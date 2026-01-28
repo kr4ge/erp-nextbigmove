@@ -59,6 +59,10 @@ jobs:
           ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
             docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm -T api npx prisma migrate deploy --schema=./apps/api/prisma/schema.prisma"
 
+          # Run seed (uses compiled JS, idempotent - safe to run every deploy)
+          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
+            docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm -T api node apps/api/dist/prisma/seed.js"
+
           # Now start all services
           ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
             docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod up -d"

@@ -16,6 +16,8 @@ COPY packages ./packages
 ENV DATABASE_URL=postgresql://user:pass@localhost:5432/placeholder
 RUN npm run prisma:generate --workspace=@erp/api
 RUN npm run build --workspace=@erp/api
+# Compile seed.ts for production use (ts-node is not available in prod)
+RUN npx tsc apps/api/prisma/seed.ts --outDir apps/api/dist/prisma --esModuleInterop --skipLibCheck
 
 FROM node:18-alpine AS runner
 RUN apk add --no-cache openssl
@@ -37,7 +39,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
-# Copy built application and prisma schema
+# Copy built application, prisma schema, and compiled seed
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 
