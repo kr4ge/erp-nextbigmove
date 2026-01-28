@@ -78,8 +78,7 @@ const ROLES: RoleDef[] = [
       'meta.read',
       'analytics.marketing',
       'analytics.sales',
-      'dashboard.marketing',
-      'dashboard.marketing_leader',
+      'analytics.share',
       'dashboard.executives',
     ],
     isSystem: true,
@@ -152,10 +151,16 @@ const ROLES: RoleDef[] = [
 ];
 
 async function ensureSuperAdmin() {
+  // Use environment variables for production, fallback to dev defaults
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'superadmin@platform.local';
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'SuperAdmin123!';
+  const adminFirstName = process.env.SEED_ADMIN_FIRST_NAME || 'Platform';
+  const adminLastName = process.env.SEED_ADMIN_LAST_NAME || 'Administrator';
+
   const existingSuperAdmin = await prisma.user.findFirst({
     where: {
       role: 'SUPER_ADMIN',
-      email: 'superadmin@platform.local',
+      email: adminEmail,
     },
   });
 
@@ -164,14 +169,14 @@ async function ensureSuperAdmin() {
     return existingSuperAdmin;
   }
 
-  const hashedPassword = await bcrypt.hash('SuperAdmin123!', 10);
+  const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
   const superAdmin = await prisma.user.create({
     data: {
-      email: 'superadmin@platform.local',
+      email: adminEmail,
       password: hashedPassword,
-      firstName: 'Platform',
-      lastName: 'Administrator',
+      firstName: adminFirstName,
+      lastName: adminLastName,
       role: 'SUPER_ADMIN',
       status: 'ACTIVE',
       emailVerified: true,
@@ -179,8 +184,8 @@ async function ensureSuperAdmin() {
   });
 
   console.log('✓ Created SUPER_ADMIN user:');
-  console.log('  Email: superadmin@platform.local');
-  console.log('  Password: SuperAdmin123!');
+  console.log(`  Email: ${adminEmail}`);
+  console.log('  Password: [hidden]');
   return superAdmin;
 }
 
