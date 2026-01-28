@@ -1,0 +1,13 @@
+{
+  "name": "@erp/eslint-config",
+  "version": "1.0.0",
+  "description": "Shared ESLint configuration for ERP Analytics Platform",
+  "main": "index.js",
+  "license": "MIT",
+  "files": [
+    "index.js"
+  ],
+  "devDependencies": {
+    "eslint": "^8.50.0"
+  }
+}

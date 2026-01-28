@@ -1,0 +1,47 @@
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { AppModule } from './app.module';
+import helmet from 'helmet';
+import * as compression from 'compression';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, {
+    logger: ['error', 'warn', 'log', 'debug'],
+  });
+
+  // Security middleware
+  app.use(helmet());
+  app.use(compression());
+
+  // CORS configuration
+  app.enableCors({
+    origin: process.env.NODE_ENV === 'production'
+      ? ['https://app.yourplatform.com', 'https://admin.yourplatform.com']
+      : ['http://localhost:3000', 'http://localhost:3002'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Team-ID'],
+  });
+
+  // Global validation pipe
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  );
+
+  // API prefix
+  app.setGlobalPrefix('api/v1');
+
+  const port = process.env.PORT || 3001;
+  await app.listen(port);
+
+  console.log(`🚀 API running on http://localhost:${port}/api/v1`);
+}
+
+bootstrap();

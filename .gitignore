@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.turbo/
+
+# Environment variables
+.env
+.env*.local
+.env.prod
+.env.production
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# OS
+.DS_Store
+*.pem
+Thumbs.db
+
+# Testing
+coverage/
+*.lcov
+.nyc_output
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Prisma
+*.db
+*.db-journal
+
+# Docker
+docker-compose.override.yml
+
+# Misc
+.cache
+.temp
+.tmp
+
+# Docs (track only top-level README and team-isolation docs; keep archive optional)
+docs/**
+!docs/README.md
+!docs/DOCUMENTATION_INDEX.md
+!docs/team-isolation/**
+!docs/archive/**

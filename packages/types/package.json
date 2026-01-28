@@ -1,0 +1,15 @@
+{
+  "name": "@erp/types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for ERP Analytics Platform",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "license": "MIT",
+  "scripts": {
+    "lint": "eslint --ext .ts .",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.0"
+  }
+}

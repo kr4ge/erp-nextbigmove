@@ -1,0 +1,69 @@
+export class WorkflowResponseDto {
+  id: string;
+  tenantId: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  schedule?: string;
+  config: any; // JSON config
+  teamId?: string | null;
+  sharedTeamIds: string[];
+  createdAt: Date;
+  updatedAt: Date;
+
+  constructor(workflow: any) {
+    this.id = workflow.id;
+    this.tenantId = workflow.tenantId;
+    this.name = workflow.name;
+    this.description = workflow.description;
+    this.enabled = workflow.enabled;
+    this.schedule = workflow.schedule;
+    this.config = workflow.config || {};
+    this.teamId = workflow.teamId ?? null;
+    this.sharedTeamIds = Array.isArray(workflow.sharedTeams)
+      ? workflow.sharedTeams.map((st: any) => st.teamId)
+      : [];
+    this.createdAt = workflow.createdAt;
+    this.updatedAt = workflow.updatedAt;
+  }
+}
+
+export class WorkflowExecutionResponseDto {
+  id: string;
+  workflowId: string;
+  tenantId: string;
+  status: string; // PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
+  triggerType: string; // MANUAL, SCHEDULED
+  dateRangeSince?: string;
+  dateRangeUntil?: string;
+  totalDays: number;
+  daysProcessed: number;
+  metaFetched: number;
+  posFetched: number;
+  errors: any[]; // Array of error objects
+  startedAt?: Date;
+  completedAt?: Date;
+  duration?: number; // milliseconds
+  createdAt: Date;
+  updatedAt: Date;
+
+  constructor(execution: any) {
+    this.id = execution.id;
+    this.workflowId = execution.workflowId;
+    this.tenantId = execution.tenantId;
+    this.status = execution.status;
+    this.triggerType = execution.triggerType;
+    this.dateRangeSince = execution.dateRangeSince;
+    this.dateRangeUntil = execution.dateRangeUntil;
+    this.totalDays = execution.totalDays;
+    this.daysProcessed = execution.daysProcessed;
+    this.metaFetched = execution.metaFetched;
+    this.posFetched = execution.posFetched;
+    this.errors = execution.errors || [];
+    this.startedAt = execution.startedAt;
+    this.completedAt = execution.completedAt;
+    this.duration = execution.duration;
+    this.createdAt = execution.createdAt;
+    this.updatedAt = execution.updatedAt;
+  }
+}

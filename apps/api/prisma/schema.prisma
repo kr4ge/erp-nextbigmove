@@ -1,0 +1,967 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// TENANT MODEL (Global - No tenantId)
+// ============================================================================
+model Tenant {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String   @unique
+  domain          String?  @unique
+  status          TenantStatus @default(ACTIVE)
+
+  // Settings
+  settings        Json     @default("{}")
+  metadata        Json     @default("{}")
+  features        String[] @default([])
+
+  // Limits
+  maxUsers        Int      @default(10)
+  maxIntegrations Int      @default(5)
+
+  // Encryption
+  encryptionKey   String   // Per-tenant encryption key
+
+  // Billing
+  planType        String   @default("trial")
+  billingEmail    String?
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  users              User[]
+  integrations       Integration[]
+  analyticsEvents    AnalyticsEvent[]
+  auditLogs          AuditLog[]
+  posStores          PosStore[]
+  metaAdAccounts     MetaAdAccount[]
+  posProductCogs     PosProductCogs[]
+  workflows          Workflow[]
+  workflowExecutions WorkflowExecution[]
+  workflowExecutionLogs WorkflowExecutionLog[]
+  metaAdInsights     MetaAdInsight[]
+  posOrders          PosOrder[]
+  posTags            PosTag[]
+  reconcileMarketing ReconcileMarketing[]
+  reconcileSales     ReconcileSales[]
+  analyticsShares    AnalyticsShare[]
+  teams             Team[]
+  teamMemberships   TeamMembership[]
+  roles             Role[]
+  userRoleAssignments       UserRoleAssignment[]
+  userPermissionAssignments UserPermissionAssignment[]
+
+  @@index([slug])
+  @@index([status])
+  @@map("tenants")
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  CANCELLED
+}
+
+// ============================================================================
+// TEAM MODEL (Tenant-scoped)
+// ============================================================================
+model Team {
+  id          String      @id @default(uuid()) @db.Uuid
+  tenantId    String      @db.Uuid
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  teamCode    String?
+  description String?
+  status      TeamStatus  @default(ACTIVE)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  members             TeamMembership[]
+  integrations        Integration[]
+  workflows           Workflow[]
+  workflowExecutions  WorkflowExecution[]
+  posStores           PosStore[]
+  posProductCogs      PosProductCogs[]
+  metaAdAccounts      MetaAdAccount[]
+  metaAdInsights      MetaAdInsight[]
+  posOrders           PosOrder[]
+  posTags             PosTag[]
+  reconcileMarketing  ReconcileMarketing[]
+  reconcileSales      ReconcileSales[]
+  userRoleAssignments       UserRoleAssignment[]
+  userPermissionAssignments UserPermissionAssignment[]
+  defaultUsers        User[] @relation("UserDefaultTeam")
+  workflowExecutionLogs WorkflowExecutionLog[] @relation("TeamWorkflowExecutionLog")
+
+  // Sharing back-relations
+  sharedIntegrationLinks IntegrationSharedTeam[]
+  sharedWorkflowLinks    WorkflowSharedTeam[]
+  analyticsSharesOwned   AnalyticsShare[]       @relation("AnalyticsShareOwner")
+  analyticsSharesShared  AnalyticsShare[]       @relation("AnalyticsShareTarget")
+
+  @@index([tenantId])
+  @@unique([tenantId, teamCode])
+  @@map("teams")
+}
+
+enum TeamStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model TeamMembership {
+  id        String                @id @default(uuid()) @db.Uuid
+  tenantId  String                @db.Uuid
+  tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId    String                @db.Uuid
+  team      Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String                @db.Uuid
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId    String?               @db.Uuid
+  role      Role?                 @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  isDefault Boolean               @default(false)
+  status    TeamMembershipStatus  @default(ACTIVE)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  @@unique([tenantId, userId, teamId])
+  @@index([tenantId])
+  @@index([roleId])
+  @@map("team_memberships")
+}
+
+enum TeamMembershipStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// ============================================================================
+// RBAC MODELS (dynamic roles/permissions, tenant/team scoped)
+// ============================================================================
+enum RoleScope {
+  GLOBAL
+  TENANT
+  TEAM
+}
+
+model Role {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String?   @db.Uuid
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key         String
+  name        String
+  description String?
+  scope       RoleScope @default(TENANT)
+  isSystem    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  rolePermissions RolePermission[]
+  userAssignments UserRoleAssignment[]
+  teamMemberships TeamMembership[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+  userAssignments UserPermissionAssignment[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String      @id @default(uuid()) @db.Uuid
+  roleId       String      @db.Uuid
+  role         Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String      @db.Uuid
+  permission   Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRoleAssignment {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId    String    @db.Uuid
+  role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  tenantId  String?   @db.Uuid
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId    String?   @db.Uuid
+  team      Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([teamId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+  @@unique([userId, roleId, tenantId, teamId])
+}
+
+model UserPermissionAssignment {
+  id           String      @id @default(uuid()) @db.Uuid
+  userId       String      @db.Uuid
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissionId String      @db.Uuid
+  permission   Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  allow        Boolean     @default(true)
+  tenantId     String?     @db.Uuid
+  tenant       Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId       String?     @db.Uuid
+  team         Team?       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now())
+
+  @@index([tenantId])
+  @@index([teamId])
+  @@index([userId])
+  @@index([permissionId])
+  @@map("user_permissions")
+  @@unique([userId, permissionId, tenantId, teamId])
+}
+
+// ============================================================================
+// USER MODEL (Tenant-scoped)
+// ============================================================================
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String
+  password      String
+  firstName     String?
+  lastName      String?
+  avatar        String?
+  employeeId    String?
+
+  // Tenant (Row-level isolation) - Optional for SUPER_ADMIN
+  tenantId      String?  @db.Uuid
+  tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // RBAC (legacy enums remain for platform-level roles; dynamic roles use join tables)
+  role          UserRole @default(USER)
+  permissions   String[] @default([])
+  defaultTeamId String? @db.Uuid
+  defaultTeam   Team?    @relation("UserDefaultTeam", fields: [defaultTeamId], references: [id], onDelete: SetNull)
+
+  // Status
+  status        UserStatus @default(ACTIVE)
+  emailVerified Boolean @default(false)
+
+  // Timestamps
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  auditLogs     AuditLog[]
+  teamMemberships TeamMembership[]
+  userRoleAssignments       UserRoleAssignment[]
+  userPermissionAssignments UserPermissionAssignment[]
+
+  @@unique([email, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, employeeId])
+  @@index([email])
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  USER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  INVITED
+  SUSPENDED
+}
+
+// ============================================================================
+// INTEGRATION MODEL (Tenant-scoped)
+// ============================================================================
+model Integration {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  provider    String
+  description String?
+
+  // Tenant (Row-level isolation)
+  tenantId    String   @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId      String?  @db.Uuid
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  // Config
+  config      Json     @default("{}")
+  credentials String   // Encrypted credentials
+
+  // Status
+  status      IntegrationStatus @default(PENDING)
+  enabled     Boolean  @default(false)
+
+  // Sync
+  lastSyncAt  DateTime?
+  syncStatus  String?
+  syncError   String?
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // POS store linkage (optional for PANCAKE_POS)
+  posStores   PosStore[]
+
+  // Meta ad accounts linkage (optional for META_ADS)
+  metaAdAccounts MetaAdAccount[]
+
+  // Shared access
+  sharedTeams IntegrationSharedTeam[]
+
+  @@index([tenantId])
+  @@index([tenantId, teamId])
+  @@index([provider])
+  @@index([tenantId, status])
+  @@map("integrations")
+}
+
+model IntegrationSharedTeam {
+  id            String       @id @default(uuid()) @db.Uuid
+  integrationId String       @db.Uuid
+  teamId        String       @db.Uuid
+  createdAt     DateTime     @default(now())
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, teamId])
+  @@index([teamId])
+  @@map("integration_shared_teams")
+}
+
+model AnalyticsShare {
+  id           String               @id @default(uuid()) @db.Uuid
+  tenantId     String               @db.Uuid
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerTeamId  String               @db.Uuid
+  ownerTeam    Team                 @relation("AnalyticsShareOwner", fields: [ownerTeamId], references: [id], onDelete: Cascade)
+  targetTeamId String               @db.Uuid
+  targetTeam   Team                 @relation("AnalyticsShareTarget", fields: [targetTeamId], references: [id], onDelete: Cascade)
+  scope        AnalyticsShareScope
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([tenantId, targetTeamId])
+  @@index([tenantId, ownerTeamId])
+  @@index([tenantId, scope])
+  @@unique([tenantId, ownerTeamId, targetTeamId, scope])
+  @@map("analytics_shares")
+}
+
+model PosStore {
+  id            String              @id @default(uuid()) @db.Uuid
+  tenantId      String              @db.Uuid
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId        String?             @db.Uuid
+  team          Team?               @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  integrationId String?             @db.Uuid
+  integration   Integration?        @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  name          String
+  shopId        String
+  shopName      String
+  shopAvatarUrl String?
+  apiKey        String
+  description   String?
+  status        IntegrationStatus   @default(ACTIVE)
+  enabled       Boolean?
+  lastSyncAt    DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  products      PosProduct[]
+  productCogs   PosProductCogs[]
+  tags          PosTag[]
+
+  @@index([tenantId])
+  @@index([tenantId, teamId])
+  @@index([integrationId])
+  @@map("pos_stores")
+}
+
+model PosProduct {
+  id         String   @id @default(uuid()) @db.Uuid
+  storeId    String   @db.Uuid
+  store      PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId  String
+  customId   String?
+  name       String
+  mapping    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  cogsHistory PosProductCogs[]
+
+  @@unique([storeId, productId])
+  @@index([storeId])
+  @@index([storeId, productId])
+  @@map("pos_products")
+}
+
+model PosProductCogs {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @db.Uuid
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId      String?   @db.Uuid
+  team        Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  productId   String    @db.Uuid
+  product     PosProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  storeId     String    @db.Uuid
+  store       PosStore  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  cogs        Decimal   @db.Decimal(12, 2)
+  startDate   DateTime  @db.Date
+  endDate     DateTime? @db.Date
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([tenantId, productId, storeId, startDate])
+  @@index([productId, storeId, startDate, endDate])
+  @@index([tenantId, storeId])
+  @@index([tenantId, teamId])
+  @@map("pos_product_cogs")
+}
+
+model MetaAdAccount {
+  id            String      @id @default(uuid()) @db.Uuid
+  tenantId      String      @db.Uuid
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId        String?     @db.Uuid
+  team          Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  integrationId String      @db.Uuid
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  accountId     String      // Meta's account_id (without act_ prefix)
+  name          String
+  currency      String?     // USD, EUR, etc.
+  currencyMultiplier Decimal? @db.Decimal(12, 4)
+  timezone      String?     // America/Los_Angeles, etc.
+  accountStatus Int?        // Meta's account_status (1 = active, 2 = disabled, etc.)
+  status        IntegrationStatus @default(ACTIVE)
+  enabled       Boolean?
+  lastSyncAt    DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([tenantId, accountId])
+  @@index([tenantId])
+  @@index([tenantId, teamId])
+  @@index([integrationId])
+  @@map("meta_ad_accounts")
+}
+
+enum IntegrationStatus {
+  PENDING
+  ACTIVE
+  ERROR
+  DISABLED
+}
+
+enum AnalyticsShareScope {
+  SALES
+  MARKETING
+  BOTH
+}
+
+// ============================================================================
+// ANALYTICS EVENT MODEL (Tenant-scoped)
+// ============================================================================
+model AnalyticsEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+
+  // Tenant (Row-level isolation)
+  tenantId   String   @db.Uuid
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Event
+  eventType  String
+  eventName  String
+  properties Json     @default("{}")
+
+  // Source
+  source     String?
+  sourceId   String?
+
+  // Timestamp
+  timestamp  DateTime @default(now())
+
+  @@index([tenantId, timestamp])
+  @@index([tenantId, eventType])
+  @@index([sourceId])
+  @@map("analytics_events")
+}
+
+// ============================================================================
+// AUDIT LOG MODEL (Tenant-scoped)
+// ============================================================================
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+
+  // Tenant (Row-level isolation)
+  tenantId   String   @db.Uuid
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // User
+  userId     String?  @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Action
+  action     String
+  resource   String
+  resourceId String?
+  changes    Json     @default("{}")
+
+  // Request metadata
+  ipAddress  String?
+  userAgent  String?
+
+  // Timestamp
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// WORKFLOW MODELS (Tenant-scoped)
+// ============================================================================
+model Workflow {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId      String?  @db.Uuid
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  name        String
+  description String?
+  enabled     Boolean  @default(true)
+
+  // Schedule configuration (cron expression)
+  schedule    String?  // e.g., "0 2 * * *" (daily at 2am)
+
+  // Workflow configuration (JSON)
+  config      Json     @default("{}")
+  // Example config structure:
+  // {
+  //   "sources": {
+  //     "meta": {
+  //       "enabled": true,
+  //       "dateRange": { "type": "relative", "days": 7 }
+  //     },
+  //     "pos": {
+  //       "enabled": true,
+  //       "dateRange": { "type": "rolling", "offsetDays": 1 }
+  //     }
+  //   },
+  //   "rateLimit": { "metaDelayMs": 2000, "posDelayMs": 1000 }
+  // }
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  executions  WorkflowExecution[]
+  sharedTeams WorkflowSharedTeam[]
+
+  @@index([tenantId, enabled])
+  @@index([tenantId, teamId])
+  @@map("workflows")
+}
+
+model WorkflowSharedTeam {
+  id          String    @id @default(uuid()) @db.Uuid
+  workflowId  String    @db.Uuid
+  teamId      String    @db.Uuid
+  createdAt   DateTime  @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, teamId])
+  @@index([teamId])
+  @@map("workflow_shared_teams")
+}
+
+model WorkflowExecution {
+  id          String   @id @default(uuid()) @db.Uuid
+  workflowId  String   @db.Uuid
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tenantId    String   @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId      String?  @db.Uuid
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  logs        WorkflowExecutionLog[]
+
+  // Execution metadata
+  status      WorkflowExecutionStatus @default(PENDING)
+  triggerType WorkflowTriggerType     // MANUAL, SCHEDULED
+
+  // Date range for this execution
+  dateRangeSince String?  // YYYY-MM-DD
+  dateRangeUntil String?  // YYYY-MM-DD
+
+  // Progress tracking
+  totalDays   Int      @default(0)
+  daysProcessed Int    @default(0)
+  metaFetched Int      @default(0)
+  posFetched  Int      @default(0)
+
+  // Error tracking
+  errors      Json     @default("[]")
+  // Example: [{ "date": "2024-11-01", "source": "meta", "accountId": "...", "error": "Rate limit exceeded" }]
+
+  // Timing
+  startedAt   DateTime?
+  completedAt DateTime?
+  duration    Int?      // milliseconds
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([workflowId, status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, teamId, createdAt])
+  @@map("workflow_executions")
+}
+
+model WorkflowExecutionLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  executionId String   @db.Uuid
+  execution   WorkflowExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  tenantId    String   @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId      String?  @db.Uuid
+  team        Team?    @relation("TeamWorkflowExecutionLog", fields: [teamId], references: [id], onDelete: SetNull)
+
+  level    String   // info, warn, error
+  event    String   // execution:started, execution:progress, etc.
+  message  String
+  metadata Json     @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([executionId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, teamId, createdAt])
+  @@map("workflow_execution_logs")
+}
+
+enum WorkflowExecutionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum WorkflowTriggerType {
+  MANUAL
+  SCHEDULED
+}
+
+// ============================================================================
+// META AD INSIGHTS MODEL (Tenant-scoped)
+// ============================================================================
+model MetaAdInsight {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId      String?  @db.Uuid
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  accountId   String   // Meta account ID (without act_ prefix)
+
+  // Hierarchy IDs
+  campaignId  String
+  campaignName String
+  adsetId     String
+  adId        String
+  adName      String
+
+  // Team code (parsed from ad name)
+  teamCode    String?
+
+  // Date tracking
+  date        DateTime @db.Date  // date_start from Meta API
+  dateCreated String?  // Ad creation date (YYYY-MM-DD)
+
+  // Mapping (normalized, lowercase)
+  mapping     String?
+
+  // Marketing associate (extracted from ad name pattern)
+  marketingAssociate String?
+
+  // Metrics
+  spend       Decimal  @db.Decimal(12, 2)
+  clicks      Int      @default(0)
+  linkClicks  Int      @default(0)  // inline_link_clicks
+  impressions Int      @default(0)
+  leads       Int      @default(0)  // landing_page_view actions
+
+  // Ad status (ACTIVE, PAUSED, etc.)
+  status      String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, accountId, adId, date])
+  @@index([tenantId, accountId, date])
+  @@index([tenantId, teamId, date])
+  @@index([date])
+  @@map("meta_ad_insights")
+}
+
+// ============================================================================
+// POS ORDER MODEL (Tenant-scoped)
+// ============================================================================
+model PosOrder {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId      String?  @db.Uuid
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  shopId      String
+  posOrderId  String   // Order ID from POS system
+
+  // Timestamps
+  insertedAt  DateTime // UTC timestamp from POS
+  dateLocal   String   // Manila-local date (YYYY-MM-DD)
+
+  // Order details
+  status      Int?
+  statusName  String?
+  cod         Decimal? @db.Decimal(12, 2)
+  // UTM tracking
+  pUtmCampaign String?
+  pUtmContent  String?
+
+  // COGS calculation (from note_product)
+  cogs         Decimal  @db.Decimal(12, 2) @default(0)
+  totalQuantity Int     @default(0)
+
+  // Product info (from first item)
+  tracking         String?
+
+  // Mapping (extracted from note_product, e.g., "Agriblast-100" → "Agriblast")
+  mapping     String?
+
+  // Assignment info
+  customerCare String?
+  marketer     String?
+  assigningCare String?
+  statusHistory   Json?
+  rtsReason       Json?
+  upsellBreakdown Json?
+  // Order items snapshot (subset of fields)
+  itemData    Json      @default("[]")
+  tags        Json      @default("[]")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, shopId, posOrderId])
+  @@index([tenantId, shopId, dateLocal])
+  @@index([tenantId, teamId, dateLocal])
+  @@index([dateLocal])
+  @@index([mapping])
+  @@map("pos_orders")
+}
+
+model PosTag {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId    String?  @db.Uuid
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  storeId   String   @db.Uuid
+  store     PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  tagId     String
+  name      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, storeId, tagId])
+  @@index([tenantId, storeId])
+  @@index([tenantId, teamId])
+  @@map("pos_tags")
+}
+
+// ============================================================================
+// RECONCILED MARKETING (Ad-level reconciliation of Meta + POS)
+// ============================================================================
+model ReconcileMarketing {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId          String?  @db.Uuid
+  team            Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  date            DateTime @db.Date
+  adId            String
+  normalizedAdId  String?
+  accountId       String?
+  campaignId      String?
+  campaignName    String?
+  adsetId         String?
+  adName          String?
+  marketingAssociate String?
+  mapping         String?
+  teamCode        String?
+
+  spend           Decimal  @default(0) @db.Decimal(12, 2)
+  clicks          Int      @default(0)
+  linkClicks      Int      @default(0)
+  impressions     Int      @default(0)
+  leads           Int      @default(0)
+
+  dateCreated     DateTime?
+  purchasesPos    Int      @default(0)
+  codPos          Decimal  @default(0) @db.Decimal(12, 2)
+  processedPurchasesPos Int @default(0)
+  cogsPos        Decimal  @default(0) @db.Decimal(12, 2)
+  cogsCanceledPos Decimal @default(0) @db.Decimal(12, 2)
+  cogsRestockingPos Decimal @default(0) @db.Decimal(12, 2)
+  cogsRtsPos      Decimal @default(0) @db.Decimal(12, 2)
+  cogsDeliveredPos Decimal @default(0) @db.Decimal(12, 2)
+  sfPos          Decimal  @default(0) @db.Decimal(12, 2)
+  ffPos          Decimal  @default(0) @db.Decimal(12, 2)
+  ifPos          Decimal  @default(0) @db.Decimal(12, 2)
+  sfSdrPos       Decimal  @default(0) @db.Decimal(12, 2)
+  ffSdrPos       Decimal  @default(0) @db.Decimal(12, 2)
+  ifSdrPos       Decimal  @default(0) @db.Decimal(12, 2)
+  codFeePos      Decimal  @default(0) @db.Decimal(12, 2)
+  codFeeDeliveredPos Decimal @default(0) @db.Decimal(12, 2)
+  canceledCodPos Decimal  @default(0) @db.Decimal(12, 2)
+  rtsCodPos      Decimal  @default(0) @db.Decimal(12, 2)
+  deliveredCodPos Decimal @default(0) @db.Decimal(12, 2)
+  shippedCodPos  Decimal  @default(0) @db.Decimal(12, 2)
+  waitingPickupCodPos Decimal @default(0) @db.Decimal(12, 2)
+  restockingCodPos Decimal @default(0) @db.Decimal(12, 2)
+  confirmedCodPos  Decimal @default(0) @db.Decimal(12, 2)
+  unconfirmedCodPos Decimal @default(0) @db.Decimal(12, 2)
+  confirmedCount Int      @default(0)
+  unconfirmedCount Int    @default(0)
+  waitingPickupCount Int  @default(0)
+  shippedCount   Int      @default(0)
+  deliveredCount Int      @default(0)
+  canceledCount  Int      @default(0)
+  rtsCount       Int      @default(0)
+  restockingCount Int     @default(0)
+  matchedOrders   Json     @default("[]") // optional details of matched POS orders
+  shops           Json     @default("[]") // shop ids involved
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, date])
+  @@index([tenantId, adId, date])
+  @@index([tenantId, campaignId, date])
+  @@index([tenantId, teamId, date])
+  @@unique([tenantId, date, adId])
+  @@map("reconcile_marketing")
+}
+
+// ============================================================================
+// RECONCILED SALES (Campaign-level aggregation of reconcile_marketing)
+// ============================================================================
+model ReconcileSales {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId        String?  @db.Uuid
+  team          Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  date          DateTime @db.Date
+  campaignId    String?
+  campaignName  String?
+  mapping       String?
+  isUnmatched   Boolean  @default(false)
+
+  spend           Decimal  @default(0) @db.Decimal(12, 2)
+  clicks          Int      @default(0)
+  linkClicks      Int      @default(0)
+  impressions     Int      @default(0)
+  leads           Int      @default(0)
+
+  purchasesPos    Int      @default(0)
+  processedPurchasesPos Int @default(0)
+  confirmedCount  Int      @default(0)
+  unconfirmedCount Int     @default(0)
+  waitingPickupCount Int  @default(0)
+  shippedCount    Int      @default(0)
+  deliveredCount  Int      @default(0)
+  canceledCount   Int      @default(0)
+  rtsCount        Int      @default(0)
+  restockingCount Int      @default(0)
+
+  codPos          Decimal  @default(0) @db.Decimal(12, 2)
+  deliveredCodPos Decimal  @default(0) @db.Decimal(12, 2)
+  shippedCodPos   Decimal  @default(0) @db.Decimal(12, 2)
+  waitingPickupCodPos Decimal @default(0) @db.Decimal(12, 2)
+  rtsCodPos       Decimal  @default(0) @db.Decimal(12, 2)
+  canceledCodPos  Decimal  @default(0) @db.Decimal(12, 2)
+  restockingCodPos Decimal @default(0) @db.Decimal(12, 2)
+  confirmedCodPos  Decimal @default(0) @db.Decimal(12, 2)
+  unconfirmedCodPos Decimal @default(0) @db.Decimal(12, 2)
+
+  cogsPos         Decimal  @default(0) @db.Decimal(12, 2)
+  cogsCanceledPos Decimal  @default(0) @db.Decimal(12, 2)
+  cogsRestockingPos Decimal @default(0) @db.Decimal(12, 2)
+  cogsRtsPos      Decimal  @default(0) @db.Decimal(12, 2)
+  cogsDeliveredPos Decimal @default(0) @db.Decimal(12, 2)
+
+  sfPos           Decimal  @default(0) @db.Decimal(12, 2)
+  ffPos           Decimal  @default(0) @db.Decimal(12, 2)
+  ifPos           Decimal  @default(0) @db.Decimal(12, 2)
+  sfSdrPos        Decimal  @default(0) @db.Decimal(12, 2)
+  ffSdrPos        Decimal  @default(0) @db.Decimal(12, 2)
+  ifSdrPos        Decimal  @default(0) @db.Decimal(12, 2)
+  codFeePos       Decimal  @default(0) @db.Decimal(12, 2)
+  codFeeDeliveredPos Decimal @default(0) @db.Decimal(12, 2)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([tenantId, date, campaignId])
+  @@index([tenantId, teamId, date])
+  @@index([tenantId, campaignId, date])
+  @@index([tenantId, date, mapping])
+  @@map("reconcile_sales")
+}

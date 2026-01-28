@@ -1,0 +1,674 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../../common/prisma/prisma.service';
+import { ClsService } from 'nestjs-cls';
+import { IntegrationService } from '../../integrations/integration.service';
+import { IntegrationProvider } from '../../integrations/dto/create-integration.dto';
+import { ProviderFactory } from '../../integrations/providers/provider.factory';
+import { MetaAdsProvider } from '../../integrations/providers/meta-ads.provider';
+import { PancakePosProvider } from '../../integrations/providers/pancake-pos.provider';
+import { MetaInsightService } from '../../integrations/services/meta-insight.service';
+import { PosOrderService } from '../../integrations/services/pos-order.service';
+import { DateRangeService } from './date-range.service';
+import { WorkflowExecutionStatus } from '@prisma/client';
+import { WorkflowExecutionGateway } from '../gateways/workflow-execution.gateway';
+import { WorkflowLogService } from './workflow-log.service';
+import { ReconcileMarketingService } from './reconcile-marketing.service';
+import { ReconcileSalesService } from './reconcile-sales.service';
+
+interface WorkflowExecutionContext {
+  executionId: string;
+  workflowId: string;
+  tenantId: string;
+  teamId: string | null;
+  config: any;
+  dateRangeSince: string;
+  dateRangeUntil: string;
+}
+
+interface ExecutionError {
+  date: string;
+  source: string;
+  accountId?: string;
+  shopId?: string;
+  error: string;
+}
+
+@Injectable()
+export class WorkflowProcessorService {
+  private readonly logger = new Logger(WorkflowProcessorService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cls: ClsService,
+    private readonly integrationService: IntegrationService,
+    private readonly providerFactory: ProviderFactory,
+    private readonly metaInsightService: MetaInsightService,
+    private readonly posOrderService: PosOrderService,
+    private readonly dateRangeService: DateRangeService,
+    private readonly executionGateway: WorkflowExecutionGateway,
+    private readonly workflowLogService: WorkflowLogService,
+    private readonly reconcileMarketingService: ReconcileMarketingService,
+    private readonly reconcileSalesService: ReconcileSalesService,
+  ) {}
+
+  /**
+   * Main workflow execution processor
+   * Processes one date at a time, fetching Meta first then POS
+   * Fail-fast: cancels on first error
+   */
+  async processWorkflowExecution(executionId: string): Promise<void> {
+    const execution = await this.prisma.workflowExecution.findUnique({
+      where: { id: executionId },
+      include: { workflow: true },
+    });
+
+    if (!execution) {
+      throw new Error(`Workflow execution ${executionId} not found`);
+    }
+
+    // Check if execution was cancelled
+    if (execution.status === WorkflowExecutionStatus.CANCELLED) {
+      this.logger.warn(`Workflow execution ${executionId} was cancelled, skipping processing`);
+      return;
+    }
+
+    // Ensure tenant context is set for downstream services (Prisma, integrations)
+    return this.runWithTenantContext(execution.tenantId, execution.teamId || null, async () => {
+      await this.processExecutionWithContext(execution);
+    });
+  }
+
+  private async processExecutionWithContext(
+    execution: any,
+  ): Promise<void> {
+    // Ensure tenant context is set for downstream services
+    this.cls.set('tenantId', execution.tenantId);
+    this.cls.set('teamId', execution.teamId || null);
+    this.cls.set('userRole', 'SYSTEM');
+
+    const executionId = execution.id;
+
+    const context: WorkflowExecutionContext = {
+      executionId,
+      workflowId: execution.workflowId,
+      tenantId: execution.tenantId,
+      teamId: execution.teamId || null,
+      config: execution.workflow.config as any,
+      dateRangeSince: execution.dateRangeSince || '',
+      dateRangeUntil: execution.dateRangeUntil || '',
+    };
+
+    this.logger.log(`Starting workflow execution ${executionId} for tenant ${context.tenantId}`);
+    this.emitAndLog(executionId, 'execution:started', context.tenantId, {
+      executionId,
+      workflowId: context.workflowId,
+      tenantId: context.tenantId,
+      timestamp: new Date().toISOString(),
+    }, 'info', 'Execution started');
+
+    try {
+      let cancellationAnnounced = false;
+      const announceCancellation = (date?: string) => {
+        if (cancellationAnnounced) return;
+        cancellationAnnounced = true;
+        this.logger.warn(`Execution ${executionId} was cancelled${date ? ` near date ${date}` : ''}`);
+        this.emitAndLog(executionId, 'execution:cancelled', context.tenantId, {
+          executionId,
+          date,
+          timestamp: new Date().toISOString(),
+        }, 'warn', date ? `Execution cancelled near date ${date}` : 'Execution cancelled');
+      };
+
+      const checkCancellation = async (date?: string): Promise<boolean> => {
+        const cancelled = await this.isCancelled(executionId);
+        if (cancelled) {
+          announceCancellation(date);
+          return true;
+        }
+        return false;
+      };
+
+      // Update status to RUNNING
+      await this.updateExecutionStatus(executionId, WorkflowExecutionStatus.RUNNING, {
+        startedAt: new Date(),
+      });
+
+      // Get date array
+      const dates = this.dateRangeService.getDateArray(
+        context.dateRangeSince,
+        context.dateRangeUntil,
+      );
+
+      const totalDays = dates.length;
+      await this.prisma.workflowExecution.update({
+        where: { id: executionId },
+        data: { totalDays },
+      });
+
+      const errors: ExecutionError[] = [];
+
+      const metaEnabled = !!context.config.sources?.meta?.enabled;
+      const posEnabled = !!context.config.sources?.pos?.enabled;
+
+      const [metaAccountCount, posStoreCount] = await Promise.all([
+        metaEnabled
+          ? this.prisma.metaAdAccount.count({
+              where: { tenantId: context.tenantId },
+            })
+          : Promise.resolve(0),
+        posEnabled
+          ? this.prisma.posStore.count({
+              where: { tenantId: context.tenantId },
+            })
+          : Promise.resolve(0),
+      ]);
+
+      const dailyUnitSources =
+        (metaEnabled ? metaAccountCount : 0) +
+        (posEnabled ? posStoreCount : 0);
+      const unitsPerDay = dailyUnitSources > 0 ? dailyUnitSources : 1;
+      const totalUnits = totalDays * unitsPerDay;
+      let unitsProcessed = 0;
+
+      // Process each date sequentially (oldest to newest)
+      let completedDays = 0;
+
+      const emitProgressValue = (dateTag?: string) => {
+        this.emitAndLog(executionId, 'execution:progress', context.tenantId, {
+          executionId,
+          date: dateTag,
+          progress: {
+            current: unitsProcessed,
+            total: totalUnits,
+          },
+          dayProgress: {
+            completedDays,
+            totalDays,
+          },
+          timestamp: new Date().toISOString(),
+        }, 'info', `Execution progress updated (${unitsProcessed.toFixed(2)}/${totalUnits})`);
+      };
+
+      const incrementUnits = (amount = 1, dateTag?: string) => {
+        unitsProcessed = Math.min(unitsProcessed + amount, totalUnits);
+        emitProgressValue(dateTag);
+      };
+
+      // Emit initial progress event so clients can render 0%
+      emitProgressValue();
+
+      const useDayFallback = dailyUnitSources === 0;
+
+      for (const date of dates) {
+        const currentDay = completedDays + 1;
+        const unitsAtDayStart = unitsProcessed;
+
+        // Respect cancellation before processing this date
+        if (await checkCancellation(date)) {
+          return;
+        }
+
+        this.logger.log(`Processing date ${date} for execution ${executionId}`);
+        this.emitAndLog(executionId, 'execution:date_started', context.tenantId, {
+          executionId,
+          date,
+          day: currentDay,
+          totalDays,
+          timestamp: new Date().toISOString(),
+        }, 'info', `Processing date ${date} (${currentDay}/${totalDays})`);
+
+        // Fetch Meta ads if enabled
+        if (metaEnabled) {
+          try {
+            await this.fetchMetaForDate(context, date, () =>
+              incrementUnits(1, date),
+            );
+            if (await checkCancellation(date)) {
+              return;
+            }
+          } catch (error) {
+            const errorObj: ExecutionError = {
+              date,
+              source: 'meta',
+              error: error.message,
+            };
+            errors.push(errorObj);
+
+            // Fail-fast: cancel workflow on first error
+            await this.failExecution(executionId, errors, date);
+            this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
+              executionId,
+              date,
+              error: error.message,
+              source: 'meta',
+              timestamp: new Date().toISOString(),
+            }, 'error', `Meta fetch failed on ${date}: ${error.message}`);
+            return;
+          }
+        }
+
+        // Fetch POS if enabled
+        if (posEnabled) {
+          try {
+            await this.fetchPosForDate(context, date, () =>
+              incrementUnits(1, date),
+            );
+            if (await checkCancellation(date)) {
+              return;
+            }
+          } catch (error) {
+            const errorObj: ExecutionError = {
+              date,
+              source: 'pos',
+              error: error.message,
+            };
+            errors.push(errorObj);
+
+            // Fail-fast: cancel workflow on first error
+            await this.failExecution(executionId, errors, date);
+            this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
+              executionId,
+              date,
+              error: error.message,
+              source: 'pos',
+              timestamp: new Date().toISOString(),
+            }, 'error', `POS fetch failed on ${date}: ${error.message}`);
+            return;
+          }
+        }
+
+        // Reconcile marketing (ad-level) after both sources succeed
+        try {
+          await this.reconcileMarketingService.reconcileDay(
+            context.tenantId,
+            date,
+            context.teamId ?? null,
+          );
+        } catch (error) {
+          const errorObj: ExecutionError = {
+            date,
+            source: 'reconcile',
+            error: (error as Error).message,
+          };
+          errors.push(errorObj);
+          await this.failExecution(executionId, errors, date);
+          this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
+            executionId,
+            date,
+            error: (error as Error).message,
+            source: 'reconcile',
+            timestamp: new Date().toISOString(),
+          }, 'error', `Reconciliation failed on ${date}: ${(error as Error).message}`);
+          return;
+        }
+
+        // Aggregate sales (campaign-level) after reconcile_marketing
+        try {
+          await this.reconcileSalesService.aggregateDay(
+            context.tenantId,
+            date,
+            context.teamId ?? null,
+          );
+          // Notify listeners that marketing/sales data has been updated
+          this.executionGateway.emitTenantEvent(
+            context.tenantId,
+            context.teamId ?? null,
+            'marketing:updated',
+            {
+              tenantId: context.tenantId,
+              teamId: context.teamId ?? null,
+              date,
+              source: 'reconcile_sales',
+            },
+          );
+        } catch (error) {
+          const errorObj: ExecutionError = {
+            date,
+            source: 'reconcile_sales',
+            error: (error as Error).message,
+          };
+          errors.push(errorObj);
+          await this.failExecution(executionId, errors, date);
+          this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
+            executionId,
+            date,
+            error: (error as Error).message,
+            source: 'reconcile_sales',
+            timestamp: new Date().toISOString(),
+          }, 'error', `Reconcile sales failed on ${date}: ${(error as Error).message}`);
+          return;
+        }
+
+        // Update progress
+        await this.prisma.workflowExecution.update({
+          where: { id: executionId },
+          data: { daysProcessed: { increment: 1 } },
+        });
+        completedDays = currentDay;
+
+        if (useDayFallback && unitsProcessed === unitsAtDayStart) {
+          incrementUnits(1, date);
+        } else {
+          emitProgressValue(date);
+        }
+
+        if (await checkCancellation(date)) {
+          return;
+        }
+      }
+
+      if (await checkCancellation()) {
+        return;
+      }
+
+      // Complete execution successfully
+    const completedAt = new Date();
+    const startedAt = execution.startedAt || new Date();
+    const duration = completedAt.getTime() - startedAt.getTime();
+
+    await this.updateExecutionStatus(executionId, WorkflowExecutionStatus.COMPLETED, {
+      completedAt,
+      duration,
+      errors,
+    });
+
+      this.logger.log(`Workflow execution ${executionId} completed successfully`);
+      this.emitAndLog(executionId, 'execution:completed', context.tenantId, {
+        executionId,
+        workflowId: context.workflowId,
+        tenantId: context.tenantId,
+        duration,
+        timestamp: new Date().toISOString(),
+      }, 'info', `Execution completed in ${duration}ms`);
+    } catch (error) {
+      this.logger.error(`Workflow execution ${executionId} failed: ${error.message}`, error.stack);
+
+      await this.failExecution(executionId, [
+        {
+        date: 'N/A',
+        source: 'system',
+        error: error.message,
+      },
+      ]);
+
+      this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
+        executionId,
+        workflowId: context.workflowId,
+        tenantId: context.tenantId,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      }, 'error', `Execution failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  private async runWithTenantContext<T>(
+    tenantId: string,
+    teamId: string | null,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return this.cls.run(async () => {
+      this.cls.set('tenantId', tenantId);
+      this.cls.set('teamId', teamId);
+      // mark as system context
+      this.cls.set('userRole', 'SYSTEM');
+      return fn();
+    });
+  }
+
+  /**
+   * Fetch Meta ad insights for all accounts on a specific date
+   */
+  private async fetchMetaForDate(
+    context: WorkflowExecutionContext,
+    date: string,
+    onAccountComplete?: () => void,
+  ): Promise<void> {
+    // Make sure CLS has tenant for integration service
+    this.cls.set('tenantId', context.tenantId);
+    this.cls.set('userRole', 'SYSTEM');
+
+    // Get all Meta ad accounts for tenant
+    const metaAccounts = await this.prisma.metaAdAccount.findMany({
+      where: { tenantId: context.tenantId, teamId: context.teamId || undefined },
+      include: { integration: true },
+    });
+
+    if (metaAccounts.length === 0) {
+      this.logger.warn(`No Meta ad accounts found for tenant ${context.tenantId}`);
+      return;
+    }
+
+    // Get rate limit config
+    const metaDelayMs = context.config.rateLimit?.metaDelayMs || 3000;
+
+    // Process each account sequentially with rate limiting
+    for (const account of metaAccounts) {
+      if (await this.isCancelled(context.executionId)) {
+        this.logger.warn(`Execution ${context.executionId} cancelled during Meta fetch`);
+        return;
+      }
+
+      this.logger.log(`Fetching Meta insights for account ${account.accountId} on ${date}`);
+
+      // Get decrypted credentials
+      let credentials: any;
+      try {
+        credentials = await this.integrationService.getDecryptedCredentials(
+          account.integrationId,
+          context.tenantId,
+        );
+      } catch (err: any) {
+        this.logger.error(
+          `Failed to decrypt credentials for integration ${account.integrationId} (tenant ${context.tenantId}): ${err?.message}`,
+        );
+        throw err;
+      }
+
+      // Create provider
+      const provider = this.providerFactory.createProvider(
+        IntegrationProvider.META_ADS,
+        credentials,
+        account.integration.config as any,
+      ) as MetaAdsProvider;
+
+      // Determine currency multiplier (only for non-PHP accounts)
+      const multiplier =
+        account.currency && account.currency.toUpperCase() !== 'PHP'
+          ? Number(account.currencyMultiplier || 1) || 1
+          : 1;
+
+      // Fetch insights
+      const rawInsights = await provider.fetchAdInsights(account.accountId, date);
+
+      let upserted = 0;
+      if (rawInsights.length > 0) {
+        const targetTeamId = account.teamId || account.integration?.teamId || context.teamId || null;
+        // Persist to database
+        upserted = await this.metaInsightService.upsertMetaInsights(
+          context.tenantId,
+          account.accountId,
+          rawInsights,
+          targetTeamId,
+          multiplier,
+        );
+
+        // Update execution counter
+        if (upserted > 0) {
+          await this.prisma.workflowExecution.update({
+            where: { id: context.executionId },
+            data: { metaFetched: { increment: upserted } },
+          });
+        }
+      }
+
+      this.logger.log(
+        `Meta fetch completed for account ${account.accountId} with ${upserted} rows on ${date}`,
+      );
+      this.emitAndLog(context.executionId, 'execution:meta_fetched', context.tenantId, {
+        executionId: context.executionId,
+        accountId: account.accountId,
+        date,
+        count: upserted,
+        timestamp: new Date().toISOString(),
+      }, 'info', `Meta fetched ${upserted} rows for ${account.accountId} on ${date}`);
+
+      onAccountComplete?.();
+
+      // Rate limiting delay
+      await new Promise(resolve => setTimeout(resolve, metaDelayMs));
+    }
+  }
+
+  /**
+   * Fetch POS orders for all stores on a specific date
+   */
+  private async fetchPosForDate(
+    context: WorkflowExecutionContext,
+    date: string,
+    onStoreComplete?: () => void,
+  ): Promise<void> {
+    this.cls.set('tenantId', context.tenantId);
+    this.cls.set('userRole', 'SYSTEM');
+
+    // Get all POS stores for tenant
+    const posStores = await this.prisma.posStore.findMany({
+      where: { tenantId: context.tenantId, teamId: context.teamId || undefined },
+    });
+
+    if (posStores.length === 0) {
+      this.logger.warn(`No POS stores found for tenant ${context.tenantId}`);
+      return;
+    }
+
+    // Get rate limit config
+    const posDelayMs = context.config.rateLimit?.posDelayMs || 3000;
+
+    // Process each store sequentially with rate limiting
+    for (const store of posStores) {
+      if (await this.isCancelled(context.executionId)) {
+        this.logger.warn(`Execution ${context.executionId} cancelled during POS fetch`);
+        return;
+      }
+
+      this.logger.log(`Fetching POS orders for shop ${store.shopId} on ${date}`);
+
+      // Create provider
+      const provider = this.providerFactory.createProvider(
+        IntegrationProvider.PANCAKE_POS,
+        { apiKey: store.apiKey },
+        { shopId: store.shopId },
+      ) as PancakePosProvider;
+
+      // Fetch orders
+      const rawOrders = await provider.fetchOrders(store.shopId, date);
+
+      let upserted = 0;
+      if (rawOrders.length > 0) {
+        const targetTeamId = store.teamId || context.teamId || null;
+        // Persist to database
+        upserted = await this.posOrderService.upsertPosOrders(
+          context.tenantId,
+          store.id,
+          rawOrders,
+          targetTeamId,
+        );
+
+        // Update execution counter
+        if (upserted > 0) {
+          await this.prisma.workflowExecution.update({
+            where: { id: context.executionId },
+            data: { posFetched: { increment: upserted } },
+          });
+        }
+      }
+
+      this.logger.log(`POS fetch completed for shop ${store.shopId} with ${upserted} orders on ${date}`);
+      this.emitAndLog(context.executionId, 'execution:pos_fetched', context.tenantId, {
+        executionId: context.executionId,
+        shopId: store.shopId,
+        date,
+        count: upserted,
+        timestamp: new Date().toISOString(),
+      }, 'info', `POS fetched ${upserted} orders for ${store.shopId} on ${date}`);
+
+      onStoreComplete?.();
+
+      // Rate limiting delay (optional, skip when set to 0)
+      if (posDelayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, posDelayMs));
+      }
+    }
+  }
+
+  /**
+   * Update execution status
+   */
+  private async updateExecutionStatus(
+    executionId: string,
+    status: WorkflowExecutionStatus,
+    additional?: any,
+  ): Promise<void> {
+    await this.prisma.workflowExecution.update({
+      where: { id: executionId },
+      data: {
+        status,
+        ...additional,
+      },
+    });
+  }
+
+  /**
+   * Fail execution with errors
+   */
+  private async failExecution(
+    executionId: string,
+    errors: ExecutionError[],
+    lastProcessedDate?: string,
+  ): Promise<void> {
+    const execution = await this.prisma.workflowExecution.findUnique({
+      where: { id: executionId },
+    });
+
+    const completedAt = new Date();
+    const startedAt = execution?.startedAt || new Date();
+    const duration = completedAt.getTime() - startedAt.getTime();
+
+    await this.updateExecutionStatus(executionId, WorkflowExecutionStatus.FAILED, {
+      errors,
+      completedAt,
+      duration,
+    });
+
+    this.logger.error(
+      `Workflow execution ${executionId} failed on date ${lastProcessedDate || 'unknown'}`,
+    );
+  }
+
+  private async isCancelled(executionId: string): Promise<boolean> {
+    const exec = await this.prisma.workflowExecution.findUnique({
+      where: { id: executionId },
+      select: { status: true },
+    });
+    return exec?.status === WorkflowExecutionStatus.CANCELLED;
+  }
+
+  private emitAndLog(
+    executionId: string,
+    event: string,
+    tenantId: string,
+    payload: any,
+    level: 'info' | 'warn' | 'error' = 'info',
+    message?: string,
+  ) {
+    this.executionGateway.emitExecutionEvent(executionId, event, payload);
+    this.workflowLogService.createLog({
+      executionId,
+      tenantId,
+      level,
+      event,
+      message: message || event,
+      metadata: payload,
+    });
+  }
+}

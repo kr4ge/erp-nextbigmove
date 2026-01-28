@@ -1,0 +1,33 @@
+{
+  "name": "erp-analytics-platform",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --no-remote",
+    "build": "turbo run build --no-remote",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "turbo run test --no-remote",
+    "clean": "turbo run clean --no-remote",
+    "docker:dev": "docker-compose -f docker-compose.dev.yml up",
+    "docker:prod": "docker-compose -f docker-compose.prod.yml up -d",
+    "docker:down": "docker-compose -f docker-compose.dev.yml down",
+    "api:migrate": "npm run migrate --workspace=@erp/api",
+    "api:studio": "npm run studio --workspace=@erp/api"
+  },
+  "devDependencies": {
+    "turbo": "^1.10.0",
+    "prettier": "^3.0.0",
+    "eslint": "^8.50.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "prisma": {
+    "seed": "ts-node apps/api/prisma/seed.ts"
+  }
+}

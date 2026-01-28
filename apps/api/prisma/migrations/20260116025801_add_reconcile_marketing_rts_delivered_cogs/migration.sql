@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "reconcile_marketing" ADD COLUMN     "cogsCanceledPos" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "cogsDeliveredPos" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "cogsRestockingPos" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "cogsRtsPos" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "restockingCodPos" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "restockingCount" INTEGER NOT NULL DEFAULT 0;
