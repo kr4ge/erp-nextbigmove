@@ -82,6 +82,22 @@ export class TenantService {
         },
       });
 
+      // Assign TENANT_ADMIN role to the owner user
+      const tenantAdminRole = await tx.role.findFirst({
+        where: { key: 'TENANT_ADMIN', tenantId: null },
+      });
+
+      if (tenantAdminRole) {
+        await tx.userRoleAssignment.create({
+          data: {
+            userId: user.id,
+            roleId: tenantAdminRole.id,
+            tenantId: tenant.id,
+            teamId: null,
+          },
+        });
+      }
+
       return { tenant, user };
     });
 
