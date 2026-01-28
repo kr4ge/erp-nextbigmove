@@ -14,10 +14,12 @@ async function bootstrap() {
   app.use(compression());
 
   // CORS configuration
+  const corsOrigins = process.env.NODE_ENV === 'production'
+    ? [process.env.CORS_ORIGIN_WEB, process.env.CORS_ORIGIN_ADMIN].filter(Boolean)
+    : ['http://localhost:3000', 'http://localhost:3002'];
+
   app.enableCors({
-    origin: process.env.NODE_ENV === 'production'
-      ? ['https://app.yourplatform.com', 'https://admin.yourplatform.com']
-      : ['http://localhost:3000', 'http://localhost:3002'],
+    origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Team-ID'],
