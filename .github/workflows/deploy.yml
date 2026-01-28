@@ -28,12 +28,30 @@ jobs:
           PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
         run: |
           set -e
+
           # Pull latest code
           ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && git pull"
+
           # Write env file from secret
           echo "$PROD_ENV_FILE" | ssh "$SSH_USER@$SSH_HOST" "cat > /opt/erp/.env.prod"
-          # Deploy and migrate
+
+          # Copy env to api directory
+          ssh "$SSH_USER@$SSH_HOST" "cp /opt/erp/.env.prod /opt/erp/apps/api/.env.prod"
+
+          # Build images sequentially to avoid OOM (exit code 137)
           ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
-            cp .env.prod apps/api/.env.prod && \
-            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod up -d --build && \
-            docker compose -f docker-compose.prod.yml --env-file .env.prod exec api npx prisma migrate deploy"
+            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build api && \
+            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build web && \
+            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build admin"
+
+          # Start all services
+          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
+            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod up -d"
+
+          # Wait for API to be ready before running migrations
+          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
+            sleep 10 && \
+            docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api npx prisma migrate deploy"
+
+          # Clean up old images to free disk space
+          ssh "$SSH_USER@$SSH_HOST" "docker image prune -f"

@@ -9,10 +9,10 @@ services:
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli ping | grep PONG"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 10
     networks:
       - erp-network
 
@@ -43,11 +43,12 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_TIMEZONE: ${NEXT_PUBLIC_TIMEZONE}
     container_name: erp-web-prod
     environment:
       TZ: ${TZ}
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-      NEXT_PUBLIC_TIMEZONE: ${NEXT_PUBLIC_TIMEZONE}
     ports:
       - "3000:3000"
     depends_on:
@@ -60,10 +61,12 @@ services:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_ADMIN_API_URL}
+        NEXT_PUBLIC_TIMEZONE: ${NEXT_PUBLIC_TIMEZONE}
     container_name: erp-admin-prod
     environment:
       TZ: ${TZ}
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_ADMIN_API_URL}
     ports:
       - "3002:3002"
     depends_on:
