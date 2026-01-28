@@ -205,6 +205,21 @@ export class IntegrationService {
       });
     }
 
+    // Auto-fetch data after creation (best-effort, don't fail the creation)
+    try {
+      if (provider === 'META_ADS') {
+        await this.syncMetaAdAccounts(integration.id);
+        this.logger.log(`Auto-synced Meta ad accounts for integration ${integration.id}`);
+      } else if (provider === 'PANCAKE_POS') {
+        await this.fetchPancakeProductsByIntegrationId(integration.id);
+        this.logger.log(`Auto-fetched POS products for integration ${integration.id}`);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Auto-fetch after integration creation failed for ${integration.id}: ${error.message}`,
+      );
+    }
+
     return new IntegrationResponseDto(integration);
   }
 
