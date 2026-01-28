@@ -21,6 +21,8 @@ FROM node:18-alpine AS runner
 RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
+# Tell Prisma where to find the query engine (needed when using bundlers like esbuild/webpack)
+ENV PRISMA_QUERY_ENGINE_LIBRARY=/app/node_modules/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node
 EXPOSE 3001
 
 # Copy package files for workspace resolution
