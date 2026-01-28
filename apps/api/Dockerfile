@@ -1,4 +1,5 @@
 FROM node:18-alpine AS deps
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY package*.json turbo.json ./
 COPY apps/api/package*.json apps/api/
@@ -16,6 +17,7 @@ RUN npm run prisma:generate --workspace=@erp/api
 RUN npm run build --workspace=@erp/api
 
 FROM node:18-alpine AS prod-deps
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY package*.json turbo.json ./
 COPY apps/api/package*.json apps/api/
@@ -25,6 +27,7 @@ COPY packages ./packages
 RUN npm ci --omit=dev
 
 FROM node:18-alpine AS runner
+RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 EXPOSE 3001
