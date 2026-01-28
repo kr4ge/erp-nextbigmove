@@ -44,14 +44,21 @@ jobs:
             docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build web && \
             docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build admin"
 
-          # Start all services
+          # Clean up old images BEFORE starting services to free memory
+          ssh "$SSH_USER@$SSH_HOST" "docker image prune -f"
+
+          # Start only redis first (needed for API)
+          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
+            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod up -d redis"
+
+          # Wait for redis to be healthy
+          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
+            docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T redis redis-cli -a \$REDIS_PASSWORD ping || sleep 5"
+
+          # Run migrations using a one-off container (less memory than running API + migration)
+          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
+            docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm -T api npx prisma migrate deploy"
+
+          # Now start all services
           ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
             docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod up -d"
-
-          # Wait for API to be ready before running migrations
-          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
-            sleep 10 && \
-            docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api npx prisma migrate deploy"
-
-          # Clean up old images to free disk space
-          ssh "$SSH_USER@$SSH_HOST" "docker image prune -f"
