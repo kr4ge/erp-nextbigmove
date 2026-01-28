@@ -30,8 +30,10 @@ COPY apps/api/package*.json apps/api/
 # Copy production dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy Prisma generated client
+# Copy Prisma generated client AND query engine from builder stage
+# This overwrites the .prisma folder with the one that has the generated client
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
 # Copy built application and prisma schema
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
