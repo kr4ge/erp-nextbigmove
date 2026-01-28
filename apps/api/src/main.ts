@@ -15,7 +15,7 @@ async function bootstrap() {
 
   // CORS configuration
   const corsOrigins = process.env.NODE_ENV === 'production'
-    ? [process.env.CORS_ORIGIN_WEB, process.env.CORS_ORIGIN_ADMIN].filter(Boolean)
+    ? [process.env.CORS_ORIGIN_WEB, process.env.CORS_ORIGIN_ADMIN].filter((o): o is string => !!o)
     : ['http://localhost:3000', 'http://localhost:3002'];
 
   app.enableCors({
