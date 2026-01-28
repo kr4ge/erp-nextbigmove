@@ -28,14 +28,12 @@ jobs:
           PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
         run: |
           set -e
-          ssh "$SSH_USER@$SSH_HOST" <<'EOF'
-            set -e
-            cd /opt/erp || { echo "Repo dir missing"; exit 1; }
-            git pull
-            cat > .env.prod <<'EOV'
-${PROD_ENV_FILE}
-EOV
-            cp .env.prod apps/api/.env.prod
-            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod up -d --build
-            docker compose -f docker-compose.prod.yml --env-file .env.prod exec api npx prisma migrate deploy
-          EOF
+          # Pull latest code
+          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && git pull"
+          # Write env file from secret
+          echo "$PROD_ENV_FILE" | ssh "$SSH_USER@$SSH_HOST" "cat > /opt/erp/.env.prod"
+          # Deploy and migrate
+          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
+            cp .env.prod apps/api/.env.prod && \
+            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod up -d --build && \
+            docker compose -f docker-compose.prod.yml --env-file .env.prod exec api npx prisma migrate deploy"
