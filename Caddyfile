@@ -1,17 +1,17 @@
 api.nextbigmove.com {
   encode zstd gzip
-  tls your-email@example.com
+  tls wetrade.frage@gmail.com
   reverse_proxy api:3001
 }
 
 erp.nextbigmove.com {
   encode zstd gzip
-  tls your-email@example.com
+  tls wetrade.frage@gmail.com
   reverse_proxy web:3000
 }
 
 admin.nextbigmove.com {
   encode zstd gzip
-  tls your-email@example.com
+  tls wetrade.frage@gmail.com
   reverse_proxy admin:3002
 }
