@@ -10,7 +10,7 @@ RUN npm ci
 FROM deps AS builder
 WORKDIR /app
 COPY . .
-# Dummy database URL so Prisma generate does not fail at build time
+# Dummy database URL so Prisma generate does not fail at build times
 ENV DATABASE_URL=postgresql://user:pass@localhost:5432/placeholder
 RUN npm run prisma:generate --workspace=@erp/api
 RUN npm run build --workspace=@erp/api
