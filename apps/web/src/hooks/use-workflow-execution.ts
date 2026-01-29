@@ -73,14 +73,7 @@ export function useWorkflowExecution(executionId: string) {
       socket.off('execution:failed');
       workflowSocket.disconnect();
     };
-  }, [
-    executionId,
-    setExecution,
-    addEvent,
-    execution?.metaFetched,
-    execution?.posFetched,
-    execution?.totalDays,
-  ]);
+  }, [executionId, setExecution, addEvent]);
 
   return execution;
 }

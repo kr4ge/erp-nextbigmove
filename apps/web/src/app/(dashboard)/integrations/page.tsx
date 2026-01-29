@@ -107,7 +107,15 @@ export default function IntegrationsPage() {
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const [isLoadingTeams, setIsLoadingTeams] = useState(false);
   const [integrationTeamId, setIntegrationTeamId] = useState<string>('');
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [allIntegrations, setAllIntegrations] = useState<Integration[]>([]);
+  const [filteredIntegrations, setFilteredIntegrations] = useState<Integration[]>([]);
+  const [searchInput, setSearchInput] = useState('');
+  const [, setMetaPagination] = useState<{
+    total: number;
+    page: number;
+    limit: number;
+    pageCount: number;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -184,6 +192,30 @@ export default function IntegrationsPage() {
     };
   }, []);
 
+  // Debounce search input and filter locally without impacting summary cards
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const term = searchInput.trim().toLowerCase();
+      if (!term) {
+        setFilteredIntegrations(allIntegrations);
+      } else {
+        setFilteredIntegrations(
+          allIntegrations.filter((i) => {
+            const name = i.name?.toLowerCase() || '';
+            const provider = i.provider?.toLowerCase() || '';
+            const description = (i.description || '').toLowerCase();
+            return (
+              name.includes(term) ||
+              provider.includes(term) ||
+              description.includes(term)
+            );
+          }),
+        );
+      }
+    }, 450);
+    return () => clearTimeout(id);
+  }, [searchInput, allIntegrations]);
+
   // Refresh permissions from API (cached)
   useEffect(() => {
     const perms = permissionsQuery.data;
@@ -236,8 +268,12 @@ export default function IntegrationsPage() {
     setEditSharedTeamIds((prev) => prev.filter((id) => id !== owner));
   }, [editTeamId, canShareIntegrations]);
 
-  const fetchIntegrations = async () => {
+  const fetchIntegrations = async (opts?: { silent?: boolean }) => {
     try {
+      const silent = opts?.silent;
+      if (!silent) {
+        setIsLoading(true);
+      }
       const token = localStorage.getItem('access_token');
       if (!token) {
         router.push('/login');
@@ -249,12 +285,29 @@ export default function IntegrationsPage() {
         headers['X-Team-Id'] = scopeIds.join(',');
       }
       const response = await apiClient.get('/integrations', { headers });
-      setIntegrations(response.data);
+
+      // Backward-compatible parsing: API may return array or { data, meta }
+      const payload = response.data;
+      const list = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
+      setAllIntegrations(list);
+      setFilteredIntegrations(list);
+      if (payload?.meta) {
+        setMetaPagination({
+          total: payload.meta.total ?? list.length,
+          page: payload.meta.page ?? 1,
+          limit: payload.meta.limit ?? list.length,
+          pageCount: payload.meta.pageCount ?? 1,
+        });
+      } else {
+        setMetaPagination(null);
+      }
     } catch (err: any) {
       const msg = parseErrorMessage(err);
       setError(msg);
     } finally {
-      setIsLoading(false);
+      if (!opts?.silent) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -552,9 +605,9 @@ export default function IntegrationsPage() {
     return <Card className="text-center text-[#475569]">Loading integrations...</Card>;
   }
 
-  const metaIntegrations = integrations.filter((i) => i.provider === 'META_ADS');
+  const metaIntegrations = allIntegrations.filter((i) => i.provider === 'META_ADS');
   const metaIntegration = metaIntegrations[0];
-  const posIntegrations = integrations.filter((i) => i.provider === 'PANCAKE_POS');
+  const posIntegrations = allIntegrations.filter((i) => i.provider === 'PANCAKE_POS');
 
   return (
     <div className="space-y-6">
@@ -615,10 +668,29 @@ export default function IntegrationsPage() {
       </div>
 
       {/* All Integrations List */}
-      {integrations.length > 0 ? (
+      {filteredIntegrations.length > 0 ? (
         <Card className="overflow-hidden">
-          <div className="border-b border-[#E2E8F0] px-6 py-4">
+          <div className="flex flex-col gap-3 border-b border-[#E2E8F0] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold text-[#0F172A]">All Integrations</h2>
+            <div className="relative w-full sm:max-w-sm">
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search integrations"
+                className="w-full rounded-xl border border-[#D5DAE0] bg-[#EEF1F5] px-4 py-2.5 pr-10 text-sm text-[#334155] placeholder:text-[#94A3B8] outline-none transition focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/30"
+              />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m1.85-5.4a7.25 7.25 0 11-14.5 0 7.25 7.25 0 0114.5 0z" />
+              </svg>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-[#E2E8F0]">
@@ -636,7 +708,7 @@ export default function IntegrationsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
-                {integrations.map((integration) => (
+                {filteredIntegrations.map((integration) => (
                   <tr key={integration.id} className="hover:bg-[#F8FAFC]">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -709,13 +781,44 @@ export default function IntegrationsPage() {
           </div>
         </Card>
       ) : (
-        <EmptyState
-          title="No integrations yet"
-          description="Connect Meta Ads or Pancake POS to get started."
-          actionLabel="Add Integration"
-          onAction={() => openModal('PANCAKE_POS')}
-          icon={<LinkIcon className="h-8 w-8" />}
-        />
+        <Card className="overflow-hidden">
+          <div className="flex flex-col gap-3 border-b border-[#E2E8F0] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-semibold text-[#0F172A]">All Integrations</h2>
+            <div className="relative w-full sm:max-w-sm">
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search integrations"
+                className="w-full rounded-xl border border-[#D5DAE0] bg-[#EEF1F5] px-4 py-2.5 pr-10 text-sm text-[#334155] placeholder:text-[#94A3B8] outline-none transition focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/30"
+              />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m1.85-5.4a7.25 7.25 0 11-14.5 0 7.25 7.25 0 0114.5 0z" />
+              </svg>
+            </div>
+          </div>
+          {allIntegrations.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 px-8 py-12 text-center">
+              <div className="text-3xl text-[#2563EB]">🔗</div>
+              <div className="text-xl font-semibold text-[#0F172A]">No integrations yet</div>
+              <p className="text-[#475569]">Connect Meta Ads or Pancake POS to get started.</p>
+              <Button onClick={() => openModal('PANCAKE_POS')}>Add Integration</Button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 px-8 py-10 text-center">
+              <div className="text-lg font-semibold text-[#0F172A]">No results for “{searchInput || 'your query'}”</div>
+              <p className="text-sm text-[#475569]">Try a different keyword or clear the search to see all integrations.</p>
+              <Button variant="ghost" onClick={() => setSearchInput('')}>Clear search</Button>
+            </div>
+          )}
+        </Card>
       )}
 
       {/* Connect Modal */}

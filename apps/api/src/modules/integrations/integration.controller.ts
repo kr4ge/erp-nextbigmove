@@ -17,6 +17,7 @@ import {
   UpdateIntegrationDto,
   IntegrationResponseDto,
   BulkCreatePosIntegrationDto,
+  ListIntegrationsDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -47,8 +48,13 @@ export class IntegrationController {
    */
   @Get()
   @Permissions('integration.read')
-  async findAll(): Promise<IntegrationResponseDto[]> {
-    return this.integrationService.findAll();
+  async findAll(
+    @Query() query: ListIntegrationsDto,
+  ): Promise<{
+    data: IntegrationResponseDto[];
+    meta: { total: number; page: number; limit: number; pageCount: number };
+  }> {
+    return this.integrationService.findAll(query);
   }
 
   /**
@@ -79,8 +85,10 @@ export class IntegrationController {
    */
   @Get('/pos-stores')
   @Permissions('integration.read')
-  async listPosStores() {
-    return this.integrationService.listPosStores();
+  async listPosStores(
+    @Query() query: ListPosStoresDto,
+  ) {
+    return this.integrationService.listPosStores(query);
   }
 
   /**
