@@ -16,6 +16,7 @@ import {
   CreateIntegrationDto,
   UpdateIntegrationDto,
   IntegrationResponseDto,
+  BulkCreatePosIntegrationDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -121,6 +122,18 @@ export class IntegrationController {
       body.productIds,
       body.mapping,
     );
+  }
+
+  /**
+   * POS Stores - bulk import from API keys
+   */
+  @Post('/pos-stores/bulk-import')
+  @Permissions('integration.create')
+  @HttpCode(HttpStatus.CREATED)
+  async bulkCreatePosIntegrations(
+    @Body() dto: BulkCreatePosIntegrationDto,
+  ) {
+    return this.integrationService.bulkCreatePosIntegrations(dto);
   }
 
   /**

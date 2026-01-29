@@ -16,6 +16,7 @@ import {
   UpdateIntegrationDto,
   IntegrationResponseDto,
   IntegrationProvider,
+  BulkCreatePosIntegrationDto,
 } from './dto';
 import { validate as uuidValidate } from 'uuid';
 import { MetaAdsProvider } from './providers/meta-ads.provider';
@@ -221,6 +222,174 @@ export class IntegrationService {
     }
 
     return new IntegrationResponseDto(integration);
+  }
+
+  /**
+   * Bulk import POS integrations from a list of API keys.
+   * For each key, discovers shops via Pancake API, creates integration + store, and auto-fetches products.
+   */
+  async bulkCreatePosIntegrations(dto: BulkCreatePosIntegrationDto) {
+    const { tenantId } = await this.teamContext.getContext();
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { encryptionKey: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    const effectiveTeamId = await this.teamContext.validateAndGetTeamId(dto.teamId);
+
+    // Validate shared team ids
+    const validSharedIds =
+      Array.isArray(dto.sharedTeamIds) && dto.sharedTeamIds.length > 0
+        ? (
+            await this.prisma.team.findMany({
+              where: { tenantId, id: { in: dto.sharedTeamIds } },
+              select: { id: true },
+            })
+          ).map((t) => t.id)
+        : [];
+
+    const results: any[] = [];
+
+    for (const entry of dto.integrations) {
+      const maskedKey = entry.apiKey.length > 8
+        ? entry.apiKey.slice(0, 4) + '...' + entry.apiKey.slice(-4)
+        : '****';
+
+      // 1. Discover shops from this API key
+      let shops: any[];
+      try {
+        const response = await fetch(
+          `https://pos.pages.fm/api/v1/shops?api_key=${entry.apiKey}`,
+        );
+
+        if (!response.ok) {
+          results.push({ status: 'failed', apiKey: maskedKey, reason: `API returned ${response.status}` });
+          continue;
+        }
+
+        const data = await response.json();
+        if (!data.success || !Array.isArray(data.shops) || data.shops.length === 0) {
+          results.push({ status: 'failed', apiKey: maskedKey, reason: 'No shops found for this API key' });
+          continue;
+        }
+
+        shops = data.shops;
+      } catch (error) {
+        results.push({ status: 'failed', apiKey: maskedKey, reason: error.message });
+        continue;
+      }
+
+      // 2. Create integration + store for each shop
+      for (const shop of shops) {
+        const shopId = shop.id?.toString() || '';
+        const shopName = shop.name || 'Unnamed Shop';
+        const shopAvatarUrl = shop.avatar_url || null;
+
+        // Duplicate check: shopId
+        const existingByShopId = await this.prisma.posStore.findFirst({
+          where: { tenantId, shopId },
+        });
+        if (existingByShopId) {
+          results.push({ status: 'skipped', apiKey: maskedKey, shopId, shopName, reason: 'Shop ID already exists' });
+          continue;
+        }
+
+        // Duplicate check: apiKey
+        const existingByApiKey = await this.prisma.posStore.findFirst({
+          where: {
+            tenantId,
+            apiKey: entry.apiKey,
+            shopId,
+          },
+        });
+        if (existingByApiKey) {
+          results.push({ status: 'skipped', apiKey: maskedKey, shopId, shopName, reason: 'API key + shop already exists' });
+          continue;
+        }
+
+        try {
+          const encryptedCredentials = this.encryptionService.encrypt(
+            { apiKey: entry.apiKey },
+            tenant.encryptionKey,
+          );
+
+          // Create integration with shared teams
+          const integration = await this.prisma.$transaction(async (tx) => {
+            const created = await tx.integration.create({
+              data: {
+                name: shopName,
+                provider: 'PANCAKE_POS',
+                credentials: encryptedCredentials,
+                config: { shopId, shopName, shopAvatarUrl },
+                tenantId,
+                teamId: effectiveTeamId,
+                status: 'ACTIVE',
+                enabled: false,
+                sharedTeams:
+                  validSharedIds.length > 0
+                    ? {
+                        createMany: {
+                          data: validSharedIds.map((tid) => ({ teamId: tid })),
+                          skipDuplicates: true,
+                        },
+                      }
+                    : undefined,
+              },
+            });
+            return created;
+          });
+
+          // Create POS store
+          await this.prisma.posStore.create({
+            data: {
+              tenantId,
+              teamId: effectiveTeamId,
+              integrationId: integration.id,
+              name: shopName,
+              shopId,
+              shopName,
+              shopAvatarUrl,
+              apiKey: entry.apiKey,
+              status: 'ACTIVE',
+              enabled: null,
+            },
+          });
+
+          // Auto-fetch products (best-effort)
+          try {
+            await this.fetchPancakeProductsByIntegrationId(integration.id);
+          } catch (fetchError) {
+            this.logger.warn(
+              `Bulk import: product fetch failed for integration ${integration.id}: ${fetchError.message}`,
+            );
+          }
+
+          results.push({
+            status: 'created',
+            apiKey: maskedKey,
+            shopId,
+            shopName,
+            integrationId: integration.id,
+          });
+        } catch (error) {
+          results.push({ status: 'failed', apiKey: maskedKey, shopId, shopName, reason: error.message });
+        }
+      }
+    }
+
+    const created = results.filter((r) => r.status === 'created').length;
+    const skipped = results.filter((r) => r.status === 'skipped').length;
+    const failed = results.filter((r) => r.status === 'failed').length;
+
+    return {
+      summary: { total: results.length, created, skipped, failed },
+      results,
+    };
   }
 
   /**
