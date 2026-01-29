@@ -104,13 +104,17 @@ export default function MetaPage() {
         return;
       }
 
-      const response = await apiClient.get('/integrations', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const scopeIds = getSelectedTeamIds();
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      if (scopeIds.length > 0) {
+        headers['X-Team-Id'] = scopeIds.join(',');
+      }
 
-      const metaIntegrations = response.data.filter((i: any) => i.provider === 'META_ADS');
+      const response = await apiClient.get('/integrations', { headers });
+
+      const payload = response.data;
+      const list = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
+      const metaIntegrations = list.filter((i: any) => i.provider === 'META_ADS');
       setIntegrations(metaIntegrations);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to load Meta integrations');

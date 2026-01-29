@@ -400,14 +400,8 @@ export class IntegrationService {
    */
   async findAll(
     params: ListIntegrationsDto,
-  ): Promise<{
-    data: IntegrationResponseDto[];
-    meta: { total: number; page: number; limit: number; pageCount: number };
-  }> {
-    const { search, page = 1, limit = 20 } = params || {};
-    const safePage = page < 1 ? 1 : page;
-    const safeLimit = limit < 1 ? 20 : limit;
-    const skip = (safePage - 1) * safeLimit;
+  ): Promise<IntegrationResponseDto[]> {
+    const { search } = params || {};
 
     const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
@@ -442,38 +436,19 @@ export class IntegrationService {
       where = { AND: [baseWhere, searchFilter] };
     }
 
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.integration.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        include: { sharedTeams: true },
-        skip,
-        take: safeLimit,
-      }),
-      this.prisma.integration.count({ where }),
-    ]);
+    const rows = await this.prisma.integration.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { sharedTeams: true },
+    });
 
-    return {
-      data: rows.map((integration) => new IntegrationResponseDto(integration)),
-      meta: {
-        total,
-        page: safePage,
-        limit: safeLimit,
-        pageCount: Math.ceil(total / safeLimit),
-      },
-    };
+    return rows.map((integration) => new IntegrationResponseDto(integration));
   }
 
   async listPosStores(
     params: ListPosStoresDto,
-  ): Promise<{
-    data: any[];
-    meta: { total: number; page: number; limit: number; pageCount: number };
-  }> {
-    const { search, page = 1, limit = 20 } = params || {};
-    const safePage = page < 1 ? 1 : page;
-    const safeLimit = limit < 1 ? 20 : limit;
-    const skip = (safePage - 1) * safeLimit;
+  ): Promise<any[]> {
+    const { search } = params || {};
 
     const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
@@ -483,10 +458,7 @@ export class IntegrationService {
     const shouldRestrict = !isAdmin || (isAdmin && allowedTeams.length > 0);
     if (shouldRestrict) {
       if (allowedTeams.length === 0) {
-        return {
-          data: [],
-          meta: { total: 0, page: safePage, limit: safeLimit, pageCount: 0 },
-        };
+        return [];
       }
       where = {
         tenantId,
@@ -515,26 +487,11 @@ export class IntegrationService {
       }
     }
 
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.posStore.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        include: { integration: { include: { sharedTeams: true } } },
-        skip,
-        take: safeLimit,
-      }),
-      this.prisma.posStore.count({ where }),
-    ]);
-
-    return {
-      data: rows,
-      meta: {
-        total,
-        page: safePage,
-        limit: safeLimit,
-        pageCount: Math.ceil(total / safeLimit),
-      },
-    };
+    return this.prisma.posStore.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { integration: { include: { sharedTeams: true } } },
+    });
   }
 
   async getPosStore(id: string) {

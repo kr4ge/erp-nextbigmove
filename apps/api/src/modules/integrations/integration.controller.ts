@@ -51,10 +51,7 @@ export class IntegrationController {
   @Permissions('integration.read')
   async findAll(
     @Query() query: ListIntegrationsDto,
-  ): Promise<{
-    data: IntegrationResponseDto[];
-    meta: { total: number; page: number; limit: number; pageCount: number };
-  }> {
+  ): Promise<IntegrationResponseDto[]> {
     return this.integrationService.findAll(query);
   }
 
