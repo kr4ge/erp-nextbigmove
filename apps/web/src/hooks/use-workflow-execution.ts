@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { workflowSocket } from '@/lib/socket-client';
 import { useExecutionStore } from '@/stores/workflow-execution-store';
+import apiClient from '@/lib/api-client';
 
 export function useWorkflowExecution(executionId: string) {
   const execution = useExecutionStore((state) => state.executions[executionId]);
@@ -44,12 +45,14 @@ export function useWorkflowExecution(executionId: string) {
     });
 
     socket.on('execution:meta_fetched', (data) => {
-      setExecution(executionId, { metaFetched: (execution?.metaFetched || 0) + data.count });
+      const current = useExecutionStore.getState().executions[executionId];
+      setExecution(executionId, { metaFetched: (current?.metaFetched || 0) + data.count });
       addEvent(executionId, { timestamp: new Date().toISOString(), event: 'meta_fetched', data });
     });
 
     socket.on('execution:pos_fetched', (data) => {
-      setExecution(executionId, { posFetched: (execution?.posFetched || 0) + data.count });
+      const current = useExecutionStore.getState().executions[executionId];
+      setExecution(executionId, { posFetched: (current?.posFetched || 0) + data.count });
       addEvent(executionId, { timestamp: new Date().toISOString(), event: 'pos_fetched', data });
     });
 
@@ -74,6 +77,45 @@ export function useWorkflowExecution(executionId: string) {
       workflowSocket.disconnect();
     };
   }, [executionId, setExecution, addEvent]);
+
+  // Hydrate from API so refresh keeps counts/logs
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      try {
+        const [execRes, logsRes] = await Promise.all([
+          apiClient.get(`/workflows/executions/${executionId}`),
+          apiClient.get(`/workflows/executions/${executionId}/logs`, {
+            params: { limit: 200 },
+          }),
+        ]);
+        if (!isMounted) return;
+        const exec = execRes.data;
+        setExecution(executionId, {
+          status: exec.status,
+          totalDays: exec.totalDays,
+          metaFetched: exec.metaFetched,
+          posFetched: exec.posFetched,
+        });
+        const logs = Array.isArray(logsRes.data) ? logsRes.data : [];
+        if (logs.length > 0) {
+          setExecution(executionId, {
+            events: logs.map((l: any) => ({
+              timestamp: l.createdAt || l.timestamp || new Date().toISOString(),
+              event: l.event || 'log',
+              data: l.metadata ?? l.message ?? l,
+            })),
+          });
+        }
+      } catch {
+        // ignore hydrate errors; live socket will still update
+      }
+    };
+    load();
+    return () => {
+      isMounted = false;
+    };
+  }, [executionId, setExecution]);
 
   return execution;
 }

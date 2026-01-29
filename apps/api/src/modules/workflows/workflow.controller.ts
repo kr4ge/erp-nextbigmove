@@ -52,6 +52,30 @@ export class WorkflowController {
   }
 
   /**
+   * Get a single execution by ID (no workflowId required)
+   */
+  @Get('executions/:executionId')
+  @Permissions('workflow.view_executions')
+  async getExecutionById(
+    @Param('executionId') executionId: string,
+  ): Promise<WorkflowExecutionResponseDto> {
+    return this.workflowService.getExecution(executionId);
+  }
+
+  /**
+   * Get execution logs by ID
+   */
+  @Get('executions/:executionId/logs')
+  @Permissions('workflow.view_executions')
+  async getExecutionLogs(
+    @Param('executionId') executionId: string,
+    @Query('limit') limit?: string,
+  ): Promise<any[]> {
+    const safeLimit = limit ? parseInt(limit, 10) : 200;
+    return this.workflowService.getExecutionLogs(executionId, safeLimit);
+  }
+
+  /**
    * Get workflow by ID
    */
   @Get(':id')

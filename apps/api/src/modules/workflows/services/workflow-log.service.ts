@@ -28,11 +28,12 @@ export class WorkflowLogService {
     });
   }
 
-  async getExecutionLogs(executionId: string, tenantId: string) {
+  async getExecutionLogs(executionId: string, tenantId: string, limit = 200) {
     const client: any = this.prisma as any;
     return client.workflowExecutionLog.findMany({
       where: { executionId, tenantId },
       orderBy: { createdAt: 'asc' },
+      take: limit,
     });
   }
 }

@@ -15,6 +15,7 @@ import * as cronParser from 'cron-parser';
 import { WORKFLOW_QUEUE, WorkflowJobData } from './processors/workflow.processor';
 import { DateRangeService } from './services/date-range.service';
 import { WorkflowProcessorService } from './services/workflow-processor.service';
+import { WorkflowLogService } from './services/workflow-log.service';
 
 @Injectable()
 export class WorkflowService {
@@ -28,6 +29,7 @@ export class WorkflowService {
     private readonly teamContext: TeamContextService,
     private readonly dateRangeService: DateRangeService,
     private readonly workflowProcessor: WorkflowProcessorService,
+    private readonly workflowLogService: WorkflowLogService,
     @InjectQueue(WORKFLOW_QUEUE) private readonly workflowQueue: Queue<WorkflowJobData>,
   ) {}
 
@@ -385,6 +387,17 @@ export class WorkflowService {
     }
 
     return new WorkflowExecutionResponseDto(execution);
+  }
+
+  /**
+   * Get execution logs for a single execution by ID
+   */
+  async getExecutionLogs(executionId: string, limit = 200): Promise<any[]> {
+    const { tenantId } = await this.teamContext.getContext();
+    // Reuse access check from getExecution
+    await this.getExecution(executionId);
+    const safeLimit = Math.min(Math.max(limit, 1), 500);
+    return this.workflowLogService.getExecutionLogs(executionId, tenantId, safeLimit);
   }
 
   /**

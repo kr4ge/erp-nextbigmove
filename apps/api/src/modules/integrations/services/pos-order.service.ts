@@ -50,6 +50,46 @@ export class PosOrderService {
   }
 
   /**
+   * Derive mapping from productId values by matching pos_products.productId.
+   * If multiple distinct mappings found, join with '-' in stable order.
+   */
+  private async deriveMappingFromItems(
+    storeId: string,
+    items: any[],
+  ): Promise<string | undefined> {
+    const productIds = Array.from(
+      new Set(
+        items
+          .map((item: any) => item?.product_id?.toString?.() || item?.productId?.toString?.())
+          .filter((v: string | undefined) => !!v),
+      ),
+    ) as string[];
+
+    if (productIds.length === 0) return undefined;
+
+    const products = await this.prisma.posProduct.findMany({
+      where: {
+        storeId,
+        productId: { in: productIds },
+      },
+      select: { mapping: true },
+    });
+
+    const mappings = products
+      .map((p) => (p.mapping || '').trim())
+      .filter((m) => m.length > 0)
+      .map((m) => m.toLowerCase());
+
+    if (mappings.length === 0) return undefined;
+
+    const unique = Array.from(new Set(mappings));
+    if (unique.length === 1) return unique[0];
+
+    unique.sort();
+    return unique.join('-');
+  }
+
+  /**
    * Calculate COGS from note_product using PosProductCogs table
    * @param tenantId - Tenant ID
    * @param storeId - POS store ID
@@ -147,9 +187,14 @@ export class PosOrderService {
       dateLocal,
     );
 
-    // Extract mapping from first item's note_product
+    // Extract mapping from productId -> pos_products.mapping first
     const noteProduct = firstItem?.note_product;
-    let mapping = this.extractMapping(noteProduct);
+    let mapping = await this.deriveMappingFromItems(storeId, items);
+
+    // Fallback to note_product parsing if no mapping from products
+    if (!mapping) {
+      mapping = this.extractMapping(noteProduct);
+    }
 
     // Build item data snapshot
     const itemData = items.map((item: any) => {
@@ -220,7 +265,7 @@ export class PosOrderService {
     // Upsell breakdown from histories (if any) looking for UPSELL tag
     const upsellBreakdown = this.computeUpsellBreakdown(rawOrder);
 
-    // Fallback mapping: if still empty, derive from note_product first segment (title case)
+    // Fallback mapping: if still empty, derive from note_product first segment
     if (!mapping && typeof noteProduct === 'string' && noteProduct.trim() !== '') {
       const parts = noteProduct.split('-');
       const first = parts[0]?.trim();
