@@ -8,10 +8,23 @@ class WorkflowSocketManager {
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
 
-    const rawBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    // Strip any /api... suffix so we hit the websocket namespace at the server root
-    const baseUrl = rawBase.replace(/\/api.*$/, '').replace(/\/$/, '');
-    const socketUrl = `${baseUrl}/workflows`;
+    const rawBase = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || '';
+    let origin = '';
+    try {
+      origin = new URL(rawBase).origin;
+    } catch {
+      origin = '';
+    }
+    if (!origin || origin === 'http:' || origin === 'https:') {
+      if (typeof window !== 'undefined') {
+        origin = window.location.origin
+          .replace('://erp.', '://api.')
+          .replace('://admin.', '://api.');
+      } else {
+        origin = 'http://localhost:3001';
+      }
+    }
+    const socketUrl = `${origin}/workflows`;
 
     this.socket = io(socketUrl, {
       path: '/socket.io',
