@@ -483,7 +483,10 @@ export class IntegrationService {
     const shouldRestrict = !isAdmin || (isAdmin && allowedTeams.length > 0);
     if (shouldRestrict) {
       if (allowedTeams.length === 0) {
-        return [];
+        return {
+          data: [],
+          meta: { total: 0, page: safePage, limit: safeLimit, pageCount: 0 },
+        };
       }
       where = {
         tenantId,

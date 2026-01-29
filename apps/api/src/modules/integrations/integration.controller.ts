@@ -18,6 +18,7 @@ import {
   IntegrationResponseDto,
   BulkCreatePosIntegrationDto,
   ListIntegrationsDto,
+  ListPosStoresDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
