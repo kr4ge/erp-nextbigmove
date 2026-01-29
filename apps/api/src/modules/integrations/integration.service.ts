@@ -410,10 +410,7 @@ export class IntegrationService {
     const shouldRestrictAdminToScope = isAdmin && allowedTeams.length > 0;
     if (!isAdmin || shouldRestrictAdminToScope) {
       if (allowedTeams.length === 0) {
-        return {
-          data: [],
-          meta: { total: 0, page: safePage, limit: safeLimit, pageCount: 0 },
-        };
+        return [];
       }
       baseWhere = {
         tenantId,
