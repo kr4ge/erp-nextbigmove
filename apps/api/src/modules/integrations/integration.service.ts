@@ -806,9 +806,29 @@ export class IntegrationService {
       throw new NotFoundException(`Integration with ID ${id} not found`);
     }
 
-    // Delete integration
-    await this.prisma.integration.delete({
-      where: { id },
+    await this.prisma.$transaction(async (tx) => {
+      if (integration.provider === 'PANCAKE_POS') {
+        const stores = await tx.posStore.findMany({
+          where: { tenantId, integrationId: id },
+          select: { id: true, shopId: true },
+        });
+        if (stores.length > 0) {
+          const shopIds = stores.map((s) => s.shopId).filter(Boolean);
+          if (shopIds.length > 0) {
+            await tx.posOrder.deleteMany({
+              where: { tenantId, shopId: { in: shopIds } },
+            });
+          }
+          await tx.posStore.deleteMany({
+            where: { id: { in: stores.map((s) => s.id) } },
+          });
+        }
+      }
+
+      // Delete integration
+      await tx.integration.delete({
+        where: { id },
+      });
     });
   }
 
