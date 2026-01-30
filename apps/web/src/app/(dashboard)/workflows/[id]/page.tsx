@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import { LiveExecutionMonitor } from '@/components/workflows/live-execution-monitor';
 import { useExecutionStore } from '@/stores/workflow-execution-store';
+import { ArrowBigLeft, Settings } from 'lucide-react';
 
 interface Workflow {
   id: string;
@@ -16,6 +17,8 @@ interface Workflow {
   config: any;
   createdAt: string;
   updatedAt: string;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
 }
 
 interface WorkflowExecution {
@@ -139,6 +142,13 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
   const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
   const [triggering, setTriggering] = useState(false);
 
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString();
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -205,7 +215,8 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
           href="/workflows"
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition"
         >
-          ← Back to Workflows
+          <ArrowBigLeft className="h-4 w-4" />
+          Back to Workflows
         </Link>
       </div>
     );
@@ -221,17 +232,18 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
         <div className="flex items-center gap-2">
           <Link
             href="/workflows"
-            className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
           >
-            ← Back
+            <ArrowBigLeft className="h-4 w-4" />
+            Back
           </Link>
-          <button
-            onClick={triggerWorkflow}
-            disabled={triggering}
-            className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition disabled:bg-indigo-400 disabled:cursor-not-allowed"
+          <Link
+            href={`/workflows/${workflowId}/edit`}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition"
           >
-            {triggering ? 'Starting…' : 'Run Now'}
-          </button>
+            <Settings className="h-4 w-4" />
+            Settings
+          </Link>
         </div>
       </div>
 
@@ -294,8 +306,17 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900">Execution History</h3>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Execution History</h3>
+            <div className="mt-1 text-xs text-slate-500">
+              <span className="mr-3">Last run: {formatDateTime(workflow.lastRunAt)}</span>
+              <span className="mr-3">Next run: {formatDateTime(workflow.nextRunAt)}</span>
+              {workflow.schedule && (
+                <span className="text-slate-400">Schedule: {workflow.schedule}</span>
+              )}
+            </div>
+          </div>
           <button
             onClick={triggerWorkflow}
             disabled={triggering}

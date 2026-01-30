@@ -15,28 +15,22 @@ import * as cronParser from 'cron-parser';
 import { WORKFLOW_QUEUE, WorkflowJobData } from './processors/workflow.processor';
 import { DateRangeService } from './services/date-range.service';
 import { WorkflowProcessorService } from './services/workflow-processor.service';
+import { WorkflowSchedulerService } from './services/workflow-scheduler.service';
 import { WorkflowLogService } from './services/workflow-log.service';
 
 @Injectable()
 export class WorkflowService {
   private readonly logger = new Logger(WorkflowService.name);
-  // WorkflowSchedulerService will be injected lazily to avoid circular dependency
-  private schedulerService: any;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
     private readonly teamContext: TeamContextService,
     private readonly dateRangeService: DateRangeService,
     private readonly workflowProcessor: WorkflowProcessorService,
+    private readonly schedulerService: WorkflowSchedulerService,
     private readonly workflowLogService: WorkflowLogService,
     @InjectQueue(WORKFLOW_QUEUE) private readonly workflowQueue: Queue<WorkflowJobData>,
   ) {}
-
-  // Lazy inject scheduler service to avoid circular dependency
-  setSchedulerService(schedulerService: any) {
-    this.schedulerService = schedulerService;
-  }
 
   private async buildAccessWhere(id?: string) {
     const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
@@ -67,6 +61,16 @@ export class WorkflowService {
         ],
       },
     };
+  }
+
+  private computeNextRunAt(schedule?: string | null): Date | null {
+    if (!schedule) return null;
+    try {
+      const interval = cronParser.parseExpression(schedule);
+      return interval.next().toDate();
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -123,7 +127,7 @@ export class WorkflowService {
     });
 
     // Register cron job if schedule is provided
-    if (schedule && this.schedulerService) {
+    if (schedule) {
       await this.schedulerService.registerWorkflowCron(workflow.id, schedule);
     }
 
@@ -141,10 +145,21 @@ export class WorkflowService {
     const workflows = await this.prisma.workflow.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { sharedTeams: true },
+      include: {
+        sharedTeams: true,
+        executions: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        },
+      },
     });
 
-    return workflows.map((workflow) => new WorkflowResponseDto(workflow));
+    return workflows.map((workflow) => {
+      const lastRunAt = workflow.executions?.[0]?.createdAt || null;
+      const nextRunAt = workflow.enabled ? this.computeNextRunAt(workflow.schedule) : null;
+      return new WorkflowResponseDto({ ...workflow, lastRunAt, nextRunAt });
+    });
   }
 
   /**
@@ -158,14 +173,23 @@ export class WorkflowService {
 
     const workflow = await this.prisma.workflow.findFirst({
       where,
-      include: { sharedTeams: true },
+      include: {
+        sharedTeams: true,
+        executions: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        },
+      },
     });
 
     if (!workflow) {
       throw new NotFoundException(`Workflow with ID ${id} not found`);
     }
 
-    return new WorkflowResponseDto(workflow);
+    const lastRunAt = workflow.executions?.[0]?.createdAt || null;
+    const nextRunAt = workflow.enabled ? this.computeNextRunAt(workflow.schedule) : null;
+    return new WorkflowResponseDto({ ...workflow, lastRunAt, nextRunAt });
   }
 
   /**
@@ -252,6 +276,12 @@ export class WorkflowService {
       });
     });
 
+    await this.schedulerService.updateWorkflowSchedule(
+      id,
+      updatedWorkflow.schedule,
+      updatedWorkflow.enabled,
+    );
+
     return new WorkflowResponseDto(updatedWorkflow);
   }
 
@@ -304,6 +334,12 @@ export class WorkflowService {
       include: { sharedTeams: true },
     });
 
+    await this.schedulerService.updateWorkflowSchedule(
+      id,
+      updatedWorkflow.schedule,
+      updatedWorkflow.enabled,
+    );
+
     return new WorkflowResponseDto(updatedWorkflow);
   }
 
@@ -330,6 +366,12 @@ export class WorkflowService {
       data: { enabled: false },
       include: { sharedTeams: true },
     });
+
+    await this.schedulerService.updateWorkflowSchedule(
+      id,
+      updatedWorkflow.schedule,
+      updatedWorkflow.enabled,
+    );
 
     return new WorkflowResponseDto(updatedWorkflow);
   }

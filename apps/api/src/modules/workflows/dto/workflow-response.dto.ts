@@ -8,6 +8,8 @@ export class WorkflowResponseDto {
   config: any; // JSON config
   teamId?: string | null;
   sharedTeamIds: string[];
+  lastRunAt?: Date | null;
+  nextRunAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 
@@ -23,6 +25,8 @@ export class WorkflowResponseDto {
     this.sharedTeamIds = Array.isArray(workflow.sharedTeams)
       ? workflow.sharedTeams.map((st: any) => st.teamId)
       : [];
+    this.lastRunAt = workflow.lastRunAt ?? null;
+    this.nextRunAt = workflow.nextRunAt ?? null;
     this.createdAt = workflow.createdAt;
     this.updatedAt = workflow.updatedAt;
   }
