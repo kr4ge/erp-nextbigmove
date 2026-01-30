@@ -140,6 +140,7 @@ type OverviewResponse = {
     if_raw?: number;
     cod_fee_delivered_raw?: number;
     cogs_ec?: number;
+    cogs_restocking?: number;
   }>;
   filters: { mappings: string[]; mappingsDisplayMap: Record<string, string> };
   selected: { start_date: string; end_date: string; mappings: string[] };
@@ -218,7 +219,7 @@ function computeCmRtsForecast(params: {
   ff: number;
   iF: number;
   codFeeDelivered: number;
-  cogsEc: number;
+  cogsAdjusted: number;
   cogsRts: number;
   rtsPct: number;
 }) {
@@ -231,7 +232,7 @@ function computeCmRtsForecast(params: {
     params.ff -
     params.iF -
     params.codFeeDelivered -
-    params.cogsEc +
+    params.cogsAdjusted +
     params.cogsRts;
   return { revenueAfterRts, cmForecast, rtsFraction };
 }
@@ -536,6 +537,10 @@ export default function SalesAnalyticsPage() {
           excludeCancel: excludeCanceled,
           excludeRestocking: excludeRestocking,
         });
+        const cogsTotal = data.kpis.cogs ?? 0;
+        const cogsCanceled = excludeCanceled ? data.kpis.cogs_canceled ?? 0 : 0;
+        const cogsRestocking = excludeRestocking ? data.kpis.cogs_restocking ?? 0 : 0;
+        const cogsAdjusted = cogsTotal - cogsCanceled - cogsRestocking;
         return {
           ...data.kpis,
           rts_pct: computeRtsPctFromCounts(data.counts),
@@ -546,7 +551,7 @@ export default function SalesAnalyticsPage() {
             ff: data.kpis.ff_fees ?? 0,
             iF: data.kpis.if_fees ?? 0,
             codFeeDelivered: data.kpis.cod_fee_delivered ?? 0,
-            cogsEc: (data.kpis.cogs ?? 0) - (data.kpis.cogs_canceled ?? 0),
+            cogsAdjusted,
             cogsRts: data.kpis.cogs_rts ?? 0,
             rtsPct: rtsForecastSafe,
           }).cmForecast,
@@ -559,6 +564,10 @@ export default function SalesAnalyticsPage() {
           excludeCancel: excludeCanceled,
           excludeRestocking: excludeRestocking,
         });
+        const cogsTotal = data.prevKpis.cogs ?? 0;
+        const cogsCanceled = excludeCanceled ? data.prevKpis.cogs_canceled ?? 0 : 0;
+        const cogsRestocking = excludeRestocking ? data.prevKpis.cogs_restocking ?? 0 : 0;
+        const cogsAdjusted = cogsTotal - cogsCanceled - cogsRestocking;
         return {
           ...data.prevKpis,
           rts_pct: computeRtsPctFromCounts(data.prevCounts),
@@ -569,7 +578,7 @@ export default function SalesAnalyticsPage() {
             ff: data.prevKpis.ff_fees ?? 0,
             iF: data.prevKpis.if_fees ?? 0,
             codFeeDelivered: data.prevKpis.cod_fee_delivered ?? 0,
-            cogsEc: (data.prevKpis.cogs ?? 0) - (data.prevKpis.cogs_canceled ?? 0),
+            cogsAdjusted,
             cogsRts: data.prevKpis.cogs_rts ?? 0,
             rtsPct: rtsForecastSafe,
           }).cmForecast,
@@ -586,7 +595,13 @@ export default function SalesAnalyticsPage() {
     const ff = row.ff_raw ?? row.ff_fees ?? 0;
     const iF = row.if_raw ?? row.if_fees ?? 0;
     const codFeeDelivered = row.cod_fee_delivered_raw ?? row.cod_fee_delivered ?? 0;
-    const cogsEc = row.cogs_ec ?? row.cogs ?? 0;
+    const cogsTotal = row.cogs ?? 0;
+    const cogsCanceled = row.cogs_ec != null ? Math.max(0, cogsTotal - row.cogs_ec) : 0;
+    const cogsRestocking = row.cogs_restocking ?? 0;
+    const cogsAdjusted =
+      cogsTotal -
+      (excludeCanceled ? cogsCanceled : 0) -
+      (excludeRestocking ? cogsRestocking : 0);
     const cogsRts = row.cogs_rts ?? 0;
     const forecast = computeCmRtsForecast({
       codRaw,
@@ -595,7 +610,7 @@ export default function SalesAnalyticsPage() {
       ff,
       iF,
       codFeeDelivered,
-      cogsEc,
+      cogsAdjusted,
       cogsRts,
       rtsPct: rtsForecastSafe,
     });
@@ -613,8 +628,10 @@ export default function SalesAnalyticsPage() {
         ff,
         iF,
         codFeeDelivered,
-        cogsEc,
+        cogsAdjusted,
         cogsRts,
+        cogsCanceled,
+        cogsRestocking,
       },
     };
   });
@@ -886,7 +903,10 @@ export default function SalesAnalyticsPage() {
     const nf = (v: number) => formatValue(v, 'currency');
     const neg = (v: number) => (v === 0 ? nf(0) : `- ${nf(Math.abs(v))}`);
     const pos = (v: number) => (v === 0 ? nf(0) : `+ ${nf(Math.abs(v))}`);
-    const cogsEc = (kpis.cogs ?? 0) - (kpis.cogs_canceled ?? 0);
+    const cogsTotal = kpis.cogs ?? 0;
+    const cogsCanceled = excludeCanceled ? kpis.cogs_canceled ?? 0 : 0;
+    const cogsRestocking = excludeRestocking ? kpis.cogs_restocking ?? 0 : 0;
+    const cogsAdjusted = cogsTotal - cogsCanceled - cogsRestocking;
     const canceledCodAdj = excludeCanceled ? kpis.canceled_cod ?? 0 : 0;
     const restockingCodAdj = excludeRestocking ? kpis.restocking_cod ?? 0 : 0;
     const adjustedGrossCod = computeAdjustedGrossCod(kpis, {
@@ -900,7 +920,7 @@ export default function SalesAnalyticsPage() {
       ff: kpis.ff_fees ?? 0,
       iF: kpis.if_fees ?? 0,
       codFeeDelivered: kpis.cod_fee_delivered ?? 0,
-      cogsEc,
+      cogsAdjusted,
       cogsRts: kpis.cogs_rts ?? 0,
       rtsPct: rtsForecastSafe,
     });
@@ -951,8 +971,20 @@ export default function SalesAnalyticsPage() {
           <span>{neg(kpis.cod_fee_delivered ?? 0)}</span>
         </div>
         <div className="flex justify-between text-slate-800">
-          <span>COGS (EC)</span>
-          <span>{neg(cogsEc)}</span>
+          <span>COGS (raw)</span>
+          <span>{neg(cogsTotal)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>COGS Canceled</span>
+          <span>{neg(cogsCanceled)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>COGS Restocking</span>
+          <span>{neg(cogsRestocking)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
+          <span>COGS (adjusted)</span>
+          <span>{neg(cogsAdjusted)}</span>
         </div>
         <div className="flex justify-between text-slate-800">
           <span>RTS COGS</span>
@@ -1418,7 +1450,7 @@ export default function SalesAnalyticsPage() {
                     ))
                   : pagedProducts.map((item, idx) => {
                       const { row, derived } = item;
-                      const { display, forecast, rtsPct, sf, ff, iF, codFeeDelivered, cogsEc, cogsRts } = derived;
+                      const { display, forecast, rtsPct, sf, ff, iF, codFeeDelivered, cogsAdjusted, cogsRts } = derived;
 
                       return (
                         <tr key={`${row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
@@ -1441,7 +1473,7 @@ export default function SalesAnalyticsPage() {
                           <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.contribution_margin, 'currency')}</td>
                           <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">
                             <span
-                              title={`CM (RTS ${rtsForecastSafe}%): ${(formatValue(forecast.revenueAfterRts,'currency'))} - ${(formatValue(row.ad_spend ?? 0,'currency'))} - ${(formatValue(sf,'currency'))} - ${(formatValue(ff,'currency'))} - ${(formatValue(iF,'currency'))} - ${(formatValue(codFeeDelivered,'currency'))} - ${(formatValue(cogsEc,'currency'))} + ${(formatValue(cogsRts,'currency'))} = ${(formatValue(forecast.cmForecast,'currency'))}`}
+                              title={`CM (RTS ${rtsForecastSafe}%): ${(formatValue(forecast.revenueAfterRts,'currency'))} - ${(formatValue(row.ad_spend ?? 0,'currency'))} - ${(formatValue(sf,'currency'))} - ${(formatValue(ff,'currency'))} - ${(formatValue(iF,'currency'))} - ${(formatValue(codFeeDelivered,'currency'))} - ${(formatValue(cogsAdjusted,'currency'))} + ${(formatValue(cogsRts,'currency'))} = ${(formatValue(forecast.cmForecast,'currency'))}`}
                             >
                               {formatValue(forecast.cmForecast, 'currency')}
                             </span>

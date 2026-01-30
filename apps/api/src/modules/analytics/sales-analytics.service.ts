@@ -84,6 +84,7 @@ type ProductRow = {
   cod_fee_delivered_raw: number;
   cogs_ec: number; // COGS excluding canceled
   cogs_rts: number;
+  cogs_restocking: number;
 };
 
 @Injectable()
@@ -341,6 +342,7 @@ export class SalesAnalyticsService {
       cod_fee_delivered_raw: this.toNumber(sum?._sum?.codFeeDeliveredPos),
       cogs_ec: cogs - cogsCanceled, // exclude canceled only
       cogs_rts: cogsRts,
+      cogs_restocking: this.toNumber(sum?._sum?.cogsRestockingPos),
     };
   }
 
