@@ -4,7 +4,7 @@ import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
 import apiClient from '@/lib/api-client';
-import { Filter, Info, ShoppingBag, Share2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Filter, Info, ShoppingBag, Share2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { workflowSocket } from '@/lib/socket-client';
 import {
@@ -50,6 +50,7 @@ type OverviewResponse = {
     ff_fees: number;
     if_fees: number;
     cm_rts_forecast?: number;
+    rts_pct?: number;
     sf_sdr_fees: number;
     ff_sdr_fees: number;
     if_sdr_fees: number;
@@ -87,6 +88,7 @@ type OverviewResponse = {
     ff_fees: number;
     if_fees: number;
     cm_rts_forecast?: number;
+    rts_pct?: number;
     sf_sdr_fees: number;
     ff_sdr_fees: number;
     if_sdr_fees: number;
@@ -169,13 +171,14 @@ const secondaryMetricDefinitions: Array<{
   format: 'currency' | 'number' | 'percent';
 }> = [
   { key: 'cm_rts_forecast', label: 'CM (RTS 20%)', format: 'currency' },
-  { key: 'contribution_margin', label: 'Contribution Margin (₱)', format: 'currency' },
   { key: 'ar_pct', label: 'AR (%)', format: 'percent' },
   { key: 'aov', label: 'AOV (₱)', format: 'currency' },
   { key: 'cpp', label: 'CPP (₱)', format: 'currency' },
   { key: 'processed_cpp', label: 'Processed CPP (₱)', format: 'currency' },
+  { key: 'rts_pct', label: 'RTS (%)', format: 'percent' },
   { key: 'conversion_rate', label: 'Conversion Rate (%)', format: 'percent' },
   { key: 'profit_efficiency', label: 'Profit Efficiency (%)', format: 'percent' },
+  { key: 'contribution_margin', label: 'Contribution Margin (₱)', format: 'currency' },
   { key: 'net_margin', label: 'Net Margin (₱)', format: 'currency' },
 ];
 
@@ -243,6 +246,14 @@ function computeAdjustedGrossCod(
   return grossCod - canceledCod - restockingCod;
 }
 
+function computeRtsPctFromCounts(counts?: OverviewResponse['counts'] | null) {
+  if (!counts) return 0;
+  const delivered = counts.delivered ?? 0;
+  const rts = counts.rts ?? 0;
+  const total = delivered + rts;
+  return total > 0 ? (rts / total) * 100 : 0;
+}
+
 export default function SalesAnalyticsPage() {
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [data, setData] = useState<OverviewResponse | null>(null);
@@ -282,6 +293,25 @@ export default function SalesAnalyticsPage() {
   const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
   const [canShare, setCanShare] = useState(false);
   const rtsForecastSafe = getSafeRtsForecastPct(rtsForecastPct);
+  const [sortKey, setSortKey] = useState<
+    | 'index'
+    | 'product'
+    | 'revenue'
+    | 'gross_sales'
+    | 'cogs'
+    | 'aov'
+    | 'cpp'
+    | 'processed_cpp'
+    | 'ad_spend'
+    | 'ar_pct'
+    | 'rts_pct'
+    | 'profit_efficiency'
+    | 'contribution_margin'
+    | 'cm_rts_forecast'
+    | 'net_margin'
+    | null
+  >(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const fetchData = async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setIsLoading(true);
@@ -468,6 +498,37 @@ export default function SalesAnalyticsPage() {
       ? 'All mappings'
       : `${selectedMappings.length} selected`;
   const isChecked = (norm: string) => selectedMappings.includes(norm);
+  const isSortActive = (key: NonNullable<typeof sortKey>, dir: 'asc' | 'desc') =>
+    sortKey === key && sortDir === dir;
+  const sortButtonClass = (key: NonNullable<typeof sortKey>, dir: 'asc' | 'desc') =>
+    `h-3 w-3 ${isSortActive(key, dir) ? 'text-slate-700' : 'text-slate-400'} hover:text-slate-600`;
+  const setSort = (key: NonNullable<typeof sortKey>, dir: 'asc' | 'desc') => {
+    setSortKey(key);
+    setSortDir(dir);
+  };
+  const renderSortLabel = (label: ReactNode, key: NonNullable<typeof sortKey>) => (
+    <span className="inline-flex items-center gap-1">
+      <span>{label}</span>
+      <span className="inline-flex flex-col -space-y-1 leading-none">
+        <button
+          type="button"
+          aria-label={`Sort ${String(label)} high to low`}
+          onClick={() => setSort(key, 'desc')}
+          className="leading-none"
+        >
+          <ChevronUp className={sortButtonClass(key, 'desc')} />
+        </button>
+        <button
+          type="button"
+          aria-label={`Sort ${String(label)} low to high`}
+          onClick={() => setSort(key, 'asc')}
+          className="leading-none"
+        >
+          <ChevronDown className={sortButtonClass(key, 'asc')} />
+        </button>
+      </span>
+    </span>
+  );
 
   const computedKpis = data
     ? (() => {
@@ -477,6 +538,7 @@ export default function SalesAnalyticsPage() {
         });
         return {
           ...data.kpis,
+          rts_pct: computeRtsPctFromCounts(data.counts),
           cm_rts_forecast: computeCmRtsForecast({
             codRaw: adjustedGrossCod,
             adSpend: data.kpis.ad_spend ?? 0,
@@ -499,6 +561,7 @@ export default function SalesAnalyticsPage() {
         });
         return {
           ...data.prevKpis,
+          rts_pct: computeRtsPctFromCounts(data.prevCounts),
           cm_rts_forecast: computeCmRtsForecast({
             codRaw: adjustedGrossCod,
             adSpend: data.prevKpis.ad_spend ?? 0,
@@ -515,9 +578,100 @@ export default function SalesAnalyticsPage() {
     : null;
 
   const products = data?.products || [];
-  const totalProducts = products.length;
+  const sortableProducts = products.map((row, index) => {
+    const norm = (row.mapping || '__null__').toLowerCase();
+    const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
+    const codRaw = row.cod_raw ?? row.revenue ?? 0;
+    const sf = row.sf_raw ?? row.sf_fees ?? 0;
+    const ff = row.ff_raw ?? row.ff_fees ?? 0;
+    const iF = row.if_raw ?? row.if_fees ?? 0;
+    const codFeeDelivered = row.cod_fee_delivered_raw ?? row.cod_fee_delivered ?? 0;
+    const cogsEc = row.cogs_ec ?? row.cogs ?? 0;
+    const cogsRts = row.cogs_rts ?? 0;
+    const forecast = computeCmRtsForecast({
+      codRaw,
+      adSpend: row.ad_spend ?? 0,
+      sf,
+      ff,
+      iF,
+      codFeeDelivered,
+      cogsEc,
+      cogsRts,
+      rtsPct: rtsForecastSafe,
+    });
+    const deliveredCount = row.delivered_count ?? 0;
+    const rtsCount = row.rts_count ?? 0;
+    const rtsPct = deliveredCount + rtsCount > 0 ? (rtsCount / (deliveredCount + rtsCount)) * 100 : 0;
+    return {
+      row,
+      index,
+      derived: {
+        display,
+        forecast,
+        rtsPct,
+        sf,
+        ff,
+        iF,
+        codFeeDelivered,
+        cogsEc,
+        cogsRts,
+      },
+    };
+  });
+
+  const sortedProducts = sortKey
+    ? [...sortableProducts].sort((a, b) => {
+        const getValue = (item: typeof a) => {
+          const r = item.row;
+          switch (sortKey) {
+            case 'index':
+              return item.index;
+            case 'product':
+              return item.derived.display.toLowerCase();
+            case 'revenue':
+              return r.revenue ?? 0;
+            case 'gross_sales':
+              return r.gross_sales ?? 0;
+            case 'cogs':
+              return r.cogs ?? 0;
+            case 'aov':
+              return r.aov ?? 0;
+            case 'cpp':
+              return r.cpp ?? 0;
+            case 'processed_cpp':
+              return r.processed_cpp ?? 0;
+            case 'ad_spend':
+              return r.ad_spend ?? 0;
+            case 'ar_pct':
+              return r.ar_pct ?? 0;
+            case 'rts_pct':
+              return item.derived.rtsPct ?? 0;
+            case 'profit_efficiency':
+              return r.profit_efficiency ?? 0;
+            case 'contribution_margin':
+              return r.contribution_margin ?? 0;
+            case 'cm_rts_forecast':
+              return item.derived.forecast.cmForecast ?? 0;
+            case 'net_margin':
+              return r.net_margin ?? 0;
+            default:
+              return 0;
+          }
+        };
+        const av = getValue(a);
+        const bv = getValue(b);
+        if (typeof av === 'string' || typeof bv === 'string') {
+          const aStr = String(av);
+          const bStr = String(bv);
+          return (sortDir === 'asc' ? 1 : -1) * aStr.localeCompare(bStr);
+        }
+        return (sortDir === 'asc' ? 1 : -1) * (Number(av) - Number(bv));
+      })
+    : sortableProducts;
+
+  const totalProducts = sortedProducts.length;
   const totalProductPages = Math.max(1, Math.ceil(totalProducts / pageSize));
-  const pagedProducts = products.slice((productPage - 1) * pageSize, productPage * pageSize);
+  const pagedProducts = sortedProducts.slice((productPage - 1) * pageSize, productPage * pageSize);
   const productStart = totalProducts === 0 ? 0 : (productPage - 1) * pageSize + 1;
   const productEnd = Math.min(productPage * pageSize, totalProducts);
   const productCanPrev = productPage > 1;
@@ -823,7 +977,7 @@ export default function SalesAnalyticsPage() {
 
   const renderCard = (m: (typeof metricValues)[number]) => {
     const delta = m.delta;
-    const deltaLabel = delta === null ? 'N/A' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
+    const deltaLabel = delta === null ? '--' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
     const deltaColor =
       delta === null ? 'text-slate-400' : delta >= 0 ? 'text-emerald-600' : 'text-rose-500';
     const countDeltaLabel =
@@ -831,7 +985,7 @@ export default function SalesAnalyticsPage() {
         ? null
         : `${m.countDelta > 0 ? '+' : ''}${m.countDelta.toFixed(1)}%`;
     const countDeltaColor =
-      m.countDelta === null || m.countDelta === undefined
+          m.countDelta === null || m.countDelta === undefined
         ? 'text-slate-400'
         : m.countDelta >= 0
           ? 'text-emerald-600'
@@ -878,7 +1032,7 @@ export default function SalesAnalyticsPage() {
               </span>
             </span>
             <span className={`text-[11px] ${countDeltaColor}`}>
-              {countDeltaLabel ?? 'N/A'}
+              {countDeltaLabel ?? '--'}
             </span>
           </div>
         )}
@@ -1201,26 +1355,54 @@ export default function SalesAnalyticsPage() {
         </div>
         <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-100">
+            <table className="min-w-full table-fixed divide-y divide-slate-100">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">#</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Product</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Gross Revenue</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Gross Sales</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">COGS</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">AOV</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">CPP</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Processed CPP</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Ad Spend</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">AR %</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">RTS %</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">P.E %</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Contribution Margin</th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {`CM (RTS ${rtsForecastSafe}% )`}
+                  <th className="sticky left-0 z-10 w-16 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('#', 'index')}
                   </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Net Margin</th>
+                  <th className="sticky left-16 z-10 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('Product', 'product')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('Gross Revenue', 'revenue')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('Gross Sales', 'gross_sales')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('COGS', 'cogs')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('AOV', 'aov')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('CPP', 'cpp')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('Processed CPP', 'processed_cpp')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('Ad Spend', 'ad_spend')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('AR %', 'ar_pct')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('RTS %', 'rts_pct')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('P.E %', 'profit_efficiency')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('Contribution Margin', 'contribution_margin')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel(`CM (RTS ${rtsForecastSafe}% )`, 'cm_rts_forecast')}
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    {renderSortLabel('Net Margin', 'net_margin')}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
@@ -1234,36 +1416,18 @@ export default function SalesAnalyticsPage() {
                         ))}
                       </tr>
                     ))
-                  : pagedProducts.map((row, idx) => {
-                      const norm = (row.mapping || '__null__').toLowerCase();
-                      const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
-                      const purchasesRaw = row.purchases_raw ?? row.gross_sales ?? 0;
-                      const codRaw = row.cod_raw ?? row.revenue ?? 0;
-                      const sf = row.sf_raw ?? row.sf_fees ?? 0;
-                      const ff = row.ff_raw ?? row.ff_fees ?? 0;
-                      const iF = row.if_raw ?? row.if_fees ?? 0;
-                      const codFeeDelivered = row.cod_fee_delivered_raw ?? row.cod_fee_delivered ?? 0;
-                      const cogsEc = row.cogs_ec ?? row.cogs ?? 0;
-                      const cogsRts = row.cogs_rts ?? 0;
-                      const forecast = computeCmRtsForecast({
-                        codRaw,
-                        adSpend: row.ad_spend ?? 0,
-                        sf,
-                        ff,
-                        iF,
-                        codFeeDelivered,
-                        cogsEc,
-                        cogsRts,
-                        rtsPct: rtsForecastSafe,
-                      });
-                      const deliveredCount = row.delivered_count ?? 0;
-                      const rtsCount = row.rts_count ?? 0;
-                      const rtsPct = deliveredCount + rtsCount > 0 ? (rtsCount / (deliveredCount + rtsCount)) * 100 : 0;
+                  : pagedProducts.map((item, idx) => {
+                      const { row, derived } = item;
+                      const { display, forecast, rtsPct, sf, ff, iF, codFeeDelivered, cogsEc, cogsRts } = derived;
 
                       return (
                         <tr key={`${row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-700 whitespace-nowrap">{(productPage - 1) * pageSize + idx + 1}.</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">{titleCase(display)}</td>
+                          <td className="sticky left-0 z-10 w-16 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-700 whitespace-nowrap">
+                            {(productPage - 1) * pageSize + idx + 1}.
+                          </td>
+                          <td className="sticky left-16 z-10 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">
+                            {titleCase(display)}
+                          </td>
                           <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.revenue, 'currency')}</td>
                           <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.gross_sales, 'number', 0)}</td>
                           <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.cogs, 'currency')}</td>
