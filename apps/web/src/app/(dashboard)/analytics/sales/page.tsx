@@ -233,6 +233,16 @@ function computeCmRtsForecast(params: {
   return { revenueAfterRts, cmForecast, rtsFraction };
 }
 
+function computeAdjustedGrossCod(
+  kpis: OverviewResponse['kpis'],
+  opts: { excludeCancel: boolean; excludeRestocking: boolean },
+) {
+  const grossCod = kpis.gross_cod ?? 0;
+  const canceledCod = opts.excludeCancel ? kpis.canceled_cod ?? 0 : 0;
+  const restockingCod = opts.excludeRestocking ? kpis.restocking_cod ?? 0 : 0;
+  return grossCod - canceledCod - restockingCod;
+}
+
 export default function SalesAnalyticsPage() {
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [data, setData] = useState<OverviewResponse | null>(null);
@@ -460,36 +470,48 @@ export default function SalesAnalyticsPage() {
   const isChecked = (norm: string) => selectedMappings.includes(norm);
 
   const computedKpis = data
-    ? {
-        ...data.kpis,
-        cm_rts_forecast: computeCmRtsForecast({
-          codRaw: data.kpis.gross_cod ?? 0,
-          adSpend: data.kpis.ad_spend ?? 0,
-          sf: data.kpis.sf_fees ?? 0,
-          ff: data.kpis.ff_fees ?? 0,
-          iF: data.kpis.if_fees ?? 0,
-          codFeeDelivered: data.kpis.cod_fee_delivered ?? 0,
-          cogsEc: (data.kpis.cogs ?? 0) - (data.kpis.cogs_canceled ?? 0),
-          cogsRts: data.kpis.cogs_rts ?? 0,
-          rtsPct: rtsForecastSafe,
-        }).cmForecast,
-      }
+    ? (() => {
+        const adjustedGrossCod = computeAdjustedGrossCod(data.kpis, {
+          excludeCancel: excludeCanceled,
+          excludeRestocking: excludeRestocking,
+        });
+        return {
+          ...data.kpis,
+          cm_rts_forecast: computeCmRtsForecast({
+            codRaw: adjustedGrossCod,
+            adSpend: data.kpis.ad_spend ?? 0,
+            sf: data.kpis.sf_fees ?? 0,
+            ff: data.kpis.ff_fees ?? 0,
+            iF: data.kpis.if_fees ?? 0,
+            codFeeDelivered: data.kpis.cod_fee_delivered ?? 0,
+            cogsEc: (data.kpis.cogs ?? 0) - (data.kpis.cogs_canceled ?? 0),
+            cogsRts: data.kpis.cogs_rts ?? 0,
+            rtsPct: rtsForecastSafe,
+          }).cmForecast,
+        };
+      })()
     : null;
   const computedPrevKpis = data
-    ? {
-        ...data.prevKpis,
-        cm_rts_forecast: computeCmRtsForecast({
-          codRaw: data.prevKpis.gross_cod ?? 0,
-          adSpend: data.prevKpis.ad_spend ?? 0,
-          sf: data.prevKpis.sf_fees ?? 0,
-          ff: data.prevKpis.ff_fees ?? 0,
-          iF: data.prevKpis.if_fees ?? 0,
-          codFeeDelivered: data.prevKpis.cod_fee_delivered ?? 0,
-          cogsEc: (data.prevKpis.cogs ?? 0) - (data.prevKpis.cogs_canceled ?? 0),
-          cogsRts: data.prevKpis.cogs_rts ?? 0,
-          rtsPct: rtsForecastSafe,
-        }).cmForecast,
-      }
+    ? (() => {
+        const adjustedGrossCod = computeAdjustedGrossCod(data.prevKpis, {
+          excludeCancel: excludeCanceled,
+          excludeRestocking: excludeRestocking,
+        });
+        return {
+          ...data.prevKpis,
+          cm_rts_forecast: computeCmRtsForecast({
+            codRaw: adjustedGrossCod,
+            adSpend: data.prevKpis.ad_spend ?? 0,
+            sf: data.prevKpis.sf_fees ?? 0,
+            ff: data.prevKpis.ff_fees ?? 0,
+            iF: data.prevKpis.if_fees ?? 0,
+            codFeeDelivered: data.prevKpis.cod_fee_delivered ?? 0,
+            cogsEc: (data.prevKpis.cogs ?? 0) - (data.prevKpis.cogs_canceled ?? 0),
+            cogsRts: data.prevKpis.cogs_rts ?? 0,
+            rtsPct: rtsForecastSafe,
+          }).cmForecast,
+        };
+      })()
     : null;
 
   const products = data?.products || [];
@@ -711,8 +733,14 @@ export default function SalesAnalyticsPage() {
     const neg = (v: number) => (v === 0 ? nf(0) : `- ${nf(Math.abs(v))}`);
     const pos = (v: number) => (v === 0 ? nf(0) : `+ ${nf(Math.abs(v))}`);
     const cogsEc = (kpis.cogs ?? 0) - (kpis.cogs_canceled ?? 0);
+    const canceledCodAdj = excludeCanceled ? kpis.canceled_cod ?? 0 : 0;
+    const restockingCodAdj = excludeRestocking ? kpis.restocking_cod ?? 0 : 0;
+    const adjustedGrossCod = computeAdjustedGrossCod(kpis, {
+      excludeCancel: excludeCanceled,
+      excludeRestocking: excludeRestocking,
+    });
     const forecast = computeCmRtsForecast({
-      codRaw: kpis.gross_cod ?? 0,
+      codRaw: adjustedGrossCod,
       adSpend: kpis.ad_spend ?? 0,
       sf: kpis.sf_fees ?? 0,
       ff: kpis.ff_fees ?? 0,
@@ -725,6 +753,7 @@ export default function SalesAnalyticsPage() {
     const filtersLabel = [
       `${startDate} → ${endDate}`,
       `${selectedMappings.length || 0}/${mappingOptions.length || 0} mappings`,
+      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}`,
       `RTS %: ${rtsForecastSafe}`,
     ].join(' • ');
 
@@ -732,8 +761,20 @@ export default function SalesAnalyticsPage() {
       <div className="space-y-1">
         <p className="font-semibold text-slate-800">CM (RTS {rtsForecastSafe}%) inputs</p>
         <div className="flex justify-between text-slate-800">
-          <span>Gross COD</span>
+          <span>Gross COD (raw)</span>
           <span>{nf(kpis.gross_cod ?? 0)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>Canceled COD</span>
+          <span>{neg(canceledCodAdj)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>Restocking COD</span>
+          <span>{neg(restockingCodAdj)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
+          <span>Gross COD (adjusted)</span>
+          <span>{nf(adjustedGrossCod)}</span>
         </div>
         <div className="flex justify-between text-slate-800">
           <span>RTS forecast ({rtsForecastSafe}%)</span>
