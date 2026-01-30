@@ -276,6 +276,10 @@ export class WorkflowService {
       });
     });
 
+    if (!updatedWorkflow) {
+      throw new NotFoundException(`Workflow with ID ${id} not found`);
+    }
+
     await this.schedulerService.updateWorkflowSchedule(
       id,
       updatedWorkflow.schedule,
