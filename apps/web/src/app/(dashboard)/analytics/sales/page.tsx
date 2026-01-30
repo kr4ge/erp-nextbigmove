@@ -49,6 +49,7 @@ type OverviewResponse = {
     sf_fees: number;
     ff_fees: number;
     if_fees: number;
+    cm_rts_forecast?: number;
     sf_sdr_fees: number;
     ff_sdr_fees: number;
     if_sdr_fees: number;
@@ -85,6 +86,7 @@ type OverviewResponse = {
     sf_fees: number;
     ff_fees: number;
     if_fees: number;
+    cm_rts_forecast?: number;
     sf_sdr_fees: number;
     ff_sdr_fees: number;
     if_sdr_fees: number;
@@ -151,13 +153,13 @@ const metricDefinitions: Array<{
   countLabel?: string;
 }> = [
   { key: 'revenue', label: 'Revenue (₱)', format: 'currency', countKey: 'purchases', countLabel: 'Orders' },
+  { key: 'unconfirmed', label: 'New (₱)', format: 'currency', countKey: 'unconfirmed', countLabel: 'Orders' },  
   { key: 'confirmed', label: 'Confirmed (₱)', format: 'currency', countKey: 'confirmed', countLabel: 'Orders' },
+  { key: 'canceled', label: 'Canceled (₱)', format: 'currency', countKey: 'canceled', countLabel: 'Orders' },
   { key: 'waiting_pickup', label: 'Wait for Pickup (₱)', format: 'currency', countKey: 'waiting_pickup', countLabel: 'Waiting' },
   { key: 'shipped', label: 'Shipped (₱)', format: 'currency', countKey: 'shipped', countLabel: 'Shipped' },
   { key: 'delivered', label: 'Delivered (₱)', format: 'currency', countKey: 'delivered', countLabel: 'Delivered' },
   { key: 'rts', label: 'RTS (₱)', format: 'currency', countKey: 'rts', countLabel: 'RTS' },
-  { key: 'unconfirmed', label: 'Unconfirmed (₱)', format: 'currency', countKey: 'unconfirmed', countLabel: 'Orders' },  
-  { key: 'canceled', label: 'Canceled (₱)', format: 'currency', countKey: 'canceled', countLabel: 'Orders' },
   { key: 'ad_spend', label: 'Ad Spend (₱)', format: 'currency' },
 ] as const;
 
@@ -166,6 +168,7 @@ const secondaryMetricDefinitions: Array<{
   label: string;
   format: 'currency' | 'number' | 'percent';
 }> = [
+  { key: 'cm_rts_forecast', label: 'CM (RTS 20%)', format: 'currency' },
   { key: 'contribution_margin', label: 'Contribution Margin (₱)', format: 'currency' },
   { key: 'ar_pct', label: 'AR (%)', format: 'percent' },
   { key: 'aov', label: 'AOV (₱)', format: 'currency' },
@@ -199,6 +202,35 @@ function titleCase(str: string) {
     .filter(Boolean)
     .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
     .join(' ');
+}
+
+function getSafeRtsForecastPct(pct: number) {
+  return Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 20));
+}
+
+function computeCmRtsForecast(params: {
+  codRaw: number;
+  adSpend: number;
+  sf: number;
+  ff: number;
+  iF: number;
+  codFeeDelivered: number;
+  cogsEc: number;
+  cogsRts: number;
+  rtsPct: number;
+}) {
+  const rtsFraction = getSafeRtsForecastPct(params.rtsPct) / 100;
+  const revenueAfterRts = (1 - rtsFraction) * params.codRaw;
+  const cmForecast =
+    revenueAfterRts -
+    params.adSpend -
+    params.sf -
+    params.ff -
+    params.iF -
+    params.codFeeDelivered -
+    params.cogsEc +
+    params.cogsRts;
+  return { revenueAfterRts, cmForecast, rtsFraction };
 }
 
 export default function SalesAnalyticsPage() {
@@ -239,6 +271,7 @@ export default function SalesAnalyticsPage() {
   const [shareSaving, setShareSaving] = useState(false);
   const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
   const [canShare, setCanShare] = useState(false);
+  const rtsForecastSafe = getSafeRtsForecastPct(rtsForecastPct);
 
   const fetchData = async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setIsLoading(true);
@@ -426,6 +459,39 @@ export default function SalesAnalyticsPage() {
       : `${selectedMappings.length} selected`;
   const isChecked = (norm: string) => selectedMappings.includes(norm);
 
+  const computedKpis = data
+    ? {
+        ...data.kpis,
+        cm_rts_forecast: computeCmRtsForecast({
+          codRaw: data.kpis.gross_cod ?? 0,
+          adSpend: data.kpis.ad_spend ?? 0,
+          sf: data.kpis.sf_fees ?? 0,
+          ff: data.kpis.ff_fees ?? 0,
+          iF: data.kpis.if_fees ?? 0,
+          codFeeDelivered: data.kpis.cod_fee_delivered ?? 0,
+          cogsEc: (data.kpis.cogs ?? 0) - (data.kpis.cogs_canceled ?? 0),
+          cogsRts: data.kpis.cogs_rts ?? 0,
+          rtsPct: rtsForecastSafe,
+        }).cmForecast,
+      }
+    : null;
+  const computedPrevKpis = data
+    ? {
+        ...data.prevKpis,
+        cm_rts_forecast: computeCmRtsForecast({
+          codRaw: data.prevKpis.gross_cod ?? 0,
+          adSpend: data.prevKpis.ad_spend ?? 0,
+          sf: data.prevKpis.sf_fees ?? 0,
+          ff: data.prevKpis.ff_fees ?? 0,
+          iF: data.prevKpis.if_fees ?? 0,
+          codFeeDelivered: data.prevKpis.cod_fee_delivered ?? 0,
+          cogsEc: (data.prevKpis.cogs ?? 0) - (data.prevKpis.cogs_canceled ?? 0),
+          cogsRts: data.prevKpis.cogs_rts ?? 0,
+          rtsPct: rtsForecastSafe,
+        }).cmForecast,
+      }
+    : null;
+
   const products = data?.products || [];
   const totalProducts = products.length;
   const totalProductPages = Math.max(1, Math.ceil(totalProducts / pageSize));
@@ -437,8 +503,8 @@ export default function SalesAnalyticsPage() {
 
   const metricValues = data
     ? metricDefinitions.map((def) => {
-        const current = data.kpis[def.key] ?? 0;
-        const previous = data.prevKpis?.[def.key] ?? 0;
+        const current = computedKpis?.[def.key] ?? 0;
+        const previous = computedPrevKpis?.[def.key] ?? 0;
         const delta = formatDelta(current, previous);
         const countCurrent = def.countKey ? data.counts?.[def.countKey] ?? 0 : null;
         const countPrev = def.countKey ? data.prevCounts?.[def.countKey] ?? 0 : null;
@@ -453,13 +519,17 @@ export default function SalesAnalyticsPage() {
 
   const secondaryCards =
     data
-      ? secondaryMetricDefinitions.map((def, idx) => {
-          const current = data.kpis[def.key] ?? 0;
-          const previous = data.prevKpis?.[def.key] ?? 0;
+      ? secondaryMetricDefinitions.map((def) => {
+          const current = computedKpis?.[def.key] ?? 0;
+          const previous = computedPrevKpis?.[def.key] ?? 0;
           const delta = formatDelta(current, previous);
+          const label =
+            def.key === 'cm_rts_forecast'
+              ? `CM (RTS ${rtsForecastSafe}% )`
+              : def.label;
           return {
             key: def.key,
-            label: def.label,
+            label,
             format: def.format,
             current,
             previous,
@@ -470,10 +540,15 @@ export default function SalesAnalyticsPage() {
           };
         })
       : [];
-  const leftSecondary = secondaryCards.find((m) => m.key === 'contribution_margin');
-  const rightSecondary = secondaryCards.find((m) => m.key === 'net_margin');
+  const leftSecondary = secondaryCards.find((m) => m.key === 'cm_rts_forecast');
+  const fixedRightSecondary = secondaryCards.filter(
+    (m) => m.key === 'contribution_margin' || m.key === 'net_margin',
+  );
   const middleSecondary = secondaryCards.filter(
-    (m) => m.key !== 'contribution_margin' && m.key !== 'net_margin',
+    (m) =>
+      m.key !== 'cm_rts_forecast' &&
+      m.key !== 'contribution_margin' &&
+      m.key !== 'net_margin',
   );
 
   const buildCmTooltip = (kpis: OverviewResponse['kpis'] | undefined): ReactNode | null => {
@@ -630,6 +705,73 @@ export default function SalesAnalyticsPage() {
     );
   };
 
+  const buildCmRtsTooltip = (kpis: OverviewResponse['kpis'] | undefined): ReactNode | null => {
+    if (!kpis) return null;
+    const nf = (v: number) => formatValue(v, 'currency');
+    const neg = (v: number) => (v === 0 ? nf(0) : `- ${nf(Math.abs(v))}`);
+    const pos = (v: number) => (v === 0 ? nf(0) : `+ ${nf(Math.abs(v))}`);
+    const cogsEc = (kpis.cogs ?? 0) - (kpis.cogs_canceled ?? 0);
+    const forecast = computeCmRtsForecast({
+      codRaw: kpis.gross_cod ?? 0,
+      adSpend: kpis.ad_spend ?? 0,
+      sf: kpis.sf_fees ?? 0,
+      ff: kpis.ff_fees ?? 0,
+      iF: kpis.if_fees ?? 0,
+      codFeeDelivered: kpis.cod_fee_delivered ?? 0,
+      cogsEc,
+      cogsRts: kpis.cogs_rts ?? 0,
+      rtsPct: rtsForecastSafe,
+    });
+    const filtersLabel = [
+      `${startDate} → ${endDate}`,
+      `${selectedMappings.length || 0}/${mappingOptions.length || 0} mappings`,
+      `RTS %: ${rtsForecastSafe}`,
+    ].join(' • ');
+
+    return (
+      <div className="space-y-1">
+        <p className="font-semibold text-slate-800">CM (RTS {rtsForecastSafe}%) inputs</p>
+        <div className="flex justify-between text-slate-800">
+          <span>Gross COD</span>
+          <span>{nf(kpis.gross_cod ?? 0)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>RTS forecast ({rtsForecastSafe}%)</span>
+          <span>{neg((kpis.gross_cod ?? 0) * forecast.rtsFraction)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
+          <span>Revenue after RTS</span>
+          <span>{nf(forecast.revenueAfterRts)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>Ad Spend</span>
+          <span>{neg(kpis.ad_spend ?? 0)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>Fulfillment (SF+FF+IF)</span>
+          <span>{neg((kpis.sf_fees ?? 0) + (kpis.ff_fees ?? 0) + (kpis.if_fees ?? 0))}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>COD Fee (Delivered)</span>
+          <span>{neg(kpis.cod_fee_delivered ?? 0)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>COGS (EC)</span>
+          <span>{neg(cogsEc)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800">
+          <span>RTS COGS</span>
+          <span>{pos(kpis.cogs_rts ?? 0)}</span>
+        </div>
+        <div className="flex justify-between text-slate-900 border-t border-slate-200 pt-1 font-semibold">
+          <span>CM (RTS {rtsForecastSafe}%)</span>
+          <span>{nf(forecast.cmForecast)}</span>
+        </div>
+        <p className="text-[11px] text-slate-500">{filtersLabel}</p>
+      </div>
+    );
+  };
+
   const handleWheelScroll = (e: React.WheelEvent<HTMLDivElement>) => {
     if (!scrollStripRef.current) return;
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
@@ -654,13 +796,15 @@ export default function SalesAnalyticsPage() {
           ? 'text-emerald-600'
           : 'text-rose-500';
     const tooltip =
-      m.key === 'contribution_margin'
-        ? buildCmTooltip(data?.kpis)
-        : m.key === 'net_margin'
-          ? buildNmTooltip(data?.kpis)
-          : m.key === 'ar_pct'
-            ? null
-            : null;
+      m.key === 'cm_rts_forecast'
+        ? buildCmRtsTooltip(data?.kpis)
+        : m.key === 'contribution_margin'
+          ? buildCmTooltip(data?.kpis)
+          : m.key === 'net_margin'
+            ? buildNmTooltip(data?.kpis)
+            : m.key === 'ar_pct'
+              ? null
+              : null;
 
     return (
       <div
@@ -670,7 +814,7 @@ export default function SalesAnalyticsPage() {
         <div className="text-xs text-slate-500 flex items-center gap-1">
           {m.label}
           {tooltip && (
-            <span className="relative group inline-flex cursor-help" tabIndex={0} aria-label="Contribution margin formula">
+            <span className="relative group inline-flex cursor-help" tabIndex={0} aria-label={`${m.label} formula`}>
               <Info className="h-4 w-4 text-slate-400 group-hover:text-emerald-600 group-focus-within:text-emerald-600" />
               <div className="absolute left-1/2 top-full z-30 mt-2 hidden w-80 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] leading-relaxed text-slate-700 shadow-lg group-hover:block group-focus-within:block">
                 {tooltip}
@@ -978,7 +1122,7 @@ export default function SalesAnalyticsPage() {
             </>
           )}
         </div>
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4 flex flex-wrap gap-3">
           {isLoading ? (
             <div className="flex gap-3 w-full">
               {Array.from({ length: 3 }).map((_, idx) => (
@@ -999,7 +1143,11 @@ export default function SalesAnalyticsPage() {
                   {middleSecondary.map((m) => renderCard(m))}
                 </div>
               </div>
-              {rightSecondary && renderCard(rightSecondary)}
+              {fixedRightSecondary.length > 0 && (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {fixedRightSecondary.map((m) => renderCard(m))}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1029,7 +1177,7 @@ export default function SalesAnalyticsPage() {
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">P.E %</th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Contribution Margin</th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {`CM (RTS ${Number.isFinite(rtsForecastPct) ? rtsForecastPct : 20}% )`}
+                    {`CM (RTS ${rtsForecastSafe}% )`}
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Net Margin</th>
                 </tr>
@@ -1048,25 +1196,25 @@ export default function SalesAnalyticsPage() {
                   : pagedProducts.map((row, idx) => {
                       const norm = (row.mapping || '__null__').toLowerCase();
                       const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
-                      const rtsFraction = Math.max(0, Math.min(100, Number.isFinite(rtsForecastPct) ? rtsForecastPct : 20)) / 100;
                       const purchasesRaw = row.purchases_raw ?? row.gross_sales ?? 0;
                       const codRaw = row.cod_raw ?? row.revenue ?? 0;
-                      const revenueAfterRts = (1 - rtsFraction) * codRaw;
                       const sf = row.sf_raw ?? row.sf_fees ?? 0;
                       const ff = row.ff_raw ?? row.ff_fees ?? 0;
                       const iF = row.if_raw ?? row.if_fees ?? 0;
                       const codFeeDelivered = row.cod_fee_delivered_raw ?? row.cod_fee_delivered ?? 0;
                       const cogsEc = row.cogs_ec ?? row.cogs ?? 0;
                       const cogsRts = row.cogs_rts ?? 0;
-                      const cmForecast =
-                        revenueAfterRts -
-                        (row.ad_spend ?? 0) -
-                        sf -
-                        ff -
-                        iF -
-                        codFeeDelivered -
-                        cogsEc +
-                        cogsRts;
+                      const forecast = computeCmRtsForecast({
+                        codRaw,
+                        adSpend: row.ad_spend ?? 0,
+                        sf,
+                        ff,
+                        iF,
+                        codFeeDelivered,
+                        cogsEc,
+                        cogsRts,
+                        rtsPct: rtsForecastSafe,
+                      });
                       const deliveredCount = row.delivered_count ?? 0;
                       const rtsCount = row.rts_count ?? 0;
                       const rtsPct = deliveredCount + rtsCount > 0 ? (rtsCount / (deliveredCount + rtsCount)) * 100 : 0;
@@ -1088,9 +1236,9 @@ export default function SalesAnalyticsPage() {
                           <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.contribution_margin, 'currency')}</td>
                           <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">
                             <span
-                              title={`CM (RTS ${Number.isFinite(rtsForecastPct) ? rtsForecastPct : 20}%): ${(formatValue(revenueAfterRts,'currency'))} - ${(formatValue(row.ad_spend ?? 0,'currency'))} - ${(formatValue(sf,'currency'))} - ${(formatValue(ff,'currency'))} - ${(formatValue(iF,'currency'))} - ${(formatValue(codFeeDelivered,'currency'))} - ${(formatValue(cogsEc,'currency'))} + ${(formatValue(cogsRts,'currency'))} = ${(formatValue(cmForecast,'currency'))}`}
+                              title={`CM (RTS ${rtsForecastSafe}%): ${(formatValue(forecast.revenueAfterRts,'currency'))} - ${(formatValue(row.ad_spend ?? 0,'currency'))} - ${(formatValue(sf,'currency'))} - ${(formatValue(ff,'currency'))} - ${(formatValue(iF,'currency'))} - ${(formatValue(codFeeDelivered,'currency'))} - ${(formatValue(cogsEc,'currency'))} + ${(formatValue(cogsRts,'currency'))} = ${(formatValue(forecast.cmForecast,'currency'))}`}
                             >
-                              {formatValue(cmForecast, 'currency')}
+                              {formatValue(forecast.cmForecast, 'currency')}
                             </span>
                           </td>
                           <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.net_margin, 'currency')}</td>
