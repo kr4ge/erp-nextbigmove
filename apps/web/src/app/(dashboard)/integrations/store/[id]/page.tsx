@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/emptystate';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { ArrowLeft, RefreshCcw, ShoppingBag, StoreIcon } from 'lucide-react';
+import { ArrowLeft, RefreshCcw, ShoppingBag, StoreIcon, Search } from 'lucide-react';
 import { ApiKeyCard } from '@/components/ui/api-key-card';
 import { DataTable } from '@/components/data-table/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
@@ -122,6 +122,8 @@ export default function StoreDetailPage() {
   const [cogsModalOpen, setCogsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [bulkMappingModalOpen, setBulkMappingModalOpen] = useState(false);
+  const [productSearchInput, setProductSearchInput] = useState('');
+  const [productSearchTerm, setProductSearchTerm] = useState('');
 
   useEffect(() => {
     if (storeId) {
@@ -266,13 +268,37 @@ export default function StoreDetailPage() {
     setCogsModalOpen(true);
   };
 
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setProductSearchTerm(productSearchInput.trim());
+    }, 350);
+    return () => clearTimeout(id);
+  }, [productSearchInput]);
+
+  const filteredProducts = useMemo(() => {
+    if (!productSearchTerm) return products;
+    const term = productSearchTerm.toLowerCase();
+    return products.filter((product) => {
+      const name = product.name?.toLowerCase() || '';
+      const mapping = product.mapping?.toLowerCase() || '';
+      const productId = product.productId?.toLowerCase() || '';
+      const customId = product.customId?.toLowerCase() || '';
+      return (
+        name.includes(term) ||
+        mapping.includes(term) ||
+        productId.includes(term) ||
+        customId.includes(term)
+      );
+    });
+  }, [products, productSearchTerm]);
+
   const columns = useMemo(() => getProductColumns(storeId, handleManageCogs), [storeId]);
   const orderColumns = useMemo(() => getOrderColumns(), []);
 
   const { table } = useDataTable({
-    data: products,
+    data: filteredProducts,
     columns,
-    pageCount: Math.ceil(products.length / 10),
+    pageCount: Math.ceil(filteredProducts.length / 10),
     initialState: {
       pagination: {
         pageIndex: 0,
@@ -287,6 +313,10 @@ export default function StoreDetailPage() {
 
   const selectedRows = table.getSelectedRowModel().rows;
   const selectedCount = selectedRows.length;
+
+  useEffect(() => {
+    table.setPageIndex(0);
+  }, [productSearchTerm, table]);
 
   const { table: orderTable } = useDataTable({
     data: orders,
@@ -347,6 +377,21 @@ export default function StoreDetailPage() {
           </Button>
         </div>
       )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-[#475569]">
+          {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
+        </div>
+        <div className="relative w-full max-w-sm">
+          <input
+            value={productSearchInput}
+            onChange={(e) => setProductSearchInput(e.target.value)}
+            placeholder="Search products"
+            className="w-full rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+          />
+          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+        </div>
+      </div>
 
       {isSyncingProducts && (
         <Card className="text-center text-[#475569]">Syncing products...</Card>

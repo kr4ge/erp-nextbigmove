@@ -1459,34 +1459,57 @@ export class IntegrationService {
       );
     }
 
-    // Business logic: Close previous active entry
-    const currentActive = await this.getCurrentCogs(productId, storeId);
+    const baseWhere = await this.teamContext.buildTeamWhereClause({ productId, storeId });
+    const nextEntry = await this.prisma.posProductCogs.findFirst({
+      where: {
+        ...baseWhere,
+        startDate: { gt: startDate },
+      },
+      orderBy: { startDate: 'asc' },
+    });
+    const prevEntry = await this.prisma.posProductCogs.findFirst({
+      where: {
+        ...baseWhere,
+        startDate: { lt: startDate },
+      },
+      orderBy: { startDate: 'desc' },
+    });
 
-    if (currentActive) {
-      // Set endDate to day before new startDate
-      const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() - 1);
-
-      await this.prisma.posProductCogs.update({
-        where: { id: currentActive.id },
-        data: { endDate },
-      });
+    // If there's a future entry, cap this one to the day before it starts.
+    let newEndDate: Date | null = null;
+    if (nextEntry) {
+      newEndDate = new Date(nextEntry.startDate);
+      newEndDate.setDate(newEndDate.getDate() - 1);
+      if (newEndDate < startDate) {
+        throw new BadRequestException('COGS entry overlaps an existing entry');
+      }
     }
 
     // Validate and get effective team ID
     const effectiveTeamId = await this.teamContext.validateAndGetTeamId(store.teamId);
 
-    // Create new entry
-    return this.prisma.posProductCogs.create({
-      data: {
-        tenantId,
-        teamId: effectiveTeamId,
-        productId,
-        storeId,
-        cogs,
-        startDate,
-        endDate: null, // Active until next change
-      },
+    // Create new entry and adjust previous entry (if overlapping) in a transaction
+    return this.prisma.$transaction(async (tx) => {
+      if (prevEntry && (prevEntry.endDate === null || prevEntry.endDate >= startDate)) {
+        const prevEndDate = new Date(startDate);
+        prevEndDate.setDate(prevEndDate.getDate() - 1);
+        await tx.posProductCogs.update({
+          where: { id: prevEntry.id },
+          data: { endDate: prevEndDate },
+        });
+      }
+
+      return tx.posProductCogs.create({
+        data: {
+          tenantId,
+          teamId: effectiveTeamId,
+          productId,
+          storeId,
+          cogs,
+          startDate,
+          endDate: newEndDate, // Active until next change or until next entry starts
+        },
+      });
     });
   }
 

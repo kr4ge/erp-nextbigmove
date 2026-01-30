@@ -49,6 +49,16 @@ export class PosOrderService {
     return match ? match[1].trim() : undefined;
   }
 
+  private parseNoteProductCogs(noteProduct: any, quantity: number): number {
+    if (!noteProduct || typeof noteProduct !== 'string') return 0;
+    const parts = noteProduct.split('-');
+    const numRaw = parts[1] ?? '';
+    const num = parseFloat((numRaw || '').toString().replace(/[^0-9.\\-]/g, ''));
+    if (isNaN(num)) return 0;
+    const qtySafe = Math.max(quantity || 0, 1);
+    return num * qtySafe;
+  }
+
   /**
    * Derive mapping from productId values by matching pos_products.productId.
    * If multiple distinct mappings found, join with '-' in stable order.
@@ -110,6 +120,7 @@ export class PosOrderService {
 
     for (const item of items) {
       const quantity = parseInt(item.quantity || '0', 10);
+      const noteCogs = this.parseNoteProductCogs(item?.note_product, quantity);
       // Accept multiple identifiers to find the product (pancake can send either product_id or product_display_id)
       const candidateIds = [
         item.product_id?.toString?.(),
@@ -117,7 +128,12 @@ export class PosOrderService {
         item.variation_info?.product_display_id?.toString?.(),
       ].filter((v) => !!v) as string[];
 
-      if (candidateIds.length === 0 || quantity === 0) continue;
+      if (candidateIds.length === 0 || quantity === 0) {
+        if (noteCogs > 0) {
+          totalCogs += noteCogs;
+        }
+        continue;
+      }
 
       // Find product in database (match productId or customId to any of the known identifiers)
       const product = await this.prisma.posProduct.findFirst({
@@ -130,7 +146,12 @@ export class PosOrderService {
         },
       });
 
-      if (!product) continue;
+      if (!product) {
+        if (noteCogs > 0) {
+          totalCogs += noteCogs;
+        }
+        continue;
+      }
 
       // Get COGS for the order date
       const cogsEntry = await this.prisma.posProductCogs.findFirst({
@@ -146,6 +167,8 @@ export class PosOrderService {
       if (cogsEntry) {
         const itemCogs = parseFloat(cogsEntry.cogs.toString()) * quantity;
         totalCogs += itemCogs;
+      } else if (noteCogs > 0) {
+        totalCogs += noteCogs;
       }
 
       totalQuantity += quantity;
