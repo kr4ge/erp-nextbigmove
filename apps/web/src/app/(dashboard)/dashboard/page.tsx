@@ -857,7 +857,13 @@ export default function DashboardPage() {
         <MetricCard label="Confirmed Sales" value={formatNumber(execStats?.confirmed ?? 0)} helper="Confirmed orders" icon={<CheckCircle2 className="h-5 w-5" />} tone="default" />
         <MetricCard label="Overall Spent" value={formatCurrency(execStats?.ad_spend)} helper="Ad spend (tax inclusive if selected)" icon={<Coins className="h-5 w-5" />} tone="default" />
         <MetricCard label="Overall AR %" value={formatPercent(execStats?.ar_pct)} helper="Spend / Revenue" icon={<PieChart className="h-5 w-5" />} tone="default" />
-        <MetricCard label="CM (RTS 20%)" value="—" helper="Coming soon" icon={<Zap className="h-5 w-5" />} tone="warning" />
+        <MetricCard
+          label="CM (RTS 20%)"
+          value={formatCurrency(execStats?.cm_rts_forecast)}
+          helper="Forecasted contribution margin"
+          icon={<Zap className="h-5 w-5" />}
+          tone="warning"
+        />
       </div>
 
       {renderNameConvention()}

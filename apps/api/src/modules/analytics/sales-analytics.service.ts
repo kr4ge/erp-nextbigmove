@@ -48,6 +48,7 @@ type SalesKpis = {
   sf_fees: number;
   ff_fees: number;
   if_fees: number;
+  cm_rts_forecast?: number;
 };
 
 type SalesCounts = {
@@ -128,7 +129,7 @@ export class SalesAnalyticsService {
     return e.diff(s, 'day');
   }
 
-  private computeKpis(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean }): SalesKpis {
+  private computeKpis(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean; rtsForecastPct?: number }): SalesKpis {
     const spendBase = this.toNumber(sum?._sum?.spend);
     const spendMultiplier = 1 + (opts.includeTax12 ? 0.12 : 0) + (opts.includeTax1 ? 0.01 : 0);
     const spend = spendBase * spendMultiplier;
@@ -196,6 +197,26 @@ export class SalesAnalyticsService {
     const conversionRate = leads > 0 ? (purchasesAdj / leads) * 100 : 0;
     const profitEfficiency = spend > 0 ? (cm / spend) * 100 : 0;
 
+    const grossCodAdjusted =
+      cod
+      - (opts.excludeCancel ? canceledCod : 0)
+      - (opts.excludeRestocking ? restockingCod : 0);
+    const cogsAdjustedForCmRts =
+      cogs
+      - (opts.excludeCancel ? cogsCanceled : 0)
+      - (opts.excludeRestocking ? cogsRestocking : 0);
+    const rtsForecast = typeof opts.rtsForecastPct === 'number' ? opts.rtsForecastPct : 20;
+    const rtsFraction = rtsForecast / 100;
+    const cmRtsForecast =
+      (1 - rtsFraction) * grossCodAdjusted -
+      spend -
+      sf -
+      ff -
+      inf -
+      this.toNumber(sum?._sum?.codFeeDeliveredPos) -
+      cogsAdjustedForCmRts +
+      cogsRts;
+
     return {
       revenue,
       delivered: this.toNumber(sum?._sum?.deliveredCodPos),
@@ -232,6 +253,7 @@ export class SalesAnalyticsService {
       sf_fees: sf,
       ff_fees: ff,
       if_fees: inf,
+      cm_rts_forecast: cmRtsForecast,
     };
   }
 
@@ -597,8 +619,9 @@ export class SalesAnalyticsService {
       };
     });
 
-    const kpis = this.computeKpis(agg, { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1 });
-    const prevKpis = this.computeKpis(prevAgg, { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1 });
+    const rtsForecastPct = 20;
+    const kpis = this.computeKpis(agg, { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1, rtsForecastPct });
+    const prevKpis = this.computeKpis(prevAgg, { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1, rtsForecastPct });
     const counts = this.computeCounts(agg, { excludeCancel, excludeRestocking, excludeRts });
     const prevCounts = this.computeCounts(prevAgg, { excludeCancel, excludeRestocking, excludeRts });
 
