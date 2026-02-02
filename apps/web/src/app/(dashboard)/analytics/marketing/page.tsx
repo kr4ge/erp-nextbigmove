@@ -16,6 +16,22 @@ import {
 } from '@/components/ui/dialog';
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
+const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
+
+const formatDateInTimezone = (date: Date) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+
+const parseYmdToLocalDate = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
+};
+
 type OverviewResponse = {
   kpis: Record<string, number>;
   prevKpis: Record<string, number>;
@@ -96,7 +112,7 @@ function titleCase(str: string) {
 }
 
 export default function MarketingAnalyticsPage() {
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const today = useMemo(() => formatDateInTimezone(new Date()), []);
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -116,8 +132,8 @@ export default function MarketingAnalyticsPage() {
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [showAssociatePicker, setShowAssociatePicker] = useState(false);
   const [range, setRange] = useState<{ startDate: Date | null; endDate: Date | null }>({
-    startDate: new Date(startDate),
-    endDate: new Date(endDate),
+    startDate: parseYmdToLocalDate(startDate),
+    endDate: parseYmdToLocalDate(endDate),
   });
   const [associateSearch, setAssociateSearch] = useState('');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -344,7 +360,7 @@ export default function MarketingAnalyticsPage() {
   const handleResetDates = () => {
     setStartDate(today);
     setEndDate(today);
-    setRange({ startDate: new Date(today), endDate: new Date(today) });
+    setRange({ startDate: parseYmdToLocalDate(today), endDate: parseYmdToLocalDate(today) });
   };
 
   const handleResetAssociates = () => {
@@ -548,7 +564,7 @@ export default function MarketingAnalyticsPage() {
                     const formatDate = (d: any) => {
                       if (!d) return today;
                       if (typeof d === 'string') return d.slice(0, 10);
-                      if (d instanceof Date) return d.toISOString().slice(0, 10);
+                      if (d instanceof Date) return formatDateInTimezone(d);
                       return today;
                     };
                     setStartDate(formatDate(nextStart));
@@ -556,6 +572,7 @@ export default function MarketingAnalyticsPage() {
                   }}
                   inputClassName="rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
                   containerClassName=""
+                  popupClassName={(defaultClass) => `${defaultClass} z-50`}
                   displayFormat="MM/DD/YYYY"
                   separator=" – "
                   toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"

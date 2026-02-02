@@ -588,6 +588,13 @@ export class WorkflowService {
 
     // Note: Bull jobs will check execution status before processing
     // If status is CANCELLED, the processor will skip execution
+    try {
+      await this.workflowLogService.deleteExecutionLogs(executionId, tenantId);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to delete logs for execution ${executionId}: ${error?.message}`,
+      );
+    }
 
     return new WorkflowExecutionResponseDto(updatedExecution);
   }
@@ -620,6 +627,13 @@ export class WorkflowService {
             ],
           },
         });
+        try {
+          await this.workflowLogService.deleteExecutionLogs(executionId);
+        } catch (deleteError) {
+          this.logger.warn(
+            `Failed to delete logs for execution ${executionId}: ${deleteError?.message}`,
+          );
+        }
       }
     });
   }

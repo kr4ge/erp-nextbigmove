@@ -69,6 +69,7 @@ export class WorkflowProcessorService {
     // Check if execution was cancelled
     if (execution.status === WorkflowExecutionStatus.CANCELLED) {
       this.logger.warn(`Workflow execution ${executionId} was cancelled, skipping processing`);
+      await this.clearExecutionLogs(executionId, execution.tenantId);
       return;
     }
 
@@ -123,6 +124,7 @@ export class WorkflowProcessorService {
         const cancelled = await this.isCancelled(executionId);
         if (cancelled) {
           announceCancellation(date);
+          await this.clearExecutionLogs(executionId, context.tenantId);
           return true;
         }
         return false;
@@ -243,6 +245,7 @@ export class WorkflowProcessorService {
               source: 'meta',
               timestamp: new Date().toISOString(),
             }, 'error', `Meta fetch failed on ${date}: ${error.message}`);
+            await this.clearExecutionLogs(executionId, context.tenantId);
             return;
           }
         }
@@ -273,6 +276,7 @@ export class WorkflowProcessorService {
               source: 'pos',
               timestamp: new Date().toISOString(),
             }, 'error', `POS fetch failed on ${date}: ${error.message}`);
+            await this.clearExecutionLogs(executionId, context.tenantId);
             return;
           }
         }
@@ -299,6 +303,7 @@ export class WorkflowProcessorService {
             source: 'reconcile',
             timestamp: new Date().toISOString(),
           }, 'error', `Reconciliation failed on ${date}: ${(error as Error).message}`);
+          await this.clearExecutionLogs(executionId, context.tenantId);
           return;
         }
 
@@ -336,6 +341,7 @@ export class WorkflowProcessorService {
             source: 'reconcile_sales',
             timestamp: new Date().toISOString(),
           }, 'error', `Reconcile sales failed on ${date}: ${(error as Error).message}`);
+          await this.clearExecutionLogs(executionId, context.tenantId);
           return;
         }
 
@@ -380,6 +386,7 @@ export class WorkflowProcessorService {
         duration,
         timestamp: new Date().toISOString(),
       }, 'info', `Execution completed in ${duration}ms`);
+      await this.clearExecutionLogs(executionId, context.tenantId);
     } catch (error) {
       this.logger.error(`Workflow execution ${executionId} failed: ${error.message}`, error.stack);
 
@@ -398,6 +405,7 @@ export class WorkflowProcessorService {
         error: error.message,
         timestamp: new Date().toISOString(),
       }, 'error', `Execution failed: ${error.message}`);
+      await this.clearExecutionLogs(executionId, context.tenantId);
       throw error;
     }
   }
@@ -628,6 +636,7 @@ export class WorkflowProcessorService {
   ): Promise<void> {
     const execution = await this.prisma.workflowExecution.findUnique({
       where: { id: executionId },
+      select: { startedAt: true, tenantId: true },
     });
 
     const completedAt = new Date();
@@ -643,6 +652,16 @@ export class WorkflowProcessorService {
     this.logger.error(
       `Workflow execution ${executionId} failed on date ${lastProcessedDate || 'unknown'}`,
     );
+  }
+
+  private async clearExecutionLogs(executionId: string, tenantId?: string) {
+    try {
+      await this.workflowLogService.deleteExecutionLogs(executionId, tenantId);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to delete logs for execution ${executionId}: ${error?.message}`,
+      );
+    }
   }
 
   private async isCancelled(executionId: string): Promise<boolean> {

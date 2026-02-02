@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import * as dayjs from 'dayjs';
+import * as utc from 'dayjs/plugin/utc';
+import * as timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const TIMEZONE = 'Asia/Manila';
 
 export interface DateRange {
   since: string; // YYYY-MM-DD
@@ -32,8 +39,8 @@ export class DateRangeService {
    * Example: days=7 means last 7 days from today
    */
   private calculateRelativeRange(days: number): DateRange {
-    const until = dayjs().format('YYYY-MM-DD');
-    const since = dayjs().subtract(days - 1, 'days').format('YYYY-MM-DD');
+    const until = dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+    const since = dayjs().tz(TIMEZONE).subtract(days - 1, 'days').format('YYYY-MM-DD');
 
     return { since, until };
   }
@@ -54,7 +61,7 @@ export class DateRangeService {
    * Example: offsetDays=0 means today, offsetDays=1 means yesterday
    */
   private calculateRollingRange(offsetDays: number): DateRange {
-    const date = dayjs().subtract(offsetDays, 'days').format('YYYY-MM-DD');
+    const date = dayjs().tz(TIMEZONE).subtract(offsetDays, 'days').format('YYYY-MM-DD');
 
     return { since: date, until: date };
   }

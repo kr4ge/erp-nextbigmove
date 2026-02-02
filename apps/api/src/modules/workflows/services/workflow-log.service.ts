@@ -36,4 +36,11 @@ export class WorkflowLogService {
       take: limit,
     });
   }
+
+  async deleteExecutionLogs(executionId: string, tenantId?: string) {
+    const client: any = this.prisma as any;
+    return client.workflowExecutionLog.deleteMany({
+      where: tenantId ? { executionId, tenantId } : { executionId },
+    });
+  }
 }
