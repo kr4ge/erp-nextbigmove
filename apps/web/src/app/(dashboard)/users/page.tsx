@@ -1,16 +1,31 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { SectionCard } from '@/components/ui/section-card';
 import { FormInput } from '@/components/ui/form-input';
 import { FormSelect } from '@/components/ui/form-select';
 import { EmptyState } from '@/components/ui/emptystate';
-import { Users as UsersIcon } from 'lucide-react';
+import { DataTable } from '@/components/data-table/data-table';
+import { useDataTable } from '@/hooks/use-data-table';
+import { type ColumnDef } from '@tanstack/react-table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
+import { MoreHorizontal, Plus, Users as UsersIcon } from 'lucide-react';
 
 type User = {
   id: string;
@@ -21,6 +36,7 @@ type User = {
   status: string;
   defaultTeamId?: string | null;
   createdAt?: string;
+  lastLoginAt?: string | null;
   userRoleAssignments?: {
     roleId: string;
     teamId: string | null;
@@ -119,20 +135,9 @@ export default function UsersPage() {
     enabled: canManage && !isCheckingPermissions,
   });
 
-  const [drafts, setDrafts] = useState<Record<string, { role: string; status: string; defaultTeamId: string; roleId?: string }>>({});
-  useEffect(() => {
-    if (!users) return;
-    const next: Record<string, { role: string; status: string; defaultTeamId: string; roleId?: string }> = {};
-    users.forEach((u) => {
-      next[u.id] = {
-        role: u.role,
-        status: u.status,
-        defaultTeamId: u.defaultTeamId || '',
-        roleId: u.userRoleAssignments?.find((a) => !a.teamId)?.roleId || '',
-      };
-    });
-    setDrafts(next);
-  }, [users]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
 
   const [createForm, setCreateForm] = useState({
     firstName: '',
@@ -140,6 +145,14 @@ export default function UsersPage() {
     email: '',
     password: '',
     role: 'USER',
+    teamId: '',
+    roleId: '',
+  });
+  const [editForm, setEditForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    status: 'ACTIVE',
     teamId: '',
     roleId: '',
   });
@@ -167,6 +180,7 @@ export default function UsersPage() {
         teamId: '',
         roleId: '',
       });
+      setCreateOpen(false);
     },
   });
 
@@ -176,6 +190,8 @@ export default function UsersPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['users'] });
+      setEditOpen(false);
+      setEditingUser(null);
     },
   });
 
@@ -185,6 +201,141 @@ export default function UsersPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  const teamMap = useMemo(() => {
+    return new Map((teams || []).map((team) => [team.id, team.name]));
+  }, [teams]);
+
+  const getTenantRole = (userItem: User) =>
+    userItem.userRoleAssignments?.find((assignment) => !assignment.teamId)?.role;
+
+  const isTenantAdmin = (userItem: User) => getTenantRole(userItem)?.key === 'TENANT_ADMIN';
+
+  const getRoleLabel = (userItem: User) => getTenantRole(userItem)?.name || userItem.role || '—';
+
+  const getTeamLabel = (userItem: User) => {
+    if (isTenantAdmin(userItem)) return 'All Teams';
+    if (!userItem.defaultTeamId) return '—';
+    return teamMap.get(userItem.defaultTeamId) || '—';
+  };
+
+  const openEditModal = (userItem: User) => {
+    const tenantAssignment = userItem.userRoleAssignments?.find(
+      (assignment) => !assignment.teamId,
+    );
+    setEditingUser(userItem);
+    setEditForm({
+      firstName: userItem.firstName || '',
+      lastName: userItem.lastName || '',
+      email: userItem.email || '',
+      status: userItem.status || 'ACTIVE',
+      roleId: tenantAssignment?.roleId || '',
+      teamId: userItem.defaultTeamId || '',
+    });
+    setEditOpen(true);
+  };
+
+  const formatLastLogin = (value?: string | null) =>
+    value ? new Date(value).toLocaleString() : '—';
+
+  const statusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      INACTIVE: 'bg-slate-100 text-slate-600 border-slate-200',
+      INVITED: 'bg-amber-50 text-amber-700 border-amber-200',
+      SUSPENDED: 'bg-rose-50 text-rose-700 border-rose-200',
+    };
+    return (
+      <span
+        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${styles[status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}
+      >
+        {statusOptions.find((opt) => opt.value === status)?.label || status}
+      </span>
+    );
+  };
+
+  const columns = useMemo<ColumnDef<User>[]>(
+    () => [
+      {
+        id: 'user',
+        header: 'User',
+        cell: ({ row }) => (
+          <div>
+            <p className="font-medium text-[#0F172A]">
+              {row.original.firstName} {row.original.lastName}
+            </p>
+            <p className="text-xs text-[#64748B]">{row.original.email}</p>
+          </div>
+        ),
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        cell: ({ row }) => statusBadge(row.original.status),
+      },
+      {
+        id: 'team',
+        header: 'Team',
+        cell: ({ row }) => (
+          <span className="text-sm text-[#0F172A]">{getTeamLabel(row.original)}</span>
+        ),
+      },
+      {
+        id: 'role',
+        header: 'User Role',
+        cell: ({ row }) => (
+          <span className="inline-flex items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-semibold text-[#475569]">
+            {getRoleLabel(row.original)}
+          </span>
+        ),
+      },
+      {
+        id: 'last_login',
+        header: 'Last Login',
+        cell: ({ row }) => (
+          <span className="text-sm text-[#475569]">
+            {formatLastLogin(row.original.lastLoginAt)}
+          </span>
+        ),
+      },
+      {
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+              <MoreHorizontal className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-36">
+              <DropdownMenuItem onClick={() => openEditModal(row.original)}>
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  const confirmed = window.confirm(
+                    `Delete ${row.original.firstName} ${row.original.lastName}?`,
+                  );
+                  if (confirmed) deleteMutation.mutate(row.original.id);
+                }}
+                className="text-rose-600 focus:text-rose-600"
+              >
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+      },
+    ],
+    [deleteMutation, teamMap],
+  );
+
+  const { table } = useDataTable({
+    data: users || [],
+    columns,
+    initialState: {
+      pagination: { pageIndex: 0, pageSize: 10 },
     },
   });
 
@@ -217,269 +368,286 @@ export default function UsersPage() {
         description="Tenant owner and admins can invite, edit, or remove users and set their default team."
       />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Existing Users */}
-        <div className="lg:col-span-2">
-          <SectionCard title="Existing Users" noPadding>
-            {isLoading && (
-              <div className="p-6 text-[#475569]">Loading users...</div>
-            )}
-
-            {isError && (
-              <div className="p-6 text-red-600">Failed to load users.</div>
-            )}
-
-            {!isLoading && !isError && users?.length === 0 && (
-              <div className="p-6">
-                <EmptyState
-                  title="No users yet"
-                  description="Invite your first teammate."
-                  icon={<UsersIcon className="h-8 w-8" />}
-                />
-              </div>
-            )}
-
-            {!isLoading && !isError && users && users.length > 0 && (
-              <div className="divide-y divide-[#E2E8F0]">
-                {users.map((userItem) => {
-                  const draft = drafts[userItem.id] || { role: userItem.role, status: userItem.status, defaultTeamId: userItem.defaultTeamId || '', roleId: '' };
-                  const selectedRole = roles?.find((r) => r.id === draft.roleId);
-                  const isTenantAdmin = selectedRole?.key === 'TENANT_ADMIN';
-
-                  return (
-                    <div key={userItem.id} className="flex flex-col gap-4 px-6 py-4 md:flex-row md:items-center md:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-[#0F172A]">
-                          {userItem.firstName} {userItem.lastName}
-                        </p>
-                        <p className="text-sm text-[#475569]">{userItem.email}</p>
-                        <p className="mt-1 text-xs text-[#94A3B8]">
-                          {userItem.role} · {userItem.status}
-                        </p>
-                        {userItem.userRoleAssignments && userItem.userRoleAssignments.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {userItem.userRoleAssignments
-                              .filter((a) => !a.teamId)
-                              .map((a) => (
-                                <span
-                                  key={`${a.roleId}-${a.teamId || 'tenant'}`}
-                                  className="inline-flex items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-medium text-[#475569]"
-                                >
-                                  {a.role?.name || a.roleId}
-                                </span>
-                              ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-3">
-                        <select
-                          className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
-                          value={draft.status}
-                          onChange={(e) =>
-                            setDrafts((prev) => ({
-                              ...prev,
-                              [userItem.id]: { ...draft, status: e.target.value },
-                            }))
-                          }
-                        >
-                          {statusOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-
-                        {isTenantAdmin ? (
-                          <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm text-[#94A3B8]">
-                            All Teams
-                          </div>
-                        ) : (
-                          <select
-                            className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
-                            value={draft.defaultTeamId}
-                            onChange={(e) =>
-                              setDrafts((prev) => ({
-                                ...prev,
-                                [userItem.id]: { ...draft, defaultTeamId: e.target.value },
-                              }))
-                            }
-                          >
-                            <option value="">No default team</option>
-                            {teams?.map((team) => (
-                              <option key={team.id} value={team.id}>
-                                {team.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-
-                        <select
-                          className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
-                          value={draft.roleId || ''}
-                          onChange={(e) => {
-                            const newRoleId = e.target.value;
-                            const newSelectedRole = roles?.find((r) => r.id === newRoleId);
-                            const newIsTenantAdmin = newSelectedRole?.key === 'TENANT_ADMIN';
-                            setDrafts((prev) => ({
-                              ...prev,
-                              [userItem.id]: {
-                                ...draft,
-                                roleId: newRoleId,
-                                defaultTeamId: newIsTenantAdmin ? '' : draft.defaultTeamId,
-                              },
-                            }));
-                          }}
-                        >
-                          <option value="">No role</option>
-                          {roles?.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.name} {r.tenantId ? '' : '(default)'}
-                            </option>
-                          ))}
-                        </select>
-
-                        <Button
-                          size="sm"
-                          onClick={() =>
-                            updateMutation.mutate({
-                              id: userItem.id,
-                              payload: {
-                                status: draft.status,
-                                defaultTeamId: draft.defaultTeamId || undefined,
-                                roleId: draft.roleId || undefined,
-                              },
-                            })
-                          }
-                          disabled={updateMutation.isPending}
-                          loading={updateMutation.isPending}
-                        >
-                          {updateMutation.isPending ? 'Saving...' : 'Save'}
-                        </Button>
-
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => deleteMutation.mutate(userItem.id)}
-                          disabled={deleteMutation.isPending}
-                          loading={deleteMutation.isPending}
-                        >
-                          {deleteMutation.isPending ? 'Removing...' : 'Remove'}
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </SectionCard>
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-slate-600">
+            All Users: <span className="font-semibold text-slate-900">{users?.length ?? 0}</span>
+          </div>
+          <Button
+            iconLeft={<Plus className="h-4 w-4" />}
+            onClick={() => setCreateOpen(true)}
+          >
+            Add new user
+          </Button>
         </div>
 
-        {/* Invite User Form */}
-        <div>
-          <SectionCard title="Invite User">
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                createMutation.mutate();
-              }}
-            >
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <FormInput
-                  label="First name"
-                  value={createForm.firstName}
-                  onChange={(e) => setCreateForm((prev) => ({ ...prev, firstName: e.target.value }))}
-                  required
-                />
-                <FormInput
-                  label="Last name"
-                  value={createForm.lastName}
-                  onChange={(e) => setCreateForm((prev) => ({ ...prev, lastName: e.target.value }))}
-                  required
-                />
-              </div>
+        <div className="mt-4">
+          {isLoading && (
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">
+              Loading users...
+            </div>
+          )}
 
+          {isError && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700">
+              Failed to load users.
+            </div>
+          )}
+
+          {!isLoading && !isError && users?.length === 0 && (
+            <EmptyState
+              title="No users yet"
+              description="Invite your first teammate."
+              icon={<UsersIcon className="h-8 w-8" />}
+            />
+          )}
+
+          {!isLoading && !isError && users && users.length > 0 && (
+            <DataTable table={table} />
+          )}
+        </div>
+      </Card>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Create User</DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              createMutation.mutate();
+            }}
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormInput
-                type="email"
-                label="Email"
-                value={createForm.email}
-                onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
+                label="First name"
+                value={createForm.firstName}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, firstName: e.target.value }))}
                 required
               />
-
               <FormInput
-                type="password"
-                label="Password"
-                value={createForm.password}
-                onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))}
+                label="Last name"
+                value={createForm.lastName}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, lastName: e.target.value }))}
                 required
               />
+            </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <FormSelect
-                  label="Role"
-                  value={createForm.roleId}
-                  onChange={(e) => {
-                    const newRoleId = e.target.value;
-                    const selectedRole = roles?.find((r) => r.id === newRoleId);
-                    const isTenantAdmin = selectedRole?.key === 'TENANT_ADMIN';
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      roleId: newRoleId,
-                      teamId: isTenantAdmin ? '' : prev.teamId,
-                    }));
-                  }}
-                  options={roles?.map((r) => ({
-                    value: r.id,
-                    label: `${r.name}${r.tenantId ? '' : ' (default)'}`,
-                  })) || []}
-                  placeholder="No role"
-                />
+            <FormInput
+              type="email"
+              label="Email"
+              value={createForm.email}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
+              required
+            />
 
-                {(() => {
-                  const selectedRole = roles?.find((r) => r.id === createForm.roleId);
-                  const isTenantAdmin = selectedRole?.key === 'TENANT_ADMIN';
-                  return isTenantAdmin ? (
-                    <div className="space-y-1.5">
-                      <label className="block text-sm font-semibold text-[#0F172A]">
-                        Default team
-                      </label>
-                      <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2 text-sm text-[#94A3B8]">
-                        All Teams (Tenant Admin)
-                      </div>
+            <FormInput
+              type="password"
+              label="Password"
+              value={createForm.password}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))}
+              required
+            />
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <FormSelect
+                label="Role"
+                value={createForm.roleId}
+                onChange={(e) => {
+                  const newRoleId = e.target.value;
+                  const selectedRole = roles?.find((r) => r.id === newRoleId);
+                  const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    roleId: newRoleId,
+                    teamId: isAdmin ? '' : prev.teamId,
+                  }));
+                }}
+                options={roles?.map((r) => ({
+                  value: r.id,
+                  label: `${r.name}${r.tenantId ? '' : ' (default)'}`,
+                })) || []}
+                placeholder="No role"
+              />
+
+              {(() => {
+                const selectedRole = roles?.find((r) => r.id === createForm.roleId);
+                const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
+                return isAdmin ? (
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-[#0F172A]">
+                      Default team
+                    </label>
+                    <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2 text-sm text-[#94A3B8]">
+                      All Teams (Tenant Admin)
                     </div>
-                  ) : (
-                    <FormSelect
-                      label="Default team (optional)"
-                      value={createForm.teamId}
-                      onChange={(e) => setCreateForm((prev) => ({ ...prev, teamId: e.target.value }))}
-                      options={teams?.map((team) => ({
-                        value: team.id,
-                        label: team.name,
-                      })) || []}
-                      placeholder="No default team"
-                    />
-                  );
-                })()}
-              </div>
+                  </div>
+                ) : (
+                  <FormSelect
+                    label="Default team (optional)"
+                    value={createForm.teamId}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, teamId: e.target.value }))}
+                    options={teams?.map((team) => ({
+                      value: team.id,
+                      label: team.name,
+                    })) || []}
+                    placeholder="No default team"
+                  />
+                );
+              })()}
+            </div>
 
+            {createMutation.isError && (
+              <p className="text-sm text-rose-600">Failed to create user. Check the details and try again.</p>
+            )}
+
+            <DialogFooter className="gap-2 sm:justify-end">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setCreateOpen(false)}
+              >
+                Cancel
+              </Button>
               <Button
                 type="submit"
                 disabled={createMutation.isPending}
                 loading={createMutation.isPending}
-                className="w-full"
               >
-                {createMutation.isPending ? 'Creating...' : 'Invite User'}
+                {createMutation.isPending ? 'Creating...' : 'Create User'}
               </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-              {createMutation.isError && (
-                <p className="text-sm text-red-600">Failed to create user. Check the details and try again.</p>
-              )}
-            </form>
-          </SectionCard>
-        </div>
-      </div>
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) setEditingUser(null);
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!editingUser) return;
+              const selectedRole = roles?.find((r) => r.id === editForm.roleId);
+              const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
+              updateMutation.mutate({
+                id: editingUser.id,
+                payload: {
+                  firstName: editForm.firstName,
+                  lastName: editForm.lastName,
+                  status: editForm.status,
+                  roleId: editForm.roleId || undefined,
+                  defaultTeamId: isAdmin ? undefined : editForm.teamId || undefined,
+                },
+              });
+            }}
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <FormInput
+                label="First name"
+                value={editForm.firstName}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                required
+              />
+              <FormInput
+                label="Last name"
+                value={editForm.lastName}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                required
+              />
+            </div>
+
+            <FormInput label="Email" value={editForm.email} readOnly />
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <FormSelect
+                label="Status"
+                value={editForm.status}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))}
+                options={statusOptions.map((opt) => ({ value: opt.value, label: opt.label }))}
+              />
+
+              <FormSelect
+                label="Role"
+                value={editForm.roleId}
+                onChange={(e) => {
+                  const newRoleId = e.target.value;
+                  const selectedRole = roles?.find((r) => r.id === newRoleId);
+                  const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
+                  setEditForm((prev) => ({
+                    ...prev,
+                    roleId: newRoleId,
+                    teamId: isAdmin ? '' : prev.teamId,
+                  }));
+                }}
+                options={roles?.map((r) => ({
+                  value: r.id,
+                  label: `${r.name}${r.tenantId ? '' : ' (default)'}`,
+                })) || []}
+                placeholder="No role"
+              />
+            </div>
+
+            {(() => {
+              const selectedRole = roles?.find((r) => r.id === editForm.roleId);
+              const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
+              return isAdmin ? (
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-[#0F172A]">
+                    Default team
+                  </label>
+                  <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2 text-sm text-[#94A3B8]">
+                    All Teams (Tenant Admin)
+                  </div>
+                </div>
+              ) : (
+                <FormSelect
+                  label="Default team (optional)"
+                  value={editForm.teamId}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, teamId: e.target.value }))}
+                  options={teams?.map((team) => ({
+                    value: team.id,
+                    label: team.name,
+                  })) || []}
+                  placeholder="No default team"
+                />
+              );
+            })()}
+
+            {updateMutation.isError && (
+              <p className="text-sm text-rose-600">Failed to update user. Try again.</p>
+            )}
+
+            <DialogFooter className="gap-2 sm:justify-end">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setEditOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={updateMutation.isPending}
+                loading={updateMutation.isPending}
+              >
+                {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

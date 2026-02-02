@@ -132,6 +132,7 @@ export class UserService {
         status: true,
         defaultTeamId: true,
         createdAt: true,
+        lastLoginAt: true,
         userRoleAssignments: {
           select: {
             roleId: true,
