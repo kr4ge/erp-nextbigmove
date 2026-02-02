@@ -161,6 +161,18 @@ type OverviewResponse = {
     restocking_cod?: number;
     rts_cod?: number;
   }>;
+  deliveryStatuses?: Array<{
+    mapping: string | null;
+    total_orders: number;
+    new_orders: number;
+    restocking: number;
+    confirmed: number;
+    canceled: number;
+    waiting_pickup: number;
+    shipped: number;
+    delivered: number;
+    rts: number;
+  }>;
   filters: { mappings: string[]; mappingsDisplayMap: Record<string, string> };
   selected: { start_date: string; end_date: string; mappings: string[] };
   rangeDays: number;
@@ -318,8 +330,10 @@ export default function SalesAnalyticsPage() {
   const fetchDataRef = useRef<any>();
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const pageSize = 10;
-  const [tableSelection, setTableSelection] = useState<'products'>('products');
+  const [tableSelection, setTableSelection] = useState<'products' | 'delivery'>('products');
+  const [showTableMenu, setShowTableMenu] = useState(false);
   const [productPage, setProductPage] = useState(1);
+  const [deliveryPage, setDeliveryPage] = useState(1);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareTeams, setShareTeams] = useState<{ id: string; name: string }[]>([]);
   const [shareSelected, setShareSelected] = useState<string[]>([]);
@@ -347,6 +361,21 @@ export default function SalesAnalyticsPage() {
     | null
   >(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [deliverySortKey, setDeliverySortKey] = useState<
+    | 'index'
+    | 'product'
+    | 'total_orders'
+    | 'new_orders'
+    | 'restocking'
+    | 'confirmed'
+    | 'canceled'
+    | 'waiting_pickup'
+    | 'shipped'
+    | 'delivered'
+    | 'rts'
+    | null
+  >(null);
+  const [deliverySortDir, setDeliverySortDir] = useState<'asc' | 'desc'>('desc');
 
   const fetchData = async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setIsLoading(true);
@@ -522,10 +551,13 @@ export default function SalesAnalyticsPage() {
       if (showFilterMenu && !inFilter) {
         setShowFilterMenu(false);
       }
+      if (showTableMenu && target && !e.composedPath().some((n) => (n as HTMLElement).dataset?.tableMenu === 'true')) {
+        setShowTableMenu(false);
+      }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showMappingPicker, showFilterMenu]);
+  }, [showMappingPicker, showFilterMenu, showTableMenu]);
 
   const mappingDisplay = (val: string) => mappingDisplayMap[val.toLowerCase()] || val;
   const selectedMappingLabel =
@@ -560,6 +592,38 @@ export default function SalesAnalyticsPage() {
           className="leading-none"
         >
           <ChevronDown className={sortButtonClass(key, 'asc')} />
+        </button>
+      </span>
+    </span>
+  );
+
+  const isDeliverySortActive = (key: NonNullable<typeof deliverySortKey>, dir: 'asc' | 'desc') =>
+    deliverySortKey === key && deliverySortDir === dir;
+  const deliverySortButtonClass = (key: NonNullable<typeof deliverySortKey>, dir: 'asc' | 'desc') =>
+    `h-3 w-3 ${isDeliverySortActive(key, dir) ? 'text-slate-700' : 'text-slate-400'} hover:text-slate-600`;
+  const setDeliverySort = (key: NonNullable<typeof deliverySortKey>, dir: 'asc' | 'desc') => {
+    setDeliverySortKey(key);
+    setDeliverySortDir(dir);
+  };
+  const renderDeliverySortLabel = (label: ReactNode, key: NonNullable<typeof deliverySortKey>) => (
+    <span className="inline-flex items-center gap-1">
+      <span>{label}</span>
+      <span className="inline-flex flex-col -space-y-1 leading-none">
+        <button
+          type="button"
+          aria-label={`Sort ${String(label)} high to low`}
+          onClick={() => setDeliverySort(key, 'desc')}
+          className="leading-none"
+        >
+          <ChevronUp className={deliverySortButtonClass(key, 'desc')} />
+        </button>
+        <button
+          type="button"
+          aria-label={`Sort ${String(label)} low to high`}
+          onClick={() => setDeliverySort(key, 'asc')}
+          className="leading-none"
+        >
+          <ChevronDown className={deliverySortButtonClass(key, 'asc')} />
         </button>
       </span>
     </span>
@@ -736,6 +800,64 @@ export default function SalesAnalyticsPage() {
   const productCanPrev = productPage > 1;
   const productCanNext = productPage < totalProductPages;
 
+  const deliveryStatuses = data?.deliveryStatuses || [];
+  const deliveryRows = deliveryStatuses.map((row, index) => {
+    const norm = (row.mapping || '__null__').toLowerCase();
+    const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
+    return {
+      row,
+      index,
+      display,
+    };
+  });
+
+  const sortedDeliveryRows = deliverySortKey
+    ? [...deliveryRows].sort((a, b) => {
+        const getValue = (item: typeof a) => {
+          switch (deliverySortKey) {
+            case 'index':
+              return item.index;
+            case 'product':
+              return item.display.toLowerCase();
+            case 'total_orders':
+              return item.row.total_orders ?? 0;
+            case 'new_orders':
+              return item.row.new_orders ?? 0;
+            case 'restocking':
+              return item.row.restocking ?? 0;
+            case 'confirmed':
+              return item.row.confirmed ?? 0;
+            case 'canceled':
+              return item.row.canceled ?? 0;
+            case 'waiting_pickup':
+              return item.row.waiting_pickup ?? 0;
+            case 'shipped':
+              return item.row.shipped ?? 0;
+            case 'delivered':
+              return item.row.delivered ?? 0;
+            case 'rts':
+              return item.row.rts ?? 0;
+            default:
+              return 0;
+          }
+        };
+        const av = getValue(a);
+        const bv = getValue(b);
+        if (typeof av === 'string' || typeof bv === 'string') {
+          return (deliverySortDir === 'asc' ? 1 : -1) * String(av).localeCompare(String(bv));
+        }
+        return (deliverySortDir === 'asc' ? 1 : -1) * (Number(av) - Number(bv));
+      })
+    : deliveryRows;
+
+  const totalDelivery = sortedDeliveryRows.length;
+  const totalDeliveryPages = Math.max(1, Math.ceil(totalDelivery / pageSize));
+  const pagedDeliveryRows = sortedDeliveryRows.slice((deliveryPage - 1) * pageSize, deliveryPage * pageSize);
+  const deliveryStart = totalDelivery === 0 ? 0 : (deliveryPage - 1) * pageSize + 1;
+  const deliveryEnd = Math.min(deliveryPage * pageSize, totalDelivery);
+  const deliveryCanPrev = deliveryPage > 1;
+  const deliveryCanNext = deliveryPage < totalDeliveryPages;
+
   const metricValues = data
     ? metricDefinitions.map((def) => {
         const current = computedKpis?.[def.key] ?? 0;
@@ -747,6 +869,11 @@ export default function SalesAnalyticsPage() {
         return { ...def, current, previous, delta, countCurrent, countPrev, countDelta };
       })
     : [];
+
+  const tableOptions: Array<{ key: 'products' | 'delivery'; label: string }> = [
+    { key: 'products', label: 'Revenue per Product' },
+    { key: 'delivery', label: 'Delivery Status' },
+  ];
 
   const leftCard = metricValues.find((m) => m.key === 'revenue');
   const rightCard = metricValues.find((m) => m.key === 'ad_spend');
@@ -1423,141 +1550,278 @@ export default function SalesAnalyticsPage() {
         </div>
       </Card>
 
-      {/* Revenue per Product (Mapping) */}
+      {/* Revenue per Product / Delivery Status */}
       <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
         <div className="flex items-center justify-between mb-3 px-2">
-          <h2 className="text-lg font-semibold text-slate-900">Revenue per Product</h2>
-        </div>
-        <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full table-fixed divide-y divide-slate-100">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="sticky left-0 z-10 w-16 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('#', 'index')}
-                  </th>
-                  <th className="sticky left-16 z-10 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('Product', 'product')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('Gross Revenue', 'revenue')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('Gross Sales', 'gross_sales')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('COGS', 'cogs')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('AOV', 'aov')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('CPP', 'cpp')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('Processed CPP', 'processed_cpp')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('Ad Spend', 'ad_spend')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('AR %', 'ar_pct')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('RTS %', 'rts_pct')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('P.E %', 'profit_efficiency')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('Contribution Margin', 'contribution_margin')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel(`CM (RTS ${rtsForecastSafe}% )`, 'cm_rts_forecast')}
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    {renderSortLabel('Net Margin', 'net_margin')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {isLoading
-                  ? Array.from({ length: 5 }).map((_, idx) => (
-                      <tr key={`prod-skel-${idx}`}>
-                        {Array.from({ length: 15 }).map((__, cIdx) => (
-                          <td key={cIdx} className="px-3 sm:px-4 lg:px-6 py-3">
-                            <div className="h-3 w-16 bg-slate-200 animate-pulse rounded" />
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  : pagedProducts.map((item, idx) => {
-                      const { row, derived } = item;
-                      const { display, forecast, rtsPct, sf, ff, iF, codFeeDelivered, cogsAdjusted, cogsRts } = derived;
-
-                      return (
-                        <tr key={`${row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
-                          <td className="sticky left-0 z-10 w-16 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-700 whitespace-nowrap">
-                            {(productPage - 1) * pageSize + idx + 1}.
-                          </td>
-                          <td className="sticky left-16 z-10 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">
-                            {titleCase(display)}
-                          </td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.revenue, 'currency')}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.gross_sales, 'number', 0)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.cogs, 'currency')}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.aov, 'currency')}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.cpp, 'currency')}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.processed_cpp, 'currency')}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.ad_spend, 'currency')}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.ar_pct, 'percent', 1)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(rtsPct, 'percent', 1)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.profit_efficiency, 'percent', 1)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.contribution_margin, 'currency')}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">
-                            <span
-                              title={`CM (RTS ${rtsForecastSafe}%): ${(formatValue(forecast.revenueAfterRts,'currency'))} - ${(formatValue(row.ad_spend ?? 0,'currency'))} - ${(formatValue(sf,'currency'))} - ${(formatValue(ff,'currency'))} - ${(formatValue(iF,'currency'))} - ${(formatValue(codFeeDelivered,'currency'))} - ${(formatValue(cogsAdjusted,'currency'))} + ${(formatValue(cogsRts,'currency'))} = ${(formatValue(forecast.cmForecast,'currency'))}`}
-                            >
-                              {formatValue(forecast.cmForecast, 'currency')}
-                            </span>
-                          </td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.net_margin, 'currency')}</td>
-                        </tr>
-                      );
-                    })}
-                {!isLoading && products.length === 0 && (
-                  <tr>
-                    <td className="px-3 sm:px-4 lg:px-6 py-4 text-center text-slate-500" colSpan={15}>
-                      No products found for this range.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div className="relative" data-table-menu="true">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-lg font-semibold text-slate-900"
+              onClick={() => setShowTableMenu((p) => !p)}
+            >
+              {tableOptions.find((t) => t.key === tableSelection)?.label || 'Revenue per Product'}
+              <span className="text-slate-500">▾</span>
+            </button>
+            {showTableMenu && (
+              <div className="absolute left-0 mt-2 w-52 rounded-xl border border-slate-200 bg-white shadow-lg z-20">
+                {tableOptions.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    className={`block w-full text-left px-3 py-2 text-sm ${tableSelection === opt.key ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50'}`}
+                    onClick={() => {
+                      setTableSelection(opt.key);
+                      setProductPage(1);
+                      setDeliveryPage(1);
+                      setShowTableMenu(false);
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+        </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
-            <p className="text-sm text-slate-600">
-              Showing {productStart}-{productEnd} of {totalProducts}
-            </p>
-            <div className="flex gap-2">
-              <button
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                onClick={() => setProductPage((p) => Math.max(1, p - 1))}
-                disabled={!productCanPrev || isLoading}
-              >
-                Previous
-              </button>
-              <button
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                onClick={() => setProductPage((p) => Math.min(totalProductPages, p + 1))}
-                disabled={!productCanNext || isLoading}
-              >
-                Next
-              </button>
+        {tableSelection === 'products' && (
+          <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full table-fixed divide-y divide-slate-100">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="sticky left-0 z-10 w-16 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('#', 'index')}
+                    </th>
+                    <th className="sticky left-16 z-10 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('Product', 'product')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('Gross Revenue', 'revenue')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('Gross Sales', 'gross_sales')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('COGS', 'cogs')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('AOV', 'aov')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('CPP', 'cpp')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('Processed CPP', 'processed_cpp')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('Ad Spend', 'ad_spend')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('AR %', 'ar_pct')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('RTS %', 'rts_pct')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('P.E %', 'profit_efficiency')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('Contribution Margin', 'contribution_margin')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel(`CM (RTS ${rtsForecastSafe}% )`, 'cm_rts_forecast')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderSortLabel('Net Margin', 'net_margin')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {isLoading
+                    ? Array.from({ length: 5 }).map((_, idx) => (
+                        <tr key={`prod-skel-${idx}`}>
+                          {Array.from({ length: 15 }).map((__, cIdx) => (
+                            <td key={cIdx} className="px-3 sm:px-4 lg:px-6 py-3">
+                              <div className="h-3 w-16 bg-slate-200 animate-pulse rounded" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    : pagedProducts.map((item, idx) => {
+                        const { row, derived } = item;
+                        const { display, forecast, rtsPct, sf, ff, iF, codFeeDelivered, cogsAdjusted, cogsRts } = derived;
+
+                        return (
+                          <tr key={`${row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
+                            <td className="sticky left-0 z-10 w-16 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-700 whitespace-nowrap">
+                              {(productPage - 1) * pageSize + idx + 1}.
+                            </td>
+                            <td className="sticky left-16 z-10 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">
+                              {titleCase(display)}
+                            </td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.revenue, 'currency')}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.gross_sales, 'number', 0)}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.cogs, 'currency')}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.aov, 'currency')}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.cpp, 'currency')}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.processed_cpp, 'currency')}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.ad_spend, 'currency')}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.ar_pct, 'percent', 1)}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(rtsPct, 'percent', 1)}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.profit_efficiency, 'percent', 1)}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.contribution_margin, 'currency')}</td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">
+                              <span
+                                title={`CM (RTS ${rtsForecastSafe}%): ${(formatValue(forecast.revenueAfterRts,'currency'))} - ${(formatValue(row.ad_spend ?? 0,'currency'))} - ${(formatValue(sf,'currency'))} - ${(formatValue(ff,'currency'))} - ${(formatValue(iF,'currency'))} - ${(formatValue(codFeeDelivered,'currency'))} - ${(formatValue(cogsAdjusted,'currency'))} + ${(formatValue(cogsRts,'currency'))} = ${(formatValue(forecast.cmForecast,'currency'))}`}
+                              >
+                                {formatValue(forecast.cmForecast, 'currency')}
+                              </span>
+                            </td>
+                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.net_margin, 'currency')}</td>
+                          </tr>
+                        );
+                      })}
+                  {!isLoading && products.length === 0 && (
+                    <tr>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-center text-slate-500" colSpan={15}>
+                        No products found for this range.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
+              <p className="text-sm text-slate-600">
+                Showing {productStart}-{productEnd} of {totalProducts}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => setProductPage((p) => Math.max(1, p - 1))}
+                  disabled={!productCanPrev || isLoading}
+                >
+                  Previous
+                </button>
+                <button
+                  className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => setProductPage((p) => Math.min(totalProductPages, p + 1))}
+                  disabled={!productCanNext || isLoading}
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {tableSelection === 'delivery' && (
+          <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full table-fixed divide-y divide-slate-100">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="sticky left-0 z-10 w-16 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('#', 'index')}
+                    </th>
+                    <th className="sticky left-16 z-10 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('Product', 'product')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('Total Order', 'total_orders')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('New', 'new_orders')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('Restocking', 'restocking')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('Confirmed', 'confirmed')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('Canceled', 'canceled')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('Waiting for Pickup', 'waiting_pickup')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('Shipped', 'shipped')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('Delivered', 'delivered')}
+                    </th>
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                      {renderDeliverySortLabel('RTS', 'rts')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {isLoading
+                    ? Array.from({ length: 5 }).map((_, idx) => (
+                        <tr key={`delivery-skel-${idx}`}>
+                          {Array.from({ length: 11 }).map((__, cIdx) => (
+                            <td key={cIdx} className="px-3 sm:px-4 lg:px-6 py-3">
+                              <div className="h-3 w-16 bg-slate-200 animate-pulse rounded" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    : pagedDeliveryRows.map((item, idx) => (
+                        <tr key={`${item.row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
+                          <td className="sticky left-0 z-10 w-16 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-700 whitespace-nowrap">
+                            {(deliveryPage - 1) * pageSize + idx + 1}.
+                          </td>
+                          <td className="sticky left-16 z-10 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">
+                            {titleCase(item.display)}
+                          </td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.total_orders ?? 0, 'number', 0)}</td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.new_orders ?? 0, 'number', 0)}</td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.restocking ?? 0, 'number', 0)}</td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.confirmed ?? 0, 'number', 0)}</td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.canceled ?? 0, 'number', 0)}</td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.waiting_pickup ?? 0, 'number', 0)}</td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.shipped ?? 0, 'number', 0)}</td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.delivered ?? 0, 'number', 0)}</td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.rts ?? 0, 'number', 0)}</td>
+                        </tr>
+                      ))}
+                  {!isLoading && deliveryStatuses.length === 0 && (
+                    <tr>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-center text-slate-500" colSpan={11}>
+                        No delivery status found for this range.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
+              <p className="text-sm text-slate-600">
+                Showing {deliveryStart}-{deliveryEnd} of {totalDelivery}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => setDeliveryPage((p) => Math.max(1, p - 1))}
+                  disabled={!deliveryCanPrev || isLoading}
+                >
+                  Previous
+                </button>
+                <button
+                  className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => setDeliveryPage((p) => Math.min(totalDeliveryPages, p + 1))}
+                  disabled={!deliveryCanNext || isLoading}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
 
       <Dialog open={shareOpen} onOpenChange={setShareOpen}>

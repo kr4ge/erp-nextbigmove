@@ -91,6 +91,19 @@ type ProductRow = {
   rts_cod: number;
 };
 
+type DeliveryStatusRow = {
+  mapping: string | null;
+  total_orders: number;
+  new_orders: number;
+  restocking: number;
+  confirmed: number;
+  canceled: number;
+  waiting_pickup: number;
+  shipped: number;
+  delivered: number;
+  rts: number;
+};
+
 @Injectable()
 export class SalesAnalyticsService {
   constructor(
@@ -619,6 +632,19 @@ export class SalesAnalyticsService {
       };
     });
 
+    const deliveryStatuses: DeliveryStatusRow[] = productGroups.map((g) => ({
+      mapping: g.mapping,
+      total_orders: this.toNumber(g._sum?.purchasesPos),
+      new_orders: this.toNumber(g._sum?.unconfirmedCount),
+      restocking: this.toNumber(g._sum?.restockingCount),
+      confirmed: this.toNumber(g._sum?.confirmedCount),
+      canceled: this.toNumber(g._sum?.canceledCount),
+      waiting_pickup: this.toNumber(g._sum?.waitingPickupCount),
+      shipped: this.toNumber(g._sum?.shippedCount),
+      delivered: this.toNumber(g._sum?.deliveredCount),
+      rts: this.toNumber(g._sum?.rtsCount),
+    }));
+
     const rtsForecastPct = 20;
     const kpis = this.computeKpis(agg, { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1, rtsForecastPct });
     const prevKpis = this.computeKpis(prevAgg, { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1, rtsForecastPct });
@@ -642,6 +668,7 @@ export class SalesAnalyticsService {
       rangeDays,
       lastUpdatedAt: lastUpdatedAgg?._max?.updatedAt || null,
       products,
+      deliveryStatuses,
     };
 
     this.logger.log(`CACHE SET ${cacheKey}`);

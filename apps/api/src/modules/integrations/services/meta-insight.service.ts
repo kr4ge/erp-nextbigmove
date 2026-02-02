@@ -119,6 +119,11 @@ export class MetaInsightService {
     for (const rawInsight of rawInsights) {
       const insight = this.parseMetaInsight(rawInsight, accountId, multiplier);
 
+      // Only persist insights with spend > 0
+      if (!Number.isFinite(insight.spend) || insight.spend <= 0) {
+        continue;
+      }
+
       await this.prisma.metaAdInsight.upsert({
         where: {
           tenantId_accountId_adId_date: {
