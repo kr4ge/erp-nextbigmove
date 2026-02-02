@@ -25,6 +25,29 @@ import {
 import dynamic from 'next/dynamic';
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
+const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
+
+const formatDateInTimezone = (date: Date) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+
+const parseYmdToLocalDate = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
+};
+
+const normalizePickerDate = (value: any) => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === 'string') return parseYmdToLocalDate(value.slice(0, 10));
+  return null;
+};
+
 interface DashboardStats {
   integrationCount: number;
   totalUsers: number;
@@ -40,6 +63,7 @@ type MyStats = {
 };
 
 export default function DashboardPage() {
+  const today = useMemo(() => formatDateInTimezone(new Date()), []);
   const [user, setUser] = useState<any>(null);
   const [tenant, setTenant] = useState<any>(null);
   const [stats, setStats] = useState<DashboardStats>({
@@ -49,8 +73,8 @@ export default function DashboardPage() {
   const [myStats, setMyStats] = useState<MyStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [range, setRange] = useState<{ startDate: Date | null; endDate: Date | null }>({
-    startDate: new Date(),
-    endDate: new Date(),
+    startDate: parseYmdToLocalDate(today),
+    endDate: parseYmdToLocalDate(today),
   });
   const [perms, setPerms] = useState<string[]>([]);
   const [excludeCancel, setExcludeCancel] = useState(true);
@@ -190,8 +214,8 @@ export default function DashboardPage() {
       setExecError('');
       try {
         const params: any = {};
-        if (range.startDate) params.start_date = range.startDate.toISOString().slice(0, 10);
-        if (range.endDate) params.end_date = range.endDate.toISOString().slice(0, 10);
+        if (range.startDate) params.start_date = formatDateInTimezone(range.startDate);
+        if (range.endDate) params.end_date = formatDateInTimezone(range.endDate);
         params.exclude_cancel = excludeCancel;
         params.exclude_restocking = excludeRestocking;
         params.exclude_rts = excludeRts;
@@ -218,8 +242,8 @@ export default function DashboardPage() {
       setError('');
     try {
       const params: any = {};
-      if (range.startDate) params.start_date = range.startDate.toISOString().slice(0, 10);
-      if (range.endDate) params.end_date = range.endDate.toISOString().slice(0, 10);
+      if (range.startDate) params.start_date = formatDateInTimezone(range.startDate);
+      if (range.endDate) params.end_date = formatDateInTimezone(range.endDate);
       params.exclude_cancel = excludeCancel;
       params.exclude_restocking = excludeRestocking;
       const res = await apiClient.get('/analytics/marketing/my-stats', { params });
@@ -249,8 +273,8 @@ export default function DashboardPage() {
       setError('');
       try {
         const params: any = {};
-        if (range.startDate) params.start_date = range.startDate.toISOString().slice(0, 10);
-        if (range.endDate) params.end_date = range.endDate.toISOString().slice(0, 10);
+        if (range.startDate) params.start_date = formatDateInTimezone(range.startDate);
+        if (range.endDate) params.end_date = formatDateInTimezone(range.endDate);
         params.exclude_cancel = excludeCancel;
         params.exclude_restocking = excludeRestocking;
         if (teamCode) params.team_code = teamCode;
@@ -610,13 +634,17 @@ export default function DashboardPage() {
             <Datepicker
               value={range}
               onChange={(val: any) => {
-                setRange({ startDate: val?.startDate, endDate: val?.endDate });
+                setRange({
+                  startDate: normalizePickerDate(val?.startDate),
+                  endDate: normalizePickerDate(val?.endDate),
+                });
               }}
               inputClassName="rounded-xl border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-indigo-300 shadow-sm"
               displayFormat="MM/DD/YYYY"
               separator=" – "
               toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
               containerClassName=""
+              popupClassName={(defaultClass) => `${defaultClass} z-50`}
             />
           </div>
           <div className="relative" ref={filterButtonRef}>
@@ -737,13 +765,17 @@ export default function DashboardPage() {
             <Datepicker
               value={range}
               onChange={(val: any) => {
-                setRange({ startDate: val?.startDate, endDate: val?.endDate });
+                setRange({
+                  startDate: normalizePickerDate(val?.startDate),
+                  endDate: normalizePickerDate(val?.endDate),
+                });
               }}
               inputClassName="rounded-xl border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-indigo-300 shadow-sm"
               displayFormat="MM/DD/YYYY"
               separator=" – "
               toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
               containerClassName=""
+              popupClassName={(defaultClass) => `${defaultClass} z-50`}
             />
           </div>
           <div className="relative" ref={filterButtonRef}>
@@ -853,13 +885,17 @@ export default function DashboardPage() {
             <Datepicker
               value={range}
               onChange={(val: any) => {
-                setRange({ startDate: val?.startDate, endDate: val?.endDate });
+                setRange({
+                  startDate: normalizePickerDate(val?.startDate),
+                  endDate: normalizePickerDate(val?.endDate),
+                });
               }}
               inputClassName="rounded-xl border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-indigo-300 shadow-sm"
               displayFormat="MM/DD/YYYY"
               separator=" – "
               toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
               containerClassName=""
+              popupClassName={(defaultClass) => `${defaultClass} z-50`}
             />
           </div>
           <div className="relative" ref={filterButtonRef}>
