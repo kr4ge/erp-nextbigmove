@@ -157,6 +157,9 @@ type OverviewResponse = {
     cod_fee_delivered_raw?: number;
     cogs_ec?: number;
     cogs_restocking?: number;
+    canceled_cod?: number;
+    restocking_cod?: number;
+    rts_cod?: number;
   }>;
   filters: { mappings: string[]; mappingsDisplayMap: Record<string, string> };
   selected: { start_date: string; end_date: string; mappings: string[] };
@@ -253,14 +256,29 @@ function computeCmRtsForecast(params: {
   return { revenueAfterRts, cmForecast, rtsFraction };
 }
 
+function computeAdjustedCod(
+  cod: number,
+  canceled: number,
+  restocking: number,
+  opts: { excludeCancel: boolean; excludeRestocking: boolean },
+) {
+  return (
+    cod -
+    (opts.excludeCancel ? canceled : 0) -
+    (opts.excludeRestocking ? restocking : 0)
+  );
+}
+
 function computeAdjustedGrossCod(
   kpis: OverviewResponse['kpis'],
   opts: { excludeCancel: boolean; excludeRestocking: boolean },
 ) {
-  const grossCod = kpis.gross_cod ?? 0;
-  const canceledCod = opts.excludeCancel ? kpis.canceled_cod ?? 0 : 0;
-  const restockingCod = opts.excludeRestocking ? kpis.restocking_cod ?? 0 : 0;
-  return grossCod - canceledCod - restockingCod;
+  return computeAdjustedCod(
+    kpis.gross_cod ?? 0,
+    kpis.canceled_cod ?? 0,
+    kpis.restocking_cod ?? 0,
+    opts,
+  );
 }
 
 function computeRtsPctFromCounts(counts?: OverviewResponse['counts'] | null) {
@@ -606,19 +624,27 @@ export default function SalesAnalyticsPage() {
   const sortableProducts = products.map((row, index) => {
     const norm = (row.mapping || '__null__').toLowerCase();
     const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
-    const codRaw = row.cod_raw ?? row.revenue ?? 0;
+    const baseCod = row.cod_raw ?? row.revenue ?? 0;
+    const canceledCod = row.canceled_cod ?? 0;
+    const restockingCod = row.restocking_cod ?? 0;
+    const codRaw = Math.max(
+      0,
+      computeAdjustedCod(baseCod, canceledCod, restockingCod, {
+        excludeCancel: excludeCanceled,
+        excludeRestocking: excludeRestocking,
+      }),
+    );
     const sf = row.sf_raw ?? row.sf_fees ?? 0;
     const ff = row.ff_raw ?? row.ff_fees ?? 0;
     const iF = row.if_raw ?? row.if_fees ?? 0;
     const codFeeDelivered = row.cod_fee_delivered_raw ?? row.cod_fee_delivered ?? 0;
-    const cogsTotal = row.cogs ?? 0;
-    const cogsCanceled = row.cogs_ec != null ? Math.max(0, cogsTotal - row.cogs_ec) : 0;
+    const cogsBase = row.cogs ?? 0;
+    const cogsCanceled = row.cogs_ec != null ? Math.max(0, cogsBase - row.cogs_ec) : 0;
     const cogsRestocking = row.cogs_restocking ?? 0;
-    const cogsAdjusted =
-      cogsTotal -
-      (excludeCanceled ? cogsCanceled : 0) -
-      (excludeRestocking ? cogsRestocking : 0);
     const cogsRts = row.cogs_rts ?? 0;
+    // row.cogs already respects excludeCanceled/excludeRestocking (and excludeRts from backend)
+    // For CM RTS% we match KPI by keeping cancel/restocking applied and only undo excludeRts.
+    const cogsAdjusted = cogsBase + (excludeRts ? cogsRts : 0);
     const forecast = computeCmRtsForecast({
       codRaw,
       adSpend: row.ad_spend ?? 0,
@@ -968,7 +994,7 @@ export default function SalesAnalyticsPage() {
         </div>
         <div className="flex justify-between text-slate-800">
           <span>RTS forecast ({rtsForecastSafe}%)</span>
-          <span>{neg((kpis.gross_cod ?? 0) * forecast.rtsFraction)}</span>
+          <span>{neg(adjustedGrossCod * forecast.rtsFraction)}</span>
         </div>
         <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
           <span>Revenue after RTS</span>

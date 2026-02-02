@@ -85,6 +85,9 @@ type ProductRow = {
   cogs_ec: number; // COGS excluding canceled
   cogs_rts: number;
   cogs_restocking: number;
+  canceled_cod: number;
+  restocking_cod: number;
+  rts_cod: number;
 };
 
 @Injectable()
@@ -343,6 +346,9 @@ export class SalesAnalyticsService {
       cogs_ec: cogs - cogsCanceled, // exclude canceled only
       cogs_rts: cogsRts,
       cogs_restocking: this.toNumber(sum?._sum?.cogsRestockingPos),
+      canceled_cod: canceledCod,
+      restocking_cod: restockingCod,
+      rts_cod: rtsCod,
     };
   }
 
