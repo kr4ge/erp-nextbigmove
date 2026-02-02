@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { SectionCard } from '@/components/ui/section-card';
@@ -153,10 +152,6 @@ export default function RolesPage() {
   if (!canManage) {
     return (
       <div className="space-y-6">
-        <PageHeader
-          title="Roles"
-          description="Create and manage roles for this tenant."
-        />
         <Card className="py-12 text-center text-[#475569]">
           You don&apos;t have permission to manage roles.
         </Card>
@@ -166,11 +161,6 @@ export default function RolesPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Roles & Permissions"
-        description="Create tenant-specific roles or use defaults; assign permissions granularly."
-      />
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Existing Roles */}
         <div className="lg:col-span-2">

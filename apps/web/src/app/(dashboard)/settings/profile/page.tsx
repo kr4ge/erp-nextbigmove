@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
 import { FormInput } from '@/components/ui/form-input';
 import { Button } from '@/components/ui/button';
@@ -295,11 +294,6 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Profile"
-        description="Update your personal details and credentials."
-      />
-
       {error && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}

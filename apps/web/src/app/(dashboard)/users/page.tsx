@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FormInput } from '@/components/ui/form-input';
@@ -295,7 +294,7 @@ export default function UsersPage() {
         id: 'last_login',
         header: 'Last Login',
         cell: ({ row }) => (
-          <span className="text-sm text-[#475569]">
+          <span className="text-sm text-[#475569] whitespace-nowrap">
             {formatLastLogin(row.original.lastLoginAt)}
           </span>
         ),
@@ -304,27 +303,29 @@ export default function UsersPage() {
         id: 'actions',
         header: '',
         cell: ({ row }) => (
-          <DropdownMenu>
-            <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
-              <MoreHorizontal className="h-4 w-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-36">
-              <DropdownMenuItem onClick={() => openEditModal(row.original)}>
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  const confirmed = window.confirm(
-                    `Delete ${row.original.firstName} ${row.original.lastName}?`,
-                  );
-                  if (confirmed) deleteMutation.mutate(row.original.id);
-                }}
-                className="text-rose-600 focus:text-rose-600"
-              >
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex w-full justify-end">
+            <DropdownMenu>
+              <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+                <MoreHorizontal className="h-4 w-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-36">
+                <DropdownMenuItem onClick={() => openEditModal(row.original)}>
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    const confirmed = window.confirm(
+                      `Delete ${row.original.firstName} ${row.original.lastName}?`,
+                    );
+                    if (confirmed) deleteMutation.mutate(row.original.id);
+                  }}
+                  className="text-rose-600 focus:text-rose-600"
+                >
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         ),
       },
     ],
@@ -350,10 +351,6 @@ export default function UsersPage() {
   if (!canManage) {
     return (
       <div className="space-y-6">
-        <PageHeader
-          title="Users"
-          description="Manage users for this tenant."
-        />
         <Card className="py-12 text-center text-[#475569]">
           You don&apos;t have permission to manage users.
         </Card>
@@ -363,11 +360,6 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Users"
-        description="Tenant owner and admins can invite, edit, or remove users and set their default team."
-      />
-
       <Card className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-slate-600">

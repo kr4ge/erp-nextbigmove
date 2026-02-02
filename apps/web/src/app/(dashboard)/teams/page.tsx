@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import apiClient from '@/lib/api-client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { SectionCard } from '@/components/ui/section-card';
@@ -130,10 +129,6 @@ export default function TeamsPage() {
   if (!canManage) {
     return (
       <div className="space-y-6">
-        <PageHeader
-          title="Teams"
-          description="Create and manage teams for this tenant."
-        />
         <Card className="py-12 text-center text-[#475569]">
           You don&apos;t have permission to manage teams.
         </Card>
@@ -143,11 +138,6 @@ export default function TeamsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Teams"
-        description="Create and manage teams for this tenant. Admins can switch to 'All teams' to see everything without a specific team scope."
-      />
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Existing Teams */}
         <div className="lg:col-span-2">
