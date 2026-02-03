@@ -45,7 +45,6 @@ export class WorkflowExecutionResponseDto {
   metaFetched: number;
   posFetched: number;
   errors: any[]; // Array of error objects
-  statusLabel?: string;
   startedAt?: Date;
   completedAt?: Date;
   duration?: number; // milliseconds
@@ -65,10 +64,6 @@ export class WorkflowExecutionResponseDto {
     this.metaFetched = execution.metaFetched;
     this.posFetched = execution.posFetched;
     this.errors = execution.errors || [];
-    this.statusLabel =
-      execution.status === 'COMPLETED' && this.errors.length > 0
-        ? 'COMPLETED_WITH_ERRORS'
-        : execution.status;
     this.startedAt = execution.startedAt;
     this.completedAt = execution.completedAt;
     this.duration = execution.duration;

@@ -18,41 +18,6 @@ dayjs.extend(timezone);
  */
 export class PancakePosProvider extends BaseIntegrationProvider {
   private readonly API_BASE = 'https://pos.pages.fm/api/v1';
-  private readonly RETRY_BACKOFF_MS = [2000, 5000, 10000];
-
-  private async fetchWithRetry(url: string, options?: RequestInit): Promise<Response> {
-    let attempt = 0;
-    let lastError: any;
-
-    while (true) {
-      try {
-        const response = await fetch(url, options);
-
-        if (response.ok) {
-          return response;
-        }
-
-        const status = response.status;
-        const retryable = status === 429 || status >= 500;
-
-        if (!retryable || attempt >= this.RETRY_BACKOFF_MS.length) {
-          return response;
-        }
-
-        const delayMs = this.RETRY_BACKOFF_MS[attempt];
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        attempt += 1;
-      } catch (error) {
-        lastError = error;
-        if (attempt >= this.RETRY_BACKOFF_MS.length) {
-          throw lastError;
-        }
-        const delayMs = this.RETRY_BACKOFF_MS[attempt];
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        attempt += 1;
-      }
-    }
-  }
 
   /**
    * Test connection to Pancake POS API
@@ -195,15 +160,13 @@ export class PancakePosProvider extends BaseIntegrationProvider {
           page_number: currentPage.toString(),
         });
 
-        const response = await this.fetchWithRetry(`${url}?${params.toString()}`);
+        const response = await fetch(`${url}?${params.toString()}`);
 
         if (!response.ok) {
           const error = await response.text();
-          const err = new Error(
+          throw new Error(
             error || `Failed to fetch orders: ${response.statusText}`,
           );
-          (err as any).status = response.status;
-          throw err;
         }
 
         const data = await response.json();

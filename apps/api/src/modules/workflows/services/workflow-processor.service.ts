@@ -9,17 +9,11 @@ import { PancakePosProvider } from '../../integrations/providers/pancake-pos.pro
 import { MetaInsightService } from '../../integrations/services/meta-insight.service';
 import { PosOrderService } from '../../integrations/services/pos-order.service';
 import { DateRangeService } from './date-range.service';
-import { IntegrationStatus, WorkflowExecutionStatus } from '@prisma/client';
+import { WorkflowExecutionStatus } from '@prisma/client';
 import { WorkflowExecutionGateway } from '../gateways/workflow-execution.gateway';
 import { WorkflowLogService } from './workflow-log.service';
 import { ReconcileMarketingService } from './reconcile-marketing.service';
 import { ReconcileSalesService } from './reconcile-sales.service';
-import * as dayjs from 'dayjs';
-import * as utc from 'dayjs/plugin/utc';
-import * as timezone from 'dayjs/plugin/timezone';
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
 
 interface WorkflowExecutionContext {
   executionId: string;
@@ -60,7 +54,7 @@ export class WorkflowProcessorService {
   /**
    * Main workflow execution processor
    * Processes one date at a time, fetching Meta first then POS
-   * Best-effort: logs errors and continues
+   * Fail-fast: cancels on first error
    */
   async processWorkflowExecution(executionId: string): Promise<void> {
     const execution = await this.prisma.workflowExecution.findUnique({
@@ -216,54 +210,6 @@ export class WorkflowProcessorService {
           return;
         }
 
-        if (!this.isValidDateString(date)) {
-          const errorObj: ExecutionError = {
-            date,
-            source: 'validation',
-            error: `Invalid date format: ${date}`,
-          };
-          errors.push(errorObj);
-          this.emitAndLog(executionId, 'execution:error', context.tenantId, {
-            executionId,
-            date,
-            source: 'validation',
-            error: errorObj.error,
-            timestamp: new Date().toISOString(),
-          }, 'error', `Invalid date format for ${date}`);
-
-          await this.prisma.workflowExecution.update({
-            where: { id: executionId },
-            data: { daysProcessed: { increment: 1 } },
-          });
-          completedDays = currentDay;
-          incrementUnits(unitsPerDay, date);
-          continue;
-        }
-
-        if (this.isFutureDate(date)) {
-          const errorObj: ExecutionError = {
-            date,
-            source: 'validation',
-            error: `Date is in the future: ${date}`,
-          };
-          errors.push(errorObj);
-          this.emitAndLog(executionId, 'execution:error', context.tenantId, {
-            executionId,
-            date,
-            source: 'validation',
-            error: errorObj.error,
-            timestamp: new Date().toISOString(),
-          }, 'warn', `Skipping future date ${date}`);
-
-          await this.prisma.workflowExecution.update({
-            where: { id: executionId },
-            data: { daysProcessed: { increment: 1 } },
-          });
-          completedDays = currentDay;
-          incrementUnits(unitsPerDay, date);
-          continue;
-        }
-
         this.logger.log(`Processing date ${date} for execution ${executionId}`);
         this.emitAndLog(executionId, 'execution:date_started', context.tenantId, {
           executionId,
@@ -276,12 +222,9 @@ export class WorkflowProcessorService {
         // Fetch Meta ads if enabled
         if (metaEnabled) {
           try {
-            const metaErrors = await this.fetchMetaForDate(context, date, () =>
+            await this.fetchMetaForDate(context, date, () =>
               incrementUnits(1, date),
             );
-            if (metaErrors.length > 0) {
-              errors.push(...metaErrors);
-            }
             if (await checkCancellation(date)) {
               return;
             }
@@ -292,25 +235,27 @@ export class WorkflowProcessorService {
               error: error.message,
             };
             errors.push(errorObj);
-            this.emitAndLog(executionId, 'execution:error', context.tenantId, {
+
+            // Fail-fast: cancel workflow on first error
+            await this.failExecution(executionId, errors, date);
+            this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
               executionId,
               date,
               error: error.message,
               source: 'meta',
               timestamp: new Date().toISOString(),
             }, 'error', `Meta fetch failed on ${date}: ${error.message}`);
+            await this.clearExecutionLogs(executionId, context.tenantId);
+            return;
           }
         }
 
         // Fetch POS if enabled
         if (posEnabled) {
           try {
-            const posErrors = await this.fetchPosForDate(context, date, () =>
+            await this.fetchPosForDate(context, date, () =>
               incrementUnits(1, date),
             );
-            if (posErrors.length > 0) {
-              errors.push(...posErrors);
-            }
             if (await checkCancellation(date)) {
               return;
             }
@@ -321,13 +266,18 @@ export class WorkflowProcessorService {
               error: error.message,
             };
             errors.push(errorObj);
-            this.emitAndLog(executionId, 'execution:error', context.tenantId, {
+
+            // Fail-fast: cancel workflow on first error
+            await this.failExecution(executionId, errors, date);
+            this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
               executionId,
               date,
               error: error.message,
               source: 'pos',
               timestamp: new Date().toISOString(),
             }, 'error', `POS fetch failed on ${date}: ${error.message}`);
+            await this.clearExecutionLogs(executionId, context.tenantId);
+            return;
           }
         }
 
@@ -345,13 +295,16 @@ export class WorkflowProcessorService {
             error: (error as Error).message,
           };
           errors.push(errorObj);
-          this.emitAndLog(executionId, 'execution:error', context.tenantId, {
+          await this.failExecution(executionId, errors, date);
+          this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
             executionId,
             date,
             error: (error as Error).message,
             source: 'reconcile',
             timestamp: new Date().toISOString(),
           }, 'error', `Reconciliation failed on ${date}: ${(error as Error).message}`);
+          await this.clearExecutionLogs(executionId, context.tenantId);
+          return;
         }
 
         // Aggregate sales (campaign-level) after reconcile_marketing
@@ -380,13 +333,16 @@ export class WorkflowProcessorService {
             error: (error as Error).message,
           };
           errors.push(errorObj);
-          this.emitAndLog(executionId, 'execution:error', context.tenantId, {
+          await this.failExecution(executionId, errors, date);
+          this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
             executionId,
             date,
             error: (error as Error).message,
             source: 'reconcile_sales',
             timestamp: new Date().toISOString(),
           }, 'error', `Reconcile sales failed on ${date}: ${(error as Error).message}`);
+          await this.clearExecutionLogs(executionId, context.tenantId);
+          return;
         }
 
         // Update progress
@@ -411,38 +367,25 @@ export class WorkflowProcessorService {
         return;
       }
 
-      // Complete execution (with or without errors)
-      const completedAt = new Date();
-      const startedAt = execution.startedAt || new Date();
-      const duration = completedAt.getTime() - startedAt.getTime();
-      const hasErrors = errors.length > 0;
+      // Complete execution successfully
+    const completedAt = new Date();
+    const startedAt = execution.startedAt || new Date();
+    const duration = completedAt.getTime() - startedAt.getTime();
 
-      await this.updateExecutionStatus(executionId, WorkflowExecutionStatus.COMPLETED, {
-        completedAt,
+    await this.updateExecutionStatus(executionId, WorkflowExecutionStatus.COMPLETED, {
+      completedAt,
+      duration,
+      errors,
+    });
+
+      this.logger.log(`Workflow execution ${executionId} completed successfully`);
+      this.emitAndLog(executionId, 'execution:completed', context.tenantId, {
+        executionId,
+        workflowId: context.workflowId,
+        tenantId: context.tenantId,
         duration,
-        errors,
-      });
-
-      if (hasErrors) {
-        this.logger.warn(`Workflow execution ${executionId} completed with ${errors.length} errors`);
-        this.emitAndLog(executionId, 'execution:completed_with_errors', context.tenantId, {
-          executionId,
-          workflowId: context.workflowId,
-          tenantId: context.tenantId,
-          duration,
-          errorCount: errors.length,
-          timestamp: new Date().toISOString(),
-        }, 'warn', `Execution completed with ${errors.length} errors in ${duration}ms`);
-      } else {
-        this.logger.log(`Workflow execution ${executionId} completed successfully`);
-        this.emitAndLog(executionId, 'execution:completed', context.tenantId, {
-          executionId,
-          workflowId: context.workflowId,
-          tenantId: context.tenantId,
-          duration,
-          timestamp: new Date().toISOString(),
-        }, 'info', `Execution completed in ${duration}ms`);
-      }
+        timestamp: new Date().toISOString(),
+      }, 'info', `Execution completed in ${duration}ms`);
       await this.clearExecutionLogs(executionId, context.tenantId);
     } catch (error) {
       this.logger.error(`Workflow execution ${executionId} failed: ${error.message}`, error.stack);
@@ -488,12 +431,10 @@ export class WorkflowProcessorService {
     context: WorkflowExecutionContext,
     date: string,
     onAccountComplete?: () => void,
-  ): Promise<ExecutionError[]> {
+  ): Promise<void> {
     // Make sure CLS has tenant for integration service
     this.cls.set('tenantId', context.tenantId);
     this.cls.set('userRole', 'SYSTEM');
-
-    const errors: ExecutionError[] = [];
 
     // Get all Meta ad accounts for tenant
     const metaAccounts = await this.prisma.metaAdAccount.findMany({
@@ -503,7 +444,7 @@ export class WorkflowProcessorService {
 
     if (metaAccounts.length === 0) {
       this.logger.warn(`No Meta ad accounts found for tenant ${context.tenantId}`);
-      return errors;
+      return;
     }
 
     // Get rate limit config
@@ -513,55 +454,10 @@ export class WorkflowProcessorService {
     for (const account of metaAccounts) {
       if (await this.isCancelled(context.executionId)) {
         this.logger.warn(`Execution ${context.executionId} cancelled during Meta fetch`);
-        return errors;
+        return;
       }
 
       this.logger.log(`Fetching Meta insights for account ${account.accountId} on ${date}`);
-
-      const registerError = (
-        errorMessage: string,
-        level: 'info' | 'warn' | 'error' = 'error',
-      ) => {
-        const errorObj: ExecutionError = {
-          date,
-          source: 'meta',
-          accountId: account.accountId,
-          error: errorMessage,
-        };
-        errors.push(errorObj);
-        this.emitAndLog(context.executionId, 'execution:error', context.tenantId, {
-          executionId: context.executionId,
-          date,
-          source: 'meta',
-          accountId: account.accountId,
-          error: errorMessage,
-          timestamp: new Date().toISOString(),
-        }, level, `Meta error for ${account.accountId} on ${date}: ${errorMessage}`);
-      };
-
-      if (!account.accountId) {
-        registerError('Missing Meta account ID', 'error');
-        onAccountComplete?.();
-        continue;
-      }
-
-      if (account.enabled === false || (account.status && account.status !== IntegrationStatus.ACTIVE)) {
-        registerError('Meta account is not active or disabled', 'warn');
-        onAccountComplete?.();
-        continue;
-      }
-
-      if (account.accountStatus && account.accountStatus !== 1) {
-        registerError(`Meta account status is inactive (${account.accountStatus})`, 'warn');
-        onAccountComplete?.();
-        continue;
-      }
-
-      if (account.integration?.enabled === false || account.integration?.status !== IntegrationStatus.ACTIVE) {
-        registerError('Integration is not active or disabled', 'warn');
-        onAccountComplete?.();
-        continue;
-      }
 
       // Get decrypted credentials
       let credentials: any;
@@ -574,15 +470,7 @@ export class WorkflowProcessorService {
         this.logger.error(
           `Failed to decrypt credentials for integration ${account.integrationId} (tenant ${context.tenantId}): ${err?.message}`,
         );
-        registerError(`Failed to decrypt credentials: ${err?.message || 'unknown error'}`, 'error');
-        onAccountComplete?.();
-        continue;
-      }
-
-      if (!credentials?.accessToken) {
-        registerError('Missing Meta access token', 'error');
-        onAccountComplete?.();
-        continue;
+        throw err;
       }
 
       // Create provider
@@ -599,15 +487,7 @@ export class WorkflowProcessorService {
           : 1;
 
       // Fetch insights
-      let rawInsights: any[] = [];
-      try {
-        rawInsights = await provider.fetchAdInsights(account.accountId, date);
-      } catch (error) {
-        registerError((error as Error).message || 'Meta fetch failed', 'error');
-        onAccountComplete?.();
-        await new Promise(resolve => setTimeout(resolve, metaDelayMs));
-        continue;
-      }
+      const rawInsights = await provider.fetchAdInsights(account.accountId, date);
 
       let upserted = 0;
       if (rawInsights.length > 0) {
@@ -646,8 +526,6 @@ export class WorkflowProcessorService {
       // Rate limiting delay
       await new Promise(resolve => setTimeout(resolve, metaDelayMs));
     }
-
-    return errors;
   }
 
   /**
@@ -657,21 +535,18 @@ export class WorkflowProcessorService {
     context: WorkflowExecutionContext,
     date: string,
     onStoreComplete?: () => void,
-  ): Promise<ExecutionError[]> {
+  ): Promise<void> {
     this.cls.set('tenantId', context.tenantId);
     this.cls.set('userRole', 'SYSTEM');
-
-    const errors: ExecutionError[] = [];
 
     // Get all POS stores for tenant
     const posStores = await this.prisma.posStore.findMany({
       where: { tenantId: context.tenantId, teamId: context.teamId || undefined },
-      include: { integration: true },
     });
 
     if (posStores.length === 0) {
       this.logger.warn(`No POS stores found for tenant ${context.tenantId}`);
-      return errors;
+      return;
     }
 
     // Get rate limit config
@@ -681,55 +556,10 @@ export class WorkflowProcessorService {
     for (const store of posStores) {
       if (await this.isCancelled(context.executionId)) {
         this.logger.warn(`Execution ${context.executionId} cancelled during POS fetch`);
-        return errors;
+        return;
       }
 
       this.logger.log(`Fetching POS orders for shop ${store.shopId} on ${date}`);
-
-      const registerError = (
-        errorMessage: string,
-        level: 'info' | 'warn' | 'error' = 'error',
-      ) => {
-        const errorObj: ExecutionError = {
-          date,
-          source: 'pos',
-          shopId: store.shopId,
-          error: errorMessage,
-        };
-        errors.push(errorObj);
-        this.emitAndLog(context.executionId, 'execution:error', context.tenantId, {
-          executionId: context.executionId,
-          date,
-          source: 'pos',
-          shopId: store.shopId,
-          error: errorMessage,
-          timestamp: new Date().toISOString(),
-        }, level, `POS error for ${store.shopId} on ${date}: ${errorMessage}`);
-      };
-
-      if (!store.shopId) {
-        registerError('Missing POS shop ID', 'error');
-        onStoreComplete?.();
-        continue;
-      }
-
-      if (!store.apiKey) {
-        registerError('Missing POS API key', 'error');
-        onStoreComplete?.();
-        continue;
-      }
-
-      if (store.enabled === false || (store.status && store.status !== IntegrationStatus.ACTIVE)) {
-        registerError('POS store is not active or disabled', 'warn');
-        onStoreComplete?.();
-        continue;
-      }
-
-      if (store.integration?.enabled === false || store.integration?.status !== IntegrationStatus.ACTIVE) {
-        registerError('Integration is not active or disabled', 'warn');
-        onStoreComplete?.();
-        continue;
-      }
 
       // Create provider
       const provider = this.providerFactory.createProvider(
@@ -739,17 +569,7 @@ export class WorkflowProcessorService {
       ) as PancakePosProvider;
 
       // Fetch orders
-      let rawOrders: any[] = [];
-      try {
-        rawOrders = await provider.fetchOrders(store.shopId, date);
-      } catch (error) {
-        registerError((error as Error).message || 'POS fetch failed', 'error');
-        onStoreComplete?.();
-        if (posDelayMs > 0) {
-          await new Promise(resolve => setTimeout(resolve, posDelayMs));
-        }
-        continue;
-      }
+      const rawOrders = await provider.fetchOrders(store.shopId, date);
 
       let upserted = 0;
       if (rawOrders.length > 0) {
@@ -787,8 +607,6 @@ export class WorkflowProcessorService {
         await new Promise(resolve => setTimeout(resolve, posDelayMs));
       }
     }
-
-    return errors;
   }
 
   /**
@@ -852,19 +670,6 @@ export class WorkflowProcessorService {
       select: { status: true },
     });
     return exec?.status === WorkflowExecutionStatus.CANCELLED;
-  }
-
-  private isValidDateString(date: string): boolean {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return false;
-    }
-    return dayjs.tz(date, 'Asia/Manila').isValid();
-  }
-
-  private isFutureDate(date: string): boolean {
-    const target = dayjs.tz(date, 'Asia/Manila').startOf('day');
-    const today = dayjs().tz('Asia/Manila').startOf('day');
-    return target.isAfter(today);
   }
 
   private emitAndLog(

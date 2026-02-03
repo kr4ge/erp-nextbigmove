@@ -12,49 +12,6 @@ import { IntegrationProvider } from '../dto/create-integration.dto';
  */
 export class MetaAdsProvider extends BaseIntegrationProvider {
   private readonly GRAPH_API_BASE = 'https://graph.facebook.com/v23.0';
-  private readonly RETRY_BACKOFF_MS = [2000, 5000, 10000];
-
-  private async fetchWithRetry(url: string): Promise<Response> {
-    let attempt = 0;
-    let lastError: any;
-
-    while (true) {
-      try {
-        const response = await fetch(url);
-
-        if (response.ok) {
-          return response;
-        }
-
-        const status = response.status;
-        const retryable = status === 429 || status >= 500;
-
-        if (!retryable || attempt >= this.RETRY_BACKOFF_MS.length) {
-          return response;
-        }
-
-        let delayMs = this.RETRY_BACKOFF_MS[attempt];
-
-        if (status === 429) {
-          const retryAfter = parseInt(response.headers.get('Retry-After') || '0', 10);
-          if (!Number.isNaN(retryAfter) && retryAfter > 0) {
-            delayMs = Math.max(delayMs, retryAfter * 1000);
-          }
-        }
-
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        attempt += 1;
-      } catch (error) {
-        lastError = error;
-        if (attempt >= this.RETRY_BACKOFF_MS.length) {
-          throw lastError;
-        }
-        const delayMs = this.RETRY_BACKOFF_MS[attempt];
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        attempt += 1;
-      }
-    }
-  }
 
   /**
    * Test connection to META Marketing API
@@ -224,16 +181,21 @@ export class MetaAdsProvider extends BaseIntegrationProvider {
       // Paginate through all ad insights using paging.next URL
       while (nextUrl) {
         const params = new URLSearchParams(nextParams);
-        const response = await this.fetchWithRetry(`${nextUrl}?${params.toString()}`);
+        const response = await fetch(`${nextUrl}?${params.toString()}`);
+
+        // Handle rate limiting (429)
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10);
+          await new Promise(resolve => setTimeout(resolve, Math.max(retryAfter, 1) * 1000));
+          continue;
+        }
 
         if (!response.ok) {
-          const error = await response.json().catch(() => null);
+          const error = await response.json();
           const errorMsg = error.error?.message || `Failed to fetch ad insights: ${response.statusText}`;
-          const err = new Error(
+          throw new Error(
             `Meta ad fetch failed for account ${accountId} (status ${response.status}): ${errorMsg}`,
           );
-          (err as any).status = response.status;
-          throw err;
         }
 
         const data = await response.json();
