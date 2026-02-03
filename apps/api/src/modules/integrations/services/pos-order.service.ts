@@ -550,7 +550,7 @@ export class PosOrderService {
 
   private computeUpsellBreakdown(order: any): any | null {
     const tags = order?.tags ?? null;
-    if (!this.hasUpsellTagInList(tags) && !order?.histories) {
+    if (!this.hasUpsellTagInList(tags)) {
       return null;
     }
 
@@ -564,6 +564,13 @@ export class PosOrderService {
       }
     }
     if (!Array.isArray(histories) || histories.length === 0) {
+      return null;
+    }
+
+    const entriesWithItems = histories.filter(
+      (entry: any) => isObject(entry) && Array.isArray(entry.items) && entry.items.length > 0,
+    );
+    if (entriesWithItems.length === 0) {
       return null;
     }
 
@@ -581,14 +588,11 @@ export class PosOrderService {
     let best: any = null;
     let bestRank: number | null = null;
 
-    histories.forEach((entry: any, idx: number) => {
+    entriesWithItems.forEach((entry: any, idx: number) => {
       if (!isObject(entry)) return;
 
-      const tagsNew = entry?.tags?.new ?? null;
-      if (!this.hasUpsellTagInList(tagsNew)) return;
-
       const itemTotals = this.computeUpsellItemsTotals(entry.items ?? null);
-      if (itemTotals.old <= 0 || itemTotals.new <= 0) return;
+      if (itemTotals.new <= 0) return;
 
       let discount = this.extractHistoryDiscount(entry);
       if (discount.old <= 0 && discount.new <= 0) {
@@ -606,8 +610,32 @@ export class PosOrderService {
 
       const shipping = this.extractHistoryAmount(entry, 'shipping_fee');
 
-      const originalAmount = itemTotals.old + shipping.old - discount.old;
-      const newAmount = itemTotals.new + shipping.new - discount.new;
+      const isReplacement = itemTotals.old > 0 && itemTotals.new > 0;
+      let itemTotalOld = itemTotals.old;
+      let itemTotalNew = itemTotals.new;
+
+      let originalAmount = 0;
+      let newAmount = 0;
+
+      if (!isReplacement) {
+        const orderCod = parseFloat(order?.cod || '0');
+        const hasShippingField = isObject(entry) && Object.prototype.hasOwnProperty.call(entry, 'shipping_fee');
+        const hasDiscountField = isObject(entry) && ['total_discount', 'general_discount', 'discount']
+          .some((key) => Object.prototype.hasOwnProperty.call(entry, key));
+        const hasDiscountValue = discount.old !== 0 || discount.new !== 0;
+        const useAdjustments = hasShippingField || hasDiscountField || hasDiscountValue;
+
+        if (useAdjustments) {
+          itemTotalOld = orderCod - itemTotalNew - shipping.new + discount.new;
+        } else {
+          itemTotalOld = orderCod - itemTotalNew;
+        }
+        originalAmount = itemTotalOld + shipping.old - discount.old;
+        newAmount = itemTotalOld + itemTotalNew + shipping.new - discount.new;
+      } else {
+        originalAmount = itemTotalOld + shipping.old - discount.old;
+        newAmount = itemTotalNew + shipping.new - discount.new;
+      }
 
       const updatedRaw = entry.updated_at ?? null;
       let rank = idx;
@@ -622,8 +650,8 @@ export class PosOrderService {
           flag: true,
           original_amount: originalAmount,
           new_amount: newAmount,
-          item_total_old: itemTotals.old,
-          item_total_new: itemTotals.new,
+          item_total_old: itemTotalOld,
+          item_total_new: itemTotalNew,
           shipping_old: shipping.old,
           shipping_new: shipping.new,
           discount_old: discount.old,
