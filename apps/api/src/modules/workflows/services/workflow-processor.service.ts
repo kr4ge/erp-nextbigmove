@@ -54,7 +54,7 @@ export class WorkflowProcessorService {
   /**
    * Main workflow execution processor
    * Processes one date at a time, fetching Meta first then POS
-   * Fail-fast: cancels on first error
+   * Best-effort: logs errors and continues
    */
   async processWorkflowExecution(executionId: string): Promise<void> {
     const execution = await this.prisma.workflowExecution.findUnique({
@@ -222,9 +222,12 @@ export class WorkflowProcessorService {
         // Fetch Meta ads if enabled
         if (metaEnabled) {
           try {
-            await this.fetchMetaForDate(context, date, () =>
+            const metaErrors = await this.fetchMetaForDate(context, date, () =>
               incrementUnits(1, date),
             );
+            if (metaErrors.length > 0) {
+              errors.push(...metaErrors);
+            }
             if (await checkCancellation(date)) {
               return;
             }
@@ -235,27 +238,25 @@ export class WorkflowProcessorService {
               error: error.message,
             };
             errors.push(errorObj);
-
-            // Fail-fast: cancel workflow on first error
-            await this.failExecution(executionId, errors, date);
-            this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
+            this.emitAndLog(executionId, 'execution:error', context.tenantId, {
               executionId,
               date,
               error: error.message,
               source: 'meta',
               timestamp: new Date().toISOString(),
             }, 'error', `Meta fetch failed on ${date}: ${error.message}`);
-            await this.clearExecutionLogs(executionId, context.tenantId);
-            return;
           }
         }
 
         // Fetch POS if enabled
         if (posEnabled) {
           try {
-            await this.fetchPosForDate(context, date, () =>
+            const posErrors = await this.fetchPosForDate(context, date, () =>
               incrementUnits(1, date),
             );
+            if (posErrors.length > 0) {
+              errors.push(...posErrors);
+            }
             if (await checkCancellation(date)) {
               return;
             }
@@ -266,22 +267,18 @@ export class WorkflowProcessorService {
               error: error.message,
             };
             errors.push(errorObj);
-
-            // Fail-fast: cancel workflow on first error
-            await this.failExecution(executionId, errors, date);
-            this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
+            this.emitAndLog(executionId, 'execution:error', context.tenantId, {
               executionId,
               date,
               error: error.message,
               source: 'pos',
               timestamp: new Date().toISOString(),
             }, 'error', `POS fetch failed on ${date}: ${error.message}`);
-            await this.clearExecutionLogs(executionId, context.tenantId);
-            return;
           }
         }
 
         // Reconcile marketing (ad-level) after both sources succeed
+        let reconcileOk = true;
         try {
           await this.reconcileMarketingService.reconcileDay(
             context.tenantId,
@@ -289,60 +286,65 @@ export class WorkflowProcessorService {
             context.teamId ?? null,
           );
         } catch (error) {
+          reconcileOk = false;
           const errorObj: ExecutionError = {
             date,
             source: 'reconcile',
             error: (error as Error).message,
           };
           errors.push(errorObj);
-          await this.failExecution(executionId, errors, date);
-          this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
+          this.emitAndLog(executionId, 'execution:error', context.tenantId, {
             executionId,
             date,
             error: (error as Error).message,
             source: 'reconcile',
             timestamp: new Date().toISOString(),
           }, 'error', `Reconciliation failed on ${date}: ${(error as Error).message}`);
-          await this.clearExecutionLogs(executionId, context.tenantId);
-          return;
         }
 
         // Aggregate sales (campaign-level) after reconcile_marketing
-        try {
-          await this.reconcileSalesService.aggregateDay(
-            context.tenantId,
-            date,
-            context.teamId ?? null,
-          );
-          // Notify listeners that marketing/sales data has been updated
-          this.executionGateway.emitTenantEvent(
-            context.tenantId,
-            context.teamId ?? null,
-            'marketing:updated',
-            {
-              tenantId: context.tenantId,
-              teamId: context.teamId ?? null,
+        if (reconcileOk) {
+          try {
+            await this.reconcileSalesService.aggregateDay(
+              context.tenantId,
+              date,
+              context.teamId ?? null,
+            );
+            // Notify listeners that marketing/sales data has been updated
+            this.executionGateway.emitTenantEvent(
+              context.tenantId,
+              context.teamId ?? null,
+              'marketing:updated',
+              {
+                tenantId: context.tenantId,
+                teamId: context.teamId ?? null,
+                date,
+                source: 'reconcile_sales',
+              },
+            );
+          } catch (error) {
+            const errorObj: ExecutionError = {
               date,
               source: 'reconcile_sales',
-            },
-          );
-        } catch (error) {
-          const errorObj: ExecutionError = {
-            date,
-            source: 'reconcile_sales',
-            error: (error as Error).message,
-          };
-          errors.push(errorObj);
-          await this.failExecution(executionId, errors, date);
-          this.emitAndLog(executionId, 'execution:failed', context.tenantId, {
+              error: (error as Error).message,
+            };
+            errors.push(errorObj);
+            this.emitAndLog(executionId, 'execution:error', context.tenantId, {
+              executionId,
+              date,
+              error: (error as Error).message,
+              source: 'reconcile_sales',
+              timestamp: new Date().toISOString(),
+            }, 'error', `Reconcile sales failed on ${date}: ${(error as Error).message}`);
+          }
+        } else {
+          this.emitAndLog(executionId, 'execution:reconcile_sales_skipped', context.tenantId, {
             executionId,
             date,
-            error: (error as Error).message,
             source: 'reconcile_sales',
+            reason: 'Reconcile marketing failed',
             timestamp: new Date().toISOString(),
-          }, 'error', `Reconcile sales failed on ${date}: ${(error as Error).message}`);
-          await this.clearExecutionLogs(executionId, context.tenantId);
-          return;
+          }, 'warn', `Reconcile sales skipped on ${date} (reconcile failed)`);
         }
 
         // Update progress
@@ -367,25 +369,42 @@ export class WorkflowProcessorService {
         return;
       }
 
-      // Complete execution successfully
-    const completedAt = new Date();
-    const startedAt = execution.startedAt || new Date();
-    const duration = completedAt.getTime() - startedAt.getTime();
+      // Complete execution (with or without errors)
+      const completedAt = new Date();
+      const startedAt = execution.startedAt || new Date();
+      const duration = completedAt.getTime() - startedAt.getTime();
+      const hasErrors = errors.length > 0;
 
-    await this.updateExecutionStatus(executionId, WorkflowExecutionStatus.COMPLETED, {
-      completedAt,
-      duration,
-      errors,
-    });
-
-      this.logger.log(`Workflow execution ${executionId} completed successfully`);
-      this.emitAndLog(executionId, 'execution:completed', context.tenantId, {
-        executionId,
-        workflowId: context.workflowId,
-        tenantId: context.tenantId,
+      await this.updateExecutionStatus(executionId, WorkflowExecutionStatus.COMPLETED, {
+        completedAt,
         duration,
-        timestamp: new Date().toISOString(),
-      }, 'info', `Execution completed in ${duration}ms`);
+        errors,
+      });
+
+      if (hasErrors) {
+        const summary = this.summarizeErrors(errors);
+        this.logger.warn(
+          `Workflow execution ${executionId} completed with ${errors.length} errors${summary.message ? ` (${summary.message})` : ''}`,
+        );
+        this.emitAndLog(executionId, 'execution:completed_with_errors', context.tenantId, {
+          executionId,
+          workflowId: context.workflowId,
+          tenantId: context.tenantId,
+          duration,
+          errorCount: errors.length,
+          errorSummary: summary,
+          timestamp: new Date().toISOString(),
+        }, 'warn', `Execution completed with ${errors.length} errors in ${duration}ms`);
+      } else {
+        this.logger.log(`Workflow execution ${executionId} completed successfully`);
+        this.emitAndLog(executionId, 'execution:completed', context.tenantId, {
+          executionId,
+          workflowId: context.workflowId,
+          tenantId: context.tenantId,
+          duration,
+          timestamp: new Date().toISOString(),
+        }, 'info', `Execution completed in ${duration}ms`);
+      }
       await this.clearExecutionLogs(executionId, context.tenantId);
     } catch (error) {
       this.logger.error(`Workflow execution ${executionId} failed: ${error.message}`, error.stack);
@@ -431,10 +450,12 @@ export class WorkflowProcessorService {
     context: WorkflowExecutionContext,
     date: string,
     onAccountComplete?: () => void,
-  ): Promise<void> {
+  ): Promise<ExecutionError[]> {
     // Make sure CLS has tenant for integration service
     this.cls.set('tenantId', context.tenantId);
     this.cls.set('userRole', 'SYSTEM');
+
+    const errors: ExecutionError[] = [];
 
     // Get all Meta ad accounts for tenant
     const metaAccounts = await this.prisma.metaAdAccount.findMany({
@@ -444,7 +465,7 @@ export class WorkflowProcessorService {
 
     if (metaAccounts.length === 0) {
       this.logger.warn(`No Meta ad accounts found for tenant ${context.tenantId}`);
-      return;
+      return errors;
     }
 
     // Get rate limit config
@@ -454,10 +475,32 @@ export class WorkflowProcessorService {
     for (const account of metaAccounts) {
       if (await this.isCancelled(context.executionId)) {
         this.logger.warn(`Execution ${context.executionId} cancelled during Meta fetch`);
-        return;
+        return errors;
       }
 
       this.logger.log(`Fetching Meta insights for account ${account.accountId} on ${date}`);
+
+      const registerError = (message: string, metaError?: any) => {
+        const errorObj: ExecutionError = {
+          date,
+          source: 'meta',
+          accountId: account.accountId,
+          error: message,
+        };
+        if (metaError !== undefined) {
+          (errorObj as any).metaError = metaError;
+        }
+        errors.push(errorObj);
+        this.emitAndLog(context.executionId, 'execution:error', context.tenantId, {
+          executionId: context.executionId,
+          date,
+          source: 'meta',
+          accountId: account.accountId,
+          error: message,
+          metaError,
+          timestamp: new Date().toISOString(),
+        }, 'error', `Meta fetch failed for ${account.accountId} on ${date}: ${message}`);
+      };
 
       // Get decrypted credentials
       let credentials: any;
@@ -470,7 +513,9 @@ export class WorkflowProcessorService {
         this.logger.error(
           `Failed to decrypt credentials for integration ${account.integrationId} (tenant ${context.tenantId}): ${err?.message}`,
         );
-        throw err;
+        registerError(`Failed to decrypt credentials: ${err?.message || 'unknown error'}`);
+        onAccountComplete?.();
+        continue;
       }
 
       // Create provider
@@ -487,7 +532,15 @@ export class WorkflowProcessorService {
           : 1;
 
       // Fetch insights
-      const rawInsights = await provider.fetchAdInsights(account.accountId, date);
+      let rawInsights: any[] = [];
+      try {
+        rawInsights = await provider.fetchAdInsights(account.accountId, date);
+      } catch (err: any) {
+        registerError(err?.message || 'Meta fetch failed', err?.metaError);
+        onAccountComplete?.();
+        await new Promise(resolve => setTimeout(resolve, metaDelayMs));
+        continue;
+      }
 
       let upserted = 0;
       if (rawInsights.length > 0) {
@@ -526,6 +579,8 @@ export class WorkflowProcessorService {
       // Rate limiting delay
       await new Promise(resolve => setTimeout(resolve, metaDelayMs));
     }
+
+    return errors;
   }
 
   /**
@@ -535,9 +590,11 @@ export class WorkflowProcessorService {
     context: WorkflowExecutionContext,
     date: string,
     onStoreComplete?: () => void,
-  ): Promise<void> {
+  ): Promise<ExecutionError[]> {
     this.cls.set('tenantId', context.tenantId);
     this.cls.set('userRole', 'SYSTEM');
+
+    const errors: ExecutionError[] = [];
 
     // Get all POS stores for tenant
     const posStores = await this.prisma.posStore.findMany({
@@ -546,7 +603,7 @@ export class WorkflowProcessorService {
 
     if (posStores.length === 0) {
       this.logger.warn(`No POS stores found for tenant ${context.tenantId}`);
-      return;
+      return errors;
     }
 
     // Get rate limit config
@@ -556,10 +613,28 @@ export class WorkflowProcessorService {
     for (const store of posStores) {
       if (await this.isCancelled(context.executionId)) {
         this.logger.warn(`Execution ${context.executionId} cancelled during POS fetch`);
-        return;
+        return errors;
       }
 
       this.logger.log(`Fetching POS orders for shop ${store.shopId} on ${date}`);
+
+      const registerError = (message: string) => {
+        const errorObj: ExecutionError = {
+          date,
+          source: 'pos',
+          shopId: store.shopId,
+          error: message,
+        };
+        errors.push(errorObj);
+        this.emitAndLog(context.executionId, 'execution:error', context.tenantId, {
+          executionId: context.executionId,
+          date,
+          source: 'pos',
+          shopId: store.shopId,
+          error: message,
+          timestamp: new Date().toISOString(),
+        }, 'error', `POS fetch failed for ${store.shopId} on ${date}: ${message}`);
+      };
 
       // Create provider
       const provider = this.providerFactory.createProvider(
@@ -569,7 +644,17 @@ export class WorkflowProcessorService {
       ) as PancakePosProvider;
 
       // Fetch orders
-      const rawOrders = await provider.fetchOrders(store.shopId, date);
+      let rawOrders: any[] = [];
+      try {
+        rawOrders = await provider.fetchOrders(store.shopId, date);
+      } catch (err: any) {
+        registerError(err?.message || 'POS fetch failed');
+        onStoreComplete?.();
+        if (posDelayMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, posDelayMs));
+        }
+        continue;
+      }
 
       let upserted = 0;
       if (rawOrders.length > 0) {
@@ -607,6 +692,8 @@ export class WorkflowProcessorService {
         await new Promise(resolve => setTimeout(resolve, posDelayMs));
       }
     }
+
+    return errors;
   }
 
   /**
@@ -689,5 +776,38 @@ export class WorkflowProcessorService {
       message: message || event,
       metadata: payload,
     });
+  }
+
+  private summarizeErrors(errors: ExecutionError[]) {
+    const metaAccounts = new Set<string>();
+    const posShops = new Set<string>();
+    const counts: Record<string, number> = {};
+
+    for (const err of errors) {
+      counts[err.source] = (counts[err.source] || 0) + 1;
+      if (err.source === 'meta' && err.accountId) {
+        metaAccounts.add(err.accountId);
+      }
+      if (err.source === 'pos' && err.shopId) {
+        posShops.add(err.shopId);
+      }
+    }
+
+    const parts: string[] = [];
+    if (counts.meta) {
+      const list = Array.from(metaAccounts).slice(0, 5).join(', ');
+      parts.push(`meta ${counts.meta}${list ? ` (accounts: ${list}${metaAccounts.size > 5 ? ', ...' : ''})` : ''}`);
+    }
+    if (counts.pos) {
+      const list = Array.from(posShops).slice(0, 5).join(', ');
+      parts.push(`pos ${counts.pos}${list ? ` (shops: ${list}${posShops.size > 5 ? ', ...' : ''})` : ''}`);
+    }
+
+    return {
+      counts,
+      metaAccounts: Array.from(metaAccounts),
+      posShops: Array.from(posShops),
+      message: parts.join('; '),
+    };
   }
 }
