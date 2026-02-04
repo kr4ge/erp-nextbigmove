@@ -27,6 +27,7 @@ interface PosOrderData {
   tags: { id: string; name: string }[];
   customerCare?: string;
   marketer?: string;
+  salesAssignee?: string | null;
   statusHistory?: any[] | null;
   rtsReason?: { l1: string | null; l2: string | null; l3: string | null } | null;
   upsellBreakdown?: any | null;
@@ -285,6 +286,52 @@ export class PosOrderService {
 
     const statusHistory = Array.isArray(rawOrder.status_history) ? rawOrder.status_history : null;
 
+    // Sales assignee: prefer assigning_seller.fb_id, fallback to latest status_history with status==1
+    let salesAssignee: string | null = null;
+    const assigningSellerRaw = rawOrder.assigning_seller ?? null;
+    if (assigningSellerRaw && typeof assigningSellerRaw === 'object') {
+      const fbId = assigningSellerRaw.fb_id ?? assigningSellerRaw.fbId ?? null;
+      if (fbId) {
+        salesAssignee = fbId.toString();
+      }
+    } else if (typeof assigningSellerRaw === 'string') {
+      const trimmed = assigningSellerRaw.trim();
+      if (trimmed) salesAssignee = trimmed;
+    }
+
+    if (!salesAssignee && Array.isArray(statusHistory)) {
+      let latestEntry: any = null;
+      let latestTs = -Infinity;
+      let latestIdx = -1;
+      statusHistory.forEach((entry: any, idx: number) => {
+        if (!entry || entry.status !== 1) return;
+        const updatedRaw = entry.updated_at ?? null;
+        const ts = typeof updatedRaw === 'string' ? Date.parse(updatedRaw) : NaN;
+        if (!isNaN(ts)) {
+          if (ts > latestTs) {
+            latestTs = ts;
+            latestEntry = entry;
+          }
+          return;
+        }
+        if (latestTs === -Infinity && idx > latestIdx) {
+          latestIdx = idx;
+          latestEntry = entry;
+        }
+      });
+
+      if (latestEntry) {
+        const fbId =
+          latestEntry.editor_fb ??
+          latestEntry.editor?.fb_id ??
+          latestEntry.editor?.fbId ??
+          null;
+        if (fbId) {
+          salesAssignee = fbId.toString();
+        }
+      }
+    }
+
     // Upsell breakdown from histories (if any) looking for UPSELL tag
     const upsellBreakdown = this.computeUpsellBreakdown(rawOrder);
 
@@ -345,6 +392,7 @@ export class PosOrderService {
       tags,
       customerCare,
       marketer,
+      salesAssignee,
       statusHistory,
       rtsReason,
       upsellBreakdown,
@@ -401,6 +449,7 @@ export class PosOrderService {
           tags: this.jsonOrDbNull(order.tags),
           customerCare: order.customerCare,
           marketer: order.marketer,
+          salesAssignee: order.salesAssignee,
           statusHistory: this.jsonOrDbNull(order.statusHistory),
           rtsReason: this.jsonOrDbNull(order.rtsReason),
           upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
@@ -422,6 +471,7 @@ export class PosOrderService {
           tags: this.jsonOrDbNull(order.tags),
           customerCare: order.customerCare,
           marketer: order.marketer,
+          salesAssignee: order.salesAssignee,
           statusHistory: this.jsonOrDbNull(order.statusHistory),
           rtsReason: this.jsonOrDbNull(order.rtsReason),
           upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),

@@ -782,6 +782,7 @@ model PosOrder {
   // Assignment info
   customerCare String?
   marketer     String?
+  salesAssignee String?
   assigningCare String?
   statusHistory   Json?
   rtsReason       Json?
