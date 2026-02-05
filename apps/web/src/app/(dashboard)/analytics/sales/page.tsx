@@ -699,13 +699,17 @@ export default function SalesAnalyticsPage() {
     const baseCod = row.cod_raw ?? row.revenue ?? 0;
     const canceledCod = row.canceled_cod ?? 0;
     const restockingCod = row.restocking_cod ?? 0;
-    const revenueBase = Math.max(
+    const adjustedGrossCod = Math.max(
       0,
       computeAdjustedCod(baseCod, canceledCod, restockingCod, {
         excludeCancel: excludeCanceled,
         excludeRestocking: excludeRestocking,
       }),
     );
+    const purchasesForCmRts =
+      (row.gross_sales ?? 0) + (excludeRts ? row.rts_count ?? 0 : 0);
+    const aovForCmRts = purchasesForCmRts > 0 ? adjustedGrossCod / purchasesForCmRts : 0;
+    const revenueBaseForCmRts = aovForCmRts * purchasesForCmRts;
     const sf = row.sf_raw ?? row.sf_fees ?? 0;
     const ff = row.ff_raw ?? row.ff_fees ?? 0;
     const iF = row.if_raw ?? row.if_fees ?? 0;
@@ -714,11 +718,10 @@ export default function SalesAnalyticsPage() {
     const cogsCanceled = row.cogs_ec != null ? Math.max(0, cogsBase - row.cogs_ec) : 0;
     const cogsRestocking = row.cogs_restocking ?? 0;
     const cogsRts = row.cogs_rts ?? 0;
-    // row.cogs already respects excludeCanceled/excludeRestocking (and excludeRts from backend)
-    // For CM RTS% we match KPI by keeping cancel/restocking applied and only undo excludeRts.
-    const cogsAdjusted = cogsBase + (excludeRts ? cogsRts : 0);
+    // row.cogs already respects excludeCanceled/excludeRestocking; RTS is not removed in backend
+    const cogsAdjusted = cogsBase;
     const forecast = computeCmRtsForecast({
-      revenueBase,
+      revenueBase: revenueBaseForCmRts,
       adSpend: row.ad_spend ?? 0,
       sf,
       ff,
@@ -929,6 +932,7 @@ export default function SalesAnalyticsPage() {
     const fulfillment = (kpis.sf_fees ?? 0) + (kpis.ff_fees ?? 0) + (kpis.if_fees ?? 0);
     const canceledCodAdj = excludeCanceled ? kpis.canceled_cod ?? 0 : 0;
     const restockingCodAdj = excludeRestocking ? kpis.restocking_cod ?? 0 : 0;
+    const rtsCodAdj = excludeRts ? kpis.rts_cod ?? 0 : 0;
     const excludedCogsCanceled = excludeCanceled ? kpis.cogs_canceled ?? 0 : 0;
     const excludedCogsRestocking = excludeRestocking ? kpis.cogs_restocking ?? 0 : 0;
     const cogsRaw = kpis.cogs ?? 0;
@@ -958,6 +962,12 @@ export default function SalesAnalyticsPage() {
             Restocking COD
           </span>
           <span>{neg(restockingCodAdj)}</span>
+        </div>
+        <div className="flex justify-between text-slate-700">
+          <span className="flex items-center gap-1">
+            RTS COD
+          </span>
+          <span>{neg(rtsCodAdj)}</span>
         </div>
         <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
           <span>Revenue after adjustments</span>
