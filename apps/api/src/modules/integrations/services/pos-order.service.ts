@@ -17,6 +17,8 @@ interface PosOrderData {
   status?: number;
   statusName?: string;
   cod?: number;
+  upsellSales?: number;
+  mktgBaseline?: number;
   pUtmCampaign?: string;
   pUtmContent?: string;
   cogs: number;
@@ -335,6 +337,17 @@ export class PosOrderService {
     // Upsell breakdown from histories (if any) looking for UPSELL tag
     const upsellBreakdown = this.computeUpsellBreakdown(rawOrder);
 
+    const codValue = parseFloat(rawOrder.cod || '0');
+    let upsellSales = 0;
+    if (upsellBreakdown && typeof upsellBreakdown === 'object') {
+      const newAmount = parseFloat(upsellBreakdown.new_amount ?? '0');
+      const originalAmount = parseFloat(upsellBreakdown.original_amount ?? '0');
+      if (Number.isFinite(newAmount) && Number.isFinite(originalAmount)) {
+        upsellSales = newAmount - originalAmount;
+      }
+    }
+    const mktgBaseline = (Number.isFinite(codValue) ? codValue : 0) - upsellSales;
+
     // Fallback mapping: if still empty, derive from note_product first segment
     if (!mapping && typeof noteProduct === 'string' && noteProduct.trim() !== '') {
       const parts = noteProduct.split('-');
@@ -380,7 +393,9 @@ export class PosOrderService {
       dateLocal,
       status: rawOrder.status,
       statusName: rawOrder.status_name,
-      cod: parseFloat(rawOrder.cod || '0'),
+      cod: codValue,
+      upsellSales,
+      mktgBaseline,
       pUtmCampaign: rawOrder.p_utm_campaign,
       pUtmContent: rawOrder.p_utm_content,
       cogs,
@@ -413,6 +428,11 @@ export class PosOrderService {
     let upserted = 0;
 
     for (const rawOrder of rawOrders) {
+      const sourceName = rawOrder?.order_sources_name?.toString?.().trim?.() || '';
+      if (sourceName.toLowerCase() === 'tiktok') {
+        continue;
+      }
+
       const items = Array.isArray(rawOrder.items) ? rawOrder.items : [];
       const hasProduct = items.some((item: any) => !!item?.product_id);
       if (items.length === 0 || !hasProduct) {
@@ -439,6 +459,8 @@ export class PosOrderService {
           status: order.status,
           statusName: order.statusName,
           cod: order.cod ? new Decimal(order.cod) : null,
+          upsellSales: new Decimal(order.upsellSales || 0),
+          mktgBaseline: new Decimal(order.mktgBaseline || 0),
           pUtmCampaign: order.pUtmCampaign,
           pUtmContent: order.pUtmContent,
           cogs: new Decimal(order.cogs),
@@ -461,6 +483,8 @@ export class PosOrderService {
           status: order.status,
           statusName: order.statusName,
           cod: order.cod ? new Decimal(order.cod) : null,
+          upsellSales: new Decimal(order.upsellSales || 0),
+          mktgBaseline: new Decimal(order.mktgBaseline || 0),
           pUtmCampaign: order.pUtmCampaign,
           pUtmContent: order.pUtmContent,
           cogs: new Decimal(order.cogs),

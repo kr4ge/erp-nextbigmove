@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useState, useRef, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Layers, StoreIcon, Network } from 'lucide-react';
+import { Layers, StoreIcon, Network, BarChart3 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
 
@@ -44,6 +44,7 @@ const baseNavigation: NavLink[] = [
     ),
     children: [
       { href: '/analytics/sales', label: 'Sales', icon: <StoreIcon className="h-4 w-4" /> },
+      { href: '/analytics/sales-performance', label: 'Sales Performance', icon: <BarChart3 className="h-4 w-4" /> },
       { href: '/analytics/marketing', label: 'Marketing', icon: <Network className="h-4 w-4" /> },
     ],
   },
@@ -107,6 +108,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const filteredNavigation = useMemo<NavLink[]>(() => {
     const hasMarketing = permissions.includes('analytics.marketing');
     const hasSales = permissions.includes('analytics.sales');
+    const hasSalesPerformance = permissions.includes('analytics.sales_performance');
     const hasIntegrations = permissions.includes('integration.read');
     const hasStores = permissions.includes('pos.read');
     const hasMeta = permissions.includes('meta.read');
@@ -136,6 +138,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       const children = (link.children || []).filter((child) => {
         if (child.href === '/analytics/marketing') return hasMarketing;
         if (child.href === '/analytics/sales') return hasSales;
+        if (child.href === '/analytics/sales-performance') return hasSalesPerformance;
         return false;
       });
 
