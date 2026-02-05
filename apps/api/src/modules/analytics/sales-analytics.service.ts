@@ -174,8 +174,7 @@ export class SalesAnalyticsService {
     const cogsAdjusted =
       cogs
       - (opts.excludeCancel ? cogsCanceled : 0)
-      - (opts.excludeRestocking ? cogsRestocking : 0)
-      - (opts.excludeRts ? cogsRts : 0);
+      - (opts.excludeRestocking ? cogsRestocking : 0);
     const arPct = revenue > 0 ? (spend / revenue) * 100 : 0;
 
     const cm =
@@ -185,7 +184,8 @@ export class SalesAnalyticsService {
       - ff
       - inf
       - spend
-      - codFee;
+      - codFee
+      + cogsRts;
     const delivered = this.toNumber(sum?._sum?.deliveredCodPos);
     const codFeeDelivered = this.toNumber(sum?._sum?.codFeeDeliveredPos);
     const net =
@@ -218,10 +218,13 @@ export class SalesAnalyticsService {
       cogs
       - (opts.excludeCancel ? cogsCanceled : 0)
       - (opts.excludeRestocking ? cogsRestocking : 0);
+    const purchasesAdjForCmRts = Math.max(0, purchasesRaw - cancelAdjCount - restockAdjCount);
+    const aovForCmRts = purchasesAdjForCmRts > 0 ? grossCodAdjusted / purchasesAdjForCmRts : 0;
+    const revenueBaseForCmRts = aovForCmRts * purchasesAdjForCmRts;
     const rtsForecast = typeof opts.rtsForecastPct === 'number' ? opts.rtsForecastPct : 20;
     const rtsFraction = rtsForecast / 100;
     const cmRtsForecast =
-      (1 - rtsFraction) * grossCodAdjusted -
+      (1 - rtsFraction) * revenueBaseForCmRts -
       spend -
       sf -
       ff -
@@ -319,8 +322,7 @@ export class SalesAnalyticsService {
     const cogsAdjusted =
       cogs
       - (opts.excludeCancel ? cogsCanceled : 0)
-      - (opts.excludeRestocking ? cogsRestocking : 0)
-      - (opts.excludeRts ? cogsRts : 0);
+      - (opts.excludeRestocking ? cogsRestocking : 0);
 
     const sf = this.toNumber(sum?._sum?.sfPos);
     const ff = this.toNumber(sum?._sum?.ffPos);
@@ -334,7 +336,8 @@ export class SalesAnalyticsService {
       - ff
       - inf
       - spend
-      - codFee;
+      - codFee
+      + cogsRts;
 
     const delivered = this.toNumber(sum?._sum?.deliveredCodPos);
     const sfSdr = this.toNumber(sum?._sum?.sfSdrPos);

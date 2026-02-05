@@ -244,7 +244,7 @@ function getSafeRtsForecastPct(pct: number) {
 }
 
 function computeCmRtsForecast(params: {
-  codRaw: number;
+  revenueBase: number;
   adSpend: number;
   sf: number;
   ff: number;
@@ -255,7 +255,7 @@ function computeCmRtsForecast(params: {
   rtsPct: number;
 }) {
   const rtsFraction = getSafeRtsForecastPct(params.rtsPct) / 100;
-  const revenueAfterRts = (1 - rtsFraction) * params.codRaw;
+  const revenueAfterRts = (1 - rtsFraction) * params.revenueBase;
   const cmForecast =
     revenueAfterRts -
     params.adSpend -
@@ -635,6 +635,10 @@ export default function SalesAnalyticsPage() {
           excludeCancel: excludeCanceled,
           excludeRestocking: excludeRestocking,
         });
+        const purchasesForCmRts =
+          (data.counts.purchases ?? 0) + (excludeRts ? data.counts.rts ?? 0 : 0);
+        const aovForCmRts = purchasesForCmRts > 0 ? adjustedGrossCod / purchasesForCmRts : 0;
+        const revenueBaseForCmRts = aovForCmRts * purchasesForCmRts;
         const cogsTotal = data.kpis.cogs ?? 0;
         const cogsCanceled = excludeCanceled ? data.kpis.cogs_canceled ?? 0 : 0;
         const cogsRestocking = excludeRestocking ? data.kpis.cogs_restocking ?? 0 : 0;
@@ -643,7 +647,7 @@ export default function SalesAnalyticsPage() {
           ...data.kpis,
           rts_pct: computeRtsPctFromCounts(data.counts),
           cm_rts_forecast: computeCmRtsForecast({
-            codRaw: adjustedGrossCod,
+            revenueBase: revenueBaseForCmRts,
             adSpend: data.kpis.ad_spend ?? 0,
             sf: data.kpis.sf_fees ?? 0,
             ff: data.kpis.ff_fees ?? 0,
@@ -662,6 +666,10 @@ export default function SalesAnalyticsPage() {
           excludeCancel: excludeCanceled,
           excludeRestocking: excludeRestocking,
         });
+        const purchasesForCmRts =
+          (data.prevCounts.purchases ?? 0) + (excludeRts ? data.prevCounts.rts ?? 0 : 0);
+        const aovForCmRts = purchasesForCmRts > 0 ? adjustedGrossCod / purchasesForCmRts : 0;
+        const revenueBaseForCmRts = aovForCmRts * purchasesForCmRts;
         const cogsTotal = data.prevKpis.cogs ?? 0;
         const cogsCanceled = excludeCanceled ? data.prevKpis.cogs_canceled ?? 0 : 0;
         const cogsRestocking = excludeRestocking ? data.prevKpis.cogs_restocking ?? 0 : 0;
@@ -670,7 +678,7 @@ export default function SalesAnalyticsPage() {
           ...data.prevKpis,
           rts_pct: computeRtsPctFromCounts(data.prevCounts),
           cm_rts_forecast: computeCmRtsForecast({
-            codRaw: adjustedGrossCod,
+            revenueBase: revenueBaseForCmRts,
             adSpend: data.prevKpis.ad_spend ?? 0,
             sf: data.prevKpis.sf_fees ?? 0,
             ff: data.prevKpis.ff_fees ?? 0,
@@ -691,7 +699,7 @@ export default function SalesAnalyticsPage() {
     const baseCod = row.cod_raw ?? row.revenue ?? 0;
     const canceledCod = row.canceled_cod ?? 0;
     const restockingCod = row.restocking_cod ?? 0;
-    const codRaw = Math.max(
+    const revenueBase = Math.max(
       0,
       computeAdjustedCod(baseCod, canceledCod, restockingCod, {
         excludeCancel: excludeCanceled,
@@ -710,7 +718,7 @@ export default function SalesAnalyticsPage() {
     // For CM RTS% we match KPI by keeping cancel/restocking applied and only undo excludeRts.
     const cogsAdjusted = cogsBase + (excludeRts ? cogsRts : 0);
     const forecast = computeCmRtsForecast({
-      codRaw,
+      revenueBase,
       adSpend: row.ad_spend ?? 0,
       sf,
       ff,
@@ -921,12 +929,11 @@ export default function SalesAnalyticsPage() {
     const fulfillment = (kpis.sf_fees ?? 0) + (kpis.ff_fees ?? 0) + (kpis.if_fees ?? 0);
     const canceledCodAdj = excludeCanceled ? kpis.canceled_cod ?? 0 : 0;
     const restockingCodAdj = excludeRestocking ? kpis.restocking_cod ?? 0 : 0;
-    const rtsCodAdj = excludeRts ? kpis.rts_cod ?? 0 : 0;
     const excludedCogsCanceled = excludeCanceled ? kpis.cogs_canceled ?? 0 : 0;
     const excludedCogsRestocking = excludeRestocking ? kpis.cogs_restocking ?? 0 : 0;
-    const excludedCogsRts = excludeRts ? kpis.cogs_rts ?? 0 : 0;
+    const cogsRaw = kpis.cogs ?? 0;
     const cogsIncluded =
-      (kpis.cogs ?? 0) - excludedCogsCanceled - excludedCogsRestocking - excludedCogsRts;
+      cogsRaw - excludedCogsCanceled - excludedCogsRestocking;
     const filtersLabel = [
       `${startDate} → ${endDate}`,
       `${selectedMappings.length || 0}/${mappingOptions.length || 0} mappings`,
@@ -951,12 +958,6 @@ export default function SalesAnalyticsPage() {
             Restocking COD
           </span>
           <span>{neg(restockingCodAdj)}</span>
-        </div>
-        <div className="flex justify-between text-slate-700">
-          <span className="flex items-center gap-1">
-            RTS COD
-          </span>
-          <span>{neg(rtsCodAdj)}</span>
         </div>
         <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
           <span>Revenue after adjustments</span>
@@ -987,26 +988,24 @@ export default function SalesAnalyticsPage() {
           <span>{neg(kpis.ad_spend ?? 0)}</span>
         </div>
         <div className="flex justify-between text-slate-800">
-          <span>COGS (all)</span>
-          <span>{neg(kpis.cogs ?? 0)}</span>
-        </div>
-        <div className="flex justify-between text-slate-800">
-          <span className="flex items-center gap-1">
-            COGS used in CM
-          </span>
-          <span>{neg(cogsIncluded)}</span>
+          <span>COGS (raw)</span>
+          <span>{neg(cogsRaw)}</span>
         </div>
         <div className="flex justify-between text-slate-700 text-[12px]">
-          <span>+ COGS Canceled</span>
+          <span>- COGS Canceled</span>
           <span>{pos(excludedCogsCanceled)}</span>
         </div>
         <div className="flex justify-between text-slate-700 text-[12px]">
-          <span>+ COGS Restocking</span>
+          <span>- COGS Restocking</span>
           <span>{pos(excludedCogsRestocking)}</span>
+        </div>
+        <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
+          <span>COGS used in CM</span>
+          <span>{neg(cogsIncluded)}</span>
         </div>
         <div className="flex justify-between text-slate-700 text-[12px]">
           <span>+ RTS COGS</span>
-          <span>{pos(excludedCogsRts)}</span>
+          <span>{pos(kpis.cogs_rts ?? 0)}</span>
         </div>
         <div className="flex justify-between text-slate-900 border-t border-slate-200 pt-1 font-semibold">
           <span>Contribution Margin</span>
@@ -1082,8 +1081,12 @@ export default function SalesAnalyticsPage() {
       excludeCancel: excludeCanceled,
       excludeRestocking: excludeRestocking,
     });
+    const purchasesForCmRts =
+      (data?.counts?.purchases ?? 0) + (excludeRts ? data?.counts?.rts ?? 0 : 0);
+    const aovForCmRts = purchasesForCmRts > 0 ? adjustedGrossCod / purchasesForCmRts : 0;
+    const revenueBaseForCmRts = aovForCmRts * purchasesForCmRts;
     const forecast = computeCmRtsForecast({
-      codRaw: adjustedGrossCod,
+      revenueBase: revenueBaseForCmRts,
       adSpend: kpis.ad_spend ?? 0,
       sf: kpis.sf_fees ?? 0,
       ff: kpis.ff_fees ?? 0,
@@ -1104,24 +1107,20 @@ export default function SalesAnalyticsPage() {
       <div className="space-y-1">
         <p className="font-semibold text-slate-800">CM (RTS {rtsForecastSafe}%) inputs</p>
         <div className="flex justify-between text-slate-800">
-          <span>Gross COD (raw)</span>
-          <span>{nf(kpis.gross_cod ?? 0)}</span>
+          <span>Purchases (adj)</span>
+          <span>{purchasesForCmRts.toFixed(0)}</span>
         </div>
         <div className="flex justify-between text-slate-800">
-          <span>Canceled COD</span>
-          <span>{neg(canceledCodAdj)}</span>
-        </div>
-        <div className="flex justify-between text-slate-800">
-          <span>Restocking COD</span>
-          <span>{neg(restockingCodAdj)}</span>
+          <span>AOV (adj)</span>
+          <span>{nf(aovForCmRts)}</span>
         </div>
         <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
-          <span>Gross COD (adjusted)</span>
-          <span>{nf(adjustedGrossCod)}</span>
+          <span>Revenue base (AOV × purchases)</span>
+          <span>{nf(revenueBaseForCmRts)}</span>
         </div>
         <div className="flex justify-between text-slate-800">
           <span>RTS forecast ({rtsForecastSafe}%)</span>
-          <span>{neg(adjustedGrossCod * forecast.rtsFraction)}</span>
+          <span>{neg(revenueBaseForCmRts * forecast.rtsFraction)}</span>
         </div>
         <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
           <span>Revenue after RTS</span>
