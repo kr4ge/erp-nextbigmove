@@ -152,15 +152,20 @@ export class WorkflowProcessorService {
       const metaEnabled = !!context.config.sources?.meta?.enabled;
       const posEnabled = !!context.config.sources?.pos?.enabled;
 
+      const sharedAccessFilter = this.buildSharedIntegrationWhere(context.teamId);
       const [metaAccountCount, posStoreCount] = await Promise.all([
         metaEnabled
           ? this.prisma.metaAdAccount.count({
-              where: { tenantId: context.tenantId, teamId: context.teamId || undefined },
+              where: sharedAccessFilter
+                ? { tenantId: context.tenantId, ...sharedAccessFilter }
+                : { tenantId: context.tenantId },
             })
           : Promise.resolve(0),
         posEnabled
           ? this.prisma.posStore.count({
-              where: { tenantId: context.tenantId, teamId: context.teamId || undefined },
+              where: sharedAccessFilter
+                ? { tenantId: context.tenantId, ...sharedAccessFilter }
+                : { tenantId: context.tenantId },
             })
           : Promise.resolve(0),
       ]);
@@ -460,8 +465,11 @@ export class WorkflowProcessorService {
     const errors: ExecutionError[] = [];
 
     // Get all Meta ad accounts for tenant
+    const sharedAccessFilter = this.buildSharedIntegrationWhere(context.teamId);
     const metaAccounts = await this.prisma.metaAdAccount.findMany({
-      where: { tenantId: context.tenantId, teamId: context.teamId || undefined },
+      where: sharedAccessFilter
+        ? { tenantId: context.tenantId, ...sharedAccessFilter }
+        : { tenantId: context.tenantId },
       include: { integration: true },
     });
 
@@ -603,8 +611,11 @@ export class WorkflowProcessorService {
     const errors: ExecutionError[] = [];
 
     // Get all POS stores for tenant
+    const sharedAccessFilter = this.buildSharedIntegrationWhere(context.teamId);
     const posStores = await this.prisma.posStore.findMany({
-      where: { tenantId: context.tenantId, teamId: context.teamId || undefined },
+      where: sharedAccessFilter
+        ? { tenantId: context.tenantId, ...sharedAccessFilter }
+        : { tenantId: context.tenantId },
     });
 
     if (posStores.length === 0) {
@@ -721,6 +732,19 @@ export class WorkflowProcessorService {
         ...additional,
       },
     });
+  }
+
+  private buildSharedIntegrationWhere(teamId: string | null): { OR: any[] } | undefined {
+    if (!teamId) {
+      return undefined;
+    }
+    return {
+      OR: [
+        { teamId },
+        { integration: { teamId } },
+        { integration: { sharedTeams: { some: { teamId } } } },
+      ],
+    };
   }
 
   /**
