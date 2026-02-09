@@ -17,6 +17,10 @@ interface ExecutionState {
   dayProgress?: { completedDays: number; totalDays: number };
   metaFetched?: number;
   posFetched?: number;
+  metaProcessed?: number;
+  posProcessed?: number;
+  metaTotal?: number;
+  posTotal?: number;
   events?: ExecutionEvent[];
   isLive?: boolean;
 }

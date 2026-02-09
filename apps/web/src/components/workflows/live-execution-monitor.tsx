@@ -28,6 +28,21 @@ export function LiveExecutionMonitor({ executionId }: { executionId: string }) {
       : execution.status === 'COMPLETED'
         ? totalDays
         : execution.activeDay ?? Math.min(completedDays + 1, totalDays);
+  const metaDisplay = `${execution.metaFetched || 0}`;
+  const posDisplay = `${execution.posFetched || 0}`;
+  const renderEvent = (evt: { event: string; data: any }) => {
+    if (evt.event === 'meta_fetched') {
+      const account = evt.data?.accountId ? `acct ${evt.data.accountId}` : 'meta';
+      const rows = evt.data?.count ?? 0;
+      return `${account} rows: ${rows}`;
+    }
+    if (evt.event === 'pos_fetched') {
+      const shop = evt.data?.shopId ? `shop ${evt.data.shopId}` : 'pos';
+      const rows = evt.data?.count ?? 0;
+      return `${shop} rows: ${rows}`;
+    }
+    return `${evt.event}: ${JSON.stringify(evt.data)}`;
+  };
 
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 p-4 bg-white">
@@ -69,11 +84,11 @@ export function LiveExecutionMonitor({ executionId }: { executionId: string }) {
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-lg bg-slate-50 p-3">
           <div className="text-slate-500">Meta fetched</div>
-          <div className="text-2xl font-semibold text-slate-900">{execution.metaFetched || 0}</div>
+          <div className="text-2xl font-semibold text-slate-900">{metaDisplay}</div>
         </div>
         <div className="rounded-lg bg-slate-50 p-3">
           <div className="text-slate-500">POS fetched</div>
-          <div className="text-2xl font-semibold text-slate-900">{execution.posFetched || 0}</div>
+          <div className="text-2xl font-semibold text-slate-900">{posDisplay}</div>
         </div>
       </div>
 
@@ -85,7 +100,7 @@ export function LiveExecutionMonitor({ executionId }: { executionId: string }) {
               <span className="text-slate-400 mr-1">
                 {new Date(evt.timestamp).toLocaleTimeString()}
               </span>
-              {evt.event}: {JSON.stringify(evt.data)}
+              {renderEvent(evt)}
             </div>
           ))}
           {(!execution.events || execution.events.length === 0) && (

@@ -35,6 +35,10 @@ export function useWorkflowExecution(executionId: string) {
         activeDay: data.day,
         totalDays: data.totalDays ?? execution?.totalDays,
         currentDate: data.date,
+        metaProcessed: 0,
+        posProcessed: 0,
+        metaTotal: data.metaTotal ?? execution?.metaTotal,
+        posTotal: data.posTotal ?? execution?.posTotal,
         isLive: true,
       });
       addEvent(executionId, {
@@ -46,13 +50,21 @@ export function useWorkflowExecution(executionId: string) {
 
     socket.on('execution:meta_fetched', (data) => {
       const current = useExecutionStore.getState().executions[executionId];
-      setExecution(executionId, { metaFetched: (current?.metaFetched || 0) + data.count });
+      setExecution(executionId, {
+        metaFetched: (current?.metaFetched || 0) + (data.count || 0),
+        metaProcessed: (current?.metaProcessed || 0) + (data.processed || 0),
+        metaTotal: data.total ?? current?.metaTotal,
+      });
       addEvent(executionId, { timestamp: new Date().toISOString(), event: 'meta_fetched', data });
     });
 
     socket.on('execution:pos_fetched', (data) => {
       const current = useExecutionStore.getState().executions[executionId];
-      setExecution(executionId, { posFetched: (current?.posFetched || 0) + data.count });
+      setExecution(executionId, {
+        posFetched: (current?.posFetched || 0) + (data.count || 0),
+        posProcessed: (current?.posProcessed || 0) + (data.processed || 0),
+        posTotal: data.total ?? current?.posTotal,
+      });
       addEvent(executionId, { timestamp: new Date().toISOString(), event: 'pos_fetched', data });
     });
 

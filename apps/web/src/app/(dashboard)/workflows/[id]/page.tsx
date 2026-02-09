@@ -71,6 +71,18 @@ function ExecutionCard({
   const progressLabel = live?.progress
     ? `${live.progress.current}/${live.progress.total}`
     : `${execution.daysProcessed}/${execution.totalDays}`;
+  const metaDisplay =
+    live?.metaTotal !== undefined
+      ? `${live?.metaProcessed || 0}/${live.metaTotal}`
+      : live?.metaProcessed !== undefined
+        ? `${live.metaProcessed}`
+        : `${execution.metaFetched}`;
+  const posDisplay =
+    live?.posTotal !== undefined
+      ? `${live?.posProcessed || 0}/${live.posTotal}`
+      : live?.posProcessed !== undefined
+        ? `${live.posProcessed}`
+        : `${execution.posFetched}`;
 
   return (
     <div className="border border-slate-200 rounded-lg p-3 text-sm text-slate-700 space-y-2">
@@ -92,8 +104,8 @@ function ExecutionCard({
       </div>
 
       <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-600">
-        <span>Meta fetched: {live?.metaFetched ?? execution.metaFetched}</span>
-        <span>POS fetched: {live?.posFetched ?? execution.posFetched}</span>
+        <span>Meta fetched: {metaDisplay}</span>
+        <span>POS fetched: {posDisplay}</span>
       </div>
 
       {status === 'RUNNING' && (

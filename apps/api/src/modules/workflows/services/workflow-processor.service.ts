@@ -155,12 +155,12 @@ export class WorkflowProcessorService {
       const [metaAccountCount, posStoreCount] = await Promise.all([
         metaEnabled
           ? this.prisma.metaAdAccount.count({
-              where: { tenantId: context.tenantId },
+              where: { tenantId: context.tenantId, teamId: context.teamId || undefined },
             })
           : Promise.resolve(0),
         posEnabled
           ? this.prisma.posStore.count({
-              where: { tenantId: context.tenantId },
+              where: { tenantId: context.tenantId, teamId: context.teamId || undefined },
             })
           : Promise.resolve(0),
       ]);
@@ -216,6 +216,8 @@ export class WorkflowProcessorService {
           date,
           day: currentDay,
           totalDays,
+          metaTotal: metaEnabled ? metaAccountCount : 0,
+          posTotal: posEnabled ? posStoreCount : 0,
           timestamp: new Date().toISOString(),
         }, 'info', `Processing date ${date} (${currentDay}/${totalDays})`);
 
@@ -471,6 +473,8 @@ export class WorkflowProcessorService {
     // Get rate limit config
     const metaDelayMs = context.config.rateLimit?.metaDelayMs || 3000;
 
+    const metaTotal = metaAccounts.length;
+
     // Process each account sequentially with rate limiting
     for (const account of metaAccounts) {
       if (await this.isCancelled(context.executionId)) {
@@ -571,6 +575,8 @@ export class WorkflowProcessorService {
         accountId: account.accountId,
         date,
         count: upserted,
+        processed: 1,
+        total: metaTotal,
         timestamp: new Date().toISOString(),
       }, 'info', `Meta fetched ${upserted} rows for ${account.accountId} on ${date}`);
 
@@ -608,6 +614,8 @@ export class WorkflowProcessorService {
 
     // Get rate limit config
     const posDelayMs = context.config.rateLimit?.posDelayMs || 3000;
+
+    const posTotal = posStores.length;
 
     // Process each store sequentially with rate limiting
     for (const store of posStores) {
@@ -682,6 +690,8 @@ export class WorkflowProcessorService {
         shopId: store.shopId,
         date,
         count: upserted,
+        processed: 1,
+        total: posTotal,
         timestamp: new Date().toISOString(),
       }, 'info', `POS fetched ${upserted} orders for ${store.shopId} on ${date}`);
 
