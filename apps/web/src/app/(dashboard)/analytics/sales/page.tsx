@@ -4,7 +4,7 @@ import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
 import apiClient from '@/lib/api-client';
-import { ChevronDown, ChevronUp, Filter, Info, ShoppingBag, Share2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Filter, Info, RefreshCw, ShoppingBag, Share2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { workflowSocket } from '@/lib/socket-client';
 import {
@@ -339,6 +339,7 @@ export default function SalesAnalyticsPage() {
   const [shareSelected, setShareSelected] = useState<string[]>([]);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareSaving, setShareSaving] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
   const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
   const [canShare, setCanShare] = useState(false);
   const rtsForecastSafe = getSafeRtsForecastPct(rtsForecastPct);
@@ -469,6 +470,23 @@ export default function SalesAnalyticsPage() {
       setShareSelected([]);
     } finally {
       setShareLoading(false);
+    }
+  };
+
+  const reconcileRange = async () => {
+    if (!startDate || !endDate) return;
+    setIsReconciling(true);
+    setError(null);
+    try {
+      await apiClient.post('/analytics/sales/reconcile', {
+        start_date: startDate,
+        end_date: endDate,
+      });
+      await fetchData({ silent: true });
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || 'Failed to reconcile sales data');
+    } finally {
+      setIsReconciling(false);
     }
   };
 
@@ -1408,6 +1426,16 @@ export default function SalesAnalyticsPage() {
                   aria-label="Filters"
                 >
                   <Filter className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={reconcileRange}
+                  disabled={isReconciling}
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-2.5 py-2 text-slate-600 bg-white hover:border-slate-300 ml-2 disabled:opacity-60"
+                  aria-label="Reconcile date range"
+                  title="Reconcile date range"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isReconciling ? 'animate-spin' : ''}`} />
                 </button>
                 {canShare && (
                   <button

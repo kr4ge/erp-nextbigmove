@@ -6,6 +6,8 @@ import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { AnalyticsCacheService } from './analytics-cache.service';
+import { ReconcileMarketingService } from '../workflows/services/reconcile-marketing.service';
+import { ReconcileSalesService } from '../workflows/services/reconcile-sales.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -110,6 +112,8 @@ export class SalesAnalyticsService {
     private readonly prisma: PrismaService,
     private readonly teamContext: TeamContextService,
     private readonly analyticsCache: AnalyticsCacheService,
+    private readonly reconcileMarketingService: ReconcileMarketingService,
+    private readonly reconcileSalesService: ReconcileSalesService,
   ) {}
 
   private readonly logger = new Logger(SalesAnalyticsService.name);
@@ -677,5 +681,64 @@ export class SalesAnalyticsService {
     this.logger.log(`CACHE SET ${cacheKey}`);
     await this.analyticsCache.set(cacheKey, response);
     return response;
+  }
+
+  async reconcileRange(startDate?: string, endDate?: string) {
+    if (!startDate || !endDate) {
+      throw new BadRequestException('start_date and end_date are required');
+    }
+
+    const { tenantId } = await this.teamContext.getContext();
+    const since = dayjs(startDate).format('YYYY-MM-DD');
+    const until = dayjs(endDate).format('YYYY-MM-DD');
+
+    if (
+      !dayjs(since, 'YYYY-MM-DD', true).isValid() ||
+      !dayjs(until, 'YYYY-MM-DD', true).isValid()
+    ) {
+      throw new BadRequestException('Invalid date range');
+    }
+
+    const dates: string[] = [];
+    let current = dayjs(since);
+    const end = dayjs(until);
+    if (current.isAfter(end)) {
+      current = end;
+    }
+
+    while (current.isBefore(end) || current.isSame(end, 'day')) {
+      dates.push(current.format('YYYY-MM-DD'));
+      current = current.add(1, 'day');
+    }
+
+    const errors: Array<{ date: string; source: string; error: string }> = [];
+    for (const date of dates) {
+      try {
+        await this.reconcileMarketingService.reconcileDay(tenantId, date, null);
+      } catch (err: any) {
+        errors.push({
+          date,
+          source: 'reconcile_marketing',
+          error: err?.message || 'Reconcile marketing failed',
+        });
+      }
+
+      try {
+        await this.reconcileSalesService.aggregateDay(tenantId, date, null);
+      } catch (err: any) {
+        errors.push({
+          date,
+          source: 'reconcile_sales',
+          error: err?.message || 'Reconcile sales failed',
+        });
+      }
+    }
+
+    return {
+      processedDays: dates.length,
+      startDate: since,
+      endDate: until,
+      errors,
+    };
   }
 }

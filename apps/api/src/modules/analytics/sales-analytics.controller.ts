@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -76,5 +76,11 @@ export class SalesAnalyticsController {
       includeTax12: parseBool(includeTax12, false),
       includeTax1: parseBool(includeTax1, false),
     });
+  }
+
+  @Post('reconcile')
+  @Permissions('analytics.sales')
+  async reconcileRange(@Body() body: { start_date?: string; end_date?: string }) {
+    return this.salesAnalyticsService.reconcileRange(body?.start_date, body?.end_date);
   }
 }
