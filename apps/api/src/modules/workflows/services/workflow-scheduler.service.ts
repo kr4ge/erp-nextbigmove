@@ -133,6 +133,21 @@ export class WorkflowSchedulerService implements OnModuleInit {
         return;
       }
 
+      const existing = await this.prisma.workflowExecution.findFirst({
+        where: {
+          workflowId: workflow.id,
+          status: { in: ['PENDING', 'RUNNING'] },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, status: true },
+      });
+      if (existing) {
+        this.logger.warn(
+          `Workflow ${workflowId} already has a ${existing.status} execution (${existing.id}); skipping scheduled run`,
+        );
+        return;
+      }
+
       const config = workflow.config as any;
       // Prefer workflow-level date range; fall back to legacy per-source config
       const dateRangeConfig =

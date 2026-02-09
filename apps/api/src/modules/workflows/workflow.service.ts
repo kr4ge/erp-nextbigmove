@@ -17,6 +17,7 @@ import { DateRangeService } from './services/date-range.service';
 import { WorkflowProcessorService } from './services/workflow-processor.service';
 import { WorkflowSchedulerService } from './services/workflow-scheduler.service';
 import { WorkflowLogService } from './services/workflow-log.service';
+import { WorkflowProgressCacheService } from './services/workflow-progress-cache.service';
 
 @Injectable()
 export class WorkflowService {
@@ -29,6 +30,7 @@ export class WorkflowService {
     private readonly workflowProcessor: WorkflowProcessorService,
     private readonly schedulerService: WorkflowSchedulerService,
     private readonly workflowLogService: WorkflowLogService,
+    private readonly workflowProgressCache: WorkflowProgressCacheService,
     @InjectQueue(WORKFLOW_QUEUE) private readonly workflowQueue: Queue<WorkflowJobData>,
   ) {}
 
@@ -432,7 +434,15 @@ export class WorkflowService {
       throw new NotFoundException(`Workflow execution with ID ${executionId} not found`);
     }
 
-    return new WorkflowExecutionResponseDto(execution);
+    const cachedProgress = await this.workflowProgressCache.getProgress(executionId);
+    return new WorkflowExecutionResponseDto({
+      ...execution,
+      metaProcessed: cachedProgress?.metaProcessed,
+      metaTotal: cachedProgress?.metaTotal,
+      posProcessed: cachedProgress?.posProcessed,
+      posTotal: cachedProgress?.posTotal,
+      currentDate: cachedProgress?.date,
+    });
   }
 
   /**
@@ -474,6 +484,20 @@ export class WorkflowService {
 
     if (!workflow.enabled) {
       throw new BadRequestException('Cannot trigger a disabled workflow');
+    }
+
+    const existing = await this.prisma.workflowExecution.findFirst({
+      where: {
+        workflowId: workflow.id,
+        status: { in: [WorkflowExecutionStatus.PENDING, WorkflowExecutionStatus.RUNNING] },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, status: true },
+    });
+    if (existing) {
+      throw new BadRequestException(
+        `Workflow already has an ${existing.status} execution (${existing.id}).`,
+      );
     }
 
     // Calculate date range if not provided

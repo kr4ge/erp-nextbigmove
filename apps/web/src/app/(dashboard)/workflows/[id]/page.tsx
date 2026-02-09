@@ -7,6 +7,7 @@ import apiClient from '@/lib/api-client';
 import { LiveExecutionMonitor } from '@/components/workflows/live-execution-monitor';
 import { useExecutionStore } from '@/stores/workflow-execution-store';
 import { ArrowBigLeft, Settings } from 'lucide-react';
+import { useToast } from '@/components/ui/toast';
 
 interface Workflow {
   id: string;
@@ -145,6 +146,7 @@ function ExecutionCard({
 
 export default function WorkflowDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const { addToast } = useToast();
   const workflowId = params.id;
 
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
@@ -197,13 +199,15 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
   const triggerWorkflow = async () => {
     if (!workflowId) return;
     setTriggering(true);
-    setError(null);
     try {
       await apiClient.post(`/workflows/${workflowId}/trigger`, {});
       const execRes = await apiClient.get(`/workflows/${workflowId}/executions`);
       setExecutions(execRes.data || []);
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to trigger workflow');
+      addToast(
+        'error',
+        err.response?.data?.message || err.message || 'Failed to trigger workflow',
+      );
     } finally {
       setTriggering(false);
     }

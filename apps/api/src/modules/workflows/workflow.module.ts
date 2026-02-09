@@ -9,6 +9,7 @@ import { DateRangeService } from './services/date-range.service';
 import { WorkflowExecutionGateway } from './gateways/workflow-execution.gateway';
 import { WorkflowQueueProcessor, WORKFLOW_QUEUE } from './processors/workflow.processor';
 import { WorkflowLogService } from './services/workflow-log.service';
+import { WorkflowProgressCacheService } from './services/workflow-progress-cache.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { IntegrationModule } from '../integrations/integration.module';
 import { ReconcileMarketingService } from './services/reconcile-marketing.service';
@@ -32,6 +33,7 @@ import { ReconcileSalesService } from './services/reconcile-sales.service';
     WorkflowQueueProcessor,
     WorkflowExecutionGateway,
     WorkflowLogService,
+    WorkflowProgressCacheService,
     ReconcileMarketingService,
     ReconcileSalesService,
   ],

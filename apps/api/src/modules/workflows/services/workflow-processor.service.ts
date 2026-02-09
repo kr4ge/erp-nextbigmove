@@ -14,6 +14,7 @@ import { WorkflowExecutionGateway } from '../gateways/workflow-execution.gateway
 import { WorkflowLogService } from './workflow-log.service';
 import { ReconcileMarketingService } from './reconcile-marketing.service';
 import { ReconcileSalesService } from './reconcile-sales.service';
+import { WorkflowProgressCacheService } from './workflow-progress-cache.service';
 
 interface WorkflowExecutionContext {
   executionId: string;
@@ -47,6 +48,7 @@ export class WorkflowProcessorService {
     private readonly dateRangeService: DateRangeService,
     private readonly executionGateway: WorkflowExecutionGateway,
     private readonly workflowLogService: WorkflowLogService,
+    private readonly workflowProgressCache: WorkflowProgressCacheService,
     private readonly reconcileMarketingService: ReconcileMarketingService,
     private readonly reconcileSalesService: ReconcileSalesService,
   ) {}
@@ -225,6 +227,14 @@ export class WorkflowProcessorService {
           posTotal: posEnabled ? posStoreCount : 0,
           timestamp: new Date().toISOString(),
         }, 'info', `Processing date ${date} (${currentDay}/${totalDays})`);
+
+        await this.workflowProgressCache.setProgress(executionId, {
+          date,
+          metaProcessed: 0,
+          posProcessed: 0,
+          metaTotal: metaEnabled ? metaAccountCount : 0,
+          posTotal: posEnabled ? posStoreCount : 0,
+        });
 
         // Fetch Meta ads if enabled
         if (metaEnabled) {
@@ -588,6 +598,8 @@ export class WorkflowProcessorService {
         timestamp: new Date().toISOString(),
       }, 'info', `Meta fetched ${upserted} rows for ${account.accountId} on ${date}`);
 
+      await this.workflowProgressCache.bumpMetaProcessed(context.executionId, metaTotal, date);
+
       onAccountComplete?.();
 
       // Rate limiting delay
@@ -705,6 +717,8 @@ export class WorkflowProcessorService {
         total: posTotal,
         timestamp: new Date().toISOString(),
       }, 'info', `POS fetched ${upserted} orders for ${store.shopId} on ${date}`);
+
+      await this.workflowProgressCache.bumpPosProcessed(context.executionId, posTotal, date);
 
       onStoreComplete?.();
 

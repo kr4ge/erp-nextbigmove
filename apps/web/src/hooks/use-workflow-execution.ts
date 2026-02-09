@@ -108,6 +108,11 @@ export function useWorkflowExecution(executionId: string) {
           totalDays: exec.totalDays,
           metaFetched: exec.metaFetched,
           posFetched: exec.posFetched,
+          metaProcessed: exec.metaProcessed,
+          posProcessed: exec.posProcessed,
+          metaTotal: exec.metaTotal,
+          posTotal: exec.posTotal,
+          currentDate: exec.currentDate ?? exec.dateRangeSince ?? undefined,
         });
         const logs = Array.isArray(logsRes.data) ? logsRes.data : [];
         if (logs.length > 0) {

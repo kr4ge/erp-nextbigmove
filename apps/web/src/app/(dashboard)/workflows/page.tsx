@@ -15,6 +15,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/emptystate';
+import { useToast } from '@/components/ui/toast';
 
 const getSelectedTeamIds = () => {
   if (typeof window === 'undefined') return [];
@@ -47,6 +48,7 @@ interface WorkflowItem {
 
 export default function WorkflowsPage() {
   const router = useRouter();
+  const { addToast } = useToast();
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,13 +121,15 @@ export default function WorkflowsPage() {
   const handleRunWorkflow = async (workflowId: string) => {
     if (running[workflowId]) return;
     setRunning((prev) => ({ ...prev, [workflowId]: true }));
-    setError(null);
     try {
       const response = await apiClient.post(`/workflows/${workflowId}/trigger`, {});
       router.push(`/workflows/${workflowId}`);
       return response;
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to trigger workflow');
+      addToast(
+        'error',
+        err.response?.data?.message || err.message || 'Failed to trigger workflow',
+      );
     } finally {
       setRunning((prev) => ({ ...prev, [workflowId]: false }));
     }

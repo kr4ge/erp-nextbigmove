@@ -44,6 +44,11 @@ export class WorkflowExecutionResponseDto {
   daysProcessed: number;
   metaFetched: number;
   posFetched: number;
+  metaProcessed?: number;
+  posProcessed?: number;
+  metaTotal?: number;
+  posTotal?: number;
+  currentDate?: string | null;
   errors: any[]; // Array of error objects
   statusLabel?: string;
   startedAt?: Date;
@@ -64,6 +69,11 @@ export class WorkflowExecutionResponseDto {
     this.daysProcessed = execution.daysProcessed;
     this.metaFetched = execution.metaFetched;
     this.posFetched = execution.posFetched;
+    this.metaProcessed = execution.metaProcessed;
+    this.posProcessed = execution.posProcessed;
+    this.metaTotal = execution.metaTotal;
+    this.posTotal = execution.posTotal;
+    this.currentDate = execution.currentDate ?? null;
     this.errors = execution.errors || [];
     this.statusLabel =
       execution.status === 'COMPLETED' && this.errors.length > 0
