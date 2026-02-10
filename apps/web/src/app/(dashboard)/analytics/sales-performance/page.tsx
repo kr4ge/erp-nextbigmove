@@ -30,26 +30,38 @@ type SalesPerformanceRow = {
   shopId: string;
   orderCount: number;
   totalCod: number;
-  sales: number;
-  mktg: number;
+  salesCod: number;
+  mktgCod: number;
+  upsellDelta: number;
+  confirmedCount: number;
+  marketingLeadCount: number;
   upsellCount: number;
   statusCounts: Record<string, number>;
   salesVsMktgPct: number;
+  confirmationRatePct: number;
 };
 
 type OverviewResponse = {
   summary: {
-    sales: number;
-    mktg: number;
+    upsell_delta: number;
+    sales_cod: number;
+    mktg_cod: number;
     sales_vs_mktg_pct: number;
+    confirmed_count: number;
+    marketing_lead_count: number;
+    confirmation_rate_pct: number;
     total_cod: number;
     order_count: number;
     upsell_count: number;
   };
   prevSummary: {
-    sales: number;
-    mktg: number;
+    upsell_delta: number;
+    sales_cod: number;
+    mktg_cod: number;
     sales_vs_mktg_pct: number;
+    confirmed_count: number;
+    marketing_lead_count: number;
+    confirmation_rate_pct: number;
     total_cod: number;
     order_count: number;
     upsell_count: number;
@@ -75,9 +87,10 @@ const formatPct = (val?: number) => `${(val || 0).toFixed(2)}%`;
 
 const metricDefinitions: { key: keyof OverviewResponse['summary']; label: string; format: 'currency' | 'percent' | 'number' }[] = [
   { key: 'sales_vs_mktg_pct', label: 'Sales vs MKTG (%)', format: 'percent' },
-  { key: 'sales', label: 'Sales Upsell (₱)', format: 'currency' },
-  { key: 'total_cod', label: 'Sales (COD) (₱)', format: 'currency' },
-  { key: 'mktg', label: 'MKTG Baseline (₱)', format: 'currency' },
+  { key: 'confirmation_rate_pct', label: 'Confirmation Rate (%)', format: 'percent' },
+  { key: 'upsell_delta', label: 'Sales Upsell (₱)', format: 'currency' },
+  { key: 'sales_cod', label: 'Sales Cod (₱)', format: 'currency' },
+  { key: 'mktg_cod', label: 'MKTG Baseline (₱)', format: 'currency' },
 ];
 
 const formatValue = (val: number, format: 'currency' | 'percent' | 'number') => {
@@ -422,7 +435,13 @@ export default function SalesPerformancePage() {
                     Sales vs MKTG %
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Confirmation Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                     Sales Upsell
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Sales Cod
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                     MKTG Baseline
@@ -432,7 +451,7 @@ export default function SalesPerformancePage() {
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={5}>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={7}>
                       Loading...
                     </td>
                   </tr>
@@ -446,17 +465,23 @@ export default function SalesPerformancePage() {
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
                         {formatPct(row.salesVsMktgPct)}
                       </td>
-                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                        {formatCurrency(row.sales)}
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatPct(row.confirmationRatePct)}
                       </td>
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                        {formatCurrency(row.mktg)}
+                        {formatCurrency(row.upsellDelta)}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
+                        {formatCurrency(row.salesCod)}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
+                        {formatCurrency(row.mktgCod)}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={5}>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={7}>
                       No data available for the selected filters.
                     </td>
                   </tr>
