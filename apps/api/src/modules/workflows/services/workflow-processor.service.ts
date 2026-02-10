@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { IntegrationService } from '../../integrations/integration.service';
@@ -15,6 +17,7 @@ import { WorkflowLogService } from './workflow-log.service';
 import { ReconcileMarketingService } from './reconcile-marketing.service';
 import { ReconcileSalesService } from './reconcile-sales.service';
 import { WorkflowProgressCacheService } from './workflow-progress-cache.service';
+import { WORKFLOW_QUEUE, WorkflowJobData } from '../workflow.constants';
 
 interface WorkflowExecutionContext {
   executionId: string;
@@ -51,6 +54,7 @@ export class WorkflowProcessorService {
     private readonly workflowProgressCache: WorkflowProgressCacheService,
     private readonly reconcileMarketingService: ReconcileMarketingService,
     private readonly reconcileSalesService: ReconcileSalesService,
+    @InjectQueue(WORKFLOW_QUEUE) private readonly workflowQueue: Queue<WorkflowJobData>,
   ) {}
 
   /**
@@ -443,6 +447,75 @@ export class WorkflowProcessorService {
       }, 'error', `Execution failed: ${error.message}`);
       await this.clearExecutionLogs(executionId, context.tenantId);
       throw error;
+    } finally {
+      try {
+        await this.enqueueNextPendingForTenant(context.tenantId);
+      } catch (enqueueError) {
+        this.logger.warn(
+          `Failed to enqueue next pending execution for tenant ${context.tenantId}: ${enqueueError?.message}`,
+        );
+      }
+    }
+  }
+
+  private async enqueueNextPendingForTenant(tenantId: string): Promise<void> {
+    const running = await this.prisma.workflowExecution.findFirst({
+      where: {
+        tenantId,
+        status: WorkflowExecutionStatus.RUNNING,
+      },
+      select: { id: true },
+    });
+    if (running) {
+      return;
+    }
+
+    const nextPending = await this.prisma.workflowExecution.findFirst({
+      where: {
+        tenantId,
+        status: WorkflowExecutionStatus.PENDING,
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, workflowId: true, tenantId: true },
+    });
+
+    if (!nextPending) {
+      return;
+    }
+
+    const inlinePreferred =
+      process.env.WORKFLOW_PROCESS_INLINE === 'true' ||
+      process.env.NODE_ENV === 'development';
+
+    let enqueued = false;
+
+    if (!inlinePreferred) {
+      try {
+        await this.workflowQueue.add({
+          executionId: nextPending.id,
+          tenantId: nextPending.tenantId,
+          workflowId: nextPending.workflowId,
+        });
+        enqueued = true;
+      } catch (error) {
+        this.logger.error(
+          `Failed to enqueue pending execution ${nextPending.id}: ${error?.message}`,
+          error?.stack,
+        );
+      }
+    }
+
+    if (!enqueued) {
+      setImmediate(async () => {
+        try {
+          await this.processWorkflowExecution(nextPending.id);
+        } catch (error) {
+          this.logger.error(
+            `Inline workflow execution ${nextPending.id} failed: ${error?.message}`,
+            error?.stack,
+          );
+        }
+      });
     }
   }
 

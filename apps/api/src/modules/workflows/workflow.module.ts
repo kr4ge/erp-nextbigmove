@@ -7,7 +7,8 @@ import { WorkflowProcessorService } from './services/workflow-processor.service'
 import { WorkflowSchedulerService } from './services/workflow-scheduler.service';
 import { DateRangeService } from './services/date-range.service';
 import { WorkflowExecutionGateway } from './gateways/workflow-execution.gateway';
-import { WorkflowQueueProcessor, WORKFLOW_QUEUE } from './processors/workflow.processor';
+import { WorkflowQueueProcessor } from './processors/workflow.processor';
+import { WORKFLOW_QUEUE } from './workflow.constants';
 import { WorkflowLogService } from './services/workflow-log.service';
 import { WorkflowProgressCacheService } from './services/workflow-progress-cache.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';

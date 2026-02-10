@@ -12,7 +12,7 @@ import {
 } from './dto';
 import { WorkflowTriggerType, WorkflowExecutionStatus } from '@prisma/client';
 import * as cronParser from 'cron-parser';
-import { WORKFLOW_QUEUE, WorkflowJobData } from './processors/workflow.processor';
+import { WORKFLOW_QUEUE, WorkflowJobData } from './workflow.constants';
 import { DateRangeService } from './services/date-range.service';
 import { WorkflowProcessorService } from './services/workflow-processor.service';
 import { WorkflowSchedulerService } from './services/workflow-scheduler.service';
@@ -486,19 +486,27 @@ export class WorkflowService {
       throw new BadRequestException('Cannot trigger a disabled workflow');
     }
 
-    const existing = await this.prisma.workflowExecution.findFirst({
+    const existingPending = await this.prisma.workflowExecution.findFirst({
       where: {
         workflowId: workflow.id,
-        status: { in: [WorkflowExecutionStatus.PENDING, WorkflowExecutionStatus.RUNNING] },
+        status: WorkflowExecutionStatus.PENDING,
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, status: true },
+      select: { id: true },
     });
-    if (existing) {
+    if (existingPending) {
       throw new BadRequestException(
-        `Workflow already has an ${existing.status} execution (${existing.id}).`,
+        `Workflow already has a PENDING execution (${existingPending.id}).`,
       );
     }
+
+    const tenantRunning = await this.prisma.workflowExecution.findFirst({
+      where: {
+        tenantId,
+        status: WorkflowExecutionStatus.RUNNING,
+      },
+      select: { id: true },
+    });
 
     // Calculate date range if not provided
     let since = dateRangeSince;
@@ -533,6 +541,13 @@ export class WorkflowService {
         dateRangeUntil: until,
       },
     });
+
+    if (tenantRunning) {
+      this.logger.log(
+        `Tenant ${tenantId} already has a running execution; queued ${execution.id} as PENDING`,
+      );
+      return new WorkflowExecutionResponseDto(execution);
+    }
 
     // Enqueue Bull job to process this execution (or inline fallback)
     const inlinePreferred =

@@ -17,8 +17,9 @@ interface PosOrderData {
   status?: number;
   statusName?: string;
   cod?: number;
-  upsellSales?: number;
-  mktgBaseline?: number;
+  salesCod?: number;
+  mktgCod?: number;
+  isMarketingSource?: boolean;
   pUtmCampaign?: string;
   pUtmContent?: string;
   cogs: number;
@@ -338,15 +339,28 @@ export class PosOrderService {
     const upsellBreakdown = this.computeUpsellBreakdown(rawOrder);
 
     const codValue = parseFloat(rawOrder.cod || '0');
-    let upsellSales = 0;
+    let upsellDelta = 0;
     if (upsellBreakdown && typeof upsellBreakdown === 'object') {
       const newAmount = parseFloat(upsellBreakdown.new_amount ?? '0');
       const originalAmount = parseFloat(upsellBreakdown.original_amount ?? '0');
       if (Number.isFinite(newAmount) && Number.isFinite(originalAmount)) {
-        upsellSales = newAmount - originalAmount;
+        upsellDelta = newAmount - originalAmount;
       }
     }
-    const mktgBaseline = (Number.isFinite(codValue) ? codValue : 0) - upsellSales;
+
+    const adsSource = rawOrder?.ads_source?.toString?.().trim?.().toLowerCase?.() || '';
+    const orderSourceName = rawOrder?.order_sources_name?.toString?.().trim?.().toLowerCase?.() || '';
+    const isMarketingSource = adsSource === 'facebook' || orderSourceName === 'webcake';
+    const safeCod = Number.isFinite(codValue) ? codValue : 0;
+    const mktgCod = isMarketingSource ? safeCod - upsellDelta : 0;
+
+    let salesCod = 0;
+    if (rawOrder?.status === 6) {
+      salesCod = 0;
+    } else if (Array.isArray(statusHistory)) {
+      const hasConfirmedHistory = statusHistory.some((entry: any) => entry?.status === 1);
+      salesCod = hasConfirmedHistory ? safeCod : 0;
+    }
 
     // Fallback mapping: if still empty, derive from note_product first segment
     if (!mapping && typeof noteProduct === 'string' && noteProduct.trim() !== '') {
@@ -394,8 +408,9 @@ export class PosOrderService {
       status: rawOrder.status,
       statusName: rawOrder.status_name,
       cod: codValue,
-      upsellSales,
-      mktgBaseline,
+      salesCod,
+      mktgCod,
+      isMarketingSource,
       pUtmCampaign: rawOrder.p_utm_campaign,
       pUtmContent: rawOrder.p_utm_content,
       cogs,
@@ -459,8 +474,9 @@ export class PosOrderService {
           status: order.status,
           statusName: order.statusName,
           cod: order.cod ? new Decimal(order.cod) : null,
-          upsellSales: new Decimal(order.upsellSales || 0),
-          mktgBaseline: new Decimal(order.mktgBaseline || 0),
+          salesCod: new Decimal(order.salesCod || 0),
+          mktgCod: new Decimal(order.mktgCod || 0),
+          isMarketingSource: !!order.isMarketingSource,
           pUtmCampaign: order.pUtmCampaign,
           pUtmContent: order.pUtmContent,
           cogs: new Decimal(order.cogs),
@@ -483,8 +499,9 @@ export class PosOrderService {
           status: order.status,
           statusName: order.statusName,
           cod: order.cod ? new Decimal(order.cod) : null,
-          upsellSales: new Decimal(order.upsellSales || 0),
-          mktgBaseline: new Decimal(order.mktgBaseline || 0),
+          salesCod: new Decimal(order.salesCod || 0),
+          mktgCod: new Decimal(order.mktgCod || 0),
+          isMarketingSource: !!order.isMarketingSource,
           pUtmCampaign: order.pUtmCampaign,
           pUtmContent: order.pUtmContent,
           cogs: new Decimal(order.cogs),

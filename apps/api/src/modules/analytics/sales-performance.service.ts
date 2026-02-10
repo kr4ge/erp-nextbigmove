@@ -17,11 +17,15 @@ type SalesPerformanceRow = {
   shopId: string;
   orderCount: number;
   totalCod: number;
-  sales: number;
-  mktg: number;
+  salesCod: number;
+  mktgCod: number;
+  upsellDelta: number;
+  confirmedCount: number;
+  marketingLeadCount: number;
   upsellCount: number;
   statusCounts: Record<string, number>;
   salesVsMktgPct: number;
+  confirmationRatePct: number;
 };
 
 @Injectable()
@@ -81,9 +85,13 @@ export class SalesPerformanceService {
 
     if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length === 0) {
       const emptySummary = {
-        sales: 0,
-        mktg: 0,
+        upsell_delta: 0,
+        sales_cod: 0,
+        mktg_cod: 0,
         sales_vs_mktg_pct: 0,
+        confirmed_count: 0,
+        marketing_lead_count: 0,
+        confirmation_rate_pct: 0,
         total_cod: 0,
         order_count: 0,
         upsell_count: 0,
@@ -155,8 +163,10 @@ export class SalesPerformanceService {
           "shopId",
           "status",
           "cod",
-          "upsellSales",
-          "mktgBaseline",
+          "salesCod",
+          "mktgCod",
+          "isMarketingSource",
+          "statusHistory",
           "upsellBreakdown"
         FROM "pos_orders"
         ${clause}
@@ -167,9 +177,17 @@ export class SalesPerformanceService {
           "shopId",
           COUNT(*)::int AS "order_count",
           COALESCE(SUM(COALESCE("cod", 0)), 0)::numeric AS "total_cod",
+          COALESCE(SUM(COALESCE("salesCod", 0)), 0)::numeric AS "sales_cod",
           COALESCE(SUM(
             CASE
-              WHEN "upsellSales" IS NOT NULL THEN "upsellSales"
+              WHEN COALESCE(jsonb_path_exists("statusHistory", '$[*] ? (@.status == 1)'), false)
+                THEN 1
+              ELSE 0
+            END
+          ), 0)::int AS "confirmed_count",
+          COALESCE(SUM(CASE WHEN "isMarketingSource" THEN 1 ELSE 0 END), 0)::int AS "marketing_lead_count",
+          COALESCE(SUM(
+            CASE
               WHEN "upsellBreakdown" IS NULL THEN 0
               ELSE
                 (
@@ -187,13 +205,12 @@ export class SalesPerformanceService {
                   END
                 )
             END
-          ), 0)::numeric AS "sales",
+          ), 0)::numeric AS "upsell_delta",
           COALESCE(SUM(
             CASE
-              WHEN "mktgBaseline" IS NOT NULL THEN "mktgBaseline"
+              WHEN "mktgCod" IS NOT NULL THEN "mktgCod"
               ELSE COALESCE("cod", 0) - (
                 CASE
-                  WHEN "upsellSales" IS NOT NULL THEN "upsellSales"
                   WHEN "upsellBreakdown" IS NULL THEN 0
                   ELSE
                     (
@@ -213,7 +230,7 @@ export class SalesPerformanceService {
                 END
               )
             END
-          ), 0)::numeric AS "mktg",
+          ), 0)::numeric AS "mktg_cod",
           COALESCE(SUM(CASE WHEN "upsellBreakdown" IS NULL THEN 0 ELSE 1 END), 0)::int AS "upsell_count"
         FROM filtered
         GROUP BY "salesAssignee", "shopId"
@@ -232,8 +249,11 @@ export class SalesPerformanceService {
         agg."shopId",
         agg."order_count",
         agg."total_cod",
-        agg."sales",
-        agg."mktg",
+        agg."sales_cod",
+        agg."mktg_cod",
+        agg."upsell_delta",
+        agg."confirmed_count",
+        agg."marketing_lead_count",
         agg."upsell_count",
         COALESCE(jsonb_object_agg(sc.status_key, sc.status_count) FILTER (WHERE sc.status_key IS NOT NULL), '{}'::jsonb) AS "status_counts"
       FROM agg
@@ -245,8 +265,11 @@ export class SalesPerformanceService {
         agg."shopId",
         agg."order_count",
         agg."total_cod",
-        agg."sales",
-        agg."mktg",
+        agg."sales_cod",
+        agg."mktg_cod",
+        agg."upsell_delta",
+        agg."confirmed_count",
+        agg."marketing_lead_count",
         agg."upsell_count"
       ORDER BY agg."salesAssignee" NULLS LAST, agg."shopId"
     `;
@@ -260,53 +283,93 @@ export class SalesPerformanceService {
     ]);
 
     const rows: SalesPerformanceRow[] = rawRows.map((row) => {
-      const sales = this.toNumber(row.sales);
-      const mktg = this.toNumber(row.mktg);
+      const salesCod = this.toNumber(row.sales_cod);
+      const mktgCod = this.toNumber(row.mktg_cod);
+      const upsellDelta = this.toNumber(row.upsell_delta);
+      const confirmedCount = this.toNumber(row.confirmed_count);
+      const marketingLeadCount = this.toNumber(row.marketing_lead_count);
       const totalCod = this.toNumber(row.total_cod);
       return {
         salesAssignee: row.salesAssignee ?? null,
         shopId: row.shopId,
         orderCount: this.toNumber(row.order_count),
         totalCod,
-        sales,
-        mktg,
+        salesCod,
+        mktgCod,
+        upsellDelta,
+        confirmedCount,
+        marketingLeadCount,
         upsellCount: this.toNumber(row.upsell_count),
         statusCounts: row.status_counts || {},
-        salesVsMktgPct: mktg > 0 ? (totalCod / mktg) * 100 : 0,
+        salesVsMktgPct: mktgCod > 0 ? (salesCod / mktgCod) * 100 : 0,
+        confirmationRatePct:
+          marketingLeadCount > 0 ? (confirmedCount / marketingLeadCount) * 100 : 0,
       };
     });
 
     const summary = rows.reduce(
       (acc, row) => {
-        acc.sales += row.sales;
-        acc.mktg += row.mktg;
+        acc.upsell_delta += row.upsellDelta;
+        acc.sales_cod += row.salesCod;
+        acc.mktg_cod += row.mktgCod;
+        acc.confirmed_count += row.confirmedCount;
+        acc.marketing_lead_count += row.marketingLeadCount;
         acc.total_cod += row.totalCod;
         acc.order_count += row.orderCount;
         acc.upsell_count += row.upsellCount;
         return acc;
       },
-      { sales: 0, mktg: 0, total_cod: 0, order_count: 0, upsell_count: 0 },
+      {
+        upsell_delta: 0,
+        sales_cod: 0,
+        mktg_cod: 0,
+        confirmed_count: 0,
+        marketing_lead_count: 0,
+        total_cod: 0,
+        order_count: 0,
+        upsell_count: 0,
+      },
     );
 
     const summaryWithPct = {
       ...summary,
-      sales_vs_mktg_pct: summary.mktg > 0 ? (summary.total_cod / summary.mktg) * 100 : 0,
+      sales_vs_mktg_pct: summary.mktg_cod > 0 ? (summary.sales_cod / summary.mktg_cod) * 100 : 0,
+      confirmation_rate_pct:
+        summary.marketing_lead_count > 0
+          ? (summary.confirmed_count / summary.marketing_lead_count) * 100
+          : 0,
     };
 
     const prevSummary = prevRawRows.reduce(
       (acc, row) => {
-        acc.sales += this.toNumber(row.sales);
-        acc.mktg += this.toNumber(row.mktg);
+        acc.upsell_delta += this.toNumber(row.upsell_delta);
+        acc.sales_cod += this.toNumber(row.sales_cod);
+        acc.mktg_cod += this.toNumber(row.mktg_cod);
+        acc.confirmed_count += this.toNumber(row.confirmed_count);
+        acc.marketing_lead_count += this.toNumber(row.marketing_lead_count);
         acc.total_cod += this.toNumber(row.total_cod);
         acc.order_count += this.toNumber(row.order_count);
         acc.upsell_count += this.toNumber(row.upsell_count);
         return acc;
       },
-      { sales: 0, mktg: 0, total_cod: 0, order_count: 0, upsell_count: 0 },
+      {
+        upsell_delta: 0,
+        sales_cod: 0,
+        mktg_cod: 0,
+        confirmed_count: 0,
+        marketing_lead_count: 0,
+        total_cod: 0,
+        order_count: 0,
+        upsell_count: 0,
+      },
     );
     const prevSummaryWithPct = {
       ...prevSummary,
-      sales_vs_mktg_pct: prevSummary.mktg > 0 ? (prevSummary.total_cod / prevSummary.mktg) * 100 : 0,
+      sales_vs_mktg_pct: prevSummary.mktg_cod > 0 ? (prevSummary.sales_cod / prevSummary.mktg_cod) * 100 : 0,
+      confirmation_rate_pct:
+        prevSummary.marketing_lead_count > 0
+          ? (prevSummary.confirmed_count / prevSummary.marketing_lead_count) * 100
+          : 0,
     };
 
     const optionsWhere = Prisma.sql`WHERE ${Prisma.join(baseWhere, ' AND ')}`;

@@ -2,14 +2,7 @@ import { Processor, Process } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { WorkflowProcessorService } from '../services/workflow-processor.service';
-
-export const WORKFLOW_QUEUE = 'workflow-execution';
-
-export interface WorkflowJobData {
-  executionId: string;
-  tenantId: string;
-  workflowId: string;
-}
+import { WORKFLOW_QUEUE, WorkflowJobData } from '../workflow.constants';
 
 @Processor(WORKFLOW_QUEUE)
 export class WorkflowQueueProcessor {

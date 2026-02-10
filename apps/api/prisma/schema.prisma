@@ -765,8 +765,9 @@ model PosOrder {
   status      Int?
   statusName  String?
   cod         Decimal? @db.Decimal(12, 2)
-  upsellSales Decimal? @db.Decimal(12, 2)
-  mktgBaseline Decimal? @db.Decimal(12, 2)
+  salesCod Decimal? @db.Decimal(12, 2)
+  mktgCod Decimal? @db.Decimal(12, 2)
+  isMarketingSource Boolean @default(false)
   // UTM tracking
   pUtmCampaign String?
   pUtmContent  String?

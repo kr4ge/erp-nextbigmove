@@ -6,7 +6,7 @@ import { CronJob } from 'cron';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { DateRangeService } from './date-range.service';
 import { WorkflowTriggerType } from '@prisma/client';
-import { WORKFLOW_QUEUE, WorkflowJobData } from '../processors/workflow.processor';
+import { WORKFLOW_QUEUE, WorkflowJobData } from '../workflow.constants';
 import { WorkflowProcessorService } from './workflow-processor.service';
 
 @Injectable()
@@ -133,20 +133,28 @@ export class WorkflowSchedulerService implements OnModuleInit {
         return;
       }
 
-      const existing = await this.prisma.workflowExecution.findFirst({
+      const existingPending = await this.prisma.workflowExecution.findFirst({
         where: {
           workflowId: workflow.id,
-          status: { in: ['PENDING', 'RUNNING'] },
+          status: 'PENDING',
         },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, status: true },
+        select: { id: true },
       });
-      if (existing) {
+      if (existingPending) {
         this.logger.warn(
-          `Workflow ${workflowId} already has a ${existing.status} execution (${existing.id}); skipping scheduled run`,
+          `Workflow ${workflowId} already has a PENDING execution (${existingPending.id}); skipping scheduled run`,
         );
         return;
       }
+
+      const tenantRunning = await this.prisma.workflowExecution.findFirst({
+        where: {
+          tenantId: workflow.tenantId,
+          status: 'RUNNING',
+        },
+        select: { id: true },
+      });
 
       const config = workflow.config as any;
       // Prefer workflow-level date range; fall back to legacy per-source config
@@ -173,6 +181,13 @@ export class WorkflowSchedulerService implements OnModuleInit {
           dateRangeUntil: calculatedRange.until,
         },
       });
+
+      if (tenantRunning) {
+        this.logger.log(
+          `Tenant ${workflow.tenantId} already has a running execution; queued ${execution.id} as PENDING`,
+        );
+        return;
+      }
 
       this.logger.log(
         `Created execution ${execution.id} for scheduled workflow ${workflowId}`,
