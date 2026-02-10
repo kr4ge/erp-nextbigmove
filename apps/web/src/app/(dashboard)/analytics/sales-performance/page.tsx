@@ -35,10 +35,17 @@ type SalesPerformanceRow = {
   upsellDelta: number;
   confirmedCount: number;
   marketingLeadCount: number;
+  deliveredCount: number;
+  rtsCount: number;
+  pendingCount: number;
+  cancelledCount: number;
   upsellCount: number;
   statusCounts: Record<string, number>;
   salesVsMktgPct: number;
   confirmationRatePct: number;
+  rtsRatePct: number;
+  pendingRatePct: number;
+  cancellationRatePct: number;
 };
 
 type OverviewResponse = {
@@ -50,6 +57,13 @@ type OverviewResponse = {
     confirmed_count: number;
     marketing_lead_count: number;
     confirmation_rate_pct: number;
+    delivered_count: number;
+    rts_count: number;
+    rts_rate_pct: number;
+    pending_count: number;
+    cancelled_count: number;
+    pending_rate_pct: number;
+    cancellation_rate_pct: number;
     total_cod: number;
     order_count: number;
     upsell_count: number;
@@ -62,6 +76,13 @@ type OverviewResponse = {
     confirmed_count: number;
     marketing_lead_count: number;
     confirmation_rate_pct: number;
+    delivered_count: number;
+    rts_count: number;
+    rts_rate_pct: number;
+    pending_count: number;
+    cancelled_count: number;
+    pending_rate_pct: number;
+    cancellation_rate_pct: number;
     total_cod: number;
     order_count: number;
     upsell_count: number;
@@ -86,11 +107,14 @@ const formatCurrency = (val?: number) =>
 const formatPct = (val?: number) => `${(val || 0).toFixed(2)}%`;
 
 const metricDefinitions: { key: keyof OverviewResponse['summary']; label: string; format: 'currency' | 'percent' | 'number' }[] = [
-  { key: 'sales_vs_mktg_pct', label: 'Sales vs MKTG (%)', format: 'percent' },
-  { key: 'confirmation_rate_pct', label: 'Confirmation Rate (%)', format: 'percent' },
-  { key: 'upsell_delta', label: 'Sales Upsell (₱)', format: 'currency' },
+  { key: 'mktg_cod', label: 'MKTG Cod (₱)', format: 'currency' },
   { key: 'sales_cod', label: 'Sales Cod (₱)', format: 'currency' },
-  { key: 'mktg_cod', label: 'MKTG Baseline (₱)', format: 'currency' },
+  { key: 'sales_vs_mktg_pct', label: 'SMP %', format: 'percent' },
+  { key: 'rts_rate_pct', label: 'RTS Rate (%)', format: 'percent' },
+  { key: 'confirmation_rate_pct', label: 'Confirmation Rate (%)', format: 'percent' },
+  { key: 'pending_rate_pct', label: 'Pending Rate (%)', format: 'percent' },
+  { key: 'cancellation_rate_pct', label: 'Cancellation Rate (%)', format: 'percent' },
+  { key: 'upsell_delta', label: 'Sales Upsell (₱)', format: 'currency' },
 ];
 
 const formatValue = (val: number, format: 'currency' | 'percent' | 'number') => {
@@ -432,10 +456,19 @@ export default function SalesPerformancePage() {
                     Shop POS
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    Sales vs MKTG %
+                    SMP %
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                     Confirmation Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    RTS Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Pending Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Cancellation Rate %
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                     Sales Upsell
@@ -444,14 +477,14 @@ export default function SalesPerformancePage() {
                     Sales Cod
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    MKTG Baseline
+                    MKTG Cod
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={7}>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
                       Loading...
                     </td>
                   </tr>
@@ -468,6 +501,15 @@ export default function SalesPerformancePage() {
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
                         {formatPct(row.confirmationRatePct)}
                       </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatPct(row.rtsRatePct)}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatPct(row.pendingRatePct)}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatPct(row.cancellationRatePct)}
+                      </td>
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
                         {formatCurrency(row.upsellDelta)}
                       </td>
@@ -481,7 +523,7 @@ export default function SalesPerformancePage() {
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={7}>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
                       No data available for the selected filters.
                     </td>
                   </tr>

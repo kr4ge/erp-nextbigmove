@@ -22,10 +22,17 @@ type SalesPerformanceRow = {
   upsellDelta: number;
   confirmedCount: number;
   marketingLeadCount: number;
+  deliveredCount: number;
+  rtsCount: number;
+  pendingCount: number;
+  cancelledCount: number;
   upsellCount: number;
   statusCounts: Record<string, number>;
   salesVsMktgPct: number;
   confirmationRatePct: number;
+  rtsRatePct: number;
+  pendingRatePct: number;
+  cancellationRatePct: number;
 };
 
 @Injectable()
@@ -92,6 +99,13 @@ export class SalesPerformanceService {
         confirmed_count: 0,
         marketing_lead_count: 0,
         confirmation_rate_pct: 0,
+        delivered_count: 0,
+        rts_count: 0,
+        rts_rate_pct: 0,
+        pending_count: 0,
+        cancelled_count: 0,
+        pending_rate_pct: 0,
+        cancellation_rate_pct: 0,
         total_cod: 0,
         order_count: 0,
         upsell_count: 0,
@@ -289,10 +303,18 @@ export class SalesPerformanceService {
       const confirmedCount = this.toNumber(row.confirmed_count);
       const marketingLeadCount = this.toNumber(row.marketing_lead_count);
       const totalCod = this.toNumber(row.total_cod);
+      const statusCounts: Record<string, number> = row.status_counts || {};
+      const deliveredCount = this.toNumber(statusCounts['3'] ?? 0);
+      const rtsCount =
+        this.toNumber(statusCounts['4'] ?? 0) + this.toNumber(statusCounts['5'] ?? 0);
+      const pendingCount = this.toNumber(statusCounts['11'] ?? 0);
+      const cancelledCount = this.toNumber(statusCounts['6'] ?? 0);
+      const orderCount = this.toNumber(row.order_count);
+      const rtsDenominator = deliveredCount + rtsCount;
       return {
         salesAssignee: row.salesAssignee ?? null,
         shopId: row.shopId,
-        orderCount: this.toNumber(row.order_count),
+        orderCount,
         totalCod,
         salesCod,
         mktgCod,
@@ -300,10 +322,19 @@ export class SalesPerformanceService {
         confirmedCount,
         marketingLeadCount,
         upsellCount: this.toNumber(row.upsell_count),
-        statusCounts: row.status_counts || {},
+        deliveredCount,
+        rtsCount,
+        pendingCount,
+        cancelledCount,
+        statusCounts,
         salesVsMktgPct: mktgCod > 0 ? (salesCod / mktgCod) * 100 : 0,
         confirmationRatePct:
-          marketingLeadCount > 0 ? (confirmedCount / marketingLeadCount) * 100 : 0,
+          orderCount > 0
+            ? (confirmedCount / orderCount) * 100
+            : 0,
+        rtsRatePct: rtsDenominator > 0 ? (rtsCount / rtsDenominator) * 100 : 0,
+        pendingRatePct: orderCount > 0 ? (pendingCount / orderCount) * 100 : 0,
+        cancellationRatePct: orderCount > 0 ? (cancelledCount / orderCount) * 100 : 0,
       };
     });
 
@@ -314,6 +345,10 @@ export class SalesPerformanceService {
         acc.mktg_cod += row.mktgCod;
         acc.confirmed_count += row.confirmedCount;
         acc.marketing_lead_count += row.marketingLeadCount;
+        acc.delivered_count += row.deliveredCount;
+        acc.rts_count += row.rtsCount;
+        acc.pending_count += row.pendingCount;
+        acc.cancelled_count += row.cancelledCount;
         acc.total_cod += row.totalCod;
         acc.order_count += row.orderCount;
         acc.upsell_count += row.upsellCount;
@@ -325,6 +360,10 @@ export class SalesPerformanceService {
         mktg_cod: 0,
         confirmed_count: 0,
         marketing_lead_count: 0,
+        delivered_count: 0,
+        rts_count: 0,
+        pending_count: 0,
+        cancelled_count: 0,
         total_cod: 0,
         order_count: 0,
         upsell_count: 0,
@@ -335,8 +374,20 @@ export class SalesPerformanceService {
       ...summary,
       sales_vs_mktg_pct: summary.mktg_cod > 0 ? (summary.sales_cod / summary.mktg_cod) * 100 : 0,
       confirmation_rate_pct:
-        summary.marketing_lead_count > 0
-          ? (summary.confirmed_count / summary.marketing_lead_count) * 100
+        summary.order_count > 0
+          ? (summary.confirmed_count / summary.order_count) * 100
+          : 0,
+      rts_rate_pct:
+        summary.delivered_count + summary.rts_count > 0
+          ? (summary.rts_count / (summary.delivered_count + summary.rts_count)) * 100
+          : 0,
+      pending_rate_pct:
+        summary.order_count > 0
+          ? (summary.pending_count / summary.order_count) * 100
+          : 0,
+      cancellation_rate_pct:
+        summary.order_count > 0
+          ? (summary.cancelled_count / summary.order_count) * 100
           : 0,
     };
 
@@ -347,6 +398,12 @@ export class SalesPerformanceService {
         acc.mktg_cod += this.toNumber(row.mktg_cod);
         acc.confirmed_count += this.toNumber(row.confirmed_count);
         acc.marketing_lead_count += this.toNumber(row.marketing_lead_count);
+        acc.delivered_count += this.toNumber(row.status_counts?.['3'] ?? 0);
+        acc.rts_count +=
+          this.toNumber(row.status_counts?.['4'] ?? 0) +
+          this.toNumber(row.status_counts?.['5'] ?? 0);
+        acc.pending_count += this.toNumber(row.status_counts?.['11'] ?? 0);
+        acc.cancelled_count += this.toNumber(row.status_counts?.['6'] ?? 0);
         acc.total_cod += this.toNumber(row.total_cod);
         acc.order_count += this.toNumber(row.order_count);
         acc.upsell_count += this.toNumber(row.upsell_count);
@@ -358,6 +415,10 @@ export class SalesPerformanceService {
         mktg_cod: 0,
         confirmed_count: 0,
         marketing_lead_count: 0,
+        delivered_count: 0,
+        rts_count: 0,
+        pending_count: 0,
+        cancelled_count: 0,
         total_cod: 0,
         order_count: 0,
         upsell_count: 0,
@@ -367,8 +428,20 @@ export class SalesPerformanceService {
       ...prevSummary,
       sales_vs_mktg_pct: prevSummary.mktg_cod > 0 ? (prevSummary.sales_cod / prevSummary.mktg_cod) * 100 : 0,
       confirmation_rate_pct:
-        prevSummary.marketing_lead_count > 0
-          ? (prevSummary.confirmed_count / prevSummary.marketing_lead_count) * 100
+        prevSummary.order_count > 0
+          ? (prevSummary.confirmed_count / prevSummary.order_count) * 100
+          : 0,
+      rts_rate_pct:
+        prevSummary.delivered_count + prevSummary.rts_count > 0
+          ? (prevSummary.rts_count / (prevSummary.delivered_count + prevSummary.rts_count)) * 100
+          : 0,
+      pending_rate_pct:
+        prevSummary.order_count > 0
+          ? (prevSummary.pending_count / prevSummary.order_count) * 100
+          : 0,
+      cancellation_rate_pct:
+        prevSummary.order_count > 0
+          ? (prevSummary.cancelled_count / prevSummary.order_count) * 100
           : 0,
     };
 
