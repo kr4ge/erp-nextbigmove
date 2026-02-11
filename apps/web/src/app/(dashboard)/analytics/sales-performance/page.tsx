@@ -48,48 +48,32 @@ type SalesPerformanceRow = {
   cancellationRatePct: number;
 };
 
+type SalesPerformanceSummary = {
+  upsell_delta: number;
+  sales_cod: number;
+  mktg_cod: number;
+  sales_vs_mktg_pct: number;
+  confirmed_count: number;
+  marketing_lead_count: number;
+  confirmation_rate_pct: number;
+  delivered_count: number;
+  rts_count: number;
+  rts_rate_pct: number;
+  pending_count: number;
+  cancelled_count: number;
+  pending_rate_pct: number;
+  cancellation_rate_pct: number;
+  upsell_rate_pct: number;
+  total_cod: number;
+  order_count: number;
+  upsell_count: number;
+  for_upsell_count: number;
+  upsell_tag_count: number;
+};
+
 type OverviewResponse = {
-  summary: {
-    upsell_delta: number;
-    sales_cod: number;
-    mktg_cod: number;
-    sales_vs_mktg_pct: number;
-    confirmed_count: number;
-    marketing_lead_count: number;
-    confirmation_rate_pct: number;
-    delivered_count: number;
-    rts_count: number;
-    rts_rate_pct: number;
-    pending_count: number;
-    cancelled_count: number;
-    pending_rate_pct: number;
-    cancellation_rate_pct: number;
-    upsell_rate_pct: number;
-    total_cod: number;
-    order_count: number;
-    upsell_count: number;
-    for_upsell_count: number;
-    upsell_tag_count: number;
-  };
-  prevSummary: {
-    upsell_delta: number;
-    sales_cod: number;
-    mktg_cod: number;
-    sales_vs_mktg_pct: number;
-    confirmed_count: number;
-    marketing_lead_count: number;
-    confirmation_rate_pct: number;
-    delivered_count: number;
-    rts_count: number;
-    rts_rate_pct: number;
-    pending_count: number;
-    cancelled_count: number;
-    pending_rate_pct: number;
-    cancellation_rate_pct: number;
-    total_cod: number;
-    order_count: number;
-    upsell_count: number;
-  };
+  summary: SalesPerformanceSummary;
+  prevSummary: SalesPerformanceSummary;
   rows: SalesPerformanceRow[];
   filters: {
     salesAssignees: string[];
