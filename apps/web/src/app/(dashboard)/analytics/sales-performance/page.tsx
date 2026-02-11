@@ -46,6 +46,7 @@ type SalesPerformanceRow = {
   rtsRatePct: number;
   pendingRatePct: number;
   cancellationRatePct: number;
+  upsellRatePct: number;
 };
 
 type SalesPerformanceSummary = {
