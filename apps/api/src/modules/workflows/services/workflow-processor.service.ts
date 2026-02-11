@@ -301,10 +301,11 @@ export class WorkflowProcessorService {
         // Reconcile marketing (ad-level) after both sources succeed
         let reconcileOk = true;
         try {
+          // Reconcile tenant-wide so shared integrations/shops are included
           await this.reconcileMarketingService.reconcileDay(
             context.tenantId,
             date,
-            context.teamId ?? null,
+            null,
           );
         } catch (error) {
           reconcileOk = false;
@@ -326,19 +327,20 @@ export class WorkflowProcessorService {
         // Aggregate sales (campaign-level) after reconcile_marketing
         if (reconcileOk) {
           try {
+            // Aggregate tenant-wide to match reconciliation scope
             await this.reconcileSalesService.aggregateDay(
               context.tenantId,
               date,
-              context.teamId ?? null,
+              null,
             );
             // Notify listeners that marketing/sales data has been updated
             this.executionGateway.emitTenantEvent(
               context.tenantId,
-              context.teamId ?? null,
+              null,
               'marketing:updated',
               {
                 tenantId: context.tenantId,
-                teamId: context.teamId ?? null,
+                teamId: null,
                 date,
                 source: 'reconcile_sales',
               },
