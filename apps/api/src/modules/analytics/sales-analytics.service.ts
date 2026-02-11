@@ -714,6 +714,28 @@ export class SalesAnalyticsService {
     const errors: Array<{ date: string; source: string; error: string }> = [];
     for (const date of dates) {
       try {
+        await this.prisma.reconcileSales.deleteMany({
+          where: {
+            tenantId,
+            date,
+          },
+        });
+        await this.prisma.reconcileMarketing.deleteMany({
+          where: {
+            tenantId,
+            date: new Date(`${date}T00:00:00.000Z`),
+          },
+        });
+      } catch (err: any) {
+        errors.push({
+          date,
+          source: 'reconcile_reset',
+          error: err?.message || 'Failed to reset reconcile rows',
+        });
+        continue;
+      }
+
+      try {
         await this.reconcileMarketingService.reconcileDay(tenantId, date, null);
       } catch (err: any) {
         errors.push({
