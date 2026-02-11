@@ -19,6 +19,7 @@ import {
   BulkCreatePosIntegrationDto,
   ListIntegrationsDto,
   ListPosStoresDto,
+  UpdatePosStoreDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -149,6 +150,18 @@ export class IntegrationController {
   @Permissions('integration.read')
   async getPosStore(@Param('id') id: string) {
     return this.integrationService.getPosStore(id);
+  }
+
+  /**
+   * POS Stores - update store settings
+   */
+  @Patch('/pos-stores/:id')
+  @Permissions('integration.update')
+  async updatePosStore(
+    @Param('id') id: string,
+    @Body() dto: UpdatePosStoreDto,
+  ) {
+    return this.integrationService.updatePosStore(id, dto);
   }
 
   /**

@@ -27,12 +27,15 @@ type SalesPerformanceRow = {
   pendingCount: number;
   cancelledCount: number;
   upsellCount: number;
+  forUpsellCount: number;
+  upsellTagCount: number;
   statusCounts: Record<string, number>;
   salesVsMktgPct: number;
   confirmationRatePct: number;
   rtsRatePct: number;
   pendingRatePct: number;
   cancellationRatePct: number;
+  upsellRatePct: number;
 };
 
 @Injectable()
@@ -48,6 +51,10 @@ export class SalesPerformanceService {
   private toNumber(val: any): number {
     const n = typeof val === 'string' ? parseFloat(val) : Number(val);
     return Number.isFinite(n) ? n : 0;
+  }
+
+  private normalizeAssignee(value?: string | null): string {
+    return (value || '').trim().toLowerCase();
   }
 
   private diffDays(startStr: string, endStr: string): number {
@@ -91,25 +98,28 @@ export class SalesPerformanceService {
     const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
 
     if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length === 0) {
-      const emptySummary = {
-        upsell_delta: 0,
-        sales_cod: 0,
-        mktg_cod: 0,
-        sales_vs_mktg_pct: 0,
-        confirmed_count: 0,
-        marketing_lead_count: 0,
-        confirmation_rate_pct: 0,
-        delivered_count: 0,
-        rts_count: 0,
-        rts_rate_pct: 0,
-        pending_count: 0,
-        cancelled_count: 0,
-        pending_rate_pct: 0,
-        cancellation_rate_pct: 0,
-        total_cod: 0,
-        order_count: 0,
-        upsell_count: 0,
-      };
+        const emptySummary = {
+          upsell_delta: 0,
+          sales_cod: 0,
+          mktg_cod: 0,
+          sales_vs_mktg_pct: 0,
+          confirmed_count: 0,
+          marketing_lead_count: 0,
+          confirmation_rate_pct: 0,
+          delivered_count: 0,
+          rts_count: 0,
+          rts_rate_pct: 0,
+          pending_count: 0,
+          cancelled_count: 0,
+          pending_rate_pct: 0,
+          cancellation_rate_pct: 0,
+          upsell_rate_pct: 0,
+          total_cod: 0,
+          order_count: 0,
+          upsell_count: 0,
+          for_upsell_count: 0,
+          upsell_tag_count: 0,
+        };
       return {
         summary: emptySummary,
         prevSummary: emptySummary,
@@ -180,7 +190,9 @@ export class SalesPerformanceService {
           "salesCod",
           "mktgCod",
           "isMarketingSource",
+          "forUpsell",
           "statusHistory",
+          "tags",
           "upsellBreakdown"
         FROM "pos_orders"
         ${clause}
@@ -200,6 +212,14 @@ export class SalesPerformanceService {
             END
           ), 0)::int AS "confirmed_count",
           COALESCE(SUM(CASE WHEN "isMarketingSource" THEN 1 ELSE 0 END), 0)::int AS "marketing_lead_count",
+          COALESCE(SUM(CASE WHEN "forUpsell" THEN 1 ELSE 0 END), 0)::int AS "for_upsell_count",
+          COALESCE(SUM(
+            CASE
+              WHEN COALESCE(jsonb_path_exists("tags", '$[*] ? (@.name == "UPSELL")'), false)
+                THEN 1
+              ELSE 0
+            END
+          ), 0)::int AS "upsell_tag_count",
           COALESCE(SUM(
             CASE
               WHEN "upsellBreakdown" IS NULL THEN 0
@@ -268,6 +288,8 @@ export class SalesPerformanceService {
         agg."upsell_delta",
         agg."confirmed_count",
         agg."marketing_lead_count",
+        agg."for_upsell_count",
+        agg."upsell_tag_count",
         agg."upsell_count",
         COALESCE(jsonb_object_agg(sc.status_key, sc.status_count) FILTER (WHERE sc.status_key IS NOT NULL), '{}'::jsonb) AS "status_counts"
       FROM agg
@@ -284,6 +306,8 @@ export class SalesPerformanceService {
         agg."upsell_delta",
         agg."confirmed_count",
         agg."marketing_lead_count",
+        agg."for_upsell_count",
+        agg."upsell_tag_count",
         agg."upsell_count"
       ORDER BY agg."salesAssignee" NULLS LAST, agg."shopId"
     `;
@@ -302,6 +326,8 @@ export class SalesPerformanceService {
       const upsellDelta = this.toNumber(row.upsell_delta);
       const confirmedCount = this.toNumber(row.confirmed_count);
       const marketingLeadCount = this.toNumber(row.marketing_lead_count);
+      const forUpsellCount = this.toNumber(row.for_upsell_count);
+      const upsellTagCount = this.toNumber(row.upsell_tag_count);
       const totalCod = this.toNumber(row.total_cod);
       const statusCounts: Record<string, number> = row.status_counts || {};
       const deliveredCount = this.toNumber(statusCounts['3'] ?? 0);
@@ -322,6 +348,8 @@ export class SalesPerformanceService {
         confirmedCount,
         marketingLeadCount,
         upsellCount: this.toNumber(row.upsell_count),
+        forUpsellCount,
+        upsellTagCount,
         deliveredCount,
         rtsCount,
         pendingCount,
@@ -335,6 +363,7 @@ export class SalesPerformanceService {
         rtsRatePct: rtsDenominator > 0 ? (rtsCount / rtsDenominator) * 100 : 0,
         pendingRatePct: orderCount > 0 ? (pendingCount / orderCount) * 100 : 0,
         cancellationRatePct: orderCount > 0 ? (cancelledCount / orderCount) * 100 : 0,
+        upsellRatePct: forUpsellCount > 0 ? (upsellTagCount / forUpsellCount) * 100 : 0,
       };
     });
 
@@ -352,6 +381,8 @@ export class SalesPerformanceService {
         acc.total_cod += row.totalCod;
         acc.order_count += row.orderCount;
         acc.upsell_count += row.upsellCount;
+        acc.for_upsell_count += row.forUpsellCount;
+        acc.upsell_tag_count += row.upsellTagCount;
         return acc;
       },
       {
@@ -367,6 +398,8 @@ export class SalesPerformanceService {
         total_cod: 0,
         order_count: 0,
         upsell_count: 0,
+        for_upsell_count: 0,
+        upsell_tag_count: 0,
       },
     );
 
@@ -389,6 +422,10 @@ export class SalesPerformanceService {
         summary.order_count > 0
           ? (summary.cancelled_count / summary.order_count) * 100
           : 0,
+      upsell_rate_pct:
+        summary.for_upsell_count > 0
+          ? (summary.upsell_tag_count / summary.for_upsell_count) * 100
+          : 0,
     };
 
     const prevSummary = prevRawRows.reduce(
@@ -407,6 +444,8 @@ export class SalesPerformanceService {
         acc.total_cod += this.toNumber(row.total_cod);
         acc.order_count += this.toNumber(row.order_count);
         acc.upsell_count += this.toNumber(row.upsell_count);
+        acc.for_upsell_count += this.toNumber(row.for_upsell_count);
+        acc.upsell_tag_count += this.toNumber(row.upsell_tag_count);
         return acc;
       },
       {
@@ -422,6 +461,8 @@ export class SalesPerformanceService {
         total_cod: 0,
         order_count: 0,
         upsell_count: 0,
+        for_upsell_count: 0,
+        upsell_tag_count: 0,
       },
     );
     const prevSummaryWithPct = {
@@ -443,6 +484,10 @@ export class SalesPerformanceService {
         prevSummary.order_count > 0
           ? (prevSummary.cancelled_count / prevSummary.order_count) * 100
           : 0,
+      upsell_rate_pct:
+        prevSummary.for_upsell_count > 0
+          ? (prevSummary.upsell_tag_count / prevSummary.for_upsell_count) * 100
+          : 0,
     };
 
     const optionsWhere = Prisma.sql`WHERE ${Prisma.join(baseWhere, ' AND ')}`;
@@ -453,18 +498,59 @@ export class SalesPerformanceService {
       AND "salesAssignee" IS NOT NULL
       ORDER BY "salesAssignee"
     `;
-    const assigneeRows = await this.prisma.$queryRaw<any[]>(assigneeOptionsQuery);
-    const assigneeOptions = assigneeRows.map((r) => r.salesAssignee).filter(Boolean);
-
-    const includeUnassignedQuery = Prisma.sql`
-      SELECT EXISTS(
-        SELECT 1 FROM "pos_orders"
-        ${optionsWhere}
-        AND "salesAssignee" IS NULL
-      ) AS "has_unassigned"
+    const unassignedCountQuery = Prisma.sql`
+      SELECT COUNT(*)::int AS "count"
+      FROM "pos_orders"
+      ${optionsWhere}
+      AND "salesAssignee" IS NULL
     `;
-    const includeUnassignedRow = await this.prisma.$queryRaw<any[]>(includeUnassignedQuery);
-    const includeUnassigned = !!includeUnassignedRow?.[0]?.has_unassigned;
+    const [assigneeRows, users, unassignedCountRows] = await Promise.all([
+      this.prisma.$queryRaw<any[]>(assigneeOptionsQuery),
+      this.prisma.user.findMany({
+        where: { tenantId },
+        select: { employeeId: true, firstName: true, lastName: true, email: true },
+      }),
+      this.prisma.$queryRaw<any[]>(unassignedCountQuery),
+    ]);
+    const unassignedCount = this.toNumber(unassignedCountRows?.[0]?.count);
+    const includeUnassigned = unassignedCount > 0;
+
+    const userMap: Record<string, string> = {};
+    users.forEach((u) => {
+      const full = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || u.employeeId || '';
+      if (u.employeeId) {
+        userMap[this.normalizeAssignee(u.employeeId)] = full;
+      }
+      if (full) {
+        userMap[this.normalizeAssignee(full)] = full;
+      }
+    });
+
+    const salesAssigneesDisplayMap: Record<string, string> = {};
+    const optionMap: Record<string, string> = {};
+    assigneeRows.forEach((r) => {
+      const raw = r.salesAssignee ?? '';
+      const trimmed = raw.trim();
+      if (!trimmed) return;
+      const normalized = this.normalizeAssignee(trimmed);
+      const display = userMap[normalized] || trimmed;
+      optionMap[trimmed] = trimmed;
+      if (!salesAssigneesDisplayMap[trimmed]) {
+        salesAssigneesDisplayMap[trimmed] = display;
+      }
+      if (!salesAssigneesDisplayMap[normalized]) {
+        salesAssigneesDisplayMap[normalized] = display;
+      }
+    });
+    if (includeUnassigned) {
+      salesAssigneesDisplayMap['__null__'] = unassignedCount > 0 ? `Unassigned (${unassignedCount})` : 'Unassigned';
+    }
+
+    const assigneeOptions = Object.keys(optionMap).sort((a, b) => {
+      const da = salesAssigneesDisplayMap[a] || optionMap[a] || a;
+      const db = salesAssigneesDisplayMap[b] || optionMap[b] || b;
+      return da.localeCompare(db);
+    });
 
     const lastUpdatedQuery = Prisma.sql`
       SELECT MAX("updatedAt") AS "last_updated"
@@ -480,6 +566,7 @@ export class SalesPerformanceService {
       rows,
       filters: {
         salesAssignees: assigneeOptions,
+        salesAssigneesDisplayMap,
         includeUnassigned,
       },
       selected: {

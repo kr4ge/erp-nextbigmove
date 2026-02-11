@@ -20,6 +20,7 @@ interface PosOrderData {
   salesCod?: number;
   mktgCod?: number;
   isMarketingSource?: boolean;
+  forUpsell?: boolean;
   pUtmCampaign?: string;
   pUtmContent?: string;
   cogs: number;
@@ -188,6 +189,7 @@ export class PosOrderService {
     tenantId: string,
     storeId: string,
     rawOrder: any,
+    initialValueOffer: number | null,
   ): Promise<PosOrderData> {
     // Skip abandoned Shopify checkouts: status 0 with abandon checkout id
     if (
@@ -335,10 +337,14 @@ export class PosOrderService {
       }
     }
 
-    // Upsell breakdown from histories (if any) looking for UPSELL tag
-    const upsellBreakdown = this.computeUpsellBreakdown(rawOrder);
+    const hasUpsellTag = this.hasUpsellTagInList(rawOrder?.tags ?? null);
+    // Compute history-based breakdown even without tag (used for forUpsell baseline)
+    const historyBreakdown = this.computeUpsellBreakdown(rawOrder, false);
+    // Only persist upsell breakdown if tagged
+    const upsellBreakdown = hasUpsellTag ? historyBreakdown : null;
 
     const codValue = parseFloat(rawOrder.cod || '0');
+    const hasCod = Number.isFinite(codValue);
     let upsellDelta = 0;
     if (upsellBreakdown && typeof upsellBreakdown === 'object') {
       const newAmount = parseFloat(upsellBreakdown.new_amount ?? '0');
@@ -351,8 +357,19 @@ export class PosOrderService {
     const adsSource = rawOrder?.ads_source?.toString?.().trim?.().toLowerCase?.() || '';
     const orderSourceName = rawOrder?.order_sources_name?.toString?.().trim?.().toLowerCase?.() || '';
     const isMarketingSource = adsSource === 'facebook' || orderSourceName === 'webcake';
-    const safeCod = Number.isFinite(codValue) ? codValue : 0;
+    const safeCod = hasCod ? codValue : 0;
     const mktgCod = isMarketingSource ? safeCod - upsellDelta : 0;
+
+    let forUpsell = false;
+    if (initialValueOffer !== null && initialValueOffer > 0 && hasCod) {
+      let baselineAmount = safeCod;
+      const originalRaw = historyBreakdown?.original_amount;
+      const originalVal = parseFloat(originalRaw ?? '0');
+      if (Number.isFinite(originalVal) && originalVal > 0) {
+        baselineAmount = originalVal;
+      }
+      forUpsell = baselineAmount <= initialValueOffer;
+    }
 
     let salesCod = 0;
     if (rawOrder?.status === 6) {
@@ -411,6 +428,7 @@ export class PosOrderService {
       salesCod,
       mktgCod,
       isMarketingSource,
+      forUpsell,
       pUtmCampaign: rawOrder.p_utm_campaign,
       pUtmContent: rawOrder.p_utm_content,
       cogs,
@@ -442,6 +460,18 @@ export class PosOrderService {
   ): Promise<number> {
     let upserted = 0;
 
+    const store = await this.prisma.posStore.findFirst({
+      where: { id: storeId, tenantId },
+      select: { initialValueOffer: true, shopId: true },
+    });
+    let initialValueOffer: number | null = null;
+    if (store?.initialValueOffer !== null && store?.initialValueOffer !== undefined) {
+      const value = Number(store.initialValueOffer);
+      if (Number.isFinite(value) && value > 0) {
+        initialValueOffer = value;
+      }
+    }
+
     for (const rawOrder of rawOrders) {
       const sourceName = rawOrder?.order_sources_name?.toString?.().trim?.() || '';
       if (sourceName.toLowerCase() === 'tiktok') {
@@ -454,7 +484,12 @@ export class PosOrderService {
         continue;
       }
 
-      const order = await this.parsePosOrder(tenantId, storeId, rawOrder);
+      const order = await this.parsePosOrder(
+        tenantId,
+        storeId,
+        rawOrder,
+        initialValueOffer,
+      );
 
       await this.prisma.posOrder.upsert({
         where: {
@@ -477,6 +512,7 @@ export class PosOrderService {
           salesCod: new Decimal(order.salesCod || 0),
           mktgCod: new Decimal(order.mktgCod || 0),
           isMarketingSource: !!order.isMarketingSource,
+          forUpsell: !!order.forUpsell,
           pUtmCampaign: order.pUtmCampaign,
           pUtmContent: order.pUtmContent,
           cogs: new Decimal(order.cogs),
@@ -502,6 +538,7 @@ export class PosOrderService {
           salesCod: new Decimal(order.salesCod || 0),
           mktgCod: new Decimal(order.mktgCod || 0),
           isMarketingSource: !!order.isMarketingSource,
+          forUpsell: !!order.forUpsell,
           pUtmCampaign: order.pUtmCampaign,
           pUtmContent: order.pUtmContent,
           cogs: new Decimal(order.cogs),
@@ -521,6 +558,34 @@ export class PosOrderService {
       });
 
       upserted++;
+    }
+
+    // Backfill forUpsell for existing orders in this store (tenant scope)
+    if (store?.shopId && initialValueOffer !== null) {
+      await this.prisma.$executeRaw`
+        UPDATE "pos_orders"
+        SET "forUpsell" = CASE
+          WHEN "cod" IS NULL THEN false
+          WHEN ("upsellBreakdown"->>'original_amount') ~ '^-?\d+(\.\d+)?$'
+            AND ("upsellBreakdown"->>'original_amount')::numeric > 0
+            AND ("upsellBreakdown"->>'original_amount')::numeric <= ${initialValueOffer}
+            THEN true
+          WHEN ("upsellBreakdown"->>'original_amount') ~ '^-?\d+(\.\d+)?$'
+            AND ("upsellBreakdown"->>'original_amount')::numeric > 0
+            THEN "forUpsell"
+          WHEN "cod" <= ${initialValueOffer} THEN true
+          ELSE "forUpsell"
+        END
+        WHERE "tenantId" = ${tenantId}::uuid
+          AND "shopId" = ${store.shopId}
+      `;
+    } else if (store?.shopId) {
+      await this.prisma.$executeRaw`
+        UPDATE "pos_orders"
+        SET "forUpsell" = false
+        WHERE "tenantId" = ${tenantId}::uuid
+          AND "shopId" = ${store.shopId}
+      `;
     }
 
     return upserted;
@@ -639,10 +704,12 @@ export class PosOrderService {
     return { old: 0, new: 0 };
   }
 
-  private computeUpsellBreakdown(order: any): any | null {
-    const tags = order?.tags ?? null;
-    if (!this.hasUpsellTagInList(tags)) {
-      return null;
+  private computeUpsellBreakdown(order: any, requireUpsellTag = true): any | null {
+    if (requireUpsellTag) {
+      const tags = order?.tags ?? null;
+      if (!this.hasUpsellTagInList(tags)) {
+        return null;
+      }
     }
 
     let histories: any = order?.histories ?? null;

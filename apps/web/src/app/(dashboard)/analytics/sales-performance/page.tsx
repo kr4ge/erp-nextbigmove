@@ -64,9 +64,12 @@ type OverviewResponse = {
     cancelled_count: number;
     pending_rate_pct: number;
     cancellation_rate_pct: number;
+    upsell_rate_pct: number;
     total_cod: number;
     order_count: number;
     upsell_count: number;
+    for_upsell_count: number;
+    upsell_tag_count: number;
   };
   prevSummary: {
     upsell_delta: number;
@@ -90,6 +93,7 @@ type OverviewResponse = {
   rows: SalesPerformanceRow[];
   filters: {
     salesAssignees: string[];
+    salesAssigneesDisplayMap?: Record<string, string>;
     includeUnassigned: boolean;
   };
   selected: {
@@ -114,7 +118,7 @@ const metricDefinitions: { key: keyof OverviewResponse['summary']; label: string
   { key: 'confirmation_rate_pct', label: 'Confirmation Rate (%)', format: 'percent' },
   { key: 'pending_rate_pct', label: 'Pending Rate (%)', format: 'percent' },
   { key: 'cancellation_rate_pct', label: 'Cancellation Rate (%)', format: 'percent' },
-  { key: 'upsell_delta', label: 'Sales Upsell (₱)', format: 'currency' },
+  { key: 'upsell_rate_pct', label: 'Upsell Rate (%)', format: 'percent' },
 ];
 
 const formatValue = (val: number, format: 'currency' | 'percent' | 'number') => {
@@ -147,6 +151,7 @@ export default function SalesPerformancePage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
+  const [assigneeDisplayMap, setAssigneeDisplayMap] = useState<Record<string, string>>({});
   const [includeUnassigned, setIncludeUnassigned] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
@@ -196,6 +201,7 @@ export default function SalesPerformancePage() {
         if (!isMounted) return;
         setData(res.data);
         setAssigneeOptions(res.data.filters.salesAssignees || []);
+        setAssigneeDisplayMap(res.data.filters.salesAssigneesDisplayMap || {});
         setIncludeUnassigned(!!res.data.filters.includeUnassigned);
         if (!hasInitializedSelection) {
           const nextAll = [
@@ -235,9 +241,14 @@ export default function SalesPerformancePage() {
   };
 
   const displayAssignee = (value: string | null) => {
-    if (!value) return 'Unassigned';
-    if (value === '__null__') return 'Unassigned';
-    return value;
+    if (!value || value === '__null__') {
+      return assigneeDisplayMap['__null__'] || 'Unassigned';
+    }
+    return (
+      assigneeDisplayMap[value] ||
+      assigneeDisplayMap[value.toLowerCase()] ||
+      value
+    );
   };
 
   const filteredOptions = allAssigneeOptions.filter((value) =>
@@ -456,13 +467,19 @@ export default function SalesPerformancePage() {
                     Shop POS
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    MKTG Cod
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Sales Cod
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                     SMP %
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    Confirmation Rate %
+                    RTS Rate %
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    RTS Rate %
+                    Confirmation Rate %
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                     Pending Rate %
@@ -471,20 +488,17 @@ export default function SalesPerformancePage() {
                     Cancellation Rate %
                   </th>
                   <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Upsell Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                     Sales Upsell
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    Sales Cod
-                  </th>
-                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                    MKTG Cod
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={11}>
                       Loading...
                     </td>
                   </tr>
@@ -495,14 +509,20 @@ export default function SalesPerformancePage() {
                         {displayAssignee(row.salesAssignee)}
                       </td>
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">{row.shopId}</td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
+                        {formatCurrency(row.mktgCod)}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
+                        {formatCurrency(row.salesCod)}
+                      </td>
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
                         {formatPct(row.salesVsMktgPct)}
                       </td>
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                        {formatPct(row.confirmationRatePct)}
+                        {formatPct(row.rtsRatePct)}
                       </td>
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                        {formatPct(row.rtsRatePct)}
+                        {formatPct(row.confirmationRatePct)}
                       </td>
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
                         {formatPct(row.pendingRatePct)}
@@ -510,20 +530,17 @@ export default function SalesPerformancePage() {
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
                         {formatPct(row.cancellationRatePct)}
                       </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatPct(row.upsellRatePct)}
+                      </td>
                       <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
                         {formatCurrency(row.upsellDelta)}
-                      </td>
-                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                        {formatCurrency(row.salesCod)}
-                      </td>
-                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                        {formatCurrency(row.mktgCod)}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={11}>
                       No data available for the selected filters.
                     </td>
                   </tr>

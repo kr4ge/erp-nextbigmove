@@ -19,6 +19,7 @@ import {
   BulkCreatePosIntegrationDto,
   ListIntegrationsDto,
   ListPosStoresDto,
+  UpdatePosStoreDto,
 } from './dto';
 import { validate as uuidValidate } from 'uuid';
 import { MetaAdsProvider } from './providers/meta-ads.provider';
@@ -523,6 +524,22 @@ export class IntegrationService {
     }
 
     return store;
+  }
+
+  async updatePosStore(id: string, dto: UpdatePosStoreDto) {
+    const store = await this.getPosStore(id);
+
+    const initialValueOffer =
+      dto.initialValueOffer === undefined ? undefined : dto.initialValueOffer;
+
+    return this.prisma.posStore.update({
+      where: { id: store.id },
+      data: {
+        ...(initialValueOffer !== undefined
+          ? { initialValueOffer: initialValueOffer === null ? null : initialValueOffer }
+          : {}),
+      },
+    });
   }
 
   async listPosStoreProducts(id: string) {

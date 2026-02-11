@@ -397,6 +397,7 @@ model PosStore {
   status        IntegrationStatus   @default(ACTIVE)
   enabled       Boolean?
   lastSyncAt    DateTime?
+  initialValueOffer Decimal?        @db.Decimal(12, 2)
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   products      PosProduct[]
@@ -768,6 +769,7 @@ model PosOrder {
   salesCod Decimal? @db.Decimal(12, 2)
   mktgCod Decimal? @db.Decimal(12, 2)
   isMarketingSource Boolean @default(false)
+  forUpsell Boolean @default(false)
   // UTM tracking
   pUtmCampaign String?
   pUtmContent  String?

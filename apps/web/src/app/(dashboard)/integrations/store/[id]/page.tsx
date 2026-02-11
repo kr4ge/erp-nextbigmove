@@ -92,6 +92,7 @@ interface PosStore {
   enabled?: boolean;
   apiKey?: string;
   createdAt?: string;
+  initialValueOffer?: number | null;
 }
 
 const tabs = [
@@ -124,6 +125,9 @@ export default function StoreDetailPage() {
   const [bulkMappingModalOpen, setBulkMappingModalOpen] = useState(false);
   const [productSearchInput, setProductSearchInput] = useState('');
   const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [initialOfferModalOpen, setInitialOfferModalOpen] = useState(false);
+  const [initialOfferInput, setInitialOfferInput] = useState('');
+  const [initialOfferSaving, setInitialOfferSaving] = useState(false);
 
   useEffect(() => {
     if (storeId) {
@@ -156,6 +160,9 @@ export default function StoreDetailPage() {
       });
 
       setStore(response.data);
+      if (response.data?.initialValueOffer !== undefined && response.data?.initialValueOffer !== null) {
+        setInitialOfferInput(String(response.data.initialValueOffer));
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to load store details');
     } finally {
@@ -193,6 +200,39 @@ export default function StoreDetailPage() {
       addToast('error', msg);
     } finally {
       setIsSyncingProducts(false);
+    }
+  };
+
+  const handleSaveInitialOffer = async () => {
+    if (!storeId) return;
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      addToast('error', 'Session expired. Please log in again.');
+      return;
+    }
+
+    const trimmed = initialOfferInput.trim();
+    const value = trimmed === '' ? null : Number(trimmed);
+    if (trimmed !== '' && !Number.isFinite(value)) {
+      addToast('error', 'Please enter a valid amount.');
+      return;
+    }
+
+    try {
+      setInitialOfferSaving(true);
+      await apiClient.patch(
+        `/integrations/pos-stores/${storeId}`,
+        { initialValueOffer: value },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      await fetchStore(storeId);
+      addToast('success', 'Initial offer updated.');
+      setInitialOfferModalOpen(false);
+    } catch (err: any) {
+      const msg = parseErrorMessage(err);
+      addToast('error', msg);
+    } finally {
+      setInitialOfferSaving(false);
     }
   };
 
@@ -472,7 +512,7 @@ export default function StoreDetailPage() {
       </button>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card className="flex items-center gap-4">
+        <Card className="relative flex items-start gap-4">
           {getAvatar() ? (
             <img
               src={getAvatar()}
@@ -489,10 +529,21 @@ export default function StoreDetailPage() {
                 .toUpperCase()}
             </div>
           )}
-          <div>
+          <div className="flex-1">
             <h2 className="text-lg font-semibold text-[#0F172A]">{getStoreName()}</h2>
             <p className="text-sm text-[#475569]">Shop ID: {store.shopId}</p>
             <p className="text-xs text-[#94A3B8]">Created: {formatDate(store.createdAt)}</p>
+          </div>
+          <div className="absolute right-4 top-4 text-right">
+            <div className="text-xs text-[#64748B]">Initial Offer</div>
+            <div className="text-sm font-semibold text-[#0F172A]">
+              {store.initialValueOffer !== undefined && store.initialValueOffer !== null
+                ? `₱${Number(store.initialValueOffer).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}`
+                : '—'}
+            </div>
           </div>
         </Card>
 
@@ -501,16 +552,25 @@ export default function StoreDetailPage() {
           apiKey={store.apiKey}
           status={(store.status as any) || 'ACTIVE'}
           action={
-            <Button
-              variant="outline"
-              size="sm"
-              iconLeft={<RefreshCcw className="h-4 w-4" />}
-              onClick={handleSyncProducts}
-              disabled={isSyncingProducts}
-              loading={isSyncingProducts}
-            >
-              {isSyncingProducts ? 'Syncing...' : 'Sync Products'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setInitialOfferModalOpen(true)}
+              >
+                Set Initial Offer
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                iconLeft={<RefreshCcw className="h-4 w-4" />}
+                onClick={handleSyncProducts}
+                disabled={isSyncingProducts}
+                loading={isSyncingProducts}
+              >
+                {isSyncingProducts ? 'Syncing...' : 'Sync Products'}
+              </Button>
+            </div>
           }
         />
       </div>
@@ -532,6 +592,42 @@ export default function StoreDetailPage() {
           ))}
         </div>
       </div>
+
+      {initialOfferModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="mb-4 text-lg font-semibold text-[#0F172A]">
+              Set Initial Offer
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm text-[#475569]">Initial offer amount</label>
+              <input
+                value={initialOfferInput}
+                onChange={(e) => setInitialOfferInput(e.target.value)}
+                placeholder="0.00"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+              />
+              <p className="text-xs text-[#94A3B8]">
+                Leave blank to clear.
+              </p>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setInitialOfferModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveInitialOffer}
+                loading={initialOfferSaving}
+                disabled={initialOfferSaving}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'products' ? renderProductsTab() : renderOrdersTab()}
 
