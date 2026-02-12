@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/toast';
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
 const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
@@ -342,6 +343,7 @@ export default function SalesAnalyticsPage() {
   const [isReconciling, setIsReconciling] = useState(false);
   const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
   const [canShare, setCanShare] = useState(false);
+  const { addToast } = useToast();
   const rtsForecastSafe = getSafeRtsForecastPct(rtsForecastPct);
   const [sortKey, setSortKey] = useState<
     | 'index'
@@ -478,13 +480,21 @@ export default function SalesAnalyticsPage() {
     setIsReconciling(true);
     setError(null);
     try {
-      await apiClient.post('/analytics/sales/reconcile', {
+      const res = await apiClient.post('/analytics/sales/reconcile', {
         start_date: startDate,
         end_date: endDate,
       });
+      const errors = res?.data?.errors || [];
+      if (errors.length > 0) {
+        addToast('error', `Reconcile completed with ${errors.length} error${errors.length > 1 ? 's' : ''}`);
+      } else {
+        addToast('success', 'Reconcile completed successfully');
+      }
       await fetchData({ silent: true });
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Failed to reconcile sales data');
+      const message = err?.response?.data?.message || err?.message || 'Failed to reconcile sales data';
+      setError(message);
+      addToast('error', message);
     } finally {
       setIsReconciling(false);
     }

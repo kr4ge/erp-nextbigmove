@@ -713,17 +713,26 @@ export class SalesAnalyticsService {
 
     const errors: Array<{ date: string; source: string; error: string }> = [];
     for (const date of dates) {
+      const dayStart = new Date(`${date}T00:00:00.000Z`);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
       try {
         await this.prisma.reconcileSales.deleteMany({
           where: {
             tenantId,
-            date,
+            date: {
+              gte: dayStart,
+              lt: dayEnd,
+            },
           },
         });
         await this.prisma.reconcileMarketing.deleteMany({
           where: {
             tenantId,
-            date: new Date(`${date}T00:00:00.000Z`),
+            date: {
+              gte: dayStart,
+              lt: dayEnd,
+            },
           },
         });
       } catch (err: any) {
@@ -755,6 +764,8 @@ export class SalesAnalyticsService {
         });
       }
     }
+
+    await this.analyticsCache.bumpVersion(tenantId);
 
     return {
       processedDays: dates.length,
