@@ -32,6 +32,9 @@ interface PosOrderData {
   customerCare?: string;
   marketer?: string;
   salesAssignee?: string | null;
+  customerName?: string;
+  customerPhone?: string;
+  customerAddress?: string;
   statusHistory?: any[] | null;
   rtsReason?: { l1: string | null; l2: string | null; l3: string | null } | null;
   upsellBreakdown?: any | null;
@@ -235,6 +238,20 @@ export class PosOrderService {
         productDisplayId: variation.product_display_id ?? null,
       };
     });
+
+    const customerRaw = rawOrder.customer && typeof rawOrder.customer === 'object' ? rawOrder.customer : null;
+    const customerName =
+      (customerRaw?.name ?? customerRaw?.full_name ?? customerRaw?.fullName ?? undefined) || undefined;
+    const customerAddresses =
+      customerRaw?.shop_customer_addresses ?? customerRaw?.shop_customer_address ?? null;
+    let addressEntry: any = null;
+    if (Array.isArray(customerAddresses)) {
+      addressEntry = customerAddresses.find((addr) => addr && (addr.full_address || addr.address)) || customerAddresses[0];
+    } else if (customerAddresses && typeof customerAddresses === 'object') {
+      addressEntry = customerAddresses;
+    }
+    const customerPhone = addressEntry?.phone_number ?? addressEntry?.phone ?? undefined;
+    const customerAddress = addressEntry?.full_address ?? addressEntry?.address ?? undefined;
 
     const customerCare =
       rawOrder.assigning_care && typeof rawOrder.assigning_care === 'object'
@@ -441,6 +458,9 @@ export class PosOrderService {
       customerCare,
       marketer,
       salesAssignee,
+      customerName,
+      customerPhone,
+      customerAddress,
       statusHistory,
       rtsReason,
       upsellBreakdown,
@@ -524,6 +544,9 @@ export class PosOrderService {
           customerCare: order.customerCare,
           marketer: order.marketer,
           salesAssignee: order.salesAssignee,
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
+          customerAddress: order.customerAddress,
           statusHistory: this.jsonOrDbNull(order.statusHistory),
           rtsReason: this.jsonOrDbNull(order.rtsReason),
           upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
@@ -550,6 +573,9 @@ export class PosOrderService {
           customerCare: order.customerCare,
           marketer: order.marketer,
           salesAssignee: order.salesAssignee,
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
+          customerAddress: order.customerAddress,
           statusHistory: this.jsonOrDbNull(order.statusHistory),
           rtsReason: this.jsonOrDbNull(order.rtsReason),
           upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
