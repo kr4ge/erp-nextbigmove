@@ -3,6 +3,12 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
 import * as compression from 'compression';
+import { webcrypto } from 'crypto';
+
+// Ensure global crypto is available for libraries that rely on Web Crypto APIs
+if (!globalThis.crypto) {
+  (globalThis as any).crypto = webcrypto;
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
