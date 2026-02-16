@@ -493,17 +493,24 @@ export class WorkflowProcessorService {
 
     if (!inlinePreferred) {
       try {
-        await this.workflowQueue.add({
-          executionId: nextPending.id,
-          tenantId: nextPending.tenantId,
-          workflowId: nextPending.workflowId,
-        });
-        enqueued = true;
-      } catch (error) {
-        this.logger.error(
-          `Failed to enqueue pending execution ${nextPending.id}: ${error?.message}`,
-          error?.stack,
+        await this.workflowQueue.add(
+          {
+            executionId: nextPending.id,
+            tenantId: nextPending.tenantId,
+            workflowId: nextPending.workflowId,
+          },
+          { jobId: nextPending.id },
         );
+        enqueued = true;
+      } catch (error: any) {
+        if (String(error?.message || '').includes('Job') && String(error?.message || '').includes('exists')) {
+          enqueued = true;
+        } else {
+          this.logger.error(
+            `Failed to enqueue pending execution ${nextPending.id}: ${error?.message}`,
+            error?.stack,
+          );
+        }
       }
     }
 

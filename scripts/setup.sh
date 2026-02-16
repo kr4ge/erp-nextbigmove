@@ -40,7 +40,7 @@ docker-compose -f docker-compose.dev.yml up -d
 echo "⏳ Waiting for PostgreSQL to be ready..."
 timeout=60
 elapsed=0
-until docker exec erp-postgres pg_isready -U erp_user > /dev/null 2>&1; do
+until docker exec erp-postgres pg_isready -U erp_user -d erp_analytics > /dev/null 2>&1; do
   if [ $elapsed -ge $timeout ]; then
     echo "❌ Error: PostgreSQL failed to start within ${timeout} seconds"
     exit 1

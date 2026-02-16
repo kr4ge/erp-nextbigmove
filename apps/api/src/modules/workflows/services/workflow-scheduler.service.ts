@@ -201,18 +201,25 @@ export class WorkflowSchedulerService implements OnModuleInit {
 
       if (!inlinePreferred) {
         try {
-          await this.workflowQueue.add({
-            executionId: execution.id,
-            tenantId: workflow.tenantId,
-            workflowId: workflow.id,
-            // teamId is kept in DB; cls will set from execution record
-          });
-          enqueued = true;
-        } catch (error) {
-          this.logger.error(
-            `Failed to enqueue execution ${execution.id}, falling back to inline processing: ${error?.message}`,
-            error.stack,
+          await this.workflowQueue.add(
+            {
+              executionId: execution.id,
+              tenantId: workflow.tenantId,
+              workflowId: workflow.id,
+              // teamId is kept in DB; cls will set from execution record
+            },
+            { jobId: execution.id },
           );
+          enqueued = true;
+        } catch (error: any) {
+          if (String(error?.message || '').includes('Job') && String(error?.message || '').includes('exists')) {
+            enqueued = true;
+          } else {
+            this.logger.error(
+              `Failed to enqueue execution ${execution.id}, falling back to inline processing: ${error?.message}`,
+              error.stack,
+            );
+          }
         }
       }
 

@@ -11,6 +11,7 @@ import { WorkflowQueueProcessor } from './processors/workflow.processor';
 import { WORKFLOW_QUEUE } from './workflow.constants';
 import { WorkflowLogService } from './services/workflow-log.service';
 import { WorkflowProgressCacheService } from './services/workflow-progress-cache.service';
+import { WorkflowExecutionReconcilerService } from './services/workflow-execution-reconciler.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { IntegrationModule } from '../integrations/integration.module';
 import { ReconcileMarketingService } from './services/reconcile-marketing.service';
@@ -35,6 +36,7 @@ import { ReconcileSalesService } from './services/reconcile-sales.service';
     WorkflowExecutionGateway,
     WorkflowLogService,
     WorkflowProgressCacheService,
+    WorkflowExecutionReconcilerService,
     ReconcileMarketingService,
     ReconcileSalesService,
   ],

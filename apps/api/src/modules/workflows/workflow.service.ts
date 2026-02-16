@@ -558,16 +558,23 @@ export class WorkflowService {
 
     if (!inlinePreferred) {
       try {
-        await this.workflowQueue.add({
-          executionId: execution.id,
-          tenantId,
-          workflowId,
-        });
-        enqueued = true;
-      } catch (error) {
-        this.logger.warn(
-          `Queue enqueue failed for execution ${execution.id}, falling back to inline processing: ${error?.message}`,
+        await this.workflowQueue.add(
+          {
+            executionId: execution.id,
+            tenantId,
+            workflowId,
+          },
+          { jobId: execution.id },
         );
+        enqueued = true;
+      } catch (error: any) {
+        if (String(error?.message || '').includes('Job') && String(error?.message || '').includes('exists')) {
+          enqueued = true;
+        } else {
+          this.logger.warn(
+            `Queue enqueue failed for execution ${execution.id}, falling back to inline processing: ${error?.message}`,
+          );
+        }
       }
     }
 

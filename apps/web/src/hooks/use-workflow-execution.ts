@@ -134,5 +134,46 @@ export function useWorkflowExecution(executionId: string) {
     };
   }, [executionId, setExecution]);
 
+  // Poll execution state as a fallback when socket events stop
+  useEffect(() => {
+    let isMounted = true;
+    let interval: NodeJS.Timeout | null = null;
+
+    const poll = async () => {
+      try {
+        const execRes = await apiClient.get(`/workflows/executions/${executionId}`);
+        if (!isMounted) return;
+        const exec = execRes.data;
+        setExecution(executionId, {
+          status: exec.status,
+          totalDays: exec.totalDays,
+          metaFetched: exec.metaFetched,
+          posFetched: exec.posFetched,
+          metaProcessed: exec.metaProcessed,
+          posProcessed: exec.posProcessed,
+          metaTotal: exec.metaTotal,
+          posTotal: exec.posTotal,
+          currentDate: exec.currentDate ?? exec.dateRangeSince ?? undefined,
+          isLive: exec.status === 'RUNNING',
+        });
+
+        if (exec.status !== 'RUNNING' && exec.status !== 'PENDING' && interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      } catch {
+        // ignore polling errors
+      }
+    };
+
+    poll();
+    interval = setInterval(poll, 20000);
+
+    return () => {
+      isMounted = false;
+      if (interval) clearInterval(interval);
+    };
+  }, [executionId, setExecution]);
+
   return execution;
 }
