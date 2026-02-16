@@ -97,17 +97,15 @@ export class UserService {
 
     // Team-scoped role assignment
     if (dto.teamRoleId && dto.teamId) {
-      await this.prisma.userRoleAssignment.upsert({
+      await this.prisma.userRoleAssignment.deleteMany({
         where: {
-          userId_roleId_tenantId_teamId: {
-            userId: user.id,
-            roleId: dto.teamRoleId,
-            tenantId,
-            teamId: dto.teamId,
-          },
+          userId: user.id,
+          tenantId,
+          teamId: dto.teamId,
         },
-        update: {},
-        create: {
+      });
+      await this.prisma.userRoleAssignment.create({
+        data: {
           userId: user.id,
           roleId: dto.teamRoleId,
           tenantId,
@@ -250,17 +248,15 @@ export class UserService {
 
     // Update team-scoped role assignment if provided alongside teamId
     if (dto.teamRoleId && dto.teamId) {
-      await this.prisma.userRoleAssignment.upsert({
+      await this.prisma.userRoleAssignment.deleteMany({
         where: {
-          userId_roleId_tenantId_teamId: {
-            userId: id,
-            roleId: dto.teamRoleId,
-            tenantId,
-            teamId: dto.teamId,
-          },
+          userId: id,
+          tenantId,
+          teamId: dto.teamId,
         },
-        update: {},
-        create: {
+      });
+      await this.prisma.userRoleAssignment.create({
+        data: {
           userId: id,
           roleId: dto.teamRoleId,
           tenantId,

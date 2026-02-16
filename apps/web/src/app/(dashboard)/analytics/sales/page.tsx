@@ -7,6 +7,7 @@ import apiClient from '@/lib/api-client';
 import { ChevronDown, ChevronUp, Filter, Info, RefreshCw, ShoppingBag, Share2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { workflowSocket } from '@/lib/socket-client';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Dialog,
   DialogContent,
@@ -943,12 +944,11 @@ export default function SalesAnalyticsPage() {
       : [];
   const leftSecondary = secondaryCards.find((m) => m.key === 'cm_rts_forecast');
   const fixedRightSecondary = secondaryCards.filter(
-    (m) => m.key === 'contribution_margin' || m.key === 'net_margin',
+    (m) => m.key === 'net_margin',
   );
   const middleSecondary = secondaryCards.filter(
     (m) =>
       m.key !== 'cm_rts_forecast' &&
-      m.key !== 'contribution_margin' &&
       m.key !== 'net_margin',
   );
 
@@ -1238,6 +1238,7 @@ export default function SalesAnalyticsPage() {
             : m.key === 'ar_pct'
               ? null
               : null;
+    const isCmTooltip = m.key === 'contribution_margin' && tooltip;
 
     return (
       <div
@@ -1246,14 +1247,25 @@ export default function SalesAnalyticsPage() {
       >
         <div className="text-xs text-slate-500 flex items-center gap-1">
           {m.label}
-          {tooltip && (
+          {isCmTooltip ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button type="button" className="inline-flex cursor-help" aria-label={`${m.label} formula`}>
+                  <Info className="h-4 w-4 text-slate-400 hover:text-emerald-600 focus:text-emerald-600" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="center" side="bottom" sideOffset={8} className="w-80">
+                {tooltip}
+              </PopoverContent>
+            </Popover>
+          ) : tooltip ? (
             <span className="relative group inline-flex cursor-help" tabIndex={0} aria-label={`${m.label} formula`}>
               <Info className="h-4 w-4 text-slate-400 group-hover:text-emerald-600 group-focus-within:text-emerald-600" />
               <div className="absolute left-1/2 top-full z-30 mt-2 hidden w-80 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] leading-relaxed text-slate-700 shadow-lg group-hover:block group-focus-within:block">
                 {tooltip}
               </div>
             </span>
-          )}
+          ) : null}
         </div>
         <div className="mt-1 flex items-center justify-between">
           <p className="text-lg font-semibold text-slate-900">

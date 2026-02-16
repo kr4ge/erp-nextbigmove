@@ -44,6 +44,7 @@ const PERMISSIONS: { key: string; description: string }[] = [
   { key: 'dashboard.marketing', description: 'View marketing dashboard (my stats)' },
   { key: 'dashboard.marketing_leader', description: 'View marketing leader dashboard' },
   { key: 'dashboard.executives', description: 'View executives dashboard (sales overview)' },
+  { key: 'dashboard.sales', description: 'View sales dashboard (my stats)' },
 ];
 
 const ROLES: RoleDef[] = [
@@ -165,7 +166,7 @@ const ROLES: RoleDef[] = [
     name: 'Sales',
     description: 'Sales-focused access',
     scope: RoleScope.TEAM,
-    permissions: ['pos.read', 'analytics.sales', 'analytics.sales_performance'],
+    permissions: ['pos.read', 'analytics.sales', 'analytics.sales_performance', 'dashboard.sales'],
     isSystem: true,
   },
   {

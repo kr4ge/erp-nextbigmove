@@ -62,6 +62,84 @@ type MyStats = {
   winning_creatives_list?: { adId: string | null; adName: string | null }[];
 };
 
+type SalesDashboardRow = {
+  salesAssignee: string | null;
+  shopId: string;
+  orderCount: number;
+  totalCod: number;
+  salesCod: number;
+  mktgCod: number;
+  upsellDelta: number;
+  confirmedCount: number;
+  marketingLeadCount: number;
+  deliveredCount: number;
+  rtsCount: number;
+  pendingCount: number;
+  cancelledCount: number;
+  upsellCount: number;
+  salesVsMktgPct: number;
+  confirmationRatePct: number;
+  rtsRatePct: number;
+  pendingRatePct: number;
+  cancellationRatePct: number;
+  upsellRatePct: number;
+};
+
+type SalesDashboardSummary = {
+  upsell_delta: number;
+  sales_cod: number;
+  mktg_cod: number;
+  sales_vs_mktg_pct: number;
+  confirmed_count: number;
+  marketing_lead_count: number;
+  confirmation_rate_pct: number;
+  delivered_count: number;
+  rts_count: number;
+  rts_rate_pct: number;
+  pending_count: number;
+  cancelled_count: number;
+  pending_rate_pct: number;
+  cancellation_rate_pct: number;
+  upsell_rate_pct: number;
+  total_cod: number;
+  order_count: number;
+  upsell_count: number;
+  for_upsell_count: number;
+  upsell_tag_count: number;
+};
+
+type SalesDashboardResponse = {
+  summary: SalesDashboardSummary;
+  prevSummary: SalesDashboardSummary;
+  rows: SalesDashboardRow[];
+  filters: {
+    shops: string[];
+    shopDisplayMap?: Record<string, string>;
+  };
+  selected: {
+    start_date: string;
+    end_date: string;
+    shop_ids: string[];
+  };
+  rangeDays: number;
+  lastUpdatedAt: string | null;
+};
+
+const salesMetricDefinitions: {
+  key: keyof SalesDashboardSummary;
+  label: string;
+  format: 'currency' | 'percent' | 'number';
+}[] = [
+  { key: 'mktg_cod', label: 'MKTG Cod (₱)', format: 'currency' },
+  { key: 'sales_cod', label: 'Sales Cod (₱)', format: 'currency' },
+  { key: 'sales_vs_mktg_pct', label: 'SMP %', format: 'percent' },
+  { key: 'rts_rate_pct', label: 'RTS Rate (%)', format: 'percent' },
+  { key: 'confirmation_rate_pct', label: 'Confirmation Rate (%)', format: 'percent' },
+  { key: 'pending_rate_pct', label: 'Pending Rate (%)', format: 'percent' },
+  { key: 'cancellation_rate_pct', label: 'Cancellation Rate (%)', format: 'percent' },
+  { key: 'upsell_rate_pct', label: 'Upsell Rate (%)', format: 'percent' },
+];
+
 export default function DashboardPage() {
   const today = useMemo(() => formatDateInTimezone(new Date()), []);
   const [user, setUser] = useState<any>(null);
@@ -107,6 +185,20 @@ export default function DashboardPage() {
   const [error, setError] = useState('');
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const filterButtonRef = useRef<HTMLDivElement | null>(null);
+  const [salesRange, setSalesRange] = useState<{ startDate: Date | null; endDate: Date | null }>({
+    startDate: parseYmdToLocalDate(today),
+    endDate: parseYmdToLocalDate(today),
+  });
+  const [salesStartDate, setSalesStartDate] = useState(today);
+  const [salesEndDate, setSalesEndDate] = useState(today);
+  const [salesData, setSalesData] = useState<SalesDashboardResponse | null>(null);
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [shopOptions, setShopOptions] = useState<string[]>([]);
+  const [selectedShops, setSelectedShops] = useState<string[]>([]);
+  const [showShopPicker, setShowShopPicker] = useState(false);
+  const [shopSearch, setShopSearch] = useState('');
+  const [hasInitializedShopSelection, setHasInitializedShopSelection] = useState(false);
+  const shopPickerRef = useRef<HTMLDivElement | null>(null);
 
   const canViewMarketingDashboard = useMemo(() => {
     return perms.includes('dashboard.marketing');
@@ -114,6 +206,7 @@ export default function DashboardPage() {
 
   const canViewMarketingLeader = useMemo(() => perms.includes('dashboard.marketing_leader'), [perms]);
   const canViewExecutives = useMemo(() => perms.includes('dashboard.executives'), [perms]);
+  const canViewSalesDashboard = useMemo(() => perms.includes('dashboard.sales'), [perms]);
 
   useEffect(() => {
     const userStr = localStorage.getItem('user');
@@ -185,6 +278,20 @@ export default function DashboardPage() {
     window.addEventListener('click', onClick);
     return () => window.removeEventListener('click', onClick);
   }, [showFilterMenu]);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (
+        showShopPicker &&
+        shopPickerRef.current &&
+        !shopPickerRef.current.contains(e.target as Node)
+      ) {
+        setShowShopPicker(false);
+      }
+    };
+    window.addEventListener('click', onClick);
+    return () => window.removeEventListener('click', onClick);
+  }, [showShopPicker]);
 
   // Fetch team code for name convention (uses my-teams)
   useEffect(() => {
@@ -291,6 +398,66 @@ export default function DashboardPage() {
     fetchLeaderStats();
   }, [canViewMarketingLeader, range.startDate, range.endDate, excludeCancel, excludeRestocking, teamCode]);
 
+  const resolvedShopSelection = useMemo(
+    () => (selectedShops.length === 0 ? shopOptions : selectedShops),
+    [selectedShops, shopOptions],
+  );
+  const isAllShopsSelected =
+    shopOptions.length > 0 && resolvedShopSelection.length === shopOptions.length;
+  const selectedShopLabel =
+    resolvedShopSelection.length === 0 || isAllShopsSelected
+      ? 'All shops'
+      : `${resolvedShopSelection.length} selected`;
+  const filteredShopOptions = useMemo(
+    () =>
+      shopOptions.filter((value) =>
+        shopSearch.trim()
+          ? (salesData?.filters?.shopDisplayMap?.[value] || value)
+              .toLowerCase()
+              .includes(shopSearch.toLowerCase())
+          : true,
+      ),
+    [shopOptions, shopSearch, salesData?.filters?.shopDisplayMap],
+  );
+
+  useEffect(() => {
+    const fetchSalesDashboard = async () => {
+      if (!canViewSalesDashboard) return;
+      setSalesLoading(true);
+      try {
+        const params: any = {};
+        params.start_date = salesStartDate;
+        params.end_date = salesEndDate;
+        if (!isAllShopsSelected && resolvedShopSelection.length > 0) {
+          params.shop_id = resolvedShopSelection;
+        }
+        const res = await apiClient.get('/analytics/sales-performance/my-stats', { params });
+        setSalesData(res.data);
+        const shops = res.data?.filters?.shops || [];
+        setShopOptions(shops);
+        if (!hasInitializedShopSelection) {
+          setSelectedShops(shops);
+          setHasInitializedShopSelection(true);
+        } else {
+          const allowed = new Set(shops);
+          setSelectedShops((prev) => prev.filter((v) => allowed.has(v)));
+        }
+      } catch (err) {
+        console.error('Failed to load sales dashboard', err);
+      } finally {
+        setSalesLoading(false);
+      }
+    };
+    fetchSalesDashboard();
+  }, [
+    canViewSalesDashboard,
+    salesStartDate,
+    salesEndDate,
+    resolvedShopSelection.join('|'),
+    isAllShopsSelected,
+    hasInitializedShopSelection,
+  ]);
+
   const accountStatus = useMemo(() => {
     const raw = (tenant?.status || 'Unknown').toString();
     return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
@@ -308,6 +475,33 @@ export default function DashboardPage() {
       : '—';
   const formatNumber = (val?: number) => (typeof val === 'number' ? new Intl.NumberFormat('en-US').format(val) : '—');
   const formatPercent = (val?: number) => (typeof val === 'number' ? `${val.toFixed(1)}%` : '—');
+  const formatSalesValue = (val: number, format: 'currency' | 'percent' | 'number') => {
+    if (!Number.isFinite(val)) return '—';
+    if (format === 'currency') {
+      return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 }).format(val);
+    }
+    if (format === 'percent') {
+      return `${val.toFixed(2)}%`;
+    }
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(val);
+  };
+  const formatSalesDelta = (current: number, previous: number) => {
+    if (!Number.isFinite(previous) || previous === 0) return null;
+    return ((current - previous) / Math.abs(previous)) * 100;
+  };
+
+  const salesMetrics = useMemo(() => {
+    return salesMetricDefinitions.map((def) => {
+      const current = salesData?.summary?.[def.key] ?? 0;
+      const previous = salesData?.prevSummary?.[def.key] ?? 0;
+      return {
+        ...def,
+        current,
+        previous,
+        delta: formatSalesDelta(current, previous),
+      };
+    });
+  }, [salesData]);
 
   const generateName = () => {
     setNameError(null);
@@ -533,6 +727,19 @@ export default function DashboardPage() {
     </Card>
   );
 
+  const toggleShop = (value: string) => {
+    if (resolvedShopSelection.includes(value)) {
+      setSelectedShops(resolvedShopSelection.filter((v) => v !== value));
+    } else {
+      setSelectedShops([...resolvedShopSelection, value]);
+    }
+    setShowShopPicker(true);
+  };
+
+  const displayShop = (value: string) => {
+    return salesData?.filters?.shopDisplayMap?.[value] || value;
+  };
+
   const renderDefaultDashboard = () => (
     <>
       <PageHeader title="Dashboard" description="Welcome back! Here’s what’s happening with your business today." />
@@ -616,6 +823,290 @@ export default function DashboardPage() {
         </>
       )}
     </>
+  );
+
+  const renderSalesDashboard = () => (
+    <div className="space-y-5">
+      <PageHeader
+        title="Sales Dashboard"
+        description="Your performance overview based on the selected date range."
+      />
+
+      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
+        <div className="flex flex-wrap items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+              <BarChart3 className="h-5 w-5" />
+            </span>
+            <p className="text-lg font-semibold text-slate-900">Monitoring</p>
+          </div>
+          <p className="text-sm text-slate-400">
+            Last updated:{' '}
+            <span className="font-medium text-slate-600">
+              {salesData?.lastUpdatedAt ? new Date(salesData.lastUpdatedAt).toLocaleString() : '—'}
+            </span>
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-4 mt-5">
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-1.5">Shop POS</p>
+            <div className="relative" ref={shopPickerRef}>
+              <button
+                type="button"
+                onClick={() => setShowShopPicker((p) => !p)}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white hover:border-slate-300 focus:outline-none"
+              >
+                <span className="text-slate-900">{selectedShopLabel}</span>
+                <span className="text-slate-400 text-xs">(click to choose)</span>
+              </button>
+              {showShopPicker && (
+                <div className="absolute z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg">
+                  <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 border-b border-slate-100">
+                    <span>Select shops</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedShops([])}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="px-3 py-2 border-b border-slate-100">
+                    <input
+                      type="text"
+                      value={shopSearch}
+                      onChange={(e) => setShopSearch(e.target.value)}
+                      placeholder="Type to search"
+                      className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="max-h-64 overflow-auto">
+                    <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isAllShopsSelected && shopOptions.length > 0}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSelectedShops(checked ? shopOptions : []);
+                            setShowShopPicker(true);
+                          }}
+                          className="rounded border-slate-300"
+                        />
+                        <span>All</span>
+                      </label>
+                    </div>
+                    {filteredShopOptions.map((value) => {
+                      const checked = resolvedShopSelection.includes(value);
+                      return (
+                        <div
+                          key={value}
+                          className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
+                        >
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleShop(value)}
+                              className="rounded border-slate-300"
+                            />
+                            <span>{displayShop(value)}</span>
+                          </label>
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                            onClick={() => {
+                              setSelectedShops([value]);
+                              setShowShopPicker(true);
+                            }}
+                          >
+                            ONLY
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col">
+            <p className="text-sm font-medium text-slate-700 mb-1.5">Date range</p>
+            <div className="flex items-end gap-2">
+              <div className="relative">
+                <Datepicker
+                  value={salesRange}
+                  onChange={(val: any) => {
+                    const nextStart = val?.startDate || today;
+                    const nextEnd = val?.endDate || today;
+                    setSalesRange({ startDate: nextStart, endDate: nextEnd });
+                    const formatDate = (d: any) => {
+                      if (!d) return today;
+                      if (typeof d === 'string') return d.slice(0, 10);
+                      if (d instanceof Date) return formatDateInTimezone(d);
+                      return today;
+                    };
+                    setSalesStartDate(formatDate(nextStart));
+                    setSalesEndDate(formatDate(nextEnd));
+                  }}
+                  inputClassName="rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
+                  containerClassName=""
+                  popupClassName={(defaultClass: string) => `${defaultClass} z-50`}
+                  displayFormat="MM/DD/YYYY"
+                  separator=" – "
+                  toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  placeholder=""
+                />
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-2.5 py-2 text-slate-600 bg-white hover:border-slate-300"
+                aria-label="Filters"
+              >
+                <Filter className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-5">
+          {salesLoading
+            ? Array.from({ length: salesMetricDefinitions.length }).map((_, idx) => (
+                <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 animate-pulse">
+                  <div className="h-3 w-20 bg-slate-200 rounded" />
+                  <div className="mt-1.5 h-5 w-16 bg-slate-200 rounded" />
+                  <div className="mt-1 h-2.5 w-14 bg-slate-200 rounded" />
+                </div>
+              ))
+            : salesMetrics.map((m) => {
+                const delta = m.delta;
+                const deltaLabel =
+                  delta === null ? 'N/A' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
+                const deltaColor =
+                  delta === null ? 'text-slate-400' : delta >= 0 ? 'text-emerald-600' : 'text-rose-500';
+                return (
+                  <div
+                    key={m.key}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2.5"
+                  >
+                    <p className="text-xs text-slate-500">{m.label}</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900">
+                      {formatSalesValue(m.current, m.format)}
+                    </p>
+                    <p className={`mt-0.5 text-[11px] ${deltaColor}`}>
+                      {deltaLabel}
+                      {salesData?.rangeDays ? ` from previous ${salesData.rangeDays} day${salesData.rangeDays > 1 ? 's' : ''}` : ''}
+                    </p>
+                  </div>
+                );
+              })}
+        </div>
+      </Card>
+
+      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
+        <div className="flex items-center justify-between mb-3 px-2">
+          <h2 className="text-lg font-semibold text-slate-900">Sales Performance</h2>
+          <span className="text-xs text-slate-400">{salesData?.rows?.length || 0} rows</span>
+        </div>
+        <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-100">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Shop POS
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    MKTG Cod
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Sales Cod
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    SMP %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    RTS Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Confirmation Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Pending Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Cancellation Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Upsell Rate %
+                  </th>
+                  <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    Sales Upsell
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {salesLoading ? (
+                  <tr>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
+                      Loading...
+                    </td>
+                  </tr>
+                ) : salesData?.rows?.length ? (
+                  salesData.rows.map((row) => (
+                    <tr key={`${row.shopId}`} className="bg-white">
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
+                        <div className="flex flex-col">
+                          <span className="text-slate-900">{displayShop(row.shopId)}</span>
+                          {displayShop(row.shopId) !== row.shopId && (
+                            <span className="text-xs text-slate-400">{row.shopId}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
+                        {formatCurrency(row.mktgCod)}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
+                        {formatCurrency(row.salesCod)}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatSalesValue(row.salesVsMktgPct, 'percent')}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatSalesValue(row.rtsRatePct, 'percent')}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatSalesValue(row.confirmationRatePct, 'percent')}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatSalesValue(row.pendingRatePct, 'percent')}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatSalesValue(row.cancellationRatePct, 'percent')}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
+                        {formatSalesValue(row.upsellRatePct, 'percent')}
+                      </td>
+                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
+                        {formatCurrency(row.upsellDelta)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
+                      No data available for the selected filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Card>
+    </div>
   );
 
   const renderMarketingDashboard = () => (
@@ -969,6 +1460,8 @@ export default function DashboardPage() {
         ? renderLeaderDashboard()
         : canViewMarketingDashboard
         ? renderMarketingDashboard()
+        : canViewSalesDashboard
+        ? renderSalesDashboard()
         : renderDefaultDashboard()}
     </div>
   );

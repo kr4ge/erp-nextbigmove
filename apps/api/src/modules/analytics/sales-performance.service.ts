@@ -19,6 +19,8 @@ type SalesPerformanceRow = {
   totalCod: number;
   salesCod: number;
   mktgCod: number;
+  salesCodCount: number;
+  mktgCodCount: number;
   upsellDelta: number;
   confirmedCount: number;
   marketingLeadCount: number;
@@ -65,12 +67,50 @@ export class SalesPerformanceService {
     return dayjs(dateStr, 'YYYY-MM-DD').add(offsetDays, 'day').format('YYYY-MM-DD');
   }
 
+  private buildEmptyResponse(startStr: string, endStr: string, rangeDays: number, salesAssignees: string[] = []) {
+    const emptySummary = {
+      upsell_delta: 0,
+      sales_cod: 0,
+      sales_cod_count: 0,
+      mktg_cod: 0,
+      mktg_cod_count: 0,
+      sales_vs_mktg_pct: 0,
+      confirmed_count: 0,
+      marketing_lead_count: 0,
+      confirmation_rate_pct: 0,
+      delivered_count: 0,
+      rts_count: 0,
+      rts_rate_pct: 0,
+      pending_count: 0,
+      cancelled_count: 0,
+      pending_rate_pct: 0,
+      cancellation_rate_pct: 0,
+      upsell_rate_pct: 0,
+      total_cod: 0,
+      order_count: 0,
+      upsell_count: 0,
+      for_upsell_count: 0,
+      upsell_tag_count: 0,
+    };
+    return {
+      summary: emptySummary,
+      prevSummary: emptySummary,
+      rows: [],
+      filters: { salesAssignees: [], includeUnassigned: false, shops: [] as string[], shopDisplayMap: {} as Record<string, string> },
+      selected: { start_date: startStr, end_date: endStr, sales_assignees: salesAssignees, shop_ids: [] as string[] },
+      rangeDays,
+      lastUpdatedAt: null,
+    };
+  }
+
   async getOverview(params: {
     startDate?: string;
     endDate?: string;
     salesAssignees?: string[];
+    shopIds?: string[];
+    includeShopOptions?: boolean;
   }) {
-    const { startDate, endDate, salesAssignees = [] } = params;
+    const { startDate, endDate, salesAssignees = [], shopIds = [], includeShopOptions = false } = params;
 
     const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
     const endStr = (endDate && endDate.trim()) || startStr;
@@ -93,42 +133,15 @@ export class SalesPerformanceService {
       .filter((v) => v.length > 0);
     const includeNull = normalizedAssignees.includes('__null__');
     const assigneeValues = normalizedAssignees.filter((v) => v !== '__null__');
+    const normalizedShopIds = (shopIds || [])
+      .map((v) => v?.toString?.().trim?.() || '')
+      .filter((v) => v.length > 0);
 
     const { tenantId } = await this.teamContext.getContext();
     const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
 
     if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length === 0) {
-        const emptySummary = {
-          upsell_delta: 0,
-          sales_cod: 0,
-          mktg_cod: 0,
-          sales_vs_mktg_pct: 0,
-          confirmed_count: 0,
-          marketing_lead_count: 0,
-          confirmation_rate_pct: 0,
-          delivered_count: 0,
-          rts_count: 0,
-          rts_rate_pct: 0,
-          pending_count: 0,
-          cancelled_count: 0,
-          pending_rate_pct: 0,
-          cancellation_rate_pct: 0,
-          upsell_rate_pct: 0,
-          total_cod: 0,
-          order_count: 0,
-          upsell_count: 0,
-          for_upsell_count: 0,
-          upsell_tag_count: 0,
-        };
-      return {
-        summary: emptySummary,
-        prevSummary: emptySummary,
-        rows: [],
-        filters: { salesAssignees: [], includeUnassigned: false },
-        selected: { start_date: startStr, end_date: endStr, sales_assignees: normalizedAssignees },
-        rangeDays,
-        lastUpdatedAt: null,
-      };
+      return this.buildEmptyResponse(startStr, endStr, rangeDays, normalizedAssignees);
     }
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
@@ -138,6 +151,8 @@ export class SalesPerformanceService {
       start: startStr,
       end: endStr,
       salesAssignees: normalizedAssignees.sort(),
+      shopIds: normalizedShopIds.sort(),
+      includeShopOptions,
     };
     const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales-performance:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
     const cached = await this.analyticsCache.get<any>(cacheKey);
@@ -172,12 +187,20 @@ export class SalesPerformanceService {
       return filtered;
     };
 
+    const applyShopFilters = (base: Prisma.Sql[]) => {
+      const filtered = [...base];
+      if (normalizedShopIds.length > 0) {
+        filtered.push(Prisma.sql`"shopId" IN (${Prisma.join(normalizedShopIds)})`);
+      }
+      return filtered;
+    };
+
     const baseWhere = buildBaseWhere(startStr, endStr);
-    const filteredWhere = applyAssigneeFilters(baseWhere);
+    const filteredWhere = applyShopFilters(applyAssigneeFilters(baseWhere));
     const whereClause = Prisma.sql`WHERE ${Prisma.join(filteredWhere, ' AND ')}`;
 
     const prevBaseWhere = buildBaseWhere(prevStartStr, prevEndStr);
-    const prevFilteredWhere = applyAssigneeFilters(prevBaseWhere);
+    const prevFilteredWhere = applyShopFilters(applyAssigneeFilters(prevBaseWhere));
     const prevWhereClause = Prisma.sql`WHERE ${Prisma.join(prevFilteredWhere, ' AND ')}`;
 
     const buildRowsQuery = (clause: Prisma.Sql) => Prisma.sql`
@@ -204,6 +227,14 @@ export class SalesPerformanceService {
           COUNT(*)::int AS "order_count",
           COALESCE(SUM(COALESCE("cod", 0)), 0)::numeric AS "total_cod",
           COALESCE(SUM(COALESCE("salesCod", 0)), 0)::numeric AS "sales_cod",
+          COALESCE(SUM(
+            CASE
+              WHEN COALESCE(jsonb_path_exists("statusHistory", '$[*] ? (@.status == 1)'), false)
+                AND COALESCE("status", 0) <> 6
+                THEN 1
+              ELSE 0
+            END
+          ), 0)::int AS "sales_cod_count",
           COALESCE(SUM(
             CASE
               WHEN COALESCE(jsonb_path_exists("statusHistory", '$[*] ? (@.status == 1)'), false)
@@ -265,6 +296,7 @@ export class SalesPerformanceService {
               )
             END
           ), 0)::numeric AS "mktg_cod",
+          COALESCE(SUM(CASE WHEN "isMarketingSource" THEN 1 ELSE 0 END), 0)::int AS "mktg_cod_count",
           COALESCE(SUM(CASE WHEN "upsellBreakdown" IS NULL THEN 0 ELSE 1 END), 0)::int AS "upsell_count"
         FROM filtered
         GROUP BY "salesAssignee", "shopId"
@@ -284,7 +316,9 @@ export class SalesPerformanceService {
         agg."order_count",
         agg."total_cod",
         agg."sales_cod",
+        agg."sales_cod_count",
         agg."mktg_cod",
+        agg."mktg_cod_count",
         agg."upsell_delta",
         agg."confirmed_count",
         agg."marketing_lead_count",
@@ -302,7 +336,9 @@ export class SalesPerformanceService {
         agg."order_count",
         agg."total_cod",
         agg."sales_cod",
+        agg."sales_cod_count",
         agg."mktg_cod",
+        agg."mktg_cod_count",
         agg."upsell_delta",
         agg."confirmed_count",
         agg."marketing_lead_count",
@@ -323,6 +359,8 @@ export class SalesPerformanceService {
     const rows: SalesPerformanceRow[] = rawRows.map((row) => {
       const salesCod = this.toNumber(row.sales_cod);
       const mktgCod = this.toNumber(row.mktg_cod);
+      const salesCodCount = this.toNumber(row.sales_cod_count);
+      const mktgCodCount = this.toNumber(row.mktg_cod_count);
       const upsellDelta = this.toNumber(row.upsell_delta);
       const confirmedCount = this.toNumber(row.confirmed_count);
       const marketingLeadCount = this.toNumber(row.marketing_lead_count);
@@ -344,6 +382,8 @@ export class SalesPerformanceService {
         totalCod,
         salesCod,
         mktgCod,
+        salesCodCount,
+        mktgCodCount,
         upsellDelta,
         confirmedCount,
         marketingLeadCount,
@@ -371,7 +411,9 @@ export class SalesPerformanceService {
       (acc, row) => {
         acc.upsell_delta += row.upsellDelta;
         acc.sales_cod += row.salesCod;
+        acc.sales_cod_count += row.salesCodCount;
         acc.mktg_cod += row.mktgCod;
+        acc.mktg_cod_count += row.mktgCodCount;
         acc.confirmed_count += row.confirmedCount;
         acc.marketing_lead_count += row.marketingLeadCount;
         acc.delivered_count += row.deliveredCount;
@@ -388,7 +430,9 @@ export class SalesPerformanceService {
       {
         upsell_delta: 0,
         sales_cod: 0,
+        sales_cod_count: 0,
         mktg_cod: 0,
+        mktg_cod_count: 0,
         confirmed_count: 0,
         marketing_lead_count: 0,
         delivered_count: 0,
@@ -432,7 +476,9 @@ export class SalesPerformanceService {
       (acc, row) => {
         acc.upsell_delta += this.toNumber(row.upsell_delta);
         acc.sales_cod += this.toNumber(row.sales_cod);
+        acc.sales_cod_count += this.toNumber(row.sales_cod_count);
         acc.mktg_cod += this.toNumber(row.mktg_cod);
+        acc.mktg_cod_count += this.toNumber(row.mktg_cod_count);
         acc.confirmed_count += this.toNumber(row.confirmed_count);
         acc.marketing_lead_count += this.toNumber(row.marketing_lead_count);
         acc.delivered_count += this.toNumber(row.status_counts?.['3'] ?? 0);
@@ -451,7 +497,9 @@ export class SalesPerformanceService {
       {
         upsell_delta: 0,
         sales_cod: 0,
+        sales_cod_count: 0,
         mktg_cod: 0,
+        mktg_cod_count: 0,
         confirmed_count: 0,
         marketing_lead_count: 0,
         delivered_count: 0,
@@ -491,6 +539,7 @@ export class SalesPerformanceService {
     };
 
     const optionsWhere = Prisma.sql`WHERE ${Prisma.join(baseWhere, ' AND ')}`;
+    const shopOptionsWhere = Prisma.sql`WHERE ${Prisma.join(applyAssigneeFilters(baseWhere), ' AND ')}`;
     const assigneeOptionsQuery = Prisma.sql`
       SELECT DISTINCT "salesAssignee"
       FROM "pos_orders"
@@ -504,13 +553,23 @@ export class SalesPerformanceService {
       ${optionsWhere}
       AND "salesAssignee" IS NULL
     `;
-    const [assigneeRows, users, unassignedCountRows] = await Promise.all([
+    const shopOptionsQuery = includeShopOptions
+      ? Prisma.sql`
+        SELECT DISTINCT "shopId"
+        FROM "pos_orders"
+        ${shopOptionsWhere}
+        ORDER BY "shopId"
+      `
+      : null;
+
+    const [assigneeRows, users, unassignedCountRows, shopRows] = await Promise.all([
       this.prisma.$queryRaw<any[]>(assigneeOptionsQuery),
       this.prisma.user.findMany({
         where: { tenantId },
         select: { employeeId: true, firstName: true, lastName: true, email: true },
       }),
       this.prisma.$queryRaw<any[]>(unassignedCountQuery),
+      shopOptionsQuery ? this.prisma.$queryRaw<any[]>(shopOptionsQuery) : Promise.resolve([]),
     ]);
     const unassignedCount = this.toNumber(unassignedCountRows?.[0]?.count);
     const includeUnassigned = unassignedCount > 0;
@@ -560,6 +619,28 @@ export class SalesPerformanceService {
     const lastUpdatedRows = await this.prisma.$queryRaw<any[]>(lastUpdatedQuery);
     const lastUpdatedAt = lastUpdatedRows?.[0]?.last_updated ?? null;
 
+    const shopIdsList = shopRows.map((r) => r.shopId).filter(Boolean);
+    const shopDisplayMap: Record<string, string> = {};
+    if (includeShopOptions && shopIdsList.length > 0) {
+      const storeWhere: Prisma.PosStoreWhereInput = {
+        tenantId,
+        shopId: { in: shopIdsList },
+      };
+      if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0) {
+        storeWhere.teamId = { in: effectiveTeamIds };
+      }
+      const stores = await this.prisma.posStore.findMany({
+        where: storeWhere,
+        select: { shopId: true, shopName: true, name: true },
+      });
+      stores.forEach((store) => {
+        const display = store.shopName || store.name || store.shopId;
+        if (display) {
+          shopDisplayMap[store.shopId] = display;
+        }
+      });
+    }
+
     const response = {
       summary: summaryWithPct,
       prevSummary: prevSummaryWithPct,
@@ -568,11 +649,14 @@ export class SalesPerformanceService {
         salesAssignees: assigneeOptions,
         salesAssigneesDisplayMap,
         includeUnassigned,
+        shops: shopIdsList,
+        shopDisplayMap,
       },
       selected: {
         start_date: startStr,
         end_date: endStr,
         sales_assignees: normalizedAssignees,
+        shop_ids: normalizedShopIds,
       },
       rangeDays,
       lastUpdatedAt,
@@ -580,5 +664,80 @@ export class SalesPerformanceService {
 
     await this.analyticsCache.set(cacheKey, response);
     return response;
+  }
+
+  async getMyStats(params: {
+    startDate?: string;
+    endDate?: string;
+    salesAssignee?: string | null;
+    shopIds?: string[];
+  }) {
+    const { startDate, endDate, salesAssignee, shopIds = [] } = params;
+
+    const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+    const endStr = (endDate && endDate.trim()) || startStr;
+    const rangeDays = this.diffDays(startStr, endStr) + 1;
+
+    if (!dayjs(startStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid start_date format. Expected YYYY-MM-DD');
+    }
+    if (!dayjs(endStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid end_date format. Expected YYYY-MM-DD');
+    }
+    if (endStr < startStr) {
+      throw new BadRequestException('start_date must be before or equal to end_date');
+    }
+
+    if (!salesAssignee || !salesAssignee.toString().trim()) {
+      return this.buildEmptyResponse(startStr, endStr, rangeDays, []);
+    }
+
+    return this.getOverview({
+      startDate,
+      endDate,
+      salesAssignees: [salesAssignee.toString()],
+      shopIds,
+      includeShopOptions: true,
+    });
+  }
+
+  async deletePosOrdersInRange(startDate?: string, endDate?: string) {
+    const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+    const endStr = (endDate && endDate.trim()) || startStr;
+
+    if (!dayjs(startStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid start_date format. Expected YYYY-MM-DD');
+    }
+    if (!dayjs(endStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid end_date format. Expected YYYY-MM-DD');
+    }
+    if (endStr < startStr) {
+      throw new BadRequestException('start_date must be before or equal to end_date');
+    }
+
+    const { tenantId } = await this.teamContext.getContext();
+    const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
+
+    if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length === 0) {
+      return { deletedCount: 0, start_date: startStr, end_date: endStr };
+    }
+
+    const where: Prisma.PosOrderWhereInput = {
+      tenantId,
+      dateLocal: {
+        gte: startStr,
+        lte: endStr,
+      },
+    };
+
+    if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0) {
+      where.teamId = { in: effectiveTeamIds };
+    }
+
+    const result = await this.prisma.posOrder.deleteMany({ where });
+    await this.analyticsCache.bumpVersion(tenantId);
+    this.logger.warn(`Deleted ${result.count} pos_orders for ${tenantId} (${startStr} -> ${endStr})`);
+
+    return { deletedCount: result.count, start_date: startStr, end_date: endStr };
   }
 }
