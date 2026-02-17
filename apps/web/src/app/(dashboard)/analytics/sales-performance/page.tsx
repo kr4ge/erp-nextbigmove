@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { BarChart3, Info, Trash2 } from 'lucide-react';
+import { BarChart3, ChevronDown, ChevronUp, Info, Trash2 } from 'lucide-react';
 
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
@@ -63,6 +63,18 @@ type SalesPerformanceRow = {
 };
 
 type SalesPerformanceSummaryRow = Omit<SalesPerformanceRow, 'shopId'>;
+type SortKey =
+  | 'assignee'
+  | 'shop'
+  | 'mktg_cod'
+  | 'sales_cod'
+  | 'smp'
+  | 'rts'
+  | 'confirmation'
+  | 'pending'
+  | 'cancellation'
+  | 'upsell_rate'
+  | 'upsell_delta';
 
 type SalesPerformanceSummary = {
   upsell_delta: number;
@@ -170,6 +182,8 @@ export default function SalesPerformancePage() {
   const [storePage, setStorePage] = useState(1);
   const [summaryPage, setSummaryPage] = useState(1);
   const pageSize = 10;
+  const [sortKey, setSortKey] = useState<SortKey>('smp');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
   const [assigneeDisplayMap, setAssigneeDisplayMap] = useState<Record<string, string>>({});
@@ -318,6 +332,65 @@ export default function SalesPerformancePage() {
 
   const displayShop = (value: string) => {
     return data?.filters?.shopDisplayMap?.[value] || value;
+  };
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDir(key === 'assignee' || key === 'shop' ? 'asc' : 'desc');
+  };
+
+  const renderSortLabel = (label: string, key: SortKey) => {
+    const isActive = sortKey === key;
+    return (
+      <button
+        type="button"
+        onClick={() => handleSort(key)}
+        className="inline-flex items-center gap-1 text-xs font-semibold uppercase text-slate-500 hover:text-slate-700"
+      >
+        <span>{label}</span>
+        {isActive ? (
+          sortDir === 'asc' ? (
+            <ChevronUp className="h-3 w-3" />
+          ) : (
+            <ChevronDown className="h-3 w-3" />
+          )
+        ) : null}
+      </button>
+    );
+  };
+
+  const getSortValue = (row: SalesPerformanceRow | SalesPerformanceSummaryRow, key: SortKey, hasShop: boolean) => {
+    switch (key) {
+      case 'assignee':
+        return displayAssignee(row.salesAssignee).toLowerCase();
+      case 'shop':
+        if (!hasShop || !('shopId' in row)) return '';
+        return displayShop(row.shopId || '').toLowerCase();
+      case 'mktg_cod':
+        return row.mktgCod;
+      case 'sales_cod':
+        return row.salesCod;
+      case 'smp':
+        return row.salesVsMktgPct;
+      case 'rts':
+        return row.rtsRatePct;
+      case 'confirmation':
+        return row.confirmationRatePct;
+      case 'pending':
+        return row.pendingRatePct;
+      case 'cancellation':
+        return row.cancellationRatePct;
+      case 'upsell_rate':
+        return row.upsellRatePct;
+      case 'upsell_delta':
+        return row.upsellDelta;
+      default:
+        return 0;
+    }
   };
 
   const filteredOptions = allAssigneeOptions.filter((value) =>
@@ -533,18 +606,56 @@ export default function SalesPerformancePage() {
     setSummaryPage(1);
   }, [summaryRows.length]);
 
+  useEffect(() => {
+    setStorePage(1);
+    setSummaryPage(1);
+  }, [sortKey, sortDir]);
+
+  useEffect(() => {
+    if (tableSelection === 'summary' && sortKey === 'shop') {
+      setSortKey('assignee');
+      setSortDir('asc');
+    }
+  }, [tableSelection, sortKey]);
+
   const tableOptions: Array<{ key: 'store' | 'summary'; label: string }> = [
     { key: 'summary', label: 'Sales Performance' },
     { key: 'store', label: 'Sales Performance (Per Store)' },
   ];
 
-  const totalStoreRows = data?.rows?.length ?? 0;
-  const totalSummaryRows = summaryRows.length;
+  const sortedStoreRows = useMemo(() => {
+    const rows = [...(data?.rows || [])];
+    if (rows.length === 0) return rows;
+    return rows.sort((a, b) => {
+      const av = getSortValue(a, sortKey, true);
+      const bv = getSortValue(b, sortKey, true);
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return (sortDir === 'asc' ? 1 : -1) * String(av).localeCompare(String(bv));
+      }
+      return (sortDir === 'asc' ? 1 : -1) * (Number(av) - Number(bv));
+    });
+  }, [data?.rows, sortKey, sortDir]);
+
+  const sortedSummaryRows = useMemo(() => {
+    const rows = [...summaryRows];
+    if (rows.length === 0) return rows;
+    return rows.sort((a, b) => {
+      const av = getSortValue(a, sortKey, false);
+      const bv = getSortValue(b, sortKey, false);
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return (sortDir === 'asc' ? 1 : -1) * String(av).localeCompare(String(bv));
+      }
+      return (sortDir === 'asc' ? 1 : -1) * (Number(av) - Number(bv));
+    });
+  }, [summaryRows, sortKey, sortDir]);
+
+  const totalStoreRows = sortedStoreRows.length;
+  const totalSummaryRows = sortedSummaryRows.length;
   const totalStorePages = Math.max(1, Math.ceil(totalStoreRows / pageSize));
   const totalSummaryPages = Math.max(1, Math.ceil(totalSummaryRows / pageSize));
 
-  const pagedStoreRows = (data?.rows || []).slice((storePage - 1) * pageSize, storePage * pageSize);
-  const pagedSummaryRows = summaryRows.slice((summaryPage - 1) * pageSize, summaryPage * pageSize);
+  const pagedStoreRows = sortedStoreRows.slice((storePage - 1) * pageSize, storePage * pageSize);
+  const pagedSummaryRows = sortedSummaryRows.slice((summaryPage - 1) * pageSize, summaryPage * pageSize);
 
   const storeStart = totalStoreRows === 0 ? 0 : (storePage - 1) * pageSize + 1;
   const storeEnd = Math.min(storePage * pageSize, totalStoreRows);
@@ -837,38 +948,38 @@ export default function SalesPerformancePage() {
               <table className="min-w-full divide-y divide-slate-100">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Sales Assignee
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Sales Assignee', 'assignee')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Shop POS
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Shop POS', 'shop')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      MKTG Cod
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('MKTG Cod', 'mktg_cod')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Sales Cod
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Sales Cod', 'sales_cod')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      SMP %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('SMP %', 'smp')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      RTS Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('RTS Rate %', 'rts')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Confirmation Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Confirmation Rate %', 'confirmation')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Pending Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Pending Rate %', 'pending')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Cancellation Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Cancellation Rate %', 'cancellation')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Upsell Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Upsell Rate %', 'upsell_rate')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Sales Upsell
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Sales Upsell', 'upsell_delta')}
                     </th>
                   </tr>
                 </thead>
@@ -958,35 +1069,35 @@ export default function SalesPerformancePage() {
               <table className="min-w-full divide-y divide-slate-100">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Sales Assignee
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Sales Assignee', 'assignee')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      MKTG Cod
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('MKTG Cod', 'mktg_cod')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Sales Cod
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Sales Cod', 'sales_cod')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      SMP %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('SMP %', 'smp')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      RTS Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('RTS Rate %', 'rts')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Confirmation Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Confirmation Rate %', 'confirmation')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Pending Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Pending Rate %', 'pending')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Cancellation Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Cancellation Rate %', 'cancellation')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Upsell Rate %
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Upsell Rate %', 'upsell_rate')}
                     </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      Sales Upsell
+                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
+                      {renderSortLabel('Sales Upsell', 'upsell_delta')}
                     </th>
                   </tr>
                 </thead>
