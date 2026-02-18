@@ -263,12 +263,12 @@ export class PosOrderService {
         ? rawOrder.marketer.name || undefined
         : undefined;
 
-    // Normalize assigning care (id or name)
+    // Normalize assigning care (fb id only)
     const assigningCareRaw = rawOrder.assigning_care ?? null;
     let assigningCare: string | null = null;
     if (assigningCareRaw) {
       if (typeof assigningCareRaw === 'object') {
-        assigningCare = assigningCareRaw.id?.toString?.() || assigningCareRaw.name || null;
+        assigningCare = assigningCareRaw.fb_id?.toString?.() || null;
       } else if (typeof assigningCareRaw === 'string') {
         assigningCare = assigningCareRaw.trim() || null;
       }

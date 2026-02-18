@@ -125,17 +125,7 @@ const ROLES: RoleDef[] = [
     name: 'Team Member',
     description: 'Baseline access for team members',
     scope: RoleScope.TEAM,
-    permissions: [
-      'integration.read',
-      'workflow.read',
-      'workflow.execute',
-      'workflow.view_executions',
-      'pos.read',
-      'meta.read',
-      'analytics.marketing',
-      'analytics.sales',
-      'analytics.sales_performance',
-    ],
+    permissions: [''],
     isSystem: true,
   },
   {
@@ -166,7 +156,7 @@ const ROLES: RoleDef[] = [
     name: 'Sales',
     description: 'Sales-focused access',
     scope: RoleScope.TEAM,
-    permissions: ['pos.read', 'analytics.sales', 'analytics.sales_performance', 'dashboard.sales'],
+    permissions: ['dashboard.sales'],
     isSystem: true,
   },
   {
