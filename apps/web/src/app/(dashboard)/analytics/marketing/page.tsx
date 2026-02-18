@@ -119,6 +119,7 @@ export default function MarketingAnalyticsPage() {
   const [startDate, setStartDate] = useState<string>(today);
   const [endDate, setEndDate] = useState<string>(today);
   const [selectedAssociates, setSelectedAssociates] = useState<string[]>([]);
+  const [isAllAssociatesMode, setIsAllAssociatesMode] = useState(true);
   const [associatesOptions, setAssociatesOptions] = useState<string[]>([]);
   const [associatesDisplayMap, setAssociatesDisplayMap] = useState<Record<string, string>>({});
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -158,14 +159,18 @@ export default function MarketingAnalyticsPage() {
     setError(null);
     try {
       const normalizedOpts = normalizedOptions();
-      const effectiveSel = selectedAssociates.length === 0 ? normalizedOpts : selectedAssociates;
-      const sendAll = effectiveSel.length === normalizedOpts.length;
+      const allPreviouslySelected = isAllAssociatesMode;
+      const effectiveSel = allPreviouslySelected ? normalizedOpts : selectedAssociates;
+      const sendAll =
+        allPreviouslySelected ||
+        (effectiveSel.length > 0 && effectiveSel.length === normalizedOpts.length);
       const params = new URLSearchParams();
       params.set('start_date', startDate);
       params.set('end_date', endDate);
       params.set('tables', tableSelection);
-      if (!sendAll && effectiveSel.length > 0) {
-        effectiveSel.forEach((a) => params.append('associate', a));
+      if (!sendAll) {
+        const scopedSelection = effectiveSel.length > 0 ? effectiveSel : ['__no_selection__'];
+        scopedSelection.forEach((a) => params.append('associate', a));
       }
       params.set('exclude_cancel', String(excludeCanceled));
       params.set('exclude_restocking', String(excludeRestocking));
@@ -175,9 +180,12 @@ export default function MarketingAnalyticsPage() {
       const normalized = options.map((a) => a.toLowerCase());
       setAssociatesOptions(options);
       setAssociatesDisplayMap(res.data.filters.associatesDisplayMap || {});
-      const boundedSel = effectiveSel.filter((p) => normalized.includes(p));
-      const finalSel = boundedSel.length === 0 ? normalized : boundedSel;
-      setSelectedAssociates(finalSel);
+      if (allPreviouslySelected) {
+        setSelectedAssociates(normalized);
+      } else {
+        const boundedSel = selectedAssociates.filter((p) => normalized.includes(p));
+        setSelectedAssociates(boundedSel);
+      }
       setLastUpdated(res.data.lastUpdatedAt);
       setTopAssociates(res.data.topAssociates || []);
       setTopCampaigns(res.data.topCampaigns || []);
@@ -212,7 +220,7 @@ export default function MarketingAnalyticsPage() {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate, selectedAssociates.join('|'), excludeCanceled, excludeRestocking, tableSelection]);
+  }, [startDate, endDate, isAllAssociatesMode, selectedAssociates.join('|'), excludeCanceled, excludeRestocking, tableSelection]);
 
   // Lightweight auto-refresh every 60s when tab is visible
   useEffect(() => {
@@ -223,7 +231,7 @@ export default function MarketingAnalyticsPage() {
     }, 60000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate, selectedAssociates.join('|'), excludeCanceled, excludeRestocking, tableSelection]);
+  }, [startDate, endDate, isAllAssociatesMode, selectedAssociates.join('|'), excludeCanceled, excludeRestocking, tableSelection]);
 
   useEffect(() => {
     fetchDataRef.current = fetchData;
@@ -364,16 +372,35 @@ export default function MarketingAnalyticsPage() {
   };
 
   const handleResetAssociates = () => {
+    setIsAllAssociatesMode(true);
     setSelectedAssociates([]);
     setShowAssociatePicker(false);
   };
 
+  const toggleAssociate = (norm: string) => {
+    if (isAllAssociatesMode) {
+      setIsAllAssociatesMode(false);
+      setSelectedAssociates(normalizedOptions().filter((v) => v !== norm));
+      return;
+    }
+    const has = selectedAssociates.includes(norm);
+    const next = has
+      ? selectedAssociates.filter((v) => v !== norm)
+      : [...selectedAssociates, norm];
+    if (associatesOptions.length > 0 && next.length === associatesOptions.length) {
+      setIsAllAssociatesMode(true);
+      setSelectedAssociates(normalizedOptions());
+      return;
+    }
+    setSelectedAssociates(next);
+  };
+
   const associateDisplay = (val: string) => associatesDisplayMap[val.toLowerCase()] || val;
   const selectedAssociateLabel =
-    selectedAssociates.length === associatesOptions.length
+    isAllAssociatesMode
       ? 'All associates'
       : `${selectedAssociates.length} selected`;
-  const isChecked = (norm: string) => selectedAssociates.includes(norm);
+  const isChecked = (norm: string) => isAllAssociatesMode || selectedAssociates.includes(norm);
 
   const metrics = data ? metricDefinitions.map((def) => {
     const current = data.kpis[def.key] ?? 0;
@@ -487,11 +514,11 @@ export default function MarketingAnalyticsPage() {
                         <input
                           type="checkbox"
                           checked={
-                            associatesOptions.length > 0 &&
-                            selectedAssociates.length === associatesOptions.length
+                            isAllAssociatesMode
                           }
                           onChange={(e) => {
                             const checked = e.target.checked;
+                            setIsAllAssociatesMode(checked);
                             setSelectedAssociates(checked ? normalizedOptions() : []);
                             setShowAssociatePicker(true);
                           }}
@@ -519,11 +546,7 @@ export default function MarketingAnalyticsPage() {
                                 type="checkbox"
                                 checked={checked}
                                 onChange={() => {
-                                  setSelectedAssociates((prev) =>
-                                    prev.includes(norm)
-                                      ? prev.filter((v) => v !== norm)
-                                      : [...prev, norm],
-                                  );
+                                  toggleAssociate(norm);
                                   setShowAssociatePicker(true);
                                 }}
                                 className="rounded border-slate-300"
@@ -534,6 +557,7 @@ export default function MarketingAnalyticsPage() {
                               type="button"
                               className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                               onClick={() => {
+                                setIsAllAssociatesMode(false);
                                 setSelectedAssociates([norm]);
                                 setShowAssociatePicker(true);
                               }}

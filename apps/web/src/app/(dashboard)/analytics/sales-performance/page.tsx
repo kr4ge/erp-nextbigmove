@@ -215,6 +215,7 @@ export default function SalesPerformancePage() {
   const [isProblematicLoading, setIsProblematicLoading] = useState(false);
   const [chartShopOptions, setChartShopOptions] = useState<string[]>([]);
   const [selectedChartShops, setSelectedChartShops] = useState<string[]>([]);
+  const [isAllChartShopsMode, setIsAllChartShopsMode] = useState(true);
   const [showChartShopPicker, setShowChartShopPicker] = useState(false);
   const [chartShopSearch, setChartShopSearch] = useState('');
   const [hasInitializedChartShops, setHasInitializedChartShops] = useState(false);
@@ -223,6 +224,7 @@ export default function SalesPerformancePage() {
   const [assigneeDisplayMap, setAssigneeDisplayMap] = useState<Record<string, string>>({});
   const [includeUnassigned, setIncludeUnassigned] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  const [isAllAssigneesMode, setIsAllAssigneesMode] = useState(true);
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
   const [assigneeSearch, setAssigneeSearch] = useState('');
   const [hasInitializedSelection, setHasInitializedSelection] = useState(false);
@@ -238,24 +240,20 @@ export default function SalesPerformancePage() {
   }, [assigneeOptions, includeUnassigned]);
 
   const resolvedSelection = useMemo(
-    () => (selectedAssignees.length === 0 ? allAssigneeOptions : selectedAssignees),
-    [selectedAssignees, allAssigneeOptions],
+    () => (isAllAssigneesMode ? allAssigneeOptions : selectedAssignees),
+    [isAllAssigneesMode, selectedAssignees, allAssigneeOptions],
   );
 
   const selectedLabel =
-    resolvedSelection.length === 0 || resolvedSelection.length === allAssigneeOptions.length
-      ? 'All sales assignees'
-      : `${resolvedSelection.length} selected`;
+    isAllAssigneesMode ? 'All sales assignees' : `${selectedAssignees.length} selected`;
 
   const resolvedChartShops = useMemo(
-    () => (selectedChartShops.length === 0 ? chartShopOptions : selectedChartShops),
-    [selectedChartShops, chartShopOptions],
+    () => (isAllChartShopsMode ? chartShopOptions : selectedChartShops),
+    [isAllChartShopsMode, selectedChartShops, chartShopOptions],
   );
 
   const selectedChartShopLabel =
-    resolvedChartShops.length === 0 || resolvedChartShops.length === chartShopOptions.length
-      ? 'All shops'
-      : `${resolvedChartShops.length} selected`;
+    isAllChartShopsMode ? 'All shops' : `${selectedChartShops.length} selected`;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -299,32 +297,34 @@ export default function SalesPerformancePage() {
     const loadOverview = async () => {
       setIsLoading(true);
       try {
+        const params: Record<string, string | string[]> = {
+          start_date: startDate,
+          end_date: endDate,
+        };
+        if (!isAllAssigneesMode) {
+          params.sales_assignee =
+            selectedAssignees.length > 0 ? selectedAssignees : ['__no_selection__'];
+        }
+
         const res = await apiClient.get<OverviewResponse>('/analytics/sales-performance/overview', {
-          params: {
-            start_date: startDate,
-            end_date: endDate,
-            sales_assignee: resolvedSelection,
-          },
+          params,
         });
         if (!isMounted) return;
         setData(res.data);
         setAssigneeOptions(res.data.filters.salesAssignees || []);
         setAssigneeDisplayMap(res.data.filters.salesAssigneesDisplayMap || {});
         setIncludeUnassigned(!!res.data.filters.includeUnassigned);
-        if (!hasInitializedSelection) {
-          const nextAll = [
-            ...(res.data.filters.salesAssignees || []),
-            ...(res.data.filters.includeUnassigned ? ['__null__'] : []),
-          ];
-          setSelectedAssignees(nextAll);
-          setHasInitializedSelection(true);
+        const nextAll = [
+          ...(res.data.filters.salesAssignees || []),
+          ...(res.data.filters.includeUnassigned ? ['__null__'] : []),
+        ];
+        if (!hasInitializedSelection || isAllAssigneesMode) {
+          setSelectedAssignees([]);
         } else {
-          const allowed = new Set([
-            ...(res.data.filters.salesAssignees || []),
-            ...(res.data.filters.includeUnassigned ? ['__null__'] : []),
-          ]);
+          const allowed = new Set(nextAll);
           setSelectedAssignees((prev) => prev.filter((v) => allowed.has(v)));
         }
+        if (!hasInitializedSelection) setHasInitializedSelection(true);
       } catch (error) {
         if (isMounted) {
           console.error('Failed to load sales performance overview', error);
@@ -337,33 +337,38 @@ export default function SalesPerformancePage() {
     return () => {
       isMounted = false;
     };
-  }, [startDate, endDate, resolvedSelection.join('|'), refreshKey]);
+  }, [startDate, endDate, isAllAssigneesMode, selectedAssignees.join('|'), refreshKey]);
 
   useEffect(() => {
     let isMounted = true;
     const loadProblematicDelivery = async () => {
       setIsProblematicLoading(true);
       try {
+        const params: Record<string, string | string[]> = {
+          start_date: startDate,
+          end_date: endDate,
+        };
+        if (!isAllChartShopsMode) {
+          params.shop_id =
+            selectedChartShops.length > 0 ? selectedChartShops : ['__no_selection__'];
+        }
+
         const res = await apiClient.get<ProblematicDeliveryResponse>(
           '/analytics/sales-performance/problematic-delivery',
           {
-            params: {
-              start_date: startDate,
-              end_date: endDate,
-              shop_id: resolvedChartShops,
-            },
+            params,
           },
         );
         if (!isMounted) return;
         setProblematicData(res.data);
         setChartShopOptions(res.data.filters.shops || []);
-        if (!hasInitializedChartShops) {
-          setSelectedChartShops(res.data.filters.shops || []);
-          setHasInitializedChartShops(true);
+        if (!hasInitializedChartShops || isAllChartShopsMode) {
+          setSelectedChartShops([]);
         } else {
           const allowed = new Set(res.data.filters.shops || []);
           setSelectedChartShops((prev) => prev.filter((v) => allowed.has(v)));
         }
+        if (!hasInitializedChartShops) setHasInitializedChartShops(true);
       } catch (error) {
         if (isMounted) {
           console.error('Failed to load problematic delivery chart', error);
@@ -376,7 +381,7 @@ export default function SalesPerformancePage() {
     return () => {
       isMounted = false;
     };
-  }, [startDate, endDate, resolvedChartShops.join('|'), refreshKey]);
+  }, [startDate, endDate, isAllChartShopsMode, selectedChartShops.join('|'), refreshKey]);
 
   const rangeLabel = startDate === endDate ? startDate : `${startDate} → ${endDate}`;
 
@@ -405,10 +410,21 @@ export default function SalesPerformancePage() {
   };
 
   const toggleAssignee = (value: string) => {
-    if (resolvedSelection.includes(value)) {
-      setSelectedAssignees(resolvedSelection.filter((v) => v !== value));
+    if (isAllAssigneesMode) {
+      setIsAllAssigneesMode(false);
+      setSelectedAssignees(allAssigneeOptions.filter((v) => v !== value));
+      setShowAssigneePicker(true);
+      return;
+    }
+    const has = selectedAssignees.includes(value);
+    const next = has
+      ? selectedAssignees.filter((v) => v !== value)
+      : [...selectedAssignees, value];
+    if (allAssigneeOptions.length > 0 && next.length === allAssigneeOptions.length) {
+      setIsAllAssigneesMode(true);
+      setSelectedAssignees([]);
     } else {
-      setSelectedAssignees([...resolvedSelection, value]);
+      setSelectedAssignees(next);
     }
     setShowAssigneePicker(true);
   };
@@ -504,10 +520,21 @@ export default function SalesPerformancePage() {
   );
 
   const toggleChartShop = (value: string) => {
-    if (resolvedChartShops.includes(value)) {
-      setSelectedChartShops(resolvedChartShops.filter((v) => v !== value));
+    if (isAllChartShopsMode) {
+      setIsAllChartShopsMode(false);
+      setSelectedChartShops(chartShopOptions.filter((v) => v !== value));
+      setShowChartShopPicker(true);
+      return;
+    }
+    const has = selectedChartShops.includes(value);
+    const next = has
+      ? selectedChartShops.filter((v) => v !== value)
+      : [...selectedChartShops, value];
+    if (chartShopOptions.length > 0 && next.length === chartShopOptions.length) {
+      setIsAllChartShopsMode(true);
+      setSelectedChartShops([]);
     } else {
-      setSelectedChartShops([...resolvedChartShops, value]);
+      setSelectedChartShops(next);
     }
     setShowChartShopPicker(true);
   };
@@ -1007,7 +1034,10 @@ export default function SalesPerformancePage() {
                     <span>Select assignees</span>
                     <button
                       type="button"
-                      onClick={() => setSelectedAssignees([])}
+                      onClick={() => {
+                        setIsAllAssigneesMode(true);
+                        setSelectedAssignees([]);
+                      }}
                       className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                     >
                       Clear
@@ -1027,10 +1057,11 @@ export default function SalesPerformancePage() {
                       <label className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={resolvedSelection.length === allAssigneeOptions.length && allAssigneeOptions.length > 0}
+                          checked={isAllAssigneesMode}
                           onChange={(e) => {
                             const checked = e.target.checked;
-                            setSelectedAssignees(checked ? allAssigneeOptions : []);
+                            setIsAllAssigneesMode(checked);
+                            setSelectedAssignees([]);
                             setShowAssigneePicker(true);
                           }}
                           className="rounded border-slate-300"
@@ -1058,6 +1089,7 @@ export default function SalesPerformancePage() {
                             type="button"
                             className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                             onClick={() => {
+                              setIsAllAssigneesMode(false);
                               setSelectedAssignees([value]);
                               setShowAssigneePicker(true);
                             }}
@@ -1495,7 +1527,10 @@ export default function SalesPerformancePage() {
                     <span>Select shops</span>
                     <button
                       type="button"
-                      onClick={() => setSelectedChartShops([])}
+                      onClick={() => {
+                        setIsAllChartShopsMode(true);
+                        setSelectedChartShops([]);
+                      }}
                       className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                     >
                       Clear
@@ -1515,10 +1550,11 @@ export default function SalesPerformancePage() {
                       <label className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={resolvedChartShops.length === chartShopOptions.length && chartShopOptions.length > 0}
+                          checked={isAllChartShopsMode}
                           onChange={(e) => {
                             const checked = e.target.checked;
-                            setSelectedChartShops(checked ? chartShopOptions : []);
+                            setIsAllChartShopsMode(checked);
+                            setSelectedChartShops([]);
                             setShowChartShopPicker(true);
                           }}
                           className="rounded border-slate-300"
@@ -1546,6 +1582,7 @@ export default function SalesPerformancePage() {
                             type="button"
                             className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                             onClick={() => {
+                              setIsAllChartShopsMode(false);
                               setSelectedChartShops([value]);
                               setShowChartShopPicker(true);
                             }}

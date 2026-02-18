@@ -386,8 +386,14 @@ export default function SalesAnalyticsPage() {
     setError(null);
     try {
       const normalizedOptions = mappingOptions.map((m) => m.toLowerCase());
-      const effectiveSel = selectedMappings.length === 0 ? normalizedOptions : selectedMappings;
-      const sendAll = effectiveSel.length === normalizedOptions.length;
+      const allPreviouslySelected =
+        normalizedOptions.length === 0
+          ? selectedMappings.length === 0
+          : selectedMappings.length === 0 ||
+            (selectedMappings.length === normalizedOptions.length &&
+              normalizedOptions.every((m) => selectedMappings.includes(m)));
+      const effectiveSel = allPreviouslySelected ? normalizedOptions : selectedMappings;
+      const sendAll = allPreviouslySelected || effectiveSel.length === normalizedOptions.length;
       const params = new URLSearchParams();
       params.set('start_date', startDate);
       params.set('end_date', endDate);
@@ -405,8 +411,12 @@ export default function SalesAnalyticsPage() {
       const normalized = optsList.map((m) => m.toLowerCase());
       setMappingOptions(normalized);
       setMappingDisplayMap(res.data.filters.mappingsDisplayMap || {});
-      const bounded = effectiveSel.filter((m) => normalized.includes(m));
-      setSelectedMappings(bounded.length === 0 ? normalized : bounded);
+      if (allPreviouslySelected) {
+        setSelectedMappings(normalized);
+      } else {
+        const bounded = selectedMappings.filter((m) => normalized.includes(m));
+        setSelectedMappings(bounded);
+      }
       setStartDate(res.data.selected.start_date);
       setEndDate(res.data.selected.end_date);
     } catch (err: any) {
