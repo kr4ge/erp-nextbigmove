@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { BarChart3, ChevronDown, ChevronUp, Info, Trash2 } from 'lucide-react';
 
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
+const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
 const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
 
@@ -120,6 +121,32 @@ type OverviewResponse = {
   lastUpdatedAt: string | null;
 };
 
+type SunburstNode = {
+  name: string;
+  value: number;
+  children?: SunburstNode[];
+};
+
+type ProblematicDeliveryResponse = {
+  data: SunburstNode[];
+  total: number;
+  trend: Array<{
+    date: string;
+    delivered_count: number;
+    rts_count: number;
+  }>;
+  filters: {
+    shops: string[];
+    shopDisplayMap?: Record<string, string>;
+  };
+  selected: {
+    start_date: string;
+    end_date: string;
+    shop_ids: string[];
+  };
+  lastUpdatedAt: string | null;
+};
+
 const formatCurrency = (val?: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);
 
@@ -184,6 +211,13 @@ export default function SalesPerformancePage() {
   const pageSize = 10;
   const [sortKey, setSortKey] = useState<SortKey>('smp');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [problematicData, setProblematicData] = useState<ProblematicDeliveryResponse | null>(null);
+  const [isProblematicLoading, setIsProblematicLoading] = useState(false);
+  const [chartShopOptions, setChartShopOptions] = useState<string[]>([]);
+  const [selectedChartShops, setSelectedChartShops] = useState<string[]>([]);
+  const [showChartShopPicker, setShowChartShopPicker] = useState(false);
+  const [chartShopSearch, setChartShopSearch] = useState('');
+  const [hasInitializedChartShops, setHasInitializedChartShops] = useState(false);
 
   const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
   const [assigneeDisplayMap, setAssigneeDisplayMap] = useState<Record<string, string>>({});
@@ -194,6 +228,7 @@ export default function SalesPerformancePage() {
   const [hasInitializedSelection, setHasInitializedSelection] = useState(false);
 
   const assigneePickerRef = useRef<HTMLDivElement>(null);
+  const chartShopPickerRef = useRef<HTMLDivElement>(null);
   const { addToast } = useToast();
 
   const allAssigneeOptions = useMemo(() => {
@@ -212,10 +247,30 @@ export default function SalesPerformancePage() {
       ? 'All sales assignees'
       : `${resolvedSelection.length} selected`;
 
+  const resolvedChartShops = useMemo(
+    () => (selectedChartShops.length === 0 ? chartShopOptions : selectedChartShops),
+    [selectedChartShops, chartShopOptions],
+  );
+
+  const selectedChartShopLabel =
+    resolvedChartShops.length === 0 || resolvedChartShops.length === chartShopOptions.length
+      ? 'All shops'
+      : `${resolvedChartShops.length} selected`;
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (assigneePickerRef.current && !assigneePickerRef.current.contains(event.target as Node)) {
         setShowAssigneePicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (chartShopPickerRef.current && !chartShopPickerRef.current.contains(event.target as Node)) {
+        setShowChartShopPicker(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -284,6 +339,45 @@ export default function SalesPerformancePage() {
     };
   }, [startDate, endDate, resolvedSelection.join('|'), refreshKey]);
 
+  useEffect(() => {
+    let isMounted = true;
+    const loadProblematicDelivery = async () => {
+      setIsProblematicLoading(true);
+      try {
+        const res = await apiClient.get<ProblematicDeliveryResponse>(
+          '/analytics/sales-performance/problematic-delivery',
+          {
+            params: {
+              start_date: startDate,
+              end_date: endDate,
+              shop_id: resolvedChartShops,
+            },
+          },
+        );
+        if (!isMounted) return;
+        setProblematicData(res.data);
+        setChartShopOptions(res.data.filters.shops || []);
+        if (!hasInitializedChartShops) {
+          setSelectedChartShops(res.data.filters.shops || []);
+          setHasInitializedChartShops(true);
+        } else {
+          const allowed = new Set(res.data.filters.shops || []);
+          setSelectedChartShops((prev) => prev.filter((v) => allowed.has(v)));
+        }
+      } catch (error) {
+        if (isMounted) {
+          console.error('Failed to load problematic delivery chart', error);
+        }
+      } finally {
+        if (isMounted) setIsProblematicLoading(false);
+      }
+    };
+    loadProblematicDelivery();
+    return () => {
+      isMounted = false;
+    };
+  }, [startDate, endDate, resolvedChartShops.join('|'), refreshKey]);
+
   const rangeLabel = startDate === endDate ? startDate : `${startDate} → ${endDate}`;
 
   const handleDeleteOrders = async () => {
@@ -332,6 +426,10 @@ export default function SalesPerformancePage() {
 
   const displayShop = (value: string) => {
     return data?.filters?.shopDisplayMap?.[value] || value;
+  };
+
+  const displayChartShop = (value: string) => {
+    return problematicData?.filters?.shopDisplayMap?.[value] || data?.filters?.shopDisplayMap?.[value] || value;
   };
 
   const handleSort = (key: SortKey) => {
@@ -399,6 +497,21 @@ export default function SalesPerformancePage() {
       : true,
   );
 
+  const filteredChartShopOptions = chartShopOptions.filter((value) =>
+    chartShopSearch.trim()
+      ? displayChartShop(value).toLowerCase().includes(chartShopSearch.toLowerCase())
+      : true,
+  );
+
+  const toggleChartShop = (value: string) => {
+    if (resolvedChartShops.includes(value)) {
+      setSelectedChartShops(resolvedChartShops.filter((v) => v !== value));
+    } else {
+      setSelectedChartShops([...resolvedChartShops, value]);
+    }
+    setShowChartShopPicker(true);
+  };
+
   const metrics = useMemo(() => {
     return metricDefinitions.map((def) => {
       const current = data?.summary?.[def.key] ?? 0;
@@ -422,6 +535,171 @@ export default function SalesPerformancePage() {
       {startDate} → {endDate} • {selectedLabel}
     </p>
   );
+
+  const sunburstSeriesData = useMemo(() => {
+    // Keep one hue family per L1 branch, then vary only lightness/saturation by depth.
+    const baseHues = [24, 205, 142, 268, 347, 192, 48, 285];
+    const clamp = (value: number, min: number, max: number) =>
+      Math.max(min, Math.min(max, value));
+    const tone = (hue: number, saturation: number, lightness: number) =>
+      `hsl(${hue}, ${clamp(saturation, 35, 95)}%, ${clamp(lightness, 20, 88)}%)`;
+
+    return (problematicData?.data || []).map((l1, l1Index) => {
+      const hue = baseHues[l1Index % baseHues.length];
+      return {
+        ...l1,
+        itemStyle: { color: tone(hue, 90, 52) },
+        children: (l1.children || []).map((l2, l2Index) => ({
+          ...l2,
+          itemStyle: { color: tone(hue, 80 - (l2Index % 3) * 4, 60 + (l2Index % 4) * 2) },
+          children: (l2.children || []).map((l3, l3Index) => ({
+            ...l3,
+            itemStyle: { color: tone(hue, 72 - (l3Index % 4) * 4, 69 + (l3Index % 5) * 2) },
+          })),
+        })),
+      };
+    });
+  }, [problematicData?.data]);
+
+  const chartOption = useMemo(
+    () => ({
+      tooltip: {
+        trigger: 'item',
+        formatter: (params: any) => {
+          const path = params?.treePathInfo?.slice(1)?.map((p: any) => p.name)?.join(' / ');
+          const value = Number(params?.value || 0);
+          const total = Number(problematicData?.total || 0);
+          const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+          return `${path}<br/>Orders: ${formatCount(value)} (${pct}%)`;
+        },
+      },
+      series: [
+        {
+          type: 'sunburst',
+          radius: ['2%', '94%'],
+          data: sunburstSeriesData,
+          sort: null,
+          nodeClick: false,
+          animation: false,
+          animationDurationUpdate: 0,
+          label: { show: false },
+          itemStyle: {
+            borderColor: '#ffffff',
+            borderWidth: 2,
+          },
+          levels: [
+            {},
+            {
+              r0: '8%',
+              r: '24%',
+              itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
+              label: { show: false },
+            },
+            {
+              r0: '34%',
+              r: '50%',
+              itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
+              label: { show: false },
+            },
+            {
+              r0: '60%',
+              r: '76%',
+              itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
+              label: { show: false },
+            },
+          ],
+          emphasis: {
+            focus: 'ancestor',
+            itemStyle: {
+              opacity: 1,
+              borderColor: '#ffffff',
+              borderWidth: 2,
+            },
+          },
+          blur: {
+            itemStyle: {
+              opacity: 0.22,
+              borderColor: '#ffffff',
+              borderWidth: 2,
+            },
+          },
+        },
+      ],
+    }),
+    [problematicData?.total, sunburstSeriesData],
+  );
+
+  const trendLineOption = useMemo(() => {
+    const trend = problematicData?.trend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const delivered = trend.map((row) => row.delivered_count || 0);
+    const rts = trend.map((row) => row.rts_count || 0);
+
+    return {
+      tooltip: {
+        trigger: 'axis',
+      },
+      legend: {
+        data: ['Delivered', 'RTS'],
+        top: 6,
+        left: 12,
+      },
+      grid: {
+        left: 16,
+        right: 16,
+        top: 42,
+        bottom: 20,
+        containLabel: true,
+      },
+      xAxis: {
+        type: 'category',
+        data: labels,
+        boundaryGap: false,
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        splitLine: {
+          lineStyle: { color: '#E2E8F0' },
+        },
+      },
+      series: [
+        {
+          name: 'Delivered',
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          data: delivered,
+          lineStyle: { color: '#16A34A', width: 3 },
+          itemStyle: { color: '#16A34A' },
+          areaStyle: {
+            color: 'rgba(22,163,74,0.10)',
+          },
+        },
+        {
+          name: 'RTS',
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          data: rts,
+          lineStyle: { color: '#F97316', width: 3 },
+          itemStyle: { color: '#F97316' },
+          areaStyle: {
+            color: 'rgba(249,115,22,0.10)',
+          },
+        },
+      ],
+    };
+  }, [problematicData?.trend]);
 
   const buildSmpTooltip = (summary?: SalesPerformanceSummary | null) => {
     if (!summary) return null;
@@ -1174,9 +1452,127 @@ export default function SalesPerformancePage() {
                 Next
               </button>
             </div>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3 px-2">
+          <h2 className="text-lg font-semibold text-slate-900">Problematic Delivery</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative" ref={chartShopPickerRef}>
+              <button
+                type="button"
+                onClick={() => setShowChartShopPicker((p) => !p)}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white hover:border-slate-300 focus:outline-none"
+              >
+                <span className="text-slate-900">{selectedChartShopLabel}</span>
+                <span className="text-slate-400 text-xs">(click to choose)</span>
+              </button>
+              {showChartShopPicker && (
+                <div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg">
+                  <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 border-b border-slate-100">
+                    <span>Select shops</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChartShops([])}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="px-3 py-2 border-b border-slate-100">
+                    <input
+                      type="text"
+                      value={chartShopSearch}
+                      onChange={(e) => setChartShopSearch(e.target.value)}
+                      placeholder="Type to search"
+                      className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="max-h-64 overflow-auto">
+                    <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={resolvedChartShops.length === chartShopOptions.length && chartShopOptions.length > 0}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSelectedChartShops(checked ? chartShopOptions : []);
+                            setShowChartShopPicker(true);
+                          }}
+                          className="rounded border-slate-300"
+                        />
+                        <span>All</span>
+                      </label>
+                    </div>
+                    {filteredChartShopOptions.map((value) => {
+                      const checked = resolvedChartShops.includes(value);
+                      return (
+                        <div
+                          key={value}
+                          className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
+                        >
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleChartShop(value)}
+                              className="rounded border-slate-300"
+                            />
+                            <span>{displayChartShop(value)}</span>
+                          </label>
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                            onClick={() => {
+                              setSelectedChartShops([value]);
+                              setShowChartShopPicker(true);
+                            }}
+                          >
+                            ONLY
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <span className="text-xs text-slate-500">
+              Total problematic orders: <span className="font-semibold text-slate-700">{formatCount(problematicData?.total || 0)}</span>
+            </span>
           </div>
         </div>
-      )}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+            <div className="xl:col-span-2 rounded-xl border border-slate-100 bg-slate-50/40 p-2">
+              <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Reason Breakdown</p>
+              {isProblematicLoading ? (
+                <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
+              ) : (problematicData?.data?.length || 0) > 0 ? (
+                <ReactECharts option={chartOption} style={{ height: 500 }} />
+              ) : (
+                <div className="h-[500px] w-full rounded-xl border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-sm text-slate-500">
+                  No problematic delivery data.
+                </div>
+              )}
+            </div>
+            <div className="xl:col-span-3 rounded-xl border border-slate-100 bg-slate-50/40 p-2">
+              <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Delivered vs RTS Trend</p>
+              {isProblematicLoading ? (
+                <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
+              ) : (problematicData?.trend?.length || 0) > 0 ? (
+                <ReactECharts option={trendLineOption} style={{ height: 500 }} />
+              ) : (
+                <div className="h-[500px] w-full rounded-xl border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-sm text-slate-500">
+                  No trend data for the selected range.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </Card>
 
       <Dialog

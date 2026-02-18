@@ -701,6 +701,227 @@ export class SalesPerformanceService {
     });
   }
 
+  async getProblematicDelivery(params: {
+    startDate?: string;
+    endDate?: string;
+    shopIds?: string[];
+  }) {
+    const { startDate, endDate, shopIds = [] } = params;
+    const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+    const endStr = (endDate && endDate.trim()) || startStr;
+
+    if (!dayjs(startStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid start_date format. Expected YYYY-MM-DD');
+    }
+    if (!dayjs(endStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid end_date format. Expected YYYY-MM-DD');
+    }
+    if (endStr < startStr) {
+      throw new BadRequestException('start_date must be before or equal to end_date');
+    }
+
+    const normalizedShopIds = (shopIds || [])
+      .map((v) => v?.toString?.().trim?.() || '')
+      .filter((v) => v.length > 0);
+
+    const { tenantId } = await this.teamContext.getContext();
+    const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
+
+    if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length === 0) {
+      return {
+        data: [],
+        total: 0,
+        trend: [] as Array<{ date: string; delivered_count: number; rts_count: number }>,
+        filters: { shops: [] as string[], shopDisplayMap: {} as Record<string, string> },
+        selected: { start_date: startStr, end_date: endStr, shop_ids: normalizedShopIds },
+        lastUpdatedAt: null as string | null,
+      };
+    }
+
+    const cacheVersion = await this.analyticsCache.getVersion(tenantId);
+    const cacheKeyPayload = {
+      tenantId,
+      teamIds: effectiveTeamIds || [],
+      start: startStr,
+      end: endStr,
+      shopIds: normalizedShopIds.sort(),
+      chart: 'problematic-delivery',
+    };
+    const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales-performance:problematic-delivery:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
+    const cached = await this.analyticsCache.get<any>(cacheKey);
+    if (cached) return cached;
+
+    const buildBaseWhere = (start: string, end: string) => {
+      const where = [
+        Prisma.sql`"tenantId" = ${tenantId}::uuid`,
+        Prisma.sql`"dateLocal" >= ${start}`,
+        Prisma.sql`"dateLocal" <= ${end}`,
+      ];
+      if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0) {
+        const teamIdParams = effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`);
+        where.push(Prisma.sql`"teamId" IN (${Prisma.join(teamIdParams)})`);
+      }
+      return where;
+    };
+
+    const applyShopFilters = (base: Prisma.Sql[]) => {
+      const filtered = [...base];
+      if (normalizedShopIds.length > 0) {
+        filtered.push(Prisma.sql`"shopId" IN (${Prisma.join(normalizedShopIds)})`);
+      }
+      return filtered;
+    };
+
+    const baseWhere = buildBaseWhere(startStr, endStr);
+    const chartWhere = applyShopFilters(baseWhere);
+    const whereClause = Prisma.sql`WHERE ${Prisma.join(chartWhere, ' AND ')}`;
+
+    const [rows, trendRows] = await Promise.all([
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          NULLIF(BTRIM("rtsReason"->>'l1'), '') AS l1,
+          NULLIF(BTRIM("rtsReason"->>'l2'), '') AS l2,
+          NULLIF(BTRIM("rtsReason"->>'l3'), '') AS l3,
+          COUNT(*)::int AS count
+        FROM "pos_orders"
+        ${whereClause}
+        AND "status" IN (4, 5)
+        AND "rtsReason" IS NOT NULL
+        AND NULLIF(BTRIM("rtsReason"->>'l1'), '') IS NOT NULL
+        AND NULLIF(BTRIM("rtsReason"->>'l2'), '') IS NOT NULL
+        AND NULLIF(BTRIM("rtsReason"->>'l3'), '') IS NOT NULL
+        AND LOWER(NULLIF(BTRIM("rtsReason"->>'l1'), '')) <> 'unknown'
+        AND LOWER(NULLIF(BTRIM("rtsReason"->>'l2'), '')) <> 'unknown'
+        AND LOWER(NULLIF(BTRIM("rtsReason"->>'l3'), '')) <> 'unknown'
+        GROUP BY 1, 2, 3
+        ORDER BY 1, 2, 3
+      `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        WITH dates AS (
+          SELECT generate_series(${startStr}::date, ${endStr}::date, interval '1 day')::date AS d
+        ),
+        counts AS (
+          SELECT
+            "dateLocal"::date AS d,
+            COALESCE(SUM(CASE WHEN "status" = 3 THEN 1 ELSE 0 END), 0)::int AS delivered_count,
+            COALESCE(SUM(CASE WHEN "status" IN (4, 5) THEN 1 ELSE 0 END), 0)::int AS rts_count
+          FROM "pos_orders"
+          ${whereClause}
+          GROUP BY 1
+        )
+        SELECT
+          TO_CHAR(dates.d, 'YYYY-MM-DD') AS date,
+          COALESCE(counts.delivered_count, 0)::int AS delivered_count,
+          COALESCE(counts.rts_count, 0)::int AS rts_count
+        FROM dates
+        LEFT JOIN counts ON counts.d = dates.d
+        ORDER BY dates.d
+      `),
+    ]);
+
+    const l1Map = new Map<string, { name: string; value: number; children: Map<string, { name: string; value: number; children: Map<string, { name: string; value: number }> }> }>();
+    let total = 0;
+
+    for (const row of rows) {
+      const l1 = row.l1 as string;
+      const l2 = row.l2 as string;
+      const l3 = row.l3 as string;
+      const count = this.toNumber(row.count);
+      if (!l1 || !l2 || !l3 || count <= 0) continue;
+
+      total += count;
+      if (!l1Map.has(l1)) {
+        l1Map.set(l1, { name: l1, value: 0, children: new Map() });
+      }
+      const l1Node = l1Map.get(l1)!;
+      l1Node.value += count;
+
+      if (!l1Node.children.has(l2)) {
+        l1Node.children.set(l2, { name: l2, value: 0, children: new Map() });
+      }
+      const l2Node = l1Node.children.get(l2)!;
+      l2Node.value += count;
+
+      if (!l2Node.children.has(l3)) {
+        l2Node.children.set(l3, { name: l3, value: 0 });
+      }
+      const l3Node = l2Node.children.get(l3)!;
+      l3Node.value += count;
+    }
+
+    const data = Array.from(l1Map.values()).map((l1Node) => ({
+      name: l1Node.name,
+      value: l1Node.value,
+      children: Array.from(l1Node.children.values()).map((l2Node) => ({
+        name: l2Node.name,
+        value: l2Node.value,
+        children: Array.from(l2Node.children.values()).map((l3Node) => ({
+          name: l3Node.name,
+          value: l3Node.value,
+        })),
+      })),
+    }));
+
+    const shopRows = await this.prisma.$queryRaw<{ shopId: string }[]>(Prisma.sql`
+      SELECT DISTINCT "shopId"
+      FROM "pos_orders"
+      WHERE ${Prisma.join(baseWhere, ' AND ')}
+      ORDER BY "shopId"
+    `);
+    const shopIdsList = shopRows.map((r) => r.shopId).filter(Boolean);
+    const shopDisplayMap: Record<string, string> = {};
+
+    if (shopIdsList.length > 0) {
+      const storeWhere: Prisma.PosStoreWhereInput = {
+        tenantId,
+        shopId: { in: shopIdsList },
+      };
+      if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0) {
+        storeWhere.teamId = { in: effectiveTeamIds };
+      }
+      const stores = await this.prisma.posStore.findMany({
+        where: storeWhere,
+        select: { shopId: true, shopName: true, name: true },
+      });
+      stores.forEach((store) => {
+        const display = store.shopName || store.name || store.shopId;
+        if (display) {
+          shopDisplayMap[store.shopId] = display;
+        }
+      });
+    }
+
+    const lastUpdatedRows = await this.prisma.$queryRaw<{ last_updated: string | null }[]>(Prisma.sql`
+      SELECT MAX("updatedAt")::text AS last_updated
+      FROM "pos_orders"
+      WHERE ${Prisma.join(chartWhere, ' AND ')}
+    `);
+    const lastUpdatedAt = lastUpdatedRows?.[0]?.last_updated ?? null;
+
+    const response = {
+      data,
+      total,
+      trend: (trendRows || []).map((row) => ({
+        date: (row.date || '').toString(),
+        delivered_count: this.toNumber(row.delivered_count),
+        rts_count: this.toNumber(row.rts_count),
+      })),
+      filters: {
+        shops: shopIdsList,
+        shopDisplayMap,
+      },
+      selected: {
+        start_date: startStr,
+        end_date: endStr,
+        shop_ids: normalizedShopIds,
+      },
+      lastUpdatedAt,
+    };
+
+    await this.analyticsCache.set(cacheKey, response);
+    return response;
+  }
+
   async deletePosOrdersInRange(startDate?: string, endDate?: string) {
     const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
     const endStr = (endDate && endDate.trim()) || startStr;

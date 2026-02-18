@@ -66,6 +66,30 @@ export class SalesPerformanceController {
     });
   }
 
+  @Get('problematic-delivery')
+  @Permissions('analytics.sales_performance')
+  async getProblematicDelivery(
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+    @Query('shop_id') shopId?: string | string[],
+  ) {
+    const rawShopIds = Array.isArray(shopId)
+      ? shopId
+      : shopId
+      ? [shopId]
+      : [];
+    const shopIds = rawShopIds
+      .flatMap((value) => (value ? value.toString().split(',') : []))
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+
+    return this.salesPerformanceService.getProblematicDelivery({
+      startDate,
+      endDate,
+      shopIds,
+    });
+  }
+
   @Post('pos-orders/delete-range')
   @Permissions('analytics.sales_performance')
   async deletePosOrdersInRange(@Body() body: { start_date?: string; end_date?: string }) {

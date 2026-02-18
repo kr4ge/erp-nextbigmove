@@ -23,6 +23,8 @@
     "clsx": "^2.0.0",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.19",
+    "echarts": "^5.6.0",
+    "echarts-for-react": "^3.0.6",
     "lucide-react": "^0.290.0",
     "next": "^14.0.0",
     "nuqs": "^2.8.1",
