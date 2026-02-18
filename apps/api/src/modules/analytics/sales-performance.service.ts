@@ -55,6 +55,14 @@ export class SalesPerformanceService {
     return Number.isFinite(n) ? n : 0;
   }
 
+  private toReasonLabel(value: string): string {
+    return (value || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+      .replace(/\b[a-z]/g, (m) => m.toUpperCase());
+  }
+
   private normalizeAssignee(value?: string | null): string {
     return (value || '').trim().toLowerCase();
   }
@@ -778,21 +786,28 @@ export class SalesPerformanceService {
 
     const [rows, trendRows] = await Promise.all([
       this.prisma.$queryRaw<any[]>(Prisma.sql`
+        WITH reasons AS (
+          SELECT
+            LOWER(NULLIF(BTRIM(REGEXP_REPLACE("rtsReason"->>'l1', '\\s+', ' ', 'g')), '')) AS l1,
+            LOWER(NULLIF(BTRIM(REGEXP_REPLACE("rtsReason"->>'l2', '\\s+', ' ', 'g')), '')) AS l2,
+            LOWER(NULLIF(BTRIM(REGEXP_REPLACE("rtsReason"->>'l3', '\\s+', ' ', 'g')), '')) AS l3
+          FROM "pos_orders"
+          ${whereClause}
+          AND "status" IN (4, 5)
+          AND "rtsReason" IS NOT NULL
+        )
         SELECT
-          NULLIF(BTRIM("rtsReason"->>'l1'), '') AS l1,
-          NULLIF(BTRIM("rtsReason"->>'l2'), '') AS l2,
-          NULLIF(BTRIM("rtsReason"->>'l3'), '') AS l3,
+          l1,
+          l2,
+          l3,
           COUNT(*)::int AS count
-        FROM "pos_orders"
-        ${whereClause}
-        AND "status" IN (4, 5)
-        AND "rtsReason" IS NOT NULL
-        AND NULLIF(BTRIM("rtsReason"->>'l1'), '') IS NOT NULL
-        AND NULLIF(BTRIM("rtsReason"->>'l2'), '') IS NOT NULL
-        AND NULLIF(BTRIM("rtsReason"->>'l3'), '') IS NOT NULL
-        AND LOWER(NULLIF(BTRIM("rtsReason"->>'l1'), '')) <> 'unknown'
-        AND LOWER(NULLIF(BTRIM("rtsReason"->>'l2'), '')) <> 'unknown'
-        AND LOWER(NULLIF(BTRIM("rtsReason"->>'l3'), '')) <> 'unknown'
+        FROM reasons
+        WHERE l1 IS NOT NULL
+          AND l2 IS NOT NULL
+          AND l3 IS NOT NULL
+          AND l1 <> 'unknown'
+          AND l2 <> 'unknown'
+          AND l3 <> 'unknown'
         GROUP BY 1, 2, 3
         ORDER BY 1, 2, 3
       `),
@@ -823,27 +838,27 @@ export class SalesPerformanceService {
     let total = 0;
 
     for (const row of rows) {
-      const l1 = row.l1 as string;
-      const l2 = row.l2 as string;
-      const l3 = row.l3 as string;
+      const l1 = (row.l1 as string) || '';
+      const l2 = (row.l2 as string) || '';
+      const l3 = (row.l3 as string) || '';
       const count = this.toNumber(row.count);
       if (!l1 || !l2 || !l3 || count <= 0) continue;
 
       total += count;
       if (!l1Map.has(l1)) {
-        l1Map.set(l1, { name: l1, value: 0, children: new Map() });
+        l1Map.set(l1, { name: this.toReasonLabel(l1), value: 0, children: new Map() });
       }
       const l1Node = l1Map.get(l1)!;
       l1Node.value += count;
 
       if (!l1Node.children.has(l2)) {
-        l1Node.children.set(l2, { name: l2, value: 0, children: new Map() });
+        l1Node.children.set(l2, { name: this.toReasonLabel(l2), value: 0, children: new Map() });
       }
       const l2Node = l1Node.children.get(l2)!;
       l2Node.value += count;
 
       if (!l2Node.children.has(l3)) {
-        l2Node.children.set(l3, { name: l3, value: 0 });
+        l2Node.children.set(l3, { name: this.toReasonLabel(l3), value: 0 });
       }
       const l3Node = l2Node.children.get(l3)!;
       l3Node.value += count;

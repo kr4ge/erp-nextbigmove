@@ -565,6 +565,25 @@ export default function SalesPerformancePage() {
     () => ({
       tooltip: {
         trigger: 'item',
+        confine: true,
+        position: (point: number[], _params: any, dom: any, _rect: any, size: any) => {
+          const boxWidth = Number(dom?.offsetWidth || 320);
+          const boxHeight = Number(dom?.offsetHeight || 88);
+          const viewWidth = Number(size?.viewSize?.[0] || 0);
+          const viewHeight = Number(size?.viewSize?.[1] || 0);
+
+          // Prefer right side of hovered slice.
+          let x = point[0] + 14;
+          let y = point[1] - boxHeight / 2;
+
+          // If there is no space on the right, keep it visible.
+          if (x + boxWidth > viewWidth - 8) {
+            x = Math.max(8, point[0] - boxWidth - 14);
+          }
+          y = Math.max(8, Math.min(viewHeight - boxHeight - 8, y));
+
+          return [x, y];
+        },
         formatter: (params: any) => {
           const path = params?.treePathInfo?.slice(1)?.map((p: any) => p.name)?.join(' / ');
           const value = Number(params?.value || 0);
