@@ -494,7 +494,21 @@ export class PosOrderService {
 
     for (const rawOrder of rawOrders) {
       const sourceName = rawOrder?.order_sources_name?.toString?.().trim?.() || '';
-      if (sourceName.toLowerCase() === 'tiktok') {
+      const sourceNameLower = sourceName.toLowerCase();
+      if (sourceNameLower === 'tiktok' || sourceNameLower === 'shopee') {
+        continue;
+      }
+
+      const status = Number(rawOrder?.status);
+      const hasInvalidTag = this.hasTagNameInList(rawOrder?.tags, ['duplicate order', 'no product']);
+      if (status === 6 && hasInvalidTag) {
+        const shopId = rawOrder?.shop_id?.toString();
+        const posOrderId = rawOrder?.id?.toString();
+        if (shopId && posOrderId) {
+          await this.prisma.posOrder.deleteMany({
+            where: { tenantId, shopId, posOrderId },
+          });
+        }
         continue;
       }
 
@@ -674,6 +688,31 @@ export class PosOrderService {
       }
       if (id !== null && parseInt(id, 10) === 103) return true;
       if (typeof name === 'string' && name.trim().toUpperCase() === 'UPSELL') return true;
+    }
+    return false;
+  }
+
+  private hasTagNameInList(tagsRaw: any, names: string[]): boolean {
+    if (isString(tagsRaw)) {
+      try {
+        const decoded = JSON.parse(tagsRaw);
+        tagsRaw = decoded;
+      } catch {
+        // ignore parse error
+      }
+    }
+    if (!Array.isArray(tagsRaw)) return false;
+    const normalizedTargets = new Set(names.map((name) => name.trim().toLowerCase()));
+    for (const tag of tagsRaw) {
+      let name: any = null;
+      if (isObject(tag)) {
+        name = tag.name ?? null;
+      } else if (isString(tag)) {
+        name = tag;
+      }
+      if (typeof name === 'string' && normalizedTargets.has(name.trim().toLowerCase())) {
+        return true;
+      }
     }
     return false;
   }
