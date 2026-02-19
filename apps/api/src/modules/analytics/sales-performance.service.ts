@@ -740,6 +740,16 @@ export class SalesPerformanceService {
         data: [],
         total: 0,
         trend: [] as Array<{ date: string; delivered_count: number; rts_count: number }>,
+        undeliverableAllTime: {
+          count: 0,
+          totalCod: 0,
+        },
+        undeliverableTrend: [] as Array<{ date: string; count: number }>,
+        onDeliveryAllTime: {
+          count: 0,
+          totalCod: 0,
+        },
+        onDeliveryTrend: [] as Array<{ date: string; count: number }>,
         filters: { shops: [] as string[], shopDisplayMap: {} as Record<string, string> },
         selected: { start_date: startStr, end_date: endStr, shop_ids: normalizedShopIds },
         lastUpdatedAt: null as string | null,
@@ -783,8 +793,16 @@ export class SalesPerformanceService {
     const baseWhere = buildBaseWhere(startStr, endStr);
     const chartWhere = applyShopFilters(baseWhere);
     const whereClause = Prisma.sql`WHERE ${Prisma.join(chartWhere, ' AND ')}`;
+    const allTimeBaseWhere = [
+      Prisma.sql`"tenantId" = ${tenantId}::uuid`,
+      ...(Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0
+        ? [Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`]
+        : []),
+    ];
+    const allTimeWhere = applyShopFilters(allTimeBaseWhere);
+    const allTimeWhereClause = Prisma.sql`WHERE ${Prisma.join(allTimeWhere, ' AND ')}`;
 
-    const [rows, trendRows] = await Promise.all([
+    const [rows, trendRows, undeliverableSummaryRows, undeliverableTrendRows, onDeliverySummaryRows, onDeliveryTrendRows] = await Promise.all([
       this.prisma.$queryRaw<any[]>(Prisma.sql`
         WITH reasons AS (
           SELECT
@@ -831,6 +849,62 @@ export class SalesPerformanceService {
         FROM dates
         LEFT JOIN counts ON counts.d = dates.d
         ORDER BY dates.d
+      `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          COUNT(*)::int AS count,
+          COALESCE(SUM(COALESCE("cod", 0)), 0)::numeric AS total_cod
+        FROM "pos_orders"
+        ${allTimeWhereClause}
+        AND "status" = 2
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE("tags", '[]'::jsonb)) AS tag(value)
+          WHERE LOWER(BTRIM(REGEXP_REPLACE(COALESCE(tag.value->>'name', ''), '\\s+', ' ', 'g'))) = 'undeliverable'
+        )
+      `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          TO_CHAR("dateLocal"::date, 'YYYY-MM-DD') AS date,
+          COUNT(*)::int AS count
+        FROM "pos_orders"
+        ${allTimeWhereClause}
+        AND "status" = 2
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE("tags", '[]'::jsonb)) AS tag(value)
+          WHERE LOWER(BTRIM(REGEXP_REPLACE(COALESCE(tag.value->>'name', ''), '\\s+', ' ', 'g'))) = 'undeliverable'
+        )
+        GROUP BY 1
+        ORDER BY 1
+      `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          COUNT(*)::int AS count,
+          COALESCE(SUM(COALESCE("cod", 0)), 0)::numeric AS total_cod
+        FROM "pos_orders"
+        ${allTimeWhereClause}
+        AND "status" = 2
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE("tags", '[]'::jsonb)) AS tag(value)
+          WHERE LOWER(BTRIM(REGEXP_REPLACE(COALESCE(tag.value->>'name', ''), '\\s+', ' ', 'g'))) = 'on delivery'
+        )
+      `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          TO_CHAR("dateLocal"::date, 'YYYY-MM-DD') AS date,
+          COUNT(*)::int AS count
+        FROM "pos_orders"
+        ${allTimeWhereClause}
+        AND "status" = 2
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE("tags", '[]'::jsonb)) AS tag(value)
+          WHERE LOWER(BTRIM(REGEXP_REPLACE(COALESCE(tag.value->>'name', ''), '\\s+', ' ', 'g'))) = 'on delivery'
+        )
+        GROUP BY 1
+        ORDER BY 1
       `),
     ]);
 
@@ -912,6 +986,8 @@ export class SalesPerformanceService {
       WHERE ${Prisma.join(chartWhere, ' AND ')}
     `);
     const lastUpdatedAt = lastUpdatedRows?.[0]?.last_updated ?? null;
+    const undeliverableSummary = undeliverableSummaryRows?.[0] || {};
+    const onDeliverySummary = onDeliverySummaryRows?.[0] || {};
 
     const response = {
       data,
@@ -920,6 +996,22 @@ export class SalesPerformanceService {
         date: (row.date || '').toString(),
         delivered_count: this.toNumber(row.delivered_count),
         rts_count: this.toNumber(row.rts_count),
+      })),
+      undeliverableAllTime: {
+        count: this.toNumber(undeliverableSummary.count),
+        totalCod: this.toNumber(undeliverableSummary.total_cod),
+      },
+      undeliverableTrend: (undeliverableTrendRows || []).map((row) => ({
+        date: (row.date || '').toString(),
+        count: this.toNumber(row.count),
+      })),
+      onDeliveryAllTime: {
+        count: this.toNumber(onDeliverySummary.count),
+        totalCod: this.toNumber(onDeliverySummary.total_cod),
+      },
+      onDeliveryTrend: (onDeliveryTrendRows || []).map((row) => ({
+        date: (row.date || '').toString(),
+        count: this.toNumber(row.count),
       })),
       filters: {
         shops: shopIdsList,

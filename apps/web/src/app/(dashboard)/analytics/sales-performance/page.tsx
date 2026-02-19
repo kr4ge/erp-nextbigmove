@@ -135,6 +135,22 @@ type ProblematicDeliveryResponse = {
     delivered_count: number;
     rts_count: number;
   }>;
+  undeliverableAllTime?: {
+    count: number;
+    totalCod: number;
+  };
+  undeliverableTrend?: Array<{
+    date: string;
+    count: number;
+  }>;
+  onDeliveryAllTime?: {
+    count: number;
+    totalCod: number;
+  };
+  onDeliveryTrend?: Array<{
+    date: string;
+    count: number;
+  }>;
   filters: {
     shops: string[];
     shopDisplayMap?: Record<string, string>;
@@ -182,6 +198,55 @@ const formatDelta = (current: number, previous: number) => {
 };
 
 const formatCount = (val?: number) => new Intl.NumberFormat('en-US').format(val ?? 0);
+
+const buildSparklineOption = (
+  labels: string[],
+  data: number[],
+  color: string,
+  fill: string,
+  seriesLabel: string,
+) => ({
+  animation: false,
+  tooltip: {
+    trigger: 'axis',
+    confine: true,
+    formatter: (params: any) => {
+      const row = Array.isArray(params) ? params[0] : params;
+      const value = Number(row?.value ?? 0);
+      const date = row?.axisValueLabel || row?.axisValue || '';
+      return `${seriesLabel}<br/>${date}: ${formatCount(value)}`;
+    },
+  },
+  grid: {
+    left: 8,
+    right: 8,
+    top: 6,
+    bottom: 6,
+    containLabel: false,
+  },
+  xAxis: {
+    type: 'category',
+    data: labels,
+    show: false,
+    boundaryGap: false,
+  },
+  yAxis: {
+    type: 'value',
+    show: false,
+    scale: true,
+  },
+  series: [
+    {
+      name: seriesLabel,
+      type: 'line',
+      data,
+      smooth: true,
+      symbol: 'none',
+      lineStyle: { color, width: 4 },
+      areaStyle: { color: fill },
+    },
+  ],
+});
 
 const TooltipRow = ({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) => (
   <div className="flex items-center justify-between text-[12px] text-slate-700">
@@ -685,7 +750,7 @@ export default function SalesPerformancePage() {
     [sunburstSeriesData],
   );
 
-  const trendLineOption = useMemo(() => {
+  const trendChartData = useMemo(() => {
     const trend = problematicData?.trend || [];
     const labels = trend.map((row) => {
       const [year, month, day] = row.date.split('-').map(Number);
@@ -697,6 +762,65 @@ export default function SalesPerformancePage() {
     });
     const delivered = trend.map((row) => row.delivered_count || 0);
     const rts = trend.map((row) => row.rts_count || 0);
+    const deliveredTotal = delivered.reduce((sum, value) => sum + value, 0);
+    const rtsTotal = rts.reduce((sum, value) => sum + value, 0);
+    return { labels, delivered, rts, deliveredTotal, rtsTotal };
+  }, [problematicData?.trend]);
+
+  const undeliverableChartData = useMemo(() => {
+    const trend = problematicData?.undeliverableTrend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const counts = trend.map((row) => row.count || 0);
+    return { labels, counts };
+  }, [problematicData?.undeliverableTrend]);
+
+  const undeliverableSparklineOption = useMemo(
+    () =>
+      buildSparklineOption(
+        undeliverableChartData.labels,
+        undeliverableChartData.counts,
+        '#0EA5E9',
+        'rgba(14,165,233,0.20)',
+        'Undeliverable',
+      ),
+    [undeliverableChartData],
+  );
+
+  const onDeliveryChartData = useMemo(() => {
+    const trend = problematicData?.onDeliveryTrend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const counts = trend.map((row) => row.count || 0);
+    return { labels, counts };
+  }, [problematicData?.onDeliveryTrend]);
+
+  const onDeliverySparklineOption = useMemo(
+    () =>
+      buildSparklineOption(
+        onDeliveryChartData.labels,
+        onDeliveryChartData.counts,
+        '#7C3AED',
+        'rgba(124,58,237,0.20)',
+        'On Delivery',
+      ),
+    [onDeliveryChartData],
+  );
+
+  const trendLineOption = useMemo(() => {
+    const { labels, delivered, rts } = trendChartData;
 
     return {
       tooltip: {
@@ -755,7 +879,7 @@ export default function SalesPerformancePage() {
         },
       ],
     };
-  }, [problematicData?.trend]);
+  }, [trendChartData]);
 
   const buildSmpTooltip = (summary?: SalesPerformanceSummary | null) => {
     if (!summary) return null;
@@ -1520,7 +1644,7 @@ export default function SalesPerformancePage() {
 
       <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3 px-2">
-          <h2 className="text-lg font-semibold text-slate-900">Problematic Delivery</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Delivery Monitoring</h2>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative" ref={chartShopPickerRef}>
               <button
@@ -1612,9 +1736,51 @@ export default function SalesPerformancePage() {
           </div>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="mb-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
+              <div className="px-1 pb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">On Delivery</p>
+                <p className="text-3xl font-bold text-slate-900">
+                  {formatCount(problematicData?.onDeliveryAllTime?.count || 0)}
+                </p>
+                <p className="text-xs font-medium text-slate-500">
+                  COD: {formatCurrency(problematicData?.onDeliveryAllTime?.totalCod || 0)}
+                </p>
+              </div>
+              {isProblematicLoading ? (
+                <div className="h-[140px] w-full animate-pulse rounded-lg bg-slate-100" />
+              ) : (problematicData?.onDeliveryTrend?.length || 0) > 0 ? (
+                <ReactECharts option={onDeliverySparklineOption} style={{ height: 140 }} />
+              ) : (
+                <div className="h-[140px] w-full rounded-lg border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-xs text-slate-500">
+                  No on-delivery trend data.
+                </div>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
+              <div className="px-1 pb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Undeliverable</p>
+                <p className="text-3xl font-bold text-slate-900">
+                  {formatCount(problematicData?.undeliverableAllTime?.count || 0)}
+                </p>
+                <p className="text-xs font-medium text-slate-500">
+                  COD: {formatCurrency(problematicData?.undeliverableAllTime?.totalCod || 0)}
+                </p>
+              </div>
+              {isProblematicLoading ? (
+                <div className="h-[140px] w-full animate-pulse rounded-lg bg-slate-100" />
+              ) : (problematicData?.undeliverableTrend?.length || 0) > 0 ? (
+                <ReactECharts option={undeliverableSparklineOption} style={{ height: 140 }} />
+              ) : (
+                <div className="h-[140px] w-full rounded-lg border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-xs text-slate-500">
+                  No undeliverable trend data.
+                </div>
+              )}
+            </div>
+          </div>
           <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
             <div className="xl:col-span-2 rounded-xl border border-slate-100 bg-slate-50/40 p-2">
-              <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Reason Breakdown</p>
+              <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">RTS Reason Data</p>
               {isProblematicLoading ? (
                 <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
               ) : (problematicData?.data?.length || 0) > 0 ? (
