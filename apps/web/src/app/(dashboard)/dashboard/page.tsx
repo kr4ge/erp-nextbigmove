@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
+const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
 const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
 
@@ -125,6 +126,49 @@ type SalesDashboardResponse = {
   lastUpdatedAt: string | null;
 };
 
+type SunburstNode = {
+  name: string;
+  value: number;
+  children?: SunburstNode[];
+};
+
+type ProblematicDeliveryResponse = {
+  data: SunburstNode[];
+  total: number;
+  trend: Array<{
+    date: string;
+    delivered_count: number;
+    rts_count: number;
+  }>;
+  undeliverableAllTime?: {
+    count: number;
+    totalCod: number;
+  };
+  undeliverableTrend?: Array<{
+    date: string;
+    count: number;
+  }>;
+  onDeliveryAllTime?: {
+    count: number;
+    totalCod: number;
+  };
+  onDeliveryTrend?: Array<{
+    date: string;
+    count: number;
+  }>;
+  filters: {
+    shops: string[];
+    shopDisplayMap?: Record<string, string>;
+  };
+  selected: {
+    start_date: string;
+    end_date: string;
+    shop_ids: string[];
+    sales_assignee?: string | null;
+  };
+  lastUpdatedAt: string | null;
+};
+
 const salesMetricDefinitions: {
   key: keyof SalesDashboardSummary;
   label: string;
@@ -139,6 +183,57 @@ const salesMetricDefinitions: {
   { key: 'cancellation_rate_pct', label: 'Cancellation Rate (%)', format: 'percent' },
   { key: 'upsell_rate_pct', label: 'Upsell Rate (%)', format: 'percent' },
 ];
+
+const formatCount = (val?: number) => new Intl.NumberFormat('en-US').format(val ?? 0);
+
+const buildSparklineOption = (
+  labels: string[],
+  data: number[],
+  color: string,
+  fill: string,
+  seriesLabel: string,
+) => ({
+  animation: false,
+  tooltip: {
+    trigger: 'axis',
+    confine: true,
+    formatter: (params: any) => {
+      const row = Array.isArray(params) ? params[0] : params;
+      const value = Number(row?.value ?? 0);
+      const date = row?.axisValueLabel || row?.axisValue || '';
+      return `${seriesLabel}<br/>${date}: ${formatCount(value)}`;
+    },
+  },
+  grid: {
+    left: 8,
+    right: 8,
+    top: 6,
+    bottom: 6,
+    containLabel: false,
+  },
+  xAxis: {
+    type: 'category',
+    data: labels,
+    show: false,
+    boundaryGap: false,
+  },
+  yAxis: {
+    type: 'value',
+    show: false,
+    scale: true,
+  },
+  series: [
+    {
+      name: seriesLabel,
+      type: 'line',
+      data,
+      smooth: true,
+      symbol: 'none',
+      lineStyle: { color, width: 4 },
+      areaStyle: { color: fill },
+    },
+  ],
+});
 
 export default function DashboardPage() {
   const today = useMemo(() => formatDateInTimezone(new Date()), []);
@@ -192,9 +287,11 @@ export default function DashboardPage() {
   const [salesStartDate, setSalesStartDate] = useState(today);
   const [salesEndDate, setSalesEndDate] = useState(today);
   const [salesData, setSalesData] = useState<SalesDashboardResponse | null>(null);
+  const [salesProblematicData, setSalesProblematicData] = useState<ProblematicDeliveryResponse | null>(null);
   const [salesLoading, setSalesLoading] = useState(false);
   const [shopOptions, setShopOptions] = useState<string[]>([]);
   const [selectedShops, setSelectedShops] = useState<string[]>([]);
+  const [isAllShopsMode, setIsAllShopsMode] = useState(true);
   const [showShopPicker, setShowShopPicker] = useState(false);
   const [shopSearch, setShopSearch] = useState('');
   const [hasInitializedShopSelection, setHasInitializedShopSelection] = useState(false);
@@ -399,15 +496,14 @@ export default function DashboardPage() {
   }, [canViewMarketingLeader, range.startDate, range.endDate, excludeCancel, excludeRestocking, teamCode]);
 
   const resolvedShopSelection = useMemo(
-    () => (selectedShops.length === 0 ? shopOptions : selectedShops),
-    [selectedShops, shopOptions],
+    () => (isAllShopsMode ? shopOptions : selectedShops),
+    [isAllShopsMode, selectedShops, shopOptions],
   );
-  const isAllShopsSelected =
-    shopOptions.length > 0 && resolvedShopSelection.length === shopOptions.length;
+  const isAllShopsSelected = isAllShopsMode;
   const selectedShopLabel =
-    resolvedShopSelection.length === 0 || isAllShopsSelected
+    isAllShopsSelected
       ? 'All shops'
-      : `${resolvedShopSelection.length} selected`;
+      : `${selectedShops.length} selected`;
   const filteredShopOptions = useMemo(
     () =>
       shopOptions.filter((value) =>
@@ -428,22 +524,32 @@ export default function DashboardPage() {
         const params: any = {};
         params.start_date = salesStartDate;
         params.end_date = salesEndDate;
-        if (!isAllShopsSelected && resolvedShopSelection.length > 0) {
-          params.shop_id = resolvedShopSelection;
+        if (!isAllShopsMode) {
+          params.shop_id = selectedShops.length > 0 ? selectedShops : ['__no_selection__'];
         }
-        const res = await apiClient.get('/analytics/sales-performance/my-stats', { params });
-        setSalesData(res.data);
-        const shops = res.data?.filters?.shops || [];
+        const [statsRes, problematicRes] = await Promise.all([
+          apiClient.get<SalesDashboardResponse>('/analytics/sales-performance/my-stats', { params }),
+          apiClient.get<ProblematicDeliveryResponse>('/analytics/sales-performance/my-problematic-delivery', { params }),
+        ]);
+
+        setSalesData(statsRes.data);
+        setSalesProblematicData(problematicRes.data);
+
+        const shops = statsRes.data?.filters?.shops || [];
         setShopOptions(shops);
         if (!hasInitializedShopSelection) {
-          setSelectedShops(shops);
+          setIsAllShopsMode(true);
+          setSelectedShops([]);
           setHasInitializedShopSelection(true);
+        } else if (isAllShopsMode) {
+          setSelectedShops([]);
         } else {
           const allowed = new Set(shops);
           setSelectedShops((prev) => prev.filter((v) => allowed.has(v)));
         }
       } catch (err) {
         console.error('Failed to load sales dashboard', err);
+        setSalesProblematicData(null);
       } finally {
         setSalesLoading(false);
       }
@@ -453,8 +559,8 @@ export default function DashboardPage() {
     canViewSalesDashboard,
     salesStartDate,
     salesEndDate,
-    resolvedShopSelection.join('|'),
-    isAllShopsSelected,
+    selectedShops.join('|'),
+    isAllShopsMode,
     hasInitializedShopSelection,
   ]);
 
@@ -502,6 +608,254 @@ export default function DashboardPage() {
       };
     });
   }, [salesData]);
+
+  const salesSunburstSeriesData = useMemo(() => {
+    const baseHues = [24, 205, 142, 268, 347, 192, 48, 285];
+    const clamp = (value: number, min: number, max: number) =>
+      Math.max(min, Math.min(max, value));
+    const tone = (hue: number, saturation: number, lightness: number) =>
+      `hsl(${hue}, ${clamp(saturation, 35, 95)}%, ${clamp(lightness, 20, 88)}%)`;
+
+    return (salesProblematicData?.data || []).map((l1, l1Index) => {
+      const hue = baseHues[l1Index % baseHues.length];
+      return {
+        ...l1,
+        itemStyle: { color: tone(hue, 90, 52) },
+        children: (l1.children || []).map((l2, l2Index) => ({
+          ...l2,
+          itemStyle: { color: tone(hue, 80 - (l2Index % 3) * 4, 60 + (l2Index % 4) * 2) },
+          children: (l2.children || []).map((l3, l3Index) => ({
+            ...l3,
+            itemStyle: { color: tone(hue, 72 - (l3Index % 4) * 4, 69 + (l3Index % 5) * 2) },
+          })),
+        })),
+      };
+    });
+  }, [salesProblematicData?.data]);
+
+  const salesSunburstLegend = useMemo(
+    () =>
+      (salesSunburstSeriesData || []).map((node: any) => ({
+        name: node?.name || 'Unknown',
+        count: Number(node?.value || 0),
+        color: node?.itemStyle?.color || '#94A3B8',
+      })),
+    [salesSunburstSeriesData],
+  );
+
+  const salesSunburstOption = useMemo(
+    () => ({
+      tooltip: {
+        trigger: 'item',
+        confine: true,
+        position: (point: number[], _params: any, dom: any, _rect: any, size: any) => {
+          const boxWidth = Number(dom?.offsetWidth || 320);
+          const boxHeight = Number(dom?.offsetHeight || 88);
+          const viewWidth = Number(size?.viewSize?.[0] || 0);
+          const viewHeight = Number(size?.viewSize?.[1] || 0);
+
+          let x = point[0] + 14;
+          let y = point[1] - boxHeight / 2;
+          if (x + boxWidth > viewWidth - 8) {
+            x = Math.max(8, point[0] - boxWidth - 14);
+          }
+          y = Math.max(8, Math.min(viewHeight - boxHeight - 8, y));
+          return [x, y];
+        },
+        formatter: (params: any) => {
+          const path = params?.treePathInfo?.slice(1)?.map((p: any) => p.name)?.join(' / ');
+          const value = Number(params?.value || 0);
+          const total = Number(salesProblematicData?.total || 0);
+          const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+          return `${path}<br/>Orders: ${formatCount(value)} (${pct}%)`;
+        },
+      },
+      series: [
+        {
+          type: 'sunburst',
+          radius: ['2%', '94%'],
+          data: salesSunburstSeriesData,
+          sort: null,
+          nodeClick: false,
+          animation: false,
+          animationDurationUpdate: 0,
+          label: { show: false },
+          itemStyle: {
+            borderColor: '#ffffff',
+            borderWidth: 2,
+          },
+          levels: [
+            {},
+            {
+              r0: '8%',
+              r: '24%',
+              itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
+              label: { show: false },
+            },
+            {
+              r0: '34%',
+              r: '50%',
+              itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
+              label: { show: false },
+            },
+            {
+              r0: '60%',
+              r: '76%',
+              itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
+              label: { show: false },
+            },
+          ],
+          emphasis: {
+            focus: 'ancestor',
+            itemStyle: {
+              opacity: 1,
+              borderColor: '#ffffff',
+              borderWidth: 2,
+            },
+          },
+          blur: {
+            itemStyle: {
+              opacity: 0.22,
+              borderColor: '#ffffff',
+              borderWidth: 2,
+            },
+          },
+        },
+      ],
+    }),
+    [salesProblematicData?.total, salesSunburstSeriesData],
+  );
+
+  const salesTrendChartData = useMemo(() => {
+    const trend = salesProblematicData?.trend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const delivered = trend.map((row) => row.delivered_count || 0);
+    const rts = trend.map((row) => row.rts_count || 0);
+    const deliveredTotal = delivered.reduce((sum, value) => sum + value, 0);
+    const rtsTotal = rts.reduce((sum, value) => sum + value, 0);
+    return { labels, delivered, rts, deliveredTotal, rtsTotal };
+  }, [salesProblematicData?.trend]);
+
+  const salesTrendLineOption = useMemo(() => {
+    const { labels, delivered, rts } = salesTrendChartData;
+
+    return {
+      tooltip: {
+        trigger: 'axis',
+      },
+      legend: {
+        data: ['Delivered', 'RTS'],
+        top: 6,
+        left: 12,
+      },
+      grid: {
+        left: 16,
+        right: 16,
+        top: 42,
+        bottom: 20,
+        containLabel: true,
+      },
+      xAxis: {
+        type: 'category',
+        data: labels,
+        boundaryGap: false,
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        splitLine: {
+          lineStyle: { color: '#E2E8F0' },
+        },
+      },
+      series: [
+        {
+          name: 'Delivered',
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          data: delivered,
+          lineStyle: { color: '#16A34A', width: 3 },
+          itemStyle: { color: '#16A34A' },
+          areaStyle: {
+            color: 'rgba(22,163,74,0.10)',
+          },
+        },
+        {
+          name: 'RTS',
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          data: rts,
+          lineStyle: { color: '#F97316', width: 3 },
+          itemStyle: { color: '#F97316' },
+          areaStyle: {
+            color: 'rgba(249,115,22,0.10)',
+          },
+        },
+      ],
+    };
+  }, [salesTrendChartData]);
+
+  const salesUndeliverableChartData = useMemo(() => {
+    const trend = salesProblematicData?.undeliverableTrend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const counts = trend.map((row) => row.count || 0);
+    return { labels, counts };
+  }, [salesProblematicData?.undeliverableTrend]);
+
+  const salesUndeliverableSparklineOption = useMemo(
+    () =>
+      buildSparklineOption(
+        salesUndeliverableChartData.labels,
+        salesUndeliverableChartData.counts,
+        '#0EA5E9',
+        'rgba(14,165,233,0.20)',
+        'Undeliverable',
+      ),
+    [salesUndeliverableChartData],
+  );
+
+  const salesOnDeliveryChartData = useMemo(() => {
+    const trend = salesProblematicData?.onDeliveryTrend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const counts = trend.map((row) => row.count || 0);
+    return { labels, counts };
+  }, [salesProblematicData?.onDeliveryTrend]);
+
+  const salesOnDeliverySparklineOption = useMemo(
+    () =>
+      buildSparklineOption(
+        salesOnDeliveryChartData.labels,
+        salesOnDeliveryChartData.counts,
+        '#7C3AED',
+        'rgba(124,58,237,0.20)',
+        'On Delivery',
+      ),
+    [salesOnDeliveryChartData],
+  );
 
   const generateName = () => {
     setNameError(null);
@@ -728,10 +1082,20 @@ export default function DashboardPage() {
   );
 
   const toggleShop = (value: string) => {
-    if (resolvedShopSelection.includes(value)) {
-      setSelectedShops(resolvedShopSelection.filter((v) => v !== value));
+    if (isAllShopsMode) {
+      setIsAllShopsMode(false);
+      setSelectedShops(shopOptions.filter((v) => v !== value));
     } else {
-      setSelectedShops([...resolvedShopSelection, value]);
+      const has = selectedShops.includes(value);
+      const next = has
+        ? selectedShops.filter((v) => v !== value)
+        : [...selectedShops, value];
+      if (shopOptions.length > 0 && next.length === shopOptions.length) {
+        setIsAllShopsMode(true);
+        setSelectedShops([]);
+      } else {
+        setSelectedShops(next);
+      }
     }
     setShowShopPicker(true);
   };
@@ -866,7 +1230,10 @@ export default function DashboardPage() {
                     <span>Select shops</span>
                     <button
                       type="button"
-                      onClick={() => setSelectedShops([])}
+                      onClick={() => {
+                        setIsAllShopsMode(true);
+                        setSelectedShops([]);
+                      }}
                       className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                     >
                       Clear
@@ -886,10 +1253,11 @@ export default function DashboardPage() {
                       <label className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={isAllShopsSelected && shopOptions.length > 0}
+                          checked={isAllShopsSelected}
                           onChange={(e) => {
                             const checked = e.target.checked;
-                            setSelectedShops(checked ? shopOptions : []);
+                            setIsAllShopsMode(checked);
+                            setSelectedShops([]);
                             setShowShopPicker(true);
                           }}
                           className="rounded border-slate-300"
@@ -917,6 +1285,7 @@ export default function DashboardPage() {
                             type="button"
                             className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                             onClick={() => {
+                              setIsAllShopsMode(false);
                               setSelectedShops([value]);
                               setShowShopPicker(true);
                             }}
@@ -1103,6 +1472,113 @@ export default function DashboardPage() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="px-3 py-3 border-slate-200 shadow-sm bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Delivery Monitoring</h2>
+            <p className="text-xs text-slate-500">
+              Scoped to your matched sales assignee and selected shops.
+            </p>
+          </div>
+          <p className="text-xs text-slate-500">
+            Total problematic orders:{' '}
+            <span className="font-semibold text-slate-700">
+              {formatCount(salesProblematicData?.total || 0)}
+            </span>
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 mb-3">
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              On Delivery
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {formatCount(salesProblematicData?.onDeliveryAllTime?.count || 0)}
+            </p>
+            <p className="text-xs text-slate-500">
+              COD: {formatCurrency(salesProblematicData?.onDeliveryAllTime?.totalCod || 0)}
+            </p>
+            <div className="mt-2 rounded-md bg-slate-50 border border-slate-100">
+              {salesLoading ? (
+                <div className="h-[140px] animate-pulse" />
+              ) : (salesProblematicData?.onDeliveryTrend?.length || 0) > 0 ? (
+                <ReactECharts option={salesOnDeliverySparklineOption} style={{ height: 140 }} />
+              ) : (
+                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400">
+                  No on-delivery trend data.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              Undeliverable
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {formatCount(salesProblematicData?.undeliverableAllTime?.count || 0)}
+            </p>
+            <p className="text-xs text-slate-500">
+              COD: {formatCurrency(salesProblematicData?.undeliverableAllTime?.totalCod || 0)}
+            </p>
+            <div className="mt-2 rounded-md bg-slate-50 border border-slate-100">
+              {salesLoading ? (
+                <div className="h-[140px] animate-pulse" />
+              ) : (salesProblematicData?.undeliverableTrend?.length || 0) > 0 ? (
+                <ReactECharts option={salesUndeliverableSparklineOption} style={{ height: 140 }} />
+              ) : (
+                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400">
+                  No undeliverable trend data.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-3 lg:col-span-2">
+            <p className="text-sm font-semibold text-slate-700 mb-2 uppercase">RTS Reason Data</p>
+            {salesLoading ? (
+              <div className="h-[500px] animate-pulse rounded-md bg-slate-50" />
+            ) : (salesProblematicData?.data?.length || 0) > 0 ? (
+              <div className="h-[500px] flex flex-col">
+                <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {salesSunburstLegend.map((item) => (
+                    <div key={item.name} className="flex items-center gap-1.5 text-[12px] text-slate-600">
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="font-medium text-slate-700">{item.name}</span>
+                      <span className="text-slate-500">{formatCount(item.count)}</span>
+                    </div>
+                  ))}
+                </div>
+                <ReactECharts option={salesSunburstOption} style={{ height: 460 }} />
+              </div>
+            ) : (
+              <div className="h-[500px] flex items-center justify-center text-sm text-slate-400">
+                No RTS reason data.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-3 lg:col-span-3">
+            <p className="text-sm font-semibold text-slate-700 mb-2 uppercase">Delivered vs RTS Trend</p>
+            {salesLoading ? (
+              <div className="h-[500px] animate-pulse rounded-md bg-slate-50" />
+            ) : (salesProblematicData?.trend?.length || 0) > 0 ? (
+              <ReactECharts option={salesTrendLineOption} style={{ height: 500 }} />
+            ) : (
+              <div className="h-[500px] flex items-center justify-center text-sm text-slate-400">
+                No trend data for the selected range.
+              </div>
+            )}
           </div>
         </div>
       </Card>

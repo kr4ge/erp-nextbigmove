@@ -111,6 +111,37 @@ export class SalesPerformanceService {
     };
   }
 
+  private buildEmptyProblematicDeliveryResponse(
+    startStr: string,
+    endStr: string,
+    selectedShopIds: string[] = [],
+    salesAssignee: string | null = null,
+  ) {
+    return {
+      data: [],
+      total: 0,
+      trend: [] as Array<{ date: string; delivered_count: number; rts_count: number }>,
+      undeliverableAllTime: {
+        count: 0,
+        totalCod: 0,
+      },
+      undeliverableTrend: [] as Array<{ date: string; count: number }>,
+      onDeliveryAllTime: {
+        count: 0,
+        totalCod: 0,
+      },
+      onDeliveryTrend: [] as Array<{ date: string; count: number }>,
+      filters: { shops: [] as string[], shopDisplayMap: {} as Record<string, string> },
+      selected: {
+        start_date: startStr,
+        end_date: endStr,
+        shop_ids: selectedShopIds,
+        sales_assignee: salesAssignee,
+      },
+      lastUpdatedAt: null as string | null,
+    };
+  }
+
   async getOverview(params: {
     startDate?: string;
     endDate?: string;
@@ -709,12 +740,38 @@ export class SalesPerformanceService {
     });
   }
 
+  async getMyProblematicDelivery(params: {
+    startDate?: string;
+    endDate?: string;
+    salesAssignee?: string | null;
+    shopIds?: string[];
+  }) {
+    const startStr = (params.startDate && params.startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+    const endStr = (params.endDate && params.endDate.trim()) || startStr;
+    const normalizedShopIds = (params.shopIds || [])
+      .map((v) => v?.toString?.().trim?.() || '')
+      .filter((v) => v.length > 0);
+    const assignee = params.salesAssignee?.toString().trim() || '';
+
+    if (!assignee) {
+      return this.buildEmptyProblematicDeliveryResponse(startStr, endStr, normalizedShopIds, null);
+    }
+
+    return this.getProblematicDelivery({
+      startDate: params.startDate,
+      endDate: params.endDate,
+      shopIds: params.shopIds,
+      salesAssignee: assignee,
+    });
+  }
+
   async getProblematicDelivery(params: {
     startDate?: string;
     endDate?: string;
     shopIds?: string[];
+    salesAssignee?: string | null;
   }) {
-    const { startDate, endDate, shopIds = [] } = params;
+    const { startDate, endDate, shopIds = [], salesAssignee } = params;
     const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
     const endStr = (endDate && endDate.trim()) || startStr;
 
@@ -731,29 +788,18 @@ export class SalesPerformanceService {
     const normalizedShopIds = (shopIds || [])
       .map((v) => v?.toString?.().trim?.() || '')
       .filter((v) => v.length > 0);
+    const normalizedSalesAssignee = salesAssignee?.toString().trim() || null;
 
     const { tenantId } = await this.teamContext.getContext();
     const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
 
     if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length === 0) {
-      return {
-        data: [],
-        total: 0,
-        trend: [] as Array<{ date: string; delivered_count: number; rts_count: number }>,
-        undeliverableAllTime: {
-          count: 0,
-          totalCod: 0,
-        },
-        undeliverableTrend: [] as Array<{ date: string; count: number }>,
-        onDeliveryAllTime: {
-          count: 0,
-          totalCod: 0,
-        },
-        onDeliveryTrend: [] as Array<{ date: string; count: number }>,
-        filters: { shops: [] as string[], shopDisplayMap: {} as Record<string, string> },
-        selected: { start_date: startStr, end_date: endStr, shop_ids: normalizedShopIds },
-        lastUpdatedAt: null as string | null,
-      };
+      return this.buildEmptyProblematicDeliveryResponse(
+        startStr,
+        endStr,
+        normalizedShopIds,
+        normalizedSalesAssignee,
+      );
     }
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
@@ -763,6 +809,7 @@ export class SalesPerformanceService {
       start: startStr,
       end: endStr,
       shopIds: normalizedShopIds.sort(),
+      salesAssignee: normalizedSalesAssignee,
       chart: 'problematic-delivery',
     };
     const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales-performance:problematic-delivery:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
@@ -790,7 +837,17 @@ export class SalesPerformanceService {
       return filtered;
     };
 
-    const baseWhere = buildBaseWhere(startStr, endStr);
+    const applySalesAssigneeFilters = (base: Prisma.Sql[]) => {
+      const filtered = [...base];
+      if (normalizedSalesAssignee) {
+        filtered.push(
+          Prisma.sql`LOWER(BTRIM(COALESCE("salesAssignee", ''))) = LOWER(BTRIM(${normalizedSalesAssignee}))`,
+        );
+      }
+      return filtered;
+    };
+
+    const baseWhere = applySalesAssigneeFilters(buildBaseWhere(startStr, endStr));
     const chartWhere = applyShopFilters(baseWhere);
     const whereClause = Prisma.sql`WHERE ${Prisma.join(chartWhere, ' AND ')}`;
     const allTimeBaseWhere = [
@@ -799,7 +856,7 @@ export class SalesPerformanceService {
         ? [Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`]
         : []),
     ];
-    const allTimeWhere = applyShopFilters(allTimeBaseWhere);
+    const allTimeWhere = applyShopFilters(applySalesAssigneeFilters(allTimeBaseWhere));
     const allTimeWhereClause = Prisma.sql`WHERE ${Prisma.join(allTimeWhere, ' AND ')}`;
 
     const [rows, trendRows, undeliverableSummaryRows, undeliverableTrendRows, onDeliverySummaryRows, onDeliveryTrendRows] = await Promise.all([
@@ -1021,6 +1078,7 @@ export class SalesPerformanceService {
         start_date: startStr,
         end_date: endStr,
         shop_ids: normalizedShopIds,
+        sales_assignee: normalizedSalesAssignee,
       },
       lastUpdatedAt,
     };

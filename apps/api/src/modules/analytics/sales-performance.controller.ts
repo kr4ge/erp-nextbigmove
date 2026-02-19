@@ -90,6 +90,34 @@ export class SalesPerformanceController {
     });
   }
 
+  @Get('my-problematic-delivery')
+  @Permissions('dashboard.sales')
+  async getMyProblematicDelivery(
+    @Req() req: any,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+    @Query('shop_id') shopId?: string | string[],
+  ) {
+    const rawShopIds = Array.isArray(shopId)
+      ? shopId
+      : shopId
+      ? [shopId]
+      : [];
+    const shopIds = rawShopIds
+      .flatMap((value) => (value ? value.toString().split(',') : []))
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+
+    const salesAssignee = req?.user?.employeeId || req?.user?.employee_id || null;
+
+    return this.salesPerformanceService.getMyProblematicDelivery({
+      startDate,
+      endDate,
+      salesAssignee,
+      shopIds,
+    });
+  }
+
   @Post('pos-orders/delete-range')
   @Permissions('analytics.sales_performance')
   async deletePosOrdersInRange(@Body() body: { start_date?: string; end_date?: string }) {
