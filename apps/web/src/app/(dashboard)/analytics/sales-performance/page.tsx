@@ -675,6 +675,16 @@ export default function SalesPerformancePage() {
     [problematicData?.total, sunburstSeriesData],
   );
 
+  const sunburstLegend = useMemo(
+    () =>
+      (sunburstSeriesData || []).map((node: any) => ({
+        name: node?.name || 'Unknown',
+        count: Number(node?.value || 0),
+        color: node?.itemStyle?.color || '#94A3B8',
+      })),
+    [sunburstSeriesData],
+  );
+
   const trendLineOption = useMemo(() => {
     const trend = problematicData?.trend || [];
     const labels = trend.map((row) => {
@@ -1608,7 +1618,23 @@ export default function SalesPerformancePage() {
               {isProblematicLoading ? (
                 <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
               ) : (problematicData?.data?.length || 0) > 0 ? (
-                <ReactECharts option={chartOption} style={{ height: 500 }} />
+                <>
+                  <div className="px-2 pt-2 pb-1">
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                      {sunburstLegend.map((item) => (
+                        <div key={item.name} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                          <span
+                            className="h-4 w-8 flex-shrink-0 rounded-md"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span className="font-medium text-slate-700">{item.name}</span>
+                          <span className="tabular-nums text-slate-500">{formatCount(item.count)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <ReactECharts option={chartOption} style={{ height: 500 }} />
+                </>
               ) : (
                 <div className="h-[500px] w-full rounded-xl border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-sm text-slate-500">
                   No problematic delivery data.
