@@ -304,6 +304,7 @@ export default function DashboardPage() {
   const [shopSearch, setShopSearch] = useState('');
   const [hasInitializedShopSelection, setHasInitializedShopSelection] = useState(false);
   const shopPickerRef = useRef<HTMLDivElement | null>(null);
+  const lastSalesSunburstHoverKeyRef = useRef<string>('');
 
   const canViewMarketingDashboard = useMemo(() => {
     return perms.includes('dashboard.marketing');
@@ -528,6 +529,7 @@ export default function DashboardPage() {
     const fetchSalesDashboard = async () => {
       if (!canViewSalesDashboard) return;
       setSalesSunburstHoverInfo(null);
+      lastSalesSunburstHoverKeyRef.current = '';
       setSalesLoading(true);
       try {
         const params: any = {};
@@ -727,9 +729,16 @@ export default function DashboardPage() {
         const total = Number(salesProblematicData?.total || 0);
         const pct = total > 0 ? (orders / total) * 100 : 0;
         const color = typeof params?.color === 'string' ? params.color : '#94A3B8';
+        const key = `${path}|${orders}|${pct.toFixed(4)}|${color}`;
+        if (lastSalesSunburstHoverKeyRef.current === key) {
+          return;
+        }
+        lastSalesSunburstHoverKeyRef.current = key;
         setSalesSunburstHoverInfo({ path, orders, pct, color });
       },
       globalout: () => {
+        if (!lastSalesSunburstHoverKeyRef.current) return;
+        lastSalesSunburstHoverKeyRef.current = '';
         setSalesSunburstHoverInfo(null);
       },
     }),
@@ -1557,20 +1566,23 @@ export default function DashboardPage() {
               <div className="h-[500px] animate-pulse rounded-md bg-slate-50" />
             ) : (salesProblematicData?.data?.length || 0) > 0 ? (
               <div className="h-[500px] flex flex-col">
-                <div className="mb-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Hover details
-                  </p>
+                <div className="mb-2 rounded-lg border border-slate-200 bg-white px-3 py-2 min-h-[84px]">
                   {salesSunburstHoverInfo ? (
-                    <div className="mt-1.5 space-y-1">
-                      <div className="flex items-start gap-2">
+                    <div className="space-y-1">
+                      <div className="flex min-w-0 items-start gap-2">
                         <span
                           className="mt-1 h-2.5 w-2.5 rounded-full"
                           style={{ backgroundColor: salesSunburstHoverInfo.color }}
                         />
                         <p
-                          className="text-sm font-medium text-slate-800 break-words leading-5"
+                          className="min-w-0 flex-1 text-sm font-medium text-slate-800 leading-5 whitespace-normal break-words"
                           title={salesSunburstHoverInfo.path}
+                          style={{
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
                         >
                           {salesSunburstHoverInfo.path}
                         </p>
@@ -1584,7 +1596,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                   ) : (
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="text-xs text-slate-500">
                       Hover a chart segment to inspect details.
                     </p>
                   )}

@@ -329,6 +329,7 @@ export default function SalesPerformancePage() {
 
   const assigneePickerRef = useRef<HTMLDivElement>(null);
   const chartShopPickerRef = useRef<HTMLDivElement>(null);
+  const lastSunburstHoverKeyRef = useRef<string>('');
   const { addToast } = useToast();
 
   const allAssigneeOptions = useMemo(() => {
@@ -441,6 +442,7 @@ export default function SalesPerformancePage() {
     let isMounted = true;
     const loadProblematicDelivery = async () => {
       setSunburstHoverInfo(null);
+      lastSunburstHoverKeyRef.current = '';
       setIsProblematicLoading(true);
       try {
         const params: Record<string, string | string[]> = {
@@ -762,9 +764,16 @@ export default function SalesPerformancePage() {
         const total = Number(problematicData?.total || 0);
         const pct = total > 0 ? (orders / total) * 100 : 0;
         const color = typeof params?.color === 'string' ? params.color : '#94A3B8';
+        const key = `${path}|${orders}|${pct.toFixed(4)}|${color}`;
+        if (lastSunburstHoverKeyRef.current === key) {
+          return;
+        }
+        lastSunburstHoverKeyRef.current = key;
         setSunburstHoverInfo({ path, orders, pct, color });
       },
       globalout: () => {
+        if (!lastSunburstHoverKeyRef.current) return;
+        lastSunburstHoverKeyRef.current = '';
         setSunburstHoverInfo(null);
       },
     }),
@@ -1944,37 +1953,6 @@ export default function SalesPerformancePage() {
                 <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
               ) : (problematicData?.data?.length || 0) > 0 ? (
                 <>
-                  <div className="px-2 pt-2">
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                        Hover details
-                      </p>
-                      {sunburstHoverInfo ? (
-                        <div className="mt-1.5 space-y-1">
-                          <div className="flex items-start gap-2">
-                            <span
-                              className="mt-1 h-2.5 w-2.5 rounded-full"
-                              style={{ backgroundColor: sunburstHoverInfo.color }}
-                            />
-                            <p
-                              className="text-sm font-medium text-slate-800 break-words leading-5"
-                              title={sunburstHoverInfo.path}
-                            >
-                              {sunburstHoverInfo.path}
-                            </p>
-                          </div>
-                          <p className="text-xs text-slate-600">
-                            Orders: <span className="font-semibold text-slate-900">{formatCount(sunburstHoverInfo.orders)}</span>{' '}
-                            ({sunburstHoverInfo.pct.toFixed(1)}%)
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="mt-1 text-xs text-slate-500">
-                          Hover a chart segment to inspect details.
-                        </p>
-                      )}
-                    </div>
-                  </div>
                   <div className="px-2 pt-2 pb-1">
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
                       {sunburstLegend.map((item) => (
@@ -1990,6 +1968,40 @@ export default function SalesPerformancePage() {
                     </div>
                   </div>
                   <ReactECharts option={chartOption} onEvents={sunburstEvents} style={{ height: 500 }} />
+                  <div className="px-2 pt-2 pb-1">
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 min-h-[84px]">
+                      {sunburstHoverInfo ? (
+                        <div className="space-y-1">
+                          <div className="flex min-w-0 items-start gap-2">
+                            <span
+                              className="mt-1 h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: sunburstHoverInfo.color }}
+                            />
+                            <p
+                              className="min-w-0 flex-1 text-sm font-medium text-slate-800 leading-5 whitespace-normal break-words"
+                              title={sunburstHoverInfo.path}
+                              style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              {sunburstHoverInfo.path}
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-600">
+                            Orders: <span className="font-semibold text-slate-900">{formatCount(sunburstHoverInfo.orders)}</span>{' '}
+                            ({sunburstHoverInfo.pct.toFixed(1)}%)
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500">
+                          Hover a chart segment to inspect details.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </>
               ) : (
                 <div className="h-[500px] w-full rounded-xl border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-sm text-slate-500">
