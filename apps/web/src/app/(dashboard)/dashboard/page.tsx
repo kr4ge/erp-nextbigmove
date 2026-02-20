@@ -156,6 +156,22 @@ type ProblematicDeliveryResponse = {
     date: string;
     count: number;
   }>;
+  deliveredInRange?: {
+    count: number;
+    totalCod: number;
+  };
+  deliveredInRangeTrend?: Array<{
+    date: string;
+    count: number;
+  }>;
+  returnedInRange?: {
+    count: number;
+    totalCod: number;
+  };
+  returnedInRangeTrend?: Array<{
+    date: string;
+    count: number;
+  }>;
   filters: {
     shops: string[];
     shopDisplayMap?: Record<string, string>;
@@ -192,6 +208,15 @@ const salesMetricDefinitions: {
 ];
 
 const formatCount = (val?: number) => new Intl.NumberFormat('en-US').format(val ?? 0);
+const formatShortDate = (dateStr: string) => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) return dateStr;
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
 
 const buildSparklineOption = (
   labels: string[],
@@ -876,6 +901,90 @@ export default function DashboardPage() {
     [salesOnDeliveryChartData],
   );
 
+  const salesDeliveredInRangeChartData = useMemo(() => {
+    const trend = salesProblematicData?.deliveredInRangeTrend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const counts = trend.map((row) => row.count || 0);
+    return { labels, counts };
+  }, [salesProblematicData?.deliveredInRangeTrend]);
+
+  const salesDeliveredInRangeSparklineOption = useMemo(
+    () =>
+      buildSparklineOption(
+        salesDeliveredInRangeChartData.labels,
+        salesDeliveredInRangeChartData.counts,
+        '#16A34A',
+        'rgba(22,163,74,0.20)',
+        'Delivered',
+      ),
+    [salesDeliveredInRangeChartData],
+  );
+
+  const salesReturnedInRangeChartData = useMemo(() => {
+    const trend = salesProblematicData?.returnedInRangeTrend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const counts = trend.map((row) => row.count || 0);
+    return { labels, counts };
+  }, [salesProblematicData?.returnedInRangeTrend]);
+
+  const salesReturnedInRangeSparklineOption = useMemo(
+    () =>
+      buildSparklineOption(
+        salesReturnedInRangeChartData.labels,
+        salesReturnedInRangeChartData.counts,
+        '#DC2626',
+        'rgba(220,38,38,0.20)',
+        'Returned',
+      ),
+    [salesReturnedInRangeChartData],
+  );
+
+  const salesDeliveredInRangeLabel = useMemo(() => {
+    if (salesStartDate !== salesEndDate) {
+      return `Delivered ${formatShortDate(salesStartDate)} → ${formatShortDate(salesEndDate)}`;
+    }
+
+    const now = new Date();
+    const todayStr = formatDateInTimezone(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = formatDateInTimezone(yesterday);
+
+    if (salesStartDate === todayStr) return 'Delivered Today';
+    if (salesStartDate === yesterdayStr) return 'Delivered Yesterday';
+    return `Delivered ${formatShortDate(salesStartDate)}`;
+  }, [salesStartDate, salesEndDate]);
+
+  const salesReturnedInRangeLabel = useMemo(() => {
+    if (salesStartDate !== salesEndDate) {
+      return `Returned ${formatShortDate(salesStartDate)} → ${formatShortDate(salesEndDate)}`;
+    }
+
+    const now = new Date();
+    const todayStr = formatDateInTimezone(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = formatDateInTimezone(yesterday);
+
+    if (salesStartDate === todayStr) return 'Returned Today';
+    if (salesStartDate === yesterdayStr) return 'Returned Yesterday';
+    return `Returned ${formatShortDate(salesStartDate)}`;
+  }, [salesStartDate, salesEndDate]);
+
   const generateName = () => {
     setNameError(null);
     if (nameTab === 'ads') {
@@ -1559,14 +1668,75 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 mb-3">
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              {salesDeliveredInRangeLabel}
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {formatCount(salesProblematicData?.deliveredInRange?.count || 0)}
+            </p>
+            <p className="text-xs text-slate-500">
+              COD: {formatCurrency(salesProblematicData?.deliveredInRange?.totalCod || 0)}
+            </p>
+            <div className="mt-2 rounded-md bg-slate-50 border border-slate-100">
+              {salesLoading ? (
+                <div className="h-[140px] animate-pulse" />
+              ) : (salesProblematicData?.deliveredInRangeTrend?.length || 0) > 0 ? (
+                <ReactECharts option={salesDeliveredInRangeSparklineOption} style={{ height: 140 }} />
+              ) : (
+                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400">
+                  No delivered trend data.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              {salesReturnedInRangeLabel}
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {formatCount(salesProblematicData?.returnedInRange?.count || 0)}
+            </p>
+            <p className="text-xs text-slate-500">
+              COD: {formatCurrency(salesProblematicData?.returnedInRange?.totalCod || 0)}
+            </p>
+            <div className="mt-2 rounded-md bg-slate-50 border border-slate-100">
+              {salesLoading ? (
+                <div className="h-[140px] animate-pulse" />
+              ) : (salesProblematicData?.returnedInRangeTrend?.length || 0) > 0 ? (
+                <ReactECharts option={salesReturnedInRangeSparklineOption} style={{ height: 140 }} />
+              ) : (
+                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400">
+                  No returned trend data.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
           <div className="rounded-xl border border-slate-200 bg-white p-3 lg:col-span-2">
             <p className="text-sm font-semibold text-slate-700 mb-2 uppercase">RTS Reason Data</p>
             {salesLoading ? (
               <div className="h-[500px] animate-pulse rounded-md bg-slate-50" />
             ) : (salesProblematicData?.data?.length || 0) > 0 ? (
-              <div className="h-[500px] flex flex-col">
-                <div className="mb-2 rounded-lg border border-slate-200 bg-white px-3 py-2 min-h-[84px]">
+              <div className="flex flex-col">
+                <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {salesSunburstLegend.map((item) => (
+                    <div key={item.name} className="flex items-center gap-1.5 text-[12px] text-slate-600">
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="font-medium text-slate-700">{item.name}</span>
+                      <span className="text-slate-500">{formatCount(item.count)}</span>
+                    </div>
+                  ))}
+                </div>
+                <ReactECharts option={salesSunburstOption} onEvents={salesSunburstEvents} style={{ height: 460 }} />
+                <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 min-h-[84px]">
                   {salesSunburstHoverInfo ? (
                     <div className="space-y-1">
                       <div className="flex min-w-0 items-start gap-2">
@@ -1601,19 +1771,6 @@ export default function DashboardPage() {
                     </p>
                   )}
                 </div>
-                <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {salesSunburstLegend.map((item) => (
-                    <div key={item.name} className="flex items-center gap-1.5 text-[12px] text-slate-600">
-                      <span
-                        className="inline-block h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: item.color }}
-                      />
-                      <span className="font-medium text-slate-700">{item.name}</span>
-                      <span className="text-slate-500">{formatCount(item.count)}</span>
-                    </div>
-                  ))}
-                </div>
-                <ReactECharts option={salesSunburstOption} onEvents={salesSunburstEvents} style={{ height: 460 }} />
               </div>
             ) : (
               <div className="h-[500px] flex items-center justify-center text-sm text-slate-400">
