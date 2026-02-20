@@ -14,6 +14,8 @@ interface PosOrderData {
   posOrderId: string;
   insertedAt: Date;
   dateLocal: string;
+  deliveredAt?: Date | null;
+  rtsAt?: Date | null;
   status?: number;
   statusName?: string;
   cod?: number;
@@ -44,6 +46,41 @@ interface PosOrderData {
 @Injectable()
 export class PosOrderService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private extractStatusTimestampFromHistory(
+    status: number | null | undefined,
+    statusHistory: any[] | null,
+    targetStatus: number,
+  ): Date | null {
+    if (status !== targetStatus || !Array.isArray(statusHistory) || statusHistory.length === 0) {
+      return null;
+    }
+
+    let latestRaw: string | null = null;
+    let latestTs = -Infinity;
+    let fallbackRaw: string | null = null;
+
+    statusHistory.forEach((entry: any) => {
+      if (!entry || entry.status !== targetStatus) return;
+      const updatedRaw = typeof entry.updated_at === 'string' ? entry.updated_at.trim() : '';
+      if (!updatedRaw) return;
+
+      fallbackRaw = updatedRaw;
+      const ts = Date.parse(updatedRaw);
+      if (!Number.isNaN(ts) && ts > latestTs) {
+        latestTs = ts;
+        latestRaw = updatedRaw;
+      }
+    });
+
+    const pickedRaw = latestRaw ?? fallbackRaw;
+    if (!pickedRaw) return null;
+
+    const parsed = dayjs.utc(pickedRaw);
+    if (!parsed.isValid()) return null;
+
+    return parsed.tz('Asia/Manila').toDate();
+  }
 
   /**
    * Extract mapping from note_product field
@@ -307,6 +344,18 @@ export class PosOrderService {
     }
 
     const statusHistory = Array.isArray(rawOrder.status_history) ? rawOrder.status_history : null;
+    const numericStatus = Number(rawOrder?.status);
+    const normalizedStatus = Number.isFinite(numericStatus) ? numericStatus : null;
+    const deliveredAt = this.extractStatusTimestampFromHistory(
+      normalizedStatus,
+      statusHistory,
+      3,
+    );
+    const rtsAt = this.extractStatusTimestampFromHistory(
+      normalizedStatus,
+      statusHistory,
+      5,
+    );
 
     // Sales assignee: prefer assigning_seller.fb_id, fallback to latest status_history with status==1
     let salesAssignee: string | null = null;
@@ -439,6 +488,8 @@ export class PosOrderService {
       posOrderId: rawOrder.id?.toString(),
       insertedAt,
       dateLocal,
+      deliveredAt,
+      rtsAt,
       status: rawOrder.status,
       statusName: rawOrder.status_name,
       cod: codValue,
@@ -540,6 +591,8 @@ export class PosOrderService {
           posOrderId: order.posOrderId,
           insertedAt: order.insertedAt,
           dateLocal: order.dateLocal,
+          deliveredAt: order.deliveredAt,
+          rtsAt: order.rtsAt,
           status: order.status,
           statusName: order.statusName,
           cod: order.cod ? new Decimal(order.cod) : null,
@@ -569,6 +622,8 @@ export class PosOrderService {
         update: {
           teamId,
           insertedAt: order.insertedAt,
+          ...(order.deliveredAt ? { deliveredAt: order.deliveredAt } : {}),
+          ...(order.rtsAt ? { rtsAt: order.rtsAt } : {}),
           status: order.status,
           statusName: order.statusName,
           cod: order.cod ? new Decimal(order.cod) : null,

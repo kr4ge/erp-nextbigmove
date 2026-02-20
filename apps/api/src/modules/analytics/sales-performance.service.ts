@@ -131,6 +131,16 @@ export class SalesPerformanceService {
         totalCod: 0,
       },
       onDeliveryTrend: [] as Array<{ date: string; count: number }>,
+      deliveredInRange: {
+        count: 0,
+        totalCod: 0,
+      },
+      deliveredInRangeTrend: [] as Array<{ date: string; count: number }>,
+      returnedInRange: {
+        count: 0,
+        totalCod: 0,
+      },
+      returnedInRangeTrend: [] as Array<{ date: string; count: number }>,
       filters: { shops: [] as string[], shopDisplayMap: {} as Record<string, string> },
       selected: {
         start_date: startStr,
@@ -850,6 +860,33 @@ export class SalesPerformanceService {
     const baseWhere = applySalesAssigneeFilters(buildBaseWhere(startStr, endStr));
     const chartWhere = applyShopFilters(baseWhere);
     const whereClause = Prisma.sql`WHERE ${Prisma.join(chartWhere, ' AND ')}`;
+    const deliveredRangeStartUtc = dayjs.tz(startStr, TIMEZONE).startOf('day').utc().toDate();
+    const deliveredRangeEndUtcExclusive = dayjs
+      .tz(endStr, TIMEZONE)
+      .add(1, 'day')
+      .startOf('day')
+      .utc()
+      .toDate();
+    const deliveredRangeBaseWhere = [
+      Prisma.sql`"tenantId" = ${tenantId}::uuid`,
+      ...(Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0
+        ? [Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`]
+        : []),
+    ];
+    const deliveredRangeWhere = applyShopFilters(
+      applySalesAssigneeFilters(deliveredRangeBaseWhere),
+    );
+    deliveredRangeWhere.push(Prisma.sql`"deliveredAt" IS NOT NULL`);
+    deliveredRangeWhere.push(Prisma.sql`"deliveredAt" >= ${deliveredRangeStartUtc}`);
+    deliveredRangeWhere.push(Prisma.sql`"deliveredAt" < ${deliveredRangeEndUtcExclusive}`);
+    const deliveredRangeWhereClause = Prisma.sql`WHERE ${Prisma.join(deliveredRangeWhere, ' AND ')}`;
+    const returnedRangeWhere = applyShopFilters(
+      applySalesAssigneeFilters(deliveredRangeBaseWhere),
+    );
+    returnedRangeWhere.push(Prisma.sql`"rtsAt" IS NOT NULL`);
+    returnedRangeWhere.push(Prisma.sql`"rtsAt" >= ${deliveredRangeStartUtc}`);
+    returnedRangeWhere.push(Prisma.sql`"rtsAt" < ${deliveredRangeEndUtcExclusive}`);
+    const returnedRangeWhereClause = Prisma.sql`WHERE ${Prisma.join(returnedRangeWhere, ' AND ')}`;
     const allTimeBaseWhere = [
       Prisma.sql`"tenantId" = ${tenantId}::uuid`,
       ...(Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0
@@ -859,7 +896,18 @@ export class SalesPerformanceService {
     const allTimeWhere = applyShopFilters(applySalesAssigneeFilters(allTimeBaseWhere));
     const allTimeWhereClause = Prisma.sql`WHERE ${Prisma.join(allTimeWhere, ' AND ')}`;
 
-    const [rows, trendRows, undeliverableSummaryRows, undeliverableTrendRows, onDeliverySummaryRows, onDeliveryTrendRows] = await Promise.all([
+    const [
+      rows,
+      trendRows,
+      undeliverableSummaryRows,
+      undeliverableTrendRows,
+      onDeliverySummaryRows,
+      onDeliveryTrendRows,
+      deliveredInRangeSummaryRows,
+      deliveredInRangeTrendRows,
+      returnedInRangeSummaryRows,
+      returnedInRangeTrendRows,
+    ] = await Promise.all([
       this.prisma.$queryRaw<any[]>(Prisma.sql`
         WITH reasons AS (
           SELECT
@@ -963,6 +1011,58 @@ export class SalesPerformanceService {
         GROUP BY 1
         ORDER BY 1
       `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          COUNT(*)::int AS count,
+          COALESCE(SUM(COALESCE("cod", 0)), 0)::numeric AS total_cod
+        FROM "pos_orders"
+        ${deliveredRangeWhereClause}
+      `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        WITH dates AS (
+          SELECT generate_series(${startStr}::date, ${endStr}::date, interval '1 day')::date AS d
+        ),
+        counts AS (
+          SELECT
+            (("deliveredAt" AT TIME ZONE 'UTC') AT TIME ZONE ${TIMEZONE})::date AS d,
+            COUNT(*)::int AS count
+          FROM "pos_orders"
+          ${deliveredRangeWhereClause}
+          GROUP BY 1
+        )
+        SELECT
+          TO_CHAR(dates.d, 'YYYY-MM-DD') AS date,
+          COALESCE(counts.count, 0)::int AS count
+        FROM dates
+        LEFT JOIN counts ON counts.d = dates.d
+        ORDER BY dates.d
+      `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          COUNT(*)::int AS count,
+          COALESCE(SUM(COALESCE("cod", 0)), 0)::numeric AS total_cod
+        FROM "pos_orders"
+        ${returnedRangeWhereClause}
+      `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        WITH dates AS (
+          SELECT generate_series(${startStr}::date, ${endStr}::date, interval '1 day')::date AS d
+        ),
+        counts AS (
+          SELECT
+            (("rtsAt" AT TIME ZONE 'UTC') AT TIME ZONE ${TIMEZONE})::date AS d,
+            COUNT(*)::int AS count
+          FROM "pos_orders"
+          ${returnedRangeWhereClause}
+          GROUP BY 1
+        )
+        SELECT
+          TO_CHAR(dates.d, 'YYYY-MM-DD') AS date,
+          COALESCE(counts.count, 0)::int AS count
+        FROM dates
+        LEFT JOIN counts ON counts.d = dates.d
+        ORDER BY dates.d
+      `),
     ]);
 
     const l1Map = new Map<string, { name: string; value: number; children: Map<string, { name: string; value: number; children: Map<string, { name: string; value: number }> }> }>();
@@ -1045,6 +1145,8 @@ export class SalesPerformanceService {
     const lastUpdatedAt = lastUpdatedRows?.[0]?.last_updated ?? null;
     const undeliverableSummary = undeliverableSummaryRows?.[0] || {};
     const onDeliverySummary = onDeliverySummaryRows?.[0] || {};
+    const deliveredInRangeSummary = deliveredInRangeSummaryRows?.[0] || {};
+    const returnedInRangeSummary = returnedInRangeSummaryRows?.[0] || {};
 
     const response = {
       data,
@@ -1067,6 +1169,22 @@ export class SalesPerformanceService {
         totalCod: this.toNumber(onDeliverySummary.total_cod),
       },
       onDeliveryTrend: (onDeliveryTrendRows || []).map((row) => ({
+        date: (row.date || '').toString(),
+        count: this.toNumber(row.count),
+      })),
+      deliveredInRange: {
+        count: this.toNumber(deliveredInRangeSummary.count),
+        totalCod: this.toNumber(deliveredInRangeSummary.total_cod),
+      },
+      deliveredInRangeTrend: (deliveredInRangeTrendRows || []).map((row) => ({
+        date: (row.date || '').toString(),
+        count: this.toNumber(row.count),
+      })),
+      returnedInRange: {
+        count: this.toNumber(returnedInRangeSummary.count),
+        totalCod: this.toNumber(returnedInRangeSummary.total_cod),
+      },
+      returnedInRangeTrend: (returnedInRangeTrendRows || []).map((row) => ({
         date: (row.date || '').toString(),
         count: this.toNumber(row.count),
       })),

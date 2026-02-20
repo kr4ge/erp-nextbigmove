@@ -169,6 +169,13 @@ type ProblematicDeliveryResponse = {
   lastUpdatedAt: string | null;
 };
 
+type SunburstHoverInfo = {
+  path: string;
+  orders: number;
+  pct: number;
+  color: string;
+};
+
 const salesMetricDefinitions: {
   key: keyof SalesDashboardSummary;
   label: string;
@@ -288,6 +295,7 @@ export default function DashboardPage() {
   const [salesEndDate, setSalesEndDate] = useState(today);
   const [salesData, setSalesData] = useState<SalesDashboardResponse | null>(null);
   const [salesProblematicData, setSalesProblematicData] = useState<ProblematicDeliveryResponse | null>(null);
+  const [salesSunburstHoverInfo, setSalesSunburstHoverInfo] = useState<SunburstHoverInfo | null>(null);
   const [salesLoading, setSalesLoading] = useState(false);
   const [shopOptions, setShopOptions] = useState<string[]>([]);
   const [selectedShops, setSelectedShops] = useState<string[]>([]);
@@ -519,6 +527,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchSalesDashboard = async () => {
       if (!canViewSalesDashboard) return;
+      setSalesSunburstHoverInfo(null);
       setSalesLoading(true);
       try {
         const params: any = {};
@@ -646,29 +655,7 @@ export default function DashboardPage() {
   const salesSunburstOption = useMemo(
     () => ({
       tooltip: {
-        trigger: 'item',
-        confine: true,
-        position: (point: number[], _params: any, dom: any, _rect: any, size: any) => {
-          const boxWidth = Number(dom?.offsetWidth || 320);
-          const boxHeight = Number(dom?.offsetHeight || 88);
-          const viewWidth = Number(size?.viewSize?.[0] || 0);
-          const viewHeight = Number(size?.viewSize?.[1] || 0);
-
-          let x = point[0] + 14;
-          let y = point[1] - boxHeight / 2;
-          if (x + boxWidth > viewWidth - 8) {
-            x = Math.max(8, point[0] - boxWidth - 14);
-          }
-          y = Math.max(8, Math.min(viewHeight - boxHeight - 8, y));
-          return [x, y];
-        },
-        formatter: (params: any) => {
-          const path = params?.treePathInfo?.slice(1)?.map((p: any) => p.name)?.join(' / ');
-          const value = Number(params?.value || 0);
-          const total = Number(salesProblematicData?.total || 0);
-          const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
-          return `${path}<br/>Orders: ${formatCount(value)} (${pct}%)`;
-        },
+        show: false,
       },
       series: [
         {
@@ -723,7 +710,30 @@ export default function DashboardPage() {
         },
       ],
     }),
-    [salesProblematicData?.total, salesSunburstSeriesData],
+    [salesSunburstSeriesData],
+  );
+
+  const salesSunburstEvents = useMemo(
+    () => ({
+      mouseover: (params: any) => {
+        if (params?.seriesType !== 'sunburst') return;
+        const path =
+          params?.treePathInfo
+            ?.slice(1)
+            ?.map((p: any) => p?.name)
+            ?.filter((name: string | undefined) => !!name)
+            ?.join(' / ') || params?.name || 'Unknown';
+        const orders = Number(params?.value || 0);
+        const total = Number(salesProblematicData?.total || 0);
+        const pct = total > 0 ? (orders / total) * 100 : 0;
+        const color = typeof params?.color === 'string' ? params.color : '#94A3B8';
+        setSalesSunburstHoverInfo({ path, orders, pct, color });
+      },
+      globalout: () => {
+        setSalesSunburstHoverInfo(null);
+      },
+    }),
+    [salesProblematicData?.total],
   );
 
   const salesTrendChartData = useMemo(() => {
@@ -1547,6 +1557,38 @@ export default function DashboardPage() {
               <div className="h-[500px] animate-pulse rounded-md bg-slate-50" />
             ) : (salesProblematicData?.data?.length || 0) > 0 ? (
               <div className="h-[500px] flex flex-col">
+                <div className="mb-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Hover details
+                  </p>
+                  {salesSunburstHoverInfo ? (
+                    <div className="mt-1.5 space-y-1">
+                      <div className="flex items-start gap-2">
+                        <span
+                          className="mt-1 h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: salesSunburstHoverInfo.color }}
+                        />
+                        <p
+                          className="text-sm font-medium text-slate-800 break-words leading-5"
+                          title={salesSunburstHoverInfo.path}
+                        >
+                          {salesSunburstHoverInfo.path}
+                        </p>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        Orders:{' '}
+                        <span className="font-semibold text-slate-900">
+                          {formatCount(salesSunburstHoverInfo.orders)}
+                        </span>{' '}
+                        ({salesSunburstHoverInfo.pct.toFixed(1)}%)
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Hover a chart segment to inspect details.
+                    </p>
+                  )}
+                </div>
                 <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
                   {salesSunburstLegend.map((item) => (
                     <div key={item.name} className="flex items-center gap-1.5 text-[12px] text-slate-600">
@@ -1559,7 +1601,7 @@ export default function DashboardPage() {
                     </div>
                   ))}
                 </div>
-                <ReactECharts option={salesSunburstOption} style={{ height: 460 }} />
+                <ReactECharts option={salesSunburstOption} onEvents={salesSunburstEvents} style={{ height: 460 }} />
               </div>
             ) : (
               <div className="h-[500px] flex items-center justify-center text-sm text-slate-400">

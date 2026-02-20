@@ -761,6 +761,8 @@ model PosOrder {
   // Timestamps
   insertedAt  DateTime // UTC timestamp from POS
   dateLocal   String   // Manila-local date (YYYY-MM-DD)
+  deliveredAt DateTime?
+  rtsAt       DateTime?
 
   // Order details
   status      Int?

@@ -151,6 +151,22 @@ type ProblematicDeliveryResponse = {
     date: string;
     count: number;
   }>;
+  deliveredInRange?: {
+    count: number;
+    totalCod: number;
+  };
+  deliveredInRangeTrend?: Array<{
+    date: string;
+    count: number;
+  }>;
+  returnedInRange?: {
+    count: number;
+    totalCod: number;
+  };
+  returnedInRangeTrend?: Array<{
+    date: string;
+    count: number;
+  }>;
   filters: {
     shops: string[];
     shopDisplayMap?: Record<string, string>;
@@ -161,6 +177,13 @@ type ProblematicDeliveryResponse = {
     shop_ids: string[];
   };
   lastUpdatedAt: string | null;
+};
+
+type SunburstHoverInfo = {
+  path: string;
+  orders: number;
+  pct: number;
+  color: string;
 };
 
 const formatCurrency = (val?: number) =>
@@ -198,6 +221,15 @@ const formatDelta = (current: number, previous: number) => {
 };
 
 const formatCount = (val?: number) => new Intl.NumberFormat('en-US').format(val ?? 0);
+const formatShortDate = (dateStr: string) => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) return dateStr;
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
 
 const buildSparklineOption = (
   labels: string[],
@@ -277,6 +309,7 @@ export default function SalesPerformancePage() {
   const [sortKey, setSortKey] = useState<SortKey>('smp');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [problematicData, setProblematicData] = useState<ProblematicDeliveryResponse | null>(null);
+  const [sunburstHoverInfo, setSunburstHoverInfo] = useState<SunburstHoverInfo | null>(null);
   const [isProblematicLoading, setIsProblematicLoading] = useState(false);
   const [chartShopOptions, setChartShopOptions] = useState<string[]>([]);
   const [selectedChartShops, setSelectedChartShops] = useState<string[]>([]);
@@ -407,6 +440,7 @@ export default function SalesPerformancePage() {
   useEffect(() => {
     let isMounted = true;
     const loadProblematicDelivery = async () => {
+      setSunburstHoverInfo(null);
       setIsProblematicLoading(true);
       try {
         const params: Record<string, string | string[]> = {
@@ -656,33 +690,7 @@ export default function SalesPerformancePage() {
   const chartOption = useMemo(
     () => ({
       tooltip: {
-        trigger: 'item',
-        confine: true,
-        position: (point: number[], _params: any, dom: any, _rect: any, size: any) => {
-          const boxWidth = Number(dom?.offsetWidth || 320);
-          const boxHeight = Number(dom?.offsetHeight || 88);
-          const viewWidth = Number(size?.viewSize?.[0] || 0);
-          const viewHeight = Number(size?.viewSize?.[1] || 0);
-
-          // Prefer right side of hovered slice.
-          let x = point[0] + 14;
-          let y = point[1] - boxHeight / 2;
-
-          // If there is no space on the right, keep it visible.
-          if (x + boxWidth > viewWidth - 8) {
-            x = Math.max(8, point[0] - boxWidth - 14);
-          }
-          y = Math.max(8, Math.min(viewHeight - boxHeight - 8, y));
-
-          return [x, y];
-        },
-        formatter: (params: any) => {
-          const path = params?.treePathInfo?.slice(1)?.map((p: any) => p.name)?.join(' / ');
-          const value = Number(params?.value || 0);
-          const total = Number(problematicData?.total || 0);
-          const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
-          return `${path}<br/>Orders: ${formatCount(value)} (${pct}%)`;
-        },
+        show: false,
       },
       series: [
         {
@@ -737,7 +745,30 @@ export default function SalesPerformancePage() {
         },
       ],
     }),
-    [problematicData?.total, sunburstSeriesData],
+    [sunburstSeriesData],
+  );
+
+  const sunburstEvents = useMemo(
+    () => ({
+      mouseover: (params: any) => {
+        if (params?.seriesType !== 'sunburst') return;
+        const path =
+          params?.treePathInfo
+            ?.slice(1)
+            ?.map((p: any) => p?.name)
+            ?.filter((name: string | undefined) => !!name)
+            ?.join(' / ') || params?.name || 'Unknown';
+        const orders = Number(params?.value || 0);
+        const total = Number(problematicData?.total || 0);
+        const pct = total > 0 ? (orders / total) * 100 : 0;
+        const color = typeof params?.color === 'string' ? params.color : '#94A3B8';
+        setSunburstHoverInfo({ path, orders, pct, color });
+      },
+      globalout: () => {
+        setSunburstHoverInfo(null);
+      },
+    }),
+    [problematicData?.total],
   );
 
   const sunburstLegend = useMemo(
@@ -818,6 +849,90 @@ export default function SalesPerformancePage() {
       ),
     [onDeliveryChartData],
   );
+
+  const deliveredInRangeChartData = useMemo(() => {
+    const trend = problematicData?.deliveredInRangeTrend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const counts = trend.map((row) => row.count || 0);
+    return { labels, counts };
+  }, [problematicData?.deliveredInRangeTrend]);
+
+  const deliveredInRangeSparklineOption = useMemo(
+    () =>
+      buildSparklineOption(
+        deliveredInRangeChartData.labels,
+        deliveredInRangeChartData.counts,
+        '#16A34A',
+        'rgba(22,163,74,0.20)',
+        'Delivered',
+      ),
+    [deliveredInRangeChartData],
+  );
+
+  const returnedInRangeChartData = useMemo(() => {
+    const trend = problematicData?.returnedInRangeTrend || [];
+    const labels = trend.map((row) => {
+      const [year, month, day] = row.date.split('-').map(Number);
+      if (!year || !month || !day) return row.date;
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    });
+    const counts = trend.map((row) => row.count || 0);
+    return { labels, counts };
+  }, [problematicData?.returnedInRangeTrend]);
+
+  const returnedInRangeSparklineOption = useMemo(
+    () =>
+      buildSparklineOption(
+        returnedInRangeChartData.labels,
+        returnedInRangeChartData.counts,
+        '#DC2626',
+        'rgba(220,38,38,0.20)',
+        'Returned',
+      ),
+    [returnedInRangeChartData],
+  );
+
+  const deliveredInRangeLabel = useMemo(() => {
+    if (startDate !== endDate) {
+      return `Delivered ${formatShortDate(startDate)} → ${formatShortDate(endDate)}`;
+    }
+
+    const now = new Date();
+    const todayStr = formatDateInTimezone(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = formatDateInTimezone(yesterday);
+
+    if (startDate === todayStr) return 'Delivered Today';
+    if (startDate === yesterdayStr) return 'Delivered Yesterday';
+    return `Delivered ${formatShortDate(startDate)}`;
+  }, [startDate, endDate]);
+
+  const returnedInRangeLabel = useMemo(() => {
+    if (startDate !== endDate) {
+      return `Returned ${formatShortDate(startDate)} → ${formatShortDate(endDate)}`;
+    }
+
+    const now = new Date();
+    const todayStr = formatDateInTimezone(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = formatDateInTimezone(yesterday);
+
+    if (startDate === todayStr) return 'Returned Today';
+    if (startDate === yesterdayStr) return 'Returned Yesterday';
+    return `Returned ${formatShortDate(startDate)}`;
+  }, [startDate, endDate]);
 
   const trendLineOption = useMemo(() => {
     const { labels, delivered, rts } = trendChartData;
@@ -1777,6 +1892,50 @@ export default function SalesPerformancePage() {
                 </div>
               )}
             </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
+              <div className="px-1 pb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {deliveredInRangeLabel}
+                </p>
+                <p className="text-3xl font-bold text-slate-900">
+                  {formatCount(problematicData?.deliveredInRange?.count || 0)}
+                </p>
+                <p className="text-xs font-medium text-slate-500">
+                  COD: {formatCurrency(problematicData?.deliveredInRange?.totalCod || 0)}
+                </p>
+              </div>
+              {isProblematicLoading ? (
+                <div className="h-[140px] w-full animate-pulse rounded-lg bg-slate-100" />
+              ) : (problematicData?.deliveredInRangeTrend?.length || 0) > 0 ? (
+                <ReactECharts option={deliveredInRangeSparklineOption} style={{ height: 140 }} />
+              ) : (
+                <div className="h-[140px] w-full rounded-lg border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-xs text-slate-500">
+                  No delivered trend data.
+                </div>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
+              <div className="px-1 pb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {returnedInRangeLabel}
+                </p>
+                <p className="text-3xl font-bold text-slate-900">
+                  {formatCount(problematicData?.returnedInRange?.count || 0)}
+                </p>
+                <p className="text-xs font-medium text-slate-500">
+                  COD: {formatCurrency(problematicData?.returnedInRange?.totalCod || 0)}
+                </p>
+              </div>
+              {isProblematicLoading ? (
+                <div className="h-[140px] w-full animate-pulse rounded-lg bg-slate-100" />
+              ) : (problematicData?.returnedInRangeTrend?.length || 0) > 0 ? (
+                <ReactECharts option={returnedInRangeSparklineOption} style={{ height: 140 }} />
+              ) : (
+                <div className="h-[140px] w-full rounded-lg border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-xs text-slate-500">
+                  No returned trend data.
+                </div>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
             <div className="xl:col-span-2 rounded-xl border border-slate-100 bg-slate-50/40 p-2">
@@ -1785,6 +1944,37 @@ export default function SalesPerformancePage() {
                 <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
               ) : (problematicData?.data?.length || 0) > 0 ? (
                 <>
+                  <div className="px-2 pt-2">
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        Hover details
+                      </p>
+                      {sunburstHoverInfo ? (
+                        <div className="mt-1.5 space-y-1">
+                          <div className="flex items-start gap-2">
+                            <span
+                              className="mt-1 h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: sunburstHoverInfo.color }}
+                            />
+                            <p
+                              className="text-sm font-medium text-slate-800 break-words leading-5"
+                              title={sunburstHoverInfo.path}
+                            >
+                              {sunburstHoverInfo.path}
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-600">
+                            Orders: <span className="font-semibold text-slate-900">{formatCount(sunburstHoverInfo.orders)}</span>{' '}
+                            ({sunburstHoverInfo.pct.toFixed(1)}%)
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Hover a chart segment to inspect details.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                   <div className="px-2 pt-2 pb-1">
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
                       {sunburstLegend.map((item) => (
@@ -1799,7 +1989,7 @@ export default function SalesPerformancePage() {
                       ))}
                     </div>
                   </div>
-                  <ReactECharts option={chartOption} style={{ height: 500 }} />
+                  <ReactECharts option={chartOption} onEvents={sunburstEvents} style={{ height: 500 }} />
                 </>
               ) : (
                 <div className="h-[500px] w-full rounded-xl border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-sm text-slate-500">
