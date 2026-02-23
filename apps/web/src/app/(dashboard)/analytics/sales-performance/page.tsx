@@ -167,6 +167,15 @@ type ProblematicDeliveryResponse = {
     date: string;
     count: number;
   }>;
+  riskConfirmationRows?: Array<{
+    riskTag: string;
+    confirmedCount: number;
+    restockingCount: number;
+    waitingForPickupCount: number;
+    shippedCount: number;
+    deliveredCount: number;
+    rtsCount: number;
+  }>;
   filters: {
     shops: string[];
     shopDisplayMap?: Record<string, string>;
@@ -303,8 +312,12 @@ export default function SalesPerformancePage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [tableSelection, setTableSelection] = useState<'store' | 'summary'>('summary');
   const [showTableMenu, setShowTableMenu] = useState(false);
+  const [deliveryViewSelection, setDeliveryViewSelection] =
+    useState<'delivery' | 'risk_confirmation'>('delivery');
+  const [showDeliveryViewMenu, setShowDeliveryViewMenu] = useState(false);
   const [storePage, setStorePage] = useState(1);
   const [summaryPage, setSummaryPage] = useState(1);
+  const [riskPage, setRiskPage] = useState(1);
   const pageSize = 10;
   const [sortKey, setSortKey] = useState<SortKey>('smp');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -390,6 +403,23 @@ export default function SalesPerformancePage() {
     document.addEventListener('mousedown', handleTableMenuClose);
     return () => document.removeEventListener('mousedown', handleTableMenuClose);
   }, [showTableMenu]);
+
+  useEffect(() => {
+    const handleDeliveryMenuClose = (event: MouseEvent) => {
+      if (!showDeliveryViewMenu) return;
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const path = event.composedPath ? event.composedPath() : [];
+      const withinMenu = path.some(
+        (node) => (node as HTMLElement | null)?.dataset?.deliveryMenu === 'true',
+      );
+      if (!withinMenu) {
+        setShowDeliveryViewMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleDeliveryMenuClose);
+    return () => document.removeEventListener('mousedown', handleDeliveryMenuClose);
+  }, [showDeliveryViewMenu]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1189,6 +1219,10 @@ export default function SalesPerformancePage() {
   }, [summaryRows.length]);
 
   useEffect(() => {
+    setRiskPage(1);
+  }, [problematicData?.riskConfirmationRows?.length, deliveryViewSelection]);
+
+  useEffect(() => {
     setStorePage(1);
     setSummaryPage(1);
   }, [sortKey, sortDir]);
@@ -1203,6 +1237,14 @@ export default function SalesPerformancePage() {
   const tableOptions: Array<{ key: 'store' | 'summary'; label: string }> = [
     { key: 'summary', label: 'Sales Performance' },
     { key: 'store', label: 'Sales Performance (Per Store)' },
+  ];
+
+  const deliveryViewOptions: Array<{
+    key: 'delivery' | 'risk_confirmation';
+    label: string;
+  }> = [
+    { key: 'delivery', label: 'Delivery Monitoring' },
+    { key: 'risk_confirmation', label: 'Risk Confirmation' },
   ];
 
   const sortedStoreRows = useMemo(() => {
@@ -1233,21 +1275,29 @@ export default function SalesPerformancePage() {
 
   const totalStoreRows = sortedStoreRows.length;
   const totalSummaryRows = sortedSummaryRows.length;
+  const riskRows = problematicData?.riskConfirmationRows || [];
+  const totalRiskRows = riskRows.length;
   const totalStorePages = Math.max(1, Math.ceil(totalStoreRows / pageSize));
   const totalSummaryPages = Math.max(1, Math.ceil(totalSummaryRows / pageSize));
+  const totalRiskPages = Math.max(1, Math.ceil(totalRiskRows / pageSize));
 
   const pagedStoreRows = sortedStoreRows.slice((storePage - 1) * pageSize, storePage * pageSize);
   const pagedSummaryRows = sortedSummaryRows.slice((summaryPage - 1) * pageSize, summaryPage * pageSize);
+  const pagedRiskRows = riskRows.slice((riskPage - 1) * pageSize, riskPage * pageSize);
 
   const storeStart = totalStoreRows === 0 ? 0 : (storePage - 1) * pageSize + 1;
   const storeEnd = Math.min(storePage * pageSize, totalStoreRows);
   const summaryStart = totalSummaryRows === 0 ? 0 : (summaryPage - 1) * pageSize + 1;
   const summaryEnd = Math.min(summaryPage * pageSize, totalSummaryRows);
+  const riskStart = totalRiskRows === 0 ? 0 : (riskPage - 1) * pageSize + 1;
+  const riskEnd = Math.min(riskPage * pageSize, totalRiskRows);
 
   const storeCanPrev = storePage > 1;
   const storeCanNext = storePage < totalStorePages;
   const summaryCanPrev = summaryPage > 1;
   const summaryCanNext = summaryPage < totalSummaryPages;
+  const riskCanPrev = riskPage > 1;
+  const riskCanNext = riskPage < totalRiskPages;
 
   const activeRowCount = tableSelection === 'summary' ? totalSummaryRows : totalStoreRows;
 
@@ -1768,7 +1818,38 @@ export default function SalesPerformancePage() {
 
       <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3 px-2">
-          <h2 className="text-lg font-semibold text-slate-900">Delivery Monitoring</h2>
+          <div className="relative" data-delivery-menu="true">
+            <button
+              type="button"
+              onClick={() => setShowDeliveryViewMenu((p) => !p)}
+              className="inline-flex items-center gap-1 text-lg font-semibold text-slate-900 hover:text-slate-700"
+            >
+              {deliveryViewOptions.find((opt) => opt.key === deliveryViewSelection)?.label ||
+                'Delivery Monitoring'}
+              <ChevronDown className="h-5 w-5 text-slate-500" />
+            </button>
+            {showDeliveryViewMenu && (
+              <div className="absolute left-0 z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                {deliveryViewOptions.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => {
+                      setDeliveryViewSelection(opt.key);
+                      setShowDeliveryViewMenu(false);
+                    }}
+                    className={`block w-full px-3 py-2 text-left text-sm ${
+                      deliveryViewSelection === opt.key
+                        ? 'bg-slate-100 font-semibold text-slate-900'
+                        : 'text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative" ref={chartShopPickerRef}>
               <button
@@ -1854,12 +1935,105 @@ export default function SalesPerformancePage() {
                 </div>
               )}
             </div>
-            <span className="text-xs text-slate-500">
-              Total problematic orders: <span className="font-semibold text-slate-700">{formatCount(problematicData?.total || 0)}</span>
-            </span>
           </div>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="p-1 sm:p-2">
+          {deliveryViewSelection === 'risk_confirmation' ? (
+            <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                        Risk Confirmation
+                      </th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                        Restocking
+                      </th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                        Confirmed
+                      </th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                        Waiting For Pickup
+                      </th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                        Shipped
+                      </th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                        Delivered
+                      </th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                        RTS
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {isProblematicLoading ? (
+                      <tr>
+                        <td className="px-3 sm:px-4 lg:px-6 py-6 text-sm text-slate-400" colSpan={7}>
+                          Loading...
+                        </td>
+                      </tr>
+                    ) : pagedRiskRows.length ? (
+                      pagedRiskRows.map((row) => (
+                        <tr key={row.riskTag} className="bg-white">
+                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700 whitespace-nowrap">
+                            {row.riskTag}
+                          </td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
+                            {formatCount(row.restockingCount)}
+                          </td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
+                            {formatCount(row.confirmedCount)}
+                          </td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
+                            {formatCount(row.waitingForPickupCount)}
+                          </td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
+                            {formatCount(row.shippedCount)}
+                          </td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
+                            {formatCount(row.deliveredCount)}
+                          </td>
+                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
+                            {formatCount(row.rtsCount)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td className="px-3 sm:px-4 lg:px-6 py-6 text-sm text-slate-400" colSpan={7}>
+                          No risk confirmation data for the selected scope.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
+                <p className="text-sm text-slate-600">
+                  Showing {riskStart}-{riskEnd} of {totalRiskRows}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    onClick={() => setRiskPage((p) => Math.max(1, p - 1))}
+                    disabled={!riskCanPrev || isProblematicLoading}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    onClick={() => setRiskPage((p) => Math.min(totalRiskPages, p + 1))}
+                    disabled={!riskCanNext || isProblematicLoading}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
           <div className="mb-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
               <div className="px-1 pb-2">
@@ -2022,6 +2196,8 @@ export default function SalesPerformancePage() {
               )}
             </div>
           </div>
+            </>
+          )}
         </div>
       </Card>
 

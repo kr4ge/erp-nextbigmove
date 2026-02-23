@@ -11,6 +11,13 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
+const RISK_CONFIRMATION_GROUPS = [
+  'HIGH RTS RATE',
+  'ABANDONED',
+  'NO CONVERSATION',
+  'WITH CONVERSATION',
+  'HAS RTS ORDER',
+] as const;
 
 type SalesPerformanceRow = {
   salesAssignee: string | null;
@@ -141,6 +148,15 @@ export class SalesPerformanceService {
         totalCod: 0,
       },
       returnedInRangeTrend: [] as Array<{ date: string; count: number }>,
+      riskConfirmationRows: RISK_CONFIRMATION_GROUPS.map((riskTag) => ({
+        riskTag,
+        confirmedCount: 0,
+        restockingCount: 0,
+        waitingForPickupCount: 0,
+        shippedCount: 0,
+        deliveredCount: 0,
+        rtsCount: 0,
+      })),
       filters: { shops: [] as string[], shopDisplayMap: {} as Record<string, string> },
       selected: {
         start_date: startStr,
@@ -907,6 +923,7 @@ export class SalesPerformanceService {
       deliveredInRangeTrendRows,
       returnedInRangeSummaryRows,
       returnedInRangeTrendRows,
+      riskConfirmationRawRows,
     ] = await Promise.all([
       this.prisma.$queryRaw<any[]>(Prisma.sql`
         WITH reasons AS (
@@ -1063,6 +1080,87 @@ export class SalesPerformanceService {
         LEFT JOIN counts ON counts.d = dates.d
         ORDER BY dates.d
       `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        WITH scoped_orders AS (
+          SELECT
+            "id",
+            "status",
+            "isRiskConfirmation",
+            COALESCE("tags", '[]'::jsonb) AS tags
+          FROM "pos_orders"
+          ${whereClause}
+        ),
+        tag_rows AS (
+          SELECT
+            o."id",
+            o."status",
+            o."isRiskConfirmation",
+            LOWER(
+              NULLIF(
+                BTRIM(
+                  REGEXP_REPLACE(
+                    COALESCE(
+                      CASE
+                        WHEN jsonb_typeof(tag.value) = 'object' THEN tag.value->>'name'
+                        WHEN jsonb_typeof(tag.value) = 'string' THEN trim(BOTH '"' FROM tag.value::text)
+                        ELSE ''
+                      END,
+                      ''
+                    ),
+                    '\\s+',
+                    ' ',
+                    'g'
+                  )
+                ),
+                ''
+              )
+            ) AS tag_name
+          FROM scoped_orders o
+          LEFT JOIN LATERAL jsonb_array_elements(o.tags) AS tag(value) ON TRUE
+        ),
+        per_order AS (
+          SELECT
+            "id",
+            MAX("status")::int AS status,
+            MAX("isRiskConfirmation"::int)::int AS is_risk_confirmation,
+            MAX(CASE WHEN tag_name = 'risk confirmation' THEN 1 ELSE 0 END)::int AS has_risk_confirmation_tag,
+            MAX(CASE WHEN tag_name = 'high rts rate' THEN 1 ELSE 0 END)::int AS has_high_rts_rate,
+            MAX(CASE WHEN tag_name = 'abandoned' THEN 1 ELSE 0 END)::int AS has_abandoned,
+            MAX(CASE WHEN tag_name = 'no conversation' THEN 1 ELSE 0 END)::int AS has_no_conversation,
+            MAX(CASE WHEN tag_name = 'with conversation' THEN 1 ELSE 0 END)::int AS has_with_conversation,
+            MAX(CASE WHEN tag_name = 'has rts order' THEN 1 ELSE 0 END)::int AS has_has_rts_order
+          FROM tag_rows
+          GROUP BY "id"
+        ),
+        classified AS (
+          SELECT
+            CASE
+              WHEN has_high_rts_rate = 1 THEN 'HIGH RTS RATE'
+              WHEN has_abandoned = 1 THEN 'ABANDONED'
+              WHEN has_no_conversation = 1 THEN 'NO CONVERSATION'
+              WHEN has_with_conversation = 1 THEN 'WITH CONVERSATION'
+              WHEN has_has_rts_order = 1 THEN 'HAS RTS ORDER'
+              ELSE NULL
+            END AS risk_tag,
+            status,
+            is_risk_confirmation,
+            has_risk_confirmation_tag
+          FROM per_order
+          WHERE is_risk_confirmation = 1
+             OR (has_risk_confirmation_tag = 1 AND status = 11)
+        )
+        SELECT
+          risk_tag,
+          COALESCE(SUM(CASE WHEN is_risk_confirmation = 1 THEN 1 ELSE 0 END), 0)::int AS confirmed_count,
+          COALESCE(SUM(CASE WHEN has_risk_confirmation_tag = 1 AND status = 11 THEN 1 ELSE 0 END), 0)::int AS restocking_count,
+          COALESCE(SUM(CASE WHEN is_risk_confirmation = 1 AND status = 9 THEN 1 ELSE 0 END), 0)::int AS waiting_for_pickup_count,
+          COALESCE(SUM(CASE WHEN is_risk_confirmation = 1 AND status = 2 THEN 1 ELSE 0 END), 0)::int AS shipped_count,
+          COALESCE(SUM(CASE WHEN is_risk_confirmation = 1 AND status = 3 THEN 1 ELSE 0 END), 0)::int AS delivered_count,
+          COALESCE(SUM(CASE WHEN is_risk_confirmation = 1 AND status IN (4, 5) THEN 1 ELSE 0 END), 0)::int AS rts_count
+        FROM classified
+        WHERE risk_tag IS NOT NULL
+        GROUP BY risk_tag
+      `),
     ]);
 
     const l1Map = new Map<string, { name: string; value: number; children: Map<string, { name: string; value: number; children: Map<string, { name: string; value: number }> }> }>();
@@ -1108,10 +1206,24 @@ export class SalesPerformanceService {
       })),
     }));
 
+    const shopScopeWhere = applySalesAssigneeFilters([
+      Prisma.sql`"tenantId" = ${tenantId}::uuid`,
+      ...(Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0
+        ? [Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`]
+        : []),
+    ]);
     const shopRows = await this.prisma.$queryRaw<{ shopId: string }[]>(Prisma.sql`
       SELECT DISTINCT "shopId"
       FROM "pos_orders"
-      WHERE ${Prisma.join(baseWhere, ' AND ')}
+      WHERE ${Prisma.join(shopScopeWhere, ' AND ')}
+        AND (
+          ("dateLocal" >= ${startStr} AND "dateLocal" <= ${endStr})
+          OR (
+            "deliveredAt" IS NOT NULL
+            AND "deliveredAt" >= ${deliveredRangeStartUtc}
+            AND "deliveredAt" < ${deliveredRangeEndUtcExclusive}
+          )
+        )
       ORDER BY "shopId"
     `);
     const shopIdsList = shopRows.map((r) => r.shopId).filter(Boolean);
@@ -1147,6 +1259,38 @@ export class SalesPerformanceService {
     const onDeliverySummary = onDeliverySummaryRows?.[0] || {};
     const deliveredInRangeSummary = deliveredInRangeSummaryRows?.[0] || {};
     const returnedInRangeSummary = returnedInRangeSummaryRows?.[0] || {};
+    const riskRowsMap = new Map<
+      string,
+      {
+        confirmedCount: number;
+        restockingCount: number;
+        waitingForPickupCount: number;
+        shippedCount: number;
+        deliveredCount: number;
+        rtsCount: number;
+      }
+    >();
+    (riskConfirmationRawRows || []).forEach((row) => {
+      const label = (row?.risk_tag || '').toString().trim();
+      if (!label) return;
+      riskRowsMap.set(label, {
+        confirmedCount: this.toNumber(row?.confirmed_count),
+        restockingCount: this.toNumber(row?.restocking_count),
+        waitingForPickupCount: this.toNumber(row?.waiting_for_pickup_count),
+        shippedCount: this.toNumber(row?.shipped_count),
+        deliveredCount: this.toNumber(row?.delivered_count),
+        rtsCount: this.toNumber(row?.rts_count),
+      });
+    });
+    const riskConfirmationRows = RISK_CONFIRMATION_GROUPS.map((riskTag) => ({
+      riskTag,
+      confirmedCount: riskRowsMap.get(riskTag)?.confirmedCount ?? 0,
+      restockingCount: riskRowsMap.get(riskTag)?.restockingCount ?? 0,
+      waitingForPickupCount: riskRowsMap.get(riskTag)?.waitingForPickupCount ?? 0,
+      shippedCount: riskRowsMap.get(riskTag)?.shippedCount ?? 0,
+      deliveredCount: riskRowsMap.get(riskTag)?.deliveredCount ?? 0,
+      rtsCount: riskRowsMap.get(riskTag)?.rtsCount ?? 0,
+    }));
 
     const response = {
       data,
@@ -1188,6 +1332,7 @@ export class SalesPerformanceService {
         date: (row.date || '').toString(),
         count: this.toNumber(row.count),
       })),
+      riskConfirmationRows,
       filters: {
         shops: shopIdsList,
         shopDisplayMap,

@@ -110,6 +110,8 @@ export default function IntegrationsPage() {
   const [allIntegrations, setAllIntegrations] = useState<Integration[]>([]);
   const [filteredIntegrations, setFilteredIntegrations] = useState<Integration[]>([]);
   const [searchInput, setSearchInput] = useState('');
+  const [tablePage, setTablePage] = useState(1);
+  const tablePageSize = 10;
   const [, setMetaPagination] = useState<{
     total: number;
     page: number;
@@ -215,6 +217,10 @@ export default function IntegrationsPage() {
     }, 450);
     return () => clearTimeout(id);
   }, [searchInput, allIntegrations]);
+
+  useEffect(() => {
+    setTablePage(1);
+  }, [searchInput]);
 
   // Refresh permissions from API (cached)
   useEffect(() => {
@@ -376,6 +382,60 @@ export default function IntegrationsPage() {
     setIsModalOpen(false);
     setModalProvider(null);
     resetModal();
+  };
+
+  const buildScopedHeaders = (token: string): Record<string, string> => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+    const scopeIds = getSelectedTeamIds();
+    if (scopeIds.length > 0) {
+      headers['X-Team-Id'] = scopeIds.join(',');
+    }
+    return headers;
+  };
+
+  const handleView = async (integration: Integration) => {
+    setOpenMenuId(null);
+
+    if (integration.provider === 'META_ADS') {
+      router.push(`/integrations/meta/${integration.id}`);
+      return;
+    }
+
+    if (integration.provider === 'PANCAKE_POS') {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+          addToast('error', 'Session expired. Please log in again.');
+          router.push('/login');
+          return;
+        }
+
+        const response = await apiClient.get('/integrations/pos-stores', {
+          headers: buildScopedHeaders(token),
+        });
+        const payload = response.data;
+        const stores = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
+
+        const configShopId = integration.config?.shopId?.toString?.() ?? integration.config?.shopId;
+        const linkedStore =
+          stores.find((store: any) => store.integrationId === integration.id) ||
+          (configShopId
+            ? stores.find((store: any) => store.shopId?.toString?.() === configShopId.toString())
+            : null);
+
+        if (!linkedStore?.id) {
+          addToast('error', 'No linked POS store found for this integration.');
+          return;
+        }
+
+        router.push(`/integrations/store/${linkedStore.id}`);
+      } catch (err: any) {
+        addToast('error', parseErrorMessage(err));
+      }
+      return;
+    }
+
+    addToast('error', 'Unsupported integration provider.');
   };
 
   const handleMetaSubmit = async (e: React.FormEvent) => {
@@ -608,6 +668,12 @@ export default function IntegrationsPage() {
   const metaIntegrations = allIntegrations.filter((i) => i.provider === 'META_ADS');
   const metaIntegration = metaIntegrations[0];
   const posIntegrations = allIntegrations.filter((i) => i.provider === 'PANCAKE_POS');
+  const tablePageCount = Math.max(1, Math.ceil(filteredIntegrations.length / tablePageSize));
+  const currentTablePage = Math.min(tablePage, tablePageCount);
+  const paginatedIntegrations = filteredIntegrations.slice(
+    (currentTablePage - 1) * tablePageSize,
+    currentTablePage * tablePageSize,
+  );
 
   return (
     <div className="space-y-6">
@@ -669,7 +735,7 @@ export default function IntegrationsPage() {
 
       {/* All Integrations List */}
       {filteredIntegrations.length > 0 ? (
-        <Card className="overflow-hidden">
+        <Card className="overflow-visible">
           <div className="flex flex-col gap-3 border-b border-[#E2E8F0] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold text-[#0F172A]">All Integrations</h2>
             <div className="relative w-full sm:max-w-sm">
@@ -692,7 +758,7 @@ export default function IntegrationsPage() {
               </svg>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-visible">
             <table className="min-w-full divide-y divide-[#E2E8F0]">
               <thead className="bg-[#F8FAFC]">
                 <tr>
@@ -708,7 +774,10 @@ export default function IntegrationsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
-                {filteredIntegrations.map((integration) => (
+                {paginatedIntegrations.map((integration, rowIndex) => {
+                  const shouldOpenUp = rowIndex >= paginatedIntegrations.length - 2;
+
+                  return (
                   <tr key={integration.id} className="hover:bg-[#F8FAFC]">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -736,13 +805,17 @@ export default function IntegrationsPage() {
                           iconLeft={<MoreVertical className="h-4 w-4" />}
                         />
                         {openMenuId === integration.id && (
-                          <div className="absolute right-0 z-10 mt-2 w-40 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-lg">
+                          <div
+                            className={`absolute right-0 z-50 w-40 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-lg ${
+                              shouldOpenUp ? 'bottom-full mb-2' : 'top-full mt-2'
+                            }`}
+                          >
                             <div className="py-1">
                               <button
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  setOpenMenuId(null);
+                                  handleView(integration);
                                 }}
                                 className="block w-full px-4 py-2 text-left text-sm text-[#0F172A] hover:bg-[#F8FAFC]"
                               >
@@ -775,10 +848,37 @@ export default function IntegrationsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          {tablePageCount > 1 && (
+            <div className="flex items-center justify-between border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-3 text-sm text-[#475569]">
+              <div>
+                Showing {(currentTablePage - 1) * tablePageSize + 1}-
+                {Math.min(currentTablePage * tablePageSize, filteredIntegrations.length)} of {filteredIntegrations.length}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={currentTablePage <= 1}
+                  onClick={() => setTablePage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={currentTablePage >= tablePageCount}
+                  onClick={() => setTablePage((p) => Math.min(tablePageCount, p + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
       ) : (
         <Card className="overflow-hidden">

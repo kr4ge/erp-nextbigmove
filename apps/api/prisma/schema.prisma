@@ -772,6 +772,7 @@ model PosOrder {
   mktgCod Decimal? @db.Decimal(12, 2)
   isMarketingSource Boolean @default(false)
   forUpsell Boolean @default(false)
+  isRiskConfirmation Boolean @default(false)
   // UTM tracking
   pUtmCampaign String?
   pUtmContent  String?

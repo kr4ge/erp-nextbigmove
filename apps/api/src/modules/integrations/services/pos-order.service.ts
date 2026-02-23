@@ -23,6 +23,7 @@ interface PosOrderData {
   mktgCod?: number;
   isMarketingSource?: boolean;
   forUpsell?: boolean;
+  isRiskConfirmation?: boolean;
   pUtmCampaign?: string;
   pUtmContent?: string;
   cogs: number;
@@ -330,6 +331,7 @@ export class PosOrderService {
               : { id: t.id?.toString?.() || '', name: t.name || '' }
           )
       : [];
+    const hasRiskConfirmationTag = this.hasTagNameInList(tags, ['risk confirmation']);
 
     // RTS reason: split returned_reason_name by "/"
     let rtsReason: { l1: string | null; l2: string | null; l3: string | null } | null = null;
@@ -344,6 +346,10 @@ export class PosOrderService {
     }
 
     const statusHistory = Array.isArray(rawOrder.status_history) ? rawOrder.status_history : null;
+    const hasConfirmedHistory = Array.isArray(statusHistory)
+      ? statusHistory.some((entry: any) => entry?.status === 1)
+      : false;
+    const isRiskConfirmation = hasRiskConfirmationTag && hasConfirmedHistory;
     const numericStatus = Number(rawOrder?.status);
     const normalizedStatus = Number.isFinite(numericStatus) ? numericStatus : null;
     const deliveredAt = this.extractStatusTimestampFromHistory(
@@ -440,9 +446,8 @@ export class PosOrderService {
     let salesCod = 0;
     if (rawOrder?.status === 6) {
       salesCod = 0;
-    } else if (Array.isArray(statusHistory)) {
-      const hasConfirmedHistory = statusHistory.some((entry: any) => entry?.status === 1);
-      salesCod = hasConfirmedHistory ? safeCod : 0;
+    } else if (hasConfirmedHistory) {
+      salesCod = safeCod;
     }
 
     // Fallback mapping: if still empty, derive from note_product first segment
@@ -497,6 +502,7 @@ export class PosOrderService {
       mktgCod,
       isMarketingSource,
       forUpsell,
+      isRiskConfirmation,
       pUtmCampaign: rawOrder.p_utm_campaign,
       pUtmContent: rawOrder.p_utm_content,
       cogs,
@@ -600,6 +606,7 @@ export class PosOrderService {
           mktgCod: new Decimal(order.mktgCod || 0),
           isMarketingSource: !!order.isMarketingSource,
           forUpsell: !!order.forUpsell,
+          isRiskConfirmation: !!order.isRiskConfirmation,
           pUtmCampaign: order.pUtmCampaign,
           pUtmContent: order.pUtmContent,
           cogs: new Decimal(order.cogs),
@@ -631,6 +638,7 @@ export class PosOrderService {
           mktgCod: new Decimal(order.mktgCod || 0),
           isMarketingSource: !!order.isMarketingSource,
           forUpsell: !!order.forUpsell,
+          isRiskConfirmation: !!order.isRiskConfirmation,
           pUtmCampaign: order.pUtmCampaign,
           pUtmContent: order.pUtmContent,
           cogs: new Decimal(order.cogs),
