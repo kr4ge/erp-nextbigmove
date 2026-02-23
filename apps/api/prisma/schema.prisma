@@ -808,6 +808,7 @@ model PosOrder {
   @@unique([tenantId, shopId, posOrderId])
   @@index([tenantId, shopId, dateLocal])
   @@index([tenantId, teamId, dateLocal])
+  @@index([tenantId, teamId, dateLocal, isRiskConfirmation], map: "pos_orders_tenant_team_date_risk_confirmation_idx")
   @@index([dateLocal])
   @@index([mapping])
   @@map("pos_orders")

@@ -55,9 +55,8 @@ jobs:
           ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
             docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T redis redis-cli -a \$REDIS_PASSWORD ping || sleep 5"
 
-          # Run migrations using a one-off container (less memory than running API + migration)
-          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
-            docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm -T api npx prisma migrate deploy --schema=./apps/api/prisma/schema.prisma"
+          # Run migrations safely (auto-resolve failed migration state, then retry deploy)
+          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && ./scripts/prisma-migrate-deploy-safe.sh"
 
           # Run seed (uses compiled JS, idempotent - safe to run every deploy)
           ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
