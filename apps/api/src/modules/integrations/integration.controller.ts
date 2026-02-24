@@ -22,6 +22,7 @@ import {
   ListPosStoresDto,
   UpdatePosStoreDto,
   UpdatePancakeWebhookDto,
+  UpdatePancakeWebhookRelayDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -133,6 +134,18 @@ export class IntegrationController {
     @Req() req: Request,
   ) {
     return this.integrationService.updatePancakeWebhookEnabled(dto.enabled, this.getBaseUrl(req));
+  }
+
+  /**
+   * Configure Pancake webhook relay to an external webhook endpoint.
+   */
+  @Patch('/pancake/webhook/relay')
+  @Permissions('integration.webhook.update')
+  async updatePancakeWebhookRelay(
+    @Body() dto: UpdatePancakeWebhookRelayDto,
+    @Req() req: Request,
+  ) {
+    return this.integrationService.updatePancakeWebhookRelayConfig(dto, this.getBaseUrl(req));
   }
 
   /**

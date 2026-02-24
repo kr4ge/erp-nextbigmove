@@ -5,3 +5,4 @@ export * from './list-integrations.dto';
 export * from './list-pos-stores.dto';
 export * from './update-pos-store.dto';
 export * from './update-pancake-webhook.dto';
+export * from './update-pancake-webhook-relay.dto';

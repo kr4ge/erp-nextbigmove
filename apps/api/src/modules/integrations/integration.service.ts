@@ -17,6 +17,7 @@ import { PosOrderService } from './services/pos-order.service';
 import {
   CreateIntegrationDto,
   UpdateIntegrationDto,
+  UpdatePancakeWebhookRelayDto,
   IntegrationResponseDto,
   IntegrationProvider,
   BulkCreatePosIntegrationDto,
@@ -35,6 +36,14 @@ type PancakeWebhookSettings = {
   keyLast4?: string;
   rotatedAt?: string;
   rotatedByUserId?: string;
+  relayEnabled?: boolean;
+  relayWebhookUrl?: string;
+  relayHeaderKey?: string;
+  relayApiKey?: string;
+  relayApiKeyEncrypted?: string;
+  relayKeyLast4?: string;
+  relayUpdatedAt?: string;
+  relayUpdatedByUserId?: string;
 };
 
 @Injectable()
@@ -69,6 +78,25 @@ export class IntegrationService {
       rotatedAt: typeof webhook.rotatedAt === 'string' ? webhook.rotatedAt : undefined,
       rotatedByUserId:
         typeof webhook.rotatedByUserId === 'string' ? webhook.rotatedByUserId : undefined,
+      relayEnabled: typeof webhook.relayEnabled === 'boolean' ? webhook.relayEnabled : false,
+      relayWebhookUrl:
+        typeof webhook.relayWebhookUrl === 'string' ? webhook.relayWebhookUrl : undefined,
+      relayHeaderKey:
+        typeof webhook.relayHeaderKey === 'string' ? webhook.relayHeaderKey : undefined,
+      relayApiKey:
+        typeof webhook.relayApiKey === 'string' ? webhook.relayApiKey : undefined,
+      relayApiKeyEncrypted:
+        typeof webhook.relayApiKeyEncrypted === 'string'
+          ? webhook.relayApiKeyEncrypted
+          : undefined,
+      relayKeyLast4:
+        typeof webhook.relayKeyLast4 === 'string' ? webhook.relayKeyLast4 : undefined,
+      relayUpdatedAt:
+        typeof webhook.relayUpdatedAt === 'string' ? webhook.relayUpdatedAt : undefined,
+      relayUpdatedByUserId:
+        typeof webhook.relayUpdatedByUserId === 'string'
+          ? webhook.relayUpdatedByUserId
+          : undefined,
     };
   }
 
@@ -79,6 +107,39 @@ export class IntegrationService {
 
   private hashWebhookApiKey(apiKey: string): string {
     return createHash('sha256').update(apiKey).digest('hex');
+  }
+
+  private normalizeRelayWebhookUrl(urlRaw: string | undefined): string | undefined {
+    if (!urlRaw) return undefined;
+    const trimmed = urlRaw.trim();
+    if (!trimmed) return undefined;
+
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new BadRequestException('Invalid relay webhook URL');
+    }
+
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new BadRequestException('Relay webhook URL must use http or https');
+    }
+
+    return trimmed;
+  }
+
+  private sanitizeRelayHeaderKey(headerKeyRaw: string | undefined): string | undefined {
+    if (!headerKeyRaw) return undefined;
+    const trimmed = headerKeyRaw.trim();
+    if (!trimmed) return undefined;
+    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(trimmed)) {
+      return undefined;
+    }
+    return trimmed;
+  }
+
+  private getRelayHeaderKey(cfg: PancakeWebhookSettings): string {
+    return this.sanitizeRelayHeaderKey(cfg.relayHeaderKey) || 'x-api-key';
   }
 
   private verifyWebhookApiKey(apiKey: string, expectedHash: string): boolean {
@@ -103,6 +164,81 @@ export class IntegrationService {
       }
     }
     return out;
+  }
+
+  private getRelayApiKey(
+    cfg: PancakeWebhookSettings,
+    tenantEncryptionKey?: string,
+  ): string | undefined {
+    const plain = cfg.relayApiKey?.toString?.()?.trim?.() || '';
+    if (plain) return plain;
+
+    if (!cfg.relayApiKeyEncrypted || !tenantEncryptionKey) {
+      return undefined;
+    }
+
+    try {
+      const decrypted = this.encryptionService.decrypt(
+        cfg.relayApiKeyEncrypted,
+        tenantEncryptionKey,
+      );
+      const fallback = decrypted?.apiKey?.toString?.()?.trim?.() || '';
+      return fallback || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async forwardPancakeWebhookPayload(
+    tenant: { id: string; encryptionKey: string },
+    cfg: PancakeWebhookSettings,
+    payload: any,
+    eventId: string,
+  ): Promise<string | null> {
+    if (!cfg.relayEnabled) return null;
+    if (!cfg.relayWebhookUrl) {
+      return 'Relay enabled but relay webhook URL is not configured';
+    }
+    const relayHeaderKey = this.getRelayHeaderKey(cfg);
+    const relayApiKey = this.getRelayApiKey(cfg, tenant.encryptionKey) || '';
+
+    if (!relayApiKey) {
+      return 'Relay API key is empty';
+    }
+
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), 8000);
+
+    try {
+      const relayHeaders: Record<string, string> = {
+        'content-type': 'application/json',
+        'x-erp-event-id': eventId,
+        'x-erp-source': 'pancake-webhook-relay',
+      };
+      relayHeaders[relayHeaderKey] = relayApiKey;
+
+      const response = await fetch(cfg.relayWebhookUrl, {
+        method: 'POST',
+        headers: relayHeaders,
+        body: JSON.stringify(payload),
+        signal: abortController.signal,
+      });
+
+      if (!response.ok) {
+        const responseText = await response.text().catch(() => '');
+        const compactResponse = responseText ? responseText.toString().slice(0, 180) : '';
+        return `Relay delivery failed (${response.status}${compactResponse ? `: ${compactResponse}` : ''})`;
+      }
+
+      return null;
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        return 'Relay delivery timed out';
+      }
+      return `Relay delivery failed: ${error?.message || 'Unknown error'}`;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private isWebhookOrderLike(value: any): value is Record<string, any> {
@@ -162,7 +298,7 @@ export class IntegrationService {
     const { tenantId } = await this.teamContext.getContext();
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, settings: true },
+      select: { id: true, settings: true, encryptionKey: true },
     });
 
     if (!tenant) {
@@ -170,6 +306,7 @@ export class IntegrationService {
     }
 
     const cfg = this.getPancakeWebhookSettings(tenant.settings);
+    const relayApiKey = this.getRelayApiKey(cfg, tenant.encryptionKey) || null;
     return {
       enabled: !!cfg.enabled,
       hasApiKey: !!cfg.apiKeyHash,
@@ -178,6 +315,14 @@ export class IntegrationService {
       rotatedByUserId: cfg.rotatedByUserId || null,
       headerKey: 'x-api-key',
       webhookUrl: this.buildPancakeWebhookUrl(baseUrl, tenant.id),
+      relayEnabled: !!cfg.relayEnabled,
+      relayWebhookUrl: cfg.relayWebhookUrl || null,
+      relayHeaderKey: this.getRelayHeaderKey(cfg),
+      relayApiKey,
+      relayHasApiKey: !!relayApiKey,
+      relayKeyLast4: cfg.relayKeyLast4 || null,
+      relayUpdatedAt: cfg.relayUpdatedAt || null,
+      relayUpdatedByUserId: cfg.relayUpdatedByUserId || null,
     };
   }
 
@@ -185,7 +330,7 @@ export class IntegrationService {
     const { tenantId, userId } = await this.teamContext.getContext();
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, settings: true },
+      select: { id: true, settings: true, encryptionKey: true },
     });
 
     if (!tenant) {
@@ -203,6 +348,14 @@ export class IntegrationService {
       keyLast4: apiKey.slice(-4),
       rotatedAt: nowIso,
       rotatedByUserId: userId || null,
+      relayEnabled: existing.relayEnabled ?? false,
+      relayWebhookUrl: existing.relayWebhookUrl,
+      relayHeaderKey: existing.relayHeaderKey,
+      relayApiKey: existing.relayApiKey,
+      relayApiKeyEncrypted: existing.relayApiKeyEncrypted,
+      relayKeyLast4: existing.relayKeyLast4,
+      relayUpdatedAt: existing.relayUpdatedAt,
+      relayUpdatedByUserId: existing.relayUpdatedByUserId,
     };
 
     await this.prisma.tenant.update({
@@ -218,6 +371,14 @@ export class IntegrationService {
       rotatedAt: nowIso,
       rotatedByUserId: userId || null,
       webhookUrl: this.buildPancakeWebhookUrl(baseUrl, tenant.id),
+      relayEnabled: !!existing.relayEnabled,
+      relayWebhookUrl: existing.relayWebhookUrl || null,
+      relayHeaderKey: this.getRelayHeaderKey(existing),
+      relayApiKey: this.getRelayApiKey(existing, tenant.encryptionKey) || null,
+      relayHasApiKey: !!this.getRelayApiKey(existing, tenant.encryptionKey),
+      relayKeyLast4: existing.relayKeyLast4 || null,
+      relayUpdatedAt: existing.relayUpdatedAt || null,
+      relayUpdatedByUserId: existing.relayUpdatedByUserId || null,
     };
   }
 
@@ -225,7 +386,7 @@ export class IntegrationService {
     const { tenantId } = await this.teamContext.getContext();
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, settings: true },
+      select: { id: true, settings: true, encryptionKey: true },
     });
 
     if (!tenant) {
@@ -241,6 +402,14 @@ export class IntegrationService {
       keyLast4: existing.keyLast4,
       rotatedAt: existing.rotatedAt,
       rotatedByUserId: existing.rotatedByUserId,
+      relayEnabled: existing.relayEnabled ?? false,
+      relayWebhookUrl: existing.relayWebhookUrl,
+      relayHeaderKey: existing.relayHeaderKey,
+      relayApiKey: existing.relayApiKey,
+      relayApiKeyEncrypted: existing.relayApiKeyEncrypted,
+      relayKeyLast4: existing.relayKeyLast4,
+      relayUpdatedAt: existing.relayUpdatedAt,
+      relayUpdatedByUserId: existing.relayUpdatedByUserId,
     };
 
     await this.prisma.tenant.update({
@@ -256,6 +425,100 @@ export class IntegrationService {
       rotatedByUserId: existing.rotatedByUserId || null,
       headerKey: 'x-api-key',
       webhookUrl: this.buildPancakeWebhookUrl(baseUrl, tenant.id),
+      relayEnabled: !!existing.relayEnabled,
+      relayWebhookUrl: existing.relayWebhookUrl || null,
+      relayHeaderKey: this.getRelayHeaderKey(existing),
+      relayApiKey: this.getRelayApiKey(existing, tenant.encryptionKey) || null,
+      relayHasApiKey: !!this.getRelayApiKey(existing, tenant.encryptionKey),
+      relayKeyLast4: existing.relayKeyLast4 || null,
+      relayUpdatedAt: existing.relayUpdatedAt || null,
+      relayUpdatedByUserId: existing.relayUpdatedByUserId || null,
+    };
+  }
+
+  async updatePancakeWebhookRelayConfig(
+    dto: UpdatePancakeWebhookRelayDto,
+    baseUrl: string,
+  ) {
+    const { tenantId, userId } = await this.teamContext.getContext();
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, settings: true, encryptionKey: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    const settings = this.normalizeJsonObject(tenant.settings);
+    const existing = this.getPancakeWebhookSettings(tenant.settings);
+    const nowIso = new Date().toISOString();
+    const relayWebhookUrl = this.normalizeRelayWebhookUrl(dto.webhookUrl);
+    const relayHeaderKeyRaw = dto.headerKey;
+    const relayHeaderKeyFromInput = this.sanitizeRelayHeaderKey(relayHeaderKeyRaw);
+    if (
+      typeof relayHeaderKeyRaw === 'string'
+      && relayHeaderKeyRaw.trim().length > 0
+      && !relayHeaderKeyFromInput
+    ) {
+      throw new BadRequestException('Invalid relay header key');
+    }
+
+    let relayApiKey = this.getRelayApiKey(existing, tenant.encryptionKey) || '';
+    let relayKeyLast4 = existing.relayKeyLast4;
+    const apiKeyRaw = dto.apiKey?.trim() || '';
+    if (apiKeyRaw) {
+      relayApiKey = apiKeyRaw;
+      relayKeyLast4 = apiKeyRaw.slice(-4);
+    }
+
+    const finalRelayWebhookUrl = relayWebhookUrl ?? existing.relayWebhookUrl;
+    const finalRelayHeaderKey = relayHeaderKeyFromInput ?? this.getRelayHeaderKey(existing);
+    if (dto.enabled && !finalRelayWebhookUrl) {
+      throw new BadRequestException('Relay webhook URL is required when relay is enabled');
+    }
+    if (dto.enabled && !relayApiKey) {
+      throw new BadRequestException('Relay API key is required when relay is enabled');
+    }
+
+    settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
+      enabled: existing.enabled ?? false,
+      apiKeyHash: existing.apiKeyHash,
+      keyLast4: existing.keyLast4,
+      rotatedAt: existing.rotatedAt,
+      rotatedByUserId: existing.rotatedByUserId,
+      relayEnabled: dto.enabled,
+      relayWebhookUrl: finalRelayWebhookUrl,
+      relayHeaderKey: finalRelayHeaderKey,
+      relayApiKey,
+      relayKeyLast4,
+      relayUpdatedAt: nowIso,
+      relayUpdatedByUserId: userId || null,
+    };
+
+    await this.prisma.tenant.update({
+      where: { id: tenant.id },
+      data: { settings: settings as Prisma.InputJsonValue },
+    });
+
+    const updated = this.getPancakeWebhookSettings(settings);
+    const resolvedRelayApiKey = this.getRelayApiKey(updated, tenant.encryptionKey) || null;
+    return {
+      enabled: !!updated.enabled,
+      hasApiKey: !!updated.apiKeyHash,
+      keyLast4: updated.keyLast4 || null,
+      rotatedAt: updated.rotatedAt || null,
+      rotatedByUserId: updated.rotatedByUserId || null,
+      headerKey: 'x-api-key',
+      webhookUrl: this.buildPancakeWebhookUrl(baseUrl, tenant.id),
+      relayEnabled: !!updated.relayEnabled,
+      relayWebhookUrl: updated.relayWebhookUrl || null,
+      relayHeaderKey: this.getRelayHeaderKey(updated),
+      relayApiKey: resolvedRelayApiKey,
+      relayHasApiKey: !!resolvedRelayApiKey,
+      relayKeyLast4: updated.relayKeyLast4 || null,
+      relayUpdatedAt: updated.relayUpdatedAt || null,
+      relayUpdatedByUserId: updated.relayUpdatedByUserId || null,
     };
   }
 
@@ -267,7 +530,7 @@ export class IntegrationService {
   ) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, settings: true },
+      select: { id: true, settings: true, encryptionKey: true },
     });
 
     if (!tenant) {
@@ -320,6 +583,15 @@ export class IntegrationService {
 
     let upserted = 0;
     const warnings: string[] = [];
+    const relayWarning = await this.forwardPancakeWebhookPayload(
+      { id: tenant.id, encryptionKey: tenant.encryptionKey },
+      cfg,
+      safePayload,
+      event.id,
+    );
+    if (relayWarning) {
+      warnings.push(relayWarning);
+    }
 
     if (webhookOrders.length === 0) {
       warnings.push('Missing order payload or shop_id');
