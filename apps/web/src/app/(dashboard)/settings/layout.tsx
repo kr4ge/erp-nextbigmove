@@ -42,6 +42,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     if (perms.includes('team.read')) base.push({ href: '/settings/teams', label: 'Teams' });
     if (perms.includes('role.read')) base.push({ href: '/settings/roles', label: 'Roles' });
     if (perms.includes('user.read')) base.push({ href: '/settings/users', label: 'Users' });
+    if (perms.includes('integration.webhook.read') || perms.includes('integration.webhook.update')) {
+      base.push({ href: '/settings/webhook', label: 'Webhook' });
+    }
     return base;
   }, [perms]);
 

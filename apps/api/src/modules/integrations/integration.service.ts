@@ -5,12 +5,15 @@ import {
   ForbiddenException,
   BadRequestException,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import { EncryptionService } from './services/encryption.service';
 import { ProviderFactory } from './providers/provider.factory';
+import { PosOrderService } from './services/pos-order.service';
 import {
   CreateIntegrationDto,
   UpdateIntegrationDto,
@@ -24,10 +27,20 @@ import {
 import { validate as uuidValidate } from 'uuid';
 import { MetaAdsProvider } from './providers/meta-ads.provider';
 import { MetaInsightService } from './services/meta-insight.service';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
+
+type PancakeWebhookSettings = {
+  enabled?: boolean;
+  apiKeyHash?: string;
+  keyLast4?: string;
+  rotatedAt?: string;
+  rotatedByUserId?: string;
+};
 
 @Injectable()
 export class IntegrationService {
   private readonly logger = new Logger(IntegrationService.name);
+  private readonly PANCAKE_WEBHOOK_SETTINGS_KEY = 'pancakePosWebhook';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -36,7 +49,348 @@ export class IntegrationService {
     private readonly encryptionService: EncryptionService,
     private readonly providerFactory: ProviderFactory,
     private readonly metaInsightService: MetaInsightService,
+    private readonly posOrderService: PosOrderService,
   ) {}
+
+  private normalizeJsonObject(value: any): Record<string, any> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+    return { ...value };
+  }
+
+  private getPancakeWebhookSettings(settingsRaw: any): PancakeWebhookSettings {
+    const settings = this.normalizeJsonObject(settingsRaw);
+    const webhook = this.normalizeJsonObject(settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY]);
+    return {
+      enabled: typeof webhook.enabled === 'boolean' ? webhook.enabled : false,
+      apiKeyHash: typeof webhook.apiKeyHash === 'string' ? webhook.apiKeyHash : undefined,
+      keyLast4: typeof webhook.keyLast4 === 'string' ? webhook.keyLast4 : undefined,
+      rotatedAt: typeof webhook.rotatedAt === 'string' ? webhook.rotatedAt : undefined,
+      rotatedByUserId:
+        typeof webhook.rotatedByUserId === 'string' ? webhook.rotatedByUserId : undefined,
+    };
+  }
+
+  private buildPancakeWebhookUrl(baseUrl: string, tenantId: string): string {
+    const cleanBase = (baseUrl || '').replace(/\/+$/, '');
+    return `${cleanBase}/api/v1/webhooks/pancake/${tenantId}`;
+  }
+
+  private hashWebhookApiKey(apiKey: string): string {
+    return createHash('sha256').update(apiKey).digest('hex');
+  }
+
+  private verifyWebhookApiKey(apiKey: string, expectedHash: string): boolean {
+    if (!apiKey || !expectedHash) return false;
+    const candidate = Buffer.from(this.hashWebhookApiKey(apiKey), 'hex');
+    const expected = Buffer.from(expectedHash, 'hex');
+    if (candidate.length !== expected.length) return false;
+    return timingSafeEqual(candidate, expected);
+  }
+
+  private normalizeWebhookHeaders(headers: Record<string, any> = {}): Record<string, string> {
+    const pickedKeys = ['content-type', 'user-agent', 'x-request-id', 'x-forwarded-for'];
+    const out: Record<string, string> = {};
+    for (const key of pickedKeys) {
+      const val = headers[key];
+      if (typeof val === 'string') {
+        out[key] = val;
+      } else if (Array.isArray(val)) {
+        out[key] = val.join(', ');
+      } else if (val !== undefined && val !== null) {
+        out[key] = String(val);
+      }
+    }
+    return out;
+  }
+
+  private isWebhookOrderLike(value: any): value is Record<string, any> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const hasOrderId = value.id !== undefined || value.order_id !== undefined;
+    const hasShopId = value.shop_id !== undefined || value.shopId !== undefined;
+    return hasOrderId && hasShopId;
+  }
+
+  /**
+   * Accept direct Pancake order payload and common wrappers from tools/middleware.
+   * Supports single-order and batch payloads.
+   */
+  private extractWebhookOrders(payload: any): any[] {
+    if (!payload || typeof payload !== 'object') {
+      return [];
+    }
+
+    const queue: any[] = [payload];
+    const collected: any[] = [];
+    const seen = new Set<string>();
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current || typeof current !== 'object') continue;
+
+      if (Array.isArray(current)) {
+        queue.push(...current);
+        continue;
+      }
+
+      if (this.isWebhookOrderLike(current)) {
+        const shopId = current.shop_id?.toString?.()?.trim?.() || current.shopId?.toString?.()?.trim?.() || '';
+        const orderId = current.id?.toString?.()?.trim?.() || current.order_id?.toString?.()?.trim?.() || '';
+        if (shopId && orderId) {
+          const key = `${shopId}::${orderId}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            collected.push(current);
+          }
+        }
+      }
+
+      queue.push(
+        current.body,
+        current.payload,
+        current.order,
+        current.data,
+        current.orders,
+      );
+    }
+
+    return collected;
+  }
+
+  async getPancakeWebhookConfig(baseUrl: string) {
+    const { tenantId } = await this.teamContext.getContext();
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, settings: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    const cfg = this.getPancakeWebhookSettings(tenant.settings);
+    return {
+      enabled: !!cfg.enabled,
+      hasApiKey: !!cfg.apiKeyHash,
+      keyLast4: cfg.keyLast4 || null,
+      rotatedAt: cfg.rotatedAt || null,
+      rotatedByUserId: cfg.rotatedByUserId || null,
+      headerKey: 'x-api-key',
+      webhookUrl: this.buildPancakeWebhookUrl(baseUrl, tenant.id),
+    };
+  }
+
+  async rotatePancakeWebhookApiKey(baseUrl: string) {
+    const { tenantId, userId } = await this.teamContext.getContext();
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, settings: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    const settings = this.normalizeJsonObject(tenant.settings);
+    const existing = this.getPancakeWebhookSettings(tenant.settings);
+    const apiKey = `nbm_${randomBytes(24).toString('hex')}`;
+    const nowIso = new Date().toISOString();
+
+    settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
+      enabled: existing.enabled ?? true,
+      apiKeyHash: this.hashWebhookApiKey(apiKey),
+      keyLast4: apiKey.slice(-4),
+      rotatedAt: nowIso,
+      rotatedByUserId: userId || null,
+    };
+
+    await this.prisma.tenant.update({
+      where: { id: tenant.id },
+      data: { settings: settings as Prisma.InputJsonValue },
+    });
+
+    return {
+      enabled: settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].enabled,
+      headerKey: 'x-api-key',
+      apiKey,
+      keyLast4: apiKey.slice(-4),
+      rotatedAt: nowIso,
+      rotatedByUserId: userId || null,
+      webhookUrl: this.buildPancakeWebhookUrl(baseUrl, tenant.id),
+    };
+  }
+
+  async updatePancakeWebhookEnabled(enabled: boolean, baseUrl: string) {
+    const { tenantId } = await this.teamContext.getContext();
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, settings: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    const settings = this.normalizeJsonObject(tenant.settings);
+    const existing = this.getPancakeWebhookSettings(tenant.settings);
+
+    settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
+      enabled,
+      apiKeyHash: existing.apiKeyHash,
+      keyLast4: existing.keyLast4,
+      rotatedAt: existing.rotatedAt,
+      rotatedByUserId: existing.rotatedByUserId,
+    };
+
+    await this.prisma.tenant.update({
+      where: { id: tenant.id },
+      data: { settings: settings as Prisma.InputJsonValue },
+    });
+
+    return {
+      enabled,
+      hasApiKey: !!existing.apiKeyHash,
+      keyLast4: existing.keyLast4 || null,
+      rotatedAt: existing.rotatedAt || null,
+      rotatedByUserId: existing.rotatedByUserId || null,
+      headerKey: 'x-api-key',
+      webhookUrl: this.buildPancakeWebhookUrl(baseUrl, tenant.id),
+    };
+  }
+
+  async receivePancakeOrderWebhook(
+    tenantId: string,
+    apiKey: string | undefined,
+    payload: any,
+    headers: Record<string, any>,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, settings: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Invalid tenant');
+    }
+
+    const cfg = this.getPancakeWebhookSettings(tenant.settings);
+    if (!cfg.enabled) {
+      throw new ForbiddenException('Webhook is disabled');
+    }
+    if (!cfg.apiKeyHash) {
+      throw new UnauthorizedException('Webhook API key is not configured');
+    }
+    if (!apiKey || !this.verifyWebhookApiKey(apiKey, cfg.apiKeyHash)) {
+      throw new UnauthorizedException('Invalid webhook API key');
+    }
+
+    let safePayload: any = payload ?? {};
+    try {
+      safePayload = JSON.parse(JSON.stringify(payload ?? {}));
+    } catch {
+      safePayload = { raw: String(payload ?? '') };
+    }
+
+    const webhookOrders = this.extractWebhookOrders(safePayload);
+    const firstOrder = webhookOrders[0];
+    const sourceId =
+      safePayload?.id?.toString?.() ||
+      safePayload?.order_id?.toString?.() ||
+      safePayload?.order?.id?.toString?.() ||
+      firstOrder?.id?.toString?.() ||
+      firstOrder?.order_id?.toString?.() ||
+      null;
+
+    const event = await this.prisma.analyticsEvent.create({
+      data: {
+        tenantId: tenant.id,
+        eventType: 'POS_WEBHOOK',
+        eventName: 'PANCAKE_ORDER_RECEIVED',
+        source: IntegrationProvider.PANCAKE_POS,
+        sourceId,
+        properties: {
+          payload: safePayload,
+          headers: this.normalizeWebhookHeaders(headers),
+          receivedAt: new Date().toISOString(),
+        } as Prisma.InputJsonValue,
+      },
+      select: { id: true, timestamp: true },
+    });
+
+    let upserted = 0;
+    const warnings: string[] = [];
+
+    if (webhookOrders.length === 0) {
+      warnings.push('Missing order payload or shop_id');
+    } else {
+      const ordersByShopId = new Map<string, any[]>();
+      for (const order of webhookOrders) {
+        const shopId = order?.shop_id?.toString?.()?.trim?.() || order?.shopId?.toString?.()?.trim?.() || '';
+        if (!shopId) {
+          warnings.push('Skipped order with missing shop_id');
+          continue;
+        }
+        const list = ordersByShopId.get(shopId) || [];
+        list.push(order);
+        ordersByShopId.set(shopId, list);
+      }
+
+      if (ordersByShopId.size > 0) {
+        const shopIds = Array.from(ordersByShopId.keys());
+        const stores = await this.prisma.posStore.findMany({
+          where: {
+            tenantId: tenant.id,
+            shopId: { in: shopIds },
+          },
+          select: {
+            id: true,
+            shopId: true,
+            teamId: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+        });
+
+        const storeByShopId = new Map<string, { id: string; teamId: string | null }>();
+        for (const store of stores) {
+          if (!storeByShopId.has(store.shopId)) {
+            storeByShopId.set(store.shopId, { id: store.id, teamId: store.teamId || null });
+          }
+        }
+
+        for (const [shopId, orders] of ordersByShopId.entries()) {
+          const store = storeByShopId.get(shopId);
+          if (!store) {
+            warnings.push(`No POS store found for shop_id=${shopId}`);
+            continue;
+          }
+
+          try {
+            upserted += await this.posOrderService.upsertPosOrders(
+              tenant.id,
+              store.id,
+              orders,
+              store.teamId,
+            );
+          } catch (error: any) {
+            warnings.push(
+              `Failed to upsert shop_id=${shopId}: ${error?.message || 'Unknown error'}`,
+            );
+          }
+        }
+      }
+    }
+
+    return {
+      accepted: true,
+      eventId: event.id,
+      receivedAt: event.timestamp.toISOString(),
+      message: warnings.length > 0 ? 'Webhook received with upsert warning' : 'Webhook received and upserted',
+      upserted,
+      warning: warnings.length > 0 ? warnings.join(' | ') : null,
+    };
+  }
 
   /**
    * Build an access-aware where clause for integrations, respecting team scope and sharing.

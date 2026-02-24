@@ -1,5 +1,6 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { IntegrationController } from './integration.controller';
+import { PancakeWebhookController } from './pancake-webhook.controller';
 import { IntegrationService } from './integration.service';
 import { EncryptionService } from './services/encryption.service';
 import { MetaInsightService } from './services/meta-insight.service';
@@ -13,7 +14,7 @@ import { IntegrationProvider } from './dto/create-integration.dto';
 
 @Module({
   imports: [PrismaModule],
-  controllers: [IntegrationController],
+  controllers: [IntegrationController, PancakeWebhookController],
   providers: [
     IntegrationService,
     EncryptionService,

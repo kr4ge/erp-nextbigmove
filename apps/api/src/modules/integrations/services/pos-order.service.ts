@@ -550,17 +550,28 @@ export class PosOrderService {
     }
 
     for (const rawOrder of rawOrders) {
+      const status = Number(rawOrder?.status);
+      const shopId = rawOrder?.shop_id?.toString();
+      const posOrderId = rawOrder?.id?.toString();
+
+      // Restriction: do not persist status 7 orders; remove existing rows if present.
+      if (status === 7) {
+        if (shopId && posOrderId) {
+          await this.prisma.posOrder.deleteMany({
+            where: { tenantId, shopId, posOrderId },
+          });
+        }
+        continue;
+      }
+
       const sourceName = rawOrder?.order_sources_name?.toString?.().trim?.() || '';
       const sourceNameLower = sourceName.toLowerCase();
       if (sourceNameLower === 'tiktok' || sourceNameLower === 'shopee') {
         continue;
       }
 
-      const status = Number(rawOrder?.status);
       const hasInvalidTag = this.hasTagNameInList(rawOrder?.tags, ['duplicate order', 'no product']);
       if (status === 6 && hasInvalidTag) {
-        const shopId = rawOrder?.shop_id?.toString();
-        const posOrderId = rawOrder?.id?.toString();
         if (shopId && posOrderId) {
           await this.prisma.posOrder.deleteMany({
             where: { tenantId, shopId, posOrderId },

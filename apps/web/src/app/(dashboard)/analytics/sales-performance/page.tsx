@@ -516,6 +516,20 @@ export default function SalesPerformancePage() {
 
   const rangeLabel = startDate === endDate ? startDate : `${startDate} → ${endDate}`;
 
+  const handleDateRangeChange = (val: any) => {
+    const nextStart = val?.startDate || today;
+    const nextEnd = val?.endDate || today;
+    setRange({ startDate: nextStart, endDate: nextEnd });
+    const formatDate = (d: any) => {
+      if (!d) return today;
+      if (typeof d === 'string') return d.slice(0, 10);
+      if (d instanceof Date) return formatDateInTimezone(d);
+      return today;
+    };
+    setStartDate(formatDate(nextStart));
+    setEndDate(formatDate(nextEnd));
+  };
+
   const handleDeleteOrders = async () => {
     if (isDeleting) return;
     setIsDeleting(true);
@@ -1419,19 +1433,7 @@ export default function SalesPerformancePage() {
               <div className="relative">
                 <Datepicker
                   value={range}
-                  onChange={(val: any) => {
-                    const nextStart = val?.startDate || today;
-                    const nextEnd = val?.endDate || today;
-                    setRange({ startDate: nextStart, endDate: nextEnd });
-                    const formatDate = (d: any) => {
-                      if (!d) return today;
-                      if (typeof d === 'string') return d.slice(0, 10);
-                      if (d instanceof Date) return formatDateInTimezone(d);
-                      return today;
-                    };
-                    setStartDate(formatDate(nextStart));
-                    setEndDate(formatDate(nextEnd));
-                  }}
+                  onChange={handleDateRangeChange}
                   inputClassName="rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
                   containerClassName=""
                   popupClassName={(defaultClass: string) => `${defaultClass} z-50`}
@@ -1934,6 +1936,19 @@ export default function SalesPerformancePage() {
                   </div>
                 </div>
               )}
+            </div>
+            <div className="relative">
+              <Datepicker
+                value={range}
+                onChange={handleDateRangeChange}
+                inputClassName="w-[220px] rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
+                containerClassName=""
+                popupClassName={(defaultClass: string) => `${defaultClass} z-50`}
+                displayFormat="MM/DD/YYYY"
+                separator=" – "
+                toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                placeholder=""
+              />
             </div>
           </div>
         </div>

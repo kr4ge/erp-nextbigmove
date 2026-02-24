@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  Req,
 } from '@nestjs/common';
 import { IntegrationService } from './integration.service';
 import {
@@ -20,17 +21,31 @@ import {
   ListIntegrationsDto,
   ListPosStoresDto,
   UpdatePosStoreDto,
+  UpdatePancakeWebhookDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { TeamGuard } from '../../common/guards/team.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { Request } from 'express';
 
 @Controller('integrations')
 @UseGuards(JwtAuthGuard, TenantGuard, TeamGuard, PermissionsGuard)
 export class IntegrationController {
   constructor(private readonly integrationService: IntegrationService) {}
+
+  private getBaseUrl(req: Request): string {
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const proto = typeof forwardedProto === 'string'
+      ? forwardedProto.split(',')[0].trim()
+      : req.protocol || 'https';
+    const forwardedHost = req.headers['x-forwarded-host'];
+    const host = typeof forwardedHost === 'string'
+      ? forwardedHost.split(',')[0].trim()
+      : req.get('host') || '';
+    return `${proto}://${host}`;
+  }
 
   /**
    * Create a new integration
@@ -88,6 +103,36 @@ export class IntegrationController {
     @Query() query: ListPosStoresDto,
   ) {
     return this.integrationService.listPosStores(query);
+  }
+
+  /**
+   * Pancake webhook config (tenant-level)
+   */
+  @Get('/pancake/webhook')
+  @Permissions('integration.webhook.read')
+  async getPancakeWebhookConfig(@Req() req: Request) {
+    return this.integrationService.getPancakeWebhookConfig(this.getBaseUrl(req));
+  }
+
+  /**
+   * Rotate Pancake webhook API key (tenant-level)
+   */
+  @Post('/pancake/webhook/rotate-key')
+  @Permissions('integration.webhook.update')
+  async rotatePancakeWebhookApiKey(@Req() req: Request) {
+    return this.integrationService.rotatePancakeWebhookApiKey(this.getBaseUrl(req));
+  }
+
+  /**
+   * Enable or disable Pancake webhook (tenant-level)
+   */
+  @Patch('/pancake/webhook')
+  @Permissions('integration.webhook.update')
+  async updatePancakeWebhook(
+    @Body() dto: UpdatePancakeWebhookDto,
+    @Req() req: Request,
+  ) {
+    return this.integrationService.updatePancakeWebhookEnabled(dto.enabled, this.getBaseUrl(req));
   }
 
   /**
