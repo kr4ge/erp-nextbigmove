@@ -44,6 +44,17 @@ interface PosOrderData {
   assigningCare?: string | null;
 }
 
+export type PosOrderUpsertStatus = 'UPSERTED' | 'SKIPPED' | 'DELETED' | 'FAILED';
+
+export interface PosOrderUpsertOutcome {
+  shopId: string | null;
+  orderId: string | null;
+  status: number | null;
+  upsertStatus: PosOrderUpsertStatus;
+  reason?: string;
+  warning?: string;
+}
+
 @Injectable()
 export class PosOrderService {
   constructor(private readonly prisma: PrismaService) {}
@@ -535,7 +546,28 @@ export class PosOrderService {
     rawOrders: any[],
     teamId: string | null,
   ): Promise<number> {
+    const result = await this.upsertPosOrdersInternal(tenantId, storeId, rawOrders, teamId, true);
+    return result.upserted;
+  }
+
+  async upsertPosOrdersWithOutcomes(
+    tenantId: string,
+    storeId: string,
+    rawOrders: any[],
+    teamId: string | null,
+  ): Promise<{ upserted: number; outcomes: PosOrderUpsertOutcome[] }> {
+    return this.upsertPosOrdersInternal(tenantId, storeId, rawOrders, teamId, false);
+  }
+
+  private async upsertPosOrdersInternal(
+    tenantId: string,
+    storeId: string,
+    rawOrders: any[],
+    teamId: string | null,
+    throwOnFailure: boolean,
+  ): Promise<{ upserted: number; outcomes: PosOrderUpsertOutcome[] }> {
     let upserted = 0;
+    const outcomes: PosOrderUpsertOutcome[] = [];
 
     const store = await this.prisma.posStore.findFirst({
       where: { id: storeId, tenantId },
@@ -550,9 +582,10 @@ export class PosOrderService {
     }
 
     for (const rawOrder of rawOrders) {
-      const status = Number(rawOrder?.status);
-      const shopId = rawOrder?.shop_id?.toString();
-      const posOrderId = rawOrder?.id?.toString();
+      const statusRaw = Number(rawOrder?.status);
+      const status = Number.isFinite(statusRaw) ? statusRaw : null;
+      const shopId = rawOrder?.shop_id?.toString?.()?.trim?.() || null;
+      const posOrderId = rawOrder?.id?.toString?.()?.trim?.() || null;
 
       // Restriction: do not persist status 7 orders; remove existing rows if present.
       if (status === 7) {
@@ -561,12 +594,26 @@ export class PosOrderService {
             where: { tenantId, shopId, posOrderId },
           });
         }
+        outcomes.push({
+          shopId,
+          orderId: posOrderId,
+          status,
+          upsertStatus: 'DELETED',
+          reason: 'STATUS_7_EXCLUDED',
+        });
         continue;
       }
 
       const sourceName = rawOrder?.order_sources_name?.toString?.().trim?.() || '';
       const sourceNameLower = sourceName.toLowerCase();
       if (sourceNameLower === 'tiktok' || sourceNameLower === 'shopee') {
+        outcomes.push({
+          shopId,
+          orderId: posOrderId,
+          status,
+          upsertStatus: 'SKIPPED',
+          reason: `SOURCE_EXCLUDED_${sourceNameLower.toUpperCase()}`,
+        });
         continue;
       }
 
@@ -577,101 +624,148 @@ export class PosOrderService {
             where: { tenantId, shopId, posOrderId },
           });
         }
+        outcomes.push({
+          shopId,
+          orderId: posOrderId,
+          status,
+          upsertStatus: 'DELETED',
+          reason: 'STATUS_6_INVALID_TAG',
+        });
         continue;
       }
 
       const items = Array.isArray(rawOrder.items) ? rawOrder.items : [];
       const hasProduct = items.some((item: any) => !!item?.product_id);
       if (items.length === 0 || !hasProduct) {
+        outcomes.push({
+          shopId,
+          orderId: posOrderId,
+          status,
+          upsertStatus: 'SKIPPED',
+          reason: 'NO_PRODUCT_ITEMS',
+        });
         continue;
       }
 
-      const order = await this.parsePosOrder(
-        tenantId,
-        storeId,
-        rawOrder,
-        initialValueOffer,
-      );
+      try {
+        const order = await this.parsePosOrder(
+          tenantId,
+          storeId,
+          rawOrder,
+          initialValueOffer,
+        );
 
-      await this.prisma.posOrder.upsert({
-        where: {
-          tenantId_shopId_posOrderId: {
+        await this.prisma.posOrder.upsert({
+          where: {
+            tenantId_shopId_posOrderId: {
+              tenantId,
+              shopId: order.shopId,
+              posOrderId: order.posOrderId,
+            },
+          },
+          create: {
             tenantId,
+            teamId,
             shopId: order.shopId,
             posOrderId: order.posOrderId,
+            insertedAt: order.insertedAt,
+            dateLocal: order.dateLocal,
+            deliveredAt: order.deliveredAt,
+            rtsAt: order.rtsAt,
+            status: order.status,
+            statusName: order.statusName,
+            cod: order.cod ? new Decimal(order.cod) : null,
+            salesCod: new Decimal(order.salesCod || 0),
+            mktgCod: new Decimal(order.mktgCod || 0),
+            isMarketingSource: !!order.isMarketingSource,
+            forUpsell: !!order.forUpsell,
+            isRiskConfirmation: !!order.isRiskConfirmation,
+            pUtmCampaign: order.pUtmCampaign,
+            pUtmContent: order.pUtmContent,
+            cogs: new Decimal(order.cogs),
+            totalQuantity: order.totalQuantity,
+            tracking: order.tracking,
+            mapping: order.mapping,
+            itemData: order.itemData,
+            tags: this.jsonOrDbNull(order.tags),
+            customerCare: order.customerCare,
+            marketer: order.marketer,
+            salesAssignee: order.salesAssignee,
+            customerName: order.customerName,
+            customerPhone: order.customerPhone,
+            customerAddress: order.customerAddress,
+            statusHistory: this.jsonOrDbNull(order.statusHistory),
+            rtsReason: this.jsonOrDbNull(order.rtsReason),
+            upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
+            assigningCare: order.assigningCare,
           },
-        },
-        create: {
-          tenantId,
-          teamId,
-          shopId: order.shopId,
-          posOrderId: order.posOrderId,
-          insertedAt: order.insertedAt,
-          dateLocal: order.dateLocal,
-          deliveredAt: order.deliveredAt,
-          rtsAt: order.rtsAt,
-          status: order.status,
-          statusName: order.statusName,
-          cod: order.cod ? new Decimal(order.cod) : null,
-          salesCod: new Decimal(order.salesCod || 0),
-          mktgCod: new Decimal(order.mktgCod || 0),
-          isMarketingSource: !!order.isMarketingSource,
-          forUpsell: !!order.forUpsell,
-          isRiskConfirmation: !!order.isRiskConfirmation,
-          pUtmCampaign: order.pUtmCampaign,
-          pUtmContent: order.pUtmContent,
-          cogs: new Decimal(order.cogs),
-          totalQuantity: order.totalQuantity,
-          tracking: order.tracking,
-          mapping: order.mapping,
-          itemData: order.itemData,
-          tags: this.jsonOrDbNull(order.tags),
-          customerCare: order.customerCare,
-          marketer: order.marketer,
-          salesAssignee: order.salesAssignee,
-          customerName: order.customerName,
-          customerPhone: order.customerPhone,
-          customerAddress: order.customerAddress,
-          statusHistory: this.jsonOrDbNull(order.statusHistory),
-          rtsReason: this.jsonOrDbNull(order.rtsReason),
-          upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
-          assigningCare: order.assigningCare,
-        },
-        update: {
-          teamId,
-          insertedAt: order.insertedAt,
-          ...(order.deliveredAt ? { deliveredAt: order.deliveredAt } : {}),
-          ...(order.rtsAt ? { rtsAt: order.rtsAt } : {}),
-          status: order.status,
-          statusName: order.statusName,
-          cod: order.cod ? new Decimal(order.cod) : null,
-          salesCod: new Decimal(order.salesCod || 0),
-          mktgCod: new Decimal(order.mktgCod || 0),
-          isMarketingSource: !!order.isMarketingSource,
-          forUpsell: !!order.forUpsell,
-          isRiskConfirmation: !!order.isRiskConfirmation,
-          pUtmCampaign: order.pUtmCampaign,
-          pUtmContent: order.pUtmContent,
-          cogs: new Decimal(order.cogs),
-          totalQuantity: order.totalQuantity,
-          tracking: order.tracking,
-          mapping: order.mapping,
-          itemData: order.itemData,
-          tags: this.jsonOrDbNull(order.tags),
-          customerCare: order.customerCare,
-          marketer: order.marketer,
-          salesAssignee: order.salesAssignee,
-          customerName: order.customerName,
-          customerPhone: order.customerPhone,
-          customerAddress: order.customerAddress,
-          statusHistory: this.jsonOrDbNull(order.statusHistory),
-          rtsReason: this.jsonOrDbNull(order.rtsReason),
-          upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
-          assigningCare: order.assigningCare,
-        },
-      });
+          update: {
+            teamId,
+            insertedAt: order.insertedAt,
+            ...(order.deliveredAt ? { deliveredAt: order.deliveredAt } : {}),
+            ...(order.rtsAt ? { rtsAt: order.rtsAt } : {}),
+            status: order.status,
+            statusName: order.statusName,
+            cod: order.cod ? new Decimal(order.cod) : null,
+            salesCod: new Decimal(order.salesCod || 0),
+            mktgCod: new Decimal(order.mktgCod || 0),
+            isMarketingSource: !!order.isMarketingSource,
+            forUpsell: !!order.forUpsell,
+            isRiskConfirmation: !!order.isRiskConfirmation,
+            pUtmCampaign: order.pUtmCampaign,
+            pUtmContent: order.pUtmContent,
+            cogs: new Decimal(order.cogs),
+            totalQuantity: order.totalQuantity,
+            tracking: order.tracking,
+            mapping: order.mapping,
+            itemData: order.itemData,
+            tags: this.jsonOrDbNull(order.tags),
+            customerCare: order.customerCare,
+            marketer: order.marketer,
+            salesAssignee: order.salesAssignee,
+            customerName: order.customerName,
+            customerPhone: order.customerPhone,
+            customerAddress: order.customerAddress,
+            statusHistory: this.jsonOrDbNull(order.statusHistory),
+            rtsReason: this.jsonOrDbNull(order.rtsReason),
+            upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
+            assigningCare: order.assigningCare,
+          },
+        });
 
-      upserted++;
+        upserted++;
+        outcomes.push({
+          shopId: order.shopId || shopId,
+          orderId: order.posOrderId || posOrderId,
+          status: typeof order.status === 'number' ? order.status : status,
+          upsertStatus: 'UPSERTED',
+        });
+      } catch (error: any) {
+        const message = error?.message || 'Unknown error';
+        if (message === 'skip_abandoned_checkout') {
+          outcomes.push({
+            shopId,
+            orderId: posOrderId,
+            status,
+            upsertStatus: 'SKIPPED',
+            reason: 'ABANDONED_CHECKOUT',
+          });
+          continue;
+        }
+
+        outcomes.push({
+          shopId,
+          orderId: posOrderId,
+          status,
+          upsertStatus: 'FAILED',
+          reason: 'ORDER_UPSERT_FAILED',
+          warning: message.toString().slice(0, 300),
+        });
+
+        if (throwOnFailure) {
+          throw error;
+        }
+      }
     }
 
     // Backfill forUpsell for existing orders in this store (tenant scope)
@@ -702,7 +796,7 @@ export class PosOrderService {
       `;
     }
 
-    return upserted;
+    return { upserted, outcomes };
   }
 
   /**

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Copy, Eye, EyeOff, KeyRound, RefreshCcw, Webhook } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { FormInput } from '@/components/ui/form-input';
@@ -27,6 +27,57 @@ type WebhookConfig = {
   relayHeaderKey: string;
 };
 
+type WebhookLogOrder = {
+  id: string;
+  shopId: string | null;
+  orderId: string | null;
+  status: number | null;
+  upsertStatus: string;
+  reason: string | null;
+  warning: string | null;
+  createdAt: string;
+};
+
+type WebhookLogItem = {
+  id: string;
+  requestTenantId: string | null;
+  requestId: string;
+  source: string;
+  receiveHttpStatus: number | null;
+  receiveStatus: string;
+  processStatus: string;
+  relayStatus: string | null;
+  payloadHash: string | null;
+  payloadBytes: number | null;
+  orderCount: number;
+  upsertedCount: number;
+  warningCount: number;
+  attempts: number;
+  queueJobId: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  receiveDurationMs: number | null;
+  processingDurationMs: number | null;
+  totalDurationMs: number | null;
+  receivedAt: string;
+  processingStartedAt: string | null;
+  processedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  orderRowsCount: number;
+  orders: WebhookLogOrder[];
+};
+
+type WebhookLogsResponse = {
+  items: WebhookLogItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+};
+
 const parseErrorMessage = (error: any): string => {
   const data = error?.response?.data;
   if (typeof data === 'string' && data.trim()) return data;
@@ -44,6 +95,30 @@ const formatDateTime = (value?: string | null) => {
 
 const maskApiKey = (key: string) => '•'.repeat(Math.max(12, key.length));
 
+const toStatusBadgeClass = (status: string | null | undefined) => {
+  const normalized = (status || '').toUpperCase();
+  if (normalized === 'PROCESSED' || normalized === 'ACCEPTED' || normalized === 'SUCCESS') {
+    return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+  }
+  if (normalized === 'QUEUED' || normalized === 'PROCESSING' || normalized === 'RECEIVED' || normalized === 'PARTIAL') {
+    return 'bg-amber-50 text-amber-700 ring-amber-200';
+  }
+  if (normalized === 'SKIPPED') {
+    return 'bg-slate-50 text-slate-600 ring-slate-200';
+  }
+  if (!normalized) {
+    return 'bg-slate-50 text-slate-600 ring-slate-200';
+  }
+  return 'bg-rose-50 text-rose-700 ring-rose-200';
+};
+
+const formatDuration = (value?: number | null) => {
+  if (value === null || value === undefined) return '--';
+  if (!Number.isFinite(value)) return '--';
+  if (value < 1000) return `${value} ms`;
+  return `${(value / 1000).toFixed(2)} s`;
+};
+
 export default function WebhookSettingsPage() {
   const { addToast } = useToast();
   const [config, setConfig] = useState<WebhookConfig | null>(null);
@@ -59,6 +134,20 @@ export default function WebhookSettingsPage() {
   const [relayApiKeyInput, setRelayApiKeyInput] = useState('');
   const [permissions, setPermissions] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [logs, setLogs] = useState<WebhookLogsResponse | null>(null);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsLimit] = useState(10);
+  const [logsReceiveStatus, setLogsReceiveStatus] = useState('');
+  const [logsProcessStatus, setLogsProcessStatus] = useState('');
+  const [logsRelayStatus, setLogsRelayStatus] = useState('');
+  const [logsShopId, setLogsShopId] = useState('');
+  const [logsOrderId, setLogsOrderId] = useState('');
+  const [logsSearch, setLogsSearch] = useState('');
+  const [logsStartDate, setLogsStartDate] = useState('');
+  const [logsEndDate, setLogsEndDate] = useState('');
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   const canRead = useMemo(
     () =>
@@ -124,10 +213,69 @@ export default function WebhookSettingsPage() {
     }
   };
 
+  const fetchWebhookLogs = async () => {
+    if (!canRead) return;
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      const params: Record<string, string | number> = {
+        page: logsPage,
+        limit: logsLimit,
+      };
+      if (logsReceiveStatus) params.receive_status = logsReceiveStatus;
+      if (logsProcessStatus) params.process_status = logsProcessStatus;
+      if (logsRelayStatus) params.relay_status = logsRelayStatus;
+      if (logsShopId.trim()) params.shop_id = logsShopId.trim();
+      if (logsOrderId.trim()) params.order_id = logsOrderId.trim();
+      if (logsSearch.trim()) params.search = logsSearch.trim();
+      if (logsStartDate) params.start_date = logsStartDate;
+      if (logsEndDate) params.end_date = logsEndDate;
+
+      const res = await apiClient.get<WebhookLogsResponse>('/integrations/pancake/webhook/logs', {
+        params,
+      });
+      setLogs(res.data);
+    } catch (error: any) {
+      setLogsError(parseErrorMessage(error));
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchPermissions();
     fetchWebhookConfig();
   }, []);
+
+  useEffect(() => {
+    setLogsPage(1);
+  }, [
+    logsReceiveStatus,
+    logsProcessStatus,
+    logsRelayStatus,
+    logsShopId,
+    logsOrderId,
+    logsSearch,
+    logsStartDate,
+    logsEndDate,
+  ]);
+
+  useEffect(() => {
+    fetchWebhookLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    canRead,
+    logsPage,
+    logsLimit,
+    logsReceiveStatus,
+    logsProcessStatus,
+    logsRelayStatus,
+    logsShopId,
+    logsOrderId,
+    logsSearch,
+    logsStartDate,
+    logsEndDate,
+  ]);
 
   const handleCopy = async (value: string, label: string) => {
     if (!value) return;
@@ -241,6 +389,12 @@ export default function WebhookSettingsPage() {
       setIsUpdatingRelay(false);
     }
   };
+
+  const logItems = logs?.items || [];
+  const logsTotal = logs?.pagination?.total || 0;
+  const logsTotalPages = logs?.pagination?.totalPages || 1;
+  const logsStart = logsTotal === 0 ? 0 : (logsPage - 1) * logsLimit + 1;
+  const logsEnd = Math.min(logsPage * logsLimit, logsTotal);
 
   return (
     <div className="space-y-6">
@@ -505,6 +659,284 @@ export default function WebhookSettingsPage() {
               <div>
                 Updated by: <span className="font-semibold text-slate-700">{config?.relayUpdatedByUserId || '--'}</span>
               </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="space-y-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900">Webhook Logs</h2>
+              <p className="text-sm text-slate-600">
+                Monitor API receive status, processing status, duration, and per-order results.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={fetchWebhookLogs}
+              disabled={logsLoading || !canRead}
+              iconLeft={<RefreshCcw className="h-4 w-4" />}
+            >
+              Refresh
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
+            <select
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              value={logsReceiveStatus}
+              onChange={(e) => setLogsReceiveStatus(e.target.value)}
+            >
+              <option value="">All Receive</option>
+              <option value="ACCEPTED">ACCEPTED</option>
+              <option value="AUTH_FAILED">AUTH_FAILED</option>
+              <option value="DISABLED">DISABLED</option>
+              <option value="INVALID_TENANT">INVALID_TENANT</option>
+              <option value="FAILED">FAILED</option>
+            </select>
+
+            <select
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              value={logsProcessStatus}
+              onChange={(e) => setLogsProcessStatus(e.target.value)}
+            >
+              <option value="">All Process</option>
+              <option value="QUEUED">QUEUED</option>
+              <option value="PROCESSING">PROCESSING</option>
+              <option value="PROCESSED">PROCESSED</option>
+              <option value="PARTIAL">PARTIAL</option>
+              <option value="FAILED">FAILED</option>
+              <option value="SKIPPED">SKIPPED</option>
+            </select>
+
+            <select
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              value={logsRelayStatus}
+              onChange={(e) => setLogsRelayStatus(e.target.value)}
+            >
+              <option value="">All Relay</option>
+              <option value="SUCCESS">SUCCESS</option>
+              <option value="FAILED">FAILED</option>
+              <option value="SKIPPED">SKIPPED</option>
+            </select>
+
+            <input
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              value={logsShopId}
+              onChange={(e) => setLogsShopId(e.target.value)}
+              placeholder="Shop ID"
+            />
+
+            <input
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              value={logsOrderId}
+              onChange={(e) => setLogsOrderId(e.target.value)}
+              placeholder="Order ID"
+            />
+
+            <input
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              value={logsSearch}
+              onChange={(e) => setLogsSearch(e.target.value)}
+              placeholder="Search request/error"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+            <input
+              type="date"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              value={logsStartDate}
+              onChange={(e) => setLogsStartDate(e.target.value)}
+            />
+            <input
+              type="date"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              value={logsEndDate}
+              onChange={(e) => setLogsEndDate(e.target.value)}
+            />
+            <div className="lg:col-span-2 flex items-center justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setLogsReceiveStatus('');
+                  setLogsProcessStatus('');
+                  setLogsRelayStatus('');
+                  setLogsShopId('');
+                  setLogsOrderId('');
+                  setLogsSearch('');
+                  setLogsStartDate('');
+                  setLogsEndDate('');
+                }}
+              >
+                Clear filters
+              </Button>
+            </div>
+          </div>
+
+          {logsError && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {logsError}
+            </div>
+          )}
+
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-100">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Received</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Request</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">API</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Process</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Relay</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Duration</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Orders</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Error / Warning</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {logsLoading ? (
+                  <tr>
+                    <td className="px-3 py-6 text-sm text-slate-500" colSpan={8}>
+                      Loading webhook logs...
+                    </td>
+                  </tr>
+                ) : logItems.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-6 text-sm text-slate-500" colSpan={8}>
+                      No webhook logs found for the selected filters.
+                    </td>
+                  </tr>
+                ) : (
+                  logItems.map((row) => (
+                    <Fragment key={row.id}>
+                      <tr
+                        className="cursor-pointer hover:bg-slate-50"
+                        onClick={() => setExpandedLogId((prev) => (prev === row.id ? null : row.id))}
+                      >
+                        <td className="px-3 py-3 text-xs text-slate-600 whitespace-nowrap">
+                          {formatDateTime(row.receivedAt)}
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-700">
+                          <div className="font-mono text-[11px] text-slate-900">{row.requestId}</div>
+                          <div className="text-slate-500">job: {row.queueJobId || '--'}</div>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-700 whitespace-nowrap">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${toStatusBadgeClass(row.receiveStatus)}`}>
+                            {row.receiveStatus}
+                          </span>
+                          <div className="text-slate-500 mt-1">{row.receiveHttpStatus ?? '--'}</div>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-700 whitespace-nowrap">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${toStatusBadgeClass(row.processStatus)}`}>
+                            {row.processStatus}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-700 whitespace-nowrap">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${toStatusBadgeClass(row.relayStatus)}`}>
+                            {row.relayStatus || 'SKIPPED'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-700 whitespace-nowrap">
+                          <div>receive: {formatDuration(row.receiveDurationMs)}</div>
+                          <div>process: {formatDuration(row.processingDurationMs)}</div>
+                          <div className="font-semibold text-slate-900">total: {formatDuration(row.totalDurationMs)}</div>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-700 whitespace-nowrap">
+                          <div>rows: {row.orderRowsCount}</div>
+                          <div>upserted: {row.upsertedCount}</div>
+                          <div>warnings: {row.warningCount}</div>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-700">
+                          <div className="font-semibold text-rose-700">{row.errorCode || '--'}</div>
+                          <div className="text-slate-500 max-w-[340px] truncate">{row.errorMessage || '--'}</div>
+                        </td>
+                      </tr>
+                      {expandedLogId === row.id && (
+                        <tr key={`${row.id}-expanded`} className="bg-slate-50">
+                          <td className="px-3 py-3" colSpan={8}>
+                            <div className="rounded-lg border border-slate-200 bg-white p-3">
+                              <div className="mb-2 text-xs text-slate-500">
+                                payload size: {row.payloadBytes ?? 0} bytes • attempts: {row.attempts}
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-slate-100">
+                                  <thead className="bg-slate-50">
+                                    <tr>
+                                      <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Shop ID</th>
+                                      <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Order ID</th>
+                                      <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Status</th>
+                                      <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Result</th>
+                                      <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Reason</th>
+                                      <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Warning</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {row.orders.length > 0 ? (
+                                      row.orders.map((order) => (
+                                        <tr key={order.id}>
+                                          <td className="px-2 py-2 text-xs text-slate-700">{order.shopId || '--'}</td>
+                                          <td className="px-2 py-2 text-xs text-slate-700">{order.orderId || '--'}</td>
+                                          <td className="px-2 py-2 text-xs text-slate-700">{order.status ?? '--'}</td>
+                                          <td className="px-2 py-2 text-xs text-slate-700">
+                                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${toStatusBadgeClass(order.upsertStatus)}`}>
+                                              {order.upsertStatus}
+                                            </span>
+                                          </td>
+                                          <td className="px-2 py-2 text-xs text-slate-700">{order.reason || '--'}</td>
+                                          <td className="px-2 py-2 text-xs text-slate-500">{order.warning || '--'}</td>
+                                        </tr>
+                                      ))
+                                    ) : (
+                                      <tr>
+                                        <td className="px-2 py-3 text-xs text-slate-500" colSpan={6}>
+                                          No per-order rows captured.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">
+              Showing {logsStart}-{logsEnd} of {logsTotal}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={logsPage <= 1 || logsLoading}
+                onClick={() => setLogsPage((prev) => Math.max(1, prev - 1))}
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={logsPage >= logsTotalPages || logsLoading}
+                onClick={() => setLogsPage((prev) => Math.min(logsTotalPages, prev + 1))}
+              >
+                Next
+              </Button>
             </div>
           </div>
         </div>

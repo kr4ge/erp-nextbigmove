@@ -29,6 +29,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         'pos_stores',
         'pos_products',
         'analytics_events',
+        'pancake_webhook_logs',
+        'pancake_webhook_log_orders',
         'audit_logs',
       ];
 

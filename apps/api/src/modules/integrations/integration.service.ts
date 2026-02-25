@@ -16,7 +16,10 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import { EncryptionService } from './services/encryption.service';
 import { ProviderFactory } from './providers/provider.factory';
-import { PosOrderService } from './services/pos-order.service';
+import {
+  PosOrderService,
+  PosOrderUpsertOutcome,
+} from './services/pos-order.service';
 import {
   CreateIntegrationDto,
   UpdateIntegrationDto,
@@ -52,6 +55,43 @@ type PancakeWebhookSettings = {
   relayKeyLast4?: string;
   relayUpdatedAt?: string;
   relayUpdatedByUserId?: string;
+};
+
+type PancakeWebhookProcessStatus =
+  | 'SKIPPED'
+  | 'QUEUED'
+  | 'PROCESSING'
+  | 'PROCESSED'
+  | 'PARTIAL'
+  | 'FAILED';
+
+type PancakeWebhookRelayStatus = 'SKIPPED' | 'SUCCESS' | 'FAILED';
+
+type PancakeWebhookOrderRef = {
+  shopId: string | null;
+  orderId: string | null;
+  status: number | null;
+};
+
+type PancakeWebhookPayloadProcessingResult = {
+  upserted: number;
+  warnings: string[];
+  relayStatus: PancakeWebhookRelayStatus;
+  outcomes: PosOrderUpsertOutcome[];
+};
+
+type ListPancakeWebhookLogsParams = {
+  page?: number;
+  limit?: number;
+  receiveStatus?: string;
+  processStatus?: string;
+  relayStatus?: string;
+  shopId?: string;
+  orderId?: string;
+  requestId?: string;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
 };
 
 @Injectable()
@@ -176,6 +216,106 @@ export class IntegrationService {
     return out;
   }
 
+  private buildWebhookRequestId(headers: Record<string, any> = {}): string {
+    const candidate =
+      headers['x-request-id'] ||
+      headers['x-correlation-id'] ||
+      headers['cf-ray'] ||
+      headers['x-amzn-trace-id'] ||
+      null;
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim().slice(0, 120);
+    }
+    return `pwh_${Date.now()}_${randomBytes(6).toString('hex')}`;
+  }
+
+  private toPayloadFingerprint(payload: any): { hash: string | null; bytes: number } {
+    try {
+      const serialized = JSON.stringify(payload ?? {});
+      return {
+        hash: createHash('sha256').update(serialized).digest('hex'),
+        bytes: Buffer.byteLength(serialized, 'utf8'),
+      };
+    } catch {
+      const fallback = String(payload ?? '');
+      return {
+        hash: createHash('sha256').update(fallback).digest('hex'),
+        bytes: Buffer.byteLength(fallback, 'utf8'),
+      };
+    }
+  }
+
+  private extractWebhookOrderRefs(payload: any): PancakeWebhookOrderRef[] {
+    const orders = this.extractWebhookOrders(payload);
+    return orders.map((order) => {
+      const statusRaw = Number(order?.status);
+      return {
+        shopId: order?.shop_id?.toString?.()?.trim?.() || order?.shopId?.toString?.()?.trim?.() || null,
+        orderId: order?.id?.toString?.()?.trim?.() || order?.order_id?.toString?.()?.trim?.() || null,
+        status: Number.isFinite(statusRaw) ? statusRaw : null,
+      };
+    });
+  }
+
+  private mapFinalProcessStatus(
+    upserted: number,
+    outcomes: PosOrderUpsertOutcome[],
+    warnings: string[],
+  ): PancakeWebhookProcessStatus {
+    const hasFailed = outcomes.some((row) => row.upsertStatus === 'FAILED');
+    const hasSuccess = upserted > 0;
+    if (hasFailed && hasSuccess) return 'PARTIAL';
+    if (hasFailed && !hasSuccess) return 'FAILED';
+    if (warnings.length > 0 && hasSuccess) return 'PARTIAL';
+    if (hasSuccess) return 'PROCESSED';
+    return warnings.length > 0 ? 'PARTIAL' : 'PROCESSED';
+  }
+
+  private parseLogsDateBound(dateStr: string, endExclusive: boolean): Date {
+    const normalized = dateStr?.trim?.() || '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      throw new BadRequestException('Invalid date format. Expected YYYY-MM-DD');
+    }
+
+    const date = new Date(`${normalized}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Invalid date value');
+    }
+    if (!endExclusive) return date;
+    date.setUTCDate(date.getUTCDate() + 1);
+    return date;
+  }
+
+  private truncateMessage(message: string | undefined, max = 900): string | null {
+    if (!message) return null;
+    const compact = message.toString().trim();
+    if (!compact) return null;
+    return compact.length > max ? compact.slice(0, max) : compact;
+  }
+
+  private async persistWebhookOrderOutcomes(logId: string, outcomes: PosOrderUpsertOutcome[]) {
+    await this.prisma.pancakeWebhookLogOrder.deleteMany({
+      where: { logId },
+    });
+
+    if (!outcomes || outcomes.length === 0) {
+      return;
+    }
+
+    await this.prisma.pancakeWebhookLogOrder.createMany({
+      data: outcomes.map((row) => ({
+        logId,
+        shopId: row.shopId || null,
+        orderId: row.orderId || null,
+        status: typeof row.status === 'number' ? row.status : null,
+        upsertStatus: row.upsertStatus,
+        reason: row.reason || null,
+        warning: this.truncateMessage(row.warning || ''),
+      })),
+      skipDuplicates: false,
+    });
+  }
+
   private getRelayApiKey(
     cfg: PancakeWebhookSettings,
     tenantEncryptionKey?: string,
@@ -203,17 +343,23 @@ export class IntegrationService {
     tenant: { id: string; encryptionKey: string },
     cfg: PancakeWebhookSettings,
     payload: any,
-    eventId: string,
-  ): Promise<string | null> {
-    if (!cfg.relayEnabled) return null;
+    requestId: string,
+  ): Promise<{ relayStatus: PancakeWebhookRelayStatus; warning: string | null }> {
+    if (!cfg.relayEnabled) return { relayStatus: 'SKIPPED', warning: null };
     if (!cfg.relayWebhookUrl) {
-      return 'Relay enabled but relay webhook URL is not configured';
+      return {
+        relayStatus: 'FAILED',
+        warning: 'Relay enabled but relay webhook URL is not configured',
+      };
     }
     const relayHeaderKey = this.getRelayHeaderKey(cfg);
     const relayApiKey = this.getRelayApiKey(cfg, tenant.encryptionKey) || '';
 
     if (!relayApiKey) {
-      return 'Relay API key is empty';
+      return {
+        relayStatus: 'FAILED',
+        warning: 'Relay API key is empty',
+      };
     }
 
     const abortController = new AbortController();
@@ -222,7 +368,7 @@ export class IntegrationService {
     try {
       const relayHeaders: Record<string, string> = {
         'content-type': 'application/json',
-        'x-erp-event-id': eventId,
+        'x-erp-event-id': requestId,
         'x-erp-source': 'pancake-webhook-relay',
       };
       relayHeaders[relayHeaderKey] = relayApiKey;
@@ -237,15 +383,21 @@ export class IntegrationService {
       if (!response.ok) {
         const responseText = await response.text().catch(() => '');
         const compactResponse = responseText ? responseText.toString().slice(0, 180) : '';
-        return `Relay delivery failed (${response.status}${compactResponse ? `: ${compactResponse}` : ''})`;
+        return {
+          relayStatus: 'FAILED',
+          warning: `Relay delivery failed (${response.status}${compactResponse ? `: ${compactResponse}` : ''})`,
+        };
       }
 
-      return null;
+      return { relayStatus: 'SUCCESS', warning: null };
     } catch (error: any) {
       if (error?.name === 'AbortError') {
-        return 'Relay delivery timed out';
+        return { relayStatus: 'FAILED', warning: 'Relay delivery timed out' };
       }
-      return `Relay delivery failed: ${error?.message || 'Unknown error'}`;
+      return {
+        relayStatus: 'FAILED',
+        warning: `Relay delivery failed: ${error?.message || 'Unknown error'}`,
+      };
     } finally {
       clearTimeout(timer);
     }
@@ -329,26 +481,27 @@ export class IntegrationService {
   private async processPancakeWebhookPayload(
     tenant: { id: string; settings: any; encryptionKey: string },
     safePayload: any,
-    eventId: string,
-  ): Promise<{ upserted: number; warnings: string[] }> {
+    requestId: string,
+  ): Promise<PancakeWebhookPayloadProcessingResult> {
     const cfg = this.getPancakeWebhookSettings(tenant.settings);
     const warnings: string[] = [];
     let upserted = 0;
+    const outcomes: PosOrderUpsertOutcome[] = [];
 
-    const relayWarning = await this.forwardPancakeWebhookPayload(
+    const relayResult = await this.forwardPancakeWebhookPayload(
       { id: tenant.id, encryptionKey: tenant.encryptionKey },
       cfg,
       safePayload,
-      eventId,
+      requestId,
     );
-    if (relayWarning) {
-      warnings.push(relayWarning);
+    if (relayResult.warning) {
+      warnings.push(relayResult.warning);
     }
 
     const webhookOrders = this.extractWebhookOrders(safePayload);
     if (webhookOrders.length === 0) {
       warnings.push('Missing order payload or shop_id');
-      return { upserted, warnings };
+      return { upserted, warnings, relayStatus: relayResult.relayStatus, outcomes };
     }
 
     const ordersByShopId = new Map<string, any[]>();
@@ -364,7 +517,7 @@ export class IntegrationService {
     }
 
     if (ordersByShopId.size === 0) {
-      return { upserted, warnings };
+      return { upserted, warnings, relayStatus: relayResult.relayStatus, outcomes };
     }
 
     const shopIds = Array.from(ordersByShopId.keys());
@@ -393,41 +546,73 @@ export class IntegrationService {
       const store = storeByShopId.get(shopId);
       if (!store) {
         warnings.push(`No POS store found for shop_id=${shopId}`);
+        orders.forEach((order) => {
+          const statusRaw = Number(order?.status);
+          outcomes.push({
+            shopId,
+            orderId: order?.id?.toString?.()?.trim?.() || order?.order_id?.toString?.()?.trim?.() || null,
+            status: Number.isFinite(statusRaw) ? statusRaw : null,
+            upsertStatus: 'FAILED',
+            reason: 'STORE_NOT_FOUND',
+          });
+        });
         continue;
       }
 
       try {
-        upserted += await this.posOrderService.upsertPosOrders(
+        const result = await this.posOrderService.upsertPosOrdersWithOutcomes(
           tenant.id,
           store.id,
           orders,
           store.teamId,
         );
+        upserted += result.upserted;
+        outcomes.push(...result.outcomes);
       } catch (error: any) {
         warnings.push(
           `Failed to upsert shop_id=${shopId}: ${error?.message || 'Unknown error'}`,
         );
+        orders.forEach((order) => {
+          const statusRaw = Number(order?.status);
+          outcomes.push({
+            shopId,
+            orderId: order?.id?.toString?.()?.trim?.() || order?.order_id?.toString?.()?.trim?.() || null,
+            status: Number.isFinite(statusRaw) ? statusRaw : null,
+            upsertStatus: 'FAILED',
+            reason: 'SHOP_UPSERT_FAILED',
+            warning: error?.message || 'Unknown error',
+          });
+        });
       }
     }
 
-    return { upserted, warnings };
+    return { upserted, warnings, relayStatus: relayResult.relayStatus, outcomes };
   }
 
-  async processQueuedPancakeWebhookEvent(jobData: PancakeWebhookJobData): Promise<{ upserted: number; warnings: string[] }> {
-    const event = await this.prisma.analyticsEvent.findFirst({
-      where: {
-        id: jobData.eventId,
-        tenantId: jobData.tenantId,
-      },
-      select: {
-        id: true,
-        properties: true,
-      },
+  async processQueuedPancakeWebhookEvent(
+    jobData: PancakeWebhookJobData,
+    runtime?: { jobId?: string; attempts?: number },
+  ): Promise<{ upserted: number; warnings: string[] }> {
+    const startedAt = new Date();
+    const existingLog = await this.prisma.pancakeWebhookLog.findUnique({
+      where: { id: jobData.logId },
+      select: { id: true, receiveDurationMs: true },
     });
 
-    if (!event) {
-      throw new NotFoundException(`Webhook event ${jobData.eventId} not found`);
+    if (!existingLog) {
+      throw new NotFoundException(`Webhook log ${jobData.logId} not found`);
     }
+    const baseReceiveDurationMs = existingLog.receiveDurationMs || 0;
+
+    await this.prisma.pancakeWebhookLog.update({
+      where: { id: jobData.logId },
+      data: {
+        processStatus: 'PROCESSING',
+        processingStartedAt: startedAt,
+        queueJobId: runtime?.jobId || undefined,
+        attempts: runtime?.attempts || undefined,
+      },
+    });
 
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: jobData.tenantId },
@@ -435,19 +620,84 @@ export class IntegrationService {
     });
 
     if (!tenant) {
+      const endedAt = new Date();
+      await this.prisma.pancakeWebhookLog.update({
+        where: { id: jobData.logId },
+        data: {
+          receiveStatus: 'FAILED',
+          processStatus: 'FAILED',
+          relayStatus: 'SKIPPED',
+          errorCode: 'TENANT_NOT_FOUND',
+          errorMessage: 'Tenant not found',
+          processedAt: endedAt,
+          processingDurationMs: endedAt.getTime() - startedAt.getTime(),
+          totalDurationMs: baseReceiveDurationMs + (endedAt.getTime() - startedAt.getTime()),
+        },
+      });
       throw new NotFoundException(`Tenant ${jobData.tenantId} not found`);
     }
 
-    const eventProps = this.normalizeJsonObject(event.properties);
-    const safePayload = eventProps.payload ?? {};
-
-    const result = await this.processPancakeWebhookPayload(tenant, safePayload, event.id);
-    if (result.warnings.length > 0) {
-      this.logger.warn(
-        `Webhook event ${event.id} processed with warnings: ${result.warnings.join(' | ')}`,
+    try {
+      const result = await this.processPancakeWebhookPayload(tenant, jobData.payload ?? {}, jobData.requestId);
+      const endedAt = new Date();
+      const processingDurationMs = endedAt.getTime() - startedAt.getTime();
+      const finalProcessStatus = this.mapFinalProcessStatus(
+        result.upserted,
+        result.outcomes,
+        result.warnings,
       );
+
+      await this.persistWebhookOrderOutcomes(jobData.logId, result.outcomes);
+
+      await this.prisma.pancakeWebhookLog.update({
+        where: { id: jobData.logId },
+        data: {
+          receiveStatus: 'ACCEPTED',
+          receiveHttpStatus: 202,
+          processStatus: finalProcessStatus,
+          relayStatus: result.relayStatus,
+          upsertedCount: result.upserted,
+          warningCount: result.warnings.length,
+          errorCode: finalProcessStatus === 'FAILED' ? 'PROCESS_FAILED' : null,
+          errorMessage:
+            finalProcessStatus === 'FAILED'
+              ? this.truncateMessage(result.warnings[0] || 'Webhook processing failed')
+              : result.warnings.length > 0
+                ? this.truncateMessage(result.warnings.join(' | '))
+                : null,
+          processedAt: endedAt,
+          processingDurationMs,
+          totalDurationMs: baseReceiveDurationMs + processingDurationMs,
+        },
+      });
+
+      if (result.warnings.length > 0) {
+        this.logger.warn(
+          `Webhook log ${jobData.logId} processed with warnings: ${result.warnings.join(' | ')}`,
+        );
+      }
+
+      return { upserted: result.upserted, warnings: result.warnings };
+    } catch (error: any) {
+      const endedAt = new Date();
+      const processingDurationMs = endedAt.getTime() - startedAt.getTime();
+
+      await this.prisma.pancakeWebhookLog.update({
+        where: { id: jobData.logId },
+        data: {
+          receiveStatus: 'FAILED',
+          processStatus: 'FAILED',
+          relayStatus: 'FAILED',
+          errorCode: 'PROCESS_EXCEPTION',
+          errorMessage: this.truncateMessage(error?.message || 'Unknown processing error'),
+          processedAt: endedAt,
+          processingDurationMs,
+          totalDurationMs: baseReceiveDurationMs + processingDurationMs,
+        },
+      });
+
+      throw error;
     }
-    return result;
   }
 
   async getPancakeWebhookConfig(baseUrl: string) {
@@ -479,6 +729,177 @@ export class IntegrationService {
       relayKeyLast4: cfg.relayKeyLast4 || null,
       relayUpdatedAt: cfg.relayUpdatedAt || null,
       relayUpdatedByUserId: cfg.relayUpdatedByUserId || null,
+    };
+  }
+
+  async getPancakeWebhookLogs(params: ListPancakeWebhookLogsParams) {
+    const { tenantId } = await this.teamContext.getContext();
+    const page = Math.max(1, Number(params.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(params.limit || 20)));
+    const skip = (page - 1) * limit;
+
+    const andFilters: Prisma.PancakeWebhookLogWhereInput[] = [{ tenantId }];
+
+    const receiveStatus = params.receiveStatus?.trim();
+    if (receiveStatus) {
+      andFilters.push({ receiveStatus: { equals: receiveStatus.toUpperCase() } });
+    }
+
+    const processStatus = params.processStatus?.trim();
+    if (processStatus) {
+      andFilters.push({ processStatus: { equals: processStatus.toUpperCase() } });
+    }
+
+    const relayStatus = params.relayStatus?.trim();
+    if (relayStatus) {
+      andFilters.push({ relayStatus: { equals: relayStatus.toUpperCase() } });
+    }
+
+    const requestId = params.requestId?.trim();
+    if (requestId) {
+      andFilters.push({
+        requestId: { contains: requestId, mode: 'insensitive' },
+      });
+    }
+
+    const startDate = params.startDate?.trim();
+    const endDate = params.endDate?.trim();
+    if (startDate || endDate) {
+      const receivedAtFilter: Prisma.DateTimeFilter = {};
+      if (startDate) {
+        receivedAtFilter.gte = this.parseLogsDateBound(startDate, false);
+      }
+      if (endDate) {
+        receivedAtFilter.lt = this.parseLogsDateBound(endDate, true);
+      }
+      andFilters.push({ receivedAt: receivedAtFilter });
+    }
+
+    const shopId = params.shopId?.trim();
+    if (shopId) {
+      andFilters.push({
+        orders: {
+          some: {
+            shopId: { contains: shopId, mode: 'insensitive' },
+          },
+        },
+      });
+    }
+
+    const orderId = params.orderId?.trim();
+    if (orderId) {
+      andFilters.push({
+        orders: {
+          some: {
+            orderId: { contains: orderId, mode: 'insensitive' },
+          },
+        },
+      });
+    }
+
+    const search = params.search?.trim();
+    if (search) {
+      andFilters.push({
+        OR: [
+          { requestId: { contains: search, mode: 'insensitive' } },
+          { queueJobId: { contains: search, mode: 'insensitive' } },
+          { errorMessage: { contains: search, mode: 'insensitive' } },
+          {
+            orders: {
+              some: {
+                OR: [
+                  { shopId: { contains: search, mode: 'insensitive' } },
+                  { orderId: { contains: search, mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+        ],
+      });
+    }
+
+    const where: Prisma.PancakeWebhookLogWhereInput =
+      andFilters.length === 1 ? andFilters[0] : { AND: andFilters };
+
+    const [total, logs] = await Promise.all([
+      this.prisma.pancakeWebhookLog.count({ where }),
+      this.prisma.pancakeWebhookLog.findMany({
+        where,
+        orderBy: [{ receivedAt: 'desc' }],
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          requestTenantId: true,
+          requestId: true,
+          source: true,
+          receiveHttpStatus: true,
+          receiveStatus: true,
+          processStatus: true,
+          relayStatus: true,
+          payloadHash: true,
+          payloadBytes: true,
+          orderCount: true,
+          upsertedCount: true,
+          warningCount: true,
+          attempts: true,
+          queueJobId: true,
+          errorCode: true,
+          errorMessage: true,
+          receiveDurationMs: true,
+          processingDurationMs: true,
+          totalDurationMs: true,
+          receivedAt: true,
+          processingStartedAt: true,
+          processedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: { orders: true },
+          },
+        },
+      }),
+    ]);
+
+    const logIds = logs.map((row) => row.id);
+    const orderRows =
+      logIds.length > 0
+        ? await this.prisma.pancakeWebhookLogOrder.findMany({
+            where: { logId: { in: logIds } },
+            orderBy: [{ createdAt: 'asc' }],
+            select: {
+              id: true,
+              logId: true,
+              shopId: true,
+              orderId: true,
+              status: true,
+              upsertStatus: true,
+              reason: true,
+              warning: true,
+              createdAt: true,
+            },
+          })
+        : [];
+
+    const ordersByLogId = new Map<string, typeof orderRows>();
+    orderRows.forEach((row) => {
+      const list = ordersByLogId.get(row.logId) || [];
+      list.push(row);
+      ordersByLogId.set(row.logId, list);
+    });
+
+    return {
+      items: logs.map((row) => ({
+        ...row,
+        orders: ordersByLogId.get(row.id) || [],
+        orderRowsCount: row._count.orders,
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
     };
   }
 
@@ -684,25 +1105,9 @@ export class IntegrationService {
     payload: any,
     headers: Record<string, any>,
   ) {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { id: true, settings: true, encryptionKey: true },
-    });
-
-    if (!tenant) {
-      throw new NotFoundException('Invalid tenant');
-    }
-
-    const cfg = this.getPancakeWebhookSettings(tenant.settings);
-    if (!cfg.enabled) {
-      throw new ForbiddenException('Webhook is disabled');
-    }
-    if (!cfg.apiKeyHash) {
-      throw new UnauthorizedException('Webhook API key is not configured');
-    }
-    if (!apiKey || !this.verifyWebhookApiKey(apiKey, cfg.apiKeyHash)) {
-      throw new UnauthorizedException('Invalid webhook API key');
-    }
+    const receivedAt = new Date();
+    const normalizedHeaders = this.normalizeWebhookHeaders(headers);
+    const requestId = this.buildWebhookRequestId(headers);
 
     let safePayload: any = payload ?? {};
     try {
@@ -711,102 +1116,290 @@ export class IntegrationService {
       safePayload = { raw: String(payload ?? '') };
     }
 
-    const sourceIdCandidate =
-      safePayload?.id ??
-      safePayload?.order_id ??
-      safePayload?.order?.id ??
-      safePayload?.payload?.id ??
-      safePayload?.payload?.order_id ??
-      safePayload?.body?.id ??
-      safePayload?.body?.order_id ??
-      null;
-    const sourceId = sourceIdCandidate?.toString?.() || null;
+    const payloadFingerprint = this.toPayloadFingerprint(safePayload);
+    const orderRefs = this.extractWebhookOrderRefs(safePayload);
 
-    const event = await this.prisma.analyticsEvent.create({
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, settings: true, encryptionKey: true },
+    });
+
+    if (!tenant) {
+      const endedAt = new Date();
+      const receiveDurationMs = endedAt.getTime() - receivedAt.getTime();
+      await this.prisma.pancakeWebhookLog.create({
+        data: {
+          tenantId: null,
+          requestTenantId: tenantId,
+          requestId,
+          source: IntegrationProvider.PANCAKE_POS,
+          receiveHttpStatus: 404,
+          receiveStatus: 'INVALID_TENANT',
+          processStatus: 'FAILED',
+          relayStatus: 'SKIPPED',
+          payloadHash: payloadFingerprint.hash,
+          payloadBytes: payloadFingerprint.bytes,
+          orderCount: orderRefs.length,
+          upsertedCount: 0,
+          warningCount: 1,
+          errorCode: 'INVALID_TENANT',
+          errorMessage: 'Invalid tenant',
+          headersSnapshot: normalizedHeaders as Prisma.InputJsonValue,
+          receiveDurationMs,
+          totalDurationMs: receiveDurationMs,
+          receivedAt,
+          processedAt: endedAt,
+        },
+      });
+      throw new NotFoundException('Invalid tenant');
+    }
+
+    const cfg = this.getPancakeWebhookSettings(tenant.settings);
+    const log = await this.prisma.pancakeWebhookLog.create({
       data: {
         tenantId: tenant.id,
-        eventType: 'POS_WEBHOOK',
-        eventName: 'PANCAKE_ORDER_RECEIVED',
+        requestTenantId: tenantId,
+        requestId,
         source: IntegrationProvider.PANCAKE_POS,
-        sourceId,
-        properties: {
-          payload: safePayload,
-          headers: this.normalizeWebhookHeaders(headers),
-          receivedAt: new Date().toISOString(),
-        } as Prisma.InputJsonValue,
+        receiveStatus: 'RECEIVED',
+        processStatus: 'SKIPPED',
+        relayStatus: 'SKIPPED',
+        payloadHash: payloadFingerprint.hash,
+        payloadBytes: payloadFingerprint.bytes,
+        orderCount: orderRefs.length,
+        headersSnapshot: normalizedHeaders as Prisma.InputJsonValue,
+        receivedAt,
       },
-      select: { id: true, timestamp: true },
+      select: { id: true, receivedAt: true },
     });
+
+    if (orderRefs.length > 0) {
+      await this.persistWebhookOrderOutcomes(
+        log.id,
+        orderRefs.map((row) => ({
+          shopId: row.shopId,
+          orderId: row.orderId,
+          status: row.status,
+          upsertStatus: 'SKIPPED',
+          reason: 'NOT_PROCESSED',
+        })),
+      );
+    }
+
+    if (!cfg.enabled) {
+      const endedAt = new Date();
+      const receiveDurationMs = endedAt.getTime() - receivedAt.getTime();
+      await this.prisma.pancakeWebhookLog.update({
+        where: { id: log.id },
+        data: {
+          receiveHttpStatus: 403,
+          receiveStatus: 'DISABLED',
+          processStatus: 'SKIPPED',
+          errorCode: 'WEBHOOK_DISABLED',
+          errorMessage: 'Webhook is disabled',
+          warningCount: 1,
+          processedAt: endedAt,
+          receiveDurationMs,
+          totalDurationMs: receiveDurationMs,
+        },
+      });
+      throw new ForbiddenException('Webhook is disabled');
+    }
+    if (!cfg.apiKeyHash) {
+      const endedAt = new Date();
+      const receiveDurationMs = endedAt.getTime() - receivedAt.getTime();
+      await this.prisma.pancakeWebhookLog.update({
+        where: { id: log.id },
+        data: {
+          receiveHttpStatus: 401,
+          receiveStatus: 'AUTH_FAILED',
+          processStatus: 'SKIPPED',
+          errorCode: 'API_KEY_MISSING',
+          errorMessage: 'Webhook API key is not configured',
+          warningCount: 1,
+          processedAt: endedAt,
+          receiveDurationMs,
+          totalDurationMs: receiveDurationMs,
+        },
+      });
+      throw new UnauthorizedException('Webhook API key is not configured');
+    }
+    if (!apiKey || !this.verifyWebhookApiKey(apiKey, cfg.apiKeyHash)) {
+      const endedAt = new Date();
+      const receiveDurationMs = endedAt.getTime() - receivedAt.getTime();
+      await this.prisma.pancakeWebhookLog.update({
+        where: { id: log.id },
+        data: {
+          receiveHttpStatus: 401,
+          receiveStatus: 'AUTH_FAILED',
+          processStatus: 'SKIPPED',
+          errorCode: 'API_KEY_INVALID',
+          errorMessage: 'Invalid webhook API key',
+          warningCount: 1,
+          processedAt: endedAt,
+          receiveDurationMs,
+          totalDurationMs: receiveDurationMs,
+        },
+      });
+      throw new UnauthorizedException('Invalid webhook API key');
+    }
 
     const inlinePreferred = process.env.PANCAKE_WEBHOOK_PROCESS_INLINE === 'true';
     const inlineFallback = process.env.PANCAKE_WEBHOOK_INLINE_FALLBACK !== 'false';
 
     if (!inlinePreferred) {
       try {
-        await this.pancakeWebhookQueue.add(
+        const queuedJob = await this.pancakeWebhookQueue.add(
           PANCAKE_WEBHOOK_JOB,
           {
-            eventId: event.id,
+            logId: log.id,
+            requestId,
             tenantId: tenant.id,
+            payload: safePayload,
           },
           {
-            jobId: event.id,
+            jobId: log.id,
             ...this.getPancakeWebhookQueueJobOptions(),
           },
         );
 
+        const receiveDurationMs = Date.now() - receivedAt.getTime();
+        await this.prisma.pancakeWebhookLog.update({
+          where: { id: log.id },
+          data: {
+            receiveHttpStatus: 202,
+            receiveStatus: 'ACCEPTED',
+            processStatus: 'QUEUED',
+            queueJobId: queuedJob?.id?.toString?.() || null,
+            receiveDurationMs,
+            totalDurationMs: receiveDurationMs,
+          },
+        });
+
         return {
           accepted: true,
           queued: true,
-          eventId: event.id,
-          receivedAt: event.timestamp.toISOString(),
+          eventId: log.id,
+          requestId,
+          receivedAt: log.receivedAt.toISOString(),
           message: 'Webhook received and queued',
           upserted: 0,
           warning: null,
         };
       } catch (error: any) {
-        const isDuplicateJob =
-          String(error?.message || '').includes('Job') &&
-          String(error?.message || '').includes('exists');
-
-        if (isDuplicateJob) {
-          return {
-            accepted: true,
-            queued: true,
-            eventId: event.id,
-            receivedAt: event.timestamp.toISOString(),
-            message: 'Webhook already queued',
-            upserted: 0,
-            warning: null,
-          };
-        }
-
         this.logger.error(
-          `Failed to enqueue webhook event ${event.id}: ${error?.message || 'Unknown error'}`,
+          `Failed to enqueue webhook log ${log.id}: ${error?.message || 'Unknown error'}`,
           error?.stack,
         );
 
         if (!inlineFallback) {
+          const endedAt = new Date();
+          const receiveDurationMs = endedAt.getTime() - receivedAt.getTime();
+          await this.prisma.pancakeWebhookLog.update({
+            where: { id: log.id },
+            data: {
+              receiveHttpStatus: 503,
+              receiveStatus: 'FAILED',
+              processStatus: 'FAILED',
+              relayStatus: 'SKIPPED',
+              errorCode: 'QUEUE_UNAVAILABLE',
+              errorMessage: this.truncateMessage(error?.message || 'Webhook queue unavailable'),
+              warningCount: 1,
+              processedAt: endedAt,
+              receiveDurationMs,
+              totalDurationMs: receiveDurationMs,
+            },
+          });
           throw new ServiceUnavailableException('Webhook queue unavailable');
         }
       }
     }
 
-    const result = await this.processPancakeWebhookPayload(tenant, safePayload, event.id);
-    const queueFallbackWarning = inlinePreferred
-      ? 'Queue bypassed by inline mode'
-      : 'Queue enqueue failed; processed inline fallback';
-    const allWarnings = [queueFallbackWarning, ...result.warnings];
+    const processingStartedAt = new Date();
+    await this.prisma.pancakeWebhookLog.update({
+      where: { id: log.id },
+      data: {
+        receiveHttpStatus: 202,
+        receiveStatus: 'ACCEPTED',
+        processStatus: 'PROCESSING',
+        processingStartedAt,
+        attempts: 1,
+        queueJobId: inlinePreferred ? 'inline' : 'inline_fallback',
+      },
+    });
 
-    return {
-      accepted: true,
-      queued: false,
-      eventId: event.id,
-      receivedAt: event.timestamp.toISOString(),
-      message: allWarnings.length > 0 ? 'Webhook received with inline processing warning' : 'Webhook received and upserted',
-      upserted: result.upserted,
-      warning: allWarnings.length > 0 ? allWarnings.join(' | ') : null,
-    };
+    try {
+      const result = await this.processPancakeWebhookPayload(tenant, safePayload, requestId);
+      const queueFallbackWarning = inlinePreferred
+        ? null
+        : 'Queue enqueue failed; processed inline fallback';
+      const allWarnings = queueFallbackWarning
+        ? [queueFallbackWarning, ...result.warnings]
+        : result.warnings;
+      const processedAt = new Date();
+      const receiveDurationMs = processingStartedAt.getTime() - receivedAt.getTime();
+      const processingDurationMs = processedAt.getTime() - processingStartedAt.getTime();
+      const finalProcessStatus = this.mapFinalProcessStatus(
+        result.upserted,
+        result.outcomes,
+        allWarnings,
+      );
+
+      await this.persistWebhookOrderOutcomes(log.id, result.outcomes);
+
+      await this.prisma.pancakeWebhookLog.update({
+        where: { id: log.id },
+        data: {
+          processStatus: finalProcessStatus,
+          relayStatus: result.relayStatus,
+          upsertedCount: result.upserted,
+          warningCount: allWarnings.length,
+          errorCode: finalProcessStatus === 'FAILED' ? 'INLINE_PROCESS_FAILED' : null,
+          errorMessage:
+            allWarnings.length > 0 ? this.truncateMessage(allWarnings.join(' | ')) : null,
+          processedAt,
+          receiveDurationMs,
+          processingDurationMs,
+          totalDurationMs: receiveDurationMs + processingDurationMs,
+        },
+      });
+
+      return {
+        accepted: true,
+        queued: false,
+        eventId: log.id,
+        requestId,
+        receivedAt: log.receivedAt.toISOString(),
+        message:
+          allWarnings.length > 0
+            ? 'Webhook received with inline processing warning'
+            : 'Webhook received and upserted',
+        upserted: result.upserted,
+        warning: allWarnings.length > 0 ? allWarnings.join(' | ') : null,
+      };
+    } catch (error: any) {
+      const processedAt = new Date();
+      const receiveDurationMs = processingStartedAt.getTime() - receivedAt.getTime();
+      const processingDurationMs = processedAt.getTime() - processingStartedAt.getTime();
+
+      await this.prisma.pancakeWebhookLog.update({
+        where: { id: log.id },
+        data: {
+          receiveStatus: 'FAILED',
+          processStatus: 'FAILED',
+          relayStatus: 'FAILED',
+          errorCode: 'INLINE_PROCESS_EXCEPTION',
+          errorMessage: this.truncateMessage(error?.message || 'Unknown processing error'),
+          warningCount: 1,
+          processedAt,
+          receiveDurationMs,
+          processingDurationMs,
+          totalDurationMs: receiveDurationMs + processingDurationMs,
+        },
+      });
+
+      throw error;
+    }
   }
 
   /**

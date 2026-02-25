@@ -149,6 +149,39 @@ export class IntegrationController {
   }
 
   /**
+   * List Pancake webhook logs (tenant-level)
+   */
+  @Get('/pancake/webhook/logs')
+  @Permissions('integration.webhook.read')
+  async getPancakeWebhookLogs(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('receive_status') receiveStatus?: string,
+    @Query('process_status') processStatus?: string,
+    @Query('relay_status') relayStatus?: string,
+    @Query('shop_id') shopId?: string,
+    @Query('order_id') orderId?: string,
+    @Query('request_id') requestId?: string,
+    @Query('search') search?: string,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.integrationService.getPancakeWebhookLogs({
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      receiveStatus,
+      processStatus,
+      relayStatus,
+      shopId,
+      orderId,
+      requestId,
+      search,
+      startDate,
+      endDate,
+    });
+  }
+
+  /**
    * POS Stores - list products for store (from DB)
    * NOTE: This must come BEFORE /pos-stores/:id to avoid route conflicts
    */

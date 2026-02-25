@@ -17,17 +17,20 @@ export class PancakeWebhookQueueProcessor {
   @Process(PANCAKE_WEBHOOK_JOB)
   async handleIngest(job: Job<PancakeWebhookJobData>) {
     const startedAt = Date.now();
-    const { eventId, tenantId } = job.data;
+    const { logId, tenantId, requestId } = job.data;
 
     this.logger.debug(
-      `Processing Pancake webhook job ${job.id} event=${eventId} tenant=${tenantId}`,
+      `Processing Pancake webhook job ${job.id} log=${logId} tenant=${tenantId}`,
     );
 
-    const result = await this.integrationService.processQueuedPancakeWebhookEvent(job.data);
+    const result = await this.integrationService.processQueuedPancakeWebhookEvent(job.data, {
+      jobId: job.id?.toString?.() || String(job.id),
+      attempts: (job.attemptsMade || 0) + 1,
+    });
     const durationMs = Date.now() - startedAt;
 
     this.logger.log(
-      `Processed Pancake webhook event=${eventId} tenant=${tenantId} upserted=${result.upserted} warnings=${result.warnings.length} durationMs=${durationMs}`,
+      `Processed Pancake webhook log=${logId} request=${requestId} tenant=${tenantId} upserted=${result.upserted} warnings=${result.warnings.length} durationMs=${durationMs}`,
     );
 
     return result;
@@ -35,11 +38,10 @@ export class PancakeWebhookQueueProcessor {
 
   @OnQueueFailed()
   onFailed(job: Job<PancakeWebhookJobData>, error: any) {
-    const { eventId, tenantId } = job?.data || ({} as PancakeWebhookJobData);
+    const { logId, tenantId, requestId } = job?.data || ({} as PancakeWebhookJobData);
     this.logger.error(
-      `Pancake webhook job failed event=${eventId} tenant=${tenantId}: ${error?.message || 'Unknown error'}`,
+      `Pancake webhook job failed log=${logId} request=${requestId} tenant=${tenantId}: ${error?.message || 'Unknown error'}`,
       error?.stack,
     );
   }
 }
-

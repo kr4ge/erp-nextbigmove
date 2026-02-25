@@ -41,6 +41,7 @@ model Tenant {
   users              User[]
   integrations       Integration[]
   analyticsEvents    AnalyticsEvent[]
+  pancakeWebhookLogs PancakeWebhookLog[]
   auditLogs          AuditLog[]
   posStores          PosStore[]
   metaAdAccounts     MetaAdAccount[]
@@ -521,6 +522,64 @@ model AnalyticsEvent {
   @@index([tenantId, eventType])
   @@index([sourceId])
   @@map("analytics_events")
+}
+
+model PancakeWebhookLog {
+  id                  String   @id @default(uuid()) @db.Uuid
+  tenantId            String?  @db.Uuid
+  tenant              Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  requestTenantId     String?
+  requestId           String
+  source              String   @default("PANCAKE_POS")
+  receiveHttpStatus   Int?
+  receiveStatus       String
+  processStatus       String
+  relayStatus         String?
+  payloadHash         String?
+  payloadBytes        Int?
+  orderCount          Int      @default(0)
+  upsertedCount       Int      @default(0)
+  warningCount        Int      @default(0)
+  attempts            Int      @default(0)
+  queueJobId          String?
+  errorCode           String?
+  errorMessage        String?
+  headersSnapshot     Json     @default("{}")
+  receiveDurationMs   Int?
+  processingDurationMs Int?
+  totalDurationMs     Int?
+  receivedAt          DateTime @default(now())
+  processingStartedAt DateTime?
+  processedAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  orders              PancakeWebhookLogOrder[]
+
+  @@index([tenantId, receivedAt])
+  @@index([requestTenantId, receivedAt])
+  @@index([requestId])
+  @@index([receiveStatus, receivedAt])
+  @@index([processStatus, receivedAt])
+  @@map("pancake_webhook_logs")
+}
+
+model PancakeWebhookLogOrder {
+  id          String            @id @default(uuid()) @db.Uuid
+  logId       String            @db.Uuid
+  log         PancakeWebhookLog @relation(fields: [logId], references: [id], onDelete: Cascade)
+  shopId      String?
+  orderId     String?
+  status      Int?
+  upsertStatus String
+  reason      String?
+  warning     String?
+  createdAt   DateTime          @default(now())
+
+  @@index([logId])
+  @@index([shopId])
+  @@index([orderId])
+  @@map("pancake_webhook_log_orders")
 }
 
 // ============================================================================
