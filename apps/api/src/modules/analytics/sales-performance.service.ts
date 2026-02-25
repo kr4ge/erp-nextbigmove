@@ -1151,7 +1151,7 @@ export class SalesPerformanceService {
         )
         SELECT
           risk_tag,
-          COALESCE(SUM(CASE WHEN is_risk_confirmation = 1 THEN 1 ELSE 0 END), 0)::int AS confirmed_count,
+          COALESCE(SUM(CASE WHEN is_risk_confirmation = 1 AND status <> 6 THEN 1 ELSE 0 END), 0)::int AS confirmed_count,
           COALESCE(SUM(CASE WHEN has_risk_confirmation_tag = 1 AND status = 11 THEN 1 ELSE 0 END), 0)::int AS restocking_count,
           COALESCE(SUM(CASE WHEN is_risk_confirmation = 1 AND status = 9 THEN 1 ELSE 0 END), 0)::int AS waiting_for_pickup_count,
           COALESCE(SUM(CASE WHEN is_risk_confirmation = 1 AND status = 2 THEN 1 ELSE 0 END), 0)::int AS shipped_count,

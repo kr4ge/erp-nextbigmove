@@ -1,4 +1,5 @@
 import { Module, OnModuleInit } from '@nestjs/common';
+import { BullModule } from '@nestjs/bull';
 import { IntegrationController } from './integration.controller';
 import { PancakeWebhookController } from './pancake-webhook.controller';
 import { IntegrationService } from './integration.service';
@@ -11,15 +12,23 @@ import { ProviderRegistry } from './providers/provider.registry';
 import { MetaAdsProvider } from './providers/meta-ads.provider';
 import { PancakePosProvider } from './providers/pancake-pos.provider';
 import { IntegrationProvider } from './dto/create-integration.dto';
+import { PANCAKE_WEBHOOK_QUEUE } from './pancake-webhook.constants';
+import { PancakeWebhookQueueProcessor } from './processors/pancake-webhook.processor';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [
+    PrismaModule,
+    BullModule.registerQueue({
+      name: PANCAKE_WEBHOOK_QUEUE,
+    }),
+  ],
   controllers: [IntegrationController, PancakeWebhookController],
   providers: [
     IntegrationService,
     EncryptionService,
     MetaInsightService,
     PosOrderService,
+    PancakeWebhookQueueProcessor,
     ProviderRegistry,
     ProviderFactory,
   ],

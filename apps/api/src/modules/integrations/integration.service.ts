@@ -6,7 +6,10 @@ import {
   BadRequestException,
   Logger,
   UnauthorizedException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
 import { ClsService } from 'nestjs-cls';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -29,6 +32,11 @@ import { validate as uuidValidate } from 'uuid';
 import { MetaAdsProvider } from './providers/meta-ads.provider';
 import { MetaInsightService } from './services/meta-insight.service';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
+import {
+  PANCAKE_WEBHOOK_JOB,
+  PANCAKE_WEBHOOK_QUEUE,
+  PancakeWebhookJobData,
+} from './pancake-webhook.constants';
 
 type PancakeWebhookSettings = {
   enabled?: boolean;
@@ -59,6 +67,8 @@ export class IntegrationService {
     private readonly providerFactory: ProviderFactory,
     private readonly metaInsightService: MetaInsightService,
     private readonly posOrderService: PosOrderService,
+    @InjectQueue(PANCAKE_WEBHOOK_QUEUE)
+    private readonly pancakeWebhookQueue: Queue<PancakeWebhookJobData>,
   ) {}
 
   private normalizeJsonObject(value: any): Record<string, any> {
@@ -292,6 +302,152 @@ export class IntegrationService {
     }
 
     return collected;
+  }
+
+  private getPancakeWebhookQueueJobOptions() {
+    const attempts = Math.max(1, Number(process.env.PANCAKE_WEBHOOK_QUEUE_ATTEMPTS || 5));
+    const backoffDelay = Math.max(500, Number(process.env.PANCAKE_WEBHOOK_QUEUE_BACKOFF_MS || 2000));
+    const timeout = Math.max(10_000, Number(process.env.PANCAKE_WEBHOOK_QUEUE_TIMEOUT_MS || 120_000));
+    const removeOnComplete = Math.max(
+      1,
+      Number(process.env.PANCAKE_WEBHOOK_QUEUE_REMOVE_ON_COMPLETE || 1000),
+    );
+    const removeOnFail = Math.max(
+      1,
+      Number(process.env.PANCAKE_WEBHOOK_QUEUE_REMOVE_ON_FAIL || 5000),
+    );
+
+    return {
+      attempts,
+      backoff: { type: 'exponential' as const, delay: backoffDelay },
+      timeout,
+      removeOnComplete,
+      removeOnFail,
+    };
+  }
+
+  private async processPancakeWebhookPayload(
+    tenant: { id: string; settings: any; encryptionKey: string },
+    safePayload: any,
+    eventId: string,
+  ): Promise<{ upserted: number; warnings: string[] }> {
+    const cfg = this.getPancakeWebhookSettings(tenant.settings);
+    const warnings: string[] = [];
+    let upserted = 0;
+
+    const relayWarning = await this.forwardPancakeWebhookPayload(
+      { id: tenant.id, encryptionKey: tenant.encryptionKey },
+      cfg,
+      safePayload,
+      eventId,
+    );
+    if (relayWarning) {
+      warnings.push(relayWarning);
+    }
+
+    const webhookOrders = this.extractWebhookOrders(safePayload);
+    if (webhookOrders.length === 0) {
+      warnings.push('Missing order payload or shop_id');
+      return { upserted, warnings };
+    }
+
+    const ordersByShopId = new Map<string, any[]>();
+    for (const order of webhookOrders) {
+      const shopId = order?.shop_id?.toString?.()?.trim?.() || order?.shopId?.toString?.()?.trim?.() || '';
+      if (!shopId) {
+        warnings.push('Skipped order with missing shop_id');
+        continue;
+      }
+      const list = ordersByShopId.get(shopId) || [];
+      list.push(order);
+      ordersByShopId.set(shopId, list);
+    }
+
+    if (ordersByShopId.size === 0) {
+      return { upserted, warnings };
+    }
+
+    const shopIds = Array.from(ordersByShopId.keys());
+    const stores = await this.prisma.posStore.findMany({
+      where: {
+        tenantId: tenant.id,
+        shopId: { in: shopIds },
+      },
+      select: {
+        id: true,
+        shopId: true,
+        teamId: true,
+        updatedAt: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const storeByShopId = new Map<string, { id: string; teamId: string | null }>();
+    for (const store of stores) {
+      if (!storeByShopId.has(store.shopId)) {
+        storeByShopId.set(store.shopId, { id: store.id, teamId: store.teamId || null });
+      }
+    }
+
+    for (const [shopId, orders] of ordersByShopId.entries()) {
+      const store = storeByShopId.get(shopId);
+      if (!store) {
+        warnings.push(`No POS store found for shop_id=${shopId}`);
+        continue;
+      }
+
+      try {
+        upserted += await this.posOrderService.upsertPosOrders(
+          tenant.id,
+          store.id,
+          orders,
+          store.teamId,
+        );
+      } catch (error: any) {
+        warnings.push(
+          `Failed to upsert shop_id=${shopId}: ${error?.message || 'Unknown error'}`,
+        );
+      }
+    }
+
+    return { upserted, warnings };
+  }
+
+  async processQueuedPancakeWebhookEvent(jobData: PancakeWebhookJobData): Promise<{ upserted: number; warnings: string[] }> {
+    const event = await this.prisma.analyticsEvent.findFirst({
+      where: {
+        id: jobData.eventId,
+        tenantId: jobData.tenantId,
+      },
+      select: {
+        id: true,
+        properties: true,
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(`Webhook event ${jobData.eventId} not found`);
+    }
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: jobData.tenantId },
+      select: { id: true, settings: true, encryptionKey: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException(`Tenant ${jobData.tenantId} not found`);
+    }
+
+    const eventProps = this.normalizeJsonObject(event.properties);
+    const safePayload = eventProps.payload ?? {};
+
+    const result = await this.processPancakeWebhookPayload(tenant, safePayload, event.id);
+    if (result.warnings.length > 0) {
+      this.logger.warn(
+        `Webhook event ${event.id} processed with warnings: ${result.warnings.join(' | ')}`,
+      );
+    }
+    return result;
   }
 
   async getPancakeWebhookConfig(baseUrl: string) {
@@ -555,15 +711,16 @@ export class IntegrationService {
       safePayload = { raw: String(payload ?? '') };
     }
 
-    const webhookOrders = this.extractWebhookOrders(safePayload);
-    const firstOrder = webhookOrders[0];
-    const sourceId =
-      safePayload?.id?.toString?.() ||
-      safePayload?.order_id?.toString?.() ||
-      safePayload?.order?.id?.toString?.() ||
-      firstOrder?.id?.toString?.() ||
-      firstOrder?.order_id?.toString?.() ||
+    const sourceIdCandidate =
+      safePayload?.id ??
+      safePayload?.order_id ??
+      safePayload?.order?.id ??
+      safePayload?.payload?.id ??
+      safePayload?.payload?.order_id ??
+      safePayload?.body?.id ??
+      safePayload?.body?.order_id ??
       null;
+    const sourceId = sourceIdCandidate?.toString?.() || null;
 
     const event = await this.prisma.analyticsEvent.create({
       data: {
@@ -581,86 +738,74 @@ export class IntegrationService {
       select: { id: true, timestamp: true },
     });
 
-    let upserted = 0;
-    const warnings: string[] = [];
-    const relayWarning = await this.forwardPancakeWebhookPayload(
-      { id: tenant.id, encryptionKey: tenant.encryptionKey },
-      cfg,
-      safePayload,
-      event.id,
-    );
-    if (relayWarning) {
-      warnings.push(relayWarning);
-    }
+    const inlinePreferred = process.env.PANCAKE_WEBHOOK_PROCESS_INLINE === 'true';
+    const inlineFallback = process.env.PANCAKE_WEBHOOK_INLINE_FALLBACK !== 'false';
 
-    if (webhookOrders.length === 0) {
-      warnings.push('Missing order payload or shop_id');
-    } else {
-      const ordersByShopId = new Map<string, any[]>();
-      for (const order of webhookOrders) {
-        const shopId = order?.shop_id?.toString?.()?.trim?.() || order?.shopId?.toString?.()?.trim?.() || '';
-        if (!shopId) {
-          warnings.push('Skipped order with missing shop_id');
-          continue;
-        }
-        const list = ordersByShopId.get(shopId) || [];
-        list.push(order);
-        ordersByShopId.set(shopId, list);
-      }
-
-      if (ordersByShopId.size > 0) {
-        const shopIds = Array.from(ordersByShopId.keys());
-        const stores = await this.prisma.posStore.findMany({
-          where: {
+    if (!inlinePreferred) {
+      try {
+        await this.pancakeWebhookQueue.add(
+          PANCAKE_WEBHOOK_JOB,
+          {
+            eventId: event.id,
             tenantId: tenant.id,
-            shopId: { in: shopIds },
           },
-          select: {
-            id: true,
-            shopId: true,
-            teamId: true,
-            updatedAt: true,
+          {
+            jobId: event.id,
+            ...this.getPancakeWebhookQueueJobOptions(),
           },
-          orderBy: { updatedAt: 'desc' },
-        });
+        );
 
-        const storeByShopId = new Map<string, { id: string; teamId: string | null }>();
-        for (const store of stores) {
-          if (!storeByShopId.has(store.shopId)) {
-            storeByShopId.set(store.shopId, { id: store.id, teamId: store.teamId || null });
-          }
+        return {
+          accepted: true,
+          queued: true,
+          eventId: event.id,
+          receivedAt: event.timestamp.toISOString(),
+          message: 'Webhook received and queued',
+          upserted: 0,
+          warning: null,
+        };
+      } catch (error: any) {
+        const isDuplicateJob =
+          String(error?.message || '').includes('Job') &&
+          String(error?.message || '').includes('exists');
+
+        if (isDuplicateJob) {
+          return {
+            accepted: true,
+            queued: true,
+            eventId: event.id,
+            receivedAt: event.timestamp.toISOString(),
+            message: 'Webhook already queued',
+            upserted: 0,
+            warning: null,
+          };
         }
 
-        for (const [shopId, orders] of ordersByShopId.entries()) {
-          const store = storeByShopId.get(shopId);
-          if (!store) {
-            warnings.push(`No POS store found for shop_id=${shopId}`);
-            continue;
-          }
+        this.logger.error(
+          `Failed to enqueue webhook event ${event.id}: ${error?.message || 'Unknown error'}`,
+          error?.stack,
+        );
 
-          try {
-            upserted += await this.posOrderService.upsertPosOrders(
-              tenant.id,
-              store.id,
-              orders,
-              store.teamId,
-            );
-          } catch (error: any) {
-            warnings.push(
-              `Failed to upsert shop_id=${shopId}: ${error?.message || 'Unknown error'}`,
-            );
-          }
+        if (!inlineFallback) {
+          throw new ServiceUnavailableException('Webhook queue unavailable');
         }
       }
     }
+
+    const result = await this.processPancakeWebhookPayload(tenant, safePayload, event.id);
+    const queueFallbackWarning = inlinePreferred
+      ? 'Queue bypassed by inline mode'
+      : 'Queue enqueue failed; processed inline fallback';
+    const allWarnings = [queueFallbackWarning, ...result.warnings];
 
     return {
       accepted: true,
+      queued: false,
       eventId: event.id,
       receivedAt: event.timestamp.toISOString(),
-      message: warnings.length > 0 ? 'Webhook received with upsert warning' : 'Webhook received and upserted',
-      upserted,
-      warning: warnings.length > 0 ? warnings.join(' | ') : null,
+      message: allWarnings.length > 0 ? 'Webhook received with inline processing warning' : 'Webhook received and upserted',
+      upserted: result.upserted,
+      warning: allWarnings.length > 0 ? allWarnings.join(' | ') : null,
     };
   }
 
