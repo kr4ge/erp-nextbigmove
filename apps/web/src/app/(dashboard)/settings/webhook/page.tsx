@@ -162,6 +162,11 @@ export default function WebhookSettingsPage() {
     [permissions],
   );
 
+  const canRotate = useMemo(
+    () => permissions.length === 0 || permissions.includes('integration.webhook.rotate'),
+    [permissions],
+  );
+
   const displayedApiKey = useMemo(() => {
     if (generatedApiKey) {
       return showApiKey ? generatedApiKey : maskApiKey(generatedApiKey);
@@ -430,7 +435,7 @@ export default function WebhookSettingsPage() {
                 variant="outline"
                 onClick={handleRotate}
                 loading={isRotating}
-                disabled={!canManage || loading || !config}
+                disabled={!canRotate || loading || !config}
                 iconLeft={<RefreshCcw className="h-4 w-4" />}
               >
                 Rotate API Key

@@ -119,7 +119,7 @@ export class IntegrationController {
    * Rotate Pancake webhook API key (tenant-level)
    */
   @Post('/pancake/webhook/rotate-key')
-  @Permissions('integration.webhook.update')
+  @Permissions('integration.webhook.rotate')
   async rotatePancakeWebhookApiKey(@Req() req: Request) {
     return this.integrationService.rotatePancakeWebhookApiKey(this.getBaseUrl(req));
   }
