@@ -10,6 +10,7 @@ interface PosOrderLite {
   cod?: any;
   teamId?: string | null;
   status?: number | null;
+  isAbandoned?: boolean | null;
   cogs?: any;
   tracking?: string | null;
   mapping?: string | null;
@@ -71,6 +72,7 @@ export class ReconcileMarketingService {
         cod: true,
         teamId: true,
         status: true,
+        isAbandoned: true,
         cogs: true,
         tracking: true,
         mapping: true,
@@ -101,6 +103,7 @@ export class ReconcileMarketingService {
         confirmedCount: number;
         unconfirmedCount: number; // status 0
         restockingCount: number; // status 11
+        abandonedCount: number; // status 0 + ABANDONED tag
         waitingPickupCount: number;
         shippedCount: number;
         deliveredCount: number;
@@ -108,6 +111,7 @@ export class ReconcileMarketingService {
         rtsCount: number;
         confirmedCodPos: number;
         unconfirmedCodPos: number;
+        abandonedCodPos: number;
         canceledCodPos: number;
         restockingCodPos: number;
         rtsCodPos: number;
@@ -134,6 +138,8 @@ export class ReconcileMarketingService {
           confirmedCodPos: 0,
           unconfirmedCodPos: 0,
           restockingCount: 0,
+          abandonedCount: 0,
+          abandonedCodPos: 0,
           waitingPickupCount: 0,
           shippedCount: 0,
           deliveredCount: 0,
@@ -153,6 +159,7 @@ export class ReconcileMarketingService {
       agg.purchasesPos += 1;
       const codVal = parseFloat(order.cod ?? '0') || 0;
       const cogsVal = parseFloat(order.cogs ?? '0') || 0;
+      const isAbandoned = order.isAbandoned === true;
       agg.codPos += codVal;
       agg.cogsPos += cogsVal;
       if (order.tracking && order.tracking !== '') {
@@ -162,6 +169,10 @@ export class ReconcileMarketingService {
       if (status === 0) {
         agg.unconfirmedCount += 1;
         agg.unconfirmedCodPos += codVal;
+      }
+      if (isAbandoned) {
+        agg.abandonedCount += 1;
+        agg.abandonedCodPos += codVal;
       }
       if (status === 1) {
         agg.confirmedCount += 1;
@@ -285,8 +296,10 @@ export class ReconcileMarketingService {
           restockingCodPos: agg?.restockingCodPos || 0,
           confirmedCodPos: agg?.confirmedCodPos || 0,
           unconfirmedCodPos: agg?.unconfirmedCodPos || 0,
+          abandonedCodPos: agg?.abandonedCodPos || 0,
           confirmedCount: agg?.confirmedCount || 0,
           unconfirmedCount: agg?.unconfirmedCount || 0,
+          abandonedCount: agg?.abandonedCount || 0,
           restockingCount: agg?.restockingCount || 0,
           waitingPickupCount: agg?.waitingPickupCount || 0,
           shippedCount: agg?.shippedCount || 0,
@@ -334,8 +347,10 @@ export class ReconcileMarketingService {
           restockingCodPos: agg?.restockingCodPos || 0,
           confirmedCodPos: agg?.confirmedCodPos || 0,
           unconfirmedCodPos: agg?.unconfirmedCodPos || 0,
+          abandonedCodPos: agg?.abandonedCodPos || 0,
           confirmedCount: agg?.confirmedCount || 0,
           unconfirmedCount: agg?.unconfirmedCount || 0,
+          abandonedCount: agg?.abandonedCount || 0,
           restockingCount: agg?.restockingCount || 0,
           waitingPickupCount: agg?.waitingPickupCount || 0,
           shippedCount: agg?.shippedCount || 0,
@@ -361,6 +376,7 @@ export class ReconcileMarketingService {
       const cogsVal = parseFloat(order.cogs ?? '0') || 0;
       const statusNum = Number.isFinite(order.status as any) ? Number(order.status) : -1;
       const isUnconfirmed = statusNum === 0 || statusNum === 11;
+      const isAbandoned = order.isAbandoned === true;
       const isWaitingPickup = statusNum === 9;
       const isShipped = statusNum === 2;
       const isDelivered = statusNum === 3;
@@ -428,8 +444,10 @@ export class ReconcileMarketingService {
           restockingCodPos: statusNum === 11 ? codVal : 0,
           confirmedCodPos: isConfirmed ? codVal : 0,
           unconfirmedCodPos: isUnconfirmed ? codVal : 0,
+          abandonedCodPos: isAbandoned ? codVal : 0,
           confirmedCount: statusNum === 1 ? 1 : 0,
           unconfirmedCount: isUnconfirmed ? 1 : 0,
+          abandonedCount: isAbandoned ? 1 : 0,
           restockingCount: statusNum === 11 ? 1 : 0,
           waitingPickupCount: isWaitingPickup ? 1 : 0,
           shippedCount: isShipped ? 1 : 0,
@@ -473,8 +491,10 @@ export class ReconcileMarketingService {
           restockingCodPos: statusNum === 11 ? codVal : 0,
           confirmedCodPos: isConfirmed ? codVal : 0,
           unconfirmedCodPos: isUnconfirmed ? codVal : 0,
+          abandonedCodPos: isAbandoned ? codVal : 0,
           confirmedCount: statusNum === 1 ? 1 : 0,
           unconfirmedCount: isUnconfirmed ? 1 : 0,
+          abandonedCount: isAbandoned ? 1 : 0,
           restockingCount: statusNum === 11 ? 1 : 0,
           waitingPickupCount: isWaitingPickup ? 1 : 0,
           shippedCount: isShipped ? 1 : 0,

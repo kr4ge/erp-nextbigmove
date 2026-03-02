@@ -1,0 +1,7 @@
+ALTER TABLE "reconcile_marketing"
+ADD COLUMN "abandonedCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "abandonedCodPos" DECIMAL(12,2) NOT NULL DEFAULT 0;
+
+ALTER TABLE "reconcile_sales"
+ADD COLUMN "abandonedCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "abandonedCodPos" DECIMAL(12,2) NOT NULL DEFAULT 0;

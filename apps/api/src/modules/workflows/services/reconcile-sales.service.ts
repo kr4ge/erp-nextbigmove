@@ -12,6 +12,7 @@ type NumericFields = {
   processedPurchasesPos: number;
   confirmedCount: number;
   unconfirmedCount: number;
+  abandonedCount: number;
   waitingPickupCount: number;
   shippedCount: number;
   deliveredCount: number;
@@ -29,6 +30,7 @@ type NumericFields = {
   cogsDeliveredPos: number;
   confirmedCodPos: number;
   unconfirmedCodPos: number;
+  abandonedCodPos: number;
   cogsPos: number;
   cogsCanceledPos: number;
   cogsRestockingPos: number;
@@ -97,6 +99,7 @@ export class ReconcileSalesService {
         processedPurchasesPos: true,
         confirmedCount: true,
         unconfirmedCount: true,
+        abandonedCount: true,
         waitingPickupCount: true,
         shippedCount: true,
         deliveredCount: true,
@@ -114,6 +117,7 @@ export class ReconcileSalesService {
         cogsDeliveredPos: true,
         confirmedCodPos: true,
         unconfirmedCodPos: true,
+        abandonedCodPos: true,
         cogsPos: true,
         cogsCanceledPos: true,
         cogsRestockingPos: true,
@@ -159,6 +163,7 @@ export class ReconcileSalesService {
             processedPurchasesPos: 0,
             confirmedCount: 0,
             unconfirmedCount: 0,
+            abandonedCount: 0,
             waitingPickupCount: 0,
             shippedCount: 0,
             deliveredCount: 0,
@@ -176,6 +181,7 @@ export class ReconcileSalesService {
           cogsDeliveredPos: 0,
           confirmedCodPos: 0,
           unconfirmedCodPos: 0,
+          abandonedCodPos: 0,
           cogsPos: 0,
           cogsCanceledPos: 0,
           cogsRestockingPos: 0,
@@ -202,6 +208,7 @@ export class ReconcileSalesService {
       t.processedPurchasesPos += this.toNumber(row.processedPurchasesPos);
       t.confirmedCount += this.toNumber(row.confirmedCount);
       t.unconfirmedCount += this.toNumber(row.unconfirmedCount);
+      t.abandonedCount += this.toNumber(row.abandonedCount);
       t.waitingPickupCount += this.toNumber(row.waitingPickupCount);
       t.shippedCount += this.toNumber(row.shippedCount);
       t.deliveredCount += this.toNumber(row.deliveredCount);
@@ -219,6 +226,7 @@ export class ReconcileSalesService {
       t.cogsDeliveredPos += this.toNumber(row.cogsDeliveredPos);
       t.confirmedCodPos += this.toNumber(row.confirmedCodPos);
       t.unconfirmedCodPos += this.toNumber(row.unconfirmedCodPos);
+      t.abandonedCodPos += this.toNumber(row.abandonedCodPos);
       t.cogsPos += this.toNumber(row.cogsPos);
       t.cogsCanceledPos += this.toNumber(row.cogsCanceledPos);
       t.cogsRestockingPos += this.toNumber(row.cogsRestockingPos);

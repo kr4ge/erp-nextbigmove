@@ -832,6 +832,7 @@ model PosOrder {
   isMarketingSource Boolean @default(false)
   forUpsell Boolean @default(false)
   isRiskConfirmation Boolean @default(false)
+  isAbandoned Boolean @default(false)
   // UTM tracking
   pUtmCampaign String?
   pUtmContent  String?
@@ -948,8 +949,10 @@ model ReconcileMarketing {
   restockingCodPos Decimal @default(0) @db.Decimal(12, 2)
   confirmedCodPos  Decimal @default(0) @db.Decimal(12, 2)
   unconfirmedCodPos Decimal @default(0) @db.Decimal(12, 2)
+  abandonedCodPos Decimal @default(0) @db.Decimal(12, 2)
   confirmedCount Int      @default(0)
   unconfirmedCount Int    @default(0)
+  abandonedCount Int      @default(0)
   waitingPickupCount Int  @default(0)
   shippedCount   Int      @default(0)
   deliveredCount Int      @default(0)
@@ -1002,6 +1005,7 @@ model ReconcileSales {
   canceledCount   Int      @default(0)
   rtsCount        Int      @default(0)
   restockingCount Int      @default(0)
+  abandonedCount Int      @default(0)
 
   codPos          Decimal  @default(0) @db.Decimal(12, 2)
   deliveredCodPos Decimal  @default(0) @db.Decimal(12, 2)
@@ -1012,6 +1016,7 @@ model ReconcileSales {
   restockingCodPos Decimal @default(0) @db.Decimal(12, 2)
   confirmedCodPos  Decimal @default(0) @db.Decimal(12, 2)
   unconfirmedCodPos Decimal @default(0) @db.Decimal(12, 2)
+  abandonedCodPos Decimal @default(0) @db.Decimal(12, 2)
 
   cogsPos         Decimal  @default(0) @db.Decimal(12, 2)
   cogsCanceledPos Decimal  @default(0) @db.Decimal(12, 2)

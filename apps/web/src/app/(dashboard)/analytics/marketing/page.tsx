@@ -140,6 +140,7 @@ export default function MarketingAnalyticsPage() {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [excludeCanceled, setExcludeCanceled] = useState(true);
   const [excludeRestocking, setExcludeRestocking] = useState(true);
+  const [excludeAbandoned, setExcludeAbandoned] = useState(true);
   const associatePickerRef = useRef<HTMLDivElement | null>(null);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const filterMenuContentRef = useRef<HTMLDivElement | null>(null);
@@ -174,6 +175,7 @@ export default function MarketingAnalyticsPage() {
       }
       params.set('exclude_cancel', String(excludeCanceled));
       params.set('exclude_restocking', String(excludeRestocking));
+      params.set('exclude_abandoned', String(excludeAbandoned));
       const res = await apiClient.get<OverviewResponse>(`/analytics/marketing/overview?${params.toString()}`);
       setData(res.data);
       const options = res.data.filters.associates || [];
@@ -220,7 +222,7 @@ export default function MarketingAnalyticsPage() {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate, isAllAssociatesMode, selectedAssociates.join('|'), excludeCanceled, excludeRestocking, tableSelection]);
+  }, [startDate, endDate, isAllAssociatesMode, selectedAssociates.join('|'), excludeCanceled, excludeRestocking, excludeAbandoned, tableSelection]);
 
   // Lightweight auto-refresh every 60s when tab is visible
   useEffect(() => {
@@ -231,7 +233,7 @@ export default function MarketingAnalyticsPage() {
     }, 60000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate, isAllAssociatesMode, selectedAssociates.join('|'), excludeCanceled, excludeRestocking, tableSelection]);
+  }, [startDate, endDate, isAllAssociatesMode, selectedAssociates.join('|'), excludeCanceled, excludeRestocking, excludeAbandoned, tableSelection]);
 
   useEffect(() => {
     fetchDataRef.current = fetchData;
@@ -644,6 +646,15 @@ export default function MarketingAnalyticsPage() {
                         onChange={(e) => setExcludeRestocking(e.target.checked)}
                       />
                       <span className="text-sm text-slate-800">Exclude Restocking</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300"
+                        checked={excludeAbandoned}
+                        onChange={(e) => setExcludeAbandoned(e.target.checked)}
+                      />
+                      <span className="text-sm text-slate-800">Exclude Abandoned</span>
                     </label>
                   </div>
                 )}

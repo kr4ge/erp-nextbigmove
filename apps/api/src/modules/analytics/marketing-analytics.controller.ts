@@ -19,6 +19,7 @@ export class MarketingAnalyticsController {
     @Query('associate') associate?: string | string[],
     @Query('exclude_cancel') excludeCancel?: string,
     @Query('exclude_restocking') excludeRestocking?: string,
+    @Query('exclude_abandoned') excludeAbandoned?: string,
     @Query('tables') tables?: string | string[],
   ) {
     const associates = Array.isArray(associate)
@@ -41,6 +42,7 @@ export class MarketingAnalyticsController {
       associates,
       excludeCancel: parseBool(excludeCancel),
       excludeRestocking: parseBool(excludeRestocking),
+      excludeAbandoned: parseBool(excludeAbandoned),
       tables: tableList,
     });
   }
@@ -53,6 +55,7 @@ export class MarketingAnalyticsController {
     @Query('end_date') endDate?: string,
     @Query('exclude_cancel') excludeCancel?: string,
     @Query('exclude_restocking') excludeRestocking?: string,
+    @Query('exclude_abandoned') excludeAbandoned?: string,
   ) {
     const parseBool = (val: string | undefined, defaultVal = true) => {
       if (val === undefined) return defaultVal;
@@ -64,6 +67,7 @@ export class MarketingAnalyticsController {
       endDate,
       excludeCancel: parseBool(excludeCancel, true),
       excludeRestocking: parseBool(excludeRestocking, true),
+      excludeAbandoned: parseBool(excludeAbandoned, true),
       user: req.user,
     });
   }
@@ -76,6 +80,7 @@ export class MarketingAnalyticsController {
     @Query('end_date') endDate?: string,
     @Query('exclude_cancel') excludeCancel?: string,
     @Query('exclude_restocking') excludeRestocking?: string,
+    @Query('exclude_abandoned') excludeAbandoned?: string,
     @Query('team_code') teamCode?: string,
   ) {
     const parseBool = (val: string | undefined, defaultVal = true) => {
@@ -88,6 +93,7 @@ export class MarketingAnalyticsController {
       endDate,
       excludeCancel: parseBool(excludeCancel, true),
       excludeRestocking: parseBool(excludeRestocking, true),
+      excludeAbandoned: parseBool(excludeAbandoned, true),
       user: req.user,
       teamCodeOverride: teamCode,
     });

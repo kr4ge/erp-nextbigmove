@@ -146,13 +146,14 @@ export class SalesAnalyticsService {
     return e.diff(s, 'day');
   }
 
-  private computeKpis(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean; rtsForecastPct?: number }): SalesKpis {
+  private computeKpis(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean; rtsForecastPct?: number }): SalesKpis {
     const spendBase = this.toNumber(sum?._sum?.spend);
     const spendMultiplier = 1 + (opts.includeTax12 ? 0.12 : 0) + (opts.includeTax1 ? 0.01 : 0);
     const spend = spendBase * spendMultiplier;
     const cod = this.toNumber(sum?._sum?.codPos);
     const canceledCod = this.toNumber(sum?._sum?.canceledCodPos);
     const restockingCod = this.toNumber(sum?._sum?.restockingCodPos);
+    const abandonedCod = this.toNumber(sum?._sum?.abandonedCodPos);
     const rtsCod = this.toNumber(sum?._sum?.rtsCodPos);
     const codFee = this.toNumber(sum?._sum?.codFeePos);
 
@@ -161,6 +162,7 @@ export class SalesAnalyticsService {
       cod
       - (opts.excludeCancel ? canceledCod : 0)
       - (opts.excludeRestocking ? restockingCod : 0)
+      - (opts.excludeAbandoned ? abandonedCod : 0)
       - (opts.excludeRts ? rtsCod : 0);
 
     const cogs = this.toNumber(sum?._sum?.cogsPos);
@@ -205,8 +207,9 @@ export class SalesAnalyticsService {
     const purchasesRaw = this.toNumber(sum?._sum?.purchasesPos);
     const cancelAdjCount = opts.excludeCancel ? this.toNumber(sum?._sum?.canceledCount) : 0;
     const restockAdjCount = opts.excludeRestocking ? this.toNumber(sum?._sum?.restockingCount) : 0;
+    const abandonedAdjCount = opts.excludeAbandoned ? this.toNumber(sum?._sum?.abandonedCount) : 0;
     const rtsAdjCount = opts.excludeRts ? this.toNumber(sum?._sum?.rtsCount) : 0;
-    const purchasesAdj = Math.max(0, purchasesRaw - cancelAdjCount - restockAdjCount - rtsAdjCount);
+    const purchasesAdj = Math.max(0, purchasesRaw - cancelAdjCount - restockAdjCount - abandonedAdjCount - rtsAdjCount);
     const processedPurchases = this.toNumber(sum?._sum?.processedPurchasesPos);
     const cpp = purchasesAdj > 0 ? spend / purchasesAdj : 0;
     const processedCpp = processedPurchases > 0 ? spend / processedPurchases : 0;
@@ -217,12 +220,13 @@ export class SalesAnalyticsService {
     const grossCodAdjusted =
       cod
       - (opts.excludeCancel ? canceledCod : 0)
-      - (opts.excludeRestocking ? restockingCod : 0);
+      - (opts.excludeRestocking ? restockingCod : 0)
+      - (opts.excludeAbandoned ? abandonedCod : 0);
     const cogsAdjustedForCmRts =
       cogs
       - (opts.excludeCancel ? cogsCanceled : 0)
       - (opts.excludeRestocking ? cogsRestocking : 0);
-    const purchasesAdjForCmRts = Math.max(0, purchasesRaw - cancelAdjCount - restockAdjCount);
+    const purchasesAdjForCmRts = Math.max(0, purchasesRaw - cancelAdjCount - restockAdjCount - abandonedAdjCount);
     const aovForCmRts = purchasesAdjForCmRts > 0 ? grossCodAdjusted / purchasesAdjForCmRts : 0;
     const revenueBaseForCmRts = aovForCmRts * purchasesAdjForCmRts;
     const rtsForecast = typeof opts.rtsForecastPct === 'number' ? opts.rtsForecastPct : 20;
@@ -277,12 +281,13 @@ export class SalesAnalyticsService {
     };
   }
 
-  private computeCounts(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeRts: boolean }): SalesCounts {
+  private computeCounts(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean }): SalesCounts {
     const purchasesRaw = this.toNumber(sum?._sum?.purchasesPos);
     const cancelAdj = opts.excludeCancel ? this.toNumber(sum?._sum?.canceledCount) : 0;
     const restockAdj = opts.excludeRestocking ? this.toNumber(sum?._sum?.restockingCount) : 0;
+    const abandonedAdj = opts.excludeAbandoned ? this.toNumber(sum?._sum?.abandonedCount) : 0;
     const rtsAdj = opts.excludeRts ? this.toNumber(sum?._sum?.rtsCount) : 0;
-    const adj = Math.min(purchasesRaw, cancelAdj + restockAdj + rtsAdj);
+    const adj = Math.min(purchasesRaw, cancelAdj + restockAdj + abandonedAdj + rtsAdj);
     const purchases = Math.max(0, purchasesRaw - adj);
     return {
       purchases,
@@ -298,25 +303,28 @@ export class SalesAnalyticsService {
     };
   }
 
-  private computeProductRow(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean }): ProductRow {
+  private computeProductRow(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean }): ProductRow {
     const spendBase = this.toNumber(sum?._sum?.spend);
     const spendMultiplier = 1 + (opts.includeTax12 ? 0.12 : 0) + (opts.includeTax1 ? 0.01 : 0);
     const spend = spendBase * spendMultiplier;
     const cod = this.toNumber(sum?._sum?.codPos);
     const canceledCod = this.toNumber(sum?._sum?.canceledCodPos);
     const restockingCod = this.toNumber(sum?._sum?.restockingCodPos);
+    const abandonedCod = this.toNumber(sum?._sum?.abandonedCodPos);
     const rtsCod = this.toNumber(sum?._sum?.rtsCodPos);
     const revenue =
       cod
       - (opts.excludeCancel ? canceledCod : 0)
       - (opts.excludeRestocking ? restockingCod : 0)
+      - (opts.excludeAbandoned ? abandonedCod : 0)
       - (opts.excludeRts ? rtsCod : 0);
 
     const purchasesRaw = this.toNumber(sum?._sum?.purchasesPos);
     const cancelAdjCount = opts.excludeCancel ? this.toNumber(sum?._sum?.canceledCount) : 0;
     const restockAdjCount = opts.excludeRestocking ? this.toNumber(sum?._sum?.restockingCount) : 0;
+    const abandonedAdjCount = opts.excludeAbandoned ? this.toNumber(sum?._sum?.abandonedCount) : 0;
     const rtsAdjCount = opts.excludeRts ? this.toNumber(sum?._sum?.rtsCount) : 0;
-    const purchasesAdj = Math.max(0, purchasesRaw - cancelAdjCount - restockAdjCount - rtsAdjCount);
+    const purchasesAdj = Math.max(0, purchasesRaw - cancelAdjCount - restockAdjCount - abandonedAdjCount - rtsAdjCount);
     const processedPurchases = this.toNumber(sum?._sum?.processedPurchasesPos);
 
     const cogs = this.toNumber(sum?._sum?.cogsPos);
@@ -394,8 +402,8 @@ export class SalesAnalyticsService {
     };
   }
 
-  async getOverview(params: { startDate?: string; endDate?: string; mappings?: string[]; excludeCancel?: boolean; excludeRestocking?: boolean; excludeRts?: boolean; includeTax12?: boolean; includeTax1?: boolean }) {
-    const { startDate, endDate, mappings = [], excludeCancel = true, excludeRestocking = true, excludeRts = true, includeTax12 = false, includeTax1 = false } = params;
+  async getOverview(params: { startDate?: string; endDate?: string; mappings?: string[]; excludeCancel?: boolean; excludeRestocking?: boolean; excludeAbandoned?: boolean; excludeRts?: boolean; includeTax12?: boolean; includeTax1?: boolean }) {
+    const { startDate, endDate, mappings = [], excludeCancel = true, excludeRestocking = true, excludeAbandoned = true, excludeRts = true, includeTax12 = false, includeTax1 = false } = params;
 
     const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
     const endStr = (endDate && endDate.trim()) || startStr;
@@ -461,7 +469,7 @@ export class SalesAnalyticsService {
       end: endStr,
       mappings: normalizedMappings.sort(),
       includeNull,
-      flags: { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1 },
+      flags: { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1 },
     };
     const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
     const cached = await this.analyticsCache.get<any>(cacheKey);
@@ -486,12 +494,14 @@ export class SalesAnalyticsService {
           rtsCodPos: true,
           canceledCodPos: true,
           restockingCodPos: true,
+          abandonedCodPos: true,
           deliveredCount: true,
           shippedCount: true,
           waitingPickupCount: true,
           rtsCount: true,
           canceledCount: true,
           restockingCount: true,
+          abandonedCount: true,
           confirmedCount: true,
           unconfirmedCount: true,
           confirmedCodPos: true,
@@ -529,12 +539,14 @@ export class SalesAnalyticsService {
           rtsCodPos: true,
           canceledCodPos: true,
           restockingCodPos: true,
+          abandonedCodPos: true,
           deliveredCount: true,
           shippedCount: true,
           waitingPickupCount: true,
           rtsCount: true,
           canceledCount: true,
           restockingCount: true,
+          abandonedCount: true,
           confirmedCount: true,
           unconfirmedCount: true,
           confirmedCodPos: true,
@@ -583,12 +595,14 @@ export class SalesAnalyticsService {
           rtsCodPos: true,
           canceledCodPos: true,
           restockingCodPos: true,
+          abandonedCodPos: true,
           deliveredCount: true,
           shippedCount: true,
           waitingPickupCount: true,
           rtsCount: true,
           canceledCount: true,
           restockingCount: true,
+          abandonedCount: true,
           confirmedCount: true,
           unconfirmedCount: true,
           confirmedCodPos: true,
@@ -632,7 +646,7 @@ export class SalesAnalyticsService {
     mappingOptions.sort((a, b) => (mappingDisplayMap[a] || a).localeCompare(mappingDisplayMap[b] || b));
 
     const products = productGroups.map((g) => {
-      const row = this.computeProductRow({ _sum: g._sum, mapping: g.mapping }, { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1 });
+      const row = this.computeProductRow({ _sum: g._sum, mapping: g.mapping }, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1 });
       return {
         ...row,
         mapping: g.mapping,
@@ -653,10 +667,10 @@ export class SalesAnalyticsService {
     }));
 
     const rtsForecastPct = 20;
-    const kpis = this.computeKpis(agg, { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1, rtsForecastPct });
-    const prevKpis = this.computeKpis(prevAgg, { excludeCancel, excludeRestocking, excludeRts, includeTax12, includeTax1, rtsForecastPct });
-    const counts = this.computeCounts(agg, { excludeCancel, excludeRestocking, excludeRts });
-    const prevCounts = this.computeCounts(prevAgg, { excludeCancel, excludeRestocking, excludeRts });
+    const kpis = this.computeKpis(agg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1, rtsForecastPct });
+    const prevKpis = this.computeKpis(prevAgg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1, rtsForecastPct });
+    const counts = this.computeCounts(agg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts });
+    const prevCounts = this.computeCounts(prevAgg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts });
 
     const response = {
       kpis,

@@ -64,6 +64,7 @@ type OverviewResponse = {
     rts_cod: number;
     canceled_cod: number;
     restocking_cod: number;
+    abandoned_cod: number;
     sf_fees: number;
     ff_fees: number;
     if_fees: number;
@@ -102,6 +103,7 @@ type OverviewResponse = {
     rts_cod: number;
     canceled_cod: number;
     restocking_cod: number;
+    abandoned_cod: number;
     sf_fees: number;
     ff_fees: number;
     if_fees: number;
@@ -162,6 +164,7 @@ type OverviewResponse = {
     canceled_cod?: number;
     restocking_cod?: number;
     rts_cod?: number;
+    abandoned_cod?: number;
   }>;
   deliveryStatuses?: Array<{
     mapping: string | null;
@@ -274,23 +277,26 @@ function computeAdjustedCod(
   cod: number,
   canceled: number,
   restocking: number,
-  opts: { excludeCancel: boolean; excludeRestocking: boolean },
+  abandoned: number,
+  opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean },
 ) {
   return (
     cod -
     (opts.excludeCancel ? canceled : 0) -
-    (opts.excludeRestocking ? restocking : 0)
+    (opts.excludeRestocking ? restocking : 0) -
+    (opts.excludeAbandoned ? abandoned : 0)
   );
 }
 
 function computeAdjustedGrossCod(
   kpis: OverviewResponse['kpis'],
-  opts: { excludeCancel: boolean; excludeRestocking: boolean },
+  opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean },
 ) {
   return computeAdjustedCod(
     kpis.gross_cod ?? 0,
     kpis.canceled_cod ?? 0,
     kpis.restocking_cod ?? 0,
+    kpis.abandoned_cod ?? 0,
     opts,
   );
 }
@@ -321,6 +327,7 @@ export default function SalesAnalyticsPage() {
   });
   const [excludeCanceled, setExcludeCanceled] = useState(true);
   const [excludeRestocking, setExcludeRestocking] = useState(true);
+  const [excludeAbandoned, setExcludeAbandoned] = useState(true);
   const [excludeRts, setExcludeRts] = useState(true);
   const [includeTax12, setIncludeTax12] = useState(false);
   const [includeTax1, setIncludeTax1] = useState(false);
@@ -402,6 +409,7 @@ export default function SalesAnalyticsPage() {
       }
       params.set('exclude_cancel', String(excludeCanceled));
       params.set('exclude_restocking', String(excludeRestocking));
+      params.set('exclude_abandoned', String(excludeAbandoned));
       params.set('exclude_rts', String(excludeRts));
       params.set('include_tax_12', String(includeTax12));
       params.set('include_tax_1', String(includeTax1));
@@ -533,7 +541,7 @@ export default function SalesAnalyticsPage() {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate, selectedMappings.join('|'), excludeCanceled, excludeRestocking, excludeRts, includeTax12, includeTax1, rtsForecastPct]);
+  }, [startDate, endDate, selectedMappings.join('|'), excludeCanceled, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1, rtsForecastPct]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -543,7 +551,7 @@ export default function SalesAnalyticsPage() {
     }, 60000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate, selectedMappings.join('|'), excludeCanceled, excludeRestocking]);
+  }, [startDate, endDate, selectedMappings.join('|'), excludeCanceled, excludeRestocking, excludeAbandoned]);
 
   // Realtime refetch on marketing update events (reconcile_sales emits marketing:updated)
   useEffect(() => {
@@ -673,6 +681,7 @@ export default function SalesAnalyticsPage() {
         const adjustedGrossCod = computeAdjustedGrossCod(data.kpis, {
           excludeCancel: excludeCanceled,
           excludeRestocking: excludeRestocking,
+          excludeAbandoned,
         });
         const purchasesForCmRts =
           (data.counts.purchases ?? 0) + (excludeRts ? data.counts.rts ?? 0 : 0);
@@ -704,6 +713,7 @@ export default function SalesAnalyticsPage() {
         const adjustedGrossCod = computeAdjustedGrossCod(data.prevKpis, {
           excludeCancel: excludeCanceled,
           excludeRestocking: excludeRestocking,
+          excludeAbandoned,
         });
         const purchasesForCmRts =
           (data.prevCounts.purchases ?? 0) + (excludeRts ? data.prevCounts.rts ?? 0 : 0);
@@ -738,11 +748,13 @@ export default function SalesAnalyticsPage() {
     const baseCod = row.cod_raw ?? row.revenue ?? 0;
     const canceledCod = row.canceled_cod ?? 0;
     const restockingCod = row.restocking_cod ?? 0;
+    const abandonedCod = row.abandoned_cod ?? 0;
     const adjustedGrossCod = Math.max(
       0,
-      computeAdjustedCod(baseCod, canceledCod, restockingCod, {
+      computeAdjustedCod(baseCod, canceledCod, restockingCod, abandonedCod, {
         excludeCancel: excludeCanceled,
         excludeRestocking: excludeRestocking,
+        excludeAbandoned,
       }),
     );
     const purchasesForCmRts =
@@ -979,7 +991,7 @@ export default function SalesAnalyticsPage() {
     const filtersLabel = [
       `${startDate} → ${endDate}`,
       `${selectedMappings.length || 0}/${mappingOptions.length || 0} mappings`,
-      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, RTS ${excludeRts ? 'ON' : 'OFF'}`,
+      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, abandoned ${excludeAbandoned ? 'ON' : 'OFF'}, RTS ${excludeRts ? 'ON' : 'OFF'}`,
     ].join(' • ');
 
     return (
@@ -1071,7 +1083,7 @@ export default function SalesAnalyticsPage() {
     const filtersLabel = [
       `${startDate} → ${endDate}`,
       `${selectedMappings.length || 0}/${mappingOptions.length || 0} mappings`,
-      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, RTS ${excludeRts ? 'ON' : 'OFF'}`,
+      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, abandoned ${excludeAbandoned ? 'ON' : 'OFF'}, RTS ${excludeRts ? 'ON' : 'OFF'}`,
     ].join(' • ');
 
     return (
@@ -1128,6 +1140,7 @@ export default function SalesAnalyticsPage() {
     const adjustedGrossCod = computeAdjustedGrossCod(kpis, {
       excludeCancel: excludeCanceled,
       excludeRestocking: excludeRestocking,
+      excludeAbandoned,
     });
     const purchasesForCmRts =
       (data?.counts?.purchases ?? 0) + (excludeRts ? data?.counts?.rts ?? 0 : 0);
@@ -1147,7 +1160,7 @@ export default function SalesAnalyticsPage() {
     const filtersLabel = [
       `${startDate} → ${endDate}`,
       `${selectedMappings.length || 0}/${mappingOptions.length || 0} mappings`,
-      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}`,
+      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, abandoned ${excludeAbandoned ? 'ON' : 'OFF'}`,
       `RTS %: ${rtsForecastSafe}`,
     ].join(' • ');
 
@@ -1498,6 +1511,15 @@ export default function SalesAnalyticsPage() {
                         onChange={(e) => setExcludeRestocking(e.target.checked)}
                       />
                       <span className="text-sm text-slate-800">Exclude Restocking</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300"
+                        checked={excludeAbandoned}
+                        onChange={(e) => setExcludeAbandoned(e.target.checked)}
+                      />
+                      <span className="text-sm text-slate-800">Exclude Abandoned</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input

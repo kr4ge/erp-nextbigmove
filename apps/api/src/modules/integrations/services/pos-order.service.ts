@@ -24,6 +24,7 @@ interface PosOrderData {
   isMarketingSource?: boolean;
   forUpsell?: boolean;
   isRiskConfirmation?: boolean;
+  isAbandoned?: boolean;
   pUtmCampaign?: string;
   pUtmContent?: string;
   cogs: number;
@@ -343,6 +344,7 @@ export class PosOrderService {
           )
       : [];
     const hasRiskConfirmationTag = this.hasTagNameInList(tags, ['risk confirmation']);
+    const hasAbandonedTag = this.hasTagNameInList(tags, ['abandoned']);
 
     // RTS reason: split returned_reason_name by "/"
     let rtsReason: { l1: string | null; l2: string | null; l3: string | null } | null = null;
@@ -363,6 +365,7 @@ export class PosOrderService {
     const isRiskConfirmation = hasRiskConfirmationTag && hasConfirmedHistory;
     const numericStatus = Number(rawOrder?.status);
     const normalizedStatus = Number.isFinite(numericStatus) ? numericStatus : null;
+    const isAbandoned = normalizedStatus === 0 && hasAbandonedTag;
     const deliveredAt = this.extractStatusTimestampFromHistory(
       normalizedStatus,
       statusHistory,
@@ -514,6 +517,7 @@ export class PosOrderService {
       isMarketingSource,
       forUpsell,
       isRiskConfirmation,
+      isAbandoned,
       pUtmCampaign: rawOrder.p_utm_campaign,
       pUtmContent: rawOrder.p_utm_content,
       cogs,
@@ -680,6 +684,7 @@ export class PosOrderService {
             isMarketingSource: !!order.isMarketingSource,
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
+            isAbandoned: !!order.isAbandoned,
             pUtmCampaign: order.pUtmCampaign,
             pUtmContent: order.pUtmContent,
             cogs: new Decimal(order.cogs),
@@ -712,6 +717,7 @@ export class PosOrderService {
             isMarketingSource: !!order.isMarketingSource,
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
+            isAbandoned: !!order.isAbandoned,
             pUtmCampaign: order.pUtmCampaign,
             pUtmContent: order.pUtmContent,
             cogs: new Decimal(order.cogs),

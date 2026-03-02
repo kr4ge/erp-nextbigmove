@@ -23,8 +23,10 @@ type KpiSums = {
   revenue: number;
   canceledCod: number;
   restockingCod: number;
+  abandonedCod: number;
   canceledCount: number;
   restockingCount: number;
+  abandonedCount: number;
 };
 
 const NULL_ASSOCIATE_KEY = '__null__';
@@ -92,19 +94,21 @@ export class MarketingAnalyticsService {
     return Number.isFinite(n) ? n : 0;
   }
 
-  private computeKpis(sum: KpiSums, opts: { excludeCancel: boolean; excludeRestocking: boolean }): Kpis {
+  private computeKpis(sum: KpiSums, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean }): Kpis {
     const spend = sum.spend || 0;
     const excludedCanceled = opts.excludeCancel ? sum.canceledCod || 0 : 0;
     const excludedRestocking = opts.excludeRestocking ? sum.restockingCod || 0 : 0;
+    const excludedAbandoned = opts.excludeAbandoned ? sum.abandonedCod || 0 : 0;
     const revenueRaw = sum.revenue || 0;
-    const revenue = Math.max(0, revenueRaw - excludedCanceled - excludedRestocking);
+    const revenue = Math.max(0, revenueRaw - excludedCanceled - excludedRestocking - excludedAbandoned);
     const clicks = sum.linkClicks || 0;
     const impressions = sum.impressions || 0;
     const leads = sum.leads || 0;
     const rawSales = sum.purchases || 0;
     const excludedCanceledCount = opts.excludeCancel ? sum.canceledCount || 0 : 0;
     const excludedRestockingCount = opts.excludeRestocking ? sum.restockingCount || 0 : 0;
-    const sales = Math.max(0, rawSales - excludedCanceledCount - excludedRestockingCount);
+    const excludedAbandonedCount = opts.excludeAbandoned ? sum.abandonedCount || 0 : 0;
+    const sales = Math.max(0, rawSales - excludedCanceledCount - excludedRestockingCount - excludedAbandonedCount);
 
     return {
       revenue,
@@ -122,7 +126,7 @@ export class MarketingAnalyticsService {
     };
   }
 
-  private computeTopAssociates(rows: any[], adsRunningMap: Record<string, number>, adsCreatedMap: Record<string, number>, opts: { excludeCancel: boolean; excludeRestocking: boolean }): TopAssociateRow[] {
+  private computeTopAssociates(rows: any[], adsRunningMap: Record<string, number>, adsCreatedMap: Record<string, number>, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean }): TopAssociateRow[] {
     return rows.map((r) => {
       const key = this.normalizeAssociate(r.marketingAssociate);
       const spend = this.toNumber(r._sum?.spend);
@@ -132,11 +136,25 @@ export class MarketingAnalyticsService {
       const revenueRaw = this.toNumber(r._sum?.codPos);
       const canceledCod = this.toNumber(r._sum?.canceledCodPos);
       const restockingCod = this.toNumber(r._sum?.restockingCodPos);
+      const abandonedCod = this.toNumber(r._sum?.abandonedCodPos);
       const canceledCount = this.toNumber(r._sum?.canceledCount);
       const restockingCount = this.toNumber(r._sum?.restockingCount);
+      const abandonedCount = this.toNumber(r._sum?.abandonedCount);
 
-      const revenue = Math.max(0, revenueRaw - (opts.excludeCancel ? canceledCod : 0) - (opts.excludeRestocking ? restockingCod : 0));
-      const netPurchases = Math.max(0, purchases - (opts.excludeCancel ? canceledCount : 0) - (opts.excludeRestocking ? restockingCount : 0));
+      const revenue = Math.max(
+        0,
+        revenueRaw -
+          (opts.excludeCancel ? canceledCod : 0) -
+          (opts.excludeRestocking ? restockingCod : 0) -
+          (opts.excludeAbandoned ? abandonedCod : 0),
+      );
+      const netPurchases = Math.max(
+        0,
+        purchases -
+          (opts.excludeCancel ? canceledCount : 0) -
+          (opts.excludeRestocking ? restockingCount : 0) -
+          (opts.excludeAbandoned ? abandonedCount : 0),
+      );
 
       const cpc = clicks > 0 ? spend / clicks : 0;
       const ar_pct = revenue > 0 ? (spend / revenue) * 100 : 0;
@@ -156,15 +174,22 @@ export class MarketingAnalyticsService {
     }).sort((a, b) => b.revenue - a.revenue);
   }
 
-  private computeTopCampaigns(rows: any[], opts: { excludeCancel: boolean; excludeRestocking: boolean }): TopCampaignRow[] {
+  private computeTopCampaigns(rows: any[], opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean }): TopCampaignRow[] {
     return rows.map((r) => {
       const spend = this.toNumber(r._sum?.spend);
       const clicks = this.toNumber(r._sum?.linkClicks);
       const revenueRaw = this.toNumber(r._sum?.codPos);
       const canceledCod = this.toNumber(r._sum?.canceledCodPos);
       const restockingCod = this.toNumber(r._sum?.restockingCodPos);
+      const abandonedCod = this.toNumber(r._sum?.abandonedCodPos);
 
-      const revenue = Math.max(0, revenueRaw - (opts.excludeCancel ? canceledCod : 0) - (opts.excludeRestocking ? restockingCod : 0));
+      const revenue = Math.max(
+        0,
+        revenueRaw -
+          (opts.excludeCancel ? canceledCod : 0) -
+          (opts.excludeRestocking ? restockingCod : 0) -
+          (opts.excludeAbandoned ? abandonedCod : 0),
+      );
       const cpc = clicks > 0 ? spend / clicks : 0;
       const ar_pct = revenue > 0 ? (spend / revenue) * 100 : 0;
 
@@ -178,7 +203,7 @@ export class MarketingAnalyticsService {
     }).sort((a, b) => b.revenue - a.revenue);
   }
 
-  private computeTopCreatives(rows: any[], associatesDisplayMap: Record<string, string>, opts: { excludeCancel: boolean; excludeRestocking: boolean }): TopCreativeRow[] {
+  private computeTopCreatives(rows: any[], associatesDisplayMap: Record<string, string>, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean }): TopCreativeRow[] {
     return rows.map((r) => {
       const key = this.normalizeAssociate(r.marketingAssociate);
       const spend = this.toNumber(r._sum?.spend);
@@ -186,8 +211,15 @@ export class MarketingAnalyticsService {
       const revenueRaw = this.toNumber(r._sum?.codPos);
       const canceledCod = this.toNumber(r._sum?.canceledCodPos);
       const restockingCod = this.toNumber(r._sum?.restockingCodPos);
+      const abandonedCod = this.toNumber(r._sum?.abandonedCodPos);
 
-      const revenue = Math.max(0, revenueRaw - (opts.excludeCancel ? canceledCod : 0) - (opts.excludeRestocking ? restockingCod : 0));
+      const revenue = Math.max(
+        0,
+        revenueRaw -
+          (opts.excludeCancel ? canceledCod : 0) -
+          (opts.excludeRestocking ? restockingCod : 0) -
+          (opts.excludeAbandoned ? abandonedCod : 0),
+      );
       const cpc = clicks > 0 ? spend / clicks : 0;
       const ar_pct = revenue > 0 ? (spend / revenue) * 100 : 0;
 
@@ -211,8 +243,8 @@ export class MarketingAnalyticsService {
     return Array.from(new Set(keys.filter(Boolean)));
   }
 
-  async getOverview(params: { startDate?: string; endDate?: string; associates?: string[]; excludeCancel?: boolean; excludeRestocking?: boolean; tables?: string[] }) {
-    const { startDate, endDate, associates: associateParams = [], excludeCancel = true, excludeRestocking = true, tables = [] } = params;
+  async getOverview(params: { startDate?: string; endDate?: string; associates?: string[]; excludeCancel?: boolean; excludeRestocking?: boolean; excludeAbandoned?: boolean; tables?: string[] }) {
+    const { startDate, endDate, associates: associateParams = [], excludeCancel = true, excludeRestocking = true, excludeAbandoned = true, tables = [] } = params;
     const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
     const endStr = (endDate && endDate.trim()) || startStr;
 
@@ -284,7 +316,7 @@ export class MarketingAnalyticsService {
       end: endStr,
       associates: normalizedAssociates.sort(),
       includeNullAssociate,
-      flags: { excludeCancel, excludeRestocking },
+      flags: { excludeCancel, excludeRestocking, excludeAbandoned },
       tables: tables.slice().sort(),
     };
     const cacheKey = `analytics:${tenantId}:${cacheVersion}:marketing:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
@@ -304,8 +336,10 @@ export class MarketingAnalyticsService {
       codPos: true as const,
       canceledCodPos: true as const,
       restockingCodPos: true as const,
+      abandonedCodPos: true as const,
       canceledCount: true as const,
       restockingCount: true as const,
+      abandonedCount: true as const,
     };
 
     const [currentAgg, prevAgg, lastUpdatedAgg, associateRows, users, nullAssociateCount] = await Promise.all([
@@ -350,12 +384,14 @@ export class MarketingAnalyticsService {
       revenue: this.toNumber(agg?._sum?.codPos),
       canceledCod: this.toNumber(agg?._sum?.canceledCodPos),
       restockingCod: this.toNumber(agg?._sum?.restockingCodPos),
+      abandonedCod: this.toNumber(agg?._sum?.abandonedCodPos),
       canceledCount: this.toNumber(agg?._sum?.canceledCount),
       restockingCount: this.toNumber(agg?._sum?.restockingCount),
+      abandonedCount: this.toNumber(agg?._sum?.abandonedCount),
     });
 
-    const kpis = this.computeKpis(sumToObj(currentAgg), { excludeCancel, excludeRestocking });
-    const prevKpis = this.computeKpis(sumToObj(prevAgg), { excludeCancel, excludeRestocking });
+    const kpis = this.computeKpis(sumToObj(currentAgg), { excludeCancel, excludeRestocking, excludeAbandoned });
+    const prevKpis = this.computeKpis(sumToObj(prevAgg), { excludeCancel, excludeRestocking, excludeAbandoned });
 
     // Build associate display map
     const userMap: Record<string, string> = {};
@@ -412,8 +448,10 @@ export class MarketingAnalyticsService {
             codPos: true,
             canceledCodPos: true,
             restockingCodPos: true,
+            abandonedCodPos: true,
             canceledCount: true,
             restockingCount: true,
+            abandonedCount: true,
           },
         })
       : [];
@@ -428,8 +466,10 @@ export class MarketingAnalyticsService {
       'codPos',
       'canceledCodPos',
       'restockingCodPos',
+      'abandonedCodPos',
       'canceledCount',
       'restockingCount',
+      'abandonedCount',
     ];
     topAssocRowsRaw.forEach((row) => {
       const key = this.normalizeAssociate(row.marketingAssociate);
@@ -495,6 +535,7 @@ export class MarketingAnalyticsService {
       ? this.computeTopAssociates(topAssocRows, adsRunningMap, adsCreatedMap, {
           excludeCancel,
           excludeRestocking,
+          excludeAbandoned,
         }).map((r) => ({
           ...r,
           associateDisplay: associatesDisplayMap[r.associate] || r.associate,
@@ -516,11 +557,12 @@ export class MarketingAnalyticsService {
             codPos: true,
             canceledCodPos: true,
             restockingCodPos: true,
+            abandonedCodPos: true,
           },
         })
       : [];
     const topCampaigns = needCampaigns
-      ? this.computeTopCampaigns(topCampaignRows, { excludeCancel, excludeRestocking })
+      ? this.computeTopCampaigns(topCampaignRows, { excludeCancel, excludeRestocking, excludeAbandoned })
       : [];
 
     const topCreativeRows = needCreatives
@@ -533,11 +575,12 @@ export class MarketingAnalyticsService {
             codPos: true,
             canceledCodPos: true,
             restockingCodPos: true,
+            abandonedCodPos: true,
           },
         })
       : [];
     const topCreatives = needCreatives
-      ? this.computeTopCreatives(topCreativeRows, associatesDisplayMap, { excludeCancel, excludeRestocking }).map((r) => ({
+      ? this.computeTopCreatives(topCreativeRows, associatesDisplayMap, { excludeCancel, excludeRestocking, excludeAbandoned }).map((r) => ({
           ...r,
           associateDisplay: associatesDisplayMap[r.associate] || r.associate,
         }))
@@ -572,6 +615,7 @@ export class MarketingAnalyticsService {
     endDate?: string;
     excludeCancel: boolean;
     excludeRestocking: boolean;
+    excludeAbandoned: boolean;
     user: any;
   }) {
     const startStr = (opts.startDate && opts.startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
@@ -619,6 +663,7 @@ export class MarketingAnalyticsService {
         codPos: true,
         canceledCodPos: true,
         restockingCodPos: true,
+        abandonedCodPos: true,
       },
     });
 
@@ -626,7 +671,14 @@ export class MarketingAnalyticsService {
     const revenueRaw = this.toNumber(agg?._sum?.codPos);
     const canceledCod = this.toNumber(agg?._sum?.canceledCodPos);
     const restockingCod = this.toNumber(agg?._sum?.restockingCodPos);
-    const revenue = Math.max(0, revenueRaw - (opts.excludeCancel ? canceledCod : 0) - (opts.excludeRestocking ? restockingCod : 0));
+    const abandonedCod = this.toNumber(agg?._sum?.abandonedCodPos);
+    const revenue = Math.max(
+      0,
+      revenueRaw -
+        (opts.excludeCancel ? canceledCod : 0) -
+        (opts.excludeRestocking ? restockingCod : 0) -
+        (opts.excludeAbandoned ? abandonedCod : 0),
+    );
     const ar = revenue > 0 ? (spend / revenue) * 100 : 0;
 
     const winningRows = await this.prisma.reconcileMarketing.findMany({
@@ -675,6 +727,7 @@ export class MarketingAnalyticsService {
     endDate?: string;
     excludeCancel: boolean;
     excludeRestocking: boolean;
+    excludeAbandoned: boolean;
     user: User;
     teamCodeOverride?: string | null;
   }) {
@@ -719,6 +772,7 @@ export class MarketingAnalyticsService {
         codPos: true,
         canceledCodPos: true,
         restockingCodPos: true,
+        abandonedCodPos: true,
       },
     });
 
@@ -733,7 +787,14 @@ export class MarketingAnalyticsService {
     const revenueRaw = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.codPos), 0));
     const canceledCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.canceledCodPos), 0));
     const restockingCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.restockingCodPos), 0));
-    const revenue = Math.max(0, revenueRaw - (opts.excludeCancel ? canceledCod : 0) - (opts.excludeRestocking ? restockingCod : 0));
+    const abandonedCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.abandonedCodPos), 0));
+    const revenue = Math.max(
+      0,
+      revenueRaw -
+        (opts.excludeCancel ? canceledCod : 0) -
+        (opts.excludeRestocking ? restockingCod : 0) -
+        (opts.excludeAbandoned ? abandonedCod : 0),
+    );
     const ar = revenue > 0 ? (spend / revenue) * 100 : 0;
 
     return {
