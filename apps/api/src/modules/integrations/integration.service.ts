@@ -497,10 +497,9 @@ export class IntegrationService {
 
   private buildPancakeWebhookReconcileJobId(
     tenantId: string,
-    teamId: string | null,
     dateLocal: string,
   ): string {
-    return `pancake-reconcile:${tenantId}:${teamId || 'null'}:${dateLocal}`;
+    return `pancake-reconcile:${tenantId}:${dateLocal}`;
   }
 
   private extractWebhookOrderDateLocal(order: any): string | null {
@@ -538,7 +537,7 @@ export class IntegrationService {
 
   private async enqueueWebhookReconcileJobs(
     tenantId: string,
-    targets: Map<string, { teamId: string | null; dateLocal: string }>,
+    targets: Map<string, { dateLocal: string }>,
     requestId: string,
     logId?: string,
   ): Promise<{ queued: number; skipped: number; warnings: string[] }> {
@@ -561,7 +560,7 @@ export class IntegrationService {
           PANCAKE_WEBHOOK_RECONCILE_JOB,
           {
             tenantId,
-            teamId: target.teamId,
+            teamId: null,
             dateLocal: target.dateLocal,
             requestId,
             logId,
@@ -581,7 +580,7 @@ export class IntegrationService {
         }
 
         warnings.push(
-          `Failed to queue reconcile (${target.dateLocal}, team=${target.teamId || 'null'}): ${message || 'Unknown error'}`,
+          `Failed to queue reconcile (${target.dateLocal}): ${message || 'Unknown error'}`,
         );
       }
     }
@@ -626,7 +625,7 @@ export class IntegrationService {
     }
 
     const ordersByShopId = new Map<string, any[]>();
-    const reconcileTargets = new Map<string, { teamId: string | null; dateLocal: string }>();
+    const reconcileTargets = new Map<string, { dateLocal: string }>();
     for (const order of webhookOrders) {
       const shopId = order?.shop_id?.toString?.()?.trim?.() || order?.shopId?.toString?.()?.trim?.() || '';
       if (!shopId) {
@@ -691,13 +690,8 @@ export class IntegrationService {
       for (const order of orders) {
         const dateLocal = this.extractWebhookOrderDateLocal(order);
         if (!dateLocal) continue;
-        const jobId = this.buildPancakeWebhookReconcileJobId(
-          tenant.id,
-          store.teamId || null,
-          dateLocal,
-        );
+        const jobId = this.buildPancakeWebhookReconcileJobId(tenant.id, dateLocal);
         reconcileTargets.set(jobId, {
-          teamId: store.teamId || null,
           dateLocal,
         });
       }
