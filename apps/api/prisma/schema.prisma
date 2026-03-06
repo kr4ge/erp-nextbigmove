@@ -540,6 +540,8 @@ model PancakeWebhookLog {
   orderCount          Int      @default(0)
   upsertedCount       Int      @default(0)
   warningCount        Int      @default(0)
+  reconcileQueuedCount Int     @default(0)
+  reconcileSkippedCount Int    @default(0)
   attempts            Int      @default(0)
   queueJobId          String?
   errorCode           String?

@@ -35,11 +35,20 @@ import { validate as uuidValidate } from 'uuid';
 import { MetaAdsProvider } from './providers/meta-ads.provider';
 import { MetaInsightService } from './services/meta-insight.service';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
+import * as dayjs from 'dayjs';
+import * as utc from 'dayjs/plugin/utc';
+import * as timezone from 'dayjs/plugin/timezone';
 import {
   PANCAKE_WEBHOOK_JOB,
+  PANCAKE_WEBHOOK_RECONCILE_JOB,
+  PANCAKE_WEBHOOK_RECONCILE_QUEUE,
   PANCAKE_WEBHOOK_QUEUE,
   PancakeWebhookJobData,
+  PancakeWebhookReconcileJobData,
 } from './pancake-webhook.constants';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 type PancakeWebhookSettings = {
   enabled?: boolean;
@@ -78,6 +87,8 @@ type PancakeWebhookPayloadProcessingResult = {
   warnings: string[];
   relayStatus: PancakeWebhookRelayStatus;
   outcomes: PosOrderUpsertOutcome[];
+  reconcileQueuedCount: number;
+  reconcileSkippedCount: number;
 };
 
 type ListPancakeWebhookLogsParams = {
@@ -109,6 +120,8 @@ export class IntegrationService {
     private readonly posOrderService: PosOrderService,
     @InjectQueue(PANCAKE_WEBHOOK_QUEUE)
     private readonly pancakeWebhookQueue: Queue<PancakeWebhookJobData>,
+    @InjectQueue(PANCAKE_WEBHOOK_RECONCILE_QUEUE)
+    private readonly pancakeWebhookReconcileQueue: Queue<PancakeWebhookReconcileJobData>,
   ) {}
 
   private normalizeJsonObject(value: any): Record<string, any> {
@@ -478,15 +491,112 @@ export class IntegrationService {
     };
   }
 
+  private buildPancakeWebhookReconcileJobId(
+    tenantId: string,
+    teamId: string | null,
+    dateLocal: string,
+  ): string {
+    return `pancake-reconcile:${tenantId}:${teamId || 'null'}:${dateLocal}`;
+  }
+
+  private extractWebhookOrderDateLocal(order: any): string | null {
+    const insertedRaw =
+      (typeof order?.inserted_at === 'string' && order.inserted_at.trim()) ||
+      (typeof order?.insertedAt === 'string' && order.insertedAt.trim()) ||
+      '';
+    if (!insertedRaw) return null;
+
+    const insertedAtUtc = dayjs.utc(insertedRaw);
+    if (!insertedAtUtc.isValid()) return null;
+
+    return insertedAtUtc.tz('Asia/Manila').format('YYYY-MM-DD');
+  }
+
+  private getPancakeWebhookReconcileQueueJobOptions(delayMs: number) {
+    const attempts = Math.max(1, Number(process.env.PANCAKE_RECONCILE_QUEUE_ATTEMPTS || 3));
+    const backoffDelay = Math.max(
+      1000,
+      Number(process.env.PANCAKE_RECONCILE_QUEUE_BACKOFF_MS || 4000),
+    );
+    const timeout = Math.max(
+      30_000,
+      Number(process.env.PANCAKE_RECONCILE_QUEUE_TIMEOUT_MS || 300_000),
+    );
+    return {
+      delay: Math.max(0, delayMs),
+      attempts,
+      backoff: { type: 'exponential' as const, delay: backoffDelay },
+      timeout,
+      removeOnComplete: true,
+      removeOnFail: 1000,
+    };
+  }
+
+  private async enqueueWebhookReconcileJobs(
+    tenantId: string,
+    targets: Map<string, { teamId: string | null; dateLocal: string }>,
+    requestId: string,
+    logId?: string,
+  ): Promise<{ queued: number; skipped: number; warnings: string[] }> {
+    const warnings: string[] = [];
+    let queued = 0;
+    let skipped = 0;
+
+    if (targets.size === 0) {
+      return { queued, skipped, warnings };
+    }
+
+    const delayMs = Math.max(
+      0,
+      Number(process.env.PANCAKE_WEBHOOK_RECONCILE_DELAY_MS || 120000),
+    );
+
+    for (const [jobId, target] of targets.entries()) {
+      try {
+        await this.pancakeWebhookReconcileQueue.add(
+          PANCAKE_WEBHOOK_RECONCILE_JOB,
+          {
+            tenantId,
+            teamId: target.teamId,
+            dateLocal: target.dateLocal,
+            requestId,
+            logId,
+          },
+          {
+            jobId,
+            ...this.getPancakeWebhookReconcileQueueJobOptions(delayMs),
+          },
+        );
+        queued += 1;
+      } catch (error: any) {
+        const message = (error?.message || '').toString();
+        const normalized = message.toLowerCase();
+        if (normalized.includes('job') && normalized.includes('exist')) {
+          skipped += 1;
+          continue;
+        }
+
+        warnings.push(
+          `Failed to queue reconcile (${target.dateLocal}, team=${target.teamId || 'null'}): ${message || 'Unknown error'}`,
+        );
+      }
+    }
+
+    return { queued, skipped, warnings };
+  }
+
   private async processPancakeWebhookPayload(
     tenant: { id: string; settings: any; encryptionKey: string },
     safePayload: any,
     requestId: string,
+    logId?: string,
   ): Promise<PancakeWebhookPayloadProcessingResult> {
     const cfg = this.getPancakeWebhookSettings(tenant.settings);
     const warnings: string[] = [];
     let upserted = 0;
     const outcomes: PosOrderUpsertOutcome[] = [];
+    let reconcileQueuedCount = 0;
+    let reconcileSkippedCount = 0;
 
     const relayResult = await this.forwardPancakeWebhookPayload(
       { id: tenant.id, encryptionKey: tenant.encryptionKey },
@@ -501,10 +611,18 @@ export class IntegrationService {
     const webhookOrders = this.extractWebhookOrders(safePayload);
     if (webhookOrders.length === 0) {
       warnings.push('Missing order payload or shop_id');
-      return { upserted, warnings, relayStatus: relayResult.relayStatus, outcomes };
+      return {
+        upserted,
+        warnings,
+        relayStatus: relayResult.relayStatus,
+        outcomes,
+        reconcileQueuedCount,
+        reconcileSkippedCount,
+      };
     }
 
     const ordersByShopId = new Map<string, any[]>();
+    const reconcileTargets = new Map<string, { teamId: string | null; dateLocal: string }>();
     for (const order of webhookOrders) {
       const shopId = order?.shop_id?.toString?.()?.trim?.() || order?.shopId?.toString?.()?.trim?.() || '';
       if (!shopId) {
@@ -517,7 +635,14 @@ export class IntegrationService {
     }
 
     if (ordersByShopId.size === 0) {
-      return { upserted, warnings, relayStatus: relayResult.relayStatus, outcomes };
+      return {
+        upserted,
+        warnings,
+        relayStatus: relayResult.relayStatus,
+        outcomes,
+        reconcileQueuedCount,
+        reconcileSkippedCount,
+      };
     }
 
     const shopIds = Array.from(ordersByShopId.keys());
@@ -559,6 +684,20 @@ export class IntegrationService {
         continue;
       }
 
+      for (const order of orders) {
+        const dateLocal = this.extractWebhookOrderDateLocal(order);
+        if (!dateLocal) continue;
+        const jobId = this.buildPancakeWebhookReconcileJobId(
+          tenant.id,
+          store.teamId || null,
+          dateLocal,
+        );
+        reconcileTargets.set(jobId, {
+          teamId: store.teamId || null,
+          dateLocal,
+        });
+      }
+
       try {
         const result = await this.posOrderService.upsertPosOrdersWithOutcomes(
           tenant.id,
@@ -586,7 +725,31 @@ export class IntegrationService {
       }
     }
 
-    return { upserted, warnings, relayStatus: relayResult.relayStatus, outcomes };
+    const reconcileQueueResult = await this.enqueueWebhookReconcileJobs(
+      tenant.id,
+      reconcileTargets,
+      requestId,
+      logId,
+    );
+    if (reconcileQueueResult.warnings.length > 0) {
+      warnings.push(...reconcileQueueResult.warnings);
+    }
+    reconcileQueuedCount = reconcileQueueResult.queued;
+    reconcileSkippedCount = reconcileQueueResult.skipped;
+    if (reconcileQueueResult.queued > 0 || reconcileQueueResult.skipped > 0) {
+      this.logger.log(
+        `Webhook reconcile jobs tenant=${tenant.id} queued=${reconcileQueueResult.queued} skipped=${reconcileQueueResult.skipped}`,
+      );
+    }
+
+    return {
+      upserted,
+      warnings,
+      relayStatus: relayResult.relayStatus,
+      outcomes,
+      reconcileQueuedCount,
+      reconcileSkippedCount,
+    };
   }
 
   async processQueuedPancakeWebhookEvent(
@@ -638,7 +801,12 @@ export class IntegrationService {
     }
 
     try {
-      const result = await this.processPancakeWebhookPayload(tenant, jobData.payload ?? {}, jobData.requestId);
+      const result = await this.processPancakeWebhookPayload(
+        tenant,
+        jobData.payload ?? {},
+        jobData.requestId,
+        jobData.logId,
+      );
       const endedAt = new Date();
       const processingDurationMs = endedAt.getTime() - startedAt.getTime();
       const finalProcessStatus = this.mapFinalProcessStatus(
@@ -658,6 +826,8 @@ export class IntegrationService {
           relayStatus: result.relayStatus,
           upsertedCount: result.upserted,
           warningCount: result.warnings.length,
+          reconcileQueuedCount: result.reconcileQueuedCount,
+          reconcileSkippedCount: result.reconcileSkippedCount,
           errorCode: finalProcessStatus === 'FAILED' ? 'PROCESS_FAILED' : null,
           errorMessage:
             finalProcessStatus === 'FAILED'
@@ -842,6 +1012,8 @@ export class IntegrationService {
           orderCount: true,
           upsertedCount: true,
           warningCount: true,
+          reconcileQueuedCount: true,
+          reconcileSkippedCount: true,
           attempts: true,
           queueJobId: true,
           errorCode: true,
@@ -1329,7 +1501,12 @@ export class IntegrationService {
     });
 
     try {
-      const result = await this.processPancakeWebhookPayload(tenant, safePayload, requestId);
+      const result = await this.processPancakeWebhookPayload(
+        tenant,
+        safePayload,
+        requestId,
+        log.id,
+      );
       const queueFallbackWarning = inlinePreferred
         ? null
         : 'Queue enqueue failed; processed inline fallback';
@@ -1354,6 +1531,8 @@ export class IntegrationService {
           relayStatus: result.relayStatus,
           upsertedCount: result.upserted,
           warningCount: allWarnings.length,
+          reconcileQueuedCount: result.reconcileQueuedCount,
+          reconcileSkippedCount: result.reconcileSkippedCount,
           errorCode: finalProcessStatus === 'FAILED' ? 'INLINE_PROCESS_FAILED' : null,
           errorMessage:
             allWarnings.length > 0 ? this.truncateMessage(allWarnings.join(' | ')) : null,

@@ -16,6 +16,8 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { IntegrationModule } from '../integrations/integration.module';
 import { ReconcileMarketingService } from './services/reconcile-marketing.service';
 import { ReconcileSalesService } from './services/reconcile-sales.service';
+import { PancakeWebhookReconcileProcessor } from './processors/pancake-webhook-reconcile.processor';
+import { PANCAKE_WEBHOOK_RECONCILE_QUEUE } from '../integrations/pancake-webhook.constants';
 
 @Module({
   imports: [
@@ -24,6 +26,9 @@ import { ReconcileSalesService } from './services/reconcile-sales.service';
     ScheduleModule.forRoot(),
     BullModule.registerQueue({
       name: WORKFLOW_QUEUE,
+    }),
+    BullModule.registerQueue({
+      name: PANCAKE_WEBHOOK_RECONCILE_QUEUE,
     }),
   ],
   controllers: [WorkflowController],
@@ -39,6 +44,7 @@ import { ReconcileSalesService } from './services/reconcile-sales.service';
     WorkflowExecutionReconcilerService,
     ReconcileMarketingService,
     ReconcileSalesService,
+    PancakeWebhookReconcileProcessor,
   ],
   exports: [WorkflowService],
 })

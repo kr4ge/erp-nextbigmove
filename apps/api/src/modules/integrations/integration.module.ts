@@ -12,7 +12,10 @@ import { ProviderRegistry } from './providers/provider.registry';
 import { MetaAdsProvider } from './providers/meta-ads.provider';
 import { PancakePosProvider } from './providers/pancake-pos.provider';
 import { IntegrationProvider } from './dto/create-integration.dto';
-import { PANCAKE_WEBHOOK_QUEUE } from './pancake-webhook.constants';
+import {
+  PANCAKE_WEBHOOK_QUEUE,
+  PANCAKE_WEBHOOK_RECONCILE_QUEUE,
+} from './pancake-webhook.constants';
 import { PancakeWebhookQueueProcessor } from './processors/pancake-webhook.processor';
 
 @Module({
@@ -20,6 +23,9 @@ import { PancakeWebhookQueueProcessor } from './processors/pancake-webhook.proce
     PrismaModule,
     BullModule.registerQueue({
       name: PANCAKE_WEBHOOK_QUEUE,
+    }),
+    BullModule.registerQueue({
+      name: PANCAKE_WEBHOOK_RECONCILE_QUEUE,
     }),
   ],
   controllers: [IntegrationController, PancakeWebhookController],

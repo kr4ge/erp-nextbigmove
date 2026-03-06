@@ -1,0 +1,3 @@
+ALTER TABLE "pancake_webhook_logs"
+ADD COLUMN IF NOT EXISTS "reconcileQueuedCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "reconcileSkippedCount" INTEGER NOT NULL DEFAULT 0;
