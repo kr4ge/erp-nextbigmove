@@ -52,6 +52,8 @@ type WebhookLogItem = {
   orderCount: number;
   upsertedCount: number;
   warningCount: number;
+  reconcileQueuedCount: number;
+  reconcileSkippedCount: number;
   attempts: number;
   queueJobId: string | null;
   errorCode: string | null;
@@ -857,6 +859,8 @@ export default function WebhookSettingsPage() {
                           <div>rows: {row.orderRowsCount}</div>
                           <div>upserted: {row.upsertedCount}</div>
                           <div>warnings: {row.warningCount}</div>
+                          <div>reconcile queued: {row.reconcileQueuedCount ?? 0}</div>
+                          <div>reconcile skipped: {row.reconcileSkippedCount ?? 0}</div>
                         </td>
                         <td className="px-3 py-3 text-xs text-slate-700">
                           <div className="font-semibold text-rose-700">{row.errorCode || '--'}</div>
