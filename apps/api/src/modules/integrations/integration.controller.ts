@@ -133,7 +133,7 @@ export class IntegrationController {
     @Body() dto: UpdatePancakeWebhookDto,
     @Req() req: Request,
   ) {
-    return this.integrationService.updatePancakeWebhookEnabled(dto.enabled, this.getBaseUrl(req));
+    return this.integrationService.updatePancakeWebhookEnabled(dto, this.getBaseUrl(req));
   }
 
   /**

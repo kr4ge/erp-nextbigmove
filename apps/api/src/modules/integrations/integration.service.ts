@@ -23,6 +23,7 @@ import {
 import {
   CreateIntegrationDto,
   UpdateIntegrationDto,
+  UpdatePancakeWebhookDto,
   UpdatePancakeWebhookRelayDto,
   IntegrationResponseDto,
   IntegrationProvider,
@@ -52,6 +53,7 @@ dayjs.extend(timezone);
 
 type PancakeWebhookSettings = {
   enabled?: boolean;
+  reconcileEnabled?: boolean;
   apiKeyHash?: string;
   keyLast4?: string;
   rotatedAt?: string;
@@ -136,6 +138,8 @@ export class IntegrationService {
     const webhook = this.normalizeJsonObject(settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY]);
     return {
       enabled: typeof webhook.enabled === 'boolean' ? webhook.enabled : false,
+      reconcileEnabled:
+        typeof webhook.reconcileEnabled === 'boolean' ? webhook.reconcileEnabled : true,
       apiKeyHash: typeof webhook.apiKeyHash === 'string' ? webhook.apiKeyHash : undefined,
       keyLast4: typeof webhook.keyLast4 === 'string' ? webhook.keyLast4 : undefined,
       rotatedAt: typeof webhook.rotatedAt === 'string' ? webhook.rotatedAt : undefined,
@@ -725,21 +729,30 @@ export class IntegrationService {
       }
     }
 
-    const reconcileQueueResult = await this.enqueueWebhookReconcileJobs(
-      tenant.id,
-      reconcileTargets,
-      requestId,
-      logId,
-    );
-    if (reconcileQueueResult.warnings.length > 0) {
-      warnings.push(...reconcileQueueResult.warnings);
-    }
-    reconcileQueuedCount = reconcileQueueResult.queued;
-    reconcileSkippedCount = reconcileQueueResult.skipped;
-    if (reconcileQueueResult.queued > 0 || reconcileQueueResult.skipped > 0) {
-      this.logger.log(
-        `Webhook reconcile jobs tenant=${tenant.id} queued=${reconcileQueueResult.queued} skipped=${reconcileQueueResult.skipped}`,
+    if (cfg.reconcileEnabled === false) {
+      reconcileSkippedCount = reconcileTargets.size;
+      if (reconcileTargets.size > 0) {
+        this.logger.debug(
+          `Webhook reconcile is disabled tenant=${tenant.id} skipped=${reconcileTargets.size}`,
+        );
+      }
+    } else {
+      const reconcileQueueResult = await this.enqueueWebhookReconcileJobs(
+        tenant.id,
+        reconcileTargets,
+        requestId,
+        logId,
       );
+      if (reconcileQueueResult.warnings.length > 0) {
+        warnings.push(...reconcileQueueResult.warnings);
+      }
+      reconcileQueuedCount = reconcileQueueResult.queued;
+      reconcileSkippedCount = reconcileQueueResult.skipped;
+      if (reconcileQueueResult.queued > 0 || reconcileQueueResult.skipped > 0) {
+        this.logger.log(
+          `Webhook reconcile jobs tenant=${tenant.id} queued=${reconcileQueueResult.queued} skipped=${reconcileQueueResult.skipped}`,
+        );
+      }
     }
 
     return {
@@ -885,6 +898,7 @@ export class IntegrationService {
     const relayApiKey = this.getRelayApiKey(cfg, tenant.encryptionKey) || null;
     return {
       enabled: !!cfg.enabled,
+      reconcileEnabled: cfg.reconcileEnabled !== false,
       hasApiKey: !!cfg.apiKeyHash,
       keyLast4: cfg.keyLast4 || null,
       rotatedAt: cfg.rotatedAt || null,
@@ -1093,6 +1107,7 @@ export class IntegrationService {
 
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled: existing.enabled ?? true,
+      reconcileEnabled: existing.reconcileEnabled ?? true,
       apiKeyHash: this.hashWebhookApiKey(apiKey),
       keyLast4: apiKey.slice(-4),
       rotatedAt: nowIso,
@@ -1114,6 +1129,7 @@ export class IntegrationService {
 
     return {
       enabled: settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].enabled,
+      reconcileEnabled: settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].reconcileEnabled,
       headerKey: 'x-api-key',
       apiKey,
       keyLast4: apiKey.slice(-4),
@@ -1131,7 +1147,7 @@ export class IntegrationService {
     };
   }
 
-  async updatePancakeWebhookEnabled(enabled: boolean, baseUrl: string) {
+  async updatePancakeWebhookEnabled(dto: UpdatePancakeWebhookDto, baseUrl: string) {
     const { tenantId } = await this.teamContext.getContext();
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -1144,9 +1160,20 @@ export class IntegrationService {
 
     const settings = this.normalizeJsonObject(tenant.settings);
     const existing = this.getPancakeWebhookSettings(tenant.settings);
+    const hasEnabledUpdate = typeof dto.enabled === 'boolean';
+    const hasReconcileUpdate = typeof dto.reconcileEnabled === 'boolean';
+    if (!hasEnabledUpdate && !hasReconcileUpdate) {
+      throw new BadRequestException('At least one setting must be provided');
+    }
+
+    const enabled = hasEnabledUpdate ? !!dto.enabled : !!existing.enabled;
+    const reconcileEnabled = hasReconcileUpdate
+      ? !!dto.reconcileEnabled
+      : existing.reconcileEnabled !== false;
 
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled,
+      reconcileEnabled,
       apiKeyHash: existing.apiKeyHash,
       keyLast4: existing.keyLast4,
       rotatedAt: existing.rotatedAt,
@@ -1168,6 +1195,7 @@ export class IntegrationService {
 
     return {
       enabled,
+      reconcileEnabled,
       hasApiKey: !!existing.apiKeyHash,
       keyLast4: existing.keyLast4 || null,
       rotatedAt: existing.rotatedAt || null,
@@ -1232,6 +1260,7 @@ export class IntegrationService {
 
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled: existing.enabled ?? false,
+      reconcileEnabled: existing.reconcileEnabled ?? true,
       apiKeyHash: existing.apiKeyHash,
       keyLast4: existing.keyLast4,
       rotatedAt: existing.rotatedAt,
@@ -1254,6 +1283,7 @@ export class IntegrationService {
     const resolvedRelayApiKey = this.getRelayApiKey(updated, tenant.encryptionKey) || null;
     return {
       enabled: !!updated.enabled,
+      reconcileEnabled: updated.reconcileEnabled !== false,
       hasApiKey: !!updated.apiKeyHash,
       keyLast4: updated.keyLast4 || null,
       rotatedAt: updated.rotatedAt || null,
