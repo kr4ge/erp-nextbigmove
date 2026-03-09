@@ -1,6 +1,7 @@
 import { Process, Processor, OnQueueFailed } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
+import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ReconcileMarketingService } from '../services/reconcile-marketing.service';
 import { ReconcileSalesService } from '../services/reconcile-sales.service';
 import {
@@ -14,6 +15,7 @@ export class PancakeWebhookReconcileProcessor {
   private readonly logger = new Logger(PancakeWebhookReconcileProcessor.name);
 
   constructor(
+    private readonly prisma: PrismaService,
     private readonly reconcileMarketingService: ReconcileMarketingService,
     private readonly reconcileSalesService: ReconcileSalesService,
   ) {}
@@ -22,16 +24,45 @@ export class PancakeWebhookReconcileProcessor {
   async handleReconcile(job: Job<PancakeWebhookReconcileJobData>) {
     const startedAt = Date.now();
     const { tenantId, dateLocal, requestId, logId } = job.data;
+    const reconcileMode = job.data.reconcileMode === 'incremental' ? 'incremental' : 'full_reset';
 
     this.logger.debug(
-      `Processing webhook reconcile job ${job.id} tenant=${tenantId} date=${dateLocal} request=${requestId || 'n/a'} log=${logId || 'n/a'}`,
+      `Processing webhook reconcile job ${job.id} tenant=${tenantId} date=${dateLocal} mode=${reconcileMode} request=${requestId || 'n/a'} log=${logId || 'n/a'}`,
     );
+
+    if (reconcileMode === 'full_reset') {
+      const dayStart = new Date(`${dateLocal}T00:00:00.000Z`);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+      // Mirror manual reconcile behavior: reset day rows first, then rebuild.
+      await this.prisma.$transaction([
+        this.prisma.reconcileSales.deleteMany({
+          where: {
+            tenantId,
+            date: {
+              gte: dayStart,
+              lt: dayEnd,
+            },
+          },
+        }),
+        this.prisma.reconcileMarketing.deleteMany({
+          where: {
+            tenantId,
+            date: {
+              gte: dayStart,
+              lt: dayEnd,
+            },
+          },
+        }),
+      ]);
+    }
 
     await this.reconcileMarketingService.reconcileDay(tenantId, dateLocal, null);
     await this.reconcileSalesService.aggregateDay(tenantId, dateLocal, null);
 
     this.logger.log(
-      `Processed webhook reconcile tenant=${tenantId} date=${dateLocal} durationMs=${Date.now() - startedAt}`,
+      `Processed webhook reconcile tenant=${tenantId} date=${dateLocal} mode=${reconcileMode} durationMs=${Date.now() - startedAt}`,
     );
   }
 

@@ -12,6 +12,8 @@ import apiClient from '@/lib/api-client';
 type WebhookConfig = {
   enabled: boolean;
   reconcileEnabled: boolean;
+  reconcileIntervalSeconds: number;
+  reconcileMode: 'incremental' | 'full_reset';
   hasApiKey: boolean;
   keyLast4: string | null;
   rotatedAt: string | null;
@@ -131,6 +133,8 @@ export default function WebhookSettingsPage() {
   const [isUpdatingRelay, setIsUpdatingRelay] = useState(false);
   const [generatedApiKey, setGeneratedApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [reconcileIntervalSecondsInput, setReconcileIntervalSecondsInput] = useState('120');
+  const [reconcileModeInput, setReconcileModeInput] = useState<'incremental' | 'full_reset'>('full_reset');
   const [relayEnabled, setRelayEnabled] = useState(false);
   const [relayWebhookUrl, setRelayWebhookUrl] = useState('');
   const [relayHeaderKey, setRelayHeaderKey] = useState('x-api-key');
@@ -210,6 +214,8 @@ export default function WebhookSettingsPage() {
     try {
       const res = await apiClient.get('/integrations/pancake/webhook');
       setConfig(res.data);
+      setReconcileIntervalSecondsInput(String(res.data?.reconcileIntervalSeconds ?? 120));
+      setReconcileModeInput(res.data?.reconcileMode === 'incremental' ? 'incremental' : 'full_reset');
       setRelayEnabled(!!res.data?.relayEnabled);
       setRelayWebhookUrl(res.data?.relayWebhookUrl || '');
       setRelayHeaderKey(res.data?.relayHeaderKey || 'x-api-key');
@@ -302,6 +308,8 @@ export default function WebhookSettingsPage() {
       setConfig({
         enabled: !!res.data.enabled,
         reconcileEnabled: res.data.reconcileEnabled !== false,
+        reconcileIntervalSeconds: Number(res.data.reconcileIntervalSeconds ?? 120),
+        reconcileMode: res.data.reconcileMode === 'incremental' ? 'incremental' : 'full_reset',
         hasApiKey: true,
         keyLast4: res.data.keyLast4 || null,
         rotatedAt: res.data.rotatedAt || null,
@@ -319,6 +327,8 @@ export default function WebhookSettingsPage() {
       });
       setGeneratedApiKey(res.data.apiKey || '');
       setShowApiKey(false);
+      setReconcileIntervalSecondsInput(String(res.data?.reconcileIntervalSeconds ?? 120));
+      setReconcileModeInput(res.data?.reconcileMode === 'incremental' ? 'incremental' : 'full_reset');
       setRelayHeaderKey(res.data.relayHeaderKey || 'x-api-key');
       setRelayApiKeyInput(res.data.relayApiKey || '');
       addToast('success', 'Webhook API key rotated.');
@@ -337,6 +347,8 @@ export default function WebhookSettingsPage() {
         enabled: nextEnabled,
       });
       setConfig(res.data);
+      setReconcileIntervalSecondsInput(String(res.data?.reconcileIntervalSeconds ?? 120));
+      setReconcileModeInput(res.data?.reconcileMode === 'incremental' ? 'incremental' : 'full_reset');
       addToast('success', `Webhook ${res.data.enabled ? 'enabled' : 'disabled'}.`);
     } catch (error: any) {
       addToast('error', parseErrorMessage(error));
@@ -353,10 +365,36 @@ export default function WebhookSettingsPage() {
         reconcileEnabled: nextEnabled,
       });
       setConfig(res.data);
+      setReconcileIntervalSecondsInput(String(res.data?.reconcileIntervalSeconds ?? 120));
+      setReconcileModeInput(res.data?.reconcileMode === 'incremental' ? 'incremental' : 'full_reset');
       addToast(
         'success',
         `Webhook reconciliation ${res.data.reconcileEnabled ? 'enabled' : 'disabled'}.`,
       );
+    } catch (error: any) {
+      addToast('error', parseErrorMessage(error));
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSaveReconcileSettings = async () => {
+    const parsed = Number(reconcileIntervalSecondsInput);
+    if (!Number.isFinite(parsed) || parsed < 10 || parsed > 3600) {
+      addToast('error', 'Reconcile interval must be between 10 and 3600 seconds.');
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const res = await apiClient.patch('/integrations/pancake/webhook', {
+        reconcileIntervalSeconds: Math.floor(parsed),
+        reconcileMode: reconcileModeInput,
+      });
+      setConfig(res.data);
+      setReconcileIntervalSecondsInput(String(res.data?.reconcileIntervalSeconds ?? Math.floor(parsed)));
+      setReconcileModeInput(res.data?.reconcileMode === 'incremental' ? 'incremental' : 'full_reset');
+      addToast('success', 'Reconciliation settings updated.');
     } catch (error: any) {
       addToast('error', parseErrorMessage(error));
     } finally {
@@ -489,31 +527,6 @@ export default function WebhookSettingsPage() {
             </button>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <div className="space-y-0.5">
-              <p className="text-sm font-semibold text-slate-900">Auto Reconciliation</p>
-              <p className="text-xs text-slate-500">
-                Queue per-day reconcile jobs after each received webhook event.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={!!config?.reconcileEnabled}
-              onClick={() => handleToggleReconcileEnabled(!config?.reconcileEnabled)}
-              disabled={!canManage || loading || !config || isUpdating}
-              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
-                config?.reconcileEnabled ? 'bg-amber-500' : 'bg-slate-300'
-              } ${!canManage || loading || !config || isUpdating ? 'cursor-not-allowed opacity-60' : ''}`}
-            >
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                  config?.reconcileEnabled ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="space-y-2">
               <FormInput
@@ -605,6 +618,81 @@ export default function WebhookSettingsPage() {
                 Rotated by: <span className="font-semibold text-slate-700">{config?.rotatedByUserId || '--'}</span>
               </div>
             </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-slate-900">Webhook Reconciliation Settings</p>
+              <p className="text-xs text-slate-500">
+                Configure auto-reconcile behavior for webhook-triggered updates.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!config?.reconcileEnabled}
+              onClick={() => handleToggleReconcileEnabled(!config?.reconcileEnabled)}
+              disabled={!canManage || loading || !config || isUpdating}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
+                config?.reconcileEnabled ? 'bg-amber-500' : 'bg-slate-300'
+              } ${!canManage || loading || !config || isUpdating ? 'cursor-not-allowed opacity-60' : ''}`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  config?.reconcileEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Reconcile Mode</label>
+              <select
+                value={reconcileModeInput}
+                onChange={(e) => setReconcileModeInput(e.target.value === 'incremental' ? 'incremental' : 'full_reset')}
+                disabled={!canManage || loading || isUpdating}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="full_reset">Full Reset (same as manual reconcile)</option>
+                <option value="incremental">Incremental (no day reset)</option>
+              </select>
+              <p className="text-xs text-slate-500">
+                `full_reset` clears and rebuilds the day slice for maximum consistency.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Reconcile Interval (seconds)</label>
+              <input
+                type="number"
+                min={10}
+                max={3600}
+                step={1}
+                value={reconcileIntervalSecondsInput}
+                onChange={(e) => setReconcileIntervalSecondsInput(e.target.value)}
+                disabled={!canManage || loading || isUpdating}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <p className="text-xs text-slate-500">
+                Delay before running tenant-wide reconcile for queued webhook dates.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={handleSaveReconcileSettings}
+              disabled={!canManage || loading || isUpdating}
+              loading={isUpdating}
+            >
+              Save Reconcile Settings
+            </Button>
           </div>
         </div>
       </Card>

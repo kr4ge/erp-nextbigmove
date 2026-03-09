@@ -54,6 +54,8 @@ dayjs.extend(timezone);
 type PancakeWebhookSettings = {
   enabled?: boolean;
   reconcileEnabled?: boolean;
+  reconcileIntervalSeconds?: number;
+  reconcileMode?: 'incremental' | 'full_reset';
   apiKeyHash?: string;
   keyLast4?: string;
   rotatedAt?: string;
@@ -136,10 +138,24 @@ export class IntegrationService {
   private getPancakeWebhookSettings(settingsRaw: any): PancakeWebhookSettings {
     const settings = this.normalizeJsonObject(settingsRaw);
     const webhook = this.normalizeJsonObject(settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY]);
+    const reconcileIntervalRaw = Number(webhook.reconcileIntervalSeconds);
+    const reconcileIntervalSeconds =
+      Number.isFinite(reconcileIntervalRaw)
+      && reconcileIntervalRaw >= 10
+      && reconcileIntervalRaw <= 3600
+        ? Math.floor(reconcileIntervalRaw)
+        : undefined;
+    const reconcileModeRaw = typeof webhook.reconcileMode === 'string' ? webhook.reconcileMode : '';
+    const reconcileMode: 'incremental' | 'full_reset' | undefined =
+      reconcileModeRaw === 'incremental' || reconcileModeRaw === 'full_reset'
+        ? reconcileModeRaw
+        : undefined;
     return {
       enabled: typeof webhook.enabled === 'boolean' ? webhook.enabled : false,
       reconcileEnabled:
         typeof webhook.reconcileEnabled === 'boolean' ? webhook.reconcileEnabled : true,
+      reconcileIntervalSeconds,
+      reconcileMode,
       apiKeyHash: typeof webhook.apiKeyHash === 'string' ? webhook.apiKeyHash : undefined,
       keyLast4: typeof webhook.keyLast4 === 'string' ? webhook.keyLast4 : undefined,
       rotatedAt: typeof webhook.rotatedAt === 'string' ? webhook.rotatedAt : undefined,
@@ -535,10 +551,29 @@ export class IntegrationService {
     };
   }
 
+  private getDefaultWebhookReconcileIntervalSeconds(): number {
+    const delayMs = Math.max(
+      0,
+      Number(process.env.PANCAKE_WEBHOOK_RECONCILE_DELAY_MS || 120000),
+    );
+    return Math.max(10, Math.round(delayMs / 1000));
+  }
+
+  private getWebhookReconcileDelayMs(cfg: PancakeWebhookSettings): number {
+    const intervalSeconds = cfg.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds();
+    return Math.max(10, intervalSeconds) * 1000;
+  }
+
+  private getDefaultWebhookReconcileMode(): 'incremental' | 'full_reset' {
+    return 'full_reset';
+  }
+
   private async enqueueWebhookReconcileJobs(
     tenantId: string,
     targets: Map<string, { dateLocal: string }>,
     requestId: string,
+    delayMs: number,
+    reconcileMode: 'incremental' | 'full_reset',
     logId?: string,
   ): Promise<{ queued: number; skipped: number; warnings: string[] }> {
     const warnings: string[] = [];
@@ -549,11 +584,6 @@ export class IntegrationService {
       return { queued, skipped, warnings };
     }
 
-    const delayMs = Math.max(
-      0,
-      Number(process.env.PANCAKE_WEBHOOK_RECONCILE_DELAY_MS || 120000),
-    );
-
     for (const [jobId, target] of targets.entries()) {
       try {
         await this.pancakeWebhookReconcileQueue.add(
@@ -562,6 +592,7 @@ export class IntegrationService {
             tenantId,
             teamId: null,
             dateLocal: target.dateLocal,
+            reconcileMode,
             requestId,
             logId,
           },
@@ -731,10 +762,14 @@ export class IntegrationService {
         );
       }
     } else {
+      const reconcileDelayMs = this.getWebhookReconcileDelayMs(cfg);
+      const reconcileMode = cfg.reconcileMode ?? this.getDefaultWebhookReconcileMode();
       const reconcileQueueResult = await this.enqueueWebhookReconcileJobs(
         tenant.id,
         reconcileTargets,
         requestId,
+        reconcileDelayMs,
+        reconcileMode,
         logId,
       );
       if (reconcileQueueResult.warnings.length > 0) {
@@ -893,6 +928,9 @@ export class IntegrationService {
     return {
       enabled: !!cfg.enabled,
       reconcileEnabled: cfg.reconcileEnabled !== false,
+      reconcileIntervalSeconds:
+        cfg.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds(),
+      reconcileMode: cfg.reconcileMode ?? this.getDefaultWebhookReconcileMode(),
       hasApiKey: !!cfg.apiKeyHash,
       keyLast4: cfg.keyLast4 || null,
       rotatedAt: cfg.rotatedAt || null,
@@ -1102,6 +1140,9 @@ export class IntegrationService {
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled: existing.enabled ?? true,
       reconcileEnabled: existing.reconcileEnabled ?? true,
+      reconcileIntervalSeconds:
+        existing.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds(),
+      reconcileMode: existing.reconcileMode ?? this.getDefaultWebhookReconcileMode(),
       apiKeyHash: this.hashWebhookApiKey(apiKey),
       keyLast4: apiKey.slice(-4),
       rotatedAt: nowIso,
@@ -1124,6 +1165,11 @@ export class IntegrationService {
     return {
       enabled: settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].enabled,
       reconcileEnabled: settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].reconcileEnabled,
+      reconcileIntervalSeconds:
+        settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].reconcileIntervalSeconds,
+      reconcileMode:
+        settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].reconcileMode
+        || this.getDefaultWebhookReconcileMode(),
       headerKey: 'x-api-key',
       apiKey,
       keyLast4: apiKey.slice(-4),
@@ -1156,7 +1202,9 @@ export class IntegrationService {
     const existing = this.getPancakeWebhookSettings(tenant.settings);
     const hasEnabledUpdate = typeof dto.enabled === 'boolean';
     const hasReconcileUpdate = typeof dto.reconcileEnabled === 'boolean';
-    if (!hasEnabledUpdate && !hasReconcileUpdate) {
+    const hasReconcileIntervalUpdate = typeof dto.reconcileIntervalSeconds === 'number';
+    const hasReconcileModeUpdate = typeof dto.reconcileMode === 'string';
+    if (!hasEnabledUpdate && !hasReconcileUpdate && !hasReconcileIntervalUpdate && !hasReconcileModeUpdate) {
       throw new BadRequestException('At least one setting must be provided');
     }
 
@@ -1164,10 +1212,18 @@ export class IntegrationService {
     const reconcileEnabled = hasReconcileUpdate
       ? !!dto.reconcileEnabled
       : existing.reconcileEnabled !== false;
+    const reconcileIntervalSeconds = hasReconcileIntervalUpdate
+      ? Math.floor(dto.reconcileIntervalSeconds as number)
+      : existing.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds();
+    const reconcileMode = hasReconcileModeUpdate
+      ? (dto.reconcileMode as 'incremental' | 'full_reset')
+      : existing.reconcileMode ?? this.getDefaultWebhookReconcileMode();
 
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled,
       reconcileEnabled,
+      reconcileIntervalSeconds,
+      reconcileMode,
       apiKeyHash: existing.apiKeyHash,
       keyLast4: existing.keyLast4,
       rotatedAt: existing.rotatedAt,
@@ -1190,6 +1246,8 @@ export class IntegrationService {
     return {
       enabled,
       reconcileEnabled,
+      reconcileIntervalSeconds,
+      reconcileMode,
       hasApiKey: !!existing.apiKeyHash,
       keyLast4: existing.keyLast4 || null,
       rotatedAt: existing.rotatedAt || null,
@@ -1255,6 +1313,9 @@ export class IntegrationService {
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled: existing.enabled ?? false,
       reconcileEnabled: existing.reconcileEnabled ?? true,
+      reconcileIntervalSeconds:
+        existing.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds(),
+      reconcileMode: existing.reconcileMode ?? this.getDefaultWebhookReconcileMode(),
       apiKeyHash: existing.apiKeyHash,
       keyLast4: existing.keyLast4,
       rotatedAt: existing.rotatedAt,
@@ -1278,6 +1339,9 @@ export class IntegrationService {
     return {
       enabled: !!updated.enabled,
       reconcileEnabled: updated.reconcileEnabled !== false,
+      reconcileIntervalSeconds:
+        updated.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds(),
+      reconcileMode: updated.reconcileMode ?? this.getDefaultWebhookReconcileMode(),
       hasApiKey: !!updated.apiKeyHash,
       keyLast4: updated.keyLast4 || null,
       rotatedAt: updated.rotatedAt || null,

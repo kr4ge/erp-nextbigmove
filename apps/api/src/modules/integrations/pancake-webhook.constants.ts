@@ -14,6 +14,7 @@ export interface PancakeWebhookReconcileJobData {
   tenantId: string;
   teamId: string | null;
   dateLocal: string;
+  reconcileMode?: 'incremental' | 'full_reset';
   requestId?: string;
   logId?: string;
 }
