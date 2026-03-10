@@ -6,11 +6,12 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { resolveAllowedCorsOrigins } from '../../../common/services/cors-config.service';
 
 @WebSocketGateway({
   namespace: '/workflows',
   cors: {
-    origin: process.env.FRONTEND_URL || '*',
+    origin: resolveAllowedCorsOrigins(),
     credentials: true,
   },
 })

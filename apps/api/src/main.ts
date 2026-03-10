@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import helmet from 'helmet';
 import * as compression from 'compression';
 import { webcrypto } from 'crypto';
+import { resolveAllowedCorsOrigins } from './common/services/cors-config.service';
 
 // Ensure global crypto is available for libraries that rely on Web Crypto APIs
 if (!globalThis.crypto) {
@@ -20,15 +21,16 @@ async function bootstrap() {
   app.use(compression());
 
   // CORS configuration
-  const corsOrigins = process.env.NODE_ENV === 'production'
-    ? [process.env.CORS_ORIGIN_WEB, process.env.CORS_ORIGIN_ADMIN].filter((o): o is string => !!o)
-    : ['http://localhost:3000', 'http://localhost:3002'];
+  const corsOrigins = resolveAllowedCorsOrigins();
+  if (process.env.NODE_ENV === 'production' && corsOrigins.length === 0) {
+    console.warn('No CORS origins configured. Browser cross-origin requests will be blocked.');
+  }
 
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Team-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Team-ID', 'X-API-KEY'],
   });
 
   // Global validation pipe
