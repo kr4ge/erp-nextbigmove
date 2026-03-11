@@ -2537,7 +2537,12 @@ export class IntegrationService {
     let totalPages = 1;
 
     while (page <= totalPages) {
-      const url = `${baseUrl}?api_key=${apiKey}&page_number=${page}`;
+      const params = new URLSearchParams();
+      params.set('api_key', apiKey);
+      params.set('page_number', String(page));
+      params.append('extra_fields[]', 'retail_price');
+
+      const url = `${baseUrl}?${params.toString()}`;
       const response = await fetch(url);
 
       if (!response.ok) {
@@ -2547,13 +2552,26 @@ export class IntegrationService {
 
       const data = await response.json();
       const pageProducts = data?.products || data?.data || [];
-      products.push(
-        ...pageProducts.map((item: any) => ({
-          id: item?.id,
-          customId: item?.custom_id || item?.code,
-          name: item?.name,
-        })),
-      );
+      const mappedProducts = pageProducts
+        .map((item: any) => {
+          const productId = this.extractProductIdFromPancakeProduct(item);
+          if (!productId) return null;
+
+          return {
+            productId,
+            customId:
+              item?.custom_id ||
+              item?.code ||
+              item?.display_id ||
+              item?.product_display_id ||
+              null,
+            name: item?.name || item?.variation_info?.name || 'Unnamed product',
+            retailPrice: this.extractRetailPriceFromPancakeProduct(item),
+          };
+        })
+        .filter(Boolean);
+
+      products.push(...mappedProducts);
 
       const currentPage = data?.page_number || page;
       totalPages = data?.total_pages || currentPage;
@@ -2571,27 +2589,120 @@ export class IntegrationService {
     if (!products?.length) return;
 
     await this.prisma.$transaction(
-      products.map((p: any) =>
-        this.prisma.posProduct.upsert({
-          where: {
-            storeId_productId: {
-              storeId,
-              productId: p.id?.toString() || '',
+      products
+        .filter((p: any) => (p?.productId || p?.id)?.toString().trim().length > 0)
+        .map((p: any) => {
+          const productId = (p?.productId || p?.id)?.toString().trim();
+          const parsedRetailPrice = this.toRetailPriceDecimal(p.retailPrice);
+
+          return this.prisma.posProduct.upsert({
+            where: {
+              storeId_productId: {
+                storeId,
+                productId,
+              },
             },
-          },
-          update: {
-            customId: p.customId || null,
-            name: p.name || 'Unnamed product',
-          },
-          create: {
-            storeId,
-            productId: p.id?.toString() || '',
-            customId: p.customId || null,
-            name: p.name || 'Unnamed product',
-          },
+            update: {
+              customId: p.customId || null,
+              name: p.name || 'Unnamed product',
+              ...(parsedRetailPrice !== null ? { retailPrice: parsedRetailPrice } : {}),
+            },
+            create: {
+              storeId,
+              productId,
+              customId: p.customId || null,
+              name: p.name || 'Unnamed product',
+              retailPrice: parsedRetailPrice,
+            },
+          });
         }),
-      ),
     );
+  }
+
+  private extractProductIdFromPancakeProduct(item: any): string | null {
+    const raw =
+      item?.id ??
+      item?.product_id ??
+      item?.productId ??
+      item?._id ??
+      item?.uuid ??
+      item?.variation_id ??
+      null;
+
+    if (raw === null || raw === undefined) return null;
+    const value = raw.toString().trim();
+    return value.length > 0 ? value : null;
+  }
+
+  private extractRetailPriceFromPancakeProduct(item: any): any {
+    const directCandidates = [
+      item?.retail_price,
+      item?.retailPrice,
+      item?.price,
+      item?.selling_price,
+      item?.variation_info?.retail_price,
+      item?.variation_info?.retailPrice,
+      item?.variation_info?.price,
+      item?.variation_info?.exact_price,
+    ];
+
+    for (const candidate of directCandidates) {
+      if (candidate !== null && candidate !== undefined && candidate !== '') {
+        return candidate;
+      }
+    }
+
+    const listCandidates = [
+      ...(Array.isArray(item?.variations) ? item.variations : []),
+      ...(Array.isArray(item?.variation_infos) ? item.variation_infos : []),
+      ...(Array.isArray(item?.items) ? item.items : []),
+    ];
+
+    for (const entry of listCandidates) {
+      const candidate =
+        entry?.retail_price ??
+        entry?.retailPrice ??
+        entry?.price ??
+        entry?.exact_price ??
+        entry?.variation_info?.retail_price ??
+        entry?.variation_info?.price;
+      if (candidate !== null && candidate !== undefined && candidate !== '') {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private toRetailPriceDecimal(value: any): Prisma.Decimal | null {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    if (typeof value === 'object' && !(value instanceof Prisma.Decimal)) {
+      const nested =
+        value?.amount ??
+        value?.value ??
+        value?.retail_price ??
+        value?.retailPrice ??
+        value?.price ??
+        value?.exact_price;
+      if (nested !== null && nested !== undefined && nested !== '') {
+        return this.toRetailPriceDecimal(nested);
+      }
+      return null;
+    }
+
+    const raw = typeof value === 'string' ? value.trim() : value.toString?.() ?? '';
+    if (!raw) return null;
+
+    const normalized = raw.replace(/[^0-9.-]/g, '');
+    if (!normalized) return null;
+
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return null;
+
+    return new Prisma.Decimal(parsed);
   }
 
   async fetchPancakeProductsByIntegrationId(id: string): Promise<any[]> {

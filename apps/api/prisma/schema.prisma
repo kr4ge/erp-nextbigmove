@@ -418,6 +418,7 @@ model PosProduct {
   productId  String
   customId   String?
   name       String
+  retailPrice Decimal? @db.Decimal(12, 2)
   mapping    String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

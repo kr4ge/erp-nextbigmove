@@ -20,6 +20,7 @@ export interface Product {
   customId?: string;
   name: string;
   productId?: string;
+  retailPrice?: number | string | null;
   mapping?: string;
 }
 
@@ -69,6 +70,27 @@ export function getProductColumns(
           {row.getValue("customId") || "—"}
         </div>
       ),
+      enableSorting: true,
+    },
+    {
+      id: "retailPrice",
+      accessorFn: (row) => {
+        const value = Number(row.retailPrice ?? 0);
+        return Number.isFinite(value) ? value : 0;
+      },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} label="Retail Price" />
+      ),
+      cell: ({ row }) => {
+        const value = Number(row.original.retailPrice ?? 0);
+        return (
+          <div className="font-medium text-[#0F172A] whitespace-nowrap">
+            {Number.isFinite(value)
+              ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : "0.00"}
+          </div>
+        );
+      },
       enableSorting: true,
     },
     {

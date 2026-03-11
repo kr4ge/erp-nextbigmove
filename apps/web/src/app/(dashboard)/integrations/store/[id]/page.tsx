@@ -344,6 +344,7 @@ export default function StoreDetailPage() {
         pageIndex: 0,
         pageSize: 10,
       },
+      sorting: [{ id: 'retailPrice', desc: false }],
     },
     manualPagination: false,
     manualSorting: false,
