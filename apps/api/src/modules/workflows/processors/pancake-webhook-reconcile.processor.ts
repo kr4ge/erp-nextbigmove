@@ -4,6 +4,7 @@ import { Job } from 'bull';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ReconcileMarketingService } from '../services/reconcile-marketing.service';
 import { ReconcileSalesService } from '../services/reconcile-sales.service';
+import { WorkflowExecutionGateway } from '../gateways/workflow-execution.gateway';
 import {
   PANCAKE_WEBHOOK_RECONCILE_JOB,
   PANCAKE_WEBHOOK_RECONCILE_QUEUE,
@@ -18,6 +19,7 @@ export class PancakeWebhookReconcileProcessor {
     private readonly prisma: PrismaService,
     private readonly reconcileMarketingService: ReconcileMarketingService,
     private readonly reconcileSalesService: ReconcileSalesService,
+    private readonly executionGateway: WorkflowExecutionGateway,
   ) {}
 
   @Process(PANCAKE_WEBHOOK_RECONCILE_JOB)
@@ -60,6 +62,30 @@ export class PancakeWebhookReconcileProcessor {
 
     await this.reconcileMarketingService.reconcileDay(tenantId, dateLocal, null);
     await this.reconcileSalesService.aggregateDay(tenantId, dateLocal, null);
+
+    this.executionGateway.emitTenantEvent(
+      tenantId,
+      null,
+      'orders:confirmation:updated',
+      {
+        tenantId,
+        teamId: null,
+        date: dateLocal,
+        source: 'pancake_webhook_reconcile',
+      },
+    );
+
+    this.executionGateway.emitTenantEvent(
+      tenantId,
+      null,
+      'marketing:updated',
+      {
+        tenantId,
+        teamId: null,
+        date: dateLocal,
+        source: 'pancake_webhook_reconcile',
+      },
+    );
 
     this.logger.log(
       `Processed webhook reconcile tenant=${tenantId} date=${dateLocal} mode=${reconcileMode} durationMs=${Date.now() - startedAt}`,

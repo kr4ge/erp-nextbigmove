@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useState, useRef, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Layers, StoreIcon, Network, BarChart3 } from 'lucide-react';
+import { Layers, StoreIcon, Network, BarChart3, ClipboardList } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
 
@@ -84,6 +84,15 @@ const baseNavigation: NavLink[] = [
       </svg>
     ),
   },
+  {
+    href: '/orders',
+    label: 'Orders',
+    description: 'Order operations queue',
+    icon: <ClipboardList className={iconClasses} />,
+    children: [
+      { href: '/orders/confirmation', label: 'Confirmation of Order', icon: <ClipboardList className="h-4 w-4" /> },
+    ],
+  },
 ];
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -113,6 +122,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const hasStores = permissions.includes('pos.read');
     const hasMeta = permissions.includes('meta.read');
     const hasWorkflow = permissions.includes('workflow.read');
+    const hasOrderConfirmation = permissions.includes('pos.read');
     const hasTeams = permissions.includes('team.read');
     const hasRoles = permissions.includes('role.read');
     const hasUsers = permissions.includes('user.read');
@@ -121,6 +131,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       if (link.href !== '/analytics') {
         if (link.href === '/workflows') {
           return hasWorkflow ? [link] : [];
+        }
+        if (link.href === '/orders') {
+          const children = (link.children || []).filter((child) => {
+            if (child.href === '/orders/confirmation') return hasOrderConfirmation;
+            return false;
+          });
+          if (children.length === 0) return [];
+          return [{ ...link, children }];
         }
         if (link.href !== '/integrations') return [link];
 

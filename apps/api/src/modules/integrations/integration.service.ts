@@ -40,10 +40,12 @@ import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import {
+  PANCAKE_WEBHOOK_AUTO_CANCEL_JOB,
   PANCAKE_WEBHOOK_JOB,
   PANCAKE_WEBHOOK_RECONCILE_JOB,
   PANCAKE_WEBHOOK_RECONCILE_QUEUE,
   PANCAKE_WEBHOOK_QUEUE,
+  PancakeWebhookAutoCancelJobData,
   PancakeWebhookJobData,
   PancakeWebhookReconcileJobData,
 } from './pancake-webhook.constants';
@@ -53,6 +55,7 @@ dayjs.extend(timezone);
 
 type PancakeWebhookSettings = {
   enabled?: boolean;
+  autoCancelEnabled?: boolean;
   reconcileEnabled?: boolean;
   reconcileIntervalSeconds?: number;
   reconcileMode?: 'incremental' | 'full_reset';
@@ -95,6 +98,12 @@ type PancakeWebhookPayloadProcessingResult = {
   reconcileSkippedCount: number;
 };
 
+type ReportsByPhoneMetrics = {
+  orderFail: number | null;
+  orderSuccess: number | null;
+  warning: number | null;
+};
+
 type ListPancakeWebhookLogsParams = {
   page?: number;
   limit?: number;
@@ -123,7 +132,9 @@ export class IntegrationService {
     private readonly metaInsightService: MetaInsightService,
     private readonly posOrderService: PosOrderService,
     @InjectQueue(PANCAKE_WEBHOOK_QUEUE)
-    private readonly pancakeWebhookQueue: Queue<PancakeWebhookJobData>,
+    private readonly pancakeWebhookQueue: Queue<
+      PancakeWebhookJobData | PancakeWebhookAutoCancelJobData
+    >,
     @InjectQueue(PANCAKE_WEBHOOK_RECONCILE_QUEUE)
     private readonly pancakeWebhookReconcileQueue: Queue<PancakeWebhookReconcileJobData>,
   ) {}
@@ -152,6 +163,8 @@ export class IntegrationService {
         : undefined;
     return {
       enabled: typeof webhook.enabled === 'boolean' ? webhook.enabled : false,
+      autoCancelEnabled:
+        typeof webhook.autoCancelEnabled === 'boolean' ? webhook.autoCancelEnabled : true,
       reconcileEnabled:
         typeof webhook.reconcileEnabled === 'boolean' ? webhook.reconcileEnabled : true,
       reconcileIntervalSeconds,
@@ -489,6 +502,463 @@ export class IntegrationService {
     return collected;
   }
 
+  private extractWebhookCustomerPhone(order: any): string | null {
+    const candidates = [
+      order?.customerPhone,
+      order?.customer_phone,
+      order?.bill_phone_number,
+      order?.shipping_address?.phone_number,
+      order?.shipping_address?.phone,
+      order?.customer?.phone_number,
+      Array.isArray(order?.customer?.phone_numbers) ? order.customer.phone_numbers[0] : null,
+    ];
+
+    for (const raw of candidates) {
+      const value = typeof raw === 'string' ? raw.trim() : '';
+      if (value) return value;
+    }
+
+    return null;
+  }
+
+  private normalizePhoneForComparison(phone: string): string {
+    const trimmed = (phone || '').toString().trim();
+    if (!trimmed) return '';
+
+    const digits = trimmed.replace(/\D/g, '');
+    if (!digits) return '';
+
+    if (digits.startsWith('63')) return digits;
+    if (digits.startsWith('0') && digits.length >= 10) return `63${digits.slice(1)}`;
+    if (digits.startsWith('9') && digits.length === 10) return `63${digits}`;
+    return digits;
+  }
+
+  private buildPhoneSearchCandidates(phone: string): string[] {
+    const raw = (phone || '').toString().trim();
+    if (!raw) return [];
+
+    const normalized = this.normalizePhoneForComparison(raw);
+    const set = new Set<string>();
+    set.add(raw);
+
+    if (normalized) {
+      set.add(normalized);
+      set.add(`+${normalized}`);
+      if (normalized.startsWith('63')) {
+        set.add(`0${normalized.slice(2)}`);
+      }
+    }
+
+    return Array.from(set).filter((value) => value.trim().length > 0);
+  }
+
+  private parsePancakeOrdersResponseRows(payload: any): any[] {
+    if (!payload) return [];
+
+    if (Array.isArray(payload)) {
+      const rows: any[] = [];
+      payload.forEach((entry: any) => {
+        if (Array.isArray(entry?.data)) {
+          rows.push(...entry.data);
+        } else if (entry && typeof entry === 'object' && this.isWebhookOrderLike(entry)) {
+          rows.push(entry);
+        }
+      });
+      return rows;
+    }
+
+    if (Array.isArray(payload?.data)) {
+      return payload.data;
+    }
+
+    if (payload && typeof payload === 'object' && this.isWebhookOrderLike(payload)) {
+      return [payload];
+    }
+
+    return [];
+  }
+
+  private toNullableInt(value: any): number | null {
+    const num = Number(value);
+    return Number.isFinite(num) ? Math.trunc(num) : null;
+  }
+
+  private extractReportsByPhoneMetrics(
+    reportsByPhoneRaw: any,
+    customerPhone: string,
+  ): ReportsByPhoneMetrics | null {
+    if (
+      !reportsByPhoneRaw ||
+      typeof reportsByPhoneRaw !== 'object' ||
+      Array.isArray(reportsByPhoneRaw)
+    ) {
+      return null;
+    }
+
+    const entries = Object.entries(reportsByPhoneRaw);
+    if (entries.length === 0) return null;
+
+    const requestedCandidates = this.buildPhoneSearchCandidates(customerPhone);
+    const requestedNormalized = new Set(
+      requestedCandidates
+        .map((candidate) => this.normalizePhoneForComparison(candidate))
+        .filter((candidate) => candidate.length > 0),
+    );
+
+    let picked: any = null;
+    for (const [key, value] of entries) {
+      const normalized = this.normalizePhoneForComparison(key);
+      if (normalized && requestedNormalized.has(normalized)) {
+        picked = value;
+        break;
+      }
+    }
+
+    if (!picked) {
+      picked = entries[0][1];
+    }
+    if (!picked || typeof picked !== 'object') return null;
+
+    const metrics: ReportsByPhoneMetrics = {
+      orderFail: this.toNullableInt((picked as any).order_fail),
+      orderSuccess: this.toNullableInt((picked as any).order_success),
+      warning: this.toNullableInt((picked as any).warning),
+    };
+
+    if (
+      metrics.orderFail === null &&
+      metrics.orderSuccess === null &&
+      metrics.warning === null
+    ) {
+      return null;
+    }
+
+    return metrics;
+  }
+
+  private async fetchReportsByPhoneMetricsForOrder(
+    shopId: string,
+    apiKey: string,
+    customerPhone: string,
+    posOrderId: string,
+  ): Promise<{ metrics: ReportsByPhoneMetrics | null; warning?: string }> {
+    const searchCandidates = this.buildPhoneSearchCandidates(customerPhone);
+    if (searchCandidates.length === 0) {
+      return { metrics: null, warning: 'Missing valid customer phone for reports_by_phone lookup' };
+    }
+
+    let lastWarning: string | undefined;
+    for (const search of searchCandidates) {
+      const params = new URLSearchParams();
+      params.set('api_key', apiKey);
+      params.append('extra_fields[]', 'return_rate');
+      params.set('search', search);
+      params.append('fields[]', 'id');
+      params.append('fields[]', 'shop_id');
+      params.append('fields[]', 'reports_by_phone');
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+
+      try {
+        const response = await fetch(
+          `https://pos.pancake.vn/api/v1/shops/${encodeURIComponent(shopId)}/orders?${params.toString()}`,
+          {
+            method: 'GET',
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) {
+          lastWarning = `reports_by_phone lookup failed (${response.status}) for shop_id=${shopId}`;
+          continue;
+        }
+
+        const payload = await response.json().catch(() => null);
+        const rows = this.parsePancakeOrdersResponseRows(payload);
+        if (rows.length === 0) continue;
+
+        const orderIdAsString = posOrderId.toString();
+        const matchedOrder =
+          rows.find((row: any) => row?.id?.toString?.() === orderIdAsString) ||
+          rows[0];
+
+        const metrics = this.extractReportsByPhoneMetrics(
+          matchedOrder?.reports_by_phone,
+          customerPhone,
+        );
+        if (metrics) {
+          return { metrics };
+        }
+      } catch (error: any) {
+        if (error?.name === 'AbortError') {
+          lastWarning = `reports_by_phone lookup timed out for shop_id=${shopId}`;
+        } else {
+          lastWarning = `reports_by_phone lookup error for shop_id=${shopId}: ${error?.message || 'Unknown error'}`;
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    return { metrics: null, warning: lastWarning };
+  }
+
+  private async resolveStoreApiKeyForWebhook(
+    tenantId: string,
+    store: { id: string; integrationId: string | null; apiKey: string | null },
+  ): Promise<string | null> {
+    const rawStoreKey = store.apiKey?.toString?.().trim?.() || '';
+    if (rawStoreKey) return rawStoreKey;
+
+    if (!store.integrationId) return null;
+
+    try {
+      const credentials = await this.getDecryptedCredentials(store.integrationId, tenantId);
+      const apiKey = credentials?.apiKey?.toString?.().trim?.() || '';
+      if (!apiKey) return null;
+
+      await this.prisma.posStore.update({
+        where: { id: store.id },
+        data: { apiKey },
+      });
+
+      return apiKey;
+    } catch {
+      return null;
+    }
+  }
+
+  private shouldTriggerAutoCancelFromReports(metrics: ReportsByPhoneMetrics): boolean {
+    const fail = Math.max(0, Number(metrics.orderFail ?? 0));
+    const success = Math.max(0, Number(metrics.orderSuccess ?? 0));
+
+    if (fail <= 0) return false;
+
+    // Guardrail requested: do not auto-cancel on (success=0, fail=1|2).
+    if (success === 0) {
+      return fail >= 3;
+    }
+
+    const total = success + fail;
+    if (total <= 0) return false;
+
+    // Return-rate risk = failed / total.
+    const returnRate = (fail / total) * 100;
+    return returnRate >= 81;
+  }
+
+  private getPancakeAutoCancelQueueJobOptions() {
+    const attempts = Math.max(1, Number(process.env.PANCAKE_AUTO_CANCEL_QUEUE_ATTEMPTS || 4));
+    const backoffDelay = Math.max(
+      1000,
+      Number(process.env.PANCAKE_AUTO_CANCEL_QUEUE_BACKOFF_MS || 3000),
+    );
+    const timeout = Math.max(
+      10000,
+      Number(process.env.PANCAKE_AUTO_CANCEL_QUEUE_TIMEOUT_MS || 45000),
+    );
+    return {
+      attempts,
+      backoff: { type: 'exponential' as const, delay: backoffDelay },
+      timeout,
+      removeOnComplete: true,
+      removeOnFail: 1000,
+    };
+  }
+
+  private async enqueueAutoCancelStatusJob(
+    data: PancakeWebhookAutoCancelJobData,
+  ): Promise<void> {
+    await this.pancakeWebhookQueue.add(PANCAKE_WEBHOOK_AUTO_CANCEL_JOB, data, {
+      jobId: `pancake-auto-cancel:${data.tenantId}:${data.shopId}:${data.orderId}`,
+      ...this.getPancakeAutoCancelQueueJobOptions(),
+    });
+  }
+
+  async processPancakeAutoCancelJob(
+    jobData: PancakeWebhookAutoCancelJobData,
+  ): Promise<{ success: boolean; reason: string }> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: jobData.tenantId },
+      select: { settings: true },
+    });
+    const cfg = this.getPancakeWebhookSettings(tenant?.settings);
+    if (cfg.autoCancelEnabled === false) {
+      return { success: false, reason: 'AUTO_CANCEL_DISABLED' };
+    }
+
+    const existingOrder = await this.prisma.posOrder.findFirst({
+      where: {
+        tenantId: jobData.tenantId,
+        shopId: jobData.shopId,
+        posOrderId: jobData.orderId,
+      },
+      select: {
+        status: true,
+        reportsByPhoneOrderFail: true,
+        reportsByPhoneOrderSuccess: true,
+        reportsByPhoneWarning: true,
+      },
+    });
+
+    if (!existingOrder) {
+      return { success: false, reason: 'ORDER_NOT_FOUND' };
+    }
+
+    if (existingOrder.status !== 0) {
+      return { success: false, reason: 'STATUS_NOT_NEW' };
+    }
+
+    const metrics: ReportsByPhoneMetrics = {
+      orderFail: existingOrder.reportsByPhoneOrderFail,
+      orderSuccess: existingOrder.reportsByPhoneOrderSuccess,
+      warning: existingOrder.reportsByPhoneWarning,
+    };
+    if (!this.shouldTriggerAutoCancelFromReports(metrics)) {
+      return { success: false, reason: 'CRITERIA_NOT_MET' };
+    }
+
+    const store = await this.prisma.posStore.findFirst({
+      where: {
+        tenantId: jobData.tenantId,
+        shopId: jobData.shopId,
+      },
+      select: {
+        id: true,
+        integrationId: true,
+        apiKey: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!store) {
+      return { success: false, reason: 'STORE_NOT_FOUND' };
+    }
+
+    const apiKey = await this.resolveStoreApiKeyForWebhook(jobData.tenantId, {
+      id: store.id,
+      integrationId: store.integrationId || null,
+      apiKey: store.apiKey || null,
+    });
+    if (!apiKey) {
+      throw new Error(`Missing API key for auto-cancel shop_id=${jobData.shopId}`);
+    }
+
+    const params = new URLSearchParams();
+    params.set('api_key', apiKey);
+
+    const response = await fetch(
+      `https://pos.pages.fm/api/v1/shops/${encodeURIComponent(jobData.shopId)}/orders/${encodeURIComponent(jobData.orderId)}?${params.toString()}`,
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ status: 6 }),
+      },
+    );
+
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => '');
+      throw new Error(
+        `Auto-cancel failed (${response.status}) shop_id=${jobData.shopId} order_id=${jobData.orderId}${responseText ? `: ${responseText.slice(0, 180)}` : ''}`,
+      );
+    }
+
+    // No local status overwrite here; Pancake webhook callback is the source of truth.
+    return { success: true, reason: 'STATUS_UPDATE_SENT' };
+  }
+
+  private async hydrateReportsByPhoneForWebhookOrders(
+    tenantId: string,
+    store: { id: string; shopId: string; integrationId: string | null; apiKey: string | null },
+    orders: any[],
+    outcomes: PosOrderUpsertOutcome[],
+    cfg: PancakeWebhookSettings,
+    requestId?: string,
+    logId?: string,
+  ): Promise<string[]> {
+    const warnings: string[] = [];
+    if (!orders?.length) return warnings;
+
+    const upsertedKeys = new Set(
+      outcomes
+        .filter((row) => row.upsertStatus === 'UPSERTED' && row.shopId && row.orderId)
+        .map((row) => `${row.shopId}::${row.orderId}`),
+    );
+
+    if (upsertedKeys.size === 0) return warnings;
+
+    const apiKey = await this.resolveStoreApiKeyForWebhook(tenantId, store);
+    if (!apiKey) {
+      warnings.push(`Missing API key for reports_by_phone lookup shop_id=${store.shopId}`);
+      return warnings;
+    }
+
+    for (const order of orders) {
+      const status = Number(order?.status);
+      if (status !== 0) continue;
+
+      const shopId = order?.shop_id?.toString?.()?.trim?.() || store.shopId;
+      const orderId = order?.id?.toString?.()?.trim?.();
+      if (!shopId || !orderId) continue;
+
+      if (!upsertedKeys.has(`${shopId}::${orderId}`)) continue;
+
+      const customerPhone = this.extractWebhookCustomerPhone(order);
+      if (!customerPhone) continue;
+
+      const reportsResult = await this.fetchReportsByPhoneMetricsForOrder(
+        shopId,
+        apiKey,
+        customerPhone,
+        orderId,
+      );
+      if (reportsResult.warning) {
+        warnings.push(reportsResult.warning);
+      }
+
+      const metrics = reportsResult.metrics;
+      if (!metrics) continue;
+
+      await this.prisma.posOrder.updateMany({
+        where: {
+          tenantId,
+          shopId,
+          posOrderId: orderId,
+        },
+        data: {
+          reportsByPhoneOrderFail: metrics.orderFail,
+          reportsByPhoneOrderSuccess: metrics.orderSuccess,
+          reportsByPhoneWarning: metrics.warning,
+        },
+      });
+
+      if (!this.shouldTriggerAutoCancelFromReports(metrics)) continue;
+      if (cfg.autoCancelEnabled === false) continue;
+
+      try {
+        await this.enqueueAutoCancelStatusJob({
+          tenantId,
+          shopId,
+          orderId,
+          reportsByPhoneOrderFail: metrics.orderFail,
+          reportsByPhoneOrderSuccess: metrics.orderSuccess,
+          reportsByPhoneWarning: metrics.warning,
+          requestId,
+          logId,
+        });
+      } catch (error: any) {
+        warnings.push(
+          `Failed to queue auto-cancel for shop_id=${shopId} order_id=${orderId}: ${error?.message || 'Unknown error'}`,
+        );
+      }
+    }
+
+    return warnings;
+  }
+
   private getPancakeWebhookQueueJobOptions() {
     const attempts = Math.max(1, Number(process.env.PANCAKE_WEBHOOK_QUEUE_ATTEMPTS || 5));
     const backoffDelay = Math.max(500, Number(process.env.PANCAKE_WEBHOOK_QUEUE_BACKOFF_MS || 2000));
@@ -689,15 +1159,30 @@ export class IntegrationService {
         id: true,
         shopId: true,
         teamId: true,
+        integrationId: true,
+        apiKey: true,
         updatedAt: true,
       },
       orderBy: { updatedAt: 'desc' },
     });
 
-    const storeByShopId = new Map<string, { id: string; teamId: string | null }>();
+    const storeByShopId = new Map<
+      string,
+      {
+        id: string;
+        teamId: string | null;
+        integrationId: string | null;
+        apiKey: string | null;
+      }
+    >();
     for (const store of stores) {
       if (!storeByShopId.has(store.shopId)) {
-        storeByShopId.set(store.shopId, { id: store.id, teamId: store.teamId || null });
+        storeByShopId.set(store.shopId, {
+          id: store.id,
+          teamId: store.teamId || null,
+          integrationId: store.integrationId || null,
+          apiKey: store.apiKey || null,
+        });
       }
     }
 
@@ -736,6 +1221,24 @@ export class IntegrationService {
         );
         upserted += result.upserted;
         outcomes.push(...result.outcomes);
+
+        const reportsWarnings = await this.hydrateReportsByPhoneForWebhookOrders(
+          tenant.id,
+          {
+            id: store.id,
+            shopId,
+            integrationId: store.integrationId,
+            apiKey: store.apiKey,
+          },
+          orders,
+          result.outcomes,
+          cfg,
+          requestId,
+          logId,
+        );
+        if (reportsWarnings.length > 0) {
+          warnings.push(...reportsWarnings);
+        }
       } catch (error: any) {
         warnings.push(
           `Failed to upsert shop_id=${shopId}: ${error?.message || 'Unknown error'}`,
@@ -927,6 +1430,7 @@ export class IntegrationService {
     const relayApiKey = this.getRelayApiKey(cfg, tenant.encryptionKey) || null;
     return {
       enabled: !!cfg.enabled,
+      autoCancelEnabled: cfg.autoCancelEnabled !== false,
       reconcileEnabled: cfg.reconcileEnabled !== false,
       reconcileIntervalSeconds:
         cfg.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds(),
@@ -1139,6 +1643,7 @@ export class IntegrationService {
 
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled: existing.enabled ?? true,
+      autoCancelEnabled: existing.autoCancelEnabled ?? true,
       reconcileEnabled: existing.reconcileEnabled ?? true,
       reconcileIntervalSeconds:
         existing.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds(),
@@ -1164,6 +1669,8 @@ export class IntegrationService {
 
     return {
       enabled: settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].enabled,
+      autoCancelEnabled:
+        settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].autoCancelEnabled !== false,
       reconcileEnabled: settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].reconcileEnabled,
       reconcileIntervalSeconds:
         settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY].reconcileIntervalSeconds,
@@ -1201,14 +1708,24 @@ export class IntegrationService {
     const settings = this.normalizeJsonObject(tenant.settings);
     const existing = this.getPancakeWebhookSettings(tenant.settings);
     const hasEnabledUpdate = typeof dto.enabled === 'boolean';
+    const hasAutoCancelUpdate = typeof dto.autoCancelEnabled === 'boolean';
     const hasReconcileUpdate = typeof dto.reconcileEnabled === 'boolean';
     const hasReconcileIntervalUpdate = typeof dto.reconcileIntervalSeconds === 'number';
     const hasReconcileModeUpdate = typeof dto.reconcileMode === 'string';
-    if (!hasEnabledUpdate && !hasReconcileUpdate && !hasReconcileIntervalUpdate && !hasReconcileModeUpdate) {
+    if (
+      !hasEnabledUpdate
+      && !hasAutoCancelUpdate
+      && !hasReconcileUpdate
+      && !hasReconcileIntervalUpdate
+      && !hasReconcileModeUpdate
+    ) {
       throw new BadRequestException('At least one setting must be provided');
     }
 
     const enabled = hasEnabledUpdate ? !!dto.enabled : !!existing.enabled;
+    const autoCancelEnabled = hasAutoCancelUpdate
+      ? !!dto.autoCancelEnabled
+      : existing.autoCancelEnabled !== false;
     const reconcileEnabled = hasReconcileUpdate
       ? !!dto.reconcileEnabled
       : existing.reconcileEnabled !== false;
@@ -1221,6 +1738,7 @@ export class IntegrationService {
 
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled,
+      autoCancelEnabled,
       reconcileEnabled,
       reconcileIntervalSeconds,
       reconcileMode,
@@ -1245,6 +1763,7 @@ export class IntegrationService {
 
     return {
       enabled,
+      autoCancelEnabled,
       reconcileEnabled,
       reconcileIntervalSeconds,
       reconcileMode,
@@ -1312,6 +1831,7 @@ export class IntegrationService {
 
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled: existing.enabled ?? false,
+      autoCancelEnabled: existing.autoCancelEnabled ?? true,
       reconcileEnabled: existing.reconcileEnabled ?? true,
       reconcileIntervalSeconds:
         existing.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds(),
@@ -1338,6 +1858,7 @@ export class IntegrationService {
     const resolvedRelayApiKey = this.getRelayApiKey(updated, tenant.encryptionKey) || null;
     return {
       enabled: !!updated.enabled,
+      autoCancelEnabled: updated.autoCancelEnabled !== false,
       reconcileEnabled: updated.reconcileEnabled !== false,
       reconcileIntervalSeconds:
         updated.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds(),

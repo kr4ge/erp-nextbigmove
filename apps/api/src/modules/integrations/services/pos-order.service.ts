@@ -42,6 +42,13 @@ interface PosOrderData {
   statusHistory?: any[] | null;
   rtsReason?: { l1: string | null; l2: string | null; l3: string | null } | null;
   upsellBreakdown?: any | null;
+  orderSnapshot?: {
+    customer: Record<string, any> | null;
+    shipping_address: Record<string, any> | null;
+    note: string | null;
+    items: any[] | null;
+    conversation_id: string | null;
+  } | null;
   assigningCare?: string | null;
 }
 
@@ -300,7 +307,15 @@ export class PosOrderService {
     } else if (customerAddresses && typeof customerAddresses === 'object') {
       addressEntry = customerAddresses;
     }
-    const customerPhone = addressEntry?.phone_number ?? addressEntry?.phone ?? undefined;
+    const customerPhoneNumbersRaw = customerRaw?.phone_numbers ?? customerRaw?.phoneNumbers ?? null;
+    const customerPhoneFromList = Array.isArray(customerPhoneNumbersRaw)
+      ? customerPhoneNumbersRaw
+          .map((phone: any) =>
+            typeof phone === 'string' || typeof phone === 'number' ? phone.toString().trim() : '',
+          )
+          .find((phone: string) => phone.length > 0)
+      : undefined;
+    const customerPhone = customerPhoneFromList ?? addressEntry?.phone_number ?? addressEntry?.phone ?? undefined;
     const customerAddress = addressEntry?.full_address ?? addressEntry?.address ?? undefined;
 
     const customerCare =
@@ -344,7 +359,6 @@ export class PosOrderService {
           )
       : [];
     const hasRiskConfirmationTag = this.hasTagNameInList(tags, ['risk confirmation']);
-    const hasAbandonedTag = this.hasTagNameInList(tags, ['abandoned']);
 
     // RTS reason: split returned_reason_name by "/"
     let rtsReason: { l1: string | null; l2: string | null; l3: string | null } | null = null;
@@ -365,7 +379,9 @@ export class PosOrderService {
     const isRiskConfirmation = hasRiskConfirmationTag && hasConfirmedHistory;
     const numericStatus = Number(rawOrder?.status);
     const normalizedStatus = Number.isFinite(numericStatus) ? numericStatus : null;
-    const isAbandoned = normalizedStatus === 0 && hasAbandonedTag;
+    const isWebcakeAbandonedCart =
+      rawOrder?.is_webcake_abandoned_cart === true || rawOrder?.isWebcakeAbandonedCart === true;
+    const isAbandoned = normalizedStatus === 0 && isWebcakeAbandonedCart;
     const deliveredAt = this.extractStatusTimestampFromHistory(
       normalizedStatus,
       statusHistory,
@@ -428,6 +444,31 @@ export class PosOrderService {
     const historyBreakdown = this.computeUpsellBreakdown(rawOrder, false);
     // Only persist upsell breakdown if tagged
     const upsellBreakdown = hasUpsellTag ? historyBreakdown : null;
+
+    const snapshotCustomer =
+      rawOrder?.customer && typeof rawOrder.customer === 'object' && !Array.isArray(rawOrder.customer)
+        ? rawOrder.customer
+        : null;
+    const snapshotShippingAddress =
+      rawOrder?.shipping_address
+      && typeof rawOrder.shipping_address === 'object'
+      && !Array.isArray(rawOrder.shipping_address)
+        ? rawOrder.shipping_address
+        : null;
+    const snapshotNote = typeof rawOrder?.note === 'string' ? rawOrder.note : null;
+    const snapshotItems = Array.isArray(rawOrder?.items) ? rawOrder.items : null;
+    const rawConversationId = rawOrder?.conversation_id ?? rawOrder?.conversationId ?? null;
+    const snapshotConversationId =
+      typeof rawConversationId === 'string' || typeof rawConversationId === 'number'
+        ? rawConversationId.toString()
+        : null;
+    const orderSnapshot = {
+      customer: snapshotCustomer,
+      shipping_address: snapshotShippingAddress,
+      note: snapshotNote,
+      items: snapshotItems,
+      conversation_id: snapshotConversationId,
+    };
 
     const codValue = parseFloat(rawOrder.cod || '0');
     const hasCod = Number.isFinite(codValue);
@@ -536,6 +577,7 @@ export class PosOrderService {
       statusHistory,
       rtsReason,
       upsellBreakdown,
+      orderSnapshot,
       assigningCare,
     };
   }
@@ -702,6 +744,7 @@ export class PosOrderService {
             statusHistory: this.jsonOrDbNull(order.statusHistory),
             rtsReason: this.jsonOrDbNull(order.rtsReason),
             upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
+            orderSnapshot: this.jsonOrDbNull(order.orderSnapshot),
             assigningCare: order.assigningCare,
           },
           update: {
@@ -735,6 +778,7 @@ export class PosOrderService {
             statusHistory: this.jsonOrDbNull(order.statusHistory),
             rtsReason: this.jsonOrDbNull(order.rtsReason),
             upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
+            orderSnapshot: this.jsonOrDbNull(order.orderSnapshot),
             assigningCare: order.assigningCare,
           },
         });

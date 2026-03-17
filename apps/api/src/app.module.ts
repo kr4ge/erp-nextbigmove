@@ -18,6 +18,7 @@ import { TeamModule } from './modules/teams/team.module';
 import { UserModule } from './modules/users/user.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { OrdersModule } from './modules/orders/orders.module';
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     UserModule,
     RolesModule,
     AnalyticsModule,
+    OrdersModule,
   ],
   controllers: [],
   providers: [],

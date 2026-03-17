@@ -7,6 +7,10 @@ export class UpdatePancakeWebhookDto {
 
   @IsOptional()
   @IsBoolean()
+  autoCancelEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   reconcileEnabled?: boolean;
 
   @IsOptional()

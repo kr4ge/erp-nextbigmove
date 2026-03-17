@@ -11,6 +11,7 @@ import apiClient from '@/lib/api-client';
 
 type WebhookConfig = {
   enabled: boolean;
+  autoCancelEnabled: boolean;
   reconcileEnabled: boolean;
   reconcileIntervalSeconds: number;
   reconcileMode: 'incremental' | 'full_reset';
@@ -307,6 +308,7 @@ export default function WebhookSettingsPage() {
       const res = await apiClient.post('/integrations/pancake/webhook/rotate-key');
       setConfig({
         enabled: !!res.data.enabled,
+        autoCancelEnabled: res.data.autoCancelEnabled !== false,
         reconcileEnabled: res.data.reconcileEnabled !== false,
         reconcileIntervalSeconds: Number(res.data.reconcileIntervalSeconds ?? 120),
         reconcileMode: res.data.reconcileMode === 'incremental' ? 'incremental' : 'full_reset',
@@ -370,6 +372,27 @@ export default function WebhookSettingsPage() {
       addToast(
         'success',
         `Webhook reconciliation ${res.data.reconcileEnabled ? 'enabled' : 'disabled'}.`,
+      );
+    } catch (error: any) {
+      addToast('error', parseErrorMessage(error));
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleToggleAutoCancelEnabled = async (nextEnabled: boolean) => {
+    if (!config) return;
+    setIsUpdating(true);
+    try {
+      const res = await apiClient.patch('/integrations/pancake/webhook', {
+        autoCancelEnabled: nextEnabled,
+      });
+      setConfig(res.data);
+      setReconcileIntervalSecondsInput(String(res.data?.reconcileIntervalSeconds ?? 120));
+      setReconcileModeInput(res.data?.reconcileMode === 'incremental' ? 'incremental' : 'full_reset');
+      addToast(
+        'success',
+        `Auto-cancel job ${res.data.autoCancelEnabled ? 'enabled' : 'disabled'}.`,
       );
     } catch (error: any) {
       addToast('error', parseErrorMessage(error));
@@ -693,6 +716,31 @@ export default function WebhookSettingsPage() {
             >
               Save Reconcile Settings
             </Button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-slate-900">Auto Cancel Job</p>
+              <p className="text-xs text-slate-500">
+                Automatically enqueue status update to `6` when return-rate criteria are met.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!config?.autoCancelEnabled}
+              onClick={() => handleToggleAutoCancelEnabled(!config?.autoCancelEnabled)}
+              disabled={!canManage || loading || !config || isUpdating}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
+                config?.autoCancelEnabled ? 'bg-amber-500' : 'bg-slate-300'
+              } ${!canManage || loading || !config || isUpdating ? 'cursor-not-allowed opacity-60' : ''}`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  config?.autoCancelEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
         </div>
       </Card>

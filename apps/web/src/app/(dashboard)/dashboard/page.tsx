@@ -2032,7 +2032,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-6">
         <MetricCard label="Total Revenue" value={formatCurrency(execStats?.revenue)} helper="Across selected range" icon={<DollarSignIcon className="h-5 w-5" />} tone="default" />
         <MetricCard label="Total Sales" value={formatNumber(execStats?.purchases)} helper="Orders" icon={<TrendingUp className="h-5 w-5" />} tone="default" />
-        <MetricCard label="Confirmed Sales" value={formatNumber(execStats?.confirmed ?? 0)} helper="Confirmed orders" icon={<CheckCircle2 className="h-5 w-5" />} tone="default" />
+        <MetricCard label="Confirmed Sales" value={formatCurrency(execStats?.confirmed ?? 0)} helper="Confirmed orders" icon={<CheckCircle2 className="h-5 w-5" />} tone="default" />
         <MetricCard label="Overall Spent" value={formatCurrency(execStats?.ad_spend)} helper="Ad spend (tax inclusive if selected)" icon={<Coins className="h-5 w-5" />} tone="default" />
         <MetricCard label="Overall AR %" value={formatPercent(execStats?.ar_pct)} helper="Spend / Revenue" icon={<PieChart className="h-5 w-5" />} tone="default" />
         <MetricCard
