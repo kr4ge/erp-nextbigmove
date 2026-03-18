@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
-import { ChevronDown, MessageCircle, PhoneCall, Wifi, X } from 'lucide-react';
+import { ChevronDown, Link2, MessageCircle, PhoneCall, Wifi, X } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { workflowSocket } from '@/lib/socket-client';
 import { PageHeader } from '@/components/ui/page-header';
@@ -44,23 +44,96 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 2,
   }).format(Number.isFinite(value) ? value : 0);
 
+type OrderStatusMeta = {
+  label: string;
+  color: string;
+};
+
+const ORDER_STATUS_LABELS: Record<number, OrderStatusMeta> = {
+  0: { label: 'New', color: '#64748B' },
+  1: { label: 'Confirmed', color: '#003EB3' },
+  2: { label: 'Shipped', color: '#FA8C16' },
+  3: { label: 'Delivered', color: '#52C41A' },
+  4: { label: 'Returning', color: '#E0695C' },
+  5: { label: 'Returned', color: '#A8071A' },
+  6: { label: 'Canceled', color: '#F5222D' },
+  7: { label: 'Deleted recently', color: '#434343' },
+  8: { label: 'Packaging', color: '#722ED1' },
+  9: { label: 'Waiting for pick up', color: '#EB2F96' },
+  11: { label: 'Restocking', color: '#AD8B00' },
+  12: { label: 'Wait for printing', color: '#13C2C2' },
+  13: { label: 'Printed', color: '#08979C' },
+  15: { label: 'Partial return', color: '#531DAB' },
+  16: { label: 'Collected money', color: '#237804' },
+  17: { label: 'Waiting for confirmation', color: '#1677FF' },
+  20: { label: 'Purchased', color: '#389E0D' },
+};
+
+const FALLBACK_STATUS_META: OrderStatusMeta = {
+  label: '—',
+  color: '#64748B',
+};
+
+const getStatusMeta = (
+  status: number | string | null,
+  isAbandoned?: boolean | null,
+): OrderStatusMeta => {
+  const normalizedStatus = typeof status === 'string' ? Number(status) : status;
+
+  if (normalizedStatus === 0 && isAbandoned) {
+    return { label: 'Abandoned', color: ORDER_STATUS_LABELS[0].color };
+  }
+
+  if (typeof normalizedStatus === 'number' && Number.isFinite(normalizedStatus)) {
+    return ORDER_STATUS_LABELS[normalizedStatus] || { label: String(normalizedStatus), color: FALLBACK_STATUS_META.color };
+  }
+
+  if (normalizedStatus === null || normalizedStatus === undefined) return FALLBACK_STATUS_META;
+  return { label: String(normalizedStatus), color: FALLBACK_STATUS_META.color };
+};
+
 const formatStatusLabel = (
   status: number | string | null,
-  statusName?: string | null,
+  _statusName?: string | null,
   isAbandoned?: boolean | null,
 ) => {
-  const normalizedStatus = typeof status === 'string' ? Number(status) : status;
-  if (normalizedStatus === 0 && isAbandoned) return 'Abandoned';
-  if (statusName && statusName.trim()) {
-    return statusName
-      .trim()
-      .replace(/_/g, ' ')
-      .toLowerCase()
-      .replace(/\b\w/g, (char) => char.toUpperCase());
-  }
-  if (normalizedStatus === 0) return 'New';
-  if (normalizedStatus === null || normalizedStatus === undefined) return '—';
-  return String(normalizedStatus);
+  return getStatusMeta(status, isAbandoned).label;
+};
+
+const getHistoryStatusBadgeColor = (
+  status: number | string | null,
+  isAbandoned?: boolean | null,
+): string => {
+  return getStatusMeta(status, isAbandoned).color;
+};
+
+const StatusBadge = ({
+  status,
+  statusName,
+  isAbandoned,
+  className,
+  showChevron = true,
+}: {
+  status: number | string | null;
+  statusName?: string | null;
+  isAbandoned?: boolean | null;
+  className?: string;
+  showChevron?: boolean;
+}) => {
+  const statusLabel = formatStatusLabel(status, statusName, isAbandoned);
+  const statusColor = getHistoryStatusBadgeColor(status, isAbandoned);
+
+  return (
+    <div
+      className={`inline-flex items-center justify-between gap-3 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm ${
+        className || ''
+      }`}
+      style={{ backgroundColor: statusColor }}
+    >
+      <span className="truncate">{statusLabel}</span>
+      {showChevron ? <ChevronDown className="h-4 w-4 shrink-0 text-white/90" /> : null}
+    </div>
+  );
 };
 
 const toNonNegativeNumber = (value: number | null | undefined): number => {
@@ -156,6 +229,20 @@ type ConfirmationResponse = {
   };
 };
 
+type PhoneHistoryResponse = {
+  items: ConfirmationOrderRow[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pageCount: number;
+  };
+  selected: {
+    phone: string;
+    canonical_phone: string;
+  };
+};
+
 type ConfirmationResponseItemRaw = ConfirmationOrderRow & {
   isAbandoned?: boolean | null;
   status?: number | string | null;
@@ -184,7 +271,10 @@ type ParsedOrderSnapshotCustomer = {
 type ParsedOrderSnapshotShippingAddress = {
   fullName: string;
   phoneNumber: string;
-  fullAddress: string;
+  address: string;
+  communeName: string;
+  districtName: string;
+  provinceName: string;
 };
 
 type ParsedOrderSnapshot = {
@@ -192,6 +282,7 @@ type ParsedOrderSnapshot = {
   items: ParsedSnapshotItem[];
   customer: ParsedOrderSnapshotCustomer;
   shippingAddress: ParsedOrderSnapshotShippingAddress;
+  orderLink: string;
   conversationId: string;
   duplicatedPhone: boolean;
   duplicatedIp: boolean;
@@ -200,6 +291,7 @@ type ParsedOrderSnapshot = {
 const CONFIRMATION_STATUS_OPTIONS = [
   { label: 'Restocking', value: 11 },
   { label: 'Cancel', value: 6 },
+  { label: 'Delete', value: 7 },
   { label: 'Confirm', value: 1 },
 ] as const;
 
@@ -221,6 +313,14 @@ const toText = (value: unknown): string => {
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return '';
 };
+
+const hasNonEmptyText = (value: string | null | undefined): boolean =>
+  typeof value === 'string' && value.trim().length > 0;
+
+const getDeliveryFieldClass = (hasValue: boolean): string =>
+  hasValue
+    ? 'rounded-md bg-slate-100 px-3 py-2 text-slate-900'
+    : 'rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-rose-700';
 
 const toCount = (value: unknown): number => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -308,12 +408,48 @@ const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
     shippingAddress: {
       fullName: toText(shippingRaw?.full_name),
       phoneNumber: toText(shippingRaw?.phone_number),
-      fullAddress: toText(shippingRaw?.full_address),
+      address: toText(shippingRaw?.address),
+      communeName: toText(shippingRaw?.commune_name || shippingRaw?.commnue_name),
+      districtName: toText(shippingRaw?.district_name),
+      provinceName: toText(shippingRaw?.province_name),
     },
+    orderLink: toText(snapshot?.order_link || snapshot?.orderLink),
     conversationId: toText(snapshot?.conversation_id || snapshot?.conversationId),
     duplicatedPhone: duplicateFlags.duplicatedPhone,
     duplicatedIp: duplicateFlags.duplicatedIp,
   };
+};
+
+const getHistoryProductSummary = (row: Pick<ConfirmationOrderRow, 'order_snapshot' | 'item_data'>): string => {
+  const snapshotItems = parseOrderSnapshot(row.order_snapshot).items;
+  if (snapshotItems.length > 0) {
+    return snapshotItems
+      .map((item) => {
+        const itemName = item.name || item.productDisplayId || item.displayId || 'Item';
+        const quantity = item.quantity > 0 ? item.quantity : 1;
+        return `${itemName} x${quantity}`;
+      })
+      .join(', ');
+  }
+
+  if (Array.isArray(row.item_data)) {
+    const fallbackProducts = row.item_data
+      .map((entry) => {
+        const item = toRecord(entry);
+        if (!item) return '';
+        const itemName = toText(item.variationName || item.variation_name || item.name || item.note_product);
+        const quantity = toCount(item.quantity);
+        if (!itemName) return '';
+        return `${itemName} x${quantity > 0 ? quantity : 1}`;
+      })
+      .filter((value) => value.trim().length > 0);
+
+    if (fallbackProducts.length > 0) {
+      return fallbackProducts.join(', ');
+    }
+  }
+
+  return '—';
 };
 
 type TenantSocketPayload = {
@@ -332,6 +468,20 @@ export default function OrdersConfirmationPage() {
 
   const [rows, setRows] = useState<ConfirmationOrderRow[]>([]);
   const [selectedOrderForModal, setSelectedOrderForModal] = useState<ConfirmationOrderRow | null>(null);
+  const [isPhoneHistoryOpen, setIsPhoneHistoryOpen] = useState(false);
+  const [phoneHistoryRows, setPhoneHistoryRows] = useState<ConfirmationOrderRow[]>([]);
+  const [phoneHistoryLoading, setPhoneHistoryLoading] = useState(false);
+  const [phoneHistoryError, setPhoneHistoryError] = useState<string | null>(null);
+  const [phoneHistoryCanonicalPhone, setPhoneHistoryCanonicalPhone] = useState('');
+  const [phoneHistoryLookupPhone, setPhoneHistoryLookupPhone] = useState('');
+  const [phoneHistoryPage, setPhoneHistoryPage] = useState(1);
+  const phoneHistoryPageSize = 20;
+  const [phoneHistoryPagination, setPhoneHistoryPagination] = useState({
+    page: 1,
+    limit: phoneHistoryPageSize,
+    total: 0,
+    pageCount: 0,
+  });
   const [isMounted, setIsMounted] = useState(false);
   const [draftStatus, setDraftStatus] = useState<number | null>(null);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
@@ -436,6 +586,64 @@ export default function OrdersConfirmationPage() {
     }
   };
 
+  const fetchPhoneHistory = async (phone: string, targetPage: number) => {
+    setPhoneHistoryLoading(true);
+    setPhoneHistoryError(null);
+
+    try {
+      const params = new URLSearchParams();
+      params.set('phone', phone);
+      params.set('page', String(targetPage));
+      params.set('limit', String(phoneHistoryPageSize));
+      const response = await apiClient.get<PhoneHistoryResponse>(
+        `/orders/confirmation/history-by-phone?${params.toString()}`,
+      );
+      const data = response.data;
+
+      const normalizedItems = ((data.items || []) as ConfirmationResponseItemRaw[]).map((item) => {
+        const duplicateFlags = extractDuplicateFlagsFromSnapshot(item.order_snapshot);
+        return {
+          ...item,
+          status: typeof item.status === 'string' ? Number(item.status) : item.status,
+          is_abandoned: item.is_abandoned ?? item.isAbandoned ?? false,
+          has_duplicated_phone: duplicateFlags.duplicatedPhone,
+          has_duplicated_ip: duplicateFlags.duplicatedIp,
+        };
+      }) as ConfirmationOrderRow[];
+
+      setPhoneHistoryRows(normalizedItems);
+      setPhoneHistoryPagination(
+        data.pagination || {
+          page: targetPage,
+          limit: phoneHistoryPageSize,
+          total: 0,
+          pageCount: 0,
+        },
+      );
+      setPhoneHistoryCanonicalPhone(data.selected?.canonical_phone || '');
+      setPhoneHistoryLookupPhone(data.selected?.phone || phone);
+    } catch (err: unknown) {
+      const message =
+        (typeof err === 'object' &&
+          err !== null &&
+          'response' in err &&
+          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
+          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
+        (err instanceof Error ? err.message : null) ||
+        'Failed to load phone history';
+      setPhoneHistoryError(message);
+      setPhoneHistoryRows([]);
+      setPhoneHistoryPagination({
+        page: targetPage,
+        limit: phoneHistoryPageSize,
+        total: 0,
+        pageCount: 0,
+      });
+    } finally {
+      setPhoneHistoryLoading(false);
+    }
+  };
+
   fetchDataRef.current = fetchData;
 
   useEffect(() => {
@@ -512,15 +720,18 @@ export default function OrdersConfirmationPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedOrderForModal) return undefined;
+    if (!selectedOrderForModal && !isPhoneHistoryOpen) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setSelectedOrderForModal(null);
+      if (event.key !== 'Escape') return;
+      if (isPhoneHistoryOpen) {
+        setIsPhoneHistoryOpen(false);
+        return;
       }
+      setSelectedOrderForModal(null);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [selectedOrderForModal]);
+  }, [selectedOrderForModal, isPhoneHistoryOpen]);
 
   useEffect(() => {
     if (!selectedOrderForModal) {
@@ -529,6 +740,18 @@ export default function OrdersConfirmationPage() {
       setIsSavingStatus(false);
       setIsStatusMenuOpen(false);
       setShowTagPicker(false);
+      setIsPhoneHistoryOpen(false);
+      setPhoneHistoryRows([]);
+      setPhoneHistoryError(null);
+      setPhoneHistoryCanonicalPhone('');
+      setPhoneHistoryLookupPhone('');
+      setPhoneHistoryPage(1);
+      setPhoneHistoryPagination({
+        page: 1,
+        limit: phoneHistoryPageSize,
+        total: 0,
+        pageCount: 0,
+      });
       return;
     }
     setDraftStatus(null);
@@ -537,6 +760,12 @@ export default function OrdersConfirmationPage() {
     setIsStatusMenuOpen(false);
     setShowTagPicker(false);
   }, [selectedOrderForModal]);
+
+  useEffect(() => {
+    if (!isPhoneHistoryOpen || !phoneHistoryLookupPhone) return;
+    fetchPhoneHistory(phoneHistoryLookupPhone, phoneHistoryPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPhoneHistoryOpen, phoneHistoryLookupPhone, phoneHistoryPage]);
 
   const handleDateRangeChange = (val: { startDate: Date | string | null; endDate: Date | string | null } | null) => {
     const nextStart = toSafeDate(val?.startDate);
@@ -572,10 +801,85 @@ export default function OrdersConfirmationPage() {
     : '—';
   const draftStatusLabel = getConfirmationStatusOptionLabel(draftStatus);
   const statusDisplayLabel = draftStatusLabel || modalStatusLabel;
+  const statusDisplayColor = getHistoryStatusBadgeColor(
+    draftStatus ?? selectedOrderForModal?.status ?? null,
+    draftStatus === null ? selectedOrderForModal?.is_abandoned : false,
+  );
   const hasStatusDraftChanges = draftStatus !== null;
+  const selectedOrderStatusNumber =
+    typeof selectedOrderForModal?.status === 'number'
+      ? selectedOrderForModal.status
+      : Number(selectedOrderForModal?.status ?? NaN);
+  const isSelectedOrderEditable = selectedOrderStatusNumber === 0;
+  const customerSummaryLookupPhone = (
+    modalSnapshot.customer.phone ||
+    selectedOrderForModal?.customer_phone ||
+    ''
+  ).trim();
+  const canOpenPhoneHistory = customerSummaryLookupPhone.length > 0;
+  const phoneHistoryStartRow =
+    phoneHistoryPagination.total === 0 ? 0 : (phoneHistoryPagination.page - 1) * phoneHistoryPagination.limit + 1;
+  const phoneHistoryEndRow = Math.min(
+    phoneHistoryPagination.page * phoneHistoryPagination.limit,
+    phoneHistoryPagination.total,
+  );
+  const phoneHistoryCanPrev = phoneHistoryPagination.page > 1;
+  const phoneHistoryCanNext =
+    phoneHistoryPagination.page < Math.max(1, phoneHistoryPagination.pageCount);
+
+  const openPhoneHistoryModal = () => {
+    if (!canOpenPhoneHistory) return;
+    setPhoneHistoryRows([]);
+    setPhoneHistoryError(null);
+    setPhoneHistoryCanonicalPhone('');
+    setPhoneHistoryLookupPhone(customerSummaryLookupPhone);
+    setPhoneHistoryPage(1);
+    setIsPhoneHistoryOpen(true);
+  };
+
+  const openOrderDetailsFromHistory = (row: ConfirmationOrderRow) => {
+    setSelectedOrderForModal(row);
+    setIsPhoneHistoryOpen(false);
+    setDraftStatus(null);
+    setStatusSaveError(null);
+    setIsStatusMenuOpen(false);
+    setShowTagPicker(false);
+  };
+
+  const handleOpenAndCopyOrderLink = async () => {
+    const orderLink = modalSnapshot.orderLink;
+    if (!orderLink) return;
+
+    window.open(orderLink, '_blank', 'noopener,noreferrer');
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(orderLink);
+      }
+    } catch {
+      // ignore clipboard errors (unsupported browser / denied permission)
+    }
+  };
+
+  const deliveryFullName = modalSnapshot.shippingAddress.fullName;
+  const deliveryPhoneNumber = modalSnapshot.shippingAddress.phoneNumber;
+  const deliveryAddress = modalSnapshot.shippingAddress.address;
+  const deliveryCommuneName = modalSnapshot.shippingAddress.communeName;
+  const deliveryDistrictName = modalSnapshot.shippingAddress.districtName;
+  const deliveryProvinceName = modalSnapshot.shippingAddress.provinceName;
+  const hasDeliveryFullName = hasNonEmptyText(deliveryFullName);
+  const hasDeliveryPhoneNumber = hasNonEmptyText(deliveryPhoneNumber);
+  const hasDeliveryAddress = hasNonEmptyText(deliveryAddress);
+  const hasDeliveryCommuneName = hasNonEmptyText(deliveryCommuneName);
+  const hasDeliveryDistrictName = hasNonEmptyText(deliveryDistrictName);
+  const hasDeliveryProvinceName = hasNonEmptyText(deliveryProvinceName);
+  const hasDeliveryArea = hasDeliveryCommuneName && hasDeliveryDistrictName && hasDeliveryProvinceName;
+  const deliveryAreaText = [deliveryCommuneName, deliveryDistrictName, deliveryProvinceName]
+    .filter((entry) => hasNonEmptyText(entry))
+    .join(', ');
 
   const handleSaveStatus = async () => {
-    if (!selectedOrderForModal || draftStatus === null || isSavingStatus) return;
+    if (!selectedOrderForModal || !isSelectedOrderEditable || draftStatus === null || isSavingStatus) return;
     setIsSavingStatus(true);
     setStatusSaveError(null);
     try {
@@ -723,11 +1027,12 @@ export default function OrdersConfirmationPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Shop</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Order ID</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Product</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">COD</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Return Rate</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Tags</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Customer</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Phone</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">COD</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Tags</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Return Rate</th>
                   <th className="w-[200px] min-w-[200px] px-2 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap sticky right-0 z-20 bg-slate-50 border-l border-slate-200">
                     Status
                   </th>
@@ -736,13 +1041,14 @@ export default function OrdersConfirmationPage() {
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={9}>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
                       Loading...
                     </td>
                   </tr>
                 ) : rows.length > 0 ? (
                   rows.map((row) => {
                     const rowHasDuplicate = !!row.has_duplicated_phone || !!row.has_duplicated_ip;
+                    const productSummary = getHistoryProductSummary(row);
                     return (
                     <tr
                       key={row.id}
@@ -756,13 +1062,13 @@ export default function OrdersConfirmationPage() {
                       <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.date_local}</td>
                       <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.shop_name}</td>
                       <td className="px-4 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">{row.pos_order_id}</td>
-                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.customer_name || '—'}</td>
-                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.customer_phone || '—'}</td>
+                      <td className="px-4 py-4 text-sm text-slate-700">
+                        <span className="block max-w-[360px] truncate" title={productSummary}>
+                          {productSummary}
+                        </span>
+                      </td>
                       <td className="px-4 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
                         {formatCurrency(row.cod || 0)}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">
-                        {row.tags?.length ? row.tags.join(', ') : '—'}
                       </td>
                       <td className="px-4 py-4 text-sm font-semibold whitespace-nowrap">
                         <span className="relative inline-flex cursor-help group">
@@ -775,24 +1081,29 @@ export default function OrdersConfirmationPage() {
                           </span>
                         </span>
                       </td>
+                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">
+                        {row.tags?.length ? row.tags.join(', ') : '—'}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.customer_name || '—'}</td>
+                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.customer_phone || '—'}</td>
                       <td
                         className={`w-[200px] min-w-[200px] px-2 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 ${
                           rowHasDuplicate ? 'bg-rose-50' : 'bg-white'
                         }`}
                       >
-                        <div className="inline-flex w-full items-center justify-between gap-3 rounded-xl bg-slate-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-                          <span className="truncate">
-                            {formatStatusLabel(row.status, row.status_name, row.is_abandoned)}
-                          </span>
-                          <ChevronDown className="h-4 w-4 shrink-0 text-white/90" />
-                        </div>
+                        <StatusBadge
+                          status={row.status}
+                          statusName={row.status_name}
+                          isAbandoned={row.is_abandoned}
+                          className="w-full"
+                        />
                       </td>
                     </tr>
                     );
                   })
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={9}>
+                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
                       No new orders for the selected filters.
                     </td>
                   </tr>
@@ -832,15 +1143,28 @@ export default function OrdersConfirmationPage() {
           onClick={() => setSelectedOrderForModal(null)}
         >
           <div
-            className="mx-auto my-2 flex h-[calc(100vh-1.5rem)] w-[min(96vw,1480px)] max-h-[calc(100vh-1.5rem)] max-w-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:my-4 sm:h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-3rem)]"
+            className="relative mx-auto my-2 flex h-[calc(100vh-1.5rem)] w-[min(96vw,1480px)] max-h-[calc(100vh-1.5rem)] max-w-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:my-4 sm:h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-3rem)]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Order Detail</p>
-                <h3 className="text-xl font-semibold text-slate-900">
-                  {selectedOrderForModal.shop_id} - {selectedOrderForModal.pos_order_id}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-semibold text-slate-900">
+                    {selectedOrderForModal.shop_id} - {selectedOrderForModal.pos_order_id}
+                  </h3>
+                  {modalSnapshot.orderLink ? (
+                    <button
+                      type="button"
+                      onClick={handleOpenAndCopyOrderLink}
+                      className="inline-flex rounded-lg p-1 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                      aria-label="Open and copy order link"
+                      title="Open and copy order link"
+                    >
+                      <Link2 className="h-5 w-5" />
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {modalSnapshot.conversationId ? (
@@ -863,7 +1187,7 @@ export default function OrdersConfirmationPage() {
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-6">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-32">
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
               <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-8">
                 <h4 className="mb-3 text-base font-semibold text-slate-900">Product Information</h4>
@@ -948,18 +1272,31 @@ export default function OrdersConfirmationPage() {
                     <p className="text-base font-medium text-slate-900">Status</p>
                     <div
                       className="relative"
-                      onMouseEnter={() => setIsStatusMenuOpen(true)}
-                      onMouseLeave={() => setIsStatusMenuOpen(false)}
+                      onMouseEnter={() => {
+                        if (isSelectedOrderEditable) setIsStatusMenuOpen(true);
+                      }}
+                      onMouseLeave={() => {
+                        if (isSelectedOrderEditable) setIsStatusMenuOpen(false);
+                      }}
                     >
                       <button
                         type="button"
-                        onClick={() => setIsStatusMenuOpen((prev) => !prev)}
-                        className="inline-flex min-w-[160px] max-w-full items-center justify-between gap-3 rounded-xl bg-slate-500 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                        onClick={() => {
+                          if (!isSelectedOrderEditable) return;
+                          setIsStatusMenuOpen((prev) => !prev);
+                        }}
+                        disabled={!isSelectedOrderEditable}
+                        className={`inline-flex min-w-[160px] max-w-full items-center justify-between gap-3 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm ${
+                          isSelectedOrderEditable ? '' : 'cursor-not-allowed opacity-85'
+                        }`}
+                        style={{ backgroundColor: statusDisplayColor }}
                       >
                         <span className="truncate">{statusDisplayLabel}</span>
-                        <ChevronDown className="h-4 w-4 shrink-0 text-white/90" />
+                        <ChevronDown
+                          className={`h-4 w-4 shrink-0 ${isSelectedOrderEditable ? 'text-white/90' : 'text-slate-200'}`}
+                        />
                       </button>
-                      {isStatusMenuOpen ? (
+                      {isSelectedOrderEditable && isStatusMenuOpen ? (
                         <div className="absolute right-0 top-full z-30 mt-0 min-w-[180px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
                           {CONFIRMATION_STATUS_OPTIONS.map((item) => {
                             const active = draftStatus === item.value;
@@ -1004,13 +1341,21 @@ export default function OrdersConfirmationPage() {
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={() => setShowTagPicker((prev) => !prev)}
-                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          onClick={() => {
+                            if (!isSelectedOrderEditable) return;
+                            setShowTagPicker((prev) => !prev);
+                          }}
+                          disabled={!isSelectedOrderEditable}
+                          className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-semibold ${
+                            isSelectedOrderEditable
+                              ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                              : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                          }`}
                         >
                           Add Tags
                           <ChevronDown className="h-3.5 w-3.5" />
                         </button>
-                        {showTagPicker ? (
+                        {isSelectedOrderEditable && showTagPicker ? (
                           <div className="absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
                             <p className="text-xs text-slate-500">Tag list will be connected here.</p>
                           </div>
@@ -1074,7 +1419,15 @@ export default function OrdersConfirmationPage() {
                     </div>
                   </div>
 
-                  <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={openPhoneHistoryModal}
+                    disabled={!canOpenPhoneHistory}
+                    className={`mt-3 w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-left transition ${
+                      canOpenPhoneHistory ? 'hover:bg-sky-100' : 'cursor-default'
+                    }`}
+                    title={canOpenPhoneHistory ? 'Open history of orders by this phone number' : 'Phone number unavailable'}
+                  >
                     <p className="text-base font-semibold text-slate-900">{modalSnapshot.customer.name || '—'}</p>
                     <p className="text-sm text-blue-700">{modalSnapshot.customer.phone || '—'}</p>
                     <div className="mt-2 border-t border-sky-200 pt-2 text-sm text-slate-700">
@@ -1086,28 +1439,31 @@ export default function OrdersConfirmationPage() {
                         order(s)
                       </p>
                     </div>
-                  </div>
+                  </button>
                 </section>
 
                 <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <h4 className="mb-3 text-base font-semibold text-slate-900">Delivery</h4>
                   <div className="space-y-2">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <div className="rounded-md bg-slate-100 px-3 py-2 text-slate-900">
-                        {modalSnapshot.shippingAddress.fullName || '—'}
+                      <div className={getDeliveryFieldClass(hasDeliveryFullName)}>
+                        {deliveryFullName || 'Missing full name'}
                       </div>
-                      <div className="rounded-md bg-slate-100 px-3 py-2 text-slate-900">
-                        {modalSnapshot.shippingAddress.phoneNumber || '—'}
+                      <div className={getDeliveryFieldClass(hasDeliveryPhoneNumber)}>
+                        {deliveryPhoneNumber || 'Missing phone number'}
                       </div>
                     </div>
-                    <div className="rounded-md bg-slate-100 px-3 py-2 text-slate-900">
-                      {modalSnapshot.shippingAddress.fullAddress || '—'}
+                    <div className={getDeliveryFieldClass(hasDeliveryAddress)}>
+                      {deliveryAddress || 'Missing address'}
+                    </div>
+                    <div className={getDeliveryFieldClass(hasDeliveryArea)}>
+                      {deliveryAreaText || 'Missing commune / district / province'}
                     </div>
                   </div>
                 </section>
               </div>
             </div>
-            <div className="relative z-20 flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-3 shadow-[0_-6px_12px_-12px_rgba(15,23,42,0.45)]">
+            <div className="absolute inset-x-0 bottom-0 z-50 flex items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-5 py-3 shadow-[0_-10px_20px_-14px_rgba(15,23,42,0.45)] backdrop-blur-sm">
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700">
                   Status: {statusDisplayLabel}
@@ -1120,7 +1476,7 @@ export default function OrdersConfirmationPage() {
               <button
                 type="button"
                 onClick={handleSaveStatus}
-                disabled={!hasStatusDraftChanges || isSavingStatus}
+                disabled={!isSelectedOrderEditable || !hasStatusDraftChanges || isSavingStatus}
                 className="inline-flex min-w-[140px] items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {isSavingStatus ? 'Saving...' : 'Save'}
@@ -1129,6 +1485,173 @@ export default function OrdersConfirmationPage() {
             </div>
           </div>
         </div>,
+            document.body,
+          )
+        : null}
+
+      {isMounted && selectedOrderForModal && isPhoneHistoryOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[130] overflow-y-auto bg-slate-900/45 p-3 sm:p-6"
+              onClick={() => setIsPhoneHistoryOpen(false)}
+            >
+              <div className="flex min-h-full items-center justify-center">
+                <div
+                  className="relative flex h-auto w-[min(96vw,1480px)] max-h-[72vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      History of Orders (Phone)
+                    </p>
+                    <h3 className="text-xl font-semibold text-slate-900">
+                      {phoneHistoryLookupPhone || '—'}
+                    </h3>
+                    {phoneHistoryCanonicalPhone ? (
+                      <p className="mt-1 text-sm text-slate-500">
+                        Canonical: {phoneHistoryCanonicalPhone}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPhoneHistoryOpen(false)}
+                    className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                    aria-label="Close history modal"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-auto p-4">
+                  {phoneHistoryError ? (
+                    <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                      {phoneHistoryError}
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-slate-100">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">
+                              Date
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">
+                              Shop
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">
+                              Order ID
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">
+                              Customer
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">
+                              Product
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">
+                              Phone
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">
+                              COD
+                            </th>
+                            <th className="w-[190px] min-w-[190px] px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap sticky right-0 z-20 bg-slate-50 border-l border-slate-200">
+                              Status
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {phoneHistoryLoading ? (
+                            <tr>
+                              <td className="px-4 py-6 text-sm text-slate-400" colSpan={8}>
+                                Loading...
+                              </td>
+                            </tr>
+                          ) : phoneHistoryRows.length > 0 ? (
+                            phoneHistoryRows.map((row) => {
+                              const rowHasDuplicate = !!row.has_duplicated_phone || !!row.has_duplicated_ip;
+                              const productSummary = getHistoryProductSummary(row);
+                              return (
+                                <tr
+                                  key={`history-${row.id}`}
+                                  onClick={() => openOrderDetailsFromHistory(row)}
+                                  className={`cursor-pointer transition-colors ${
+                                    rowHasDuplicate
+                                      ? 'bg-rose-50 hover:bg-rose-100/70'
+                                      : 'bg-white hover:bg-slate-50/80'
+                                  }`}
+                                >
+                                  <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.date_local}</td>
+                                  <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.shop_name}</td>
+                                  <td className="px-4 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
+                                    {row.pos_order_id}
+                                  </td>
+                                  <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.customer_name || '—'}</td>
+                                  <td className="px-4 py-4 text-sm text-slate-700">
+                                    <span className="block max-w-[380px] truncate" title={productSummary}>
+                                      {productSummary}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.customer_phone || '—'}</td>
+                                  <td className="px-4 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
+                                    {formatCurrency(row.cod || 0)}
+                                  </td>
+                                  <td
+                                    className={`w-[190px] min-w-[190px] px-2 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 ${
+                                      rowHasDuplicate ? 'bg-rose-50' : 'bg-white'
+                                    }`}
+                                  >
+                                    <StatusBadge
+                                      status={row.status}
+                                      statusName={row.status_name}
+                                      isAbandoned={row.is_abandoned}
+                                      className="w-full"
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td className="px-4 py-6 text-sm text-slate-400" colSpan={8}>
+                                No orders found for this phone number.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-slate-600">
+                        Showing {phoneHistoryStartRow}-{phoneHistoryEndRow} of {phoneHistoryPagination.total}
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPhoneHistoryPage((prev) => Math.max(1, prev - 1))}
+                          disabled={!phoneHistoryCanPrev || phoneHistoryLoading}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPhoneHistoryPage((prev) => prev + 1)}
+                          disabled={!phoneHistoryCanNext || phoneHistoryLoading}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              </div>
+            </div>,
             document.body,
           )
         : null}

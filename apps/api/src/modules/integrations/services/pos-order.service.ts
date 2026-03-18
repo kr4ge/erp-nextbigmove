@@ -47,7 +47,9 @@ interface PosOrderData {
     shipping_address: Record<string, any> | null;
     note: string | null;
     items: any[] | null;
+    order_link: string | null;
     conversation_id: string | null;
+    assigning_seller: Record<string, any> | null;
     duplicated_phone: unknown | null;
     duplicated_ip: unknown | null;
   } | null;
@@ -459,10 +461,21 @@ export class PosOrderService {
         : null;
     const snapshotNote = typeof rawOrder?.note === 'string' ? rawOrder.note : null;
     const snapshotItems = Array.isArray(rawOrder?.items) ? rawOrder.items : null;
+    const rawOrderLink = rawOrder?.order_link ?? rawOrder?.orderLink ?? null;
+    const snapshotOrderLink =
+      typeof rawOrderLink === 'string' || typeof rawOrderLink === 'number'
+        ? rawOrderLink.toString()
+        : null;
     const rawConversationId = rawOrder?.conversation_id ?? rawOrder?.conversationId ?? null;
     const snapshotConversationId =
       typeof rawConversationId === 'string' || typeof rawConversationId === 'number'
         ? rawConversationId.toString()
+        : null;
+    const snapshotAssigningSeller =
+      rawOrder?.assigning_seller
+      && typeof rawOrder.assigning_seller === 'object'
+      && !Array.isArray(rawOrder.assigning_seller)
+        ? rawOrder.assigning_seller
         : null;
     const snapshotDuplicatedPhone = rawOrder?.duplicated_phone ?? rawOrder?.duplicatedPhone ?? null;
     const snapshotDuplicatedIp = rawOrder?.duplicated_ip ?? rawOrder?.duplicatedIp ?? null;
@@ -471,7 +484,9 @@ export class PosOrderService {
       shipping_address: snapshotShippingAddress,
       note: snapshotNote,
       items: snapshotItems,
+      order_link: snapshotOrderLink,
       conversation_id: snapshotConversationId,
+      assigning_seller: snapshotAssigningSeller,
       duplicated_phone: snapshotDuplicatedPhone,
       duplicated_ip: snapshotDuplicatedIp,
     };
@@ -733,6 +748,8 @@ export class PosOrderService {
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
             isAbandoned: !!order.isAbandoned,
+            confirmationUpdateRequestedAt: null,
+            confirmationUpdateTargetStatus: null,
             pUtmCampaign: order.pUtmCampaign,
             pUtmContent: order.pUtmContent,
             cogs: new Decimal(order.cogs),
@@ -767,6 +784,8 @@ export class PosOrderService {
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
             isAbandoned: !!order.isAbandoned,
+            confirmationUpdateRequestedAt: null,
+            confirmationUpdateTargetStatus: null,
             pUtmCampaign: order.pUtmCampaign,
             pUtmContent: order.pUtmContent,
             cogs: new Decimal(order.cogs),

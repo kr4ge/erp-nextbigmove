@@ -31,6 +31,20 @@ export class OrdersController {
     });
   }
 
+  @Get('confirmation/history-by-phone')
+  @Permissions('pos.read')
+  async listConfirmationPhoneHistory(
+    @Query('phone') phone?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.ordersService.listConfirmationPhoneHistory({
+      phone,
+      page,
+      limit,
+    });
+  }
+
   @Patch('confirmation/:id/status')
   @Permissions('pos.read')
   async updateConfirmationOrderStatus(

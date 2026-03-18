@@ -836,6 +836,8 @@ model PosOrder {
   forUpsell Boolean @default(false)
   isRiskConfirmation Boolean @default(false)
   isAbandoned Boolean @default(false)
+  confirmationUpdateRequestedAt DateTime?
+  confirmationUpdateTargetStatus Int?
   reportsByPhoneOrderFail Int?
   reportsByPhoneOrderSuccess Int?
   reportsByPhoneWarning Int?
@@ -875,6 +877,7 @@ model PosOrder {
   @@unique([tenantId, shopId, posOrderId])
   @@index([tenantId, shopId, dateLocal])
   @@index([tenantId, teamId, dateLocal])
+  @@index([tenantId, status, dateLocal, confirmationUpdateRequestedAt], map: "pos_orders_confirmation_queue_idx")
   @@index([tenantId, teamId, dateLocal, isRiskConfirmation], map: "pos_orders_tenant_team_date_risk_confirmation_idx")
   @@index([dateLocal])
   @@index([mapping])
