@@ -48,6 +48,8 @@ interface PosOrderData {
     note: string | null;
     items: any[] | null;
     conversation_id: string | null;
+    duplicated_phone: unknown | null;
+    duplicated_ip: unknown | null;
   } | null;
   assigningCare?: string | null;
 }
@@ -462,12 +464,16 @@ export class PosOrderService {
       typeof rawConversationId === 'string' || typeof rawConversationId === 'number'
         ? rawConversationId.toString()
         : null;
+    const snapshotDuplicatedPhone = rawOrder?.duplicated_phone ?? rawOrder?.duplicatedPhone ?? null;
+    const snapshotDuplicatedIp = rawOrder?.duplicated_ip ?? rawOrder?.duplicatedIp ?? null;
     const orderSnapshot = {
       customer: snapshotCustomer,
       shipping_address: snapshotShippingAddress,
       note: snapshotNote,
       items: snapshotItems,
       conversation_id: snapshotConversationId,
+      duplicated_phone: snapshotDuplicatedPhone,
+      duplicated_ip: snapshotDuplicatedIp,
     };
 
     const codValue = parseFloat(rawOrder.cod || '0');

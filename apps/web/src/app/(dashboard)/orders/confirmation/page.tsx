@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
-import { ChevronDown, MessageCircle, X } from 'lucide-react';
+import { ChevronDown, MessageCircle, PhoneCall, Wifi, X } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { workflowSocket } from '@/lib/socket-client';
 import { PageHeader } from '@/components/ui/page-header';
@@ -132,6 +132,8 @@ type ConfirmationOrderRow = {
   customer_address: string | null;
   item_data?: unknown;
   order_snapshot?: unknown;
+  has_duplicated_phone?: boolean;
+  has_duplicated_ip?: boolean;
   tags: string[];
 };
 
@@ -191,6 +193,8 @@ type ParsedOrderSnapshot = {
   customer: ParsedOrderSnapshotCustomer;
   shippingAddress: ParsedOrderSnapshotShippingAddress;
   conversationId: string;
+  duplicatedPhone: boolean;
+  duplicatedIp: boolean;
 };
 
 const CONFIRMATION_STATUS_OPTIONS = [
@@ -236,6 +240,26 @@ const toAmount = (value: unknown): number => {
   return 0;
 };
 
+const toBooleanFlag = (value: unknown): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes';
+  }
+  return false;
+};
+
+const extractDuplicateFlagsFromSnapshot = (
+  snapshotValue: unknown,
+): { duplicatedPhone: boolean; duplicatedIp: boolean } => {
+  const snapshot = toRecord(snapshotValue);
+  return {
+    duplicatedPhone: toBooleanFlag(snapshot?.duplicated_phone ?? snapshot?.duplicatedPhone),
+    duplicatedIp: toBooleanFlag(snapshot?.duplicated_ip ?? snapshot?.duplicatedIp),
+  };
+};
+
 const parseSnapshotItems = (value: unknown): ParsedSnapshotItem[] => {
   if (!Array.isArray(value)) return [];
   return value
@@ -263,6 +287,7 @@ const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
   const snapshot = toRecord(value);
   const customerRaw = toRecord(snapshot?.customer);
   const shippingRaw = toRecord(snapshot?.shipping_address || snapshot?.shippingAddress);
+  const duplicateFlags = extractDuplicateFlagsFromSnapshot(snapshot);
 
   const phoneFromList = Array.isArray(customerRaw?.phone_numbers)
     ? toText(customerRaw?.phone_numbers[0])
@@ -286,6 +311,8 @@ const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
       fullAddress: toText(shippingRaw?.full_address),
     },
     conversationId: toText(snapshot?.conversation_id || snapshot?.conversationId),
+    duplicatedPhone: duplicateFlags.duplicatedPhone,
+    duplicatedIp: duplicateFlags.duplicatedIp,
   };
 };
 
@@ -373,11 +400,16 @@ export default function OrdersConfirmationPage() {
       );
       const data = response.data;
 
-      const normalizedItems = ((data.items || []) as ConfirmationResponseItemRaw[]).map((item) => ({
-        ...item,
-        status: typeof item.status === 'string' ? Number(item.status) : item.status,
-        is_abandoned: item.is_abandoned ?? item.isAbandoned ?? false,
-      })) as ConfirmationOrderRow[];
+      const normalizedItems = ((data.items || []) as ConfirmationResponseItemRaw[]).map((item) => {
+        const duplicateFlags = extractDuplicateFlagsFromSnapshot(item.order_snapshot);
+        return {
+          ...item,
+          status: typeof item.status === 'string' ? Number(item.status) : item.status,
+          is_abandoned: item.is_abandoned ?? item.isAbandoned ?? false,
+          has_duplicated_phone: duplicateFlags.duplicatedPhone,
+          has_duplicated_ip: duplicateFlags.duplicatedIp,
+        };
+      }) as ConfirmationOrderRow[];
 
       setRows(normalizedItems);
       setPagination(data.pagination || { page: 1, limit: pageSize, total: 0, pageCount: 0 });
@@ -709,10 +741,16 @@ export default function OrdersConfirmationPage() {
                     </td>
                   </tr>
                 ) : rows.length > 0 ? (
-                  rows.map((row) => (
+                  rows.map((row) => {
+                    const rowHasDuplicate = !!row.has_duplicated_phone || !!row.has_duplicated_ip;
+                    return (
                     <tr
                       key={row.id}
-                      className="bg-white cursor-pointer hover:bg-slate-50/80 transition-colors"
+                      className={`cursor-pointer transition-colors ${
+                        rowHasDuplicate
+                          ? 'bg-rose-50 hover:bg-rose-100/70'
+                          : 'bg-white hover:bg-slate-50/80'
+                      }`}
                       onClick={() => setSelectedOrderForModal(row)}
                     >
                       <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.date_local}</td>
@@ -737,7 +775,11 @@ export default function OrdersConfirmationPage() {
                           </span>
                         </span>
                       </td>
-                      <td className="w-[200px] min-w-[200px] px-2 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap sticky right-0 z-10 bg-white border-l border-slate-100">
+                      <td
+                        className={`w-[200px] min-w-[200px] px-2 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 ${
+                          rowHasDuplicate ? 'bg-rose-50' : 'bg-white'
+                        }`}
+                      >
                         <div className="inline-flex w-full items-center justify-between gap-3 rounded-xl bg-slate-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
                           <span className="truncate">
                             {formatStatusLabel(row.status, row.status_name, row.is_abandoned)}
@@ -746,7 +788,8 @@ export default function OrdersConfirmationPage() {
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 ) : (
                   <tr>
                     <td className="px-4 py-6 text-sm text-slate-400" colSpan={9}>
@@ -789,7 +832,7 @@ export default function OrdersConfirmationPage() {
           onClick={() => setSelectedOrderForModal(null)}
         >
           <div
-            className="mx-auto my-2 flex w-[min(96vw,1480px)] max-w-none flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl sm:my-4 md:max-h-[calc(100vh-3rem)]"
+            className="mx-auto my-2 flex h-[calc(100vh-1.5rem)] w-[min(96vw,1480px)] max-h-[calc(100vh-1.5rem)] max-w-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:my-4 sm:h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-3rem)]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
@@ -820,7 +863,7 @@ export default function OrdersConfirmationPage() {
               </div>
             </div>
 
-            <div className="overflow-y-auto p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-6">
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
               <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-8">
                 <h4 className="mb-3 text-base font-semibold text-slate-900">Product Information</h4>
@@ -999,6 +1042,23 @@ export default function OrdersConfirmationPage() {
                     </div>
                   </div>
 
+                  {(modalSnapshot.duplicatedPhone || modalSnapshot.duplicatedIp) ? (
+                    <div className="mb-3 space-y-2">
+                      {modalSnapshot.duplicatedPhone ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+                          <PhoneCall className="h-4 w-4 text-amber-600" />
+                          <span>This phone number has multiple orders</span>
+                        </div>
+                      ) : null}
+                      {modalSnapshot.duplicatedIp ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-900">
+                          <Wifi className="h-4 w-4 text-rose-600" />
+                          <span>Multiple IP detected in this order</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <div className="rounded-md bg-slate-100 px-3 py-2 text-slate-900">
                       {modalSnapshot.customer.name || '—'}
@@ -1047,7 +1107,7 @@ export default function OrdersConfirmationPage() {
                 </section>
               </div>
             </div>
-            <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-3">
+            <div className="relative z-20 flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-3 shadow-[0_-6px_12px_-12px_rgba(15,23,42,0.45)]">
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700">
                   Status: {statusDisplayLabel}
