@@ -64,6 +64,7 @@ export class ReconcileMarketingService {
         tenantId,
         ...(teamId ? { teamId } : {}),
         dateLocal: date,
+        isVoid: false,
       },
       select: {
         pUtmContent: true,

@@ -45,12 +45,20 @@ export class OrdersController {
     });
   }
 
+  @Get('confirmation/:id/tag-options')
+  @Permissions('pos.read')
+  async listConfirmationOrderTagOptions(
+    @Param('id') id: string,
+  ) {
+    return this.ordersService.listConfirmationOrderTagOptions(id);
+  }
+
   @Patch('confirmation/:id/status')
   @Permissions('pos.read')
   async updateConfirmationOrderStatus(
     @Param('id') id: string,
     @Body() body: UpdateConfirmationOrderStatusDto,
   ) {
-    return this.ordersService.updateConfirmationOrderStatus(id, body.status);
+    return this.ordersService.updateConfirmationOrderStatus(id, body);
   }
 }

@@ -106,6 +106,13 @@ type ReportsByPhoneMetrics = {
   warning: number | null;
 };
 
+type PancakeStoreTag = {
+  tagId: string;
+  name: string;
+  groupId: string | null;
+  groupName: string | null;
+};
+
 type ListPancakeWebhookLogsParams = {
   page?: number;
   limit?: number;
@@ -1041,7 +1048,13 @@ export class IntegrationService {
 
     const upsertedKeys = new Set(
       outcomes
-        .filter((row) => row.upsertStatus === 'UPSERTED' && row.shopId && row.orderId)
+        .filter(
+          (row) =>
+            row.upsertStatus === 'UPSERTED'
+            && row.reason !== 'VOID_NO_PRODUCT_ITEMS'
+            && row.shopId
+            && row.orderId,
+        )
         .map((row) => `${row.shopId}::${row.orderId}`),
     );
 
@@ -2546,6 +2559,19 @@ export class IntegrationService {
       } else if (provider === 'PANCAKE_POS') {
         await this.fetchPancakeProductsByIntegrationId(integration.id);
         this.logger.log(`Auto-fetched POS products for integration ${integration.id}`);
+        const linkedStore = await this.prisma.posStore.findFirst({
+          where: {
+            tenantId,
+            integrationId: integration.id,
+          },
+          select: { id: true },
+        });
+        if (linkedStore) {
+          const tagsResult = await this.syncPancakeTagsByStoreId(linkedStore.id);
+          this.logger.log(
+            `Auto-synced POS tags for integration ${integration.id} (synced=${tagsResult.synced})`,
+          );
+        }
       }
     } catch (error) {
       this.logger.warn(
@@ -2677,7 +2703,7 @@ export class IntegrationService {
           });
 
           // Create POS store
-          await this.prisma.posStore.create({
+          const createdStore = await this.prisma.posStore.create({
             data: {
               tenantId,
               teamId: effectiveTeamId,
@@ -2695,9 +2721,10 @@ export class IntegrationService {
           // Auto-fetch products (best-effort)
           try {
             await this.fetchPancakeProductsByIntegrationId(integration.id);
+            await this.syncPancakeTagsByStoreId(createdStore.id);
           } catch (fetchError) {
             this.logger.warn(
-              `Bulk import: product fetch failed for integration ${integration.id}: ${fetchError.message}`,
+              `Bulk import: product/tag fetch failed for integration ${integration.id}: ${fetchError.message}`,
             );
           }
 
@@ -2878,6 +2905,54 @@ export class IntegrationService {
       where: { storeId: store.id },
       orderBy: { name: 'asc' },
     });
+  }
+
+  async listPosStoreTags(id: string) {
+    const store = await this.getPosStore(id); // validates access including shared integrations
+    const { tenantId } = await this.teamContext.getContext();
+
+    return this.prisma.posTag.findMany({
+      where: {
+        tenantId,
+        storeId: store.id,
+      },
+      orderBy: [
+        { groupName: 'asc' },
+        { name: 'asc' },
+      ],
+    });
+  }
+
+  async syncPancakeTagsByStoreId(storeId: string) {
+    const store = await this.getPosStore(storeId); // validates access including shared integrations
+    const { tenantId } = await this.teamContext.getContext();
+
+    const apiKey = await this.resolveStoreApiKeyForWebhook(tenantId, {
+      id: store.id,
+      integrationId: store.integrationId,
+      apiKey: store.apiKey,
+    });
+
+    if (!apiKey) {
+      throw new ConflictException('Missing API key for this store');
+    }
+
+    const tags = await this.fetchTagsFromPancake(store.shopId, apiKey);
+    await this.upsertStoreTags(
+      { id: store.id, tenantId, teamId: store.teamId ?? null },
+      tags,
+    );
+
+    const grouped = tags.filter((tag) => !!tag.groupId).length;
+    const individual = tags.length - grouped;
+
+    return {
+      synced: tags.length,
+      grouped,
+      individual,
+      storeId: store.id,
+      shopId: store.shopId,
+    };
   }
 
   async listPosStoreOrders(id: string, dateFrom?: string, dateTo?: string) {
@@ -3281,6 +3356,139 @@ export class IntegrationService {
     }
 
     return products;
+  }
+
+  private parsePancakeTagsResponseRows(payload: any): any[] {
+    if (!payload) return [];
+
+    if (Array.isArray(payload)) {
+      const nestedRows = payload.flatMap((entry) => {
+        if (Array.isArray(entry?.data)) return entry.data;
+        return [];
+      });
+      if (nestedRows.length > 0) return nestedRows;
+    }
+
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.tags)) return payload.tags;
+    return [];
+  }
+
+  private normalizePancakeTagRow(row: any): PancakeStoreTag | null {
+    const tagIdRaw = row?.id;
+    const nameRaw = row?.name;
+
+    if (tagIdRaw === null || tagIdRaw === undefined) return null;
+    if (typeof nameRaw !== 'string' || !nameRaw.trim()) return null;
+
+    const tagId = tagIdRaw.toString().trim();
+    const name = nameRaw.trim();
+    if (!tagId || !name) return null;
+
+    const groups = Array.isArray(row?.groups) ? row.groups : [];
+    const firstGroup = groups.length > 0 ? groups[0] : null;
+
+    const groupIdRaw = firstGroup?.id;
+    const groupNameRaw = firstGroup?.name;
+
+    const groupId =
+      groupIdRaw === null || groupIdRaw === undefined
+        ? null
+        : groupIdRaw.toString().trim() || null;
+    const groupName =
+      typeof groupNameRaw === 'string' && groupNameRaw.trim()
+        ? groupNameRaw.trim()
+        : null;
+
+    return {
+      tagId,
+      name,
+      groupId,
+      groupName,
+    };
+  }
+
+  private async fetchTagsFromPancake(shopId: string, apiKey: string): Promise<PancakeStoreTag[]> {
+    const params = new URLSearchParams();
+    params.set('api_key', apiKey);
+
+    const response = await fetch(
+      `https://pos.pages.fm/api/v1/shops/${encodeURIComponent(shopId)}/orders/tags?${params.toString()}`,
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new ConflictException(errorText || 'Failed to fetch tags from Pancake POS');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const rows = this.parsePancakeTagsResponseRows(payload);
+    const map = new Map<string, PancakeStoreTag>();
+
+    for (const row of rows) {
+      const normalized = this.normalizePancakeTagRow(row);
+      if (!normalized) continue;
+
+      const existing = map.get(normalized.tagId);
+      if (!existing) {
+        map.set(normalized.tagId, normalized);
+        continue;
+      }
+
+      // Prefer grouped tag metadata when duplicate tag IDs appear.
+      if (!existing.groupId && normalized.groupId) {
+        map.set(normalized.tagId, normalized);
+      }
+    }
+
+    return Array.from(map.values());
+  }
+
+  private async upsertStoreTags(
+    store: { id: string; tenantId: string; teamId: string | null },
+    tags: PancakeStoreTag[],
+  ): Promise<void> {
+    const uniqueTags = tags.filter((tag) => tag.tagId && tag.name);
+    const tagIds = uniqueTags.map((tag) => tag.tagId);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.posTag.deleteMany({
+        where: {
+          tenantId: store.tenantId,
+          storeId: store.id,
+          ...(tagIds.length > 0 ? { tagId: { notIn: tagIds } } : {}),
+        },
+      });
+
+      if (uniqueTags.length === 0) return;
+
+      for (const tag of uniqueTags) {
+        await tx.posTag.upsert({
+          where: {
+            tenantId_storeId_tagId: {
+              tenantId: store.tenantId,
+              storeId: store.id,
+              tagId: tag.tagId,
+            },
+          },
+          update: {
+            teamId: store.teamId,
+            name: tag.name,
+            groupId: tag.groupId,
+            groupName: tag.groupName,
+          },
+          create: {
+            tenantId: store.tenantId,
+            teamId: store.teamId,
+            storeId: store.id,
+            tagId: tag.tagId,
+            name: tag.name,
+            groupId: tag.groupId,
+            groupName: tag.groupName,
+          },
+        });
+      }
+    });
   }
 
   private async upsertStoreProducts(storeId: string, products: any[]) {

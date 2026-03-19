@@ -113,6 +113,7 @@ export default function StoreDetailPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [isSyncingProducts, setIsSyncingProducts] = useState(false);
+  const [isSyncingTags, setIsSyncingTags] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [orderDateRange, setOrderDateRange] = useState<{
@@ -233,6 +234,41 @@ export default function StoreDetailPage() {
       addToast('error', msg);
     } finally {
       setInitialOfferSaving(false);
+    }
+  };
+
+  const handleSyncTags = async () => {
+    try {
+      setIsSyncingTags(true);
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        addToast('error', 'Session expired. Please log in again.');
+        return;
+      }
+
+      const response = await apiClient.post(
+        `/integrations/pos-stores/${storeId}/tags/sync`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const synced = Number(response?.data?.synced || 0);
+      const grouped = Number(response?.data?.grouped || 0);
+      const individual = Number(response?.data?.individual || 0);
+
+      addToast(
+        'success',
+        `Successfully synced ${synced} tag${synced !== 1 ? 's' : ''} (${grouped} grouped, ${individual} individual).`,
+      );
+    } catch (err: any) {
+      const msg = parseErrorMessage(err);
+      addToast('error', msg);
+    } finally {
+      setIsSyncingTags(false);
     }
   };
 
@@ -570,6 +606,16 @@ export default function StoreDetailPage() {
                 loading={isSyncingProducts}
               >
                 {isSyncingProducts ? 'Syncing...' : 'Sync Products'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                iconLeft={<Tags className="h-4 w-4" />}
+                onClick={handleSyncTags}
+                disabled={isSyncingTags}
+                loading={isSyncingTags}
+              >
+                {isSyncingTags ? 'Syncing...' : 'Sync Tags'}
               </Button>
             </div>
           }

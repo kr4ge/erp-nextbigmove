@@ -17,10 +17,14 @@ export class OrdersQueueProcessor {
   @Process(CONFIRMATION_UPDATE_STATUS_JOB)
   async handleUpdateStatus(job: Job<ConfirmationUpdateStatusJobData>) {
     const startedAt = Date.now();
-    const { tenantId, shopId, posOrderId, targetStatus } = job.data;
+    const { tenantId, shopId, posOrderId, targetStatus, targetTags } = job.data;
+    const targetLabel =
+      typeof targetStatus === 'number'
+        ? `status=${targetStatus}`
+        : `status=n/a tags=${Array.isArray(targetTags) ? targetTags.length : 0}`;
 
     this.logger.debug(
-      `Processing confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} target=${targetStatus}`,
+      `Processing confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel}`,
     );
 
     const result = await this.ordersService.processQueuedConfirmationOrderStatusUpdate(job.data);
@@ -28,11 +32,11 @@ export class OrdersQueueProcessor {
 
     if (result.success) {
       this.logger.log(
-        `Processed confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} target=${targetStatus} durationMs=${durationMs}`,
+        `Processed confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel} durationMs=${durationMs}`,
       );
     } else {
       this.logger.warn(
-        `Skipped confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} target=${targetStatus} reason=${result.reason} durationMs=${durationMs}`,
+        `Skipped confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel} reason=${result.reason} durationMs=${durationMs}`,
       );
     }
 
@@ -61,4 +65,3 @@ export class OrdersQueueProcessor {
       .catch(() => undefined);
   }
 }
-

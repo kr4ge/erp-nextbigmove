@@ -192,6 +192,26 @@ export class IntegrationController {
   }
 
   /**
+   * POS Stores - list tags for store (from DB)
+   * NOTE: This must come BEFORE /pos-stores/:id to avoid route conflicts
+   */
+  @Get('/pos-stores/:id/tags')
+  @Permissions('integration.read')
+  async getPosStoreTags(@Param('id') id: string) {
+    return this.integrationService.listPosStoreTags(id);
+  }
+
+  /**
+   * POS Stores - manual sync tags from Pancake POS API
+   * NOTE: This must come BEFORE /pos-stores/:id to avoid route conflicts
+   */
+  @Post('/pos-stores/:id/tags/sync')
+  @Permissions('integration.update')
+  async syncPosStoreTags(@Param('id') id: string) {
+    return this.integrationService.syncPancakeTagsByStoreId(id);
+  }
+
+  /**
    * POS Stores - list orders for store (from DB) with optional date range
    * NOTE: This must come BEFORE /pos-stores/:id to avoid route conflicts
    */

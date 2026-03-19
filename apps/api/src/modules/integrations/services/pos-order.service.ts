@@ -25,6 +25,7 @@ interface PosOrderData {
   forUpsell?: boolean;
   isRiskConfirmation?: boolean;
   isAbandoned?: boolean;
+  isVoid?: boolean;
   pUtmCampaign?: string;
   pUtmContent?: string;
   cogs: number;
@@ -592,6 +593,7 @@ export class PosOrderService {
       forUpsell,
       isRiskConfirmation,
       isAbandoned,
+      isVoid: normalizedStatus === 7,
       pUtmCampaign: rawOrder.p_utm_campaign,
       pUtmContent: rawOrder.p_utm_content,
       cogs,
@@ -666,23 +668,6 @@ export class PosOrderService {
       const shopId = rawOrder?.shop_id?.toString?.()?.trim?.() || null;
       const posOrderId = rawOrder?.id?.toString?.()?.trim?.() || null;
 
-      // Restriction: do not persist status 7 orders; remove existing rows if present.
-      if (status === 7) {
-        if (shopId && posOrderId) {
-          await this.prisma.posOrder.deleteMany({
-            where: { tenantId, shopId, posOrderId },
-          });
-        }
-        outcomes.push({
-          shopId,
-          orderId: posOrderId,
-          status,
-          upsertStatus: 'DELETED',
-          reason: 'STATUS_7_EXCLUDED',
-        });
-        continue;
-      }
-
       const sourceName = rawOrder?.order_sources_name?.toString?.().trim?.() || '';
       const sourceNameLower = sourceName.toLowerCase();
       if (sourceNameLower === 'tiktok' || sourceNameLower === 'shopee') {
@@ -715,16 +700,7 @@ export class PosOrderService {
 
       const items = Array.isArray(rawOrder.items) ? rawOrder.items : [];
       const hasProduct = items.some((item: any) => !!item?.product_id);
-      if (items.length === 0 || !hasProduct) {
-        outcomes.push({
-          shopId,
-          orderId: posOrderId,
-          status,
-          upsertStatus: 'SKIPPED',
-          reason: 'NO_PRODUCT_ITEMS',
-        });
-        continue;
-      }
+      const isNoProductOrder = items.length === 0 || !hasProduct;
 
       try {
         const order = await this.parsePosOrder(
@@ -733,6 +709,9 @@ export class PosOrderService {
           rawOrder,
           initialValueOffer,
         );
+        if (isNoProductOrder) {
+          order.isVoid = true;
+        }
 
         await this.prisma.posOrder.upsert({
           where: {
@@ -760,6 +739,7 @@ export class PosOrderService {
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
             isAbandoned: !!order.isAbandoned,
+            isVoid: !!order.isVoid,
             confirmationUpdateRequestedAt: null,
             confirmationUpdateTargetStatus: null,
             pUtmCampaign: order.pUtmCampaign,
@@ -796,6 +776,7 @@ export class PosOrderService {
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
             isAbandoned: !!order.isAbandoned,
+            isVoid: !!order.isVoid,
             confirmationUpdateRequestedAt: null,
             confirmationUpdateTargetStatus: null,
             pUtmCampaign: order.pUtmCampaign,
@@ -826,6 +807,7 @@ export class PosOrderService {
           orderId: order.posOrderId || posOrderId,
           status: typeof order.status === 'number' ? order.status : status,
           upsertStatus: 'UPSERTED',
+          ...(isNoProductOrder ? { reason: 'VOID_NO_PRODUCT_ITEMS' } : {}),
         });
       } catch (error: any) {
         const message = error?.message || 'Unknown error';

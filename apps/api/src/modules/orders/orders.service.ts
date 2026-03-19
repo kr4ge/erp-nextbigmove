@@ -81,6 +81,18 @@ type AssigningSellerPayload = {
   phone_number: string | null;
 };
 
+type ConfirmationTagOptionRow = {
+  tagId: string;
+  name: string;
+  groupId: string | null;
+  groupName: string | null;
+};
+
+type ConfirmationOrderTag = {
+  id: string | null;
+  name: string;
+};
+
 const STATIC_ASSIGNING_SELLER_PAYLOAD: AssigningSellerPayload = {
   avatar_url: null,
   email: 'wetradejaysonquiatchon@gmail.com',
@@ -184,22 +196,65 @@ export class OrdersService {
   }
 
   private extractTagNames(tagsRaw: Prisma.JsonValue | null): string[] {
+    return this.extractTagDetails(tagsRaw).map((entry) => entry.name);
+  }
+
+  private extractTagDetails(tagsRaw: Prisma.JsonValue | null): ConfirmationOrderTag[] {
     if (!Array.isArray(tagsRaw)) return [];
-    const names: string[] = [];
+
+    const seen = new Set<string>();
+    const details: ConfirmationOrderTag[] = [];
+
     for (const entry of tagsRaw) {
       if (typeof entry === 'string') {
-        const trimmed = entry.trim();
-        if (trimmed) names.push(trimmed);
+        const name = entry.trim();
+        if (!name) continue;
+        const key = `|${name.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        details.push({ id: null, name });
         continue;
       }
-      if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
-        const name = (entry as Record<string, unknown>).name;
-        if (typeof name === 'string' && name.trim()) {
-          names.push(name.trim());
-        }
-      }
+
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const source = entry as Record<string, unknown>;
+      const nameRaw = source.name;
+      const idRaw = source.id ?? source.tag_id;
+      const name = typeof nameRaw === 'string' ? nameRaw.trim() : '';
+      if (!name) continue;
+
+      const id =
+        typeof idRaw === 'string'
+          ? idRaw.trim() || null
+          : typeof idRaw === 'number' && Number.isFinite(idRaw)
+            ? String(idRaw)
+            : null;
+
+      const key = `${id || ''}|${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      details.push({ id, name });
     }
-    return Array.from(new Set(names));
+
+    return details;
+  }
+
+  private normalizeUpdateTags(tags: Array<{ id: string; name: string }>): Array<{ id: string; name: string }> {
+    const seen = new Set<string>();
+    const normalized: Array<{ id: string; name: string }> = [];
+
+    for (const entry of tags) {
+      const id = entry?.id?.toString?.().trim?.() || '';
+      const name = entry?.name?.toString?.().trim?.() || '';
+      if (!id || !name) continue;
+
+      const key = `${id}|${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push({ id, name });
+    }
+
+    return normalized;
   }
 
   private buildPosStoreAccessWhere(
@@ -530,7 +585,9 @@ export class OrdersService {
     ])) as [number, PosOrderListRow[]];
 
     const pageCount = total === 0 ? 0 : Math.ceil(total / limit);
-    const items = rows.map((row) => ({
+    const items = rows.map((row) => {
+      const tagDetails = this.extractTagDetails(row.tags);
+      return {
       id: row.id,
       shop_id: row.shopId,
       shop_name: storeMetaByShopId.get(row.shopId)?.shopName || row.shopId,
@@ -549,10 +606,12 @@ export class OrdersService {
       customer_address: row.customerAddress || null,
       item_data: row.itemData,
       order_snapshot: row.orderSnapshot,
-      tags: this.extractTagNames(row.tags),
+      tags: tagDetails.map((entry) => entry.name),
+      tags_detail: tagDetails,
       created_at: row.createdAt.toISOString(),
       updated_at: row.updatedAt.toISOString(),
-    }));
+      };
+    });
 
     return {
       items,
@@ -649,7 +708,9 @@ export class OrdersService {
       ]),
     );
 
-    const items = pageRows.map((row) => ({
+    const items = pageRows.map((row) => {
+      const tagDetails = this.extractTagDetails(row.tags);
+      return {
       id: row.id,
       shop_id: row.shopId,
       shop_name: storeMetaByShopId.get(row.shopId)?.shopName || row.shopId,
@@ -668,10 +729,12 @@ export class OrdersService {
       customer_address: row.customerAddress || null,
       item_data: row.itemData,
       order_snapshot: row.orderSnapshot,
-      tags: this.extractTagNames(row.tags),
+      tags: tagDetails.map((entry) => entry.name),
+      tags_detail: tagDetails,
       created_at: row.createdAt.toISOString(),
       updated_at: row.updatedAt.toISOString(),
-    }));
+      };
+    });
 
     return {
       items,
@@ -688,9 +751,108 @@ export class OrdersService {
     };
   }
 
-  async updateConfirmationOrderStatus(orderRowId: string, targetStatus: number) {
+  async listConfirmationOrderTagOptions(orderRowId: string) {
+    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const allowedTeams =
+      (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
+    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
+    if (!storeWhere) {
+      throw new ForbiddenException('No store access for current team scope');
+    }
+
+    const order = await this.prisma.posOrder.findFirst({
+      where: {
+        id: orderRowId,
+        tenantId,
+      },
+      select: {
+        id: true,
+        shopId: true,
+        posOrderId: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const store = await this.prisma.posStore.findFirst({
+      where: {
+        ...storeWhere,
+        shopId: order.shopId,
+      },
+      select: {
+        id: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!store) {
+      throw new ForbiddenException('Order store is outside your team scope');
+    }
+
+    const rows = (await this.prisma.posTag.findMany({
+      where: {
+        tenantId,
+        storeId: store.id,
+      },
+      orderBy: [{ groupName: 'asc' }, { name: 'asc' }],
+      select: {
+        tagId: true,
+        name: true,
+        groupId: true,
+        groupName: true,
+      },
+    })) as ConfirmationTagOptionRow[];
+
+    const groupedMap = new Map<string, { group_id: string; group_name: string; tags: Array<{ tag_id: string; name: string }> }>();
+    const individual: Array<{ tag_id: string; name: string }> = [];
+
+    for (const row of rows) {
+      const tag = { tag_id: row.tagId, name: row.name };
+      if (!row.groupId || !row.groupName) {
+        individual.push(tag);
+        continue;
+      }
+
+      const existing = groupedMap.get(row.groupId);
+      if (!existing) {
+        groupedMap.set(row.groupId, {
+          group_id: row.groupId,
+          group_name: row.groupName,
+          tags: [tag],
+        });
+        continue;
+      }
+      existing.tags.push(tag);
+    }
+
+    return {
+      order_id: order.id,
+      shop_id: order.shopId,
+      groups: Array.from(groupedMap.values()),
+      individual,
+      total: rows.length,
+    };
+  }
+
+  async updateConfirmationOrderStatus(
+    orderRowId: string,
+    payload: { status?: number; tags?: Array<{ id: string; name: string }> },
+  ) {
     try {
-      if (!this.allowedConfirmationStatusUpdates.has(targetStatus)) {
+      const targetStatus =
+        typeof payload.status === 'number' && Number.isFinite(payload.status)
+          ? payload.status
+          : null;
+      const hasTagsPayload = Array.isArray(payload.tags);
+      const targetTags = hasTagsPayload ? this.normalizeUpdateTags(payload.tags || []) : undefined;
+
+      if (targetStatus === null && !hasTagsPayload) {
+        throw new BadRequestException('Request must include status and/or tags');
+      }
+
+      if (targetStatus !== null && !this.allowedConfirmationStatusUpdates.has(targetStatus)) {
         throw new BadRequestException('Invalid status. Allowed values: 1, 6, 7, 11');
       }
 
@@ -711,6 +873,8 @@ export class OrdersService {
               shopId: true,
               posOrderId: true,
               status: true,
+              confirmationUpdateRequestedAt: true,
+              confirmationUpdateTargetStatus: true,
             },
           }),
         'read-confirmation-order',
@@ -724,6 +888,22 @@ export class OrdersService {
         throw new BadRequestException(
           'Only NEW (status 0) orders can be updated from confirmation queue',
         );
+      }
+
+      const processingCutoff = this.getConfirmationUpdateProcessingCutoff();
+      if (targetStatus === null) {
+        const hasInFlightStatusUpdate =
+          !!order.confirmationUpdateRequestedAt &&
+          order.confirmationUpdateRequestedAt >= processingCutoff;
+        if (hasInFlightStatusUpdate) {
+          const inflightTarget =
+            typeof order.confirmationUpdateTargetStatus === 'number'
+              ? order.confirmationUpdateTargetStatus
+              : null;
+          throw new ConflictException(
+            `Order status update is already in progress (${this.getConfirmationStatusLabel(inflightTarget)}). Please wait for webhook sync.`,
+          );
+        }
       }
 
       const store = await this.withDbRetry(
@@ -748,82 +928,89 @@ export class OrdersService {
         throw new ForbiddenException('Order store is outside your team scope');
       }
 
-      const processingCutoff = this.getConfirmationUpdateProcessingCutoff();
+      const hasStatusUpdate = targetStatus !== null;
       const processingRequestedAt = new Date();
-      const lockResult = await this.withDbRetry(
-        () =>
-          this.prisma.posOrder.updateMany({
-            where: {
-              id: order.id,
-              tenantId,
-              status: 0,
-              OR: [
-                { confirmationUpdateRequestedAt: null },
-                { confirmationUpdateRequestedAt: { lt: processingCutoff } },
-              ],
-            },
-            data: {
-              confirmationUpdateRequestedAt: processingRequestedAt,
-              confirmationUpdateTargetStatus: targetStatus,
-            },
-          }),
-        'lock-confirmation-order',
-      );
+      let lockedForStatusUpdate = false;
 
-      if (lockResult.count === 0) {
-        const latest = await this.withDbRetry(
+      if (hasStatusUpdate) {
+        const lockResult = await this.withDbRetry(
           () =>
-            this.prisma.posOrder.findUnique({
-              where: { id: order.id },
-              select: {
-                status: true,
-                confirmationUpdateRequestedAt: true,
-                confirmationUpdateTargetStatus: true,
+            this.prisma.posOrder.updateMany({
+              where: {
+                id: order.id,
+                tenantId,
+                status: 0,
+                OR: [
+                  { confirmationUpdateRequestedAt: null },
+                  { confirmationUpdateRequestedAt: { lt: processingCutoff } },
+                ],
+              },
+              data: {
+                confirmationUpdateRequestedAt: processingRequestedAt,
+                confirmationUpdateTargetStatus: targetStatus,
               },
             }),
-          'read-confirmation-order-after-lock',
+          'lock-confirmation-order',
         );
 
-        if (!latest) {
-          throw new NotFoundException('Order not found');
-        }
+        if (lockResult.count === 0) {
+          const latest = await this.withDbRetry(
+            () =>
+              this.prisma.posOrder.findUnique({
+                where: { id: order.id },
+                select: {
+                  status: true,
+                  confirmationUpdateRequestedAt: true,
+                  confirmationUpdateTargetStatus: true,
+                },
+              }),
+            'read-confirmation-order-after-lock',
+          );
 
-        if (latest.status !== 0) {
-          throw new BadRequestException('Order is no longer NEW. Please refresh.');
-        }
-
-        const inFlight =
-          latest.confirmationUpdateRequestedAt &&
-          latest.confirmationUpdateRequestedAt >= processingCutoff;
-        if (inFlight) {
-          const inflightTarget =
-            typeof latest.confirmationUpdateTargetStatus === 'number'
-              ? latest.confirmationUpdateTargetStatus
-              : null;
-          if (inflightTarget === targetStatus) {
-            const startedAtIso =
-              latest.confirmationUpdateRequestedAt?.toISOString?.() ||
-              processingRequestedAt.toISOString();
-            return {
-              accepted: true,
-              shop_id: order.shopId,
-              order_id: order.posOrderId,
-              status: targetStatus,
-              processing: true,
-              processing_started_at: startedAtIso,
-              processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
-              assigning_seller_included: true,
-              message: 'Status update already in progress. Waiting for webhook callback.',
-            };
+          if (!latest) {
+            throw new NotFoundException('Order not found');
           }
-          throw new ConflictException(
-            `Order update is already in progress (${this.getConfirmationStatusLabel(inflightTarget)}). Please wait for webhook sync.`,
+
+          if (latest.status !== 0) {
+            throw new BadRequestException('Order is no longer NEW. Please refresh.');
+          }
+
+          const inFlight =
+            latest.confirmationUpdateRequestedAt &&
+            latest.confirmationUpdateRequestedAt >= processingCutoff;
+          if (inFlight) {
+            const inflightTarget =
+              typeof latest.confirmationUpdateTargetStatus === 'number'
+                ? latest.confirmationUpdateTargetStatus
+                : null;
+            if (inflightTarget === targetStatus) {
+              const startedAtIso =
+                latest.confirmationUpdateRequestedAt?.toISOString?.() ||
+                processingRequestedAt.toISOString();
+              return {
+                accepted: true,
+                shop_id: order.shopId,
+                order_id: order.posOrderId,
+                status: targetStatus,
+                tags_count: targetTags?.length ?? undefined,
+                processing: true,
+                processing_started_at: startedAtIso,
+                processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
+                assigning_seller_included: true,
+                message: 'Order update already in progress. Waiting for webhook callback.',
+              };
+            }
+            throw new ConflictException(
+              `Order update is already in progress (${this.getConfirmationStatusLabel(inflightTarget)}). Please wait for webhook sync.`,
+            );
+          }
+
+          throw new BadRequestException(
+            'Order update cannot be processed right now. Please retry.',
           );
         }
 
-        throw new BadRequestException(
-          'Order update cannot be processed right now. Please retry.',
-        );
+        lockedForStatusUpdate = true;
       }
 
       try {
@@ -833,9 +1020,12 @@ export class OrdersService {
           shopId: order.shopId,
           posOrderId: order.posOrderId,
           targetStatus,
+          targetTags: targetTags ?? null,
         });
       } catch (error: any) {
-        await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+        if (lockedForStatusUpdate) {
+          await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+        }
         const message = (error?.message || '').toString();
         const normalized = message.toLowerCase();
         if (normalized.includes('job') && normalized.includes('exist')) {
@@ -843,33 +1033,41 @@ export class OrdersService {
             accepted: true,
             shop_id: order.shopId,
             order_id: order.posOrderId,
-            status: targetStatus,
-            processing: true,
-            processing_started_at: processingRequestedAt.toISOString(),
-            processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
+            status: targetStatus ?? undefined,
+            tags_count: targetTags?.length ?? undefined,
+            processing: lockedForStatusUpdate,
+            processing_started_at: lockedForStatusUpdate
+              ? processingRequestedAt.toISOString()
+              : undefined,
+            processing_timeout_seconds: lockedForStatusUpdate
+              ? this.getConfirmationUpdateProcessingTtlSeconds()
+              : undefined,
             assigning_seller_included: true,
             queued: true,
-            message: 'Status update already queued. Waiting for webhook callback.',
+            message: 'Order update already queued. Waiting for webhook callback.',
           };
         }
-        throw new ServiceUnavailableException(
-          'Unable to queue status update right now. Please retry.',
-        );
+        throw new ServiceUnavailableException('Unable to queue order update right now. Please retry.');
       }
 
-      // Local status remains source-of-truth from webhook callback.
-      // The in-flight marker is set so the row disappears from confirmation queue immediately.
       return {
         accepted: true,
         shop_id: order.shopId,
         order_id: order.posOrderId,
-        status: targetStatus,
-        processing: true,
-        processing_started_at: processingRequestedAt.toISOString(),
-        processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
+        status: targetStatus ?? undefined,
+        tags_count: targetTags?.length ?? undefined,
+        processing: lockedForStatusUpdate,
+        processing_started_at: lockedForStatusUpdate
+          ? processingRequestedAt.toISOString()
+          : undefined,
+        processing_timeout_seconds: lockedForStatusUpdate
+          ? this.getConfirmationUpdateProcessingTtlSeconds()
+          : undefined,
         assigning_seller_included: true,
         queued: true,
-        message: 'Status update queued. Waiting for webhook callback.',
+        message: lockedForStatusUpdate
+          ? 'Order update queued. Waiting for webhook callback.'
+          : 'Order tag update queued.',
       };
     } catch (error: any) {
       if (error instanceof HttpException) {
@@ -883,7 +1081,7 @@ export class OrdersService {
       }
 
       this.logger.error(
-        `Failed to update confirmation order id=${orderRowId} targetStatus=${targetStatus}: ${error?.message || 'Unknown error'}`,
+        `Failed to update confirmation order id=${orderRowId} targetStatus=${payload?.status ?? 'n/a'} targetTags=${Array.isArray(payload?.tags) ? payload.tags.length : 0}: ${error?.message || 'Unknown error'}`,
         error?.stack,
       );
       throw new ServiceUnavailableException(
@@ -895,6 +1093,13 @@ export class OrdersService {
   async processQueuedConfirmationOrderStatusUpdate(
     jobData: ConfirmationUpdateStatusJobData,
   ): Promise<{ success: boolean; reason: string }> {
+    const hasStatusUpdate = typeof jobData.targetStatus === 'number';
+    const hasTagsUpdate = Array.isArray(jobData.targetTags);
+
+    if (!hasStatusUpdate && !hasTagsUpdate) {
+      return { success: false, reason: 'NO_OPERATION' };
+    }
+
     const order = await this.prisma.posOrder.findFirst({
       where: {
         id: jobData.orderRowId,
@@ -954,10 +1159,18 @@ export class OrdersService {
     const params = new URLSearchParams();
     params.set('api_key', apiKey);
     const requestBody: Record<string, unknown> = {
-      status: jobData.targetStatus,
       assigning_seller: STATIC_ASSIGNING_SELLER_PAYLOAD,
       assigning_seller_id: STATIC_ASSIGNING_SELLER_PAYLOAD.id,
     };
+    if (hasStatusUpdate) {
+      requestBody.status = jobData.targetStatus;
+    }
+    if (hasTagsUpdate) {
+      requestBody.tags = (jobData.targetTags || []).map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+      }));
+    }
 
     let response: Response;
     try {
@@ -994,6 +1207,13 @@ export class OrdersService {
       );
     }
 
-    return { success: true, reason: 'STATUS_UPDATE_SENT' };
+    if (!hasStatusUpdate) {
+      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+    }
+
+    return {
+      success: true,
+      reason: hasStatusUpdate ? 'STATUS_UPDATE_SENT' : 'TAGS_UPDATE_SENT',
+    };
   }
 }
