@@ -1,9 +1,16 @@
 import {
+  BadGatewayException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
 import { Prisma } from '@prisma/client';
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
@@ -11,6 +18,11 @@ import * as timezone from 'dayjs/plugin/timezone';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import { IntegrationService } from '../integrations/integration.service';
+import {
+  CONFIRMATION_UPDATE_STATUS_JOB,
+  CONFIRMATION_UPDATE_QUEUE,
+  ConfirmationUpdateStatusJobData,
+} from './orders.constants';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -81,11 +93,20 @@ const STATIC_ASSIGNING_SELLER_PAYLOAD: AssigningSellerPayload = {
 @Injectable()
 export class OrdersService {
   private readonly allowedConfirmationStatusUpdates = new Set([1, 6, 7, 11]);
+  private readonly logger = new Logger(OrdersService.name);
+  private readonly confirmationStatusLabels: Record<number, string> = {
+    1: 'Confirm',
+    6: 'Cancel',
+    7: 'Delete',
+    11: 'Restocking',
+  };
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly teamContext: TeamContextService,
     private readonly integrationService: IntegrationService,
+    @InjectQueue(CONFIRMATION_UPDATE_QUEUE)
+    private readonly confirmationUpdateQueue: Queue<ConfirmationUpdateStatusJobData>,
   ) {}
 
   private normalizeDateLocal(value: string | undefined, fallback: string): string {
@@ -241,6 +262,101 @@ export class OrdersService {
         confirmationUpdateTargetStatus: null,
       },
     });
+  }
+
+  async clearConfirmationUpdateInFlightByJob(
+    orderRowId: string,
+    tenantId: string,
+  ): Promise<void> {
+    await this.prisma.posOrder.updateMany({
+      where: {
+        id: orderRowId,
+        tenantId,
+      },
+      data: {
+        confirmationUpdateRequestedAt: null,
+        confirmationUpdateTargetStatus: null,
+      },
+    });
+  }
+
+  private getConfirmationUpdateQueueJobOptions() {
+    const attempts = Math.max(
+      1,
+      Number(process.env.CONFIRMATION_UPDATE_QUEUE_ATTEMPTS || 4),
+    );
+    const backoffDelay = Math.max(
+      1000,
+      Number(process.env.CONFIRMATION_UPDATE_QUEUE_BACKOFF_MS || 3000),
+    );
+    const timeout = Math.max(
+      10000,
+      Number(process.env.CONFIRMATION_UPDATE_QUEUE_TIMEOUT_MS || 45000),
+    );
+
+    return {
+      attempts,
+      backoff: { type: 'exponential' as const, delay: backoffDelay },
+      timeout,
+      removeOnComplete: true,
+      removeOnFail: 1000,
+    };
+  }
+
+  private async enqueueConfirmationStatusUpdate(
+    data: ConfirmationUpdateStatusJobData,
+  ): Promise<void> {
+    await this.confirmationUpdateQueue.add(CONFIRMATION_UPDATE_STATUS_JOB, data, {
+      jobId: `confirmation-update:${data.tenantId}:${data.shopId}:${data.posOrderId}`,
+      ...this.getConfirmationUpdateQueueJobOptions(),
+    });
+  }
+
+  private getConfirmationStatusLabel(status: number | null | undefined): string {
+    if (typeof status !== 'number') return 'Unknown';
+    return this.confirmationStatusLabels[status] || `Status ${status}`;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private isTransientDbError(error: any): boolean {
+    const message = (error?.message || '').toString().toLowerCase();
+    const code = (error?.code || '').toString().toUpperCase();
+    const metaCode = (error?.meta?.code || '').toString().toUpperCase();
+
+    return (
+      code === 'P2034' ||
+      metaCode === '40P01' ||
+      message.includes('deadlock detected') ||
+      message.includes('40p01') ||
+      message.includes('could not serialize access due to')
+    );
+  }
+
+  private async withDbRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    maxAttempts = 3,
+  ): Promise<T> {
+    let attempt = 0;
+    while (attempt < maxAttempts) {
+      attempt += 1;
+      try {
+        return await operation();
+      } catch (error: any) {
+        if (!this.isTransientDbError(error) || attempt >= maxAttempts) {
+          throw error;
+        }
+        const delayMs = Math.min(800, 120 * attempt);
+        this.logger.warn(
+          `Transient DB contention during ${operationName}. Retrying (${attempt}/${maxAttempts}) in ${delayMs}ms`,
+        );
+        await this.sleep(delayMs);
+      }
+    }
+    throw new Error(`Failed ${operationName}`);
   }
 
   async listConfirmationOrders(params: ListConfirmationOrdersParams) {
@@ -573,88 +689,272 @@ export class OrdersService {
   }
 
   async updateConfirmationOrderStatus(orderRowId: string, targetStatus: number) {
-    if (!this.allowedConfirmationStatusUpdates.has(targetStatus)) {
-      throw new BadRequestException('Invalid status. Allowed values: 1, 6, 7, 11');
-    }
+    try {
+      if (!this.allowedConfirmationStatusUpdates.has(targetStatus)) {
+        throw new BadRequestException('Invalid status. Allowed values: 1, 6, 7, 11');
+      }
 
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
-    const allowedTeams = (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
-    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
-    if (!storeWhere) {
-      throw new ForbiddenException('No store access for current team scope');
-    }
+      const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+      const allowedTeams =
+        (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
+      const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
+      if (!storeWhere) {
+        throw new ForbiddenException('No store access for current team scope');
+      }
 
+      const order = await this.withDbRetry(
+        () =>
+          this.prisma.posOrder.findFirst({
+            where: { id: orderRowId, tenantId },
+            select: {
+              id: true,
+              shopId: true,
+              posOrderId: true,
+              status: true,
+            },
+          }),
+        'read-confirmation-order',
+      );
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      if (order.status !== 0) {
+        throw new BadRequestException(
+          'Only NEW (status 0) orders can be updated from confirmation queue',
+        );
+      }
+
+      const store = await this.withDbRetry(
+        () =>
+          this.prisma.posStore.findFirst({
+            where: {
+              ...storeWhere,
+              shopId: order.shopId,
+            },
+            select: {
+              id: true,
+              shopId: true,
+              apiKey: true,
+              integrationId: true,
+            },
+            orderBy: { updatedAt: 'desc' },
+          }),
+        'read-confirmation-store',
+      );
+
+      if (!store) {
+        throw new ForbiddenException('Order store is outside your team scope');
+      }
+
+      const processingCutoff = this.getConfirmationUpdateProcessingCutoff();
+      const processingRequestedAt = new Date();
+      const lockResult = await this.withDbRetry(
+        () =>
+          this.prisma.posOrder.updateMany({
+            where: {
+              id: order.id,
+              tenantId,
+              status: 0,
+              OR: [
+                { confirmationUpdateRequestedAt: null },
+                { confirmationUpdateRequestedAt: { lt: processingCutoff } },
+              ],
+            },
+            data: {
+              confirmationUpdateRequestedAt: processingRequestedAt,
+              confirmationUpdateTargetStatus: targetStatus,
+            },
+          }),
+        'lock-confirmation-order',
+      );
+
+      if (lockResult.count === 0) {
+        const latest = await this.withDbRetry(
+          () =>
+            this.prisma.posOrder.findUnique({
+              where: { id: order.id },
+              select: {
+                status: true,
+                confirmationUpdateRequestedAt: true,
+                confirmationUpdateTargetStatus: true,
+              },
+            }),
+          'read-confirmation-order-after-lock',
+        );
+
+        if (!latest) {
+          throw new NotFoundException('Order not found');
+        }
+
+        if (latest.status !== 0) {
+          throw new BadRequestException('Order is no longer NEW. Please refresh.');
+        }
+
+        const inFlight =
+          latest.confirmationUpdateRequestedAt &&
+          latest.confirmationUpdateRequestedAt >= processingCutoff;
+        if (inFlight) {
+          const inflightTarget =
+            typeof latest.confirmationUpdateTargetStatus === 'number'
+              ? latest.confirmationUpdateTargetStatus
+              : null;
+          if (inflightTarget === targetStatus) {
+            const startedAtIso =
+              latest.confirmationUpdateRequestedAt?.toISOString?.() ||
+              processingRequestedAt.toISOString();
+            return {
+              accepted: true,
+              shop_id: order.shopId,
+              order_id: order.posOrderId,
+              status: targetStatus,
+              processing: true,
+              processing_started_at: startedAtIso,
+              processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
+              assigning_seller_included: true,
+              message: 'Status update already in progress. Waiting for webhook callback.',
+            };
+          }
+          throw new ConflictException(
+            `Order update is already in progress (${this.getConfirmationStatusLabel(inflightTarget)}). Please wait for webhook sync.`,
+          );
+        }
+
+        throw new BadRequestException(
+          'Order update cannot be processed right now. Please retry.',
+        );
+      }
+
+      try {
+        await this.enqueueConfirmationStatusUpdate({
+          tenantId,
+          orderRowId: order.id,
+          shopId: order.shopId,
+          posOrderId: order.posOrderId,
+          targetStatus,
+        });
+      } catch (error: any) {
+        await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+        const message = (error?.message || '').toString();
+        const normalized = message.toLowerCase();
+        if (normalized.includes('job') && normalized.includes('exist')) {
+          return {
+            accepted: true,
+            shop_id: order.shopId,
+            order_id: order.posOrderId,
+            status: targetStatus,
+            processing: true,
+            processing_started_at: processingRequestedAt.toISOString(),
+            processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
+            assigning_seller_included: true,
+            queued: true,
+            message: 'Status update already queued. Waiting for webhook callback.',
+          };
+        }
+        throw new ServiceUnavailableException(
+          'Unable to queue status update right now. Please retry.',
+        );
+      }
+
+      // Local status remains source-of-truth from webhook callback.
+      // The in-flight marker is set so the row disappears from confirmation queue immediately.
+      return {
+        accepted: true,
+        shop_id: order.shopId,
+        order_id: order.posOrderId,
+        status: targetStatus,
+        processing: true,
+        processing_started_at: processingRequestedAt.toISOString(),
+        processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
+        assigning_seller_included: true,
+        queued: true,
+        message: 'Status update queued. Waiting for webhook callback.',
+      };
+    } catch (error: any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      if (this.isTransientDbError(error)) {
+        throw new ServiceUnavailableException(
+          'Order update is temporarily busy. Please retry in a few seconds.',
+        );
+      }
+
+      this.logger.error(
+        `Failed to update confirmation order id=${orderRowId} targetStatus=${targetStatus}: ${error?.message || 'Unknown error'}`,
+        error?.stack,
+      );
+      throw new ServiceUnavailableException(
+        'Order update failed due to a temporary server issue. Please retry.',
+      );
+    }
+  }
+
+  async processQueuedConfirmationOrderStatusUpdate(
+    jobData: ConfirmationUpdateStatusJobData,
+  ): Promise<{ success: boolean; reason: string }> {
     const order = await this.prisma.posOrder.findFirst({
-      where: { id: orderRowId, tenantId },
+      where: {
+        id: jobData.orderRowId,
+        tenantId: jobData.tenantId,
+      },
       select: {
         id: true,
         shopId: true,
         posOrderId: true,
         status: true,
+        confirmationUpdateTargetStatus: true,
       },
     });
 
     if (!order) {
-      throw new NotFoundException('Order not found');
+      return { success: false, reason: 'ORDER_NOT_FOUND' };
     }
 
     if (order.status !== 0) {
-      throw new BadRequestException('Only NEW (status 0) orders can be updated from confirmation queue');
+      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+      return { success: false, reason: 'STATUS_NOT_NEW' };
+    }
+
+    if (order.shopId !== jobData.shopId || order.posOrderId !== jobData.posOrderId) {
+      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+      return { success: false, reason: 'ORDER_MISMATCH' };
     }
 
     const store = await this.prisma.posStore.findFirst({
       where: {
-        ...storeWhere,
-        shopId: order.shopId,
+        tenantId: jobData.tenantId,
+        shopId: jobData.shopId,
       },
       select: {
         id: true,
-        shopId: true,
-        apiKey: true,
         integrationId: true,
+        apiKey: true,
       },
       orderBy: { updatedAt: 'desc' },
     });
 
     if (!store) {
-      throw new ForbiddenException('Order store is outside your team scope');
+      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+      return { success: false, reason: 'STORE_NOT_FOUND' };
     }
 
-    const apiKey = await this.resolveStoreApiKey(tenantId, {
+    const apiKey = await this.resolveStoreApiKey(jobData.tenantId, {
       id: store.id,
       integrationId: store.integrationId || null,
       apiKey: store.apiKey || null,
     });
     if (!apiKey) {
-      throw new BadRequestException(`Missing API key for shop ${order.shopId}`);
-    }
-
-    const processingCutoff = this.getConfirmationUpdateProcessingCutoff();
-    const processingRequestedAt = new Date();
-    const lockResult = await this.prisma.posOrder.updateMany({
-      where: {
-        id: order.id,
-        tenantId,
-        status: 0,
-        OR: [
-          { confirmationUpdateRequestedAt: null },
-          { confirmationUpdateRequestedAt: { lt: processingCutoff } },
-        ],
-      },
-      data: {
-        confirmationUpdateRequestedAt: processingRequestedAt,
-        confirmationUpdateTargetStatus: targetStatus,
-      },
-    });
-
-    if (lockResult.count === 0) {
-      throw new BadRequestException('Order update is already in progress. Please wait for webhook sync.');
+      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+      return { success: false, reason: 'MISSING_API_KEY' };
     }
 
     const params = new URLSearchParams();
     params.set('api_key', apiKey);
     const requestBody: Record<string, unknown> = {
-      status: targetStatus,
+      status: jobData.targetStatus,
       assigning_seller: STATIC_ASSIGNING_SELLER_PAYLOAD,
       assigning_seller_id: STATIC_ASSIGNING_SELLER_PAYLOAD.id,
     };
@@ -662,7 +962,7 @@ export class OrdersService {
     let response: Response;
     try {
       response = await fetch(
-        `https://pos.pages.fm/api/v1/shops/${encodeURIComponent(order.shopId)}/orders/${encodeURIComponent(order.posOrderId)}?${params.toString()}`,
+        `https://pos.pages.fm/api/v1/shops/${encodeURIComponent(jobData.shopId)}/orders/${encodeURIComponent(jobData.posOrderId)}?${params.toString()}`,
         {
           method: 'PUT',
           headers: {
@@ -671,33 +971,29 @@ export class OrdersService {
           body: JSON.stringify(requestBody),
         },
       );
-    } catch (error) {
-      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
-      const message =
-        (error instanceof Error && error.message) || 'Failed to reach Pancake API';
-      throw new BadRequestException(message);
-    }
-
-    if (!response.ok) {
-      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
-      const responseText = await response.text().catch(() => '');
-      throw new BadRequestException(
-        `Failed to update Pancake order status (${response.status})${responseText ? `: ${responseText.slice(0, 180)}` : ''}`,
+    } catch (error: any) {
+      throw new BadGatewayException(
+        error?.message || 'Failed to reach Pancake API',
       );
     }
 
-    // Local status remains source-of-truth from webhook callback.
-    // The in-flight marker is set so the row disappears from confirmation queue immediately.
-    return {
-      accepted: true,
-      shop_id: order.shopId,
-      order_id: order.posOrderId,
-      status: targetStatus,
-      processing: true,
-      processing_started_at: processingRequestedAt.toISOString(),
-      processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
-      assigning_seller_included: true,
-      message: 'Status update sent. Waiting for webhook callback.',
-    };
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => '');
+      const statusCode = response.status;
+
+      if (statusCode >= 400 && statusCode < 500 && statusCode !== 429) {
+        await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+        return {
+          success: false,
+          reason: `UPSTREAM_CLIENT_ERROR_${statusCode}${responseText ? `:${responseText.slice(0, 120)}` : ''}`,
+        };
+      }
+
+      throw new BadGatewayException(
+        `Failed to update Pancake order status (${statusCode})${responseText ? `: ${responseText.slice(0, 180)}` : ''}`,
+      );
+    }
+
+    return { success: true, reason: 'STATUS_UPDATE_SENT' };
   }
 }

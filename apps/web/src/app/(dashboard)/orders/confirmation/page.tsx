@@ -8,6 +8,7 @@ import apiClient from '@/lib/api-client';
 import { workflowSocket } from '@/lib/socket-client';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
+import { useToast } from '@/components/ui/toast';
 
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
@@ -277,11 +278,20 @@ type ParsedOrderSnapshotShippingAddress = {
   provinceName: string;
 };
 
+type ParsedOrderSnapshotPayment = {
+  totalDiscount: number;
+  shippingFee: number;
+  surcharge: number;
+  bankPaymentsRaw: unknown;
+  bankTransfer: number;
+};
+
 type ParsedOrderSnapshot = {
   note: string;
   items: ParsedSnapshotItem[];
   customer: ParsedOrderSnapshotCustomer;
   shippingAddress: ParsedOrderSnapshotShippingAddress;
+  payment: ParsedOrderSnapshotPayment;
   orderLink: string;
   conversationId: string;
   duplicatedPhone: boolean;
@@ -340,6 +350,25 @@ const toAmount = (value: unknown): number => {
   return 0;
 };
 
+const sumNumericValuesDeep = (value: unknown, depth = 0): number => {
+  if (depth > 4) return 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (Array.isArray(value)) {
+    return value.reduce((sum, entry) => sum + sumNumericValuesDeep(entry, depth + 1), 0);
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).reduce<number>(
+      (sum, entry) => sum + sumNumericValuesDeep(entry, depth + 1),
+      0,
+    );
+  }
+  return 0;
+};
+
 const toBooleanFlag = (value: unknown): boolean => {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value === 1;
@@ -387,6 +416,7 @@ const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
   const snapshot = toRecord(value);
   const customerRaw = toRecord(snapshot?.customer);
   const shippingRaw = toRecord(snapshot?.shipping_address || snapshot?.shippingAddress);
+  const bankPaymentsRaw = snapshot?.bank_payments ?? snapshot?.bankPayments ?? null;
   const duplicateFlags = extractDuplicateFlagsFromSnapshot(snapshot);
 
   const phoneFromList = Array.isArray(customerRaw?.phone_numbers)
@@ -412,6 +442,13 @@ const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
       communeName: toText(shippingRaw?.commune_name || shippingRaw?.commnue_name),
       districtName: toText(shippingRaw?.district_name),
       provinceName: toText(shippingRaw?.province_name),
+    },
+    payment: {
+      totalDiscount: toAmount(snapshot?.total_discount),
+      shippingFee: toAmount(snapshot?.shipping_fee),
+      surcharge: toAmount(snapshot?.surcharge),
+      bankPaymentsRaw,
+      bankTransfer: sumNumericValuesDeep(bankPaymentsRaw),
     },
     orderLink: toText(snapshot?.order_link || snapshot?.orderLink),
     conversationId: toText(snapshot?.conversation_id || snapshot?.conversationId),
@@ -458,6 +495,7 @@ type TenantSocketPayload = {
 };
 
 export default function OrdersConfirmationPage() {
+  const { addToast } = useToast();
   const today = formatDateInTimezone(new Date());
   const [startDate, setStartDate] = useState<string>(today);
   const [endDate, setEndDate] = useState<string>(today);
@@ -877,15 +915,31 @@ export default function OrdersConfirmationPage() {
   const deliveryAreaText = [deliveryCommuneName, deliveryDistrictName, deliveryProvinceName]
     .filter((entry) => hasNonEmptyText(entry))
     .join(', ');
+  const paymentShippingFee = Math.max(0, modalSnapshot.payment.shippingFee);
+  const paymentDiscount = Math.max(0, modalSnapshot.payment.totalDiscount);
+  const paymentSurcharge = Math.max(0, modalSnapshot.payment.surcharge);
+  const paymentBankTransfer = Math.max(0, modalSnapshot.payment.bankTransfer);
+  const paymentSubtotal = Math.max(
+    0,
+    (selectedOrderForModal?.cod || 0) + paymentDiscount + paymentShippingFee + paymentSurcharge,
+  );
+  const paymentAfterDiscount = Math.max(0, paymentSubtotal - paymentDiscount);
+  const paymentNeedToPay = paymentAfterDiscount;
+  const paymentPaid = paymentBankTransfer;
+  const paymentRemain = Math.max(0, paymentNeedToPay - paymentPaid);
 
   const handleSaveStatus = async () => {
     if (!selectedOrderForModal || !isSelectedOrderEditable || draftStatus === null || isSavingStatus) return;
+    const statusLabel = getConfirmationStatusOptionLabel(draftStatus) || String(draftStatus);
+    const orderRef = `${selectedOrderForModal.shop_id} - ${selectedOrderForModal.pos_order_id}`;
     setIsSavingStatus(true);
     setStatusSaveError(null);
+    addToast('info', `Updating order ${orderRef} to ${statusLabel}...`);
     try {
       await apiClient.patch(`/orders/confirmation/${selectedOrderForModal.id}/status`, {
         status: draftStatus,
       });
+      addToast('success', `Order ${orderRef} successfully submitted for update.`);
       setSelectedOrderForModal(null);
       fetchDataRef.current?.({ silent: true });
     } catch (err: unknown) {
@@ -897,6 +951,7 @@ export default function OrdersConfirmationPage() {
           (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
         (err instanceof Error ? err.message : null) ||
         'Failed to update order status';
+      addToast('error', message);
       setStatusSaveError(message);
     } finally {
       setIsSavingStatus(false);
@@ -1188,7 +1243,7 @@ export default function OrdersConfirmationPage() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-32">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
               <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-8">
                 <h4 className="mb-3 text-base font-semibold text-slate-900">Product Information</h4>
                 {modalItems.length > 0 ? (
@@ -1367,7 +1422,56 @@ export default function OrdersConfirmationPage() {
                 </div>
               </section>
 
-              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-6">
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-4">
+                <h4 className="mb-3 text-base font-semibold text-slate-900">Payment</h4>
+                <div className="space-y-2">
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-700">
+                    <span>Shipping fee</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(paymentShippingFee)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-700">
+                    <span>Discounted</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(paymentDiscount)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-700">
+                    <span>Bank transfer</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(paymentBankTransfer)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-700">
+                    <span>Surcharge</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(paymentSurcharge)}</span>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-sm">
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 text-slate-700">
+                    <span>Subtotal</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(paymentSubtotal)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 text-slate-700">
+                    <span>Discount</span>
+                    <span className="font-semibold text-emerald-600">{formatCurrency(paymentDiscount)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-slate-200 pt-2 text-slate-700">
+                    <span>After discount</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(paymentAfterDiscount)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 text-slate-700">
+                    <span>Need to pay</span>
+                    <span className="font-semibold text-blue-700">{formatCurrency(paymentNeedToPay)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 text-slate-700">
+                    <span>Paid</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(paymentPaid)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-slate-200 pt-2 text-slate-700">
+                    <span>Remain</span>
+                    <span className="font-semibold text-rose-600">{formatCurrency(paymentRemain)}</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-4">
                 <h4 className="mb-3 text-base font-semibold text-slate-900">Note</h4>
                 <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
                   <p className="whitespace-pre-wrap break-words text-sm leading-8 text-slate-700">
@@ -1376,7 +1480,7 @@ export default function OrdersConfirmationPage() {
                 </div>
               </section>
 
-              <div className="space-y-4 lg:col-span-6">
+              <div className="space-y-4 lg:col-span-4">
                 <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <h4 className="text-base font-semibold text-slate-900">Customer</h4>
@@ -1467,6 +1571,9 @@ export default function OrdersConfirmationPage() {
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700">
                   Status: {statusDisplayLabel}
+                </span>
+                <span className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-700">
+                  COD: {formatCurrency(selectedOrderForModal?.cod || 0)}
                 </span>
                 {statusSaveError ? (
                   <span className="text-sm text-rose-600">{statusSaveError}</span>

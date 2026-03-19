@@ -50,6 +50,10 @@ interface PosOrderData {
     order_link: string | null;
     conversation_id: string | null;
     assigning_seller: Record<string, any> | null;
+    total_discount: unknown | null;
+    shipping_fee: unknown | null;
+    bank_payments: unknown | null;
+    surcharge: unknown | null;
     duplicated_phone: unknown | null;
     duplicated_ip: unknown | null;
   } | null;
@@ -477,6 +481,10 @@ export class PosOrderService {
       && !Array.isArray(rawOrder.assigning_seller)
         ? rawOrder.assigning_seller
         : null;
+    const snapshotTotalDiscount = rawOrder?.total_discount ?? null;
+    const snapshotShippingFee = rawOrder?.shipping_fee ?? null;
+    const snapshotBankPayments = rawOrder?.bank_payments ?? null;
+    const snapshotSurcharge = rawOrder?.surcharge ?? null;
     const snapshotDuplicatedPhone = rawOrder?.duplicated_phone ?? rawOrder?.duplicatedPhone ?? null;
     const snapshotDuplicatedIp = rawOrder?.duplicated_ip ?? rawOrder?.duplicatedIp ?? null;
     const orderSnapshot = {
@@ -487,6 +495,10 @@ export class PosOrderService {
       order_link: snapshotOrderLink,
       conversation_id: snapshotConversationId,
       assigning_seller: snapshotAssigningSeller,
+      total_discount: snapshotTotalDiscount,
+      shipping_fee: snapshotShippingFee,
+      bank_payments: snapshotBankPayments,
+      surcharge: snapshotSurcharge,
       duplicated_phone: snapshotDuplicatedPhone,
       duplicated_ip: snapshotDuplicatedIp,
     };
