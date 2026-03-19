@@ -1,6 +1,7 @@
 export const PANCAKE_WEBHOOK_QUEUE = 'pancake-webhook';
 export const PANCAKE_WEBHOOK_JOB = 'ingest';
 export const PANCAKE_WEBHOOK_AUTO_CANCEL_JOB = 'auto-cancel-status';
+export const PANCAKE_WEBHOOK_REPORTS_HYDRATE_JOB = 'hydrate-reports-by-phone';
 export const PANCAKE_WEBHOOK_RECONCILE_QUEUE = 'pancake-webhook-reconcile';
 export const PANCAKE_WEBHOOK_RECONCILE_JOB = 'reconcile-day';
 
@@ -27,6 +28,15 @@ export interface PancakeWebhookAutoCancelJobData {
   reportsByPhoneOrderFail: number | null;
   reportsByPhoneOrderSuccess: number | null;
   reportsByPhoneWarning: number | null;
+  requestId?: string;
+  logId?: string;
+}
+
+export interface PancakeWebhookReportsHydrateJobData {
+  tenantId: string;
+  shopId: string;
+  orderId: string;
+  customerPhone: string;
   requestId?: string;
   logId?: string;
 }

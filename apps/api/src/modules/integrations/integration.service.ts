@@ -42,11 +42,13 @@ import * as timezone from 'dayjs/plugin/timezone';
 import {
   PANCAKE_WEBHOOK_AUTO_CANCEL_JOB,
   PANCAKE_WEBHOOK_JOB,
+  PANCAKE_WEBHOOK_REPORTS_HYDRATE_JOB,
   PANCAKE_WEBHOOK_RECONCILE_JOB,
   PANCAKE_WEBHOOK_RECONCILE_QUEUE,
   PANCAKE_WEBHOOK_QUEUE,
   PancakeWebhookAutoCancelJobData,
   PancakeWebhookJobData,
+  PancakeWebhookReportsHydrateJobData,
   PancakeWebhookReconcileJobData,
 } from './pancake-webhook.constants';
 
@@ -133,7 +135,9 @@ export class IntegrationService {
     private readonly posOrderService: PosOrderService,
     @InjectQueue(PANCAKE_WEBHOOK_QUEUE)
     private readonly pancakeWebhookQueue: Queue<
-      PancakeWebhookJobData | PancakeWebhookAutoCancelJobData
+      | PancakeWebhookJobData
+      | PancakeWebhookAutoCancelJobData
+      | PancakeWebhookReportsHydrateJobData
     >,
     @InjectQueue(PANCAKE_WEBHOOK_RECONCILE_QUEUE)
     private readonly pancakeWebhookReconcileQueue: Queue<PancakeWebhookReconcileJobData>,
@@ -767,12 +771,48 @@ export class IntegrationService {
     };
   }
 
+  private getPancakeReportsHydrateQueueJobOptions() {
+    const delay = Math.max(
+      0,
+      Number(process.env.PANCAKE_REPORTS_HYDRATE_QUEUE_DELAY_MS || 20000),
+    );
+    const attempts = Math.max(
+      1,
+      Number(process.env.PANCAKE_REPORTS_HYDRATE_QUEUE_ATTEMPTS || 8),
+    );
+    const backoffDelay = Math.max(
+      1000,
+      Number(process.env.PANCAKE_REPORTS_HYDRATE_QUEUE_BACKOFF_MS || 15000),
+    );
+    const timeout = Math.max(
+      5000,
+      Number(process.env.PANCAKE_REPORTS_HYDRATE_QUEUE_TIMEOUT_MS || 30000),
+    );
+    return {
+      delay,
+      attempts,
+      backoff: { type: 'exponential' as const, delay: backoffDelay },
+      timeout,
+      removeOnComplete: true,
+      removeOnFail: 1000,
+    };
+  }
+
   private async enqueueAutoCancelStatusJob(
     data: PancakeWebhookAutoCancelJobData,
   ): Promise<void> {
     await this.pancakeWebhookQueue.add(PANCAKE_WEBHOOK_AUTO_CANCEL_JOB, data, {
       jobId: `pancake-auto-cancel:${data.tenantId}:${data.shopId}:${data.orderId}`,
       ...this.getPancakeAutoCancelQueueJobOptions(),
+    });
+  }
+
+  private async enqueueReportsHydrateJob(
+    data: PancakeWebhookReportsHydrateJobData,
+  ): Promise<void> {
+    await this.pancakeWebhookQueue.add(PANCAKE_WEBHOOK_REPORTS_HYDRATE_JOB, data, {
+      jobId: `pancake-reports-hydrate:${data.tenantId}:${data.shopId}:${data.orderId}`,
+      ...this.getPancakeReportsHydrateQueueJobOptions(),
     });
   }
 
@@ -870,6 +910,123 @@ export class IntegrationService {
     return { success: true, reason: 'STATUS_UPDATE_SENT' };
   }
 
+  async processPancakeReportsHydrateJob(
+    jobData: PancakeWebhookReportsHydrateJobData,
+  ): Promise<{ success: boolean; reason: string; hydrated: boolean }> {
+    const existingOrder = await this.prisma.posOrder.findFirst({
+      where: {
+        tenantId: jobData.tenantId,
+        shopId: jobData.shopId,
+        posOrderId: jobData.orderId,
+      },
+      select: {
+        status: true,
+        customerPhone: true,
+        reportsByPhoneOrderFail: true,
+        reportsByPhoneOrderSuccess: true,
+      },
+    });
+
+    if (!existingOrder) {
+      return { success: false, reason: 'ORDER_NOT_FOUND', hydrated: false };
+    }
+
+    if (existingOrder.status !== 0) {
+      return { success: false, reason: 'STATUS_NOT_NEW', hydrated: false };
+    }
+
+    const alreadyHydrated =
+      existingOrder.reportsByPhoneOrderFail !== null &&
+      existingOrder.reportsByPhoneOrderSuccess !== null;
+    if (alreadyHydrated) {
+      return { success: true, reason: 'ALREADY_HYDRATED', hydrated: false };
+    }
+
+    const customerPhone =
+      (jobData.customerPhone || '').toString().trim() ||
+      (existingOrder.customerPhone || '').toString().trim();
+    if (!customerPhone) {
+      return { success: false, reason: 'MISSING_PHONE', hydrated: false };
+    }
+
+    const store = await this.prisma.posStore.findFirst({
+      where: {
+        tenantId: jobData.tenantId,
+        shopId: jobData.shopId,
+      },
+      select: {
+        id: true,
+        integrationId: true,
+        apiKey: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!store) {
+      return { success: false, reason: 'STORE_NOT_FOUND', hydrated: false };
+    }
+
+    const apiKey = await this.resolveStoreApiKeyForWebhook(jobData.tenantId, {
+      id: store.id,
+      integrationId: store.integrationId || null,
+      apiKey: store.apiKey || null,
+    });
+    if (!apiKey) {
+      throw new Error(
+        `Missing API key for reports hydrate shop_id=${jobData.shopId}`,
+      );
+    }
+
+    const reportsResult = await this.fetchReportsByPhoneMetricsForOrder(
+      jobData.shopId,
+      apiKey,
+      customerPhone,
+      jobData.orderId,
+    );
+    if (!reportsResult.metrics) {
+      throw new Error(
+        reportsResult.warning ||
+          `reports_by_phone not available yet for shop_id=${jobData.shopId} order_id=${jobData.orderId}`,
+      );
+    }
+
+    await this.prisma.posOrder.updateMany({
+      where: {
+        tenantId: jobData.tenantId,
+        shopId: jobData.shopId,
+        posOrderId: jobData.orderId,
+      },
+      data: {
+        reportsByPhoneOrderFail: reportsResult.metrics.orderFail,
+        reportsByPhoneOrderSuccess: reportsResult.metrics.orderSuccess,
+        reportsByPhoneWarning: reportsResult.metrics.warning,
+      },
+    });
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: jobData.tenantId },
+      select: { settings: true },
+    });
+    const cfg = this.getPancakeWebhookSettings(tenant?.settings);
+    if (
+      cfg.autoCancelEnabled !== false &&
+      this.shouldTriggerAutoCancelFromReports(reportsResult.metrics)
+    ) {
+      await this.enqueueAutoCancelStatusJob({
+        tenantId: jobData.tenantId,
+        shopId: jobData.shopId,
+        orderId: jobData.orderId,
+        reportsByPhoneOrderFail: reportsResult.metrics.orderFail,
+        reportsByPhoneOrderSuccess: reportsResult.metrics.orderSuccess,
+        reportsByPhoneWarning: reportsResult.metrics.warning,
+        requestId: jobData.requestId,
+        logId: jobData.logId,
+      });
+    }
+
+    return { success: true, reason: 'HYDRATED', hydrated: true };
+  }
+
   private async hydrateReportsByPhoneForWebhookOrders(
     tenantId: string,
     store: { id: string; shopId: string; integrationId: string | null; apiKey: string | null },
@@ -920,7 +1077,27 @@ export class IntegrationService {
       }
 
       const metrics = reportsResult.metrics;
-      if (!metrics) continue;
+      if (!metrics) {
+        try {
+          await this.enqueueReportsHydrateJob({
+            tenantId,
+            shopId,
+            orderId,
+            customerPhone,
+            requestId,
+            logId,
+          });
+        } catch (error: any) {
+          const message = (error?.message || '').toString();
+          const normalized = message.toLowerCase();
+          if (!(normalized.includes('job') && normalized.includes('exist'))) {
+            warnings.push(
+              `Failed to queue reports hydrate for shop_id=${shopId} order_id=${orderId}: ${message || 'Unknown error'}`,
+            );
+          }
+        }
+        continue;
+      }
 
       await this.prisma.posOrder.updateMany({
         where: {

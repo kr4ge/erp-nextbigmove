@@ -6,8 +6,10 @@ import {
   PANCAKE_WEBHOOK_AUTO_CANCEL_JOB,
   PANCAKE_WEBHOOK_JOB,
   PANCAKE_WEBHOOK_QUEUE,
+  PANCAKE_WEBHOOK_REPORTS_HYDRATE_JOB,
   PancakeWebhookAutoCancelJobData,
   PancakeWebhookJobData,
+  PancakeWebhookReportsHydrateJobData,
 } from '../pancake-webhook.constants';
 
 @Processor(PANCAKE_WEBHOOK_QUEUE)
@@ -63,12 +65,45 @@ export class PancakeWebhookQueueProcessor {
     return result;
   }
 
+  @Process(PANCAKE_WEBHOOK_REPORTS_HYDRATE_JOB)
+  async handleReportsHydrate(job: Job<PancakeWebhookReportsHydrateJobData>) {
+    const startedAt = Date.now();
+    const { tenantId, shopId, orderId } = job.data;
+
+    this.logger.debug(
+      `Processing reports hydrate job ${job.id} tenant=${tenantId} shop=${shopId} order=${orderId}`,
+    );
+
+    const result = await this.integrationService.processPancakeReportsHydrateJob(job.data);
+    const durationMs = Date.now() - startedAt;
+
+    if (result.success) {
+      this.logger.log(
+        `Reports hydrate done tenant=${tenantId} shop=${shopId} order=${orderId} hydrated=${result.hydrated ? 1 : 0} durationMs=${durationMs}`,
+      );
+    } else {
+      this.logger.debug(
+        `Reports hydrate skipped tenant=${tenantId} shop=${shopId} order=${orderId} reason=${result.reason} durationMs=${durationMs}`,
+      );
+    }
+
+    return result;
+  }
+
   @OnQueueFailed()
-  onFailed(job: Job<PancakeWebhookJobData | PancakeWebhookAutoCancelJobData>, error: any) {
+  onFailed(
+    job: Job<
+      PancakeWebhookJobData
+      | PancakeWebhookAutoCancelJobData
+      | PancakeWebhookReportsHydrateJobData
+    >,
+    error: any,
+  ) {
     const { logId, tenantId, requestId } = (job?.data || {}) as PancakeWebhookJobData;
     const asAutoCancel = (job?.data || {}) as PancakeWebhookAutoCancelJobData;
+    const asReportsHydrate = (job?.data || {}) as PancakeWebhookReportsHydrateJobData;
     this.logger.error(
-      `Pancake webhook job failed log=${logId || 'n/a'} request=${requestId || 'n/a'} tenant=${tenantId || asAutoCancel.tenantId || 'n/a'} shop=${asAutoCancel.shopId || 'n/a'} order=${asAutoCancel.orderId || 'n/a'}: ${error?.message || 'Unknown error'}`,
+      `Pancake webhook job failed log=${logId || 'n/a'} request=${requestId || 'n/a'} tenant=${tenantId || asAutoCancel.tenantId || asReportsHydrate.tenantId || 'n/a'} shop=${asAutoCancel.shopId || asReportsHydrate.shopId || 'n/a'} order=${asAutoCancel.orderId || asReportsHydrate.orderId || 'n/a'}: ${error?.message || 'Unknown error'}`,
       error?.stack,
     );
   }
