@@ -330,6 +330,7 @@ type ParsedOrderSnapshotCustomer = {
   email: string;
   dateOfBirth: string;
   gender: string;
+  conversationLink: string;
   succeedOrderCount: number;
   orderCount: number;
 };
@@ -501,6 +502,7 @@ const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
       email: Array.isArray(customerRaw?.emails) ? toText(customerRaw?.emails[0]) : '',
       dateOfBirth: toText(customerRaw?.date_of_birth),
       gender: toText(customerRaw?.gender),
+      conversationLink: toText(customerRaw?.conversation_link || customerRaw?.conversationLink),
       succeedOrderCount: toCount(customerRaw?.succeed_order_count),
       orderCount: toCount(customerRaw?.order_count),
     },
@@ -607,6 +609,7 @@ export default function OrdersConfirmationPage() {
   const [draftStatus, setDraftStatus] = useState<number | null>(null);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [statusSaveError, setStatusSaveError] = useState<string | null>(null);
+  const [isConversationLinkCopied, setIsConversationLinkCopied] = useState(false);
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
   const [draftTags, setDraftTags] = useState<ConfirmationOrderTagDetail[] | null>(null);
   const [activeNoteTab, setActiveNoteTab] = useState<'all' | 'internal' | 'printing'>('all');
@@ -624,6 +627,7 @@ export default function OrdersConfirmationPage() {
   const [showShopPicker, setShowShopPicker] = useState(false);
   const shopPickerRef = useRef<HTMLDivElement | null>(null);
   const tagPickerRef = useRef<HTMLDivElement | null>(null);
+  const conversationCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -943,6 +947,7 @@ export default function OrdersConfirmationPage() {
     setDraftPrintingNote(null);
     setStatusSaveError(null);
     setIsSavingStatus(false);
+    setIsConversationLinkCopied(false);
     setIsStatusMenuOpen(false);
     setShowTagPicker(false);
     setTagOptions(null);
@@ -950,6 +955,15 @@ export default function OrdersConfirmationPage() {
     setTagOptionsError(null);
     setActiveTagGroupId(null);
   }, [selectedOrderForModal]);
+
+  useEffect(() => {
+    return () => {
+      if (conversationCopyTimeoutRef.current) {
+        clearTimeout(conversationCopyTimeoutRef.current);
+        conversationCopyTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isPhoneHistoryOpen || !phoneHistoryLookupPhone) return;
@@ -1112,6 +1126,32 @@ export default function OrdersConfirmationPage() {
       }
     } catch {
       // ignore clipboard errors (unsupported browser / denied permission)
+    }
+  };
+
+  const handleCopyConversationLink = async () => {
+    const conversationLink = modalSnapshot.customer.conversationLink;
+    if (!conversationLink) return;
+
+    window.open(conversationLink, '_blank', 'noopener,noreferrer');
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(conversationLink);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+
+      setIsConversationLinkCopied(true);
+      if (conversationCopyTimeoutRef.current) {
+        clearTimeout(conversationCopyTimeoutRef.current);
+      }
+      conversationCopyTimeoutRef.current = setTimeout(() => {
+        setIsConversationLinkCopied(false);
+        conversationCopyTimeoutRef.current = null;
+      }, 1400);
+    } catch {
+      // Ignore clipboard errors silently for this quick action.
     }
   };
 
@@ -1495,14 +1535,19 @@ export default function OrdersConfirmationPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {modalSnapshot.conversationId ? (
-                  <span
+                {isConversationLinkCopied ? (
+                  <span className="text-xs font-semibold text-emerald-600">Copied</span>
+                ) : null}
+                {modalSnapshot.customer.conversationLink ? (
+                  <button
+                    type="button"
+                    onClick={handleCopyConversationLink}
                     className="inline-flex rounded-xl border-2 border-blue-400 p-2 text-blue-500"
-                    title={`Conversation ID: ${modalSnapshot.conversationId}`}
-                    aria-label="Conversation available"
+                    title="Copy conversation link"
+                    aria-label="Copy conversation link"
                   >
                     <MessageCircle className="h-5 w-5" />
-                  </span>
+                  </button>
                 ) : null}
                 <button
                   type="button"
