@@ -1905,7 +1905,7 @@ export default function OrdersConfirmationPage() {
                           ) : null}
                         </div>
                         <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                          {effectiveInternalNote || '—'}
+                          {effectiveInternalNote || '\u00A0'}
                         </p>
                       </div>
 
@@ -1929,7 +1929,7 @@ export default function OrdersConfirmationPage() {
                           ) : null}
                         </div>
                         <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                          {effectivePrintingNote || '—'}
+                          {effectivePrintingNote || '\u00A0'}
                         </p>
                       </div>
                     </div>
@@ -1949,7 +1949,7 @@ export default function OrdersConfirmationPage() {
                         />
                       ) : (
                         <p className="min-h-[190px] whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                          {effectiveInternalNote || '—'}
+                          {effectiveInternalNote || '\u00A0'}
                         </p>
                       )}
                     </div>
@@ -1969,7 +1969,7 @@ export default function OrdersConfirmationPage() {
                         />
                       ) : (
                         <p className="min-h-[190px] whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                          {effectivePrintingNote || '—'}
+                          {effectivePrintingNote || '\u00A0'}
                         </p>
                       )}
                     </div>
