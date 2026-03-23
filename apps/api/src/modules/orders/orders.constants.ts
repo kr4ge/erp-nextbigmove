@@ -13,5 +13,7 @@ export interface ConfirmationUpdateStatusJobData {
   posOrderId: string;
   targetStatus?: number | null;
   targetTags?: ConfirmationUpdateTagPayload[] | null;
+  targetNote?: string;
+  targetNotePrint?: string;
   requestId?: string;
 }

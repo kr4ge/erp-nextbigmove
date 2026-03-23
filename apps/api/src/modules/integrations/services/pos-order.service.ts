@@ -47,6 +47,7 @@ interface PosOrderData {
     customer: Record<string, any> | null;
     shipping_address: Record<string, any> | null;
     note: string | null;
+    note_print: string | null;
     items: any[] | null;
     order_link: string | null;
     conversation_id: string | null;
@@ -465,6 +466,7 @@ export class PosOrderService {
         ? rawOrder.shipping_address
         : null;
     const snapshotNote = typeof rawOrder?.note === 'string' ? rawOrder.note : null;
+    const snapshotNotePrint = typeof rawOrder?.note_print === 'string' ? rawOrder.note_print : null;
     const snapshotItems = Array.isArray(rawOrder?.items) ? rawOrder.items : null;
     const rawOrderLink = rawOrder?.order_link ?? rawOrder?.orderLink ?? null;
     const snapshotOrderLink =
@@ -492,6 +494,7 @@ export class PosOrderService {
       customer: snapshotCustomer,
       shipping_address: snapshotShippingAddress,
       note: snapshotNote,
+      note_print: snapshotNotePrint,
       items: snapshotItems,
       order_link: snapshotOrderLink,
       conversation_id: snapshotConversationId,

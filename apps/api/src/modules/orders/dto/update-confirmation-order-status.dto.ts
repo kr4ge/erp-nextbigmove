@@ -22,4 +22,12 @@ export class UpdateConfirmationOrderStatusDto {
   @ValidateNested({ each: true })
   @Type(() => UpdateConfirmationOrderTagDto)
   tags?: UpdateConfirmationOrderTagDto[];
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  @IsOptional()
+  @IsString()
+  note_print?: string;
 }

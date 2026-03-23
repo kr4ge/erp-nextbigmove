@@ -17,11 +17,11 @@ export class OrdersQueueProcessor {
   @Process(CONFIRMATION_UPDATE_STATUS_JOB)
   async handleUpdateStatus(job: Job<ConfirmationUpdateStatusJobData>) {
     const startedAt = Date.now();
-    const { tenantId, shopId, posOrderId, targetStatus, targetTags } = job.data;
+    const { tenantId, shopId, posOrderId, targetStatus, targetTags, targetNote, targetNotePrint } = job.data;
     const targetLabel =
       typeof targetStatus === 'number'
-        ? `status=${targetStatus}`
-        : `status=n/a tags=${Array.isArray(targetTags) ? targetTags.length : 0}`;
+        ? `status=${targetStatus} tags=${Array.isArray(targetTags) ? targetTags.length : 0} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0}`
+        : `status=n/a tags=${Array.isArray(targetTags) ? targetTags.length : 0} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0}`;
 
     this.logger.debug(
       `Processing confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel}`,

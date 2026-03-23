@@ -838,7 +838,7 @@ export class OrdersService {
 
   async updateConfirmationOrderStatus(
     orderRowId: string,
-    payload: { status?: number; tags?: Array<{ id: string; name: string }> },
+    payload: { status?: number; tags?: Array<{ id: string; name: string }>; note?: string; note_print?: string },
   ) {
     try {
       const targetStatus =
@@ -847,9 +847,15 @@ export class OrdersService {
           : null;
       const hasTagsPayload = Array.isArray(payload.tags);
       const targetTags = hasTagsPayload ? this.normalizeUpdateTags(payload.tags || []) : undefined;
+      const hasNotePayload = Object.prototype.hasOwnProperty.call(payload, 'note');
+      const targetNote = hasNotePayload ? (typeof payload.note === 'string' ? payload.note : '') : undefined;
+      const hasNotePrintPayload = Object.prototype.hasOwnProperty.call(payload, 'note_print');
+      const targetNotePrint = hasNotePrintPayload
+        ? (typeof payload.note_print === 'string' ? payload.note_print : '')
+        : undefined;
 
-      if (targetStatus === null && !hasTagsPayload) {
-        throw new BadRequestException('Request must include status and/or tags');
+      if (targetStatus === null && !hasTagsPayload && !hasNotePayload && !hasNotePrintPayload) {
+        throw new BadRequestException('Request must include status, tags, note, and/or note_print');
       }
 
       if (targetStatus !== null && !this.allowedConfirmationStatusUpdates.has(targetStatus)) {
@@ -993,6 +999,8 @@ export class OrdersService {
                 order_id: order.posOrderId,
                 status: targetStatus,
                 tags_count: targetTags?.length ?? undefined,
+                note_updated: hasNotePayload || undefined,
+                note_print_updated: hasNotePrintPayload || undefined,
                 processing: true,
                 processing_started_at: startedAtIso,
                 processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
@@ -1021,6 +1029,8 @@ export class OrdersService {
           posOrderId: order.posOrderId,
           targetStatus,
           targetTags: targetTags ?? null,
+          targetNote,
+          targetNotePrint,
         });
       } catch (error: any) {
         if (lockedForStatusUpdate) {
@@ -1035,6 +1045,8 @@ export class OrdersService {
             order_id: order.posOrderId,
             status: targetStatus ?? undefined,
             tags_count: targetTags?.length ?? undefined,
+            note_updated: hasNotePayload || undefined,
+            note_print_updated: hasNotePrintPayload || undefined,
             processing: lockedForStatusUpdate,
             processing_started_at: lockedForStatusUpdate
               ? processingRequestedAt.toISOString()
@@ -1056,6 +1068,8 @@ export class OrdersService {
         order_id: order.posOrderId,
         status: targetStatus ?? undefined,
         tags_count: targetTags?.length ?? undefined,
+        note_updated: hasNotePayload || undefined,
+        note_print_updated: hasNotePrintPayload || undefined,
         processing: lockedForStatusUpdate,
         processing_started_at: lockedForStatusUpdate
           ? processingRequestedAt.toISOString()
@@ -1067,7 +1081,7 @@ export class OrdersService {
         queued: true,
         message: lockedForStatusUpdate
           ? 'Order update queued. Waiting for webhook callback.'
-          : 'Order tag update queued.',
+          : 'Order update queued.',
       };
     } catch (error: any) {
       if (error instanceof HttpException) {
@@ -1081,7 +1095,7 @@ export class OrdersService {
       }
 
       this.logger.error(
-        `Failed to update confirmation order id=${orderRowId} targetStatus=${payload?.status ?? 'n/a'} targetTags=${Array.isArray(payload?.tags) ? payload.tags.length : 0}: ${error?.message || 'Unknown error'}`,
+        `Failed to update confirmation order id=${orderRowId} targetStatus=${payload?.status ?? 'n/a'} targetTags=${Array.isArray(payload?.tags) ? payload.tags.length : 0} targetNote=${Object.prototype.hasOwnProperty.call(payload, 'note') ? 1 : 0} targetNotePrint=${Object.prototype.hasOwnProperty.call(payload, 'note_print') ? 1 : 0}: ${error?.message || 'Unknown error'}`,
         error?.stack,
       );
       throw new ServiceUnavailableException(
@@ -1095,8 +1109,10 @@ export class OrdersService {
   ): Promise<{ success: boolean; reason: string }> {
     const hasStatusUpdate = typeof jobData.targetStatus === 'number';
     const hasTagsUpdate = Array.isArray(jobData.targetTags);
+    const hasNoteUpdate = typeof jobData.targetNote === 'string';
+    const hasNotePrintUpdate = typeof jobData.targetNotePrint === 'string';
 
-    if (!hasStatusUpdate && !hasTagsUpdate) {
+    if (!hasStatusUpdate && !hasTagsUpdate && !hasNoteUpdate && !hasNotePrintUpdate) {
       return { success: false, reason: 'NO_OPERATION' };
     }
 
@@ -1171,6 +1187,12 @@ export class OrdersService {
         name: tag.name,
       }));
     }
+    if (hasNoteUpdate) {
+      requestBody.note = jobData.targetNote || '';
+    }
+    if (hasNotePrintUpdate) {
+      requestBody.note_print = jobData.targetNotePrint || '';
+    }
 
     let response: Response;
     try {
@@ -1203,7 +1225,7 @@ export class OrdersService {
       }
 
       throw new BadGatewayException(
-        `Failed to update Pancake order status (${statusCode})${responseText ? `: ${responseText.slice(0, 180)}` : ''}`,
+        `Failed to update Pancake order (${statusCode})${responseText ? `: ${responseText.slice(0, 180)}` : ''}`,
       );
     }
 
@@ -1211,9 +1233,15 @@ export class OrdersService {
       await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
     }
 
+    const updates: string[] = [];
+    if (hasStatusUpdate) updates.push('STATUS');
+    if (hasTagsUpdate) updates.push('TAGS');
+    if (hasNoteUpdate) updates.push('NOTE');
+    if (hasNotePrintUpdate) updates.push('NOTE_PRINT');
+
     return {
       success: true,
-      reason: hasStatusUpdate ? 'STATUS_UPDATE_SENT' : 'TAGS_UPDATE_SENT',
+      reason: `${updates.join('_') || 'ORDER'}_UPDATE_SENT`,
     };
   }
 }

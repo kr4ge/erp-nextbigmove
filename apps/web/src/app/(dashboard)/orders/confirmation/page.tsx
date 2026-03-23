@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Link2, MessageCircle, PhoneCall, Wifi, X } from 'lucide-react';
+import { ChevronDown, Link2, MessageCircle, PencilLine, PhoneCall, Wifi, X } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { workflowSocket } from '@/lib/socket-client';
 import { PageHeader } from '@/components/ui/page-header';
@@ -353,6 +353,7 @@ type ParsedOrderSnapshotPayment = {
 
 type ParsedOrderSnapshot = {
   note: string;
+  notePrint: string;
   items: ParsedSnapshotItem[];
   customer: ParsedOrderSnapshotCustomer;
   shippingAddress: ParsedOrderSnapshotShippingAddress;
@@ -377,6 +378,8 @@ const getConfirmationStatusOptionLabel = (value: number | null): string | null =
 };
 
 const normalizeLineBreaks = (value: string) => value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+const toApiLineBreaks = (value: string) =>
+  normalizeLineBreaks(value).replace(/\n/g, '\r\n');
 
 const toRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -490,6 +493,7 @@ const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
 
   return {
     note: normalizeLineBreaks(toText(snapshot?.note)),
+    notePrint: normalizeLineBreaks(toText(snapshot?.note_print || snapshot?.notePrint)),
     items: parseSnapshotItems(snapshot?.items),
     customer: {
       name: toText(customerRaw?.name),
@@ -605,6 +609,9 @@ export default function OrdersConfirmationPage() {
   const [statusSaveError, setStatusSaveError] = useState<string | null>(null);
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
   const [draftTags, setDraftTags] = useState<ConfirmationOrderTagDetail[] | null>(null);
+  const [activeNoteTab, setActiveNoteTab] = useState<'all' | 'internal' | 'printing'>('all');
+  const [draftInternalNote, setDraftInternalNote] = useState<string | null>(null);
+  const [draftPrintingNote, setDraftPrintingNote] = useState<string | null>(null);
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [tagOptions, setTagOptions] = useState<ConfirmationTagOptionsResponse | null>(null);
   const [isTagOptionsLoading, setIsTagOptionsLoading] = useState(false);
@@ -931,6 +938,9 @@ export default function OrdersConfirmationPage() {
     }
     setDraftStatus(null);
     setDraftTags(null);
+    setActiveNoteTab('all');
+    setDraftInternalNote(null);
+    setDraftPrintingNote(null);
     setStatusSaveError(null);
     setIsSavingStatus(false);
     setIsStatusMenuOpen(false);
@@ -1027,7 +1037,17 @@ export default function OrdersConfirmationPage() {
         .join('||');
     return toComparable(effectiveDraftTags) !== toComparable(selectedOrderBaseTags);
   }, [effectiveDraftTags, selectedOrderBaseTags]);
-  const hasPendingChanges = hasStatusDraftChanges || hasTagDraftChanges;
+  const effectiveInternalNote = draftInternalNote ?? modalSnapshot.note;
+  const effectivePrintingNote = draftPrintingNote ?? modalSnapshot.notePrint;
+  const hasInternalNoteDraftChanges =
+    normalizeLineBreaks(effectiveInternalNote) !== normalizeLineBreaks(modalSnapshot.note);
+  const hasPrintingNoteDraftChanges =
+    normalizeLineBreaks(effectivePrintingNote) !== normalizeLineBreaks(modalSnapshot.notePrint);
+  const hasPendingChanges =
+    hasStatusDraftChanges ||
+    hasTagDraftChanges ||
+    hasInternalNoteDraftChanges ||
+    hasPrintingNoteDraftChanges;
   const selectedTagNameSet = useMemo(
     () =>
       new Set(
@@ -1173,13 +1193,19 @@ export default function OrdersConfirmationPage() {
     const payload: Record<string, unknown> = {};
     if (draftStatus !== null) payload.status = draftStatus;
     if (hasTagDraftChanges) payload.tags = resolvedTagsPayload || [];
+    if (hasInternalNoteDraftChanges) payload.note = toApiLineBreaks(effectiveInternalNote);
+    if (hasPrintingNoteDraftChanges) payload.note_print = toApiLineBreaks(effectivePrintingNote);
 
     setIsSavingStatus(true);
     setStatusSaveError(null);
     if (statusLabel) {
       addToast('info', `Updating order ${orderRef} to ${statusLabel}...`);
-    } else {
+    } else if (hasTagDraftChanges) {
       addToast('info', `Updating tags for order ${orderRef}...`);
+    } else if (hasInternalNoteDraftChanges || hasPrintingNoteDraftChanges) {
+      addToast('info', `Updating notes for order ${orderRef}...`);
+    } else {
+      addToast('info', `Updating order ${orderRef}...`);
     }
     try {
       await apiClient.patch(`/orders/confirmation/${selectedOrderForModal.id}/status`, payload);
@@ -1194,7 +1220,7 @@ export default function OrdersConfirmationPage() {
           typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
           (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
         (err instanceof Error ? err.message : null) ||
-        'Failed to update order status';
+        'Failed to update order';
       addToast('error', message);
       setStatusSaveError(message);
     } finally {
@@ -1820,10 +1846,134 @@ export default function OrdersConfirmationPage() {
 
               <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-4">
                 <h4 className="mb-3 text-base font-semibold text-slate-900">Note</h4>
-                <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
-                  <p className="whitespace-pre-wrap break-words text-sm leading-8 text-slate-700">
-                    {modalSnapshot.note || '—'}
-                  </p>
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className="mb-3 inline-flex rounded-lg bg-slate-100 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveNoteTab('all')}
+                      className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                        activeNoteTab === 'all'
+                          ? 'bg-white text-blue-700 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveNoteTab('internal')}
+                      className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                        activeNoteTab === 'internal'
+                          ? 'bg-white text-blue-700 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Internal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveNoteTab('printing')}
+                      className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                        activeNoteTab === 'printing'
+                          ? 'bg-white text-blue-700 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Printing
+                    </button>
+                  </div>
+
+                  {activeNoteTab === 'all' ? (
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="inline-flex rounded-lg border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
+                            Internal
+                          </span>
+                          {isSelectedOrderEditable ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveNoteTab('internal');
+                              }}
+                              className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                              aria-label="Edit internal note"
+                              title="Edit internal note"
+                            >
+                              <PencilLine className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                        </div>
+                        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                          {effectiveInternalNote || '—'}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="inline-flex rounded-lg border border-orange-300 bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                            Printing
+                          </span>
+                          {isSelectedOrderEditable ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveNoteTab('printing');
+                              }}
+                              className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                              aria-label="Edit printing note"
+                              title="Edit printing note"
+                            >
+                              <PencilLine className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                        </div>
+                        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                          {effectivePrintingNote || '—'}
+                        </p>
+                      </div>
+                    </div>
+                  ) : activeNoteTab === 'internal' ? (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="mb-2">
+                        <span className="inline-flex rounded-lg border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
+                          Internal
+                        </span>
+                      </div>
+                      {isSelectedOrderEditable ? (
+                        <textarea
+                          value={effectiveInternalNote}
+                          onChange={(event) => setDraftInternalNote(normalizeLineBreaks(event.target.value))}
+                          className="min-h-[190px] w-full rounded-lg border border-blue-400 px-3 py-2 text-sm text-slate-800 outline-none"
+                          placeholder="Add internal note..."
+                        />
+                      ) : (
+                        <p className="min-h-[190px] whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                          {effectiveInternalNote || '—'}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="mb-2">
+                        <span className="inline-flex rounded-lg border border-orange-300 bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                          Printing
+                        </span>
+                      </div>
+                      {isSelectedOrderEditable ? (
+                        <textarea
+                          value={effectivePrintingNote}
+                          onChange={(event) => setDraftPrintingNote(normalizeLineBreaks(event.target.value))}
+                          className="min-h-[190px] w-full rounded-lg border border-blue-400 px-3 py-2 text-sm text-slate-800 outline-none"
+                          placeholder="Add printing note..."
+                        />
+                      ) : (
+                        <p className="min-h-[190px] whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                          {effectivePrintingNote || '—'}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </section>
 
