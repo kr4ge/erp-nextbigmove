@@ -469,6 +469,64 @@ const toAmount = (value: unknown): number => {
   return 0;
 };
 
+const parseNumericDraftInput = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
+  const normalized = trimmed.replace(/,/g, '');
+  const parsed = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+};
+
+const resolveNumericDraftForUi = (draftValue: string | null, fallbackValue: number): number => {
+  if (draftValue === null) return fallbackValue;
+  const parsed = parseNumericDraftInput(draftValue);
+  if (parsed === null) return fallbackValue;
+  return parsed;
+};
+
+const hasNumericDraftChanged = (draftValue: string | null, fallbackValue: number): boolean => {
+  if (draftValue === null) return false;
+  const parsed = parseNumericDraftInput(draftValue);
+  if (parsed === null) return false;
+  return Math.abs(parsed - fallbackValue) > 0.0001;
+};
+
+const buildBankPaymentsPayloadFromTransferAmount = (
+  currentRaw: unknown,
+  transferAmount: number,
+): unknown => {
+  if (currentRaw && typeof currentRaw === 'object' && !Array.isArray(currentRaw)) {
+    const next = { ...(currentRaw as Record<string, unknown>) };
+    const hasSnake = Object.prototype.hasOwnProperty.call(next, 'bank_transfer');
+    const hasCamel = Object.prototype.hasOwnProperty.call(next, 'bankTransfer');
+    if (hasSnake || hasCamel) {
+      if (hasSnake) next.bank_transfer = transferAmount;
+      if (hasCamel) next.bankTransfer = transferAmount;
+      return next;
+    }
+    const numericKeys = Object.keys(next).filter((key) => {
+      const value = next[key];
+      if (typeof value === 'number') return Number.isFinite(value);
+      if (typeof value === 'string') {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed);
+      }
+      return false;
+    });
+    if (numericKeys.length === 1) {
+      next[numericKeys[0]] = transferAmount;
+      return next;
+    }
+    return {
+      ...next,
+      bank_transfer: transferAmount,
+    };
+  }
+
+  return { bank_transfer: transferAmount };
+};
+
 const sumNumericValuesDeep = (value: unknown, depth = 0): number => {
   if (depth > 4) return 0;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -754,6 +812,10 @@ export default function OrdersConfirmationPage() {
   const [activeNoteTab, setActiveNoteTab] = useState<'all' | 'internal' | 'printing'>('all');
   const [draftInternalNote, setDraftInternalNote] = useState<string | null>(null);
   const [draftPrintingNote, setDraftPrintingNote] = useState<string | null>(null);
+  const [draftPaymentShippingFee, setDraftPaymentShippingFee] = useState<string | null>(null);
+  const [draftPaymentTotalDiscount, setDraftPaymentTotalDiscount] = useState<string | null>(null);
+  const [draftPaymentBankTransfer, setDraftPaymentBankTransfer] = useState<string | null>(null);
+  const [draftPaymentSurcharge, setDraftPaymentSurcharge] = useState<string | null>(null);
   const [selectedDeliveryAddressKey, setSelectedDeliveryAddressKey] = useState<string>('');
   const [draftDeliveryAddress, setDraftDeliveryAddress] = useState<ParsedDeliveryAddress | null>(null);
   const [geoProvinces, setGeoProvinces] = useState<GeoProvinceOption[]>([]);
@@ -771,7 +833,7 @@ export default function OrdersConfirmationPage() {
   const [isTagOptionsLoading, setIsTagOptionsLoading] = useState(false);
   const [tagOptionsError, setTagOptionsError] = useState<string | null>(null);
   const [activeTagGroupId, setActiveTagGroupId] = useState<string | null>(null);
-  const [isPaymentExpanded, setIsPaymentExpanded] = useState(false);
+  const [isPaymentExpanded, setIsPaymentExpanded] = useState(true);
   const [isPhoneCopied, setIsPhoneCopied] = useState(false);
   const phoneCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shopOptions, setShopOptions] = useState<ShopOption[]>([]);
@@ -1077,6 +1139,10 @@ export default function OrdersConfirmationPage() {
     if (!selectedOrderForModal) {
       setDraftStatus(null);
       setDraftTags(null);
+      setDraftPaymentShippingFee(null);
+      setDraftPaymentTotalDiscount(null);
+      setDraftPaymentBankTransfer(null);
+      setDraftPaymentSurcharge(null);
       setSelectedDeliveryAddressKey('');
       setDraftDeliveryAddress(null);
       setGeoProvinces([]);
@@ -1116,6 +1182,10 @@ export default function OrdersConfirmationPage() {
     setActiveNoteTab('all');
     setDraftInternalNote(null);
     setDraftPrintingNote(null);
+    setDraftPaymentShippingFee(null);
+    setDraftPaymentTotalDiscount(null);
+    setDraftPaymentBankTransfer(null);
+    setDraftPaymentSurcharge(null);
     setSelectedDeliveryAddressKey('');
     setDraftDeliveryAddress(null);
     setGeoDistricts([]);
@@ -1232,11 +1302,47 @@ export default function OrdersConfirmationPage() {
     normalizeLineBreaks(effectiveInternalNote) !== normalizeLineBreaks(modalSnapshot.note);
   const hasPrintingNoteDraftChanges =
     normalizeLineBreaks(effectivePrintingNote) !== normalizeLineBreaks(modalSnapshot.notePrint);
+  const effectivePaymentShippingFee = resolveNumericDraftForUi(
+    draftPaymentShippingFee,
+    modalSnapshot.payment.shippingFee,
+  );
+  const effectivePaymentDiscount = resolveNumericDraftForUi(
+    draftPaymentTotalDiscount,
+    modalSnapshot.payment.totalDiscount,
+  );
+  const effectivePaymentBankTransfer = resolveNumericDraftForUi(
+    draftPaymentBankTransfer,
+    modalSnapshot.payment.bankTransfer,
+  );
+  const effectivePaymentSurcharge = resolveNumericDraftForUi(
+    draftPaymentSurcharge,
+    modalSnapshot.payment.surcharge,
+  );
+  const hasPaymentShippingFeeDraftChanges = hasNumericDraftChanged(
+    draftPaymentShippingFee,
+    modalSnapshot.payment.shippingFee,
+  );
+  const hasPaymentTotalDiscountDraftChanges = hasNumericDraftChanged(
+    draftPaymentTotalDiscount,
+    modalSnapshot.payment.totalDiscount,
+  );
+  const hasPaymentBankTransferDraftChanges = hasNumericDraftChanged(
+    draftPaymentBankTransfer,
+    modalSnapshot.payment.bankTransfer,
+  );
+  const hasPaymentSurchargeDraftChanges = hasNumericDraftChanged(
+    draftPaymentSurcharge,
+    modalSnapshot.payment.surcharge,
+  );
   const hasPendingChangesBase =
     hasStatusDraftChanges ||
     hasTagDraftChanges ||
     hasInternalNoteDraftChanges ||
-    hasPrintingNoteDraftChanges;
+    hasPrintingNoteDraftChanges ||
+    hasPaymentShippingFeeDraftChanges ||
+    hasPaymentTotalDiscountDraftChanges ||
+    hasPaymentBankTransferDraftChanges ||
+    hasPaymentSurchargeDraftChanges;
   const selectedTagNameSet = useMemo(
     () =>
       new Set(
@@ -1408,6 +1514,17 @@ export default function OrdersConfirmationPage() {
     geoCommunes.find((entry) => entry.id === selectedCommuneId)?.name ||
     deliveryCommuneName ||
     'Barangay';
+  const hasProvinceGeoValue = selectedProvinceId.length > 0 || hasNonEmptyText(deliveryProvinceName);
+  const hasDistrictGeoValue = selectedDistrictId.length > 0 || hasNonEmptyText(deliveryDistrictName);
+  const hasCommuneGeoValue = selectedCommuneId.length > 0 || hasNonEmptyText(deliveryCommuneName);
+  const missingGeoParts: string[] = [];
+  if (!hasProvinceGeoValue) missingGeoParts.push('Province');
+  if (!hasDistrictGeoValue) missingGeoParts.push('City');
+  if (!hasCommuneGeoValue) missingGeoParts.push('Barangay');
+  const hasMissingGeoParts = missingGeoParts.length > 0;
+  const missingGeoMessage = hasMissingGeoParts
+    ? `${missingGeoParts.join(', ')} ${missingGeoParts.length > 1 ? 'are' : 'is'} missing.`
+    : null;
   const effectiveCustomerName = deliveryFullName;
   const effectiveCustomerPhone = deliveryPhoneNumber;
   const customerSummaryLookupPhone = (
@@ -1537,7 +1654,6 @@ export default function OrdersConfirmationPage() {
 
   const openGeoPicker = () => {
     setShowGeoPicker(true);
-    setActiveGeoTab('province');
   };
 
   useEffect(() => {
@@ -1708,10 +1824,10 @@ export default function OrdersConfirmationPage() {
     selectedCommuneId,
   ]);
 
-  const paymentShippingFee = Math.max(0, modalSnapshot.payment.shippingFee);
-  const paymentDiscount = Math.max(0, modalSnapshot.payment.totalDiscount);
-  const paymentSurcharge = Math.max(0, modalSnapshot.payment.surcharge);
-  const paymentBankTransfer = Math.max(0, modalSnapshot.payment.bankTransfer);
+  const paymentShippingFee = Math.max(0, effectivePaymentShippingFee);
+  const paymentDiscount = Math.max(0, effectivePaymentDiscount);
+  const paymentSurcharge = Math.max(0, effectivePaymentSurcharge);
+  const paymentBankTransfer = Math.max(0, effectivePaymentBankTransfer);
   const paymentProductBase = Math.max(
     0,
     modalItems.reduce((sum, item) => sum + Math.max(0, item.retailPrice) * Math.max(0, item.quantity), 0),
@@ -1771,11 +1887,65 @@ export default function OrdersConfirmationPage() {
       }
     }
 
+    const parsedShippingFeeDraft =
+      draftPaymentShippingFee === null ? undefined : parseNumericDraftInput(draftPaymentShippingFee);
+    if (draftPaymentShippingFee !== null && parsedShippingFeeDraft === null) {
+      const errorMessage = 'Shipping fee must be a valid number.';
+      setStatusSaveError(errorMessage);
+      addToast('error', errorMessage);
+      return;
+    }
+    const parsedTotalDiscountDraft =
+      draftPaymentTotalDiscount === null ? undefined : parseNumericDraftInput(draftPaymentTotalDiscount);
+    if (draftPaymentTotalDiscount !== null && parsedTotalDiscountDraft === null) {
+      const errorMessage = 'Discounted must be a valid number.';
+      setStatusSaveError(errorMessage);
+      addToast('error', errorMessage);
+      return;
+    }
+    const parsedBankTransferDraft =
+      draftPaymentBankTransfer === null ? undefined : parseNumericDraftInput(draftPaymentBankTransfer);
+    if (draftPaymentBankTransfer !== null && parsedBankTransferDraft === null) {
+      const errorMessage = 'Bank transfer must be a valid number.';
+      setStatusSaveError(errorMessage);
+      addToast('error', errorMessage);
+      return;
+    }
+    const parsedSurchargeDraft =
+      draftPaymentSurcharge === null ? undefined : parseNumericDraftInput(draftPaymentSurcharge);
+    if (draftPaymentSurcharge !== null && parsedSurchargeDraft === null) {
+      const errorMessage = 'Surcharge must be a valid number.';
+      setStatusSaveError(errorMessage);
+      addToast('error', errorMessage);
+      return;
+    }
+    const shouldUpdateShippingFee =
+      typeof parsedShippingFeeDraft === 'number' &&
+      Math.abs(parsedShippingFeeDraft - modalSnapshot.payment.shippingFee) > 0.0001;
+    const shouldUpdateTotalDiscount =
+      typeof parsedTotalDiscountDraft === 'number' &&
+      Math.abs(parsedTotalDiscountDraft - modalSnapshot.payment.totalDiscount) > 0.0001;
+    const shouldUpdateBankPayments =
+      typeof parsedBankTransferDraft === 'number' &&
+      Math.abs(parsedBankTransferDraft - modalSnapshot.payment.bankTransfer) > 0.0001;
+    const shouldUpdateSurcharge =
+      typeof parsedSurchargeDraft === 'number' &&
+      Math.abs(parsedSurchargeDraft - modalSnapshot.payment.surcharge) > 0.0001;
+
     const payload: Record<string, unknown> = {};
     if (draftStatus !== null) payload.status = draftStatus;
     if (hasTagDraftChanges) payload.tags = resolvedTagsPayload || [];
     if (hasInternalNoteDraftChanges) payload.note = toApiLineBreaks(effectiveInternalNote);
     if (hasPrintingNoteDraftChanges) payload.note_print = toApiLineBreaks(effectivePrintingNote);
+    if (shouldUpdateShippingFee) payload.shipping_fee = parsedShippingFeeDraft;
+    if (shouldUpdateTotalDiscount) payload.total_discount = parsedTotalDiscountDraft;
+    if (shouldUpdateBankPayments) {
+      payload.bank_payments = buildBankPaymentsPayloadFromTransferAmount(
+        modalSnapshot.payment.bankPaymentsRaw,
+        parsedBankTransferDraft as number,
+      );
+    }
+    if (shouldUpdateSurcharge) payload.surcharge = parsedSurchargeDraft;
     if (hasShippingAddressDraftChanges) {
       if (!effectiveDeliveryAddress.fullName.trim() || !effectiveDeliveryAddress.phoneNumber.trim()) {
         const errorMessage = 'Customer name and phone number are required before saving.';
@@ -1794,6 +1964,13 @@ export default function OrdersConfirmationPage() {
       addToast('info', `Updating tags for order ${orderRef}...`);
     } else if (hasInternalNoteDraftChanges || hasPrintingNoteDraftChanges) {
       addToast('info', `Updating notes for order ${orderRef}...`);
+    } else if (
+      shouldUpdateShippingFee ||
+      shouldUpdateTotalDiscount ||
+      shouldUpdateBankPayments ||
+      shouldUpdateSurcharge
+    ) {
+      addToast('info', `Updating payment details for order ${orderRef}...`);
     } else if (hasShippingAddressDraftChanges) {
       addToast('info', `Updating delivery address for order ${orderRef}...`);
     } else {
@@ -2216,21 +2393,85 @@ export default function OrdersConfirmationPage() {
                   {isPaymentExpanded ? (
                     <div className="p-3">
                       <div className="space-y-1 text-xs">
-                        <div className="flex items-center justify-between py-0.5 text-slate-600">
+                        <div className="flex items-center justify-between gap-3 py-0.5 text-slate-600">
                           <span>Shipping fee</span>
-                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentShippingFee)}</span>
+                          <div className="relative w-36">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={
+                                draftPaymentShippingFee !== null
+                                  ? draftPaymentShippingFee
+                                  : String(paymentShippingFee)
+                              }
+                              onChange={(event) => setDraftPaymentShippingFee(event.target.value)}
+                              disabled={!isSelectedOrderEditable || isSavingStatus}
+                              className="h-8 w-full rounded-md border border-slate-200 bg-slate-100 pl-2 pr-7 text-right tabular-nums font-medium text-slate-900 outline-none transition focus:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-70"
+                            />
+                            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-900">
+                              ₱
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between py-0.5 text-slate-600">
+                        <div className="flex items-center justify-between gap-3 py-0.5 text-slate-600">
                           <span>Discounted</span>
-                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentDiscount)}</span>
+                          <div className="relative w-36">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={
+                                draftPaymentTotalDiscount !== null
+                                  ? draftPaymentTotalDiscount
+                                  : String(paymentDiscount)
+                              }
+                              onChange={(event) => setDraftPaymentTotalDiscount(event.target.value)}
+                              disabled={!isSelectedOrderEditable || isSavingStatus}
+                              className="h-8 w-full rounded-md border border-slate-200 bg-slate-100 pl-2 pr-7 text-right tabular-nums font-medium text-slate-900 outline-none transition focus:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-70"
+                            />
+                            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-900">
+                              ₱
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between py-0.5 text-slate-600">
+                        <div className="flex items-center justify-between gap-3 py-0.5 text-slate-600">
                           <span>Bank transfer</span>
-                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentBankTransfer)}</span>
+                          <div className="relative w-36">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={
+                                draftPaymentBankTransfer !== null
+                                  ? draftPaymentBankTransfer
+                                  : String(paymentBankTransfer)
+                              }
+                              onChange={(event) => setDraftPaymentBankTransfer(event.target.value)}
+                              disabled={!isSelectedOrderEditable || isSavingStatus}
+                              className="h-8 w-full rounded-md border border-slate-200 bg-slate-100 pl-2 pr-7 text-right tabular-nums font-medium text-slate-900 outline-none transition focus:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-70"
+                            />
+                            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-900">
+                              ₱
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between py-0.5 text-slate-600">
+                        <div className="flex items-center justify-between gap-3 py-0.5 text-slate-600">
                           <span>Surcharge</span>
-                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentSurcharge)}</span>
+                          <div className="relative w-36">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={
+                                draftPaymentSurcharge !== null
+                                  ? draftPaymentSurcharge
+                                  : String(paymentSurcharge)
+                              }
+                              onChange={(event) => setDraftPaymentSurcharge(event.target.value)}
+                              disabled={!isSelectedOrderEditable || isSavingStatus}
+                              className="h-8 w-full rounded-md border border-slate-200 bg-slate-100 pl-2 pr-7 text-right tabular-nums font-medium text-slate-900 outline-none transition focus:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-70"
+                            />
+                            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-900">
+                              ₱
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -2827,7 +3068,9 @@ export default function OrdersConfirmationPage() {
                           <div
                             className={`group/geo relative flex items-center rounded-md border bg-white transition ${
                               isSelectedOrderEditable
-                                ? 'border-slate-200 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100'
+                                ? hasMissingGeoParts
+                                  ? 'border-rose-300 bg-rose-50/30 focus-within:border-rose-400 focus-within:ring-2 focus-within:ring-rose-100'
+                                  : 'border-slate-200 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100'
                                 : 'border-slate-100 bg-slate-50'
                             }`}
                           >
@@ -2851,7 +3094,11 @@ export default function OrdersConfirmationPage() {
                               disabled={!isSelectedOrderEditable}
                               placeholder="Type to search"
                               className={`w-full rounded-md bg-transparent px-2.5 py-1.5 pr-14 text-xs outline-none ${
-                                isSelectedOrderEditable ? 'text-slate-900' : 'cursor-not-allowed text-slate-500'
+                                isSelectedOrderEditable
+                                  ? hasMissingGeoParts && !showGeoPicker
+                                    ? 'text-rose-700 placeholder:text-rose-400'
+                                    : 'text-slate-900'
+                                  : 'cursor-not-allowed text-slate-500'
                               }`}
                             />
                             {showGeoPicker ? (
@@ -3058,6 +3305,9 @@ export default function OrdersConfirmationPage() {
                           }`}
                         />
                       </div>
+                      {missingGeoMessage ? (
+                        <p className="text-[11px] text-rose-600">{missingGeoMessage}</p>
+                      ) : null}
                       {geoLookupError ? (
                         <p className="text-[11px] text-rose-600">{geoLookupError}</p>
                       ) : null}

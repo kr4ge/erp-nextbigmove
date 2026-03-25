@@ -16,5 +16,9 @@ export interface ConfirmationUpdateStatusJobData {
   targetNote?: string;
   targetNotePrint?: string;
   targetShippingAddress?: Record<string, unknown> | null;
+  targetShippingFee?: number | null;
+  targetTotalDiscount?: number | null;
+  targetBankPayments?: unknown;
+  targetSurcharge?: number | null;
   requestId?: string;
 }

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
 
 export class UpdateConfirmationOrderTagDto {
   @IsString()
@@ -34,4 +34,19 @@ export class UpdateConfirmationOrderStatusDto {
   @IsOptional()
   @IsObject()
   shipping_address?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsNumber()
+  shipping_fee?: number;
+
+  @IsOptional()
+  @IsNumber()
+  total_discount?: number;
+
+  @IsOptional()
+  bank_payments?: unknown;
+
+  @IsOptional()
+  @IsNumber()
+  surcharge?: number;
 }

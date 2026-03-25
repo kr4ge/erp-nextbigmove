@@ -257,6 +257,23 @@ export class OrdersService {
     return normalized;
   }
 
+  private parseOptionalAmountUpdateField(
+    payload: Record<string, unknown>,
+    key: string,
+  ): number | undefined {
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) return undefined;
+    const raw = payload[key];
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (!trimmed) return 0;
+      const parsed = Number.parseFloat(trimmed);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    if (raw === null) return 0;
+    throw new BadRequestException(`${key} must be a valid number`);
+  }
+
   private buildPosStoreAccessWhere(
     tenantId: string,
     allowedTeams: string[],
@@ -856,6 +873,10 @@ export class OrdersService {
       note?: string;
       note_print?: string;
       shipping_address?: Record<string, unknown>;
+      shipping_fee?: number;
+      total_discount?: number;
+      bank_payments?: unknown;
+      surcharge?: number;
     },
   ) {
     try {
@@ -888,16 +909,28 @@ export class OrdersService {
         delete (sanitizedShippingAddress as { id?: unknown }).id;
         targetShippingAddress = sanitizedShippingAddress;
       }
+      const targetShippingFee = this.parseOptionalAmountUpdateField(payload, 'shipping_fee');
+      const hasShippingFeePayload = typeof targetShippingFee === 'number';
+      const targetTotalDiscount = this.parseOptionalAmountUpdateField(payload, 'total_discount');
+      const hasTotalDiscountPayload = typeof targetTotalDiscount === 'number';
+      const hasBankPaymentsPayload = Object.prototype.hasOwnProperty.call(payload, 'bank_payments');
+      const targetBankPayments = hasBankPaymentsPayload ? payload.bank_payments : undefined;
+      const targetSurcharge = this.parseOptionalAmountUpdateField(payload, 'surcharge');
+      const hasSurchargePayload = typeof targetSurcharge === 'number';
 
       if (
         targetStatus === null &&
         !hasTagsPayload &&
         !hasNotePayload &&
         !hasNotePrintPayload &&
-        !hasShippingAddressPayload
+        !hasShippingAddressPayload &&
+        !hasShippingFeePayload &&
+        !hasTotalDiscountPayload &&
+        !hasBankPaymentsPayload &&
+        !hasSurchargePayload
       ) {
         throw new BadRequestException(
-          'Request must include status, tags, note, note_print, and/or shipping_address',
+          'Request must include status, tags, note, note_print, shipping_address, shipping_fee, total_discount, bank_payments, and/or surcharge',
         );
       }
 
@@ -1045,6 +1078,10 @@ export class OrdersService {
                 note_updated: hasNotePayload || undefined,
                 note_print_updated: hasNotePrintPayload || undefined,
                 shipping_address_updated: hasShippingAddressPayload || undefined,
+                shipping_fee_updated: hasShippingFeePayload || undefined,
+                total_discount_updated: hasTotalDiscountPayload || undefined,
+                bank_payments_updated: hasBankPaymentsPayload || undefined,
+                surcharge_updated: hasSurchargePayload || undefined,
                 processing: true,
                 processing_started_at: startedAtIso,
                 processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
@@ -1076,6 +1113,10 @@ export class OrdersService {
           targetNote,
           targetNotePrint,
           targetShippingAddress,
+          targetShippingFee,
+          targetTotalDiscount,
+          targetBankPayments,
+          targetSurcharge,
         });
       } catch (error: any) {
         if (lockedForStatusUpdate) {
@@ -1093,6 +1134,10 @@ export class OrdersService {
             note_updated: hasNotePayload || undefined,
             note_print_updated: hasNotePrintPayload || undefined,
             shipping_address_updated: hasShippingAddressPayload || undefined,
+            shipping_fee_updated: hasShippingFeePayload || undefined,
+            total_discount_updated: hasTotalDiscountPayload || undefined,
+            bank_payments_updated: hasBankPaymentsPayload || undefined,
+            surcharge_updated: hasSurchargePayload || undefined,
             processing: lockedForStatusUpdate,
             processing_started_at: lockedForStatusUpdate
               ? processingRequestedAt.toISOString()
@@ -1117,6 +1162,10 @@ export class OrdersService {
         note_updated: hasNotePayload || undefined,
         note_print_updated: hasNotePrintPayload || undefined,
         shipping_address_updated: hasShippingAddressPayload || undefined,
+        shipping_fee_updated: hasShippingFeePayload || undefined,
+        total_discount_updated: hasTotalDiscountPayload || undefined,
+        bank_payments_updated: hasBankPaymentsPayload || undefined,
+        surcharge_updated: hasSurchargePayload || undefined,
         processing: lockedForStatusUpdate,
         processing_started_at: lockedForStatusUpdate
           ? processingRequestedAt.toISOString()
@@ -1142,7 +1191,7 @@ export class OrdersService {
       }
 
       this.logger.error(
-        `Failed to update confirmation order id=${orderRowId} targetStatus=${payload?.status ?? 'n/a'} targetTags=${Array.isArray(payload?.tags) ? payload.tags.length : 0} targetNote=${Object.prototype.hasOwnProperty.call(payload, 'note') ? 1 : 0} targetNotePrint=${Object.prototype.hasOwnProperty.call(payload, 'note_print') ? 1 : 0} targetShippingAddress=${Object.prototype.hasOwnProperty.call(payload, 'shipping_address') ? 1 : 0}: ${error?.message || 'Unknown error'}`,
+        `Failed to update confirmation order id=${orderRowId} targetStatus=${payload?.status ?? 'n/a'} targetTags=${Array.isArray(payload?.tags) ? payload.tags.length : 0} targetNote=${Object.prototype.hasOwnProperty.call(payload, 'note') ? 1 : 0} targetNotePrint=${Object.prototype.hasOwnProperty.call(payload, 'note_print') ? 1 : 0} targetShippingAddress=${Object.prototype.hasOwnProperty.call(payload, 'shipping_address') ? 1 : 0} targetShippingFee=${Object.prototype.hasOwnProperty.call(payload, 'shipping_fee') ? 1 : 0} targetTotalDiscount=${Object.prototype.hasOwnProperty.call(payload, 'total_discount') ? 1 : 0} targetBankPayments=${Object.prototype.hasOwnProperty.call(payload, 'bank_payments') ? 1 : 0} targetSurcharge=${Object.prototype.hasOwnProperty.call(payload, 'surcharge') ? 1 : 0}: ${error?.message || 'Unknown error'}`,
         error?.stack,
       );
       throw new ServiceUnavailableException(
@@ -1162,13 +1211,21 @@ export class OrdersService {
       !!jobData.targetShippingAddress &&
       typeof jobData.targetShippingAddress === 'object' &&
       !Array.isArray(jobData.targetShippingAddress);
+    const hasShippingFeeUpdate = typeof jobData.targetShippingFee === 'number';
+    const hasTotalDiscountUpdate = typeof jobData.targetTotalDiscount === 'number';
+    const hasBankPaymentsUpdate = typeof jobData.targetBankPayments !== 'undefined';
+    const hasSurchargeUpdate = typeof jobData.targetSurcharge === 'number';
 
     if (
       !hasStatusUpdate &&
       !hasTagsUpdate &&
       !hasNoteUpdate &&
       !hasNotePrintUpdate &&
-      !hasShippingAddressUpdate
+      !hasShippingAddressUpdate &&
+      !hasShippingFeeUpdate &&
+      !hasTotalDiscountUpdate &&
+      !hasBankPaymentsUpdate &&
+      !hasSurchargeUpdate
     ) {
       return { success: false, reason: 'NO_OPERATION' };
     }
@@ -1253,6 +1310,18 @@ export class OrdersService {
     if (hasShippingAddressUpdate) {
       requestBody.shipping_address = jobData.targetShippingAddress;
     }
+    if (hasShippingFeeUpdate) {
+      requestBody.shipping_fee = jobData.targetShippingFee;
+    }
+    if (hasTotalDiscountUpdate) {
+      requestBody.total_discount = jobData.targetTotalDiscount;
+    }
+    if (hasBankPaymentsUpdate) {
+      requestBody.bank_payments = jobData.targetBankPayments;
+    }
+    if (hasSurchargeUpdate) {
+      requestBody.surcharge = jobData.targetSurcharge;
+    }
 
     let response: Response;
     try {
@@ -1299,6 +1368,10 @@ export class OrdersService {
     if (hasNoteUpdate) updates.push('NOTE');
     if (hasNotePrintUpdate) updates.push('NOTE_PRINT');
     if (hasShippingAddressUpdate) updates.push('SHIPPING_ADDRESS');
+    if (hasShippingFeeUpdate) updates.push('SHIPPING_FEE');
+    if (hasTotalDiscountUpdate) updates.push('TOTAL_DISCOUNT');
+    if (hasBankPaymentsUpdate) updates.push('BANK_PAYMENTS');
+    if (hasSurchargeUpdate) updates.push('SURCHARGE');
 
     return {
       success: true,

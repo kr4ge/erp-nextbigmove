@@ -26,6 +26,10 @@ export class OrdersQueueProcessor {
       targetNote,
       targetNotePrint,
       targetShippingAddress,
+      targetShippingFee,
+      targetTotalDiscount,
+      targetBankPayments,
+      targetSurcharge,
     } = job.data;
     const hasShippingAddressUpdate =
       !!targetShippingAddress &&
@@ -33,8 +37,8 @@ export class OrdersQueueProcessor {
       !Array.isArray(targetShippingAddress);
     const targetLabel =
       typeof targetStatus === 'number'
-        ? `status=${targetStatus} tags=${Array.isArray(targetTags) ? targetTags.length : 0} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0} shipping_address=${hasShippingAddressUpdate ? 1 : 0}`
-        : `status=n/a tags=${Array.isArray(targetTags) ? targetTags.length : 0} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0} shipping_address=${hasShippingAddressUpdate ? 1 : 0}`;
+        ? `status=${targetStatus} tags=${Array.isArray(targetTags) ? targetTags.length : 0} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0} shipping_address=${hasShippingAddressUpdate ? 1 : 0} shipping_fee=${typeof targetShippingFee === 'number' ? 1 : 0} total_discount=${typeof targetTotalDiscount === 'number' ? 1 : 0} bank_payments=${typeof targetBankPayments !== 'undefined' ? 1 : 0} surcharge=${typeof targetSurcharge === 'number' ? 1 : 0}`
+        : `status=n/a tags=${Array.isArray(targetTags) ? targetTags.length : 0} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0} shipping_address=${hasShippingAddressUpdate ? 1 : 0} shipping_fee=${typeof targetShippingFee === 'number' ? 1 : 0} total_discount=${typeof targetTotalDiscount === 'number' ? 1 : 0} bank_payments=${typeof targetBankPayments !== 'undefined' ? 1 : 0} surcharge=${typeof targetSurcharge === 'number' ? 1 : 0}`;
 
     this.logger.debug(
       `Processing confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel}`,
