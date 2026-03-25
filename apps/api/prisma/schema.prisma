@@ -910,6 +910,55 @@ model PosTag {
   @@map("pos_tags")
 }
 
+model PosProvince {
+  id          String       @id
+  countryCode Int
+  name        String
+  nameEn      String?
+  newId       String?
+  regionType  String?
+  districts   PosDistrict[]
+  communes    PosCommune[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([countryCode, name])
+  @@map("pos_provinces")
+}
+
+model PosDistrict {
+  id         String       @id
+  provinceId String
+  province   PosProvince  @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  name       String
+  nameEn     String?
+  postcode   Json?
+  communes   PosCommune[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([provinceId, name])
+  @@map("pos_districts")
+}
+
+model PosCommune {
+  id         String      @id
+  provinceId String
+  districtId String
+  province   PosProvince @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  district   PosDistrict @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  name       String
+  nameEn     String?
+  newId      String?
+  postcode   Json?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([provinceId, districtId, name])
+  @@index([districtId, name])
+  @@map("pos_communes")
+}
+
 // ============================================================================
 // RECONCILED MARKETING (Ad-level reconciliation of Meta + POS)
 // ============================================================================

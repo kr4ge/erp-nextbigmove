@@ -15,5 +15,6 @@ export interface ConfirmationUpdateStatusJobData {
   targetTags?: ConfirmationUpdateTagPayload[] | null;
   targetNote?: string;
   targetNotePrint?: string;
+  targetShippingAddress?: Record<string, unknown> | null;
   requestId?: string;
 }

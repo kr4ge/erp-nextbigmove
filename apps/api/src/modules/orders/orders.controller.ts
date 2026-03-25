@@ -31,6 +31,31 @@ export class OrdersController {
     });
   }
 
+  @Get('geo/provinces')
+  @Permissions('pos.read')
+  async listGeoProvinces(
+    @Query('country_code') countryCode?: string,
+  ) {
+    return this.ordersService.listGeoProvinces(countryCode || '63');
+  }
+
+  @Get('geo/districts')
+  @Permissions('pos.read')
+  async listGeoDistricts(
+    @Query('province_id') provinceId?: string,
+  ) {
+    return this.ordersService.listGeoDistricts(provinceId || '');
+  }
+
+  @Get('geo/communes')
+  @Permissions('pos.read')
+  async listGeoCommunes(
+    @Query('province_id') provinceId?: string,
+    @Query('district_id') districtId?: string,
+  ) {
+    return this.ordersService.listGeoCommunes(provinceId || '', districtId);
+  }
+
   @Get('confirmation/history-by-phone')
   @Permissions('pos.read')
   async listConfirmationPhoneHistory(

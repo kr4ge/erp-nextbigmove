@@ -414,6 +414,18 @@ export class OrdersService {
     throw new Error(`Failed ${operationName}`);
   }
 
+  async listGeoProvinces(countryCodeRaw: string) {
+    return this.integrationService.listPosGeoProvinces(countryCodeRaw);
+  }
+
+  async listGeoDistricts(provinceIdRaw: string) {
+    return this.integrationService.listPosGeoDistricts(provinceIdRaw);
+  }
+
+  async listGeoCommunes(provinceIdRaw: string, districtIdRaw?: string) {
+    return this.integrationService.listPosGeoCommunes(provinceIdRaw, districtIdRaw);
+  }
+
   async listConfirmationOrders(params: ListConfirmationOrdersParams) {
     const today = this.getTodayDateLocal();
     let startDate = this.normalizeDateLocal(params.startDate, today);
@@ -838,7 +850,13 @@ export class OrdersService {
 
   async updateConfirmationOrderStatus(
     orderRowId: string,
-    payload: { status?: number; tags?: Array<{ id: string; name: string }>; note?: string; note_print?: string },
+    payload: {
+      status?: number;
+      tags?: Array<{ id: string; name: string }>;
+      note?: string;
+      note_print?: string;
+      shipping_address?: Record<string, unknown>;
+    },
   ) {
     try {
       const targetStatus =
@@ -853,9 +871,34 @@ export class OrdersService {
       const targetNotePrint = hasNotePrintPayload
         ? (typeof payload.note_print === 'string' ? payload.note_print : '')
         : undefined;
+      const hasShippingAddressPayload = Object.prototype.hasOwnProperty.call(payload, 'shipping_address');
+      let targetShippingAddress: Record<string, unknown> | undefined;
+      if (hasShippingAddressPayload) {
+        const shippingAddressValue = payload.shipping_address;
+        if (
+          !shippingAddressValue ||
+          typeof shippingAddressValue !== 'object' ||
+          Array.isArray(shippingAddressValue)
+        ) {
+          throw new BadRequestException('shipping_address must be an object');
+        }
+        const sanitizedShippingAddress = {
+          ...(shippingAddressValue as Record<string, unknown>),
+        };
+        delete (sanitizedShippingAddress as { id?: unknown }).id;
+        targetShippingAddress = sanitizedShippingAddress;
+      }
 
-      if (targetStatus === null && !hasTagsPayload && !hasNotePayload && !hasNotePrintPayload) {
-        throw new BadRequestException('Request must include status, tags, note, and/or note_print');
+      if (
+        targetStatus === null &&
+        !hasTagsPayload &&
+        !hasNotePayload &&
+        !hasNotePrintPayload &&
+        !hasShippingAddressPayload
+      ) {
+        throw new BadRequestException(
+          'Request must include status, tags, note, note_print, and/or shipping_address',
+        );
       }
 
       if (targetStatus !== null && !this.allowedConfirmationStatusUpdates.has(targetStatus)) {
@@ -1001,6 +1044,7 @@ export class OrdersService {
                 tags_count: targetTags?.length ?? undefined,
                 note_updated: hasNotePayload || undefined,
                 note_print_updated: hasNotePrintPayload || undefined,
+                shipping_address_updated: hasShippingAddressPayload || undefined,
                 processing: true,
                 processing_started_at: startedAtIso,
                 processing_timeout_seconds: this.getConfirmationUpdateProcessingTtlSeconds(),
@@ -1031,6 +1075,7 @@ export class OrdersService {
           targetTags: targetTags ?? null,
           targetNote,
           targetNotePrint,
+          targetShippingAddress,
         });
       } catch (error: any) {
         if (lockedForStatusUpdate) {
@@ -1047,6 +1092,7 @@ export class OrdersService {
             tags_count: targetTags?.length ?? undefined,
             note_updated: hasNotePayload || undefined,
             note_print_updated: hasNotePrintPayload || undefined,
+            shipping_address_updated: hasShippingAddressPayload || undefined,
             processing: lockedForStatusUpdate,
             processing_started_at: lockedForStatusUpdate
               ? processingRequestedAt.toISOString()
@@ -1070,6 +1116,7 @@ export class OrdersService {
         tags_count: targetTags?.length ?? undefined,
         note_updated: hasNotePayload || undefined,
         note_print_updated: hasNotePrintPayload || undefined,
+        shipping_address_updated: hasShippingAddressPayload || undefined,
         processing: lockedForStatusUpdate,
         processing_started_at: lockedForStatusUpdate
           ? processingRequestedAt.toISOString()
@@ -1095,7 +1142,7 @@ export class OrdersService {
       }
 
       this.logger.error(
-        `Failed to update confirmation order id=${orderRowId} targetStatus=${payload?.status ?? 'n/a'} targetTags=${Array.isArray(payload?.tags) ? payload.tags.length : 0} targetNote=${Object.prototype.hasOwnProperty.call(payload, 'note') ? 1 : 0} targetNotePrint=${Object.prototype.hasOwnProperty.call(payload, 'note_print') ? 1 : 0}: ${error?.message || 'Unknown error'}`,
+        `Failed to update confirmation order id=${orderRowId} targetStatus=${payload?.status ?? 'n/a'} targetTags=${Array.isArray(payload?.tags) ? payload.tags.length : 0} targetNote=${Object.prototype.hasOwnProperty.call(payload, 'note') ? 1 : 0} targetNotePrint=${Object.prototype.hasOwnProperty.call(payload, 'note_print') ? 1 : 0} targetShippingAddress=${Object.prototype.hasOwnProperty.call(payload, 'shipping_address') ? 1 : 0}: ${error?.message || 'Unknown error'}`,
         error?.stack,
       );
       throw new ServiceUnavailableException(
@@ -1111,8 +1158,18 @@ export class OrdersService {
     const hasTagsUpdate = Array.isArray(jobData.targetTags);
     const hasNoteUpdate = typeof jobData.targetNote === 'string';
     const hasNotePrintUpdate = typeof jobData.targetNotePrint === 'string';
+    const hasShippingAddressUpdate =
+      !!jobData.targetShippingAddress &&
+      typeof jobData.targetShippingAddress === 'object' &&
+      !Array.isArray(jobData.targetShippingAddress);
 
-    if (!hasStatusUpdate && !hasTagsUpdate && !hasNoteUpdate && !hasNotePrintUpdate) {
+    if (
+      !hasStatusUpdate &&
+      !hasTagsUpdate &&
+      !hasNoteUpdate &&
+      !hasNotePrintUpdate &&
+      !hasShippingAddressUpdate
+    ) {
       return { success: false, reason: 'NO_OPERATION' };
     }
 
@@ -1193,6 +1250,9 @@ export class OrdersService {
     if (hasNotePrintUpdate) {
       requestBody.note_print = jobData.targetNotePrint || '';
     }
+    if (hasShippingAddressUpdate) {
+      requestBody.shipping_address = jobData.targetShippingAddress;
+    }
 
     let response: Response;
     try {
@@ -1238,6 +1298,7 @@ export class OrdersService {
     if (hasTagsUpdate) updates.push('TAGS');
     if (hasNoteUpdate) updates.push('NOTE');
     if (hasNotePrintUpdate) updates.push('NOTE_PRINT');
+    if (hasShippingAddressUpdate) updates.push('SHIPPING_ADDRESS');
 
     return {
       success: true,

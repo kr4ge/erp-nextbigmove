@@ -3,16 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Link2, MessageCircle, PencilLine, PhoneCall, Wifi, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardCopy, CreditCard, Link2, MapPin, MessageCircle, Package, PencilLine, PhoneCall, Search, StickyNote, Tag, User, Wifi, X } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { workflowSocket } from '@/lib/socket-client';
-import { PageHeader } from '@/components/ui/page-header';
+
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
 const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
+const GEO_COUNTRY_CODE = '63';
 
 const formatDateInTimezone = (date: Date) =>
   new Intl.DateTimeFormat('en-CA', {
@@ -126,13 +127,13 @@ const StatusBadge = ({
 
   return (
     <div
-      className={`inline-flex items-center justify-between gap-3 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm ${
+      className={`inline-flex items-center justify-between gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold text-white shadow-sm ${
         className || ''
       }`}
       style={{ backgroundColor: statusColor }}
     >
       <span className="truncate">{statusLabel}</span>
-      {showChevron ? <ChevronDown className="h-4 w-4 shrink-0 text-white/90" /> : null}
+      {showChevron ? <ChevronDown className="h-3 w-3 shrink-0 text-white/90" /> : null}
     </div>
   );
 };
@@ -269,6 +270,37 @@ type ConfirmationTagOptionsResponse = {
   total: number;
 };
 
+type GeoProvinceOption = {
+  id: string;
+  name: string;
+  name_en?: string | null;
+};
+
+type GeoDistrictOption = {
+  id: string;
+  name: string;
+  name_en?: string | null;
+};
+
+type GeoCommuneOption = {
+  id: string;
+  district_id: string;
+  name: string;
+  name_en?: string | null;
+};
+
+type GeoProvincesResponse = {
+  items?: GeoProvinceOption[];
+};
+
+type GeoDistrictsResponse = {
+  items?: GeoDistrictOption[];
+};
+
+type GeoCommunesResponse = {
+  items?: GeoCommuneOption[];
+};
+
 const normalizeTagNameKey = (value: string): string => value.trim().toLowerCase();
 
 const normalizeTagDetails = (
@@ -331,17 +363,26 @@ type ParsedOrderSnapshotCustomer = {
   dateOfBirth: string;
   gender: string;
   conversationLink: string;
+  shopCustomerAddresses: ParsedDeliveryAddress[];
   succeedOrderCount: number;
   orderCount: number;
 };
 
-type ParsedOrderSnapshotShippingAddress = {
+type ParsedDeliveryAddress = {
+  id: string;
   fullName: string;
   phoneNumber: string;
   address: string;
+  fullAddress: string;
   communeName: string;
   districtName: string;
   provinceName: string;
+  communeId: string;
+  districtId: string;
+  provinceId: string;
+  countryCode: string;
+  postCode: string;
+  payloadWithoutId: Record<string, unknown>;
 };
 
 type ParsedOrderSnapshotPayment = {
@@ -357,7 +398,7 @@ type ParsedOrderSnapshot = {
   notePrint: string;
   items: ParsedSnapshotItem[];
   customer: ParsedOrderSnapshotCustomer;
-  shippingAddress: ParsedOrderSnapshotShippingAddress;
+  shippingAddress: ParsedDeliveryAddress;
   payment: ParsedOrderSnapshotPayment;
   orderLink: string;
   conversationId: string;
@@ -396,10 +437,19 @@ const toText = (value: unknown): string => {
 const hasNonEmptyText = (value: string | null | undefined): boolean =>
   typeof value === 'string' && value.trim().length > 0;
 
-const getDeliveryFieldClass = (hasValue: boolean): string =>
-  hasValue
-    ? 'rounded-md bg-slate-100 px-3 py-2 text-slate-900'
-    : 'rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-rose-700';
+const composeDeliveryFullAddress = (value: Pick<
+  ParsedDeliveryAddress,
+  'address' | 'communeName' | 'districtName' | 'provinceName'
+>): string => {
+  const street = value.address.trim();
+  const area = [value.communeName, value.districtName, value.provinceName]
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .join(', ');
+
+  if (street && area) return `${street}, ${area}`;
+  return street || area;
+};
 
 const toCount = (value: unknown): number => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -481,6 +531,101 @@ const parseSnapshotItems = (value: unknown): ParsedSnapshotItem[] => {
     .filter((entry): entry is ParsedSnapshotItem => !!entry);
 };
 
+const removeIdFromAddressPayload = (value: Record<string, unknown> | null): Record<string, unknown> => {
+  if (!value) return {};
+  const next = { ...value };
+  delete (next as { id?: unknown }).id;
+  return next;
+};
+
+const parseDeliveryAddress = (value: Record<string, unknown> | null): ParsedDeliveryAddress => {
+  const address = value || {};
+  const payloadWithoutId = removeIdFromAddressPayload(value);
+
+  return {
+    id: toText(address.id),
+    fullName: toText(address.full_name || address.fullName),
+    phoneNumber: toText(address.phone_number || address.phoneNumber),
+    address: toText(address.address),
+    fullAddress: toText(address.full_address || address.fullAddress),
+    communeName: toText(address.commune_name || address.commnue_name || address.communeName),
+    districtName: toText(address.district_name || address.districtName),
+    provinceName: toText(address.province_name || address.provinceName),
+    communeId: toText(address.commune_id || address.communeId),
+    districtId: toText(address.district_id || address.districtId),
+    provinceId: toText(address.province_id || address.provinceId),
+    countryCode: toText(address.country_code || address.countryCode),
+    postCode: toText(address.post_code || address.postCode),
+    payloadWithoutId,
+  };
+};
+
+const parseCustomerShopAddresses = (value: unknown): ParsedDeliveryAddress[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => parseDeliveryAddress(toRecord(entry)))
+    .filter((entry) => {
+      return (
+        hasNonEmptyText(entry.fullAddress) ||
+        hasNonEmptyText(entry.address) ||
+        hasNonEmptyText(entry.phoneNumber) ||
+        hasNonEmptyText(entry.fullName)
+      );
+    });
+};
+
+const cloneDeliveryAddress = (value: ParsedDeliveryAddress): ParsedDeliveryAddress => ({
+  ...value,
+  payloadWithoutId: { ...(value.payloadWithoutId || {}) },
+});
+
+const toNullableShippingText = (value: string): string | null => {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const toNullableShippingCountryCode = (value: string): number | string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const numeric = Number(trimmed);
+  return Number.isFinite(numeric) ? numeric : trimmed;
+};
+
+const buildShippingAddressPayload = (value: ParsedDeliveryAddress): Record<string, unknown> => {
+  const payload: Record<string, unknown> = {
+    ...(value.payloadWithoutId || {}),
+    full_name: toNullableShippingText(value.fullName),
+    phone_number: toNullableShippingText(value.phoneNumber),
+    address: toNullableShippingText(value.address),
+    full_address: toNullableShippingText(value.fullAddress),
+    commune_name: toNullableShippingText(value.communeName),
+    district_name: toNullableShippingText(value.districtName),
+    province_name: toNullableShippingText(value.provinceName),
+    commune_id: toNullableShippingText(value.communeId),
+    district_id: toNullableShippingText(value.districtId),
+    province_id: toNullableShippingText(value.provinceId),
+    country_code: toNullableShippingCountryCode(value.countryCode),
+    post_code: toNullableShippingText(value.postCode),
+  };
+  delete (payload as { id?: unknown }).id;
+  return payload;
+};
+
+const toComparableShippingAddress = (value: ParsedDeliveryAddress): Record<string, string> => ({
+  full_name: value.fullName,
+  phone_number: value.phoneNumber,
+  address: value.address,
+  full_address: value.fullAddress,
+  commune_name: value.communeName,
+  district_name: value.districtName,
+  province_name: value.provinceName,
+  commune_id: value.communeId,
+  district_id: value.districtId,
+  province_id: value.provinceId,
+  country_code: value.countryCode,
+  post_code: value.postCode,
+});
+
 const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
   const snapshot = toRecord(value);
   const customerRaw = toRecord(snapshot?.customer);
@@ -503,17 +648,11 @@ const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
       dateOfBirth: toText(customerRaw?.date_of_birth),
       gender: toText(customerRaw?.gender),
       conversationLink: toText(customerRaw?.conversation_link || customerRaw?.conversationLink),
+      shopCustomerAddresses: parseCustomerShopAddresses(customerRaw?.shop_customer_addresses),
       succeedOrderCount: toCount(customerRaw?.succeed_order_count),
       orderCount: toCount(customerRaw?.order_count),
     },
-    shippingAddress: {
-      fullName: toText(shippingRaw?.full_name),
-      phoneNumber: toText(shippingRaw?.phone_number),
-      address: toText(shippingRaw?.address),
-      communeName: toText(shippingRaw?.commune_name || shippingRaw?.commnue_name),
-      districtName: toText(shippingRaw?.district_name),
-      provinceName: toText(shippingRaw?.province_name),
-    },
+    shippingAddress: parseDeliveryAddress(shippingRaw),
     payment: {
       totalDiscount: toAmount(snapshot?.total_discount),
       shippingFee: toAmount(snapshot?.shipping_fee),
@@ -615,11 +754,26 @@ export default function OrdersConfirmationPage() {
   const [activeNoteTab, setActiveNoteTab] = useState<'all' | 'internal' | 'printing'>('all');
   const [draftInternalNote, setDraftInternalNote] = useState<string | null>(null);
   const [draftPrintingNote, setDraftPrintingNote] = useState<string | null>(null);
+  const [selectedDeliveryAddressKey, setSelectedDeliveryAddressKey] = useState<string>('');
+  const [draftDeliveryAddress, setDraftDeliveryAddress] = useState<ParsedDeliveryAddress | null>(null);
+  const [geoProvinces, setGeoProvinces] = useState<GeoProvinceOption[]>([]);
+  const [geoDistricts, setGeoDistricts] = useState<GeoDistrictOption[]>([]);
+  const [geoCommunes, setGeoCommunes] = useState<GeoCommuneOption[]>([]);
+  const [isGeoProvincesLoading, setIsGeoProvincesLoading] = useState(false);
+  const [isGeoDistrictsLoading, setIsGeoDistrictsLoading] = useState(false);
+  const [isGeoCommunesLoading, setIsGeoCommunesLoading] = useState(false);
+  const [geoLookupError, setGeoLookupError] = useState<string | null>(null);
+  const [showGeoPicker, setShowGeoPicker] = useState(false);
+  const [geoSearchTerm, setGeoSearchTerm] = useState('');
+  const [activeGeoTab, setActiveGeoTab] = useState<'province' | 'district' | 'commune'>('province');
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [tagOptions, setTagOptions] = useState<ConfirmationTagOptionsResponse | null>(null);
   const [isTagOptionsLoading, setIsTagOptionsLoading] = useState(false);
   const [tagOptionsError, setTagOptionsError] = useState<string | null>(null);
   const [activeTagGroupId, setActiveTagGroupId] = useState<string | null>(null);
+  const [isPaymentExpanded, setIsPaymentExpanded] = useState(false);
+  const [isPhoneCopied, setIsPhoneCopied] = useState(false);
+  const phoneCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shopOptions, setShopOptions] = useState<ShopOption[]>([]);
   const [selectedShopIds, setSelectedShopIds] = useState<string[]>([]);
   const [isAllShopsMode, setIsAllShopsMode] = useState(true);
@@ -627,6 +781,7 @@ export default function OrdersConfirmationPage() {
   const [showShopPicker, setShowShopPicker] = useState(false);
   const shopPickerRef = useRef<HTMLDivElement | null>(null);
   const tagPickerRef = useRef<HTMLDivElement | null>(null);
+  const geoPickerRef = useRef<HTMLDivElement | null>(null);
   const conversationCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [page, setPage] = useState(1);
@@ -842,10 +997,14 @@ export default function OrdersConfirmationPage() {
         setShowTagPicker(false);
         setActiveTagGroupId(null);
       }
+      if (showGeoPicker && geoPickerRef.current && target && !geoPickerRef.current.contains(target)) {
+        setShowGeoPicker(false);
+        setGeoSearchTerm('');
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showShopPicker, showTagPicker]);
+  }, [showShopPicker, showTagPicker, showGeoPicker]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -918,6 +1077,18 @@ export default function OrdersConfirmationPage() {
     if (!selectedOrderForModal) {
       setDraftStatus(null);
       setDraftTags(null);
+      setSelectedDeliveryAddressKey('');
+      setDraftDeliveryAddress(null);
+      setGeoProvinces([]);
+      setGeoDistricts([]);
+      setGeoCommunes([]);
+      setIsGeoProvincesLoading(false);
+      setIsGeoDistrictsLoading(false);
+      setIsGeoCommunesLoading(false);
+      setGeoLookupError(null);
+      setShowGeoPicker(false);
+      setGeoSearchTerm('');
+      setActiveGeoTab('province');
       setStatusSaveError(null);
       setIsSavingStatus(false);
       setIsStatusMenuOpen(false);
@@ -945,6 +1116,16 @@ export default function OrdersConfirmationPage() {
     setActiveNoteTab('all');
     setDraftInternalNote(null);
     setDraftPrintingNote(null);
+    setSelectedDeliveryAddressKey('');
+    setDraftDeliveryAddress(null);
+    setGeoDistricts([]);
+    setGeoCommunes([]);
+    setIsGeoDistrictsLoading(false);
+    setIsGeoCommunesLoading(false);
+    setGeoLookupError(null);
+    setShowGeoPicker(false);
+    setGeoSearchTerm('');
+    setActiveGeoTab('province');
     setStatusSaveError(null);
     setIsSavingStatus(false);
     setIsConversationLinkCopied(false);
@@ -1015,12 +1196,6 @@ export default function OrdersConfirmationPage() {
       ? selectedOrderForModal.status
       : Number(selectedOrderForModal?.status ?? NaN);
   const isSelectedOrderEditable = selectedOrderStatusNumber === 0;
-  const customerSummaryLookupPhone = (
-    modalSnapshot.customer.phone ||
-    selectedOrderForModal?.customer_phone ||
-    ''
-  ).trim();
-  const canOpenPhoneHistory = customerSummaryLookupPhone.length > 0;
   const phoneHistoryStartRow =
     phoneHistoryPagination.total === 0 ? 0 : (phoneHistoryPagination.page - 1) * phoneHistoryPagination.limit + 1;
   const phoneHistoryEndRow = Math.min(
@@ -1057,7 +1232,7 @@ export default function OrdersConfirmationPage() {
     normalizeLineBreaks(effectiveInternalNote) !== normalizeLineBreaks(modalSnapshot.note);
   const hasPrintingNoteDraftChanges =
     normalizeLineBreaks(effectivePrintingNote) !== normalizeLineBreaks(modalSnapshot.notePrint);
-  const hasPendingChanges =
+  const hasPendingChangesBase =
     hasStatusDraftChanges ||
     hasTagDraftChanges ||
     hasInternalNoteDraftChanges ||
@@ -1076,7 +1251,7 @@ export default function OrdersConfirmationPage() {
     const normalizedNext = normalizeTagDetails(nextTags, []);
     setDraftTags(normalizedNext);
   };
-  const addDraftTag = (tag: TagOptionItem) => {
+  const addDraftTag = (tag: TagOptionItem, groupTags?: TagOptionItem[]) => {
     const name = tag.name.trim();
     const id = tag.tag_id.trim();
     if (!name || !id) return;
@@ -1084,7 +1259,12 @@ export default function OrdersConfirmationPage() {
       (entry) => normalizeTagNameKey(entry.name) === normalizeTagNameKey(name),
     );
     if (exists) return;
-    applyDraftTags([...effectiveDraftTags, { id, name }]);
+    let base = effectiveDraftTags;
+    if (groupTags && groupTags.length > 0) {
+      const groupTagKeys = new Set(groupTags.map((gt) => normalizeTagNameKey(gt.name)));
+      base = base.filter((entry) => !groupTagKeys.has(normalizeTagNameKey(entry.name)));
+    }
+    applyDraftTags([...base, { id, name }]);
   };
   const removeDraftTag = (tagName: string) => {
     applyDraftTags(
@@ -1155,29 +1335,390 @@ export default function OrdersConfirmationPage() {
     }
   };
 
-  const deliveryFullName = modalSnapshot.shippingAddress.fullName;
-  const deliveryPhoneNumber = modalSnapshot.shippingAddress.phoneNumber;
-  const deliveryAddress = modalSnapshot.shippingAddress.address;
-  const deliveryCommuneName = modalSnapshot.shippingAddress.communeName;
-  const deliveryDistrictName = modalSnapshot.shippingAddress.districtName;
-  const deliveryProvinceName = modalSnapshot.shippingAddress.provinceName;
-  const hasDeliveryFullName = hasNonEmptyText(deliveryFullName);
-  const hasDeliveryPhoneNumber = hasNonEmptyText(deliveryPhoneNumber);
-  const hasDeliveryAddress = hasNonEmptyText(deliveryAddress);
-  const hasDeliveryCommuneName = hasNonEmptyText(deliveryCommuneName);
-  const hasDeliveryDistrictName = hasNonEmptyText(deliveryDistrictName);
-  const hasDeliveryProvinceName = hasNonEmptyText(deliveryProvinceName);
-  const hasDeliveryArea = hasDeliveryCommuneName && hasDeliveryDistrictName && hasDeliveryProvinceName;
-  const deliveryAreaText = [deliveryCommuneName, deliveryDistrictName, deliveryProvinceName]
+  const currentDeliveryAddress = modalSnapshot.shippingAddress;
+  const getDeliveryComparableKey = (address: ParsedDeliveryAddress): string => {
+    return [
+      (address.fullAddress || address.address || '').trim().toLowerCase(),
+      (address.fullName || '').trim().toLowerCase(),
+      (address.phoneNumber || '').trim().toLowerCase(),
+      (address.communeId || '').trim().toLowerCase(),
+      (address.districtId || '').trim().toLowerCase(),
+      (address.provinceId || '').trim().toLowerCase(),
+    ].join('|');
+  };
+  const currentDeliveryComparableKey = getDeliveryComparableKey(currentDeliveryAddress);
+  const deliveryAddressOptions = modalSnapshot.customer.shopCustomerAddresses
+    .map((entry, idx) => ({ entry, idx }))
+    .filter(({ idx, entry }) => {
+      if (idx === 0) return false;
+      return getDeliveryComparableKey(entry) !== currentDeliveryComparableKey;
+    })
+    .map(({ entry, idx }) => ({
+      key: `${idx}:${entry.id || entry.phoneNumber || entry.fullAddress || entry.address}`,
+      index: idx,
+      value: entry,
+      label:
+        `${idx} - ${entry.fullAddress || entry.address || 'Unnamed address'}`,
+    }));
+  const selectedDeliveryAddressOption =
+    deliveryAddressOptions.find((option) => option.key === selectedDeliveryAddressKey) || null;
+  const selectedOrCurrentDeliveryAddress = selectedDeliveryAddressOption?.value || currentDeliveryAddress;
+  const effectiveDeliveryAddress = draftDeliveryAddress || selectedOrCurrentDeliveryAddress;
+  const selectedProvinceId = effectiveDeliveryAddress.provinceId.trim();
+  const selectedDistrictId = effectiveDeliveryAddress.districtId.trim();
+  const selectedCommuneId = effectiveDeliveryAddress.communeId.trim();
+  const hasShippingAddressDraftChanges =
+    JSON.stringify(toComparableShippingAddress(effectiveDeliveryAddress)) !==
+    JSON.stringify(toComparableShippingAddress(currentDeliveryAddress));
+  const hasPendingChanges = hasPendingChangesBase || hasShippingAddressDraftChanges;
+
+  const deliveryFullName = effectiveDeliveryAddress.fullName;
+  const deliveryPhoneNumber = effectiveDeliveryAddress.phoneNumber;
+  const deliveryAddress = effectiveDeliveryAddress.address;
+  const deliveryCommuneName = effectiveDeliveryAddress.communeName;
+  const deliveryDistrictName = effectiveDeliveryAddress.districtName;
+  const deliveryProvinceName = effectiveDeliveryAddress.provinceName;
+  const deliveryAreaText = [deliveryProvinceName, deliveryDistrictName, deliveryCommuneName]
     .filter((entry) => hasNonEmptyText(entry))
     .join(', ');
+  const geoSearchNormalized = geoSearchTerm.trim().toLowerCase();
+  const matchesGeoSearch = (name: string, nameEn?: string | null): boolean => {
+    if (!geoSearchNormalized) return true;
+    const source = `${name} ${nameEn || ''}`.toLowerCase();
+    return source.includes(geoSearchNormalized);
+  };
+  const filteredGeoProvinces = geoProvinces.filter((entry) =>
+    matchesGeoSearch(entry.name, entry.name_en),
+  );
+  const filteredGeoDistricts = geoDistricts.filter((entry) =>
+    matchesGeoSearch(entry.name, entry.name_en),
+  );
+  const filteredGeoCommunes = geoCommunes.filter((entry) =>
+    matchesGeoSearch(entry.name, entry.name_en),
+  );
+  const selectedProvinceLabel =
+    geoProvinces.find((entry) => entry.id === selectedProvinceId)?.name ||
+    deliveryProvinceName ||
+    'Province/State';
+  const selectedDistrictLabel =
+    geoDistricts.find((entry) => entry.id === selectedDistrictId)?.name ||
+    deliveryDistrictName ||
+    'City';
+  const selectedCommuneLabel =
+    geoCommunes.find((entry) => entry.id === selectedCommuneId)?.name ||
+    deliveryCommuneName ||
+    'Barangay';
+  const effectiveCustomerName = deliveryFullName;
+  const effectiveCustomerPhone = deliveryPhoneNumber;
+  const customerSummaryLookupPhone = (
+    effectiveCustomerPhone ||
+    selectedOrderForModal?.customer_phone ||
+    ''
+  ).trim();
+  const canOpenPhoneHistory = customerSummaryLookupPhone.length > 0;
+
+  type EditableDeliveryField =
+    | 'fullName'
+    | 'phoneNumber'
+    | 'address'
+    | 'fullAddress'
+    | 'communeName'
+    | 'districtName'
+    | 'provinceName'
+    | 'postCode';
+  const updateDraftDeliveryAddress = (field: EditableDeliveryField, nextValue: string) => {
+    setDraftDeliveryAddress((prev) => {
+      const base = prev
+        ? cloneDeliveryAddress(prev)
+        : cloneDeliveryAddress(selectedOrCurrentDeliveryAddress);
+      const next: ParsedDeliveryAddress = {
+        ...base,
+        [field]: nextValue,
+      };
+      if (
+        field === 'address' ||
+        field === 'communeName' ||
+        field === 'districtName' ||
+        field === 'provinceName'
+      ) {
+        next.fullAddress = composeDeliveryFullAddress(next);
+      }
+      return next;
+    });
+  };
+
+  const handleProvinceChange = (provinceId: string) => {
+    const selected = geoProvinces.find((entry) => entry.id === provinceId);
+    setDraftDeliveryAddress((prev) => {
+      const base = prev
+        ? cloneDeliveryAddress(prev)
+        : cloneDeliveryAddress(selectedOrCurrentDeliveryAddress);
+      const next: ParsedDeliveryAddress = {
+        ...base,
+        provinceId: selected ? selected.id : '',
+        provinceName: selected ? (selected.name || selected.name_en || '') : '',
+        districtId: '',
+        districtName: '',
+        communeId: '',
+        communeName: '',
+        postCode: '',
+        countryCode: GEO_COUNTRY_CODE,
+      };
+      next.fullAddress = composeDeliveryFullAddress(next);
+      return next;
+    });
+    setGeoSearchTerm('');
+    setActiveGeoTab('district');
+  };
+
+  const handleDistrictChange = (districtId: string) => {
+    const selected = geoDistricts.find((entry) => entry.id === districtId);
+    setDraftDeliveryAddress((prev) => {
+      const base = prev
+        ? cloneDeliveryAddress(prev)
+        : cloneDeliveryAddress(selectedOrCurrentDeliveryAddress);
+      const next: ParsedDeliveryAddress = {
+        ...base,
+        districtId: selected ? selected.id : '',
+        districtName: selected ? (selected.name || selected.name_en || '') : '',
+        communeId: '',
+        communeName: '',
+        postCode: '',
+        countryCode: GEO_COUNTRY_CODE,
+      };
+      next.fullAddress = composeDeliveryFullAddress(next);
+      return next;
+    });
+    setGeoSearchTerm('');
+    setActiveGeoTab('commune');
+  };
+
+  const handleCommuneChange = (communeId: string) => {
+    const selected = geoCommunes.find((entry) => entry.id === communeId);
+    setDraftDeliveryAddress((prev) => {
+      const base = prev
+        ? cloneDeliveryAddress(prev)
+        : cloneDeliveryAddress(selectedOrCurrentDeliveryAddress);
+      const next: ParsedDeliveryAddress = {
+        ...base,
+        communeId: selected ? selected.id : '',
+        communeName: selected ? (selected.name || selected.name_en || '') : '',
+        countryCode: GEO_COUNTRY_CODE,
+      };
+      next.fullAddress = composeDeliveryFullAddress(next);
+      return next;
+    });
+    setGeoSearchTerm('');
+    setShowGeoPicker(false);
+  };
+
+  const clearGeoLocationSelection = () => {
+    setDraftDeliveryAddress((prev) => {
+      const base = prev
+        ? cloneDeliveryAddress(prev)
+        : cloneDeliveryAddress(selectedOrCurrentDeliveryAddress);
+      const next: ParsedDeliveryAddress = {
+        ...base,
+        provinceId: '',
+        provinceName: '',
+        districtId: '',
+        districtName: '',
+        communeId: '',
+        communeName: '',
+        postCode: '',
+        countryCode: GEO_COUNTRY_CODE,
+      };
+      next.fullAddress = composeDeliveryFullAddress(next);
+      return next;
+    });
+    setGeoSearchTerm('');
+    setActiveGeoTab('province');
+  };
+
+  const openGeoPicker = () => {
+    setShowGeoPicker(true);
+    setActiveGeoTab('province');
+  };
+
+  useEffect(() => {
+    if (!selectedOrderForModal) return;
+
+    let cancelled = false;
+    setIsGeoProvincesLoading(true);
+    setGeoLookupError(null);
+
+    apiClient
+      .get<GeoProvincesResponse>(`/orders/geo/provinces?country_code=${GEO_COUNTRY_CODE}`)
+      .then((response) => {
+        if (cancelled) return;
+        const items = Array.isArray(response.data?.items) ? response.data.items : [];
+        setGeoProvinces(items);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message =
+          (typeof error === 'object' &&
+            error !== null &&
+            'response' in error &&
+            typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
+            (error as { response?: { data?: { message?: string } } }).response?.data?.message) ||
+          (error instanceof Error ? error.message : null) ||
+          'Failed to load province options';
+        setGeoLookupError(message);
+        setGeoProvinces([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsGeoProvincesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOrderForModal?.id]);
+
+  useEffect(() => {
+    if (!selectedOrderForModal) return;
+
+    if (!selectedProvinceId) {
+      setGeoDistricts([]);
+      setGeoCommunes([]);
+      setIsGeoDistrictsLoading(false);
+      setIsGeoCommunesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsGeoDistrictsLoading(true);
+    setGeoLookupError(null);
+
+    apiClient
+      .get<GeoDistrictsResponse>(
+        `/orders/geo/districts?province_id=${encodeURIComponent(selectedProvinceId)}`,
+      )
+      .then((response) => {
+        if (cancelled) return;
+        const items = Array.isArray(response.data?.items) ? response.data.items : [];
+        setGeoDistricts(items);
+        if (selectedDistrictId && !items.some((entry) => entry.id === selectedDistrictId)) {
+          setDraftDeliveryAddress((prev) => {
+            if (!prev) return prev;
+            const base = cloneDeliveryAddress(prev);
+            const next: ParsedDeliveryAddress = {
+              ...base,
+              districtId: '',
+              districtName: '',
+              communeId: '',
+              communeName: '',
+              postCode: '',
+              countryCode: GEO_COUNTRY_CODE,
+            };
+            next.fullAddress = composeDeliveryFullAddress(next);
+            return next;
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message =
+          (typeof error === 'object' &&
+            error !== null &&
+            'response' in error &&
+            typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
+            (error as { response?: { data?: { message?: string } } }).response?.data?.message) ||
+          (error instanceof Error ? error.message : null) ||
+          'Failed to load city options';
+        setGeoLookupError(message);
+        setGeoDistricts([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsGeoDistrictsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOrderForModal?.id, selectedProvinceId, selectedDistrictId]);
+
+  useEffect(() => {
+    if (!selectedOrderForModal) return;
+
+    if (!selectedProvinceId || !selectedDistrictId) {
+      setGeoCommunes([]);
+      setIsGeoCommunesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsGeoCommunesLoading(true);
+    setGeoLookupError(null);
+
+    apiClient
+      .get<GeoCommunesResponse>(
+        `/orders/geo/communes?province_id=${encodeURIComponent(selectedProvinceId)}&district_id=${encodeURIComponent(selectedDistrictId)}`,
+      )
+      .then((response) => {
+        if (cancelled) return;
+        const items = Array.isArray(response.data?.items) ? response.data.items : [];
+        setGeoCommunes(items);
+        if (selectedCommuneId && !items.some((entry) => entry.id === selectedCommuneId)) {
+          setDraftDeliveryAddress((prev) => {
+            if (!prev) return prev;
+            const base = cloneDeliveryAddress(prev);
+            const next: ParsedDeliveryAddress = {
+              ...base,
+              communeId: '',
+              communeName: '',
+              countryCode: GEO_COUNTRY_CODE,
+            };
+            next.fullAddress = composeDeliveryFullAddress(next);
+            return next;
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message =
+          (typeof error === 'object' &&
+            error !== null &&
+            'response' in error &&
+            typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
+            (error as { response?: { data?: { message?: string } } }).response?.data?.message) ||
+          (error instanceof Error ? error.message : null) ||
+          'Failed to load barangay options';
+        setGeoLookupError(message);
+        setGeoCommunes([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsGeoCommunesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedOrderForModal?.id,
+    selectedProvinceId,
+    selectedDistrictId,
+    selectedCommuneId,
+  ]);
+
   const paymentShippingFee = Math.max(0, modalSnapshot.payment.shippingFee);
   const paymentDiscount = Math.max(0, modalSnapshot.payment.totalDiscount);
   const paymentSurcharge = Math.max(0, modalSnapshot.payment.surcharge);
   const paymentBankTransfer = Math.max(0, modalSnapshot.payment.bankTransfer);
+  const paymentProductBase = Math.max(
+    0,
+    modalItems.reduce((sum, item) => sum + Math.max(0, item.retailPrice) * Math.max(0, item.quantity), 0),
+  );
   const paymentSubtotal = Math.max(
     0,
-    (selectedOrderForModal?.cod || 0) + paymentDiscount + paymentShippingFee + paymentSurcharge,
+    paymentProductBase + paymentShippingFee + paymentSurcharge,
   );
   const paymentAfterDiscount = Math.max(0, paymentSubtotal - paymentDiscount);
   const paymentNeedToPay = paymentAfterDiscount;
@@ -1235,6 +1776,15 @@ export default function OrdersConfirmationPage() {
     if (hasTagDraftChanges) payload.tags = resolvedTagsPayload || [];
     if (hasInternalNoteDraftChanges) payload.note = toApiLineBreaks(effectiveInternalNote);
     if (hasPrintingNoteDraftChanges) payload.note_print = toApiLineBreaks(effectivePrintingNote);
+    if (hasShippingAddressDraftChanges) {
+      if (!effectiveDeliveryAddress.fullName.trim() || !effectiveDeliveryAddress.phoneNumber.trim()) {
+        const errorMessage = 'Customer name and phone number are required before saving.';
+        setStatusSaveError(errorMessage);
+        addToast('error', errorMessage);
+        return;
+      }
+      payload.shipping_address = buildShippingAddressPayload(effectiveDeliveryAddress);
+    }
 
     setIsSavingStatus(true);
     setStatusSaveError(null);
@@ -1244,6 +1794,8 @@ export default function OrdersConfirmationPage() {
       addToast('info', `Updating tags for order ${orderRef}...`);
     } else if (hasInternalNoteDraftChanges || hasPrintingNoteDraftChanges) {
       addToast('info', `Updating notes for order ${orderRef}...`);
+    } else if (hasShippingAddressDraftChanges) {
+      addToast('info', `Updating delivery address for order ${orderRef}...`);
     } else {
       addToast('info', `Updating order ${orderRef}...`);
     }
@@ -1269,19 +1821,18 @@ export default function OrdersConfirmationPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Confirmation of Order"
-        description="Queue of new POS orders (status 0). Rows auto-refresh when webhook reconciliation updates your tenant."
-      />
+    <div className="space-y-3">
+      <div className="flex items-center justify-between pb-2">
+        <h1 className="text-lg font-semibold text-slate-900">Confirmation of Order</h1>
+      </div>
 
-      <Card className="border-slate-200 shadow-sm bg-white">
-        <div className="flex flex-wrap items-center justify-end gap-3 mb-4">
+      <Card padding="sm" className="border-slate-200 shadow-sm bg-white">
+        <div className="flex flex-wrap items-center justify-end gap-2 mb-2">
           <div className="relative order-1" ref={shopPickerRef}>
             <button
               type="button"
               onClick={() => setShowShopPicker((prev) => !prev)}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white hover:border-slate-300 focus:outline-none"
+              className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm bg-white hover:border-slate-300 focus:outline-none"
             >
               <span className="text-slate-900">{selectedShopLabel}</span>
               <span className="text-slate-400 text-xs">(click to choose)</span>
@@ -1368,7 +1919,7 @@ export default function OrdersConfirmationPage() {
             <Datepicker
               value={range}
               onChange={handleDateRangeChange}
-              inputClassName="w-[240px] rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
+              inputClassName="w-[240px] rounded-lg border border-slate-200 pl-3 pr-10 py-1.5 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
               popupClassName={(defaultClass: string) => `${defaultClass} z-50`}
               displayFormat="MM/DD/YYYY"
               separator=" - "
@@ -1389,16 +1940,16 @@ export default function OrdersConfirmationPage() {
             <table className="min-w-full divide-y divide-slate-100">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Shop</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Order ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Product</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">COD</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Return Rate</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Tags</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Customer</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Phone</th>
-                  <th className="w-[200px] min-w-[200px] px-2 py-3 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap sticky right-0 z-20 bg-slate-50 border-l border-slate-200">
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Date</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Shop</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Order ID</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Product</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">COD</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Return Rate</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Tags</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Customer</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Phone</th>
+                  <th className="w-[150px] min-w-[150px] px-2 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap sticky right-0 z-20 bg-slate-50 border-l border-slate-200">
                     Status
                   </th>
                 </tr>
@@ -1406,7 +1957,7 @@ export default function OrdersConfirmationPage() {
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
+                    <td className="px-3 py-3 text-xs text-slate-400" colSpan={10}>
                       Loading...
                     </td>
                   </tr>
@@ -1427,18 +1978,18 @@ export default function OrdersConfirmationPage() {
                       }`}
                       onClick={() => setSelectedOrderForModal(row)}
                     >
-                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.date_local}</td>
-                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.shop_name}</td>
-                      <td className="px-4 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">{row.pos_order_id}</td>
-                      <td className="px-4 py-4 text-sm text-slate-700">
-                        <span className="block max-w-[360px] truncate" title={productSummary}>
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{row.date_local}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{row.shop_name}</td>
+                      <td className="px-3 py-2 text-xs font-semibold text-slate-900 whitespace-nowrap">{row.pos_order_id}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700">
+                        <span className="block max-w-[280px] truncate" title={productSummary}>
                           {productSummary}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
+                      <td className="px-3 py-2 text-xs font-semibold text-slate-900 whitespace-nowrap">
                         {formatCurrency(row.cod || 0)}
                       </td>
-                      <td className="px-4 py-4 text-sm font-semibold whitespace-nowrap">
+                      <td className="px-3 py-2 text-xs font-semibold whitespace-nowrap">
                         <span className="relative inline-flex cursor-help group">
                           <span className={getReturnRateColorClass(row.reports_by_phone_success, row.reports_by_phone_fail)}>
                             {formatReturnRate(row.reports_by_phone_success, row.reports_by_phone_fail)}
@@ -1449,13 +2000,13 @@ export default function OrdersConfirmationPage() {
                           </span>
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">
                         {row.tags?.length ? row.tags.join(', ') : '—'}
                       </td>
-                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.customer_name || '—'}</td>
-                      <td className="px-4 py-4 text-sm text-slate-700 whitespace-nowrap">{row.customer_phone || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{row.customer_name || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{row.customer_phone || '—'}</td>
                       <td
-                        className={`w-[200px] min-w-[200px] px-2 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 ${
+                        className={`w-[150px] min-w-[150px] px-2 py-1.5 text-xs font-semibold text-slate-900 whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 ${
                           rowHasNoProduct ? 'bg-rose-100' : rowHasDuplicate ? 'bg-rose-50' : 'bg-white'
                         }`}
                       >
@@ -1471,7 +2022,7 @@ export default function OrdersConfirmationPage() {
                   })
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
+                    <td className="px-3 py-3 text-xs text-slate-400" colSpan={10}>
                       No new orders for the selected filters.
                     </td>
                   </tr>
@@ -1480,20 +2031,20 @@ export default function OrdersConfirmationPage() {
             </table>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200">
-            <p className="text-sm text-slate-600">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-slate-50 border-t border-slate-200">
+            <p className="text-xs text-slate-600">
               Showing {startRow}-{endRow} of {pagination.total}
             </p>
             <div className="flex gap-2">
               <button
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                 disabled={!canPrev || isLoading}
               >
                 Previous
               </button>
               <button
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => setPage((prev) => prev + 1)}
                 disabled={!canNext || isLoading}
               >
@@ -1511,614 +2062,1027 @@ export default function OrdersConfirmationPage() {
           onClick={() => setSelectedOrderForModal(null)}
         >
           <div
-            className="relative mx-auto my-2 flex h-[calc(100vh-1.5rem)] w-[min(96vw,1480px)] max-h-[calc(100vh-1.5rem)] max-w-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:my-4 sm:h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-3rem)]"
+            className="relative mx-auto my-2 flex h-[calc(100vh-1.5rem)] w-[min(94vw,1200px)] max-h-[calc(100vh-1.5rem)] max-w-none flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:my-4 sm:h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-3rem)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Order Detail</p>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xl font-semibold text-slate-900">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Order Detail</p>
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-sm font-semibold text-slate-900">
                     {selectedOrderForModal.shop_id} - {selectedOrderForModal.pos_order_id}
                   </h3>
                   {modalSnapshot.orderLink ? (
                     <button
                       type="button"
                       onClick={handleOpenAndCopyOrderLink}
-                      className="inline-flex rounded-lg p-1 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                      className="inline-flex rounded-md p-0.5 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                       aria-label="Open and copy order link"
                       title="Open and copy order link"
                     >
-                      <Link2 className="h-5 w-5" />
+                      <Link2 className="h-3.5 w-3.5" />
                     </button>
                   ) : null}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 {isConversationLinkCopied ? (
-                  <span className="text-xs font-semibold text-emerald-600">Copied</span>
+                  <span className="text-[10px] font-semibold text-emerald-600">Copied</span>
                 ) : null}
                 {modalSnapshot.customer.conversationLink ? (
                   <button
                     type="button"
                     onClick={handleCopyConversationLink}
-                    className="inline-flex rounded-xl border-2 border-blue-400 p-2 text-blue-500"
+                    className="inline-flex rounded-lg border-2 border-blue-400 p-1.5 text-blue-500"
                     title="Copy conversation link"
                     aria-label="Copy conversation link"
                   >
-                    <MessageCircle className="h-5 w-5" />
+                    <MessageCircle className="h-3.5 w-3.5" />
                   </button>
                 ) : null}
                 <button
                   type="button"
                   onClick={() => setSelectedOrderForModal(null)}
-                  className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                  className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                   aria-label="Close order modal"
                 >
-                  <X className="h-5 w-5" />
+                  <X className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-32">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
-              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-8">
-                <h4 className="mb-3 text-base font-semibold text-slate-900">Product Information</h4>
-                {modalItems.length > 0 ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-100/70 p-3">
-                    <div className="mb-3 flex flex-wrap items-center gap-5 text-sm font-semibold text-slate-700">
-                      <p>Number of variation: {modalItems.length}</p>
-                      <p>Total quantity: {modalItems.reduce((total, item) => total + item.quantity, 0)}</p>
-                    </div>
-                    <div className="space-y-2">
-                      {modalItems.map((item, index) => (
-                        <div
-                          key={`${item.id || item.productDisplayId || item.displayId || item.name}-${index}`}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800"
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                              {item.imageUrl ? (
-                                <img
-                                  src={item.imageUrl}
-                                  alt={item.name || 'Product image'}
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : null}
-                            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 pb-20">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-start">
 
-                            <div className="min-w-0 flex-1 space-y-2">
-                              <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div className="min-w-0 space-y-1">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    {item.productDisplayId ? (
-                                      <span className="inline-flex rounded-lg border border-green-300 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
-                                        {item.productDisplayId}
-                                      </span>
-                                    ) : null}
-                                    {item.displayId ? (
-                                      <span className="inline-flex rounded-lg border border-pink-300 bg-pink-50 px-2 py-0.5 text-xs font-semibold text-pink-700">
-                                        {item.displayId}
-                                      </span>
-                                    ) : null}
-                                    <p className="truncate text-sm font-semibold text-slate-900">{item.name || '—'}</p>
-                                  </div>
-                                </div>
-
-                                <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
-                                  <div className="flex items-center gap-2 text-sm text-slate-800">
-                                    <span className="inline-flex min-w-[86px] justify-end rounded-lg bg-slate-100 px-3 py-1.5 font-semibold">
-                                      {Math.round(item.retailPrice)}
-                                    </span>
-                                    <span className="text-xl leading-none">x</span>
-                                    <span className="inline-flex min-w-[56px] justify-end rounded-lg bg-slate-100 px-3 py-1.5 font-semibold">
-                                      {item.quantity}
-                                    </span>
-                                  </div>
-                                  <p className="text-lg font-semibold text-blue-700">
-                                    {formatCurrency(item.retailPrice * item.quantity)}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+              {/* ── LEFT COLUMN: Products + Payment ── */}
+              <div className="space-y-3 lg:col-span-7">
+                <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                    <Package className="h-3.5 w-3.5 text-indigo-500" />
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Products</h4>
+                    {modalItems.length > 0 ? (
+                      <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-500">
+                        <span>{modalItems.length} variation{modalItems.length !== 1 ? 's' : ''}</span>
+                        <span className="text-slate-300">|</span>
+                        <span>Qty: {modalItems.reduce((total, item) => total + item.quantity, 0)}</span>
+                      </div>
+                    ) : null}
                   </div>
-                ) : (
-                  <p className="text-sm text-slate-500">No orderSnapshot.items data available.</p>
-                )}
-              </section>
-
-              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-4">
-                <h4 className="mb-3 text-base font-semibold text-slate-900">Order Information</h4>
-                <div className="space-y-3 text-sm text-slate-700">
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                    <p className="text-base font-medium text-slate-900">Created At</p>
-                    <p className="inline-flex rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-900">
-                      {selectedOrderForModal.date_local}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                    <p className="text-base font-medium text-slate-900">Status</p>
-                    <div
-                      className="relative"
-                      onMouseEnter={() => {
-                        if (isSelectedOrderEditable) setIsStatusMenuOpen(true);
-                      }}
-                      onMouseLeave={() => {
-                        if (isSelectedOrderEditable) setIsStatusMenuOpen(false);
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!isSelectedOrderEditable) return;
-                          setIsStatusMenuOpen((prev) => !prev);
-                        }}
-                        disabled={!isSelectedOrderEditable}
-                        className={`inline-flex min-w-[160px] max-w-full items-center justify-between gap-3 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm ${
-                          isSelectedOrderEditable ? '' : 'cursor-not-allowed opacity-85'
-                        }`}
-                        style={{ backgroundColor: statusDisplayColor }}
-                      >
-                        <span className="truncate">{statusDisplayLabel}</span>
-                        <ChevronDown
-                          className={`h-4 w-4 shrink-0 ${isSelectedOrderEditable ? 'text-white/90' : 'text-slate-200'}`}
-                        />
-                      </button>
-                      {isSelectedOrderEditable && isStatusMenuOpen ? (
-                        <div className="absolute right-0 top-full z-30 mt-0 min-w-[180px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-                          {CONFIRMATION_STATUS_OPTIONS.map((item) => {
-                            const active = draftStatus === item.value;
-                            return (
-                              <button
-                                key={item.value}
-                                type="button"
-                                onClick={() => {
-                                  setDraftStatus(item.value);
-                                  setIsStatusMenuOpen(false);
-                                }}
-                                className={`block w-full px-3 py-2 text-left text-sm ${
-                                  active ? 'bg-indigo-50 font-semibold text-indigo-700' : 'text-slate-700 hover:bg-slate-50'
-                                }`}
-                              >
-                                {item.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                    <div className="flex flex-wrap items-start gap-2">
-                      <div className="relative" ref={tagPickerRef}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!isSelectedOrderEditable || !selectedOrderForModal?.id) return;
-                            setShowTagPicker((prev) => {
-                              const next = !prev;
-                              if (next) {
-                                const needsFetch =
-                                  !tagOptions ||
-                                  tagOptions.order_id !== selectedOrderForModal.id;
-                                if (needsFetch && !isTagOptionsLoading) {
-                                  fetchTagOptions(selectedOrderForModal.id);
-                                }
-                              } else {
-                                setActiveTagGroupId(null);
-                              }
-                              return next;
-                            });
-                          }}
-                          disabled={!isSelectedOrderEditable}
-                          className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-semibold ${
-                            isSelectedOrderEditable
-                              ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                              : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                          }`}
-                        >
-                          Add Tags
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        </button>
-                        {isSelectedOrderEditable && showTagPicker ? (
+                  <div className="p-2">
+                    {modalItems.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {modalItems.map((item, index) => (
                           <div
-                            className="absolute left-0 top-full z-30 mt-1 w-[320px] md:-left-[220px]"
-                            onMouseLeave={() => setActiveTagGroupId(null)}
+                            key={`${item.id || item.productDisplayId || item.displayId || item.name}-${index}`}
+                            className="rounded-lg border border-slate-100 bg-slate-50/50 px-2.5 py-2 text-xs text-slate-800 transition hover:border-slate-200"
                           >
-                            <div className="relative overflow-visible rounded-lg border border-slate-200 bg-white shadow-lg">
-                              <div className="max-h-[320px] overflow-auto py-1">
-                                {isTagOptionsLoading ? (
-                                  <div className="px-3 py-2 text-sm text-slate-500">Loading tags...</div>
-                                ) : tagOptionsError ? (
-                                  <div className="px-3 py-2 text-sm text-rose-600">{tagOptionsError}</div>
+                            <div className="flex items-start gap-2.5">
+                              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                                {item.imageUrl ? (
+                                  <img
+                                    src={item.imageUrl}
+                                    alt={item.name || 'Product image'}
+                                    className="h-full w-full object-cover"
+                                  />
                                 ) : (
-                                  <>
-                                    {availableTagGroups.map((group) => (
-                                      <button
-                                        key={group.group_id}
-                                        type="button"
-                                        onMouseEnter={() => setActiveTagGroupId(group.group_id)}
-                                        className="flex w-full items-center justify-between border-b border-dashed border-slate-200 px-4 py-2.5 text-left text-sm font-semibold uppercase tracking-wide text-slate-800 hover:bg-slate-50"
-                                      >
-                                        <span>{group.group_name}</span>
-                                        <ChevronDown className="-rotate-90 h-4 w-4 text-slate-500" />
-                                      </button>
-                                    ))}
-
-                                    {availableIndividualTags.map((tag) => {
-                                      const selected = isTagSelected(tag.name);
-                                      return (
-                                        <button
-                                          key={tag.tag_id}
-                                          type="button"
-                                          onClick={() => addDraftTag(tag)}
-                                          className={`flex w-full items-center gap-2 border-b border-dashed border-slate-200 px-4 py-2.5 text-left text-sm ${
-                                            selected
-                                              ? 'bg-indigo-50 font-semibold text-indigo-700'
-                                              : 'text-slate-800 hover:bg-slate-50'
-                                          }`}
-                                        >
-                                          <span className="h-2 w-2 rounded-full bg-emerald-700" />
-                                          <span>{tag.name}</span>
-                                        </button>
-                                      );
-                                    })}
-
-                                    {!availableTagGroups.length && !availableIndividualTags.length ? (
-                                      <div className="px-3 py-2 text-sm text-slate-500">No tags available for this shop.</div>
-                                    ) : null}
-                                  </>
+                                  <div className="flex h-full w-full items-center justify-center">
+                                    <Package className="h-4 w-4 text-slate-300" />
+                                  </div>
                                 )}
                               </div>
 
-                              {activeTagGroup ? (
-                                <div className="absolute left-full top-0 ml-2 w-[300px] rounded-lg border border-slate-200 bg-white shadow-lg">
-                                  <div className="max-h-[320px] overflow-auto py-1">
-                                    {activeTagGroup.tags.map((tag) => {
-                                      const selected = isTagSelected(tag.name);
-                                      return (
-                                        <button
-                                          key={tag.tag_id}
-                                          type="button"
-                                          onClick={() => addDraftTag(tag)}
-                                          className={`flex w-full items-center gap-2 border-b border-dashed border-slate-200 px-4 py-2.5 text-left text-sm ${
-                                            selected
-                                              ? 'bg-indigo-50 font-semibold text-indigo-700'
-                                              : 'text-slate-800 hover:bg-slate-50'
-                                          }`}
-                                        >
-                                          <span className="h-2 w-2 rounded-full bg-emerald-700" />
-                                          <span>{tag.name}</span>
-                                        </button>
-                                      );
-                                    })}
-                                    {!activeTagGroup.tags.length ? (
-                                      <div className="px-3 py-2 text-sm text-slate-500">No tags in this group.</div>
-                                    ) : null}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-start justify-between gap-1.5">
+                                  <div className="min-w-0 space-y-0.5">
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      {item.productDisplayId ? (
+                                        <span className="inline-flex rounded border border-green-200 bg-green-50 px-1 py-px text-[10px] font-semibold text-green-700">
+                                          {item.productDisplayId}
+                                        </span>
+                                      ) : null}
+                                      {item.displayId ? (
+                                        <span className="inline-flex rounded border border-pink-200 bg-pink-50 px-1 py-px text-[10px] font-semibold text-pink-700">
+                                          {item.displayId}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <p className="text-xs font-medium text-slate-900">{item.name || '—'}</p>
+                                  </div>
+
+                                  <div className="ml-auto flex shrink-0 flex-col items-end gap-0.5">
+                                    <div className="flex items-center gap-1 text-[11px] text-slate-600">
+                                      <span className="tabular-nums">{Math.round(item.retailPrice)}</span>
+                                      <span className="text-slate-400">x</span>
+                                      <span className="tabular-nums font-medium">{item.quantity}</span>
+                                    </div>
+                                    <p className="text-xs font-semibold text-indigo-600">
+                                      {formatCurrency(item.retailPrice * item.quantity)}
+                                    </p>
                                   </div>
                                 </div>
-                              ) : null}
+                              </div>
                             </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="py-3 text-center text-xs text-slate-400">No product data available</p>
+                    )}
+                  </div>
+                </section>
+
+                {/* ── Payment (collapsible) ── */}
+                <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setIsPaymentExpanded((prev) => !prev)}
+                    className="flex w-full items-center justify-between border-b border-slate-100 bg-slate-50/80 px-3 py-2 text-left transition hover:bg-slate-100/80"
+                  >
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="h-3.5 w-3.5 text-emerald-500" />
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Payment</h4>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-indigo-600">
+                        {formatCurrency(paymentNeedToPay)}
+                      </span>
+                      {isPaymentExpanded ? (
+                        <ChevronUp className="h-3 w-3 text-slate-400" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3 text-slate-400" />
+                      )}
+                    </div>
+                  </button>
+                  {isPaymentExpanded ? (
+                    <div className="p-3">
+                      <div className="space-y-1 text-xs">
+                        <div className="flex items-center justify-between py-0.5 text-slate-600">
+                          <span>Shipping fee</span>
+                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentShippingFee)}</span>
+                        </div>
+                        <div className="flex items-center justify-between py-0.5 text-slate-600">
+                          <span>Discounted</span>
+                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentDiscount)}</span>
+                        </div>
+                        <div className="flex items-center justify-between py-0.5 text-slate-600">
+                          <span>Bank transfer</span>
+                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentBankTransfer)}</span>
+                        </div>
+                        <div className="flex items-center justify-between py-0.5 text-slate-600">
+                          <span>Surcharge</span>
+                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentSurcharge)}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 space-y-1 rounded-md border border-slate-100 bg-slate-50 p-2 text-xs">
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>Subtotal</span>
+                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentSubtotal)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>Discount</span>
+                          <span className="tabular-nums font-medium text-emerald-600">{formatCurrency(paymentDiscount)}</span>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-slate-200 pt-1 text-slate-600">
+                          <span>After discount</span>
+                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentAfterDiscount)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-700">
+                          <span className="font-medium">Need to pay</span>
+                          <span className="tabular-nums font-semibold text-indigo-600">{formatCurrency(paymentNeedToPay)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>Paid</span>
+                          <span className="tabular-nums font-medium text-slate-900">{formatCurrency(paymentPaid)}</span>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-slate-200 pt-1 text-slate-700">
+                          <span className="font-medium">Remain</span>
+                          <span className="tabular-nums font-semibold text-rose-600">{formatCurrency(paymentRemain)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+
+                {/* ── Notes (full width in left column) ── */}
+                <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                    <StickyNote className="h-3.5 w-3.5 text-amber-500" />
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Notes</h4>
+                    {effectiveInternalNote.trim() || effectivePrintingNote.trim() ? (
+                      <span className="ml-0.5 inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" title="Has notes" />
+                    ) : null}
+                  </div>
+                  <div className="p-3">
+                    <div className="mb-2 inline-flex rounded-md bg-slate-100 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setActiveNoteTab('all')}
+                        className={`relative rounded px-2 py-1 text-xs font-medium transition ${
+                          activeNoteTab === 'all'
+                            ? 'bg-white text-indigo-700 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveNoteTab('internal')}
+                        className={`relative rounded px-2 py-1 text-xs font-medium transition ${
+                          activeNoteTab === 'internal'
+                            ? 'bg-white text-indigo-700 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Internal
+                        {effectiveInternalNote.trim() ? (
+                          <span className="absolute -right-0.5 -top-0.5 inline-flex h-1.5 w-1.5 rounded-full bg-violet-500" />
+                        ) : null}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveNoteTab('printing')}
+                        className={`relative rounded px-2 py-1 text-xs font-medium transition ${
+                          activeNoteTab === 'printing'
+                            ? 'bg-white text-indigo-700 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Printing
+                        {effectivePrintingNote.trim() ? (
+                          <span className="absolute -right-0.5 -top-0.5 inline-flex h-1.5 w-1.5 rounded-full bg-orange-500" />
+                        ) : null}
+                      </button>
+                    </div>
+
+                    {activeNoteTab === 'all' ? (
+                      <div className="space-y-2">
+                        <div className="rounded-md border border-slate-100 bg-slate-50/50 p-2">
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <span className="inline-flex rounded border border-violet-200 bg-violet-50 px-1.5 py-px text-[10px] font-semibold text-violet-700">
+                              Internal
+                            </span>
+                            {isSelectedOrderEditable ? (
+                              <button
+                                type="button"
+                                onClick={() => setActiveNoteTab('internal')}
+                                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                                aria-label="Edit internal note"
+                                title="Edit internal note"
+                              >
+                                <PencilLine className="h-3 w-3" />
+                              </button>
+                            ) : null}
+                          </div>
+                          <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-700">
+                            {effectiveInternalNote || '\u00A0'}
+                          </p>
+                        </div>
+
+                        <div className="rounded-md border border-slate-100 bg-slate-50/50 p-2">
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-px text-[10px] font-semibold text-orange-700">
+                              Printing
+                            </span>
+                            {isSelectedOrderEditable ? (
+                              <button
+                                type="button"
+                                onClick={() => setActiveNoteTab('printing')}
+                                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                                aria-label="Edit printing note"
+                                title="Edit printing note"
+                              >
+                                <PencilLine className="h-3 w-3" />
+                              </button>
+                            ) : null}
+                          </div>
+                          <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-700">
+                            {effectivePrintingNote || '\u00A0'}
+                          </p>
+                        </div>
+                      </div>
+                    ) : activeNoteTab === 'internal' ? (
+                      <div>
+                        <div className="mb-1.5">
+                          <span className="inline-flex rounded border border-violet-200 bg-violet-50 px-1.5 py-px text-[10px] font-semibold text-violet-700">
+                            Internal
+                          </span>
+                        </div>
+                        {isSelectedOrderEditable ? (
+                          <textarea
+                            value={effectiveInternalNote}
+                            onChange={(event) => setDraftInternalNote(normalizeLineBreaks(event.target.value))}
+                            className="min-h-[100px] w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                            placeholder="Add internal note..."
+                          />
+                        ) : (
+                          <p className="min-h-[100px] whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-700">
+                            {effectiveInternalNote || '\u00A0'}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="mb-1.5">
+                          <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-px text-[10px] font-semibold text-orange-700">
+                            Printing
+                          </span>
+                        </div>
+                        {isSelectedOrderEditable ? (
+                          <textarea
+                            value={effectivePrintingNote}
+                            onChange={(event) => setDraftPrintingNote(normalizeLineBreaks(event.target.value))}
+                            className="min-h-[100px] w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                            placeholder="Add printing note..."
+                          />
+                        ) : (
+                          <p className="min-h-[100px] whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-700">
+                            {effectivePrintingNote || '\u00A0'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              {/* ── RIGHT COLUMN: Order Info + Customer + Delivery ── */}
+              <div className="space-y-3 lg:col-span-5">
+
+                {/* ── Order Info: Date + Status + Tags ── */}
+                <section className="relative overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-2 rounded-t-xl border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                    <Package className="h-3.5 w-3.5 text-blue-500" />
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Order Info</h4>
+                    <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-600 tabular-nums">
+                      {selectedOrderForModal.date_local}
+                    </span>
+                  </div>
+                  <div className="space-y-2 p-3">
+                    {/* Status selector */}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-slate-600">Status</span>
+                      <div
+                        className="relative"
+                        onMouseEnter={() => {
+                          if (isSelectedOrderEditable) setIsStatusMenuOpen(true);
+                        }}
+                        onMouseLeave={() => {
+                          if (isSelectedOrderEditable) setIsStatusMenuOpen(false);
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!isSelectedOrderEditable) return;
+                            setIsStatusMenuOpen((prev) => !prev);
+                          }}
+                          disabled={!isSelectedOrderEditable}
+                          className={`inline-flex min-w-[120px] max-w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition ${
+                            isSelectedOrderEditable ? 'hover:opacity-90' : 'cursor-not-allowed opacity-85'
+                          }`}
+                          style={{ backgroundColor: statusDisplayColor }}
+                        >
+                          <span className="truncate">{statusDisplayLabel}</span>
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 shrink-0 ${isSelectedOrderEditable ? 'text-white/90' : 'text-slate-200'}`}
+                          />
+                        </button>
+                        {isSelectedOrderEditable && isStatusMenuOpen ? (
+                          <div className="absolute right-0 top-full z-30 mt-1 min-w-[140px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+                            {CONFIRMATION_STATUS_OPTIONS.map((item) => {
+                              const active = draftStatus === item.value;
+                              return (
+                                <button
+                                  key={item.value}
+                                  type="button"
+                                  onClick={() => {
+                                    setDraftStatus(item.value);
+                                    setIsStatusMenuOpen(false);
+                                  }}
+                                  className={`block w-full px-2.5 py-1.5 text-left text-xs transition ${
+                                    active ? 'bg-indigo-50 font-semibold text-indigo-700' : 'text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  {item.label}
+                                </button>
+                              );
+                            })}
                           </div>
                         ) : null}
                       </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {effectiveDraftTags.length ? (
-                          effectiveDraftTags.map((tag) => (
-                            <span
-                              key={`${tag.id || 'tag'}-${tag.name}`}
-                              className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700"
-                            >
-                              <span>{tag.name}</span>
-                              {isSelectedOrderEditable ? (
-                                <button
-                                  type="button"
-                                  onClick={() => removeDraftTag(tag.name)}
-                                  className="rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
-                                  aria-label={`Remove tag ${tag.name}`}
-                                  title={`Remove ${tag.name}`}
-                                >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              ) : null}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-sm text-slate-500">No tags</span>
-                        )}
-                      </div>
                     </div>
-                  </div>
 
-                </div>
-              </section>
-
-              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-4">
-                <h4 className="mb-3 text-base font-semibold text-slate-900">Payment</h4>
-                <div className="space-y-2">
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-700">
-                    <span>Shipping fee</span>
-                    <span className="font-semibold text-slate-900">{formatCurrency(paymentShippingFee)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-700">
-                    <span>Discounted</span>
-                    <span className="font-semibold text-slate-900">{formatCurrency(paymentDiscount)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-700">
-                    <span>Bank transfer</span>
-                    <span className="font-semibold text-slate-900">{formatCurrency(paymentBankTransfer)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-700">
-                    <span>Surcharge</span>
-                    <span className="font-semibold text-slate-900">{formatCurrency(paymentSurcharge)}</span>
-                  </div>
-                </div>
-
-                <div className="mt-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-sm">
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 text-slate-700">
-                    <span>Subtotal</span>
-                    <span className="font-semibold text-slate-900">{formatCurrency(paymentSubtotal)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 text-slate-700">
-                    <span>Discount</span>
-                    <span className="font-semibold text-emerald-600">{formatCurrency(paymentDiscount)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-slate-200 pt-2 text-slate-700">
-                    <span>After discount</span>
-                    <span className="font-semibold text-slate-900">{formatCurrency(paymentAfterDiscount)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 text-slate-700">
-                    <span>Need to pay</span>
-                    <span className="font-semibold text-blue-700">{formatCurrency(paymentNeedToPay)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 text-slate-700">
-                    <span>Paid</span>
-                    <span className="font-semibold text-slate-900">{formatCurrency(paymentPaid)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-slate-200 pt-2 text-slate-700">
-                    <span>Remain</span>
-                    <span className="font-semibold text-rose-600">{formatCurrency(paymentRemain)}</span>
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 lg:col-span-4">
-                <h4 className="mb-3 text-base font-semibold text-slate-900">Note</h4>
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <div className="mb-3 inline-flex rounded-lg bg-slate-100 p-1">
-                    <button
-                      type="button"
-                      onClick={() => setActiveNoteTab('all')}
-                      className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
-                        activeNoteTab === 'all'
-                          ? 'bg-white text-blue-700 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveNoteTab('internal')}
-                      className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
-                        activeNoteTab === 'internal'
-                          ? 'bg-white text-blue-700 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      Internal
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveNoteTab('printing')}
-                      className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
-                        activeNoteTab === 'printing'
-                          ? 'bg-white text-blue-700 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      Printing
-                    </button>
-                  </div>
-
-                  {activeNoteTab === 'all' ? (
-                    <div className="space-y-3">
-                      <div className="rounded-xl border border-slate-200 bg-white p-3">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="inline-flex rounded-lg border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
-                            Internal
+                    {/* Tags */}
+                    <div className="border-t border-slate-100 pt-2">
+                      <div className="mb-1.5 flex items-center gap-1.5">
+                        <Tag className="h-3 w-3 text-slate-400" />
+                        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Tags</span>
+                        {effectiveDraftTags.length > 0 ? (
+                          <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                            {effectiveDraftTags.length}
                           </span>
-                          {isSelectedOrderEditable ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveNoteTab('internal');
-                              }}
-                              className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                              aria-label="Edit internal note"
-                              title="Edit internal note"
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-start gap-2">
+                        <div className="relative" ref={tagPickerRef}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!isSelectedOrderEditable || !selectedOrderForModal?.id) return;
+                              setShowTagPicker((prev) => {
+                                const next = !prev;
+                                if (next) {
+                                  const needsFetch =
+                                    !tagOptions ||
+                                    tagOptions.order_id !== selectedOrderForModal.id;
+                                  if (needsFetch && !isTagOptionsLoading) {
+                                    fetchTagOptions(selectedOrderForModal.id);
+                                  }
+                                } else {
+                                  setActiveTagGroupId(null);
+                                }
+                                return next;
+                              });
+                            }}
+                            disabled={!isSelectedOrderEditable}
+                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition ${
+                              isSelectedOrderEditable
+                                ? 'border-slate-300 bg-white text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
+                                : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
+                            }`}
+                          >
+                            Add Tags
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                          {isSelectedOrderEditable && showTagPicker ? (
+                            <div
+                              className="absolute left-0 top-full z-30 mt-1 w-[220px]"
+                              onMouseLeave={() => setActiveTagGroupId(null)}
                             >
-                              <PencilLine className="h-4 w-4" />
-                            </button>
+                              <div className="relative overflow-visible rounded-md border border-slate-200 bg-white shadow-lg">
+                                <div className="max-h-[240px] overflow-auto py-0.5">
+                                  {isTagOptionsLoading ? (
+                                    <div className="px-2.5 py-1.5 text-xs text-slate-500">Loading tags...</div>
+                                  ) : tagOptionsError ? (
+                                    <div className="px-2.5 py-1.5 text-xs text-rose-600">{tagOptionsError}</div>
+                                  ) : (
+                                    <>
+                                      {availableTagGroups.map((group) => (
+                                        <button
+                                          key={group.group_id}
+                                          type="button"
+                                          onMouseEnter={() => setActiveTagGroupId(group.group_id)}
+                                          className="flex w-full items-center justify-between border-b border-dashed border-slate-100 px-2.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-800 hover:bg-slate-50"
+                                        >
+                                          <span>{group.group_name}</span>
+                                          <ChevronDown className="-rotate-90 h-3 w-3 text-slate-500" />
+                                        </button>
+                                      ))}
+
+                                      {availableIndividualTags.map((tag) => {
+                                        const selected = isTagSelected(tag.name);
+                                        return (
+                                          <button
+                                            key={tag.tag_id}
+                                            type="button"
+                                            onClick={() => addDraftTag(tag)}
+                                            className={`flex w-full items-center gap-1.5 border-b border-dashed border-slate-100 px-2.5 py-1.5 text-left text-[11px] ${
+                                              selected
+                                                ? 'bg-indigo-50 font-semibold text-indigo-700'
+                                                : 'text-slate-800 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-700" />
+                                            <span>{tag.name}</span>
+                                          </button>
+                                        );
+                                      })}
+
+                                      {!availableTagGroups.length && !availableIndividualTags.length ? (
+                                        <div className="px-2.5 py-1.5 text-xs text-slate-500">No tags available for this shop.</div>
+                                      ) : null}
+                                    </>
+                                  )}
+                                </div>
+
+                                {activeTagGroup ? (
+                                  <div className="absolute left-full top-0 ml-1 w-[200px] rounded-md border border-slate-200 bg-white shadow-lg">
+                                    <div className="max-h-[240px] overflow-auto py-0.5">
+                                      {activeTagGroup.tags.map((tag) => {
+                                        const selected = isTagSelected(tag.name);
+                                        return (
+                                          <button
+                                            key={tag.tag_id}
+                                            type="button"
+                                            onClick={() => addDraftTag(tag, activeTagGroup.tags)}
+                                            className={`flex w-full items-center gap-1.5 border-b border-dashed border-slate-100 px-2.5 py-1.5 text-left text-[11px] ${
+                                              selected
+                                                ? 'bg-indigo-50 font-semibold text-indigo-700'
+                                                : 'text-slate-800 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-700" />
+                                            <span>{tag.name}</span>
+                                          </button>
+                                        );
+                                      })}
+                                      {!activeTagGroup.tags.length ? (
+                                        <div className="px-2.5 py-1.5 text-xs text-slate-500">No tags in this group.</div>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
                           ) : null}
                         </div>
-                        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                          {effectiveInternalNote || '\u00A0'}
-                        </p>
-                      </div>
 
-                      <div className="rounded-xl border border-slate-200 bg-white p-3">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="inline-flex rounded-lg border border-orange-300 bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700">
-                            Printing
-                          </span>
-                          {isSelectedOrderEditable ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveNoteTab('printing');
-                              }}
-                              className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                              aria-label="Edit printing note"
-                              title="Edit printing note"
-                            >
-                              <PencilLine className="h-4 w-4" />
-                            </button>
-                          ) : null}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {effectiveDraftTags.length ? (
+                            effectiveDraftTags.map((tag) => (
+                              <span
+                                key={`${tag.id || 'tag'}-${tag.name}`}
+                                className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
+                              >
+                                <span>{tag.name}</span>
+                                {isSelectedOrderEditable ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeDraftTag(tag.name)}
+                                    className="rounded-full p-0.5 text-indigo-400 hover:bg-indigo-100 hover:text-indigo-600"
+                                    aria-label={`Remove tag ${tag.name}`}
+                                    title={`Remove ${tag.name}`}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                ) : null}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-slate-400">No tags</span>
+                          )}
                         </div>
-                        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                          {effectivePrintingNote || '\u00A0'}
-                        </p>
                       </div>
-                    </div>
-                  ) : activeNoteTab === 'internal' ? (
-                    <div className="rounded-xl border border-slate-200 bg-white p-3">
-                      <div className="mb-2">
-                        <span className="inline-flex rounded-lg border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">
-                          Internal
-                        </span>
-                      </div>
-                      {isSelectedOrderEditable ? (
-                        <textarea
-                          value={effectiveInternalNote}
-                          onChange={(event) => setDraftInternalNote(normalizeLineBreaks(event.target.value))}
-                          className="min-h-[190px] w-full rounded-lg border border-blue-400 px-3 py-2 text-sm text-slate-800 outline-none"
-                          placeholder="Add internal note..."
-                        />
-                      ) : (
-                        <p className="min-h-[190px] whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                          {effectiveInternalNote || '\u00A0'}
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-slate-200 bg-white p-3">
-                      <div className="mb-2">
-                        <span className="inline-flex rounded-lg border border-orange-300 bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700">
-                          Printing
-                        </span>
-                      </div>
-                      {isSelectedOrderEditable ? (
-                        <textarea
-                          value={effectivePrintingNote}
-                          onChange={(event) => setDraftPrintingNote(normalizeLineBreaks(event.target.value))}
-                          className="min-h-[190px] w-full rounded-lg border border-blue-400 px-3 py-2 text-sm text-slate-800 outline-none"
-                          placeholder="Add printing note..."
-                        />
-                      ) : (
-                        <p className="min-h-[190px] whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                          {effectivePrintingNote || '\u00A0'}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              <div className="space-y-4 lg:col-span-4">
-                <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <h4 className="text-base font-semibold text-slate-900">Customer</h4>
-                    <div className="inline-flex items-center gap-2">
-                      <span className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700">
-                        {modalSnapshot.customer.gender || '—'}
-                      </span>
                     </div>
                   </div>
-
-                  {(modalSnapshot.duplicatedPhone || modalSnapshot.duplicatedIp) ? (
-                    <div className="mb-3 space-y-2">
-                      {modalSnapshot.duplicatedPhone ? (
-                        <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
-                          <PhoneCall className="h-4 w-4 text-amber-600" />
-                          <span>This phone number has multiple orders</span>
-                        </div>
-                      ) : null}
-                      {modalSnapshot.duplicatedIp ? (
-                        <div className="flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-900">
-                          <Wifi className="h-4 w-4 text-rose-600" />
-                          <span>Multiple IP detected in this order</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="rounded-md bg-slate-100 px-3 py-2 text-slate-900">
-                      {modalSnapshot.customer.name || '—'}
-                    </div>
-                    <div className="rounded-md bg-slate-100 px-3 py-2 text-slate-900">
-                      {modalSnapshot.customer.phone || '—'}
-                    </div>
-                    <div className="rounded-md bg-slate-100 px-3 py-2 text-slate-500">
-                      {modalSnapshot.customer.email || 'Email'}
-                    </div>
-                    <div className="rounded-md bg-slate-100 px-3 py-2 text-slate-500">
-                      {modalSnapshot.customer.dateOfBirth || 'Date of birth'}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={openPhoneHistoryModal}
-                    disabled={!canOpenPhoneHistory}
-                    className={`mt-3 w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-left transition ${
-                      canOpenPhoneHistory ? 'hover:bg-sky-100' : 'cursor-default'
-                    }`}
-                    title={canOpenPhoneHistory ? 'Open history of orders by this phone number' : 'Phone number unavailable'}
-                  >
-                    <p className="text-base font-semibold text-slate-900">{modalSnapshot.customer.name || '—'}</p>
-                    <p className="text-sm text-blue-700">{modalSnapshot.customer.phone || '—'}</p>
-                    <div className="mt-2 border-t border-sky-200 pt-2 text-sm text-slate-700">
-                      <p>
-                        Success:{' '}
-                        <span className="font-semibold text-slate-900">
-                          {modalSnapshot.customer.succeedOrderCount}/{modalSnapshot.customer.orderCount}
-                        </span>{' '}
-                        order(s)
-                      </p>
-                    </div>
-                  </button>
                 </section>
 
-                <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <h4 className="mb-3 text-base font-semibold text-slate-900">Delivery</h4>
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <div className={getDeliveryFieldClass(hasDeliveryFullName)}>
-                        {deliveryFullName || 'Missing full name'}
+                {/* ── Customer ── */}
+                <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                    <User className="h-3.5 w-3.5 text-sky-500" />
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Customer</h4>
+                    {modalSnapshot.customer.gender ? (
+                      <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">
+                        {modalSnapshot.customer.gender}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="p-3">
+                    {(modalSnapshot.duplicatedPhone || modalSnapshot.duplicatedIp) ? (
+                      <div className="mb-2 space-y-1">
+                        {modalSnapshot.duplicatedPhone ? (
+                          <div className="flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-800">
+                            <PhoneCall className="h-3 w-3 text-amber-500" />
+                            <span>Multiple orders from this phone</span>
+                          </div>
+                        ) : null}
+                        {modalSnapshot.duplicatedIp ? (
+                          <div className="flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-medium text-rose-800">
+                            <Wifi className="h-3 w-3 text-rose-500" />
+                            <span>Multiple IP detected</span>
+                          </div>
+                        ) : null}
                       </div>
-                      <div className={getDeliveryFieldClass(hasDeliveryPhoneNumber)}>
-                        {deliveryPhoneNumber || 'Missing phone number'}
+                    ) : null}
+
+                    <div className="space-y-1.5">
+                      <input
+                        type="text"
+                        value={effectiveCustomerName}
+                        onChange={(event) => updateDraftDeliveryAddress('fullName', event.target.value)}
+                        disabled={!isSelectedOrderEditable}
+                        placeholder="Customer name"
+                        className={`w-full rounded-md px-2.5 py-1.5 text-xs outline-none transition ${
+                          isSelectedOrderEditable
+                            ? 'border border-slate-200 bg-slate-50 text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'
+                            : 'cursor-not-allowed border border-slate-100 text-slate-500'
+                        }`}
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={effectiveCustomerPhone}
+                          onChange={(event) => updateDraftDeliveryAddress('phoneNumber', event.target.value)}
+                          disabled={!isSelectedOrderEditable}
+                          placeholder="Phone number"
+                          className={`min-w-0 flex-1 rounded-md px-2.5 py-1.5 text-xs outline-none transition ${
+                            isSelectedOrderEditable
+                              ? 'border border-slate-200 bg-slate-50 text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'
+                              : 'cursor-not-allowed border border-slate-100 text-slate-500'
+                          }`}
+                        />
+                        {effectiveCustomerPhone ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(effectiveCustomerPhone);
+                              setIsPhoneCopied(true);
+                              if (phoneCopyTimeoutRef.current) clearTimeout(phoneCopyTimeoutRef.current);
+                              phoneCopyTimeoutRef.current = setTimeout(() => setIsPhoneCopied(false), 2000);
+                            }}
+                            className="shrink-0 rounded-md border border-slate-200 p-1.5 text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"
+                            title="Copy phone number"
+                          >
+                            {isPhoneCopied ? (
+                              <span className="text-[9px] font-semibold text-emerald-600">Done</span>
+                            ) : (
+                              <ClipboardCopy className="h-3 w-3" />
+                            )}
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <div className="rounded-md bg-slate-50 px-2.5 py-1.5 text-xs text-slate-400">
+                          {modalSnapshot.customer.email || 'Email'}
+                        </div>
+                        <div className="rounded-md bg-slate-50 px-2.5 py-1.5 text-xs text-slate-400">
+                          {modalSnapshot.customer.dateOfBirth || 'Date of birth'}
+                        </div>
                       </div>
                     </div>
-                    <div className={getDeliveryFieldClass(hasDeliveryAddress)}>
-                      {deliveryAddress || 'Missing address'}
-                    </div>
-                    <div className={getDeliveryFieldClass(hasDeliveryArea)}>
-                      {deliveryAreaText || 'Missing commune / district / province'}
+
+                    {/* Phone history button with success badge */}
+                    <button
+                      type="button"
+                      onClick={openPhoneHistoryModal}
+                      disabled={!canOpenPhoneHistory}
+                      className={`mt-2 w-full rounded-md border px-2.5 py-2 text-left transition ${
+                        canOpenPhoneHistory
+                          ? 'border-sky-200 bg-sky-50/70 hover:bg-sky-100/70'
+                          : 'cursor-default border-slate-100 bg-slate-50'
+                      }`}
+                      title={canOpenPhoneHistory ? 'Open history of orders by this phone number' : 'Phone number unavailable'}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-slate-900">{effectiveCustomerName || '—'}</p>
+                          <p className="text-[10px] text-blue-600">{effectiveCustomerPhone || '—'}</p>
+                        </div>
+                        {(() => {
+                          const total = modalSnapshot.customer.orderCount;
+                          const success = modalSnapshot.customer.succeedOrderCount;
+                          const rate = total > 0 ? (success / total) * 100 : 0;
+                          const badgeColor = total === 0
+                            ? 'border-slate-200 bg-slate-50 text-slate-600'
+                            : rate >= 70
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : rate >= 40
+                                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                : 'border-rose-200 bg-rose-50 text-rose-700';
+                          return (
+                            <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${badgeColor}`}>
+                              {success}/{total} order{total !== 1 ? 's' : ''}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </button>
+                  </div>
+                </section>
+
+                {/* ── Delivery ── */}
+                <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                    <MapPin className="h-3.5 w-3.5 text-rose-500" />
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Delivery</h4>
+                    {deliveryAddressOptions.length > 0 ? (
+                      <select
+                        value={selectedDeliveryAddressKey}
+                        onChange={(event) => {
+                          setSelectedDeliveryAddressKey(event.target.value);
+                          setDraftDeliveryAddress(null);
+                        }}
+                        disabled={!isSelectedOrderEditable}
+                        className={`ml-auto max-w-[160px] truncate rounded-md border px-1.5 py-0.5 text-[10px] transition ${
+                          isSelectedOrderEditable
+                            ? 'border-slate-200 bg-white text-slate-800 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100'
+                            : 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-500'
+                        }`}
+                        title="Select a different saved customer address"
+                      >
+                        <option value="">Current address</option>
+                        {deliveryAddressOptions.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+                  </div>
+                  <div className="p-3">
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <input
+                          type="text"
+                          value={deliveryFullName}
+                          onChange={(event) => updateDraftDeliveryAddress('fullName', event.target.value)}
+                          disabled={!isSelectedOrderEditable}
+                          placeholder="Full name"
+                          className={`rounded-md px-2.5 py-1.5 text-xs outline-none transition ${
+                            isSelectedOrderEditable
+                              ? 'border border-slate-200 bg-slate-100 text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'
+                              : 'cursor-not-allowed border border-slate-100 text-slate-500'
+                          }`}
+                        />
+                        <input
+                          type="text"
+                          value={deliveryPhoneNumber}
+                          onChange={(event) => updateDraftDeliveryAddress('phoneNumber', event.target.value)}
+                          disabled={!isSelectedOrderEditable}
+                          placeholder="Phone number"
+                          className={`rounded-md px-2.5 py-1.5 text-xs outline-none transition ${
+                            isSelectedOrderEditable
+                              ? 'border border-slate-200 bg-slate-100 text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'
+                            : 'cursor-not-allowed border border-slate-100 text-slate-500'
+                          }`}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        value={deliveryAddress}
+                        onChange={(event) => updateDraftDeliveryAddress('address', event.target.value)}
+                        disabled={!isSelectedOrderEditable}
+                        placeholder="Full address"
+                        className={`w-full rounded-md px-2.5 py-1.5 text-xs outline-none transition ${
+                          isSelectedOrderEditable
+                            ? 'border border-slate-200 bg-slate-100 text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'
+                            : 'cursor-not-allowed border border-slate-100 text-slate-500'
+                        }`}
+                      />
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_120px]">
+                        <div className="relative" ref={geoPickerRef}>
+                          <div
+                            className={`group/geo relative flex items-center rounded-md border bg-white transition ${
+                              isSelectedOrderEditable
+                                ? 'border-slate-200 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100'
+                                : 'border-slate-100 bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="text"
+                              value={showGeoPicker ? geoSearchTerm : deliveryAreaText}
+                              onFocus={() => {
+                                if (!isSelectedOrderEditable) return;
+                                openGeoPicker();
+                              }}
+                              onClick={() => {
+                                if (!isSelectedOrderEditable) return;
+                                openGeoPicker();
+                              }}
+                              onChange={(event) => {
+                                if (!isSelectedOrderEditable) return;
+                                openGeoPicker();
+                                setGeoSearchTerm(event.target.value);
+                              }}
+                              readOnly={!isSelectedOrderEditable || !showGeoPicker}
+                              disabled={!isSelectedOrderEditable}
+                              placeholder="Type to search"
+                              className={`w-full rounded-md bg-transparent px-2.5 py-1.5 pr-14 text-xs outline-none ${
+                                isSelectedOrderEditable ? 'text-slate-900' : 'cursor-not-allowed text-slate-500'
+                              }`}
+                            />
+                            {showGeoPicker ? (
+                              <button
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  clearGeoLocationSelection();
+                                }}
+                                className={`absolute right-8 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-300 text-white transition ${
+                                  isSelectedOrderEditable
+                                    ? 'opacity-0 group-hover/geo:opacity-100 group-focus-within/geo:opacity-100 hover:bg-slate-400'
+                                    : 'hidden'
+                                }`}
+                                aria-label="Clear search"
+                                title="Clear search"
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            ) : null}
+                            <Search
+                              className={`pointer-events-none absolute right-8 h-3.5 w-3.5 text-slate-300 transition ${
+                                showGeoPicker
+                                  ? 'opacity-100 group-hover/geo:opacity-0 group-focus-within/geo:opacity-0'
+                                  : 'opacity-100'
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isSelectedOrderEditable) return;
+                                if (showGeoPicker) {
+                                  setShowGeoPicker(false);
+                                  setGeoSearchTerm('');
+                                } else {
+                                  openGeoPicker();
+                                }
+                              }}
+                              disabled={!isSelectedOrderEditable}
+                              className={`absolute right-1 inline-flex h-6 w-6 items-center justify-center rounded transition ${
+                                isSelectedOrderEditable
+                                  ? 'text-slate-500 hover:bg-slate-100'
+                                  : 'cursor-not-allowed text-slate-300'
+                              }`}
+                            >
+                              {showGeoPicker ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+
+                          {showGeoPicker && isSelectedOrderEditable ? (
+                            <div className="absolute left-0 top-full z-40 mt-1 w-full min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+                              <div className="grid grid-cols-3 border-b border-slate-100">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveGeoTab('province');
+                                    setGeoSearchTerm('');
+                                  }}
+                                  className={`overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2 text-center text-[13px] font-medium leading-tight ${
+                                    activeGeoTab === 'province'
+                                      ? 'border-b-2 border-indigo-500 text-indigo-700'
+                                      : 'text-slate-500 hover:text-slate-700'
+                                  }`}
+                                >
+                                  {selectedProvinceLabel}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!selectedProvinceId) return;
+                                    setActiveGeoTab('district');
+                                    setGeoSearchTerm('');
+                                  }}
+                                  disabled={!selectedProvinceId}
+                                  className={`overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2 text-center text-[13px] font-medium leading-tight ${
+                                    activeGeoTab === 'district'
+                                      ? 'border-b-2 border-indigo-500 text-indigo-700'
+                                      : 'text-slate-500 hover:text-slate-700'
+                                  } ${!selectedProvinceId ? 'cursor-not-allowed opacity-40' : ''}`}
+                                >
+                                  {selectedDistrictLabel}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!selectedDistrictId) return;
+                                    setActiveGeoTab('commune');
+                                    setGeoSearchTerm('');
+                                  }}
+                                  disabled={!selectedDistrictId}
+                                  className={`overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2 text-center text-[13px] font-medium leading-tight ${
+                                    activeGeoTab === 'commune'
+                                      ? 'border-b-2 border-indigo-500 text-indigo-700'
+                                      : 'text-slate-500 hover:text-slate-700'
+                                  } ${!selectedDistrictId ? 'cursor-not-allowed opacity-40' : ''}`}
+                                >
+                                  {selectedCommuneLabel}
+                                </button>
+                              </div>
+
+                              <div className="max-h-52 overflow-auto p-1.5">
+                                {activeGeoTab === 'province' ? (
+                                  <>
+                                    {isGeoProvincesLoading ? (
+                                      <div className="px-2 py-1.5 text-xs text-slate-500">Loading province...</div>
+                                    ) : filteredGeoProvinces.length === 0 ? (
+                                      <div className="px-2 py-1.5 text-xs text-slate-500">No province found.</div>
+                                    ) : (
+                                      filteredGeoProvinces.map((entry) => {
+                                        const selected = entry.id === selectedProvinceId;
+                                        return (
+                                          <button
+                                            key={entry.id}
+                                            type="button"
+                                            onClick={() => handleProvinceChange(entry.id)}
+                                            className={`mb-1 block w-full rounded-md px-2 py-1.5 text-left text-xs ${
+                                              selected
+                                                ? 'bg-blue-50 font-semibold text-blue-700'
+                                                : 'text-slate-800 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            {entry.name || entry.name_en || entry.id}
+                                          </button>
+                                        );
+                                      })
+                                    )}
+                                  </>
+                                ) : null}
+
+                                {activeGeoTab === 'district' ? (
+                                  <>
+                                    {!selectedProvinceId ? (
+                                      <div className="px-2 py-1.5 text-xs text-slate-500">Select province first.</div>
+                                    ) : isGeoDistrictsLoading ? (
+                                      <div className="px-2 py-1.5 text-xs text-slate-500">Loading city...</div>
+                                    ) : filteredGeoDistricts.length === 0 ? (
+                                      <div className="px-2 py-1.5 text-xs text-slate-500">No city found.</div>
+                                    ) : (
+                                      filteredGeoDistricts.map((entry) => {
+                                        const selected = entry.id === selectedDistrictId;
+                                        return (
+                                          <button
+                                            key={entry.id}
+                                            type="button"
+                                            onClick={() => handleDistrictChange(entry.id)}
+                                            className={`mb-1 block w-full rounded-md px-2 py-1.5 text-left text-xs ${
+                                              selected
+                                                ? 'bg-blue-50 font-semibold text-blue-700'
+                                                : 'text-slate-800 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            {entry.name || entry.name_en || entry.id}
+                                          </button>
+                                        );
+                                      })
+                                    )}
+                                  </>
+                                ) : null}
+
+                                {activeGeoTab === 'commune' ? (
+                                  <>
+                                    {!selectedDistrictId ? (
+                                      <div className="px-2 py-1.5 text-xs text-slate-500">Select city first.</div>
+                                    ) : isGeoCommunesLoading ? (
+                                      <div className="px-2 py-1.5 text-xs text-slate-500">Loading barangay...</div>
+                                    ) : filteredGeoCommunes.length === 0 ? (
+                                      <div className="px-2 py-1.5 text-xs text-slate-500">No barangay found.</div>
+                                    ) : (
+                                      filteredGeoCommunes.map((entry) => {
+                                        const selected = entry.id === selectedCommuneId;
+                                        return (
+                                          <button
+                                            key={entry.id}
+                                            type="button"
+                                            onClick={() => handleCommuneChange(entry.id)}
+                                            className={`mb-1 block w-full rounded-md px-2 py-1.5 text-left text-xs ${
+                                              selected
+                                                ? 'bg-blue-50 font-semibold text-blue-700'
+                                                : 'text-slate-800 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            {entry.name || entry.name_en || entry.id}
+                                          </button>
+                                        );
+                                      })
+                                    )}
+                                  </>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                        <input
+                          type="text"
+                          value={effectiveDeliveryAddress.postCode}
+                          onChange={(event) => updateDraftDeliveryAddress('postCode', event.target.value)}
+                          disabled={!isSelectedOrderEditable}
+                          placeholder="Postcode"
+                          className={`rounded-md px-2.5 py-1.5 text-xs outline-none transition ${
+                            isSelectedOrderEditable
+                              ? 'border border-slate-200 bg-slate-100 text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'
+                            : 'cursor-not-allowed border border-slate-100 text-slate-500'
+                          }`}
+                        />
+                      </div>
+                      {geoLookupError ? (
+                        <p className="text-[11px] text-rose-600">{geoLookupError}</p>
+                      ) : null}
                     </div>
                   </div>
                 </section>
               </div>
+
             </div>
-            <div className="absolute inset-x-0 bottom-0 z-50 flex items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-5 py-3 shadow-[0_-10px_20px_-14px_rgba(15,23,42,0.45)] backdrop-blur-sm">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700">
-                  Status: {statusDisplayLabel}
+            </div>
+
+            {/* ── STICKY FOOTER ── */}
+            <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 shadow-[0_-4px_12px_-4px_rgba(15,23,42,0.08)]">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-white"
+                  style={{ backgroundColor: statusDisplayColor }}
+                >
+                  {statusDisplayLabel}
                 </span>
-                <span className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-700">
+                <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold tabular-nums text-slate-700">
                   COD: {formatCurrency(selectedOrderForModal?.cod || 0)}
                 </span>
                 {statusSaveError ? (
-                  <span className="text-sm text-rose-600">{statusSaveError}</span>
+                  <span className="text-xs text-rose-600">{statusSaveError}</span>
                 ) : null}
               </div>
 
@@ -2126,11 +3090,14 @@ export default function OrdersConfirmationPage() {
                 type="button"
                 onClick={handleSaveStatus}
                 disabled={!isSelectedOrderEditable || !hasPendingChanges || isSavingStatus}
-                className="inline-flex min-w-[140px] items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className={`inline-flex min-w-[100px] items-center justify-center gap-1.5 rounded-md px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition ${
+                  !isSelectedOrderEditable || !hasPendingChanges || isSavingStatus
+                    ? 'cursor-not-allowed bg-slate-300'
+                    : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800'
+                }`}
               >
                 {isSavingStatus ? 'Saving...' : 'Save'}
               </button>
-            </div>
             </div>
           </div>
         </div>,

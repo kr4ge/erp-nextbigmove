@@ -182,6 +182,21 @@ export class IntegrationController {
   }
 
   /**
+   * Pancake POS Geo - one-time/global sync for country data (default: PH=63)
+   */
+  @Post('/pos-geo/sync')
+  @Permissions('integration.update')
+  async syncPosGeo(
+    @Query('country_code') countryCode?: string,
+    @Query('force') force?: string,
+  ) {
+    const normalizedForce = ['1', 'true', 'yes', 'on'].includes(
+      (force || '').toString().trim().toLowerCase(),
+    );
+    return this.integrationService.syncPancakeGeoData(countryCode || '63', normalizedForce);
+  }
+
+  /**
    * POS Stores - list products for store (from DB)
    * NOTE: This must come BEFORE /pos-stores/:id to avoid route conflicts
    */

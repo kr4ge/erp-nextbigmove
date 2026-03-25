@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Inject,
   NotFoundException,
   ConflictException,
   ForbiddenException,
@@ -8,6 +9,8 @@ import {
   UnauthorizedException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { ClsService } from 'nestjs-cls';
@@ -113,6 +116,33 @@ type PancakeStoreTag = {
   groupName: string | null;
 };
 
+type PancakeGeoProvince = {
+  id: string;
+  countryCode: number;
+  name: string;
+  nameEn: string | null;
+  newId: string | null;
+  regionType: string | null;
+};
+
+type PancakeGeoDistrict = {
+  id: string;
+  provinceId: string;
+  name: string;
+  nameEn: string | null;
+  postcode?: Prisma.InputJsonValue;
+};
+
+type PancakeGeoCommune = {
+  id: string;
+  provinceId: string;
+  districtId: string;
+  name: string;
+  nameEn: string | null;
+  newId: string | null;
+  postcode?: Prisma.InputJsonValue;
+};
+
 type ListPancakeWebhookLogsParams = {
   page?: number;
   limit?: number;
@@ -131,6 +161,7 @@ type ListPancakeWebhookLogsParams = {
 export class IntegrationService {
   private readonly logger = new Logger(IntegrationService.name);
   private readonly PANCAKE_WEBHOOK_SETTINGS_KEY = 'pancakePosWebhook';
+  private readonly POS_GEO_CACHE_VERSION_KEY = 'pos_geo:version';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -148,7 +179,67 @@ export class IntegrationService {
     >,
     @InjectQueue(PANCAKE_WEBHOOK_RECONCILE_QUEUE)
     private readonly pancakeWebhookReconcileQueue: Queue<PancakeWebhookReconcileJobData>,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {}
+
+  private getPosGeoCacheTtlMs(): number {
+    const ttlSecondsRaw = Number(process.env.POS_GEO_CACHE_TTL_SECONDS || '21600');
+    const ttlSeconds = Number.isFinite(ttlSecondsRaw) && ttlSecondsRaw > 0
+      ? Math.floor(ttlSecondsRaw)
+      : 21600;
+    return ttlSeconds * 1000;
+  }
+
+  private async getGeoCacheVersion(): Promise<string> {
+    try {
+      const cached = await this.cacheManager.get<string>(this.POS_GEO_CACHE_VERSION_KEY);
+      if (typeof cached === 'string' && cached.trim().length > 0) {
+        return cached.trim();
+      }
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to read POS geo cache version: ${error?.message || 'Unknown cache error'}`,
+      );
+    }
+    return 'v1';
+  }
+
+  private async bumpGeoCacheVersion(): Promise<void> {
+    try {
+      await this.cacheManager.set(
+        this.POS_GEO_CACHE_VERSION_KEY,
+        `v${Date.now()}`,
+        this.getPosGeoCacheTtlMs(),
+      );
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to bump POS geo cache version: ${error?.message || 'Unknown cache error'}`,
+      );
+    }
+  }
+
+  private async getGeoCacheValue<T>(key: string): Promise<T | null> {
+    try {
+      const cached = await this.cacheManager.get<T>(key);
+      return cached ?? null;
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to read POS geo cache key=${key}: ${error?.message || 'Unknown cache error'}`,
+      );
+      return null;
+    }
+  }
+
+  private async setGeoCacheValue<T>(key: string, value: T): Promise<void> {
+    try {
+      await this.cacheManager.set(key, value, this.getPosGeoCacheTtlMs());
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to write POS geo cache key=${key}: ${error?.message || 'Unknown cache error'}`,
+      );
+    }
+  }
 
   private normalizeJsonObject(value: any): Record<string, any> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -2923,6 +3014,345 @@ export class IntegrationService {
     });
   }
 
+  async listPosGeoProvinces(countryCodeRaw: string | number = '63') {
+    const countryCode = this.normalizeGeoCountryCode(countryCodeRaw);
+    const cacheVersion = await this.getGeoCacheVersion();
+    const cacheKey = `pos_geo:${cacheVersion}:provinces:${countryCode}`;
+    const cached = await this.getGeoCacheValue<{
+      country_code: number;
+      items: Array<{
+        id: string;
+        name: string;
+        name_en: string | null;
+        new_id: string | null;
+        region_type: string | null;
+      }>;
+      total: number;
+    }>(cacheKey);
+    if (cached) return cached;
+
+    const rows = await this.prisma.posProvince.findMany({
+      where: { countryCode },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        countryCode: true,
+        name: true,
+        nameEn: true,
+        newId: true,
+        regionType: true,
+      },
+    });
+
+    const response = {
+      country_code: countryCode,
+      items: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        name_en: row.nameEn,
+        new_id: row.newId,
+        region_type: row.regionType,
+      })),
+      total: rows.length,
+    };
+    await this.setGeoCacheValue(cacheKey, response);
+    return response;
+  }
+
+  async listPosGeoDistricts(provinceIdRaw: string) {
+    const provinceId = provinceIdRaw?.toString?.().trim?.() || '';
+    if (!provinceId) {
+      throw new BadRequestException('province_id is required');
+    }
+
+    const cacheVersion = await this.getGeoCacheVersion();
+    const cacheKey = `pos_geo:${cacheVersion}:districts:${provinceId}`;
+    const cached = await this.getGeoCacheValue<{
+      country_code: number;
+      province_id: string;
+      province_name: string;
+      items: Array<{
+        id: string;
+        name: string;
+        name_en: string | null;
+        postcode: Prisma.JsonValue | null;
+      }>;
+      total: number;
+    }>(cacheKey);
+    if (cached) return cached;
+
+    const province = await this.prisma.posProvince.findUnique({
+      where: { id: provinceId },
+      select: {
+        id: true,
+        countryCode: true,
+        name: true,
+      },
+    });
+
+    if (!province) {
+      throw new NotFoundException('Province not found');
+    }
+
+    const rows = await this.prisma.posDistrict.findMany({
+      where: { provinceId },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        provinceId: true,
+        name: true,
+        nameEn: true,
+        postcode: true,
+      },
+    });
+
+    const response = {
+      country_code: province.countryCode,
+      province_id: province.id,
+      province_name: province.name,
+      items: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        name_en: row.nameEn,
+        postcode: row.postcode,
+      })),
+      total: rows.length,
+    };
+    await this.setGeoCacheValue(cacheKey, response);
+    return response;
+  }
+
+  async listPosGeoCommunes(provinceIdRaw: string, districtIdRaw?: string) {
+    const provinceId = provinceIdRaw?.toString?.().trim?.() || '';
+    if (!provinceId) {
+      throw new BadRequestException('province_id is required');
+    }
+
+    const districtId = districtIdRaw?.toString?.().trim?.() || undefined;
+    const cacheVersion = await this.getGeoCacheVersion();
+    const cacheKey = `pos_geo:${cacheVersion}:communes:${provinceId}:${districtId || 'all'}`;
+    const cached = await this.getGeoCacheValue<{
+      country_code: number;
+      province_id: string;
+      province_name: string;
+      district_id: string | null;
+      items: Array<{
+        id: string;
+        district_id: string;
+        name: string;
+        name_en: string | null;
+        new_id: string | null;
+        postcode: Prisma.JsonValue | null;
+      }>;
+      total: number;
+    }>(cacheKey);
+    if (cached) return cached;
+
+    const province = await this.prisma.posProvince.findUnique({
+      where: { id: provinceId },
+      select: {
+        id: true,
+        countryCode: true,
+        name: true,
+      },
+    });
+
+    if (!province) {
+      throw new NotFoundException('Province not found');
+    }
+
+    if (districtId) {
+      const district = await this.prisma.posDistrict.findUnique({
+        where: { id: districtId },
+        select: {
+          id: true,
+          provinceId: true,
+        },
+      });
+      if (!district || district.provinceId !== provinceId) {
+        throw new BadRequestException('district_id does not belong to province_id');
+      }
+    }
+
+    const rows = await this.prisma.posCommune.findMany({
+      where: {
+        provinceId,
+        ...(districtId ? { districtId } : {}),
+      },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        provinceId: true,
+        districtId: true,
+        name: true,
+        nameEn: true,
+        newId: true,
+        postcode: true,
+      },
+    });
+
+    const response = {
+      country_code: province.countryCode,
+      province_id: province.id,
+      province_name: province.name,
+      district_id: districtId || null,
+      items: rows.map((row) => ({
+        id: row.id,
+        district_id: row.districtId,
+        name: row.name,
+        name_en: row.nameEn,
+        new_id: row.newId,
+        postcode: row.postcode,
+      })),
+      total: rows.length,
+    };
+    await this.setGeoCacheValue(cacheKey, response);
+    return response;
+  }
+
+  async syncPancakeGeoData(countryCodeRaw: string | number = '63', force = false) {
+    const countryCode = this.normalizeGeoCountryCode(countryCodeRaw);
+
+    const existingProvinces = await this.prisma.posProvince.findMany({
+      where: { countryCode },
+      select: { id: true },
+    });
+    const existingProvinceIds = existingProvinces.map((row) => row.id);
+
+    if (!force && existingProvinceIds.length > 0) {
+      const [districtCount, communeCount] = await this.prisma.$transaction([
+        this.prisma.posDistrict.count({
+          where: { provinceId: { in: existingProvinceIds } },
+        }),
+        this.prisma.posCommune.count({
+          where: { provinceId: { in: existingProvinceIds } },
+        }),
+      ]);
+
+      return {
+        country_code: countryCode,
+        synced: false,
+        skipped: true,
+        reason: 'ALREADY_SYNCED',
+        message: 'Geo data already exists. Use force=true to refresh.',
+        provinces: existingProvinceIds.length,
+        districts: districtCount,
+        communes: communeCount,
+      };
+    }
+
+    const provinces = await this.fetchGeoProvincesFromPancake(countryCode);
+    const provinceIdSet = new Set(provinces.map((row) => row.id));
+    const districtMap = new Map<string, PancakeGeoDistrict>();
+    const communeMap = new Map<string, PancakeGeoCommune>();
+    let requestCount = 1; // provinces request
+
+    for (const province of provinces) {
+      const [districts, communes] = await Promise.all([
+        this.fetchGeoDistrictsFromPancake(province.id),
+        this.fetchGeoCommunesFromPancake(province.id),
+      ]);
+      requestCount += 2;
+
+      for (const district of districts) {
+        if (!provinceIdSet.has(district.provinceId)) continue;
+        districtMap.set(district.id, district);
+      }
+
+      for (const commune of communes) {
+        if (!provinceIdSet.has(commune.provinceId)) continue;
+        communeMap.set(commune.id, commune);
+      }
+    }
+
+    const districts = Array.from(districtMap.values());
+    const districtIdSet = new Set(districts.map((row) => row.id));
+    const communes = Array.from(communeMap.values()).filter((row) => districtIdSet.has(row.districtId));
+    const skippedCommunes = communeMap.size - communes.length;
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        if (existingProvinceIds.length > 0) {
+          await tx.posCommune.deleteMany({
+            where: { provinceId: { in: existingProvinceIds } },
+          });
+          await tx.posDistrict.deleteMany({
+            where: { provinceId: { in: existingProvinceIds } },
+          });
+          await tx.posProvince.deleteMany({
+            where: { id: { in: existingProvinceIds } },
+          });
+        }
+
+        for (const chunk of this.chunkRows(provinces, 200)) {
+          await tx.posProvince.createMany({
+            data: chunk.map((row) => ({
+              id: row.id,
+              countryCode: row.countryCode,
+              name: row.name,
+              nameEn: row.nameEn,
+              newId: row.newId,
+              regionType: row.regionType,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        for (const chunk of this.chunkRows(districts, 1000)) {
+          await tx.posDistrict.createMany({
+            data: chunk.map((row) => ({
+              id: row.id,
+              provinceId: row.provinceId,
+              name: row.name,
+              nameEn: row.nameEn,
+              ...(row.postcode !== undefined ? { postcode: row.postcode } : {}),
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        for (const chunk of this.chunkRows(communes, 1000)) {
+          await tx.posCommune.createMany({
+            data: chunk.map((row) => ({
+              id: row.id,
+              provinceId: row.provinceId,
+              districtId: row.districtId,
+              name: row.name,
+              nameEn: row.nameEn,
+              newId: row.newId,
+              ...(row.postcode !== undefined ? { postcode: row.postcode } : {}),
+            })),
+            skipDuplicates: true,
+          });
+        }
+      },
+      {
+        timeout: 240000,
+        maxWait: 10000,
+      },
+    );
+
+    const [provinceCount, districtCount, communeCount] = await this.prisma.$transaction([
+      this.prisma.posProvince.count({ where: { countryCode } }),
+      this.prisma.posDistrict.count({ where: { province: { countryCode } } }),
+      this.prisma.posCommune.count({ where: { province: { countryCode } } }),
+    ]);
+
+    await this.bumpGeoCacheVersion();
+
+    return {
+      country_code: countryCode,
+      synced: true,
+      skipped: false,
+      force,
+      requests_made: requestCount,
+      provinces: provinceCount,
+      districts: districtCount,
+      communes: communeCount,
+      skipped_communes_missing_district: skippedCommunes,
+    };
+  }
+
   async syncPancakeTagsByStoreId(storeId: string) {
     const store = await this.getPosStore(storeId); // validates access including shared integrations
     const { tenantId } = await this.teamContext.getContext();
@@ -3356,6 +3786,204 @@ export class IntegrationService {
     }
 
     return products;
+  }
+
+  private normalizeGeoCountryCode(countryCodeRaw: string | number): number {
+    const parsed =
+      typeof countryCodeRaw === 'number'
+        ? countryCodeRaw
+        : Number.parseInt(countryCodeRaw?.toString?.().trim?.() || '', 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new BadRequestException('country_code must be a positive integer');
+    }
+    return Math.floor(parsed);
+  }
+
+  private chunkRows<T>(rows: T[], size: number): T[][] {
+    const chunkSize = Math.max(1, Math.floor(size));
+    const chunks: T[][] = [];
+    for (let index = 0; index < rows.length; index += chunkSize) {
+      chunks.push(rows.slice(index, index + chunkSize));
+    }
+    return chunks;
+  }
+
+  private parsePancakeGeoResponseRows(payload: any): any[] {
+    if (!payload) return [];
+
+    if (Array.isArray(payload)) {
+      const nestedRows = payload.flatMap((entry) => {
+        if (Array.isArray(entry?.data)) return entry.data;
+        return [];
+      });
+      if (nestedRows.length > 0) return nestedRows;
+    }
+
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
+  }
+
+  private asOptionalString(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    const text = value.toString().trim();
+    return text ? text : null;
+  }
+
+  private asOptionalJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
+    if (value === null || value === undefined) return undefined;
+
+    if (
+      typeof value === 'string'
+      || typeof value === 'number'
+      || typeof value === 'boolean'
+      || Array.isArray(value)
+      || (typeof value === 'object' && value !== null)
+    ) {
+      return value as Prisma.InputJsonValue;
+    }
+
+    return undefined;
+  }
+
+  private normalizePancakeGeoProvinceRow(row: any, countryCode: number): PancakeGeoProvince | null {
+    const id = this.asOptionalString(row?.id);
+    const name = this.asOptionalString(row?.name);
+    if (!id || !name) return null;
+
+    const rowCountryCode = Number.parseInt(
+      this.asOptionalString(row?.country_code) || String(countryCode),
+      10,
+    );
+
+    return {
+      id,
+      countryCode: Number.isFinite(rowCountryCode) ? rowCountryCode : countryCode,
+      name,
+      nameEn: this.asOptionalString(row?.name_en),
+      newId: this.asOptionalString(row?.new_id),
+      regionType: this.asOptionalString(row?.region_type),
+    };
+  }
+
+  private normalizePancakeGeoDistrictRow(
+    row: any,
+    fallbackProvinceId: string,
+  ): PancakeGeoDistrict | null {
+    const id = this.asOptionalString(row?.id);
+    const name = this.asOptionalString(row?.name);
+    const provinceId = this.asOptionalString(row?.province_id) || fallbackProvinceId;
+    if (!id || !name || !provinceId) return null;
+
+    return {
+      id,
+      provinceId,
+      name,
+      nameEn: this.asOptionalString(row?.name_en),
+      postcode: this.asOptionalJsonValue(row?.postcode),
+    };
+  }
+
+  private normalizePancakeGeoCommuneRow(
+    row: any,
+    fallbackProvinceId: string,
+  ): PancakeGeoCommune | null {
+    const id = this.asOptionalString(row?.id);
+    const name = this.asOptionalString(row?.name);
+    const districtId = this.asOptionalString(row?.district_id);
+    const provinceId = this.asOptionalString(row?.province_id) || fallbackProvinceId;
+    if (!id || !name || !districtId || !provinceId) return null;
+
+    return {
+      id,
+      provinceId,
+      districtId,
+      name,
+      nameEn: this.asOptionalString(row?.name_en),
+      newId: this.asOptionalString(row?.new_id),
+      postcode: this.asOptionalJsonValue(row?.postcode),
+    };
+  }
+
+  private async fetchGeoProvincesFromPancake(countryCode: number): Promise<PancakeGeoProvince[]> {
+    const params = new URLSearchParams();
+    params.set('country_code', String(countryCode));
+
+    const response = await fetch(
+      `https://pos.pages.fm/api/v1/geo/provinces?${params.toString()}`,
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new ConflictException(errorText || 'Failed to fetch provinces from Pancake POS');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const rows = this.parsePancakeGeoResponseRows(payload);
+    const map = new Map<string, PancakeGeoProvince>();
+
+    for (const row of rows) {
+      const normalized = this.normalizePancakeGeoProvinceRow(row, countryCode);
+      if (!normalized) continue;
+      map.set(normalized.id, normalized);
+    }
+
+    return Array.from(map.values());
+  }
+
+  private async fetchGeoDistrictsFromPancake(provinceId: string): Promise<PancakeGeoDistrict[]> {
+    const params = new URLSearchParams();
+    params.set('province_id', provinceId);
+
+    const response = await fetch(
+      `https://pos.pages.fm/api/v1/geo/districts?${params.toString()}`,
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new ConflictException(
+        errorText || `Failed to fetch districts for province ${provinceId}`,
+      );
+    }
+
+    const payload = await response.json().catch(() => null);
+    const rows = this.parsePancakeGeoResponseRows(payload);
+    const map = new Map<string, PancakeGeoDistrict>();
+
+    for (const row of rows) {
+      const normalized = this.normalizePancakeGeoDistrictRow(row, provinceId);
+      if (!normalized) continue;
+      map.set(normalized.id, normalized);
+    }
+
+    return Array.from(map.values());
+  }
+
+  private async fetchGeoCommunesFromPancake(provinceId: string): Promise<PancakeGeoCommune[]> {
+    const params = new URLSearchParams();
+    params.set('province_id', provinceId);
+
+    const response = await fetch(
+      `https://pos.pages.fm/api/v1/geo/communes?${params.toString()}`,
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new ConflictException(
+        errorText || `Failed to fetch communes for province ${provinceId}`,
+      );
+    }
+
+    const payload = await response.json().catch(() => null);
+    const rows = this.parsePancakeGeoResponseRows(payload);
+    const map = new Map<string, PancakeGeoCommune>();
+
+    for (const row of rows) {
+      const normalized = this.normalizePancakeGeoCommuneRow(row, provinceId);
+      if (!normalized) continue;
+      map.set(normalized.id, normalized);
+    }
+
+    return Array.from(map.values());
   }
 
   private parsePancakeTagsResponseRows(payload: any): any[] {
