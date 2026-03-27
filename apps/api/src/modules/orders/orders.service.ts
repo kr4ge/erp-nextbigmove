@@ -21,6 +21,7 @@ import { IntegrationService } from '../integrations/integration.service';
 import {
   CONFIRMATION_UPDATE_STATUS_JOB,
   CONFIRMATION_UPDATE_QUEUE,
+  ConfirmationUpdateItemPayload,
   ConfirmationUpdateStatusJobData,
 } from './orders.constants';
 
@@ -45,6 +46,7 @@ type ListConfirmationPhoneHistoryParams = {
 };
 
 type PosStoreAccessRow = {
+  id: string;
   shopId: string;
   shopName: string | null;
   name: string | null;
@@ -195,6 +197,19 @@ export class OrdersService {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  private toObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+  }
+
+  private extractOrderWarehouseId(orderSnapshot: Prisma.JsonValue | null): string | null {
+    const snapshot = this.toObject(orderSnapshot);
+    const warehouseIdRaw = snapshot?.warehouse_id ?? snapshot?.warehouseId ?? null;
+    if (warehouseIdRaw === null || warehouseIdRaw === undefined) return null;
+    const warehouseId = warehouseIdRaw.toString().trim();
+    return warehouseId || null;
+  }
+
   private extractTagNames(tagsRaw: Prisma.JsonValue | null): string[] {
     return this.extractTagDetails(tagsRaw).map((entry) => entry.name);
   }
@@ -255,6 +270,25 @@ export class OrdersService {
     }
 
     return normalized;
+  }
+
+  private normalizeUpdateItems(items: Array<{ variation_id: string; quantity: number }>): ConfirmationUpdateItemPayload[] {
+    const normalized = new Map<string, ConfirmationUpdateItemPayload>();
+
+    for (const entry of items) {
+      const variationId = entry?.variation_id?.toString?.().trim?.() || '';
+      if (!variationId) continue;
+
+      const quantityRaw = Number.parseInt(`${entry?.quantity ?? 1}`, 10);
+      const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 1;
+
+      normalized.set(variationId, {
+        variation_id: variationId,
+        quantity,
+      });
+    }
+
+    return Array.from(normalized.values());
   }
 
   private parseOptionalAmountUpdateField(
@@ -484,6 +518,7 @@ export class OrdersService {
     const stores = (await this.prisma.posStore.findMany({
       where: storeWhere,
       select: {
+        id: true,
         shopId: true,
         shopName: true,
         name: true,
@@ -613,11 +648,53 @@ export class OrdersService {
       }),
     ])) as [number, PosOrderListRow[]];
 
+    const shopIdByStoreId = new Map(stores.map((store) => [store.id, store.shopId]));
+    const storeIdByShopId = new Map(stores.map((store) => [store.shopId, store.id]));
+    const warehouseIds = Array.from(
+      new Set(
+        rows
+          .map((row) => this.extractOrderWarehouseId(row.orderSnapshot))
+          .filter((value): value is string => !!value),
+      ),
+    );
+    const storeIdsForWarehouseLookup = Array.from(
+      new Set(
+        rows
+          .map((row) => storeIdByShopId.get(row.shopId))
+          .filter((value): value is string => !!value),
+      ),
+    );
+    const warehouseNameByShopAndWarehouseId = new Map<string, string>();
+    if (warehouseIds.length > 0 && storeIdsForWarehouseLookup.length > 0) {
+      const warehouseRows = await this.prisma.posWarehouse.findMany({
+        where: {
+          storeId: { in: storeIdsForWarehouseLookup },
+          warehouseId: { in: warehouseIds },
+        },
+        select: {
+          storeId: true,
+          warehouseId: true,
+          name: true,
+        },
+      });
+
+      for (const warehouse of warehouseRows) {
+        const shopId = shopIdByStoreId.get(warehouse.storeId);
+        if (!shopId) continue;
+        warehouseNameByShopAndWarehouseId.set(
+          `${shopId}|${warehouse.warehouseId}`,
+          warehouse.name,
+        );
+      }
+    }
+
     const pageCount = total === 0 ? 0 : Math.ceil(total / limit);
     const items = rows.map((row) => {
       const tagDetails = this.extractTagDetails(row.tags);
+      const warehouseId = this.extractOrderWarehouseId(row.orderSnapshot);
       return {
       id: row.id,
+      store_id: storeIdByShopId.get(row.shopId) || null,
       shop_id: row.shopId,
       shop_name: storeMetaByShopId.get(row.shopId)?.shopName || row.shopId,
       pos_order_id: row.posOrderId,
@@ -635,6 +712,11 @@ export class OrdersService {
       customer_address: row.customerAddress || null,
       item_data: row.itemData,
       order_snapshot: row.orderSnapshot,
+      warehouse_id: warehouseId,
+      warehouse_name:
+        warehouseId
+          ? warehouseNameByShopAndWarehouseId.get(`${row.shopId}|${warehouseId}`) || null
+          : null,
       tags: tagDetails.map((entry) => entry.name),
       tags_detail: tagDetails,
       created_at: row.createdAt.toISOString(),
@@ -681,6 +763,7 @@ export class OrdersService {
       this.prisma.posStore.findMany({
         where: { tenantId },
         select: {
+          id: true,
           shopId: true,
           shopName: true,
           name: true,
@@ -736,11 +819,52 @@ export class OrdersService {
         },
       ]),
     );
+    const shopIdByStoreId = new Map(stores.map((store) => [store.id, store.shopId]));
+    const storeIdByShopId = new Map(stores.map((store) => [store.shopId, store.id]));
+    const warehouseIds = Array.from(
+      new Set(
+        pageRows
+          .map((row) => this.extractOrderWarehouseId(row.orderSnapshot))
+          .filter((value): value is string => !!value),
+      ),
+    );
+    const storeIdsForWarehouseLookup = Array.from(
+      new Set(
+        pageRows
+          .map((row) => storeIdByShopId.get(row.shopId))
+          .filter((value): value is string => !!value),
+      ),
+    );
+    const warehouseNameByShopAndWarehouseId = new Map<string, string>();
+    if (warehouseIds.length > 0 && storeIdsForWarehouseLookup.length > 0) {
+      const warehouseRows = await this.prisma.posWarehouse.findMany({
+        where: {
+          storeId: { in: storeIdsForWarehouseLookup },
+          warehouseId: { in: warehouseIds },
+        },
+        select: {
+          storeId: true,
+          warehouseId: true,
+          name: true,
+        },
+      });
+
+      for (const warehouse of warehouseRows) {
+        const shopId = shopIdByStoreId.get(warehouse.storeId);
+        if (!shopId) continue;
+        warehouseNameByShopAndWarehouseId.set(
+          `${shopId}|${warehouse.warehouseId}`,
+          warehouse.name,
+        );
+      }
+    }
 
     const items = pageRows.map((row) => {
       const tagDetails = this.extractTagDetails(row.tags);
+      const warehouseId = this.extractOrderWarehouseId(row.orderSnapshot);
       return {
       id: row.id,
+      store_id: storeIdByShopId.get(row.shopId) || null,
       shop_id: row.shopId,
       shop_name: storeMetaByShopId.get(row.shopId)?.shopName || row.shopId,
       pos_order_id: row.posOrderId,
@@ -758,6 +882,11 @@ export class OrdersService {
       customer_address: row.customerAddress || null,
       item_data: row.itemData,
       order_snapshot: row.orderSnapshot,
+      warehouse_id: warehouseId,
+      warehouse_name:
+        warehouseId
+          ? warehouseNameByShopAndWarehouseId.get(`${row.shopId}|${warehouseId}`) || null
+          : null,
       tags: tagDetails.map((entry) => entry.name),
       tags_detail: tagDetails,
       created_at: row.createdAt.toISOString(),
@@ -865,11 +994,163 @@ export class OrdersService {
     };
   }
 
+  async listConfirmationOrderProductOptions(
+    orderRowId: string,
+    searchRaw?: string,
+    limitRaw?: string,
+  ) {
+    const search = (searchRaw || '').trim();
+    const limit = Math.min(this.parseLimit(limitRaw), 50);
+    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const allowedTeams =
+      (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
+    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
+    if (!storeWhere) {
+      throw new ForbiddenException('No store access for current team scope');
+    }
+
+    const order = await this.prisma.posOrder.findFirst({
+      where: {
+        id: orderRowId,
+        tenantId,
+      },
+      select: {
+        id: true,
+        shopId: true,
+        orderSnapshot: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const store = await this.prisma.posStore.findFirst({
+      where: {
+        ...storeWhere,
+        shopId: order.shopId,
+      },
+      select: {
+        id: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!store) {
+      throw new ForbiddenException('Order store is outside your team scope');
+    }
+
+    const warehouseId = this.extractOrderWarehouseId(order.orderSnapshot);
+    if (!warehouseId) {
+      return {
+        order_id: order.id,
+        shop_id: order.shopId,
+        warehouse_id: null,
+        warehouse_name: null,
+        items: [],
+        total: 0,
+      };
+    }
+
+    const warehouse = await this.prisma.posWarehouse.findFirst({
+      where: {
+        storeId: store.id,
+        warehouseId,
+      },
+      select: {
+        name: true,
+      },
+    });
+
+    const where: Prisma.PosProductWhereInput = {
+      storeId: store.id,
+      warehouseId,
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { customId: { contains: search, mode: 'insensitive' } },
+              { productId: { contains: search, mode: 'insensitive' } },
+              { variationId: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const rows = await this.prisma.posProduct.findMany({
+      where,
+      orderBy: [{ name: 'asc' }, { updatedAt: 'desc' }],
+      take: limit,
+      select: {
+        productId: true,
+        variationId: true,
+        customId: true,
+        name: true,
+        retailPrice: true,
+        productSnapshot: true,
+      },
+    });
+
+    const items = rows
+      .map((row) => {
+        const variationId = row.variationId?.toString?.().trim?.() || '';
+        if (!variationId) return null;
+
+        const snapshot = this.toObject(row.productSnapshot);
+        let imageUrl: string | null = null;
+
+        const images = Array.isArray(snapshot?.images) ? snapshot.images : [];
+        imageUrl =
+          images.find(
+            (value) => typeof value === 'string' && value.trim().length > 0,
+          )?.toString?.() || null;
+
+        if (!imageUrl) {
+          const productSnapshot = this.toObject(snapshot?.product as Prisma.JsonValue | null);
+          const productImage = productSnapshot?.image;
+          if (typeof productImage === 'string' && productImage.trim()) {
+            imageUrl = productImage.trim();
+          }
+        }
+
+        return {
+          variation_id: variationId,
+          product_id: row.productId,
+          custom_id: row.customId || null,
+          name: row.name,
+          retail_price: this.toNumber(row.retailPrice),
+          image_url: imageUrl,
+        };
+      })
+      .filter(
+        (
+          row,
+        ): row is {
+          variation_id: string;
+          product_id: string;
+          custom_id: string | null;
+          name: string;
+          retail_price: number;
+          image_url: string | null;
+        } => !!row,
+      );
+
+    return {
+      order_id: order.id,
+      shop_id: order.shopId,
+      warehouse_id: warehouseId,
+      warehouse_name: warehouse?.name || null,
+      items,
+      total: items.length,
+    };
+  }
+
   async updateConfirmationOrderStatus(
     orderRowId: string,
     payload: {
       status?: number;
       tags?: Array<{ id: string; name: string }>;
+      items?: Array<{ variation_id: string; quantity: number }>;
       note?: string;
       note_print?: string;
       shipping_address?: Record<string, unknown>;
@@ -886,6 +1167,8 @@ export class OrdersService {
           : null;
       const hasTagsPayload = Array.isArray(payload.tags);
       const targetTags = hasTagsPayload ? this.normalizeUpdateTags(payload.tags || []) : undefined;
+      const hasItemsPayload = Array.isArray(payload.items);
+      const targetItems = hasItemsPayload ? this.normalizeUpdateItems(payload.items || []) : undefined;
       const hasNotePayload = Object.prototype.hasOwnProperty.call(payload, 'note');
       const targetNote = hasNotePayload ? (typeof payload.note === 'string' ? payload.note : '') : undefined;
       const hasNotePrintPayload = Object.prototype.hasOwnProperty.call(payload, 'note_print');
@@ -921,6 +1204,7 @@ export class OrdersService {
       if (
         targetStatus === null &&
         !hasTagsPayload &&
+        !hasItemsPayload &&
         !hasNotePayload &&
         !hasNotePrintPayload &&
         !hasShippingAddressPayload &&
@@ -930,7 +1214,7 @@ export class OrdersService {
         !hasSurchargePayload
       ) {
         throw new BadRequestException(
-          'Request must include status, tags, note, note_print, shipping_address, shipping_fee, total_discount, bank_payments, and/or surcharge',
+          'Request must include status, tags, items, note, note_print, shipping_address, shipping_fee, total_discount, bank_payments, and/or surcharge',
         );
       }
 
@@ -1075,6 +1359,7 @@ export class OrdersService {
                 order_id: order.posOrderId,
                 status: targetStatus,
                 tags_count: targetTags?.length ?? undefined,
+                items_count: targetItems?.length ?? undefined,
                 note_updated: hasNotePayload || undefined,
                 note_print_updated: hasNotePrintPayload || undefined,
                 shipping_address_updated: hasShippingAddressPayload || undefined,
@@ -1110,6 +1395,7 @@ export class OrdersService {
           posOrderId: order.posOrderId,
           targetStatus,
           targetTags: targetTags ?? null,
+          targetItems: targetItems ?? null,
           targetNote,
           targetNotePrint,
           targetShippingAddress,
@@ -1131,6 +1417,7 @@ export class OrdersService {
             order_id: order.posOrderId,
             status: targetStatus ?? undefined,
             tags_count: targetTags?.length ?? undefined,
+            items_count: targetItems?.length ?? undefined,
             note_updated: hasNotePayload || undefined,
             note_print_updated: hasNotePrintPayload || undefined,
             shipping_address_updated: hasShippingAddressPayload || undefined,
@@ -1159,6 +1446,7 @@ export class OrdersService {
         order_id: order.posOrderId,
         status: targetStatus ?? undefined,
         tags_count: targetTags?.length ?? undefined,
+        items_count: targetItems?.length ?? undefined,
         note_updated: hasNotePayload || undefined,
         note_print_updated: hasNotePrintPayload || undefined,
         shipping_address_updated: hasShippingAddressPayload || undefined,
@@ -1191,7 +1479,7 @@ export class OrdersService {
       }
 
       this.logger.error(
-        `Failed to update confirmation order id=${orderRowId} targetStatus=${payload?.status ?? 'n/a'} targetTags=${Array.isArray(payload?.tags) ? payload.tags.length : 0} targetNote=${Object.prototype.hasOwnProperty.call(payload, 'note') ? 1 : 0} targetNotePrint=${Object.prototype.hasOwnProperty.call(payload, 'note_print') ? 1 : 0} targetShippingAddress=${Object.prototype.hasOwnProperty.call(payload, 'shipping_address') ? 1 : 0} targetShippingFee=${Object.prototype.hasOwnProperty.call(payload, 'shipping_fee') ? 1 : 0} targetTotalDiscount=${Object.prototype.hasOwnProperty.call(payload, 'total_discount') ? 1 : 0} targetBankPayments=${Object.prototype.hasOwnProperty.call(payload, 'bank_payments') ? 1 : 0} targetSurcharge=${Object.prototype.hasOwnProperty.call(payload, 'surcharge') ? 1 : 0}: ${error?.message || 'Unknown error'}`,
+        `Failed to update confirmation order id=${orderRowId} targetStatus=${payload?.status ?? 'n/a'} targetTags=${Array.isArray(payload?.tags) ? payload.tags.length : 0} targetItems=${Array.isArray(payload?.items) ? payload.items.length : 0} targetNote=${Object.prototype.hasOwnProperty.call(payload, 'note') ? 1 : 0} targetNotePrint=${Object.prototype.hasOwnProperty.call(payload, 'note_print') ? 1 : 0} targetShippingAddress=${Object.prototype.hasOwnProperty.call(payload, 'shipping_address') ? 1 : 0} targetShippingFee=${Object.prototype.hasOwnProperty.call(payload, 'shipping_fee') ? 1 : 0} targetTotalDiscount=${Object.prototype.hasOwnProperty.call(payload, 'total_discount') ? 1 : 0} targetBankPayments=${Object.prototype.hasOwnProperty.call(payload, 'bank_payments') ? 1 : 0} targetSurcharge=${Object.prototype.hasOwnProperty.call(payload, 'surcharge') ? 1 : 0}: ${error?.message || 'Unknown error'}`,
         error?.stack,
       );
       throw new ServiceUnavailableException(
@@ -1205,6 +1493,7 @@ export class OrdersService {
   ): Promise<{ success: boolean; reason: string }> {
     const hasStatusUpdate = typeof jobData.targetStatus === 'number';
     const hasTagsUpdate = Array.isArray(jobData.targetTags);
+    const hasItemsUpdate = Array.isArray(jobData.targetItems);
     const hasNoteUpdate = typeof jobData.targetNote === 'string';
     const hasNotePrintUpdate = typeof jobData.targetNotePrint === 'string';
     const hasShippingAddressUpdate =
@@ -1219,6 +1508,7 @@ export class OrdersService {
     if (
       !hasStatusUpdate &&
       !hasTagsUpdate &&
+      !hasItemsUpdate &&
       !hasNoteUpdate &&
       !hasNotePrintUpdate &&
       !hasShippingAddressUpdate &&
@@ -1301,6 +1591,12 @@ export class OrdersService {
         name: tag.name,
       }));
     }
+    if (hasItemsUpdate) {
+      requestBody.items = (jobData.targetItems || []).map((item) => ({
+        variation_id: item.variation_id,
+        quantity: item.quantity,
+      }));
+    }
     if (hasNoteUpdate) {
       requestBody.note = jobData.targetNote || '';
     }
@@ -1365,6 +1661,7 @@ export class OrdersService {
     const updates: string[] = [];
     if (hasStatusUpdate) updates.push('STATUS');
     if (hasTagsUpdate) updates.push('TAGS');
+    if (hasItemsUpdate) updates.push('ITEMS');
     if (hasNoteUpdate) updates.push('NOTE');
     if (hasNotePrintUpdate) updates.push('NOTE_PRINT');
     if (hasShippingAddressUpdate) updates.push('SHIPPING_ADDRESS');

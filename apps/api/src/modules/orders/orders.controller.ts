@@ -78,6 +78,16 @@ export class OrdersController {
     return this.ordersService.listConfirmationOrderTagOptions(id);
   }
 
+  @Get('confirmation/:id/product-options')
+  @Permissions('pos.read')
+  async listConfirmationOrderProductOptions(
+    @Param('id') id: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.ordersService.listConfirmationOrderProductOptions(id, search, limit);
+  }
+
   @Patch('confirmation/:id/status')
   @Permissions('pos.read')
   async updateConfirmationOrderStatus(

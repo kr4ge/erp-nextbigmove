@@ -6,6 +6,11 @@ export interface ConfirmationUpdateTagPayload {
   name: string;
 }
 
+export interface ConfirmationUpdateItemPayload {
+  variation_id: string;
+  quantity: number;
+}
+
 export interface ConfirmationUpdateStatusJobData {
   tenantId: string;
   orderRowId: string;
@@ -13,6 +18,7 @@ export interface ConfirmationUpdateStatusJobData {
   posOrderId: string;
   targetStatus?: number | null;
   targetTags?: ConfirmationUpdateTagPayload[] | null;
+  targetItems?: ConfirmationUpdateItemPayload[] | null;
   targetNote?: string;
   targetNotePrint?: string;
   targetShippingAddress?: Record<string, unknown> | null;

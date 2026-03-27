@@ -116,6 +116,26 @@ type PancakeStoreTag = {
   groupName: string | null;
 };
 
+type PancakeStoreWarehouse = {
+  warehouseId: string;
+  name: string;
+  customId: string | null;
+  address: string | null;
+  fullAddress: string | null;
+  phoneNumber: string | null;
+  countryCode: number | null;
+  provinceId: string | null;
+  districtId: string | null;
+  communeId: string | null;
+  postcode: string | null;
+  allowCreateOrder: boolean | null;
+  batchConfig: Prisma.InputJsonValue | null;
+  customBatchConfig: Prisma.InputJsonValue | null;
+  customShelfConfig: Prisma.InputJsonValue | null;
+  shelfConfig: Prisma.InputJsonValue | null;
+  hideConfigBatchShelf: boolean | null;
+};
+
 type PancakeGeoProvince = {
   id: string;
   countryCode: number;
@@ -2662,6 +2682,10 @@ export class IntegrationService {
           this.logger.log(
             `Auto-synced POS tags for integration ${integration.id} (synced=${tagsResult.synced})`,
           );
+          const warehousesResult = await this.syncPancakeWarehousesByStoreId(linkedStore.id);
+          this.logger.log(
+            `Auto-synced POS warehouses for integration ${integration.id} (synced=${warehousesResult.synced})`,
+          );
         }
       }
     } catch (error) {
@@ -2813,9 +2837,10 @@ export class IntegrationService {
           try {
             await this.fetchPancakeProductsByIntegrationId(integration.id);
             await this.syncPancakeTagsByStoreId(createdStore.id);
+            await this.syncPancakeWarehousesByStoreId(createdStore.id);
           } catch (fetchError) {
             this.logger.warn(
-              `Bulk import: product/tag fetch failed for integration ${integration.id}: ${fetchError.message}`,
+              `Bulk import: product/tag/warehouse fetch failed for integration ${integration.id}: ${fetchError.message}`,
             );
           }
 
@@ -3011,6 +3036,15 @@ export class IntegrationService {
         { groupName: 'asc' },
         { name: 'asc' },
       ],
+    });
+  }
+
+  async listPosStoreWarehouses(id: string) {
+    const store = await this.getPosStore(id); // validates access including shared integrations
+
+    return this.prisma.posWarehouse.findMany({
+      where: { storeId: store.id },
+      orderBy: { name: 'asc' },
     });
   }
 
@@ -3385,6 +3419,30 @@ export class IntegrationService {
     };
   }
 
+  async syncPancakeWarehousesByStoreId(storeId: string) {
+    const store = await this.getPosStore(storeId); // validates access including shared integrations
+    const { tenantId } = await this.teamContext.getContext();
+
+    const apiKey = await this.resolveStoreApiKeyForWebhook(tenantId, {
+      id: store.id,
+      integrationId: store.integrationId,
+      apiKey: store.apiKey,
+    });
+
+    if (!apiKey) {
+      throw new ConflictException('Missing API key for this store');
+    }
+
+    const warehouses = await this.fetchWarehousesFromPancake(store.shopId, apiKey);
+    await this.upsertStoreWarehouses(store.id, warehouses);
+
+    return {
+      synced: warehouses.length,
+      storeId: store.id,
+      shopId: store.shopId,
+    };
+  }
+
   async listPosStoreOrders(id: string, dateFrom?: string, dateTo?: string) {
     const store = await this.getPosStore(id); // validates access including shared integrations
     const { tenantId } = await this.teamContext.getContext();
@@ -3753,31 +3811,60 @@ export class IntegrationService {
         throw new ConflictException(errorText || 'Failed to fetch products from Pancake POS');
       }
 
-      const data = await response.json();
-      const pageProducts = data?.products || data?.data || [];
+      const data = await response.json().catch(() => null);
+      const apiError = this.extractPancakeProductsApiError(data);
+      if (apiError) {
+        throw new ConflictException(apiError);
+      }
+
+      const envelope = this.extractProductEnvelope(data);
+      const pageProducts = this.extractProductRows(data, envelope);
       const mappedProducts = pageProducts
         .map((item: any) => {
           const productId = this.extractProductIdFromPancakeProduct(item);
-          if (!productId) return null;
+          const variationId = this.extractVariationIdFromPancakeProduct(item);
+          if (!productId || !variationId) return null;
 
           return {
             productId,
+            variationId,
+            warehouseId: this.extractWarehouseIdFromPancakeProduct(item),
+            productSnapshot: this.extractProductSnapshotFromPancakeProduct(item),
             customId:
               item?.custom_id ||
               item?.code ||
               item?.display_id ||
               item?.product_display_id ||
+              item?.product?.display_id ||
               null,
-            name: item?.name || item?.variation_info?.name || 'Unnamed product',
+            name:
+              item?.name ||
+              item?.variation_info?.name ||
+              item?.product?.name ||
+              'Unnamed product',
             retailPrice: this.extractRetailPriceFromPancakeProduct(item),
           };
         })
         .filter(Boolean);
 
+      if (pageProducts.length > 0 && mappedProducts.length === 0) {
+        this.logger.warn(
+          `Pancake products parse produced 0 mapped rows for shop=${shopId} page=${page} rawRows=${pageProducts.length}`,
+        );
+      }
+
       products.push(...mappedProducts);
 
-      const currentPage = data?.page_number || page;
-      totalPages = data?.total_pages || currentPage;
+      const currentPageRaw = envelope?.page_number ?? envelope?.pageNumber ?? page;
+      const totalPagesRaw = envelope?.total_pages ?? envelope?.totalPages ?? currentPageRaw;
+      const currentPage = Math.max(
+        1,
+        Number.parseInt(currentPageRaw?.toString?.() || `${page}`, 10) || page,
+      );
+      totalPages = Math.max(
+        currentPage,
+        Number.parseInt(totalPagesRaw?.toString?.() || `${currentPage}`, 10) || currentPage,
+      );
       if (currentPage >= totalPages) {
         break;
       }
@@ -3785,7 +3872,181 @@ export class IntegrationService {
       page += 1;
     }
 
-    return products;
+    const unique = new Map<string, any>();
+    for (const row of products) {
+      const variationId = row?.variationId?.toString?.().trim?.() || '';
+      const productId = row?.productId?.toString?.().trim?.() || '';
+      const key = variationId || `product:${productId}`;
+      if (!key) continue;
+      unique.set(key, row);
+    }
+
+    return Array.from(unique.values());
+  }
+
+  private extractProductEnvelope(payload: any): any {
+    if (!Array.isArray(payload)) {
+      return payload ?? {};
+    }
+
+    const objectRows = payload.filter((entry: any) => entry && typeof entry === 'object');
+    const explicitEnvelope = objectRows.find(
+      (entry: any) =>
+        entry?.data !== undefined ||
+        entry?.products !== undefined ||
+        entry?.page_number !== undefined ||
+        entry?.total_pages !== undefined,
+    );
+
+    return explicitEnvelope ?? {};
+  }
+
+  private isPancakeProductLike(value: any): value is Record<string, any> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const hasIdentity =
+      value?.id !== undefined ||
+      value?.product_id !== undefined ||
+      value?.productId !== undefined ||
+      value?.variation_id !== undefined ||
+      value?.variationId !== undefined;
+    if (!hasIdentity) return false;
+
+    const hasProductSignals =
+      value?.product !== undefined ||
+      value?.variation_info !== undefined ||
+      value?.images !== undefined ||
+      value?.retail_price !== undefined ||
+      value?.retailPrice !== undefined ||
+      value?.barcode !== undefined ||
+      value?.remain_quantity !== undefined;
+
+    return !!hasProductSignals;
+  }
+
+  private extractProductRows(payload: any, envelope: any): any[] {
+    const directRows =
+      envelope?.products ??
+      envelope?.data?.products ??
+      envelope?.data ??
+      payload?.products ??
+      payload?.data?.products ??
+      payload?.data ??
+      [];
+
+    const expandedDirectRows = this.expandPancakeProductRows(
+      Array.isArray(directRows) ? directRows : [],
+    );
+    if (
+      Array.isArray(expandedDirectRows)
+      && expandedDirectRows.some((row) => this.isPancakeProductLike(row))
+    ) {
+      return expandedDirectRows.filter((row) => this.isPancakeProductLike(row));
+    }
+
+    const queue: any[] = [payload, envelope];
+    const rows: any[] = [];
+    const seen = new Set<string>();
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) continue;
+
+      if (Array.isArray(current)) {
+        queue.push(...current);
+        continue;
+      }
+
+      if (typeof current !== 'object') continue;
+
+      if (this.isPancakeProductLike(current)) {
+        const productId = this.extractProductIdFromPancakeProduct(current) || '';
+        const variationId = this.extractVariationIdFromPancakeProduct(current) || '';
+        const key = `${productId}::${variationId}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          rows.push(current);
+        }
+      }
+
+      queue.push(
+        current?.body,
+        current?.payload,
+        current?.result,
+        current?.products,
+        current?.data,
+        current?.items,
+        current?.variations,
+      );
+    }
+
+    const expandedRows = this.expandPancakeProductRows(rows);
+    return expandedRows.filter((row) => this.isPancakeProductLike(row));
+  }
+
+  private expandPancakeProductRows(rows: any[]): any[] {
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+
+    const expanded: any[] = [];
+    for (const row of rows) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+
+      const variations = Array.isArray((row as any)?.variations)
+        ? (row as any).variations
+        : [];
+      if (variations.length === 0) {
+        expanded.push(row);
+        continue;
+      }
+
+      const { variations: _omitVariations, ...parentProduct } = row as Record<string, any>;
+      for (const variation of variations) {
+        if (!variation || typeof variation !== 'object' || Array.isArray(variation)) continue;
+
+        expanded.push({
+          ...variation,
+          product_id:
+            variation?.product_id ??
+            variation?.productId ??
+            row?.id ??
+            row?.product_id ??
+            row?.productId ??
+            null,
+          product: variation?.product ?? parentProduct,
+          custom_id: variation?.custom_id ?? row?.custom_id ?? null,
+          // Keep product-level fallback names available for mapping.
+          name: variation?.name ?? row?.name ?? null,
+        });
+      }
+    }
+
+    return expanded;
+  }
+
+  private extractPancakeProductsApiError(payload: any): string | null {
+    const candidates: any[] = [];
+    if (Array.isArray(payload)) {
+      candidates.push(...payload);
+    } else if (payload && typeof payload === 'object') {
+      candidates.push(payload);
+    }
+
+    for (const candidate of candidates) {
+      if (!candidate || typeof candidate !== 'object') continue;
+      const success = candidate?.success;
+      if (success === false) {
+        const message =
+          candidate?.message ||
+          candidate?.error ||
+          candidate?.error_message ||
+          candidate?.detail;
+        if (typeof message === 'string' && message.trim()) {
+          return message.trim();
+        }
+        return 'Failed to fetch products from Pancake POS';
+      }
+    }
+
+    return null;
   }
 
   private normalizeGeoCountryCode(countryCodeRaw: string | number): number {
@@ -4119,53 +4380,324 @@ export class IntegrationService {
     });
   }
 
+  private parsePancakeWarehousesResponseRows(payload: any): any[] {
+    if (!payload) return [];
+
+    if (Array.isArray(payload)) {
+      const nestedRows = payload.flatMap((entry) => {
+        if (Array.isArray(entry?.data)) return entry.data;
+        return [];
+      });
+      if (nestedRows.length > 0) return nestedRows;
+    }
+
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.warehouses)) return payload.warehouses;
+    return [];
+  }
+
+  private normalizePancakeWarehouseJson(value: any): Prisma.InputJsonValue | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
+      return null;
+    }
+
+    try {
+      JSON.stringify(value);
+      return value as Prisma.InputJsonValue;
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizePancakeWarehouseRow(row: any): PancakeStoreWarehouse | null {
+    const warehouseIdRaw = row?.id;
+    const nameRaw = row?.name;
+
+    if (warehouseIdRaw === null || warehouseIdRaw === undefined) return null;
+    const warehouseId = warehouseIdRaw.toString().trim();
+    if (!warehouseId) return null;
+
+    const name = typeof nameRaw === 'string' ? nameRaw.trim() : '';
+    if (!name) return null;
+
+    const toNullableString = (value: any): string | null => {
+      if (value === null || value === undefined) return null;
+      const text = value.toString().trim();
+      return text.length > 0 ? text : null;
+    };
+
+    const toNullableBoolean = (value: any): boolean | null => {
+      if (typeof value === 'boolean') return value;
+      if (value === 1 || value === '1') return true;
+      if (value === 0 || value === '0') return false;
+      return null;
+    };
+
+    const countryCodeRaw = row?.country_code;
+    const parsedCountryCode =
+      countryCodeRaw === null || countryCodeRaw === undefined || countryCodeRaw === ''
+        ? Number.NaN
+        : Number.parseInt(countryCodeRaw.toString(), 10);
+    const countryCode = Number.isFinite(parsedCountryCode) ? parsedCountryCode : null;
+
+    return {
+      warehouseId,
+      name,
+      customId: toNullableString(row?.custom_id),
+      address: toNullableString(row?.address),
+      fullAddress: toNullableString(row?.full_address),
+      phoneNumber: toNullableString(row?.phone_number),
+      countryCode,
+      provinceId: toNullableString(row?.province_id),
+      districtId: toNullableString(row?.district_id),
+      communeId: toNullableString(row?.commune_id),
+      postcode: toNullableString(row?.postcode),
+      allowCreateOrder: toNullableBoolean(row?.allow_create_order),
+      batchConfig: this.normalizePancakeWarehouseJson(row?.batch_config),
+      customBatchConfig: this.normalizePancakeWarehouseJson(row?.custom_batch_config),
+      customShelfConfig: this.normalizePancakeWarehouseJson(row?.custom_shelf_config),
+      shelfConfig: this.normalizePancakeWarehouseJson(row?.shelf_config),
+      hideConfigBatchShelf: toNullableBoolean(row?.hide_config_batch_shelf),
+    };
+  }
+
+  private async fetchWarehousesFromPancake(
+    shopId: string,
+    apiKey: string,
+  ): Promise<PancakeStoreWarehouse[]> {
+    const params = new URLSearchParams();
+    params.set('api_key', apiKey);
+
+    const response = await fetch(
+      `https://pos.pages.fm/api/v1/shops/${encodeURIComponent(shopId)}/warehouses?${params.toString()}`,
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new ConflictException(errorText || 'Failed to fetch warehouses from Pancake POS');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const rows = this.parsePancakeWarehousesResponseRows(payload);
+    const unique = new Map<string, PancakeStoreWarehouse>();
+
+    for (const row of rows) {
+      const normalized = this.normalizePancakeWarehouseRow(row);
+      if (!normalized) continue;
+      unique.set(normalized.warehouseId, normalized);
+    }
+
+    return Array.from(unique.values());
+  }
+
+  private async upsertStoreWarehouses(
+    storeId: string,
+    warehouses: PancakeStoreWarehouse[],
+  ): Promise<void> {
+    const uniqueWarehouses = warehouses.filter((row) => row.warehouseId && row.name);
+    const warehouseIds = uniqueWarehouses.map((row) => row.warehouseId);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.posWarehouse.deleteMany({
+        where: {
+          storeId,
+          ...(warehouseIds.length > 0 ? { warehouseId: { notIn: warehouseIds } } : {}),
+        },
+      });
+
+      if (uniqueWarehouses.length === 0) return;
+
+      for (const warehouse of uniqueWarehouses) {
+        const batchConfig =
+          warehouse.batchConfig === null ? Prisma.JsonNull : warehouse.batchConfig;
+        const customBatchConfig =
+          warehouse.customBatchConfig === null
+            ? Prisma.JsonNull
+            : warehouse.customBatchConfig;
+        const customShelfConfig =
+          warehouse.customShelfConfig === null
+            ? Prisma.JsonNull
+            : warehouse.customShelfConfig;
+        const shelfConfig =
+          warehouse.shelfConfig === null ? Prisma.JsonNull : warehouse.shelfConfig;
+
+        await tx.posWarehouse.upsert({
+          where: {
+            storeId_warehouseId: {
+              storeId,
+              warehouseId: warehouse.warehouseId,
+            },
+          },
+          update: {
+            name: warehouse.name,
+            customId: warehouse.customId,
+            address: warehouse.address,
+            fullAddress: warehouse.fullAddress,
+            phoneNumber: warehouse.phoneNumber,
+            countryCode: warehouse.countryCode,
+            provinceId: warehouse.provinceId,
+            districtId: warehouse.districtId,
+            communeId: warehouse.communeId,
+            postcode: warehouse.postcode,
+            allowCreateOrder: warehouse.allowCreateOrder,
+            batchConfig,
+            customBatchConfig,
+            customShelfConfig,
+            shelfConfig,
+            hideConfigBatchShelf: warehouse.hideConfigBatchShelf,
+          },
+          create: {
+            storeId,
+            warehouseId: warehouse.warehouseId,
+            name: warehouse.name,
+            customId: warehouse.customId,
+            address: warehouse.address,
+            fullAddress: warehouse.fullAddress,
+            phoneNumber: warehouse.phoneNumber,
+            countryCode: warehouse.countryCode,
+            provinceId: warehouse.provinceId,
+            districtId: warehouse.districtId,
+            communeId: warehouse.communeId,
+            postcode: warehouse.postcode,
+            allowCreateOrder: warehouse.allowCreateOrder,
+            batchConfig,
+            customBatchConfig,
+            customShelfConfig,
+            shelfConfig,
+            hideConfigBatchShelf: warehouse.hideConfigBatchShelf,
+          },
+        });
+      }
+    });
+  }
+
   private async upsertStoreProducts(storeId: string, products: any[]) {
     if (!products?.length) return;
 
-    await this.prisma.$transaction(
-      products
-        .filter((p: any) => (p?.productId || p?.id)?.toString().trim().length > 0)
-        .map((p: any) => {
-          const productId = (p?.productId || p?.id)?.toString().trim();
-          const parsedRetailPrice = this.toRetailPriceDecimal(p.retailPrice);
+    await this.prisma.$transaction(async (tx) => {
+      const filteredProducts = products.filter(
+        (p: any) =>
+          (p?.productId || p?.id)?.toString().trim().length > 0 &&
+          (p?.variationId || p?.id)?.toString().trim().length > 0,
+      );
 
-          return this.prisma.posProduct.upsert({
-            where: {
-              storeId_productId: {
-                storeId,
-                productId,
+      for (const p of filteredProducts) {
+        const productId = (p?.productId || p?.id)?.toString().trim();
+        const variationId = (p?.variationId || p?.id)?.toString().trim();
+        const parsedRetailPrice = this.toRetailPriceDecimal(p.retailPrice);
+        const productSnapshot = p?.productSnapshot ?? null;
+
+        const existing = await tx.posProduct.findFirst({
+          where: {
+            storeId,
+            OR: [
+              { variationId },
+              {
+                AND: [
+                  { productId },
+                  {
+                    OR: [
+                      { variationId: null },
+                      { variationId: productId },
+                    ],
+                  },
+                ],
               },
-            },
-            update: {
+            ],
+          },
+          select: { id: true },
+        });
+
+        if (existing) {
+          await tx.posProduct.update({
+            where: { id: existing.id },
+            data: {
+              productId,
+              variationId,
+              warehouseId: p.warehouseId || null,
+              productSnapshot,
               customId: p.customId || null,
               name: p.name || 'Unnamed product',
               ...(parsedRetailPrice !== null ? { retailPrice: parsedRetailPrice } : {}),
             },
-            create: {
-              storeId,
-              productId,
-              customId: p.customId || null,
-              name: p.name || 'Unnamed product',
-              retailPrice: parsedRetailPrice,
-            },
           });
-        }),
-    );
+          continue;
+        }
+
+        await tx.posProduct.create({
+          data: {
+            storeId,
+            productId,
+            variationId,
+            warehouseId: p.warehouseId || null,
+            productSnapshot,
+            customId: p.customId || null,
+            name: p.name || 'Unnamed product',
+            retailPrice: parsedRetailPrice,
+          },
+        });
+      }
+    });
   }
 
   private extractProductIdFromPancakeProduct(item: any): string | null {
     const raw =
-      item?.id ??
       item?.product_id ??
       item?.productId ??
+      item?.product?.id ??
+      item?.variation_info?.product_id ??
+      item?.variation_info?.productId ??
       item?._id ??
       item?.uuid ??
-      item?.variation_id ??
+      item?.id ??
       null;
 
     if (raw === null || raw === undefined) return null;
     const value = raw.toString().trim();
     return value.length > 0 ? value : null;
+  }
+
+  private extractVariationIdFromPancakeProduct(item: any): string | null {
+    const raw = item?.id ?? item?.variation_id ?? item?.variationId ?? null;
+    if (raw === null || raw === undefined) return null;
+    const value = raw.toString().trim();
+    return value.length > 0 ? value : null;
+  }
+
+  private extractWarehouseIdFromPancakeProduct(item: any): string | null {
+    const rows = [
+      ...(Array.isArray(item?.variations_warehouses) ? item.variations_warehouses : []),
+      ...(Array.isArray(item?.variation_info?.variations_warehouses)
+        ? item.variation_info.variations_warehouses
+        : []),
+    ];
+
+    for (const row of rows) {
+      const raw = row?.warehouse_id ?? row?.warehouseId ?? row?.id ?? null;
+      if (raw === null || raw === undefined) continue;
+      const value = raw.toString().trim();
+      if (value.length > 0) return value;
+    }
+
+    return null;
+  }
+
+  private extractProductSnapshotFromPancakeProduct(item: any): Record<string, any> {
+    const product = item?.product ?? null;
+    return {
+      product,
+      images: this.normalizeProductImages(
+        item?.images ?? product?.images ?? product?.image ?? null,
+      ),
+    };
+  }
+
+  private normalizeProductImages(raw: any): string[] {
+    const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    return values
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value) => value.length > 0);
   }
 
   private extractRetailPriceFromPancakeProduct(item: any): any {

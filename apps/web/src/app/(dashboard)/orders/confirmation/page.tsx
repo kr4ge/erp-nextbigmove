@@ -195,6 +195,7 @@ type ConfirmationOrderTagDetail = {
 
 type ConfirmationOrderRow = {
   id: string;
+  store_id?: string | null;
   shop_id: string;
   shop_name: string;
   pos_order_id: string;
@@ -212,6 +213,8 @@ type ConfirmationOrderRow = {
   customer_address: string | null;
   item_data?: unknown;
   order_snapshot?: unknown;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
   has_duplicated_phone?: boolean;
   has_duplicated_ip?: boolean;
   tags: string[];
@@ -267,6 +270,24 @@ type ConfirmationTagOptionsResponse = {
   shop_id: string;
   groups: TagOptionGroup[];
   individual: TagOptionItem[];
+  total: number;
+};
+
+type ProductOptionItem = {
+  variation_id: string;
+  product_id: string;
+  custom_id: string | null;
+  name: string;
+  retail_price: number;
+  image_url: string | null;
+};
+
+type ConfirmationProductOptionsResponse = {
+  order_id: string;
+  shop_id: string;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
+  items: ProductOptionItem[];
   total: number;
 };
 
@@ -348,6 +369,8 @@ type ConfirmationResponseItemRaw = ConfirmationOrderRow & {
 
 type ParsedSnapshotItem = {
   id: string;
+  variationId: string;
+  warehouseId: string;
   quantity: number;
   name: string;
   productDisplayId: string;
@@ -396,6 +419,7 @@ type ParsedOrderSnapshotPayment = {
 type ParsedOrderSnapshot = {
   note: string;
   notePrint: string;
+  warehouseId: string;
   items: ParsedSnapshotItem[];
   customer: ParsedOrderSnapshotCustomer;
   shippingAddress: ParsedDeliveryAddress;
@@ -578,6 +602,18 @@ const parseSnapshotItems = (value: unknown): ParsedSnapshotItem[] => {
 
       return {
         id: toText(item.id),
+        variationId: toText(
+          item.variation_id ||
+            item.variationId ||
+            variation?.id ||
+            item.id,
+        ),
+        warehouseId: toText(
+          item.warehouse_id ||
+            item.warehouseId ||
+            variation?.warehouse_id ||
+            variation?.warehouseId,
+        ),
         quantity: toCount(item.quantity),
         name: toText(variation?.name || item.note_product || item.variation_name),
         productDisplayId: toText(variation?.product_display_id || item.product_display_id),
@@ -698,6 +734,7 @@ const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
   return {
     note: normalizeLineBreaks(toText(snapshot?.note)),
     notePrint: normalizeLineBreaks(toText(snapshot?.note_print || snapshot?.notePrint)),
+    warehouseId: toText(snapshot?.warehouse_id || snapshot?.warehouseId),
     items: parseSnapshotItems(snapshot?.items),
     customer: {
       name: toText(customerRaw?.name),
@@ -771,6 +808,19 @@ const hasRowProductItems = (row: Pick<ConfirmationOrderRow, 'order_snapshot' | '
   });
 };
 
+const normalizeItemsForUpdatePayload = (
+  items: ParsedSnapshotItem[],
+): Array<{ variation_id: string; quantity: number }> => {
+  const map = new Map<string, { variation_id: string; quantity: number }>();
+  for (const item of items) {
+    const variationId = (item.variationId || item.id || '').trim();
+    if (!variationId) continue;
+    const quantity = Number.isFinite(item.quantity) && item.quantity > 0 ? Math.floor(item.quantity) : 1;
+    map.set(variationId, { variation_id: variationId, quantity });
+  }
+  return Array.from(map.values());
+};
+
 type TenantSocketPayload = {
   tenantId?: string;
   teamId?: string | null;
@@ -816,6 +866,16 @@ export default function OrdersConfirmationPage() {
   const [draftPaymentTotalDiscount, setDraftPaymentTotalDiscount] = useState<string | null>(null);
   const [draftPaymentBankTransfer, setDraftPaymentBankTransfer] = useState<string | null>(null);
   const [draftPaymentSurcharge, setDraftPaymentSurcharge] = useState<string | null>(null);
+  const [draftItems, setDraftItems] = useState<ParsedSnapshotItem[] | null>(null);
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [isProductOptionsLoading, setIsProductOptionsLoading] = useState(false);
+  const [productOptionsError, setProductOptionsError] = useState<string | null>(null);
+  const [productOptions, setProductOptions] = useState<ProductOptionItem[]>([]);
+  const [productOptionsWarehouseName, setProductOptionsWarehouseName] = useState<string | null>(null);
+  const [isSyncingFallbackProducts, setIsSyncingFallbackProducts] = useState(false);
+  const [isSyncingFallbackTags, setIsSyncingFallbackTags] = useState(false);
+  const [isSyncingFallbackWarehouses, setIsSyncingFallbackWarehouses] = useState(false);
   const [selectedDeliveryAddressKey, setSelectedDeliveryAddressKey] = useState<string>('');
   const [draftDeliveryAddress, setDraftDeliveryAddress] = useState<ParsedDeliveryAddress | null>(null);
   const [geoProvinces, setGeoProvinces] = useState<GeoProvinceOption[]>([]);
@@ -844,6 +904,7 @@ export default function OrdersConfirmationPage() {
   const shopPickerRef = useRef<HTMLDivElement | null>(null);
   const tagPickerRef = useRef<HTMLDivElement | null>(null);
   const geoPickerRef = useRef<HTMLDivElement | null>(null);
+  const productPickerRef = useRef<HTMLDivElement | null>(null);
   const conversationCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [page, setPage] = useState(1);
@@ -1038,6 +1099,36 @@ export default function OrdersConfirmationPage() {
     }
   };
 
+  const fetchProductOptions = async (orderRowId: string, searchTerm: string) => {
+    setIsProductOptionsLoading(true);
+    setProductOptionsError(null);
+    try {
+      const params = new URLSearchParams();
+      if (searchTerm.trim()) params.set('search', searchTerm.trim());
+      params.set('limit', '20');
+      const response = await apiClient.get<ConfirmationProductOptionsResponse>(
+        `/orders/confirmation/${orderRowId}/product-options?${params.toString()}`,
+      );
+      const data = response.data;
+      setProductOptions(Array.isArray(data.items) ? data.items : []);
+      setProductOptionsWarehouseName(typeof data.warehouse_name === 'string' ? data.warehouse_name : null);
+    } catch (err: unknown) {
+      const message =
+        (typeof err === 'object' &&
+          err !== null &&
+          'response' in err &&
+          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
+          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
+        (err instanceof Error ? err.message : null) ||
+        'Failed to load product options';
+      setProductOptionsError(message);
+      setProductOptions([]);
+      setProductOptionsWarehouseName(null);
+    } finally {
+      setIsProductOptionsLoading(false);
+    }
+  };
+
   fetchDataRef.current = fetchData;
 
   useEffect(() => {
@@ -1063,10 +1154,13 @@ export default function OrdersConfirmationPage() {
         setShowGeoPicker(false);
         setGeoSearchTerm('');
       }
+      if (showProductPicker && productPickerRef.current && target && !productPickerRef.current.contains(target)) {
+        setShowProductPicker(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showShopPicker, showTagPicker, showGeoPicker]);
+  }, [showShopPicker, showTagPicker, showGeoPicker, showProductPicker]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1143,6 +1237,16 @@ export default function OrdersConfirmationPage() {
       setDraftPaymentTotalDiscount(null);
       setDraftPaymentBankTransfer(null);
       setDraftPaymentSurcharge(null);
+      setDraftItems(null);
+      setProductSearchTerm('');
+      setShowProductPicker(false);
+      setIsProductOptionsLoading(false);
+      setProductOptionsError(null);
+      setProductOptions([]);
+      setProductOptionsWarehouseName(null);
+      setIsSyncingFallbackProducts(false);
+      setIsSyncingFallbackTags(false);
+      setIsSyncingFallbackWarehouses(false);
       setSelectedDeliveryAddressKey('');
       setDraftDeliveryAddress(null);
       setGeoProvinces([]);
@@ -1186,6 +1290,16 @@ export default function OrdersConfirmationPage() {
     setDraftPaymentTotalDiscount(null);
     setDraftPaymentBankTransfer(null);
     setDraftPaymentSurcharge(null);
+    setDraftItems(null);
+    setProductSearchTerm('');
+    setShowProductPicker(false);
+    setIsProductOptionsLoading(false);
+    setProductOptionsError(null);
+    setProductOptions([]);
+    setProductOptionsWarehouseName(null);
+    setIsSyncingFallbackProducts(false);
+    setIsSyncingFallbackTags(false);
+    setIsSyncingFallbackWarehouses(false);
     setSelectedDeliveryAddressKey('');
     setDraftDeliveryAddress(null);
     setGeoDistricts([]);
@@ -1222,6 +1336,12 @@ export default function OrdersConfirmationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPhoneHistoryOpen, phoneHistoryLookupPhone, phoneHistoryPage]);
 
+  useEffect(() => {
+    if (!selectedOrderForModal?.id || !showProductPicker) return;
+    fetchProductOptions(selectedOrderForModal.id, productSearchTerm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrderForModal?.id, productSearchTerm, showProductPicker]);
+
   const handleDateRangeChange = (val: { startDate: Date | string | null; endDate: Date | string | null } | null) => {
     const nextStart = toSafeDate(val?.startDate);
     const nextEnd = toSafeDate(val?.endDate);
@@ -1241,12 +1361,63 @@ export default function OrdersConfirmationPage() {
   const endRow = Math.min(pagination.page * pagination.limit, pagination.total);
   const canPrev = pagination.page > 1;
   const canNext = pagination.page < Math.max(1, pagination.pageCount);
+  const storeIdByShopId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      const shopId = (row.shop_id || '').trim();
+      const storeId = (row.store_id || '').trim();
+      if (shopId && storeId && !map.has(shopId)) {
+        map.set(shopId, storeId);
+      }
+    }
+    for (const row of phoneHistoryRows) {
+      const shopId = (row.shop_id || '').trim();
+      const storeId = (row.store_id || '').trim();
+      if (shopId && storeId && !map.has(shopId)) {
+        map.set(shopId, storeId);
+      }
+    }
+    return map;
+  }, [rows, phoneHistoryRows]);
 
   const modalSnapshot = useMemo(
     () => parseOrderSnapshot(selectedOrderForModal?.order_snapshot),
     [selectedOrderForModal?.order_snapshot],
   );
   const modalItems = modalSnapshot.items;
+  const modalWarehouseId = (
+    selectedOrderForModal?.warehouse_id ||
+    modalSnapshot.warehouseId ||
+    ''
+  ).trim();
+  const modalWarehouseName = (
+    selectedOrderForModal?.warehouse_name ||
+    ''
+  ).trim();
+  const selectedStoreId = (
+    selectedOrderForModal?.store_id ||
+    (selectedOrderForModal?.shop_id ? storeIdByShopId.get(selectedOrderForModal.shop_id) : null) ||
+    ''
+  ).trim();
+  const effectiveWarehouseName = (modalWarehouseName || productOptionsWarehouseName || '').trim();
+  const warehouseScopedModalItems = useMemo(() => {
+    if (!modalWarehouseId) return modalItems;
+    return modalItems.filter((item) => !item.warehouseId || item.warehouseId === modalWarehouseId);
+  }, [modalItems, modalWarehouseId]);
+  const baseWarehouseScopedModalItems = useMemo(
+    () =>
+      warehouseScopedModalItems.map((item) => ({
+        ...item,
+        quantity: Number.isFinite(item.quantity) && item.quantity > 0 ? Math.floor(item.quantity) : 1,
+      })),
+    [warehouseScopedModalItems],
+  );
+  const effectiveModalItems = draftItems ?? baseWarehouseScopedModalItems;
+  const hasItemsDraftChanges = useMemo(() => {
+    const source = normalizeItemsForUpdatePayload(baseWarehouseScopedModalItems);
+    const draft = normalizeItemsForUpdatePayload(effectiveModalItems);
+    return JSON.stringify(source) !== JSON.stringify(draft);
+  }, [baseWarehouseScopedModalItems, effectiveModalItems]);
   const modalStatusLabel = selectedOrderForModal
     ? formatStatusLabel(
         selectedOrderForModal.status,
@@ -1277,6 +1448,23 @@ export default function OrdersConfirmationPage() {
     phoneHistoryPagination.page < Math.max(1, phoneHistoryPagination.pageCount);
   const availableTagGroups = tagOptions?.groups || [];
   const availableIndividualTags = tagOptions?.individual || [];
+  const shouldShowProductFallbackSync =
+    isSelectedOrderEditable &&
+    showProductPicker &&
+    !isProductOptionsLoading &&
+    productOptions.length === 0 &&
+    !!selectedOrderForModal?.shop_id;
+  const shouldShowWarehouseFallbackSync =
+    shouldShowProductFallbackSync &&
+    !!selectedStoreId &&
+    !!modalWarehouseId &&
+    !effectiveWarehouseName;
+  const shouldShowTagFallbackSync =
+    isSelectedOrderEditable &&
+    showTagPicker &&
+    !isTagOptionsLoading &&
+    !!selectedStoreId &&
+    (Boolean(tagOptionsError) || (!availableTagGroups.length && !availableIndividualTags.length));
   const activeTagGroup =
     availableTagGroups.find((group) => group.group_id === activeTagGroupId) || null;
   const selectedOrderBaseTags = useMemo(
@@ -1337,6 +1525,7 @@ export default function OrdersConfirmationPage() {
   const hasPendingChangesBase =
     hasStatusDraftChanges ||
     hasTagDraftChanges ||
+    hasItemsDraftChanges ||
     hasInternalNoteDraftChanges ||
     hasPrintingNoteDraftChanges ||
     hasPaymentShippingFeeDraftChanges ||
@@ -1378,6 +1567,153 @@ export default function OrdersConfirmationPage() {
         (entry) => normalizeTagNameKey(entry.name) !== normalizeTagNameKey(tagName),
       ),
     );
+  };
+  const updateDraftItemQuantity = (variationIdRaw: string, quantityText: string) => {
+    const variationId = variationIdRaw.trim();
+    if (!variationId) return;
+
+    setDraftItems((prev) => {
+      const base = (prev ?? baseWarehouseScopedModalItems).map((item) => ({ ...item }));
+      const index = base.findIndex(
+        (item) => (item.variationId || item.id || '').trim() === variationId,
+      );
+      if (index < 0) return base;
+
+      const parsed = Number.parseInt(quantityText, 10);
+      const nextQuantity = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+      base[index] = {
+        ...base[index],
+        quantity: nextQuantity,
+      };
+      return base;
+    });
+  };
+  const addProductToDraftItems = (option: ProductOptionItem) => {
+    const variationId = option.variation_id.trim();
+    if (!variationId) return;
+
+    setDraftItems((prev) => {
+      const base = (prev ?? baseWarehouseScopedModalItems).map((item) => ({ ...item }));
+      const existingIndex = base.findIndex(
+        (item) => (item.variationId || item.id || '').trim() === variationId,
+      );
+
+      if (existingIndex >= 0) {
+        const existing = base[existingIndex];
+        base[existingIndex] = {
+          ...existing,
+          quantity: (Number.isFinite(existing.quantity) && existing.quantity > 0
+            ? Math.floor(existing.quantity)
+            : 1) + 1,
+        };
+        return base;
+      }
+
+      base.unshift({
+        id: variationId,
+        variationId,
+        warehouseId: modalWarehouseId,
+        quantity: 1,
+        name: option.name || 'Unnamed product',
+        productDisplayId: option.custom_id || '',
+        displayId: '',
+        retailPrice: Number.isFinite(option.retail_price) ? option.retail_price : 0,
+        imageUrl: option.image_url || '',
+      });
+      return base;
+    });
+
+    setProductSearchTerm('');
+    setShowProductPicker(false);
+  };
+  const removeDraftItem = (variationIdRaw: string) => {
+    const variationId = variationIdRaw.trim();
+    if (!variationId) return;
+
+    setDraftItems((prev) => {
+      const base = (prev ?? baseWarehouseScopedModalItems).map((item) => ({ ...item }));
+      return base.filter((item) => (item.variationId || item.id || '').trim() !== variationId);
+    });
+  };
+  const handleFallbackSyncProducts = async () => {
+    if (!selectedOrderForModal?.shop_id) return;
+    setIsSyncingFallbackProducts(true);
+    try {
+      const response = await apiClient.get(
+        `/integrations/shops/${encodeURIComponent(selectedOrderForModal.shop_id)}/products`,
+      );
+      const syncedRows = Array.isArray(response.data) ? response.data.length : 0;
+      addToast('success', `Products synced (${syncedRows} rows).`);
+      if (selectedOrderForModal.id && showProductPicker) {
+        await fetchProductOptions(selectedOrderForModal.id, productSearchTerm);
+      }
+      fetchDataRef.current?.({ silent: true });
+    } catch (err: unknown) {
+      const message =
+        (typeof err === 'object' &&
+          err !== null &&
+          'response' in err &&
+          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
+          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
+        (err instanceof Error ? err.message : null) ||
+        'Failed to sync products';
+      addToast('error', message);
+    } finally {
+      setIsSyncingFallbackProducts(false);
+    }
+  };
+  const handleFallbackSyncTags = async () => {
+    if (!selectedStoreId || !selectedOrderForModal?.id) return;
+    setIsSyncingFallbackTags(true);
+    try {
+      const response = await apiClient.post(
+        `/integrations/pos-stores/${encodeURIComponent(selectedStoreId)}/tags/sync`,
+        {},
+      );
+      const synced = Number(response?.data?.synced || 0);
+      addToast('success', `Tags synced (${synced}).`);
+      await fetchTagOptions(selectedOrderForModal.id);
+    } catch (err: unknown) {
+      const message =
+        (typeof err === 'object' &&
+          err !== null &&
+          'response' in err &&
+          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
+          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
+        (err instanceof Error ? err.message : null) ||
+        'Failed to sync tags';
+      addToast('error', message);
+    } finally {
+      setIsSyncingFallbackTags(false);
+    }
+  };
+  const handleFallbackSyncWarehouses = async () => {
+    if (!selectedStoreId) return;
+    setIsSyncingFallbackWarehouses(true);
+    try {
+      const response = await apiClient.post(
+        `/integrations/pos-stores/${encodeURIComponent(selectedStoreId)}/warehouses/sync`,
+        {},
+      );
+      const synced = Number(response?.data?.synced || 0);
+      addToast('success', `Warehouses synced (${synced}).`);
+      if (selectedOrderForModal?.id && showProductPicker) {
+        await fetchProductOptions(selectedOrderForModal.id, productSearchTerm);
+      }
+      fetchDataRef.current?.({ silent: true });
+    } catch (err: unknown) {
+      const message =
+        (typeof err === 'object' &&
+          err !== null &&
+          'response' in err &&
+          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
+          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
+        (err instanceof Error ? err.message : null) ||
+        'Failed to sync warehouses';
+      addToast('error', message);
+    } finally {
+      setIsSyncingFallbackWarehouses(false);
+    }
   };
 
   const openPhoneHistoryModal = () => {
@@ -1830,7 +2166,10 @@ export default function OrdersConfirmationPage() {
   const paymentBankTransfer = Math.max(0, effectivePaymentBankTransfer);
   const paymentProductBase = Math.max(
     0,
-    modalItems.reduce((sum, item) => sum + Math.max(0, item.retailPrice) * Math.max(0, item.quantity), 0),
+    effectiveModalItems.reduce(
+      (sum, item) => sum + Math.max(0, item.retailPrice) * Math.max(0, item.quantity),
+      0,
+    ),
   );
   const paymentSubtotal = Math.max(
     0,
@@ -1933,8 +2272,12 @@ export default function OrdersConfirmationPage() {
       Math.abs(parsedSurchargeDraft - modalSnapshot.payment.surcharge) > 0.0001;
 
     const payload: Record<string, unknown> = {};
+    const normalizedItemsPayload = hasItemsDraftChanges
+      ? normalizeItemsForUpdatePayload(effectiveModalItems)
+      : undefined;
     if (draftStatus !== null) payload.status = draftStatus;
     if (hasTagDraftChanges) payload.tags = resolvedTagsPayload || [];
+    if (hasItemsDraftChanges) payload.items = normalizedItemsPayload || [];
     if (hasInternalNoteDraftChanges) payload.note = toApiLineBreaks(effectiveInternalNote);
     if (hasPrintingNoteDraftChanges) payload.note_print = toApiLineBreaks(effectivePrintingNote);
     if (shouldUpdateShippingFee) payload.shipping_fee = parsedShippingFeeDraft;
@@ -1962,6 +2305,8 @@ export default function OrdersConfirmationPage() {
       addToast('info', `Updating order ${orderRef} to ${statusLabel}...`);
     } else if (hasTagDraftChanges) {
       addToast('info', `Updating tags for order ${orderRef}...`);
+    } else if (hasItemsDraftChanges) {
+      addToast('info', `Updating products for order ${orderRef}...`);
     } else if (hasInternalNoteDraftChanges || hasPrintingNoteDraftChanges) {
       addToast('info', `Updating notes for order ${orderRef}...`);
     } else if (
@@ -2294,27 +2639,158 @@ export default function OrdersConfirmationPage() {
               {/* ── LEFT COLUMN: Products + Payment ── */}
               <div className="space-y-3 lg:col-span-7">
                 <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+                  {/* Header row 1: Title + warehouse + counts */}
                   <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
                     <Package className="h-3.5 w-3.5 text-indigo-500" />
                     <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Products</h4>
-                    {modalItems.length > 0 ? (
+                    {modalWarehouseName || modalWarehouseId ? (
+                      <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                        {modalWarehouseName || modalWarehouseId}
+                      </span>
+                    ) : null}
+                    {effectiveModalItems.length > 0 ? (
                       <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-500">
-                        <span>{modalItems.length} variation{modalItems.length !== 1 ? 's' : ''}</span>
+                        <span>
+                          {effectiveModalItems.length} variation
+                          {effectiveModalItems.length !== 1 ? 's' : ''}
+                        </span>
                         <span className="text-slate-300">|</span>
-                        <span>Qty: {modalItems.reduce((total, item) => total + item.quantity, 0)}</span>
+                        <span>
+                          Qty: {effectiveModalItems.reduce((total, item) => total + item.quantity, 0)}
+                        </span>
                       </div>
                     ) : null}
                   </div>
+
+                  {/* Header row 2: Search product (inside header area) */}
+                  {isSelectedOrderEditable ? (
+                    <div className="relative border-b border-slate-100 px-3 py-1.5" ref={productPickerRef}>
+                      <div className="flex items-center gap-1.5">
+                        <Search className="h-3 w-3 shrink-0 text-slate-400" />
+                        <input
+                          type="text"
+                          value={productSearchTerm}
+                          onChange={(event) => {
+                            setProductSearchTerm(event.target.value);
+                            if (!showProductPicker) setShowProductPicker(true);
+                          }}
+                          onFocus={() => setShowProductPicker(true)}
+                          placeholder="Search product to add"
+                          className="w-full bg-transparent text-[11px] text-slate-900 outline-none placeholder:text-slate-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowProductPicker((prev) => !prev)}
+                          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                        >
+                          {showProductPicker ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+
+                      {showProductPicker ? (
+                        <div className="absolute left-0 right-0 top-full z-30 mt-px max-h-56 overflow-y-auto rounded-b-lg border border-t-0 border-slate-200 bg-white shadow-lg">
+                          {isProductOptionsLoading ? (
+                            <div className="px-2.5 py-2 text-[11px] text-slate-500">Loading products...</div>
+                          ) : productOptionsError ? (
+                            <div className="px-2.5 py-2 text-[11px] text-rose-600">{productOptionsError}</div>
+                          ) : productOptions.length === 0 ? (
+                            <div className="space-y-2 px-2.5 py-2">
+                              <div className="text-[11px] text-slate-500">
+                                {shouldShowWarehouseFallbackSync
+                                  ? 'Warehouse is not matched yet for this order. Sync warehouse and products.'
+                                  : 'No products available for this warehouse.'}
+                              </div>
+                              {(shouldShowWarehouseFallbackSync || shouldShowProductFallbackSync) ? (
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {shouldShowWarehouseFallbackSync ? (
+                                    <button
+                                      type="button"
+                                      onClick={handleFallbackSyncWarehouses}
+                                      disabled={isSyncingFallbackWarehouses || isSyncingFallbackProducts}
+                                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {isSyncingFallbackWarehouses ? 'Syncing warehouse...' : 'Sync Warehouse'}
+                                    </button>
+                                  ) : null}
+                                  {shouldShowProductFallbackSync ? (
+                                    <button
+                                      type="button"
+                                      onClick={handleFallbackSyncProducts}
+                                      disabled={isSyncingFallbackProducts || isSyncingFallbackWarehouses}
+                                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {isSyncingFallbackProducts ? 'Syncing products...' : 'Sync Products'}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            productOptions.map((option) => (
+                              <button
+                                key={option.variation_id}
+                                type="button"
+                                onClick={() => addProductToDraftItems(option)}
+                                className="flex w-full items-center gap-2 border-b border-slate-50 px-2.5 py-1.5 text-left transition hover:bg-indigo-50/50"
+                              >
+                                <div className="h-7 w-7 shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-100">
+                                  {option.image_url ? (
+                                    <img
+                                      src={option.image_url}
+                                      alt={option.name || 'Product image'}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-full w-full items-center justify-center">
+                                      <Package className="h-3 w-3 text-slate-300" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-[11px] font-medium text-slate-900">
+                                    {option.name || 'Unnamed product'}
+                                  </p>
+                                  <p className="truncate text-[10px] text-slate-400">
+                                    {option.custom_id || option.variation_id}
+                                  </p>
+                                </div>
+                                <span className="shrink-0 text-[11px] font-semibold tabular-nums text-emerald-600">
+                                  {formatCurrency(option.retail_price || 0)}
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* Product list */}
                   <div className="p-2">
-                    {modalItems.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {modalItems.map((item, index) => (
+                    {effectiveModalItems.length > 0 ? (
+                      <div className="space-y-1">
+                        {effectiveModalItems.map((item, index) => (
                           <div
-                            key={`${item.id || item.productDisplayId || item.displayId || item.name}-${index}`}
-                            className="rounded-lg border border-slate-100 bg-slate-50/50 px-2.5 py-2 text-xs text-slate-800 transition hover:border-slate-200"
+                            key={`${item.variationId || item.id || item.productDisplayId || item.displayId || item.name}-${index}`}
+                            className="relative rounded-lg border border-slate-100 bg-slate-50/40 px-2 py-1.5 text-xs text-slate-800 transition hover:border-slate-200 hover:bg-slate-50"
                           >
-                            <div className="flex items-start gap-2.5">
-                              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                            {isSelectedOrderEditable ? (
+                              <button
+                                type="button"
+                                onClick={() => removeDraftItem((item.variationId || item.id || '').trim())}
+                                className="absolute -right-1.5 -top-1.5 z-10 inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-400 shadow-sm transition hover:bg-rose-50 hover:text-rose-600"
+                                aria-label="Remove product"
+                                title="Remove product"
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            ) : null}
+                            <div className="flex items-center gap-2">
+                              <div className="h-10 w-10 shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-100">
                                 {item.imageUrl ? (
                                   <img
                                     src={item.imageUrl}
@@ -2323,47 +2799,84 @@ export default function OrdersConfirmationPage() {
                                   />
                                 ) : (
                                   <div className="flex h-full w-full items-center justify-center">
-                                    <Package className="h-4 w-4 text-slate-300" />
+                                    <Package className="h-3.5 w-3.5 text-slate-300" />
                                   </div>
                                 )}
                               </div>
 
                               <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-start justify-between gap-1.5">
-                                  <div className="min-w-0 space-y-0.5">
-                                    <div className="flex flex-wrap items-center gap-1">
-                                      {item.productDisplayId ? (
-                                        <span className="inline-flex rounded border border-green-200 bg-green-50 px-1 py-px text-[10px] font-semibold text-green-700">
-                                          {item.productDisplayId}
-                                        </span>
-                                      ) : null}
-                                      {item.displayId ? (
-                                        <span className="inline-flex rounded border border-pink-200 bg-pink-50 px-1 py-px text-[10px] font-semibold text-pink-700">
-                                          {item.displayId}
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                    <p className="text-xs font-medium text-slate-900">{item.name || '—'}</p>
-                                  </div>
-
-                                  <div className="ml-auto flex shrink-0 flex-col items-end gap-0.5">
-                                    <div className="flex items-center gap-1 text-[11px] text-slate-600">
-                                      <span className="tabular-nums">{Math.round(item.retailPrice)}</span>
-                                      <span className="text-slate-400">x</span>
-                                      <span className="tabular-nums font-medium">{item.quantity}</span>
-                                    </div>
-                                    <p className="text-xs font-semibold text-indigo-600">
-                                      {formatCurrency(item.retailPrice * item.quantity)}
-                                    </p>
-                                  </div>
+                                <div className="flex flex-wrap items-center gap-0.5">
+                                  {item.productDisplayId ? (
+                                    <span className="inline-flex rounded border border-green-200 bg-green-50 px-1 py-px text-[9px] font-semibold text-green-700">
+                                      {item.productDisplayId}
+                                    </span>
+                                  ) : null}
+                                  {item.displayId ? (
+                                    <span className="inline-flex rounded border border-pink-200 bg-pink-50 px-1 py-px text-[9px] font-semibold text-pink-700">
+                                      {item.displayId}
+                                    </span>
+                                  ) : null}
                                 </div>
+                                <p className="mt-0.5 truncate text-[11px] font-medium text-slate-900">{item.name || '—'}</p>
+                              </div>
+
+                              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                                <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                                  <span className="tabular-nums">{Math.round(item.retailPrice)}</span>
+                                  <span className="text-slate-300">x</span>
+                                  {isSelectedOrderEditable ? (
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={item.quantity}
+                                      onChange={(event) =>
+                                        updateDraftItemQuantity(
+                                          (item.variationId || item.id || '').trim(),
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="h-5 w-12 rounded border border-slate-200 bg-white px-1 text-right text-[11px] tabular-nums font-medium text-slate-900 outline-none focus:border-indigo-400"
+                                    />
+                                  ) : (
+                                    <span className="tabular-nums font-medium">{item.quantity}</span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] font-semibold tabular-nums text-indigo-600">
+                                  {formatCurrency(item.retailPrice * item.quantity)}
+                                </p>
                               </div>
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="py-3 text-center text-xs text-slate-400">No product data available</p>
+                      <div className="space-y-2 py-3 text-center">
+                        <p className="text-[11px] text-slate-400">No product data available</p>
+                        {isSelectedOrderEditable && (selectedOrderForModal?.shop_id || selectedStoreId) ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            {selectedStoreId && modalWarehouseId && !effectiveWarehouseName ? (
+                              <button
+                                type="button"
+                                onClick={handleFallbackSyncWarehouses}
+                                disabled={isSyncingFallbackWarehouses || isSyncingFallbackProducts}
+                                className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isSyncingFallbackWarehouses ? 'Syncing warehouse...' : 'Sync Warehouse'}
+                              </button>
+                            ) : null}
+                            {selectedOrderForModal?.shop_id ? (
+                              <button
+                                type="button"
+                                onClick={handleFallbackSyncProducts}
+                                disabled={isSyncingFallbackProducts || isSyncingFallbackWarehouses}
+                                className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isSyncingFallbackProducts ? 'Syncing products...' : 'Sync Products'}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 </section>
@@ -2767,7 +3280,19 @@ export default function OrdersConfirmationPage() {
                                   {isTagOptionsLoading ? (
                                     <div className="px-2.5 py-1.5 text-xs text-slate-500">Loading tags...</div>
                                   ) : tagOptionsError ? (
-                                    <div className="px-2.5 py-1.5 text-xs text-rose-600">{tagOptionsError}</div>
+                                    <div className="space-y-2 px-2.5 py-1.5">
+                                      <div className="text-xs text-rose-600">{tagOptionsError}</div>
+                                      {shouldShowTagFallbackSync ? (
+                                        <button
+                                          type="button"
+                                          onClick={handleFallbackSyncTags}
+                                          disabled={isSyncingFallbackTags}
+                                          className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                          {isSyncingFallbackTags ? 'Syncing tags...' : 'Sync Tags'}
+                                        </button>
+                                      ) : null}
+                                    </div>
                                   ) : (
                                     <>
                                       {availableTagGroups.map((group) => (
@@ -2802,7 +3327,19 @@ export default function OrdersConfirmationPage() {
                                       })}
 
                                       {!availableTagGroups.length && !availableIndividualTags.length ? (
-                                        <div className="px-2.5 py-1.5 text-xs text-slate-500">No tags available for this shop.</div>
+                                        <div className="space-y-2 px-2.5 py-1.5">
+                                          <div className="text-xs text-slate-500">No tags available for this shop.</div>
+                                          {shouldShowTagFallbackSync ? (
+                                            <button
+                                              type="button"
+                                              onClick={handleFallbackSyncTags}
+                                              disabled={isSyncingFallbackTags}
+                                              className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              {isSyncingFallbackTags ? 'Syncing tags...' : 'Sync Tags'}
+                                            </button>
+                                          ) : null}
+                                        </div>
                                       ) : null}
                                     </>
                                   )}

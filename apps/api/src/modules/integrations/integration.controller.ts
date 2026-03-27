@@ -227,6 +227,26 @@ export class IntegrationController {
   }
 
   /**
+   * POS Stores - list warehouses for store (from DB)
+   * NOTE: This must come BEFORE /pos-stores/:id to avoid route conflicts
+   */
+  @Get('/pos-stores/:id/warehouses')
+  @Permissions('integration.read')
+  async getPosStoreWarehouses(@Param('id') id: string) {
+    return this.integrationService.listPosStoreWarehouses(id);
+  }
+
+  /**
+   * POS Stores - manual sync warehouses from Pancake POS API
+   * NOTE: This must come BEFORE /pos-stores/:id to avoid route conflicts
+   */
+  @Post('/pos-stores/:id/warehouses/sync')
+  @Permissions('integration.update')
+  async syncPosStoreWarehouses(@Param('id') id: string) {
+    return this.integrationService.syncPancakeWarehousesByStoreId(id);
+  }
+
+  /**
    * POS Stores - list orders for store (from DB) with optional date range
    * NOTE: This must come BEFORE /pos-stores/:id to avoid route conflicts
    */

@@ -404,6 +404,7 @@ model PosStore {
   products      PosProduct[]
   productCogs   PosProductCogs[]
   tags          PosTag[]
+  warehouses    PosWarehouse[]
 
   @@index([tenantId])
   @@index([tenantId, teamId])
@@ -416,6 +417,9 @@ model PosProduct {
   storeId    String   @db.Uuid
   store      PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
   productId  String
+  variationId String?
+  warehouseId String?
+  productSnapshot Json?
   customId   String?
   name       String
   retailPrice Decimal? @db.Decimal(12, 2)
@@ -424,9 +428,11 @@ model PosProduct {
   updatedAt  DateTime @updatedAt
   cogsHistory PosProductCogs[]
 
-  @@unique([storeId, productId])
+  @@unique([storeId, variationId])
   @@index([storeId])
   @@index([storeId, productId])
+  @@index([storeId, variationId])
+  @@index([storeId, warehouseId])
   @@map("pos_products")
 }
 
@@ -908,6 +914,35 @@ model PosTag {
   @@index([tenantId, storeId])
   @@index([tenantId, teamId])
   @@map("pos_tags")
+}
+
+model PosWarehouse {
+  id                  String   @id @default(uuid()) @db.Uuid
+  storeId             String   @db.Uuid
+  store               PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  warehouseId         String
+  name                String
+  customId            String?
+  address             String?
+  fullAddress         String?
+  phoneNumber         String?
+  countryCode         Int?
+  provinceId          String?
+  districtId          String?
+  communeId           String?
+  postcode            String?
+  allowCreateOrder    Boolean?
+  batchConfig         Json?
+  customBatchConfig   Json?
+  customShelfConfig   Json?
+  shelfConfig         Json?
+  hideConfigBatchShelf Boolean?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([storeId, warehouseId])
+  @@index([storeId])
+  @@map("pos_warehouses")
 }
 
 model PosProvince {

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Min, MinLength, ValidateNested } from 'class-validator';
 
 export class UpdateConfirmationOrderTagDto {
   @IsString()
@@ -9,6 +9,16 @@ export class UpdateConfirmationOrderTagDto {
   @IsString()
   @MinLength(1)
   name!: string;
+}
+
+export class UpdateConfirmationOrderItemDto {
+  @IsString()
+  @MinLength(1)
+  variation_id!: string;
+
+  @IsInt()
+  @Min(1)
+  quantity!: number;
 }
 
 export class UpdateConfirmationOrderStatusDto {
@@ -22,6 +32,12 @@ export class UpdateConfirmationOrderStatusDto {
   @ValidateNested({ each: true })
   @Type(() => UpdateConfirmationOrderTagDto)
   tags?: UpdateConfirmationOrderTagDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateConfirmationOrderItemDto)
+  items?: UpdateConfirmationOrderItemDto[];
 
   @IsOptional()
   @IsString()
