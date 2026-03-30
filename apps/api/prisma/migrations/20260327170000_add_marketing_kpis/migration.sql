@@ -50,23 +50,23 @@ CREATE TABLE "marketing_kpi_user_category_assignments" (
 );
 
 -- CreateIndex
-CREATE INDEX "mkt_kpi_targets_scope_team_metric_date_idx"
+CREATE INDEX "marketing_kpi_targets_tenantId_scopeType_teamCode_metricKey_idx"
 ON "marketing_kpi_targets"("tenantId", "scopeType", "teamCode", "metricKey", "startDate", "endDate");
 
 -- CreateIndex
-CREATE INDEX "mkt_kpi_targets_user_metric_date_idx"
+CREATE INDEX "marketing_kpi_targets_tenantId_userId_metricKey_startDate_e_idx"
 ON "marketing_kpi_targets"("tenantId", "userId", "metricKey", "startDate", "endDate");
 
 -- CreateIndex
-CREATE INDEX "mkt_kpi_targets_team_cat_metric_date_idx"
+CREATE INDEX "marketing_kpi_targets_tenantId_teamCode_category_metricKey__idx"
 ON "marketing_kpi_targets"("tenantId", "teamCode", "category", "metricKey", "startDate", "endDate");
 
 -- CreateIndex
-CREATE INDEX "mkt_kpi_user_cat_team_user_date_idx"
+CREATE INDEX "marketing_kpi_user_category_assignments_tenantId_teamCode_u_idx"
 ON "marketing_kpi_user_category_assignments"("tenantId", "teamCode", "userId", "startDate", "endDate");
 
 -- CreateIndex
-CREATE INDEX "mkt_kpi_user_cat_cat_team_date_idx"
+CREATE INDEX "marketing_kpi_user_category_assignments_tenantId_category_t_idx"
 ON "marketing_kpi_user_category_assignments"("tenantId", "category", "teamCode", "startDate", "endDate");
 
 -- AddForeignKey
