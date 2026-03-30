@@ -9,7 +9,7 @@ export interface Integration {
   description?: string;
   status: IntegrationStatus;
   enabled: boolean;
-  config: Record<string, any>;
+  config: Record<string, string | number | boolean | null | undefined>;
   createdAt: string;
   updatedAt: string;
   lastSyncAt?: string;

@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useState, useRef, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Layers, StoreIcon, Network, BarChart3, ClipboardList } from 'lucide-react';
+import { Layers, StoreIcon, Network, BarChart3, ClipboardList, Target } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
 
@@ -93,15 +93,51 @@ const baseNavigation: NavLink[] = [
       { href: '/orders/confirmation', label: 'Confirmation of Order', icon: <ClipboardList className="h-4 w-4" /> },
     ],
   },
+  {
+    href: '/kpis',
+    label: 'KPIs',
+    description: 'Targets & performance tracking',
+    icon: <Target className={iconClasses} />,
+    children: [
+      { href: '/kpis/marketing', label: 'Marketing', icon: <Target className="h-4 w-4" /> },
+      { href: '/kpis/funnel', label: 'Funnel', icon: <Target className="h-4 w-4" /> },
+      { href: '/kpis/sales', label: 'Sales', icon: <Target className="h-4 w-4" /> },
+    ],
+  },
 ];
+
+type DashboardLayoutUser = {
+  userId?: string;
+  id?: string;
+  tenantId?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  permissions?: string[];
+  tenant?: {
+    name?: string;
+  };
+};
+
+type DashboardLayoutTenant = {
+  id?: string;
+  status?: string;
+  name?: string;
+};
+
+type DashboardLayoutTeam = {
+  id: string;
+  name?: string;
+  teamCode?: string;
+};
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<any>(null);
-  const [tenant, setTenant] = useState<any>(null);
+  const [user, setUser] = useState<DashboardLayoutUser | null>(null);
+  const [tenant, setTenant] = useState<DashboardLayoutTenant | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
-  const [teams, setTeams] = useState<any[]>([]);
+  const [teams, setTeams] = useState<DashboardLayoutTeam[]>([]);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [isLoadingTeams, setIsLoadingTeams] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -123,9 +159,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const hasMeta = permissions.includes('meta.read');
     const hasWorkflow = permissions.includes('workflow.read');
     const hasOrderConfirmation = permissions.includes('pos.read');
-    const hasTeams = permissions.includes('team.read');
-    const hasRoles = permissions.includes('role.read');
-    const hasUsers = permissions.includes('user.read');
+    const hasMarketingKpi = permissions.includes('kpi.marketing.read') || permissions.includes('kpi.marketing.manage');
+    const hasFunnelKpi = permissions.includes('kpi.funnel.read');
+    const hasSalesKpi = permissions.includes('kpi.sales.read');
 
     return baseNavigation.flatMap((link) => {
       if (link.href !== '/analytics') {
@@ -135,6 +171,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         if (link.href === '/orders') {
           const children = (link.children || []).filter((child) => {
             if (child.href === '/orders/confirmation') return hasOrderConfirmation;
+            return false;
+          });
+          if (children.length === 0) return [];
+          return [{ ...link, children }];
+        }
+        if (link.href === '/kpis') {
+          const children = (link.children || []).filter((child) => {
+            if (child.href === '/kpis/marketing') return hasMarketingKpi;
+            if (child.href === '/kpis/funnel') return hasFunnelKpi;
+            if (child.href === '/kpis/sales') return hasSalesKpi;
             return false;
           });
           if (children.length === 0) return [];
@@ -179,7 +225,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }
 
     if (userStr) {
-      const parsedUser = JSON.parse(userStr);
+      const parsedUser = JSON.parse(userStr) as DashboardLayoutUser;
       setUser(parsedUser);
       const perms: string[] = Array.isArray(parsedUser.permissions) ? parsedUser.permissions : [];
       if (perms.includes('team.read_all') || perms.includes('permission.assign')) {
@@ -192,7 +238,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       }
     }
     if (tenantStr) {
-      const parsedTenant = JSON.parse(tenantStr);
+      const parsedTenant = JSON.parse(tenantStr) as DashboardLayoutTenant;
       setTenant(parsedTenant);
       // Ensure tenant context is set for permission calls
       if (!storedTenantId && parsedTenant?.id) {
@@ -254,7 +300,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     apiClient
       .get(endpoint)
       .then((res) => {
-        const list = res.data || [];
+        const list = Array.isArray(res.data) ? (res.data as DashboardLayoutTeam[]) : [];
         setTeams(list);
         const storedIds = localStorage.getItem('current_team_ids');
         let initialIds: string[] = [];
@@ -359,7 +405,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           {/* Collapse toggle pinned to the right edge, vertically centered */}
           <button
             onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-            className="absolute -right-3 top-1/2 z-50 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm hover:border-indigo-300 hover:text-indigo-600 transition-all duration-300"
+            className="absolute -right-3 top-1/2 z-50 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm hover:border-orange-300 hover:text-orange-600 transition-all duration-300"
             aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             <svg
@@ -377,7 +423,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               isSidebarCollapsed ? 'justify-center' : 'items-center gap-3'
             }`}
           >
-            <div className="h-12 w-12 flex-shrink-0 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-xl font-semibold transition-all duration-300">
+            <div className="h-12 w-12 flex-shrink-0 rounded-2xl bg-orange-500 text-white flex items-center justify-center text-xl font-semibold transition-all duration-300">
               {organizationName
                 .split(' ')
                 .map((word: string) => word.charAt(0))
@@ -427,8 +473,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     >
                       <span
                         className={`flex-shrink-0 transition-colors duration-300 ${
-                          hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href) ? 'text-indigo-500' : 'text-slate-400'
-                        } group-hover:text-indigo-500`}
+                          hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href) ? 'text-orange-500' : 'text-slate-400'
+                        } group-hover:text-orange-500`}
                       >
                         {link.icon}
                       </span>
@@ -440,7 +486,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       </div>
                       <svg
                         className={`h-4 w-4 text-slate-400 transition-all duration-300 ${
-                          isExpanded ? 'rotate-90 text-indigo-500' : ''
+                          isExpanded ? 'rotate-90 text-orange-500' : ''
                         } ${isSidebarCollapsed ? 'w-0 opacity-0' : 'opacity-100'}`}
                         viewBox="0 0 20 20"
                         fill="none"
@@ -454,13 +500,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     <Link
                       href={link.href}
                       className={`group flex items-center rounded-xl px-3 py-2 transition-all duration-300 ${
-                        isActive ? 'bg-indigo-50 text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+                        isActive ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
                       } ${isSidebarCollapsed ? 'justify-center' : ''}`}
                     >
                       <span
                         className={`flex-shrink-0 transition-colors duration-300 ${
-                          isActive ? 'text-indigo-500' : 'text-slate-400'
-                        } group-hover:text-indigo-500`}
+                          isActive ? 'text-orange-500' : 'text-slate-400'
+                        } group-hover:text-orange-500`}
                       >
                         {link.icon}
                       </span>
@@ -486,13 +532,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             href={child.href}
                             className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
                               childActive
-                                ? 'bg-indigo-50 text-indigo-600 shadow-sm'
+                                ? 'bg-orange-50 text-orange-700 shadow-sm'
                                 : 'text-slate-600 hover:bg-slate-50'
                             }`}
                           >
                             <span
                             className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                              childActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
+                              childActive ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
                             }`}
                           >
                               {child.icon ?? <span className="h-4 w-4" />}
@@ -613,13 +659,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         onClick={() => setCollapsedPopupItem(null)}
                         className={`flex items-center gap-3 px-4 py-2 text-sm transition ${
                           childActive
-                            ? 'bg-indigo-50 text-indigo-600'
+                            ? 'bg-orange-50 text-orange-700'
                             : 'text-slate-600 hover:bg-slate-50'
                         }`}
                       >
                         <span
                           className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                            childActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
+                            childActive ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
                           }`}
                         >
                           {child.icon ?? <span className="h-4 w-4" />}
@@ -649,10 +695,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     <button
                       type="button"
                       onClick={() => setIsTeamMenuOpen((prev) => !prev)}
-                      className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-800 shadow-sm hover:border-indigo-400 focus:border-indigo-500 focus:outline-none"
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-800 shadow-sm hover:border-orange-400 focus:border-orange-500 focus:outline-none"
                     >
                       <span>Team scope:</span>
-                      <span className="text-indigo-600">
+                      <span className="text-orange-600">
                         {selectedTeamIds.length === 0
                           ? 'All teams'
                           : selectedTeamIds
@@ -690,7 +736,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                                 <span>{team.name}</span>
                               </label>
                               <button
-                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                                className="text-xs font-semibold text-orange-600 hover:text-orange-700"
                                 onClick={() => handleOnlySelection(team.id)}
                               >
                                 ONLY

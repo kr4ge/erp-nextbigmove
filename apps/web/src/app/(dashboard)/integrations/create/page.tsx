@@ -6,9 +6,11 @@ import apiClient from '@/lib/api-client';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { AlertBanner } from '@/components/ui/feedback';
 import { FormInput } from '@/components/ui/form-input';
 import { FormSelect } from '@/components/ui/form-select';
 import { FormTextarea } from '@/components/ui/form-textarea';
+import { useToast } from '@/components/ui/toast';
 
 type IntegrationProvider = 'META_ADS' | 'PANCAKE_POS';
 
@@ -25,15 +27,16 @@ interface AdAccount {
   account_status?: number;
 }
 
+const parseCreateIntegrationError = (error: unknown, fallback: string) => {
+  const err = error as { response?: { data?: { message?: string } }; message?: string };
+  return err?.response?.data?.message || err?.message || fallback;
+};
+
 export default function CreateIntegrationPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const providerParam = searchParams.get('provider') as IntegrationProvider | null;
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const showToast = (type: 'success' | 'error', message: string) => {
-    setToast({ type, message });
-    setTimeout(() => setToast(null), 4000);
-  };
+  const { addToast } = useToast();
 
   const [step, setStep] = useState<'select' | 'credentials' | 'configure'>('select');
   const [provider, setProvider] = useState<IntegrationProvider | null>(providerParam);
@@ -100,7 +103,9 @@ export default function CreateIntegrationPage() {
 
         if (!shopsResponse.ok) {
           const errorText = await shopsResponse.text();
-          showToast('error', errorText || 'Invalid API key or access denied');
+          const message = errorText || 'Invalid API key or access denied';
+          setError(message);
+          addToast('error', message);
           setIsLoading(false);
           return;
         }
@@ -108,7 +113,9 @@ export default function CreateIntegrationPage() {
         const responseData = await shopsResponse.json();
 
         if (!responseData.success || !responseData.shops) {
-          showToast('error', 'Invalid API response from Pancake POS');
+          const message = 'Invalid API response from Pancake POS';
+          setError(message);
+          addToast('error', message);
           setIsLoading(false);
           return;
         }
@@ -137,7 +144,7 @@ export default function CreateIntegrationPage() {
             },
           });
 
-          showToast('success', 'Integration created successfully');
+          addToast('success', 'Integration created successfully');
           router.push('/integrations');
         } else {
           // Multiple shops, show dropdown
@@ -149,8 +156,10 @@ export default function CreateIntegrationPage() {
         await fetchAdAccounts(accessToken);
         setStep('configure');
       }
-    } catch (err: any) {
-      showToast('error', err.response?.data?.message || 'Failed to create integration');
+    } catch (error: unknown) {
+      const message = parseCreateIntegrationError(error, 'Failed to create integration');
+      setError(message);
+      addToast('error', message);
     } finally {
       setIsLoading(false);
     }
@@ -170,9 +179,11 @@ export default function CreateIntegrationPage() {
       } else {
         throw new Error('Failed to fetch ad accounts');
       }
-    } catch (err: any) {
-      showToast('error', 'Failed to fetch ad accounts: ' + err.message);
-      throw err;
+    } catch (error: unknown) {
+      const message = parseCreateIntegrationError(error, 'Failed to fetch ad accounts');
+      setError(message);
+      addToast('error', message);
+      throw error;
     }
   };
 
@@ -212,10 +223,12 @@ export default function CreateIntegrationPage() {
         },
       });
 
-      showToast('success', 'Integration created successfully');
+      addToast('success', 'Integration created successfully');
       router.push('/integrations');
-    } catch (err: any) {
-      showToast('error', err.response?.data?.message || 'Failed to create integration');
+    } catch (error: unknown) {
+      const message = parseCreateIntegrationError(error, 'Failed to create integration');
+      setError(message);
+      addToast('error', message);
     } finally {
       setIsLoading(false);
     }
@@ -242,44 +255,12 @@ export default function CreateIntegrationPage() {
 
   return (
     <div className="space-y-6">
-      {toast && (
-        <div className="fixed top-4 right-4 z-50">
-          <div
-            className={`flex items-center w-full max-w-sm p-4 text-sm text-gray-700 bg-white border rounded-lg shadow ${
-              toast.type === 'success' ? 'border-green-200' : 'border-red-200'
-            }`}
-            role="alert"
-          >
-            <div
-              className={`inline-flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-lg ${
-                toast.type === 'success' ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'
-              }`}
-            >
-              {toast.type === 'success' ? '✓' : '✕'}
-            </div>
-            <div className="ml-3 text-sm font-medium text-gray-900">{toast.message}</div>
-            <button
-              type="button"
-              className="ml-auto text-gray-400 hover:text-gray-700"
-              onClick={() => setToast(null)}
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      )}
-
       <PageHeader
         title="Create Integration"
         description="Connect your Meta Ads or Pancake POS account"
       />
 
-      {/* Error Display (kept for non-toast flows, but hidden if toast shown) */}
-      {!toast && error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <AlertBanner tone="error" message={error} />}
 
       {/* Step 1: Select Provider */}
       {step === 'select' && (

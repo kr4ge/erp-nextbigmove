@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backend ERP Core"
+  short_description: "NestJS backend patterns for ERP"
+  default_prompt: "Use $backend-erp-core to implement this backend change with proper DTO, scoping, and transaction safety."

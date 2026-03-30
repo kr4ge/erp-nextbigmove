@@ -52,6 +52,8 @@ model Tenant {
   metaAdInsights     MetaAdInsight[]
   posOrders          PosOrder[]
   posTags            PosTag[]
+  marketingKpiTargets MarketingKpiTarget[]
+  marketingKpiUserCategoryAssignments MarketingKpiUserCategoryAssignment[]
   reconcileMarketing ReconcileMarketing[]
   reconcileSales     ReconcileSales[]
   analyticsShares    AnalyticsShare[]
@@ -992,6 +994,66 @@ model PosCommune {
   @@index([provinceId, districtId, name])
   @@index([districtId, name])
   @@map("pos_communes")
+}
+
+enum MarketingKpiScopeType {
+  TEAM
+  CATEGORY
+  USER
+}
+
+enum MarketingKpiCategory {
+  SCALING
+  TESTING
+}
+
+enum MarketingKpiMetricKey {
+  TEAM_AD_SPEND
+  TEAM_AR_PCT
+  USER_CREATIVES_CREATED
+  USER_AR_PCT
+}
+
+model MarketingKpiTarget {
+  id              String                @id @default(uuid()) @db.Uuid
+  tenantId        String                @db.Uuid
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scopeType       MarketingKpiScopeType
+  teamCode        String
+  userId          String?               @db.Uuid
+  category        MarketingKpiCategory?
+  metricKey       MarketingKpiMetricKey
+  targetValue     Decimal               @db.Decimal(12, 2)
+  startDate       DateTime              @db.Date
+  endDate         DateTime?             @db.Date
+  createdByUserId String                @db.Uuid
+  updatedByUserId String?               @db.Uuid
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([tenantId, scopeType, teamCode, metricKey, startDate, endDate])
+  @@index([tenantId, userId, metricKey, startDate, endDate])
+  @@index([tenantId, teamCode, category, metricKey, startDate, endDate])
+  @@map("marketing_kpi_targets")
+}
+
+model MarketingKpiUserCategoryAssignment {
+  id              String               @id @default(uuid()) @db.Uuid
+  tenantId        String               @db.Uuid
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamCode        String
+  userId          String               @db.Uuid
+  category        MarketingKpiCategory
+  startDate       DateTime             @db.Date
+  endDate         DateTime?            @db.Date
+  createdByUserId String               @db.Uuid
+  updatedByUserId String?              @db.Uuid
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([tenantId, teamCode, userId, startDate, endDate])
+  @@index([tenantId, category, teamCode, startDate, endDate])
+  @@map("marketing_kpi_user_category_assignments")
 }
 
 // ============================================================================

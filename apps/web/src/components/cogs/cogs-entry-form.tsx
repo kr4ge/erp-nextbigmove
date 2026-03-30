@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
 import dynamic from "next/dynamic";
 import { getToday } from "@/lib/timezone";
+import type { DateValueType } from "react-tailwindcss-datepicker";
 // Client-only datepicker (ssr disabled to avoid hydration warnings)
 const Datepicker = dynamic(() => import("react-tailwindcss-datepicker"), { ssr: false });
 
@@ -64,9 +64,9 @@ export function CogsEntryForm({
 }: CogsEntryFormProps) {
   const [cogs, setCogs] = useState<string>(initialCogs?.toString() || "");
   const [mode, setMode] = useState<'current' | 'backdated'>(initialEndDate ? 'backdated' : 'current');
-  const [pickerValue, setPickerValue] = useState<{ startDate: string | Date | null; endDate: string | Date | null }>({
-    startDate: initialStartDate ? format(initialStartDate, "yyyy-MM-dd") : null,
-    endDate: initialEndDate ? format(initialEndDate, "yyyy-MM-dd") : null,
+  const [pickerValue, setPickerValue] = useState<DateValueType>({
+    startDate: initialStartDate ?? null,
+    endDate: initialEndDate ?? null,
   });
   const [errors, setErrors] = useState<{ cogs?: string; startDate?: string; endDate?: string }>({});
   const [mounted, setMounted] = useState(false);
@@ -77,55 +77,16 @@ export function CogsEntryForm({
   }, []);
 
   const normalizedDates = useMemo(() => {
-    // Parse dates and set to midnight to avoid timezone issues
-    let start: Date | null = null;
-    let end: Date | null = null;
+    const normalizeDate = (value: Date | null | undefined): Date | null =>
+      value ? new Date(value.getFullYear(), value.getMonth(), value.getDate()) : null;
 
-    console.log('Normalizing dates from pickerValue:', pickerValue);
-
-    if (pickerValue.startDate) {
-      if (pickerValue.startDate instanceof Date) {
-        // If it's already a Date object, use it
-        start = new Date(pickerValue.startDate.getFullYear(), pickerValue.startDate.getMonth(), pickerValue.startDate.getDate());
-        console.log('Parsed start date from Date object:', start);
-      } else if (typeof pickerValue.startDate === 'string') {
-        // Parse the date string in YYYY-MM-DD format
-        const parts = pickerValue.startDate.split('-');
-        if (parts.length === 3) {
-          const [year, month, day] = parts.map(Number);
-          if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
-            start = new Date(year, month - 1, day); // month is 0-indexed
-            console.log('Parsed start date from string:', start);
-          } else {
-            console.log('Invalid date parts:', { year, month, day });
-          }
-        }
-      }
-    }
-
-    if (pickerValue.endDate) {
-      if (pickerValue.endDate instanceof Date) {
-        // If it's already a Date object, use it
-        end = new Date(pickerValue.endDate.getFullYear(), pickerValue.endDate.getMonth(), pickerValue.endDate.getDate());
-        console.log('Parsed end date from Date object:', end);
-      } else if (typeof pickerValue.endDate === 'string') {
-        // Parse the date string in YYYY-MM-DD format
-        const parts = pickerValue.endDate.split('-');
-        if (parts.length === 3) {
-          const [year, month, day] = parts.map(Number);
-          if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
-            end = new Date(year, month - 1, day); // month is 0-indexed
-            console.log('Parsed end date from string:', end);
-          }
-        }
-      }
-    }
-
-    console.log('Normalized dates result:', { start, end });
-    return { start, end };
+    return {
+      start: normalizeDate(pickerValue?.startDate),
+      end: normalizeDate(pickerValue?.endDate),
+    };
   }, [pickerValue]);
 
-  const handleDateChange = (value: { startDate: string | Date | null; endDate: string | Date | null } | null) => {
+  const handleDateChange = (value: DateValueType) => {
     console.log('Datepicker value changed:', value);
     const startDate = value?.startDate ?? null;
     const endDate = value?.endDate ?? null;
@@ -262,8 +223,8 @@ export function CogsEntryForm({
               const nextMode = e.target.value as 'current' | 'backdated';
               setMode(nextMode);
               setPickerValue((prev) => ({
-                startDate: prev.startDate,
-                endDate: nextMode === 'current' ? prev.startDate : prev.endDate,
+                startDate: prev?.startDate ?? null,
+                endDate: nextMode === 'current' ? prev?.startDate ?? null : prev?.endDate ?? null,
               }));
               setErrors((prev) => ({ ...prev, endDate: undefined }));
             }}
@@ -317,7 +278,7 @@ export function CogsEntryForm({
         {mounted && (
           <div className="relative">
             <Datepicker
-              value={pickerValue as any}
+              value={pickerValue}
               onChange={handleDateChange}
               useRange={false}
               asSingle={mode !== "backdated"}

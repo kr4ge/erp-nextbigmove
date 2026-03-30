@@ -2,6 +2,7 @@
 
 import type { Column } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface DataTableColumnHeaderProps<TData, TValue> {
   column: Column<TData, TValue>;
@@ -20,8 +21,13 @@ export function DataTableColumnHeader<TData, TValue>({
 
   return (
     <button
-      className={`flex items-center gap-2 hover:text-[#0F172A] transition ${className ?? ""}`}
+      type="button"
+      className={cn(
+        "flex items-center gap-2 transition hover:text-[#0F172A]",
+        className,
+      )}
       onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      aria-label={`Sort by ${label}`}
     >
       {label}
       {column.getIsSorted() === "desc" ? (

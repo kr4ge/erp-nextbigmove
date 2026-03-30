@@ -19,6 +19,7 @@ import { UserModule } from './modules/users/user.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { KpisModule } from './modules/kpis/kpis.module';
 
 @Module({
   imports: [
@@ -92,6 +93,7 @@ import { OrdersModule } from './modules/orders/orders.module';
     RolesModule,
     AnalyticsModule,
     OrdersModule,
+    KpisModule,
   ],
   controllers: [],
   providers: [],

@@ -1,0 +1,184 @@
+export type SalesOverviewResponse = {
+  kpis: {
+    revenue: number;
+    delivered: number;
+    shipped: number;
+    waiting_pickup: number;
+    rts: number;
+    ad_spend: number;
+    ar_pct: number;
+    profit_efficiency: number;
+    conversion_rate: number;
+    aov: number;
+    cpp: number;
+    processed_cpp: number;
+    confirmed: number;
+    unconfirmed: number;
+    canceled: number;
+    contribution_margin: number;
+    net_margin: number;
+    cogs: number;
+    cogs_canceled: number;
+    cogs_restocking: number;
+    cogs_rts: number;
+    cogs_delivered: number;
+    cod_fee: number;
+    cod_fee_delivered: number;
+    gross_cod: number;
+    rts_cod: number;
+    canceled_cod: number;
+    restocking_cod: number;
+    abandoned_cod: number;
+    sf_fees: number;
+    ff_fees: number;
+    if_fees: number;
+    cm_rts_forecast?: number;
+    rts_pct?: number;
+    sf_sdr_fees: number;
+    ff_sdr_fees: number;
+    if_sdr_fees: number;
+  };
+  prevKpis: {
+    revenue: number;
+    delivered: number;
+    shipped: number;
+    waiting_pickup: number;
+    rts: number;
+    ad_spend: number;
+    ar_pct: number;
+    profit_efficiency: number;
+    conversion_rate: number;
+    aov: number;
+    cpp: number;
+    processed_cpp: number;
+    confirmed: number;
+    unconfirmed: number;
+    canceled: number;
+    contribution_margin: number;
+    net_margin: number;
+    cogs: number;
+    cogs_canceled: number;
+    cogs_restocking: number;
+    cogs_rts: number;
+    cogs_delivered: number;
+    cod_fee: number;
+    cod_fee_delivered: number;
+    gross_cod: number;
+    rts_cod: number;
+    canceled_cod: number;
+    restocking_cod: number;
+    abandoned_cod: number;
+    sf_fees: number;
+    ff_fees: number;
+    if_fees: number;
+    cm_rts_forecast?: number;
+    rts_pct?: number;
+    sf_sdr_fees: number;
+    ff_sdr_fees: number;
+    if_sdr_fees: number;
+  };
+  counts: {
+    purchases: number;
+    delivered: number;
+    shipped: number;
+    waiting_pickup: number;
+    rts: number;
+    confirmed: number;
+    unconfirmed: number;
+    canceled: number;
+  };
+  prevCounts: {
+    purchases: number;
+    delivered: number;
+    shipped: number;
+    waiting_pickup: number;
+    rts: number;
+    confirmed: number;
+    unconfirmed: number;
+    canceled: number;
+  };
+  products: Array<{
+    mapping: string | null;
+    revenue: number;
+    gross_sales: number;
+    cogs: number;
+    aov: number;
+    cpp: number;
+    processed_cpp: number;
+    ad_spend: number;
+    ar_pct: number;
+    profit_efficiency: number;
+    contribution_margin: number;
+    net_margin: number;
+    sf_fees?: number;
+    ff_fees?: number;
+    if_fees?: number;
+    cod_fee_delivered?: number;
+    cogs_rts?: number;
+    rts_count?: number;
+    delivered_count?: number;
+    cod_raw?: number;
+    purchases_raw?: number;
+    sf_raw?: number;
+    ff_raw?: number;
+    if_raw?: number;
+    cod_fee_delivered_raw?: number;
+    cogs_ec?: number;
+    cogs_restocking?: number;
+    canceled_cod?: number;
+    restocking_cod?: number;
+    rts_cod?: number;
+    abandoned_cod?: number;
+  }>;
+  deliveryStatuses?: Array<{
+    mapping: string | null;
+    total_orders: number;
+    new_orders: number;
+    restocking: number;
+    confirmed: number;
+    canceled: number;
+    waiting_pickup: number;
+    shipped: number;
+    delivered: number;
+    rts: number;
+  }>;
+  filters: { mappings: string[]; mappingsDisplayMap: Record<string, string> };
+  selected: { start_date: string; end_date: string; mappings: string[] };
+  rangeDays: number;
+  lastUpdatedAt: string | null;
+};
+
+export const salesMetricDefinitions: Array<{
+  key: keyof SalesOverviewResponse['kpis'];
+  label: string;
+  format: 'currency' | 'number' | 'percent';
+  countKey?: keyof SalesOverviewResponse['counts'];
+  countLabel?: string;
+}> = [
+  { key: 'revenue', label: 'Revenue (₱)', format: 'currency', countKey: 'purchases', countLabel: 'Orders' },
+  { key: 'unconfirmed', label: 'New (₱)', format: 'currency', countKey: 'unconfirmed', countLabel: 'Orders' },
+  { key: 'confirmed', label: 'Confirmed (₱)', format: 'currency', countKey: 'confirmed', countLabel: 'Orders' },
+  { key: 'canceled', label: 'Canceled (₱)', format: 'currency', countKey: 'canceled', countLabel: 'Orders' },
+  { key: 'waiting_pickup', label: 'Wait for Pickup (₱)', format: 'currency', countKey: 'waiting_pickup', countLabel: 'Waiting' },
+  { key: 'shipped', label: 'Shipped (₱)', format: 'currency', countKey: 'shipped', countLabel: 'Shipped' },
+  { key: 'delivered', label: 'Delivered (₱)', format: 'currency', countKey: 'delivered', countLabel: 'Delivered' },
+  { key: 'rts', label: 'RTS (₱)', format: 'currency', countKey: 'rts', countLabel: 'RTS' },
+  { key: 'ad_spend', label: 'Ad Spend (₱)', format: 'currency' },
+] as const;
+
+export const salesSecondaryMetricDefinitions: Array<{
+  key: keyof SalesOverviewResponse['kpis'];
+  label: string;
+  format: 'currency' | 'number' | 'percent';
+}> = [
+  { key: 'cm_rts_forecast', label: 'CM (RTS 20%)', format: 'currency' },
+  { key: 'ar_pct', label: 'AR (%)', format: 'percent' },
+  { key: 'aov', label: 'AOV (₱)', format: 'currency' },
+  { key: 'cpp', label: 'CPP (₱)', format: 'currency' },
+  { key: 'processed_cpp', label: 'Processed CPP (₱)', format: 'currency' },
+  { key: 'rts_pct', label: 'RTS (%)', format: 'percent' },
+  { key: 'conversion_rate', label: 'Conversion Rate (%)', format: 'percent' },
+  { key: 'profit_efficiency', label: 'Profit Efficiency (%)', format: 'percent' },
+  { key: 'contribution_margin', label: 'Contribution Margin (₱)', format: 'currency' },
+  { key: 'net_margin', label: 'Net Margin (₱)', format: 'currency' },
+];

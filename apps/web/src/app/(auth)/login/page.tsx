@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import apiClient from '@/lib/api-client';
+import { AlertBanner } from '@/components/ui/feedback';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -14,6 +15,15 @@ const loginSchema = z.object({
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
+
+const parseLoginError = (error: unknown) => {
+  const err = error as { response?: { data?: { message?: string } }; message?: string };
+  return (
+    err?.response?.data?.message ||
+    err?.message ||
+    'Login failed. Please check your credentials.'
+  );
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -58,12 +68,8 @@ export default function LoginPage() {
 
       // Redirect to dashboard
       router.push('/dashboard');
-    } catch (err: any) {
-      const message =
-        err?.response?.data?.message ||
-        err?.message ||
-        'Login failed. Please check your credentials.';
-      setError(message);
+    } catch (error: unknown) {
+      setError(parseLoginError(error));
     } finally {
       setIsLoading(false);
     }
@@ -87,9 +93,7 @@ export default function LoginPage() {
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-              {error}
-            </div>
+            <AlertBanner tone="error" message={error} />
           )}
 
           <div className="space-y-4">

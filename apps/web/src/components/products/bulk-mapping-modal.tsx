@@ -27,6 +27,15 @@ export function BulkMappingModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const parseErrorMessage = (error: unknown, fallback: string) => {
+    if (!error || typeof error !== "object") return fallback;
+    const maybeError = error as { message?: unknown };
+    if (typeof maybeError.message === "string" && maybeError.message.trim().length > 0) {
+      return maybeError.message;
+    }
+    return fallback;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -42,8 +51,8 @@ export function BulkMappingModal({
       await onSubmit(mapping.trim());
       setMapping("");
       onClose();
-    } catch (err: any) {
-      setError(err.message || "Failed to update mapping");
+    } catch (error: unknown) {
+      setError(parseErrorMessage(error, "Failed to update mapping"));
     } finally {
       setIsSubmitting(false);
     }

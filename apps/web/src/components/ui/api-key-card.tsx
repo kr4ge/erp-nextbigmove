@@ -13,6 +13,7 @@ type ApiKeyCardProps = {
 export function ApiKeyCard({ label = 'API Key', apiKey, status = 'ACTIVE', action }: ApiKeyCardProps) {
   const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState(false);
+  const normalizedStatus = status === 'INACTIVE' ? 'DISABLED' : status;
 
   const displayValue = useMemo(() => {
     if (showKey) return apiKey || '';
@@ -32,7 +33,7 @@ export function ApiKeyCard({ label = 'API Key', apiKey, status = 'ACTIVE', actio
       <div className="flex flex-col gap-4 pb-2">
         <div className="flex items-start justify-between">
           <div className="flex flex-col gap-2">
-            {status && <StatusBadge status={status as any} />}
+            {status && <StatusBadge status={normalizedStatus} />}
             <p className="text-sm font-semibold text-[#0F172A]">{label}</p>
           </div>
           {action && <div>{action}</div>}

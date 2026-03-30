@@ -1,248 +1,48 @@
 'use client';
 
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
+import { AlertBanner } from '@/components/ui/feedback';
 import apiClient from '@/lib/api-client';
-import { ChevronDown, ChevronUp, Filter, Info, RefreshCw, ShoppingBag, Share2 } from 'lucide-react';
+import { Filter, RefreshCw, ShoppingBag, Share2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { workflowSocket } from '@/lib/socket-client';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
+import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
+import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
+import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
+import {
+  AnalyticsSalesDeliveryTable,
+  type SalesDeliveryRowItem,
+  type SalesDeliverySortKey,
+} from '../_components/analytics-sales-delivery-table';
+import {
+  AnalyticsSalesProductsTable,
+  type SalesProductRowItem,
+  type SalesProductsSortKey,
+} from '../_components/analytics-sales-products-table';
+import { AnalyticsShareDialog } from '../_components/analytics-share-dialog';
+import { AnalyticsSortDirectionLabel } from '../_components/analytics-sort-direction-label';
+import {
+  AnalyticsTableSelector,
+  type AnalyticsTableSelectorOption,
+} from '../_components/analytics-table-selector';
+import { useAnalyticsDateRange } from '../_hooks/use-analytics-date-range';
+import { useAnalyticsShare } from '../_hooks/use-analytics-share';
+import { analyticsOverviewApi } from '../_services/analytics-overview-api';
+import { useVisibleAutoRefresh } from '../_hooks/use-visible-auto-refresh';
+import { useWorkflowTenantEvent } from '../_hooks/use-workflow-tenant-event';
+import {
+  type SalesOverviewResponse as OverviewResponse,
+  salesMetricDefinitions as metricDefinitions,
+  salesSecondaryMetricDefinitions as secondaryMetricDefinitions,
+} from '../_types/sales';
+import {
+  formatDeltaPercent,
+  formatMetricValue,
+  toTitleCase,
+} from '../_utils/metrics';
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
-
-const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
-
-const formatDateInTimezone = (date: Date) =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date);
-
-const parseYmdToLocalDate = (value: string) => {
-  const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) return new Date();
-  return new Date(year, month - 1, day);
-};
-
-type OverviewResponse = {
-  kpis: {
-    revenue: number;
-    delivered: number;
-    shipped: number;
-    waiting_pickup: number;
-    rts: number;
-    ad_spend: number;
-    ar_pct: number;
-    profit_efficiency: number;
-    conversion_rate: number;
-    aov: number;
-    cpp: number;
-    processed_cpp: number;
-    confirmed: number;
-    unconfirmed: number;
-    canceled: number;
-    contribution_margin: number;
-    net_margin: number;
-    cogs: number;
-    cogs_canceled: number;
-    cogs_restocking: number;
-    cogs_rts: number;
-    cogs_delivered: number;
-    cod_fee: number;
-    cod_fee_delivered: number;
-    gross_cod: number;
-    rts_cod: number;
-    canceled_cod: number;
-    restocking_cod: number;
-    abandoned_cod: number;
-    sf_fees: number;
-    ff_fees: number;
-    if_fees: number;
-    cm_rts_forecast?: number;
-    rts_pct?: number;
-    sf_sdr_fees: number;
-    ff_sdr_fees: number;
-    if_sdr_fees: number;
-  };
-  prevKpis: {
-    revenue: number;
-    delivered: number;
-    shipped: number;
-    waiting_pickup: number;
-    rts: number;
-    ad_spend: number;
-    ar_pct: number;
-    profit_efficiency: number;
-    conversion_rate: number;
-    aov: number;
-    cpp: number;
-    processed_cpp: number;
-    confirmed: number;
-    unconfirmed: number;
-    canceled: number;
-    contribution_margin: number;
-    net_margin: number;
-    cogs: number;
-    cogs_canceled: number;
-    cogs_restocking: number;
-    cogs_rts: number;
-    cogs_delivered: number;
-    cod_fee: number;
-    cod_fee_delivered: number;
-    gross_cod: number;
-    rts_cod: number;
-    canceled_cod: number;
-    restocking_cod: number;
-    abandoned_cod: number;
-    sf_fees: number;
-    ff_fees: number;
-    if_fees: number;
-    cm_rts_forecast?: number;
-    rts_pct?: number;
-    sf_sdr_fees: number;
-    ff_sdr_fees: number;
-    if_sdr_fees: number;
-  };
-  counts: {
-    purchases: number;
-    delivered: number;
-    shipped: number;
-    waiting_pickup: number;
-    rts: number;
-    confirmed: number;
-    unconfirmed: number;
-    canceled: number;
-  };
-  prevCounts: {
-    purchases: number;
-    delivered: number;
-    shipped: number;
-    waiting_pickup: number;
-    rts: number;
-    confirmed: number;
-    unconfirmed: number;
-    canceled: number;
-  };
-  products: Array<{
-    mapping: string | null;
-    revenue: number;
-    gross_sales: number;
-    cogs: number;
-    aov: number;
-    cpp: number;
-    processed_cpp: number;
-    ad_spend: number;
-    ar_pct: number;
-    profit_efficiency: number;
-    contribution_margin: number;
-    net_margin: number;
-    sf_fees?: number;
-    ff_fees?: number;
-    if_fees?: number;
-    cod_fee_delivered?: number;
-    cogs_rts?: number;
-    rts_count?: number;
-    delivered_count?: number;
-    cod_raw?: number;
-    purchases_raw?: number;
-    sf_raw?: number;
-    ff_raw?: number;
-    if_raw?: number;
-    cod_fee_delivered_raw?: number;
-    cogs_ec?: number;
-    cogs_restocking?: number;
-    canceled_cod?: number;
-    restocking_cod?: number;
-    rts_cod?: number;
-    abandoned_cod?: number;
-  }>;
-  deliveryStatuses?: Array<{
-    mapping: string | null;
-    total_orders: number;
-    new_orders: number;
-    restocking: number;
-    confirmed: number;
-    canceled: number;
-    waiting_pickup: number;
-    shipped: number;
-    delivered: number;
-    rts: number;
-  }>;
-  filters: { mappings: string[]; mappingsDisplayMap: Record<string, string> };
-  selected: { start_date: string; end_date: string; mappings: string[] };
-  rangeDays: number;
-  lastUpdatedAt: string | null;
-};
-
-const metricDefinitions: Array<{
-  key: keyof OverviewResponse['kpis'];
-  label: string;
-  format: 'currency' | 'number' | 'percent';
-  countKey?: keyof OverviewResponse['counts'];
-  countLabel?: string;
-}> = [
-  { key: 'revenue', label: 'Revenue (₱)', format: 'currency', countKey: 'purchases', countLabel: 'Orders' },
-  { key: 'unconfirmed', label: 'New (₱)', format: 'currency', countKey: 'unconfirmed', countLabel: 'Orders' },  
-  { key: 'confirmed', label: 'Confirmed (₱)', format: 'currency', countKey: 'confirmed', countLabel: 'Orders' },
-  { key: 'canceled', label: 'Canceled (₱)', format: 'currency', countKey: 'canceled', countLabel: 'Orders' },
-  { key: 'waiting_pickup', label: 'Wait for Pickup (₱)', format: 'currency', countKey: 'waiting_pickup', countLabel: 'Waiting' },
-  { key: 'shipped', label: 'Shipped (₱)', format: 'currency', countKey: 'shipped', countLabel: 'Shipped' },
-  { key: 'delivered', label: 'Delivered (₱)', format: 'currency', countKey: 'delivered', countLabel: 'Delivered' },
-  { key: 'rts', label: 'RTS (₱)', format: 'currency', countKey: 'rts', countLabel: 'RTS' },
-  { key: 'ad_spend', label: 'Ad Spend (₱)', format: 'currency' },
-] as const;
-
-const secondaryMetricDefinitions: Array<{
-  key: keyof OverviewResponse['kpis'];
-  label: string;
-  format: 'currency' | 'number' | 'percent';
-}> = [
-  { key: 'cm_rts_forecast', label: 'CM (RTS 20%)', format: 'currency' },
-  { key: 'ar_pct', label: 'AR (%)', format: 'percent' },
-  { key: 'aov', label: 'AOV (₱)', format: 'currency' },
-  { key: 'cpp', label: 'CPP (₱)', format: 'currency' },
-  { key: 'processed_cpp', label: 'Processed CPP (₱)', format: 'currency' },
-  { key: 'rts_pct', label: 'RTS (%)', format: 'percent' },
-  { key: 'conversion_rate', label: 'Conversion Rate (%)', format: 'percent' },
-  { key: 'profit_efficiency', label: 'Profit Efficiency (%)', format: 'percent' },
-  { key: 'contribution_margin', label: 'Contribution Margin (₱)', format: 'currency' },
-  { key: 'net_margin', label: 'Net Margin (₱)', format: 'currency' },
-];
-
-function formatValue(val: number, format: 'currency' | 'number' | 'percent', decimals: number = 2) {
-  if (!Number.isFinite(val)) return '—';
-  if (format === 'currency') {
-    return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 }).format(val);
-  }
-  const formatted = new Intl.NumberFormat('en-US', { maximumFractionDigits: decimals }).format(val);
-  return format === 'percent' ? `${formatted}%` : formatted;
-}
-
-function formatDelta(current: number, previous: number) {
-  if (!Number.isFinite(previous) || previous === 0) {
-    return null;
-  }
-  const delta = ((current - previous) / Math.abs(previous)) * 100;
-  return delta;
-}
-
-function titleCase(str: string) {
-  return str
-    .split(' ')
-    .filter(Boolean)
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-    .join(' ');
-}
 
 function getSafeRtsForecastPct(pct: number) {
   return Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 20));
@@ -309,22 +109,50 @@ function computeRtsPctFromCounts(counts?: OverviewResponse['counts'] | null) {
   return total > 0 ? (rts / total) * 100 : 0;
 }
 
+function parseErrorMessage(error: unknown, fallback: string) {
+  if (!error || typeof error !== 'object') return fallback;
+  const maybeError = error as {
+    response?: { data?: { message?: unknown } };
+    message?: unknown;
+  };
+  const responseMessage = maybeError.response?.data?.message;
+  if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) return responseMessage;
+  if (typeof maybeError.message === 'string' && maybeError.message.trim().length > 0) return maybeError.message;
+  return fallback;
+}
+
+function areArraysEqual(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function areRecordsEqual(
+  a: Record<string, string>,
+  b: Record<string, string>,
+) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
 export default function SalesAnalyticsPage() {
-  const today = useMemo(() => formatDateInTimezone(new Date()), []);
+  const { range, startDate, endDate, handleDateRangeChange, syncDateRangeFromApi } =
+    useAnalyticsDateRange();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [startDate, setStartDate] = useState<string>(today);
-  const [endDate, setEndDate] = useState<string>(today);
   const [selectedMappings, setSelectedMappings] = useState<string[]>([]);
   const [mappingOptions, setMappingOptions] = useState<string[]>([]);
   const [mappingDisplayMap, setMappingDisplayMap] = useState<Record<string, string>>({});
-  const [showMappingPicker, setShowMappingPicker] = useState(false);
-  const [mappingSearch, setMappingSearch] = useState('');
-  const [range, setRange] = useState<{ startDate: Date | null; endDate: Date | null }>({
-    startDate: parseYmdToLocalDate(today),
-    endDate: parseYmdToLocalDate(today),
-  });
+  const mappingOptionsRef = useRef<string[]>([]);
+  const selectedMappingsRef = useRef<string[]>([]);
   const [excludeCanceled, setExcludeCanceled] = useState(true);
   const [excludeRestocking, setExcludeRestocking] = useState(true);
   const [excludeAbandoned, setExcludeAbandoned] = useState(true);
@@ -332,74 +160,58 @@ export default function SalesAnalyticsPage() {
   const [includeTax12, setIncludeTax12] = useState(false);
   const [includeTax1, setIncludeTax1] = useState(false);
   const [rtsForecastPct, setRtsForecastPct] = useState<number>(20);
-  const mappingPickerRef = useRef<HTMLDivElement | null>(null);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const filterMenuContentRef = useRef<HTMLDivElement | null>(null);
   const scrollStripRef = useRef<HTMLDivElement | null>(null);
-  const fetchDataRef = useRef<any>();
+  const fetchDataRef = useRef<((opts?: { silent?: boolean }) => Promise<void>) | null>(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const pageSize = 10;
   const [tableSelection, setTableSelection] = useState<'products' | 'delivery'>('products');
-  const [showTableMenu, setShowTableMenu] = useState(false);
   const [productPage, setProductPage] = useState(1);
   const [deliveryPage, setDeliveryPage] = useState(1);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [shareTeams, setShareTeams] = useState<{ id: string; name: string }[]>([]);
-  const [shareSelected, setShareSelected] = useState<string[]>([]);
-  const [shareLoading, setShareLoading] = useState(false);
-  const [shareSaving, setShareSaving] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
-  const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
-  const [canShare, setCanShare] = useState(false);
+  const {
+    canShare,
+    currentTeamId,
+    openShareModal,
+    saveShare,
+    setShareOpen,
+    shareLoading,
+    shareOpen,
+    shareSaving,
+    shareSelected,
+    shareTeams,
+    toggleShareTeam,
+  } = useAnalyticsShare('sales');
   const { addToast } = useToast();
   const rtsForecastSafe = getSafeRtsForecastPct(rtsForecastPct);
-  const [sortKey, setSortKey] = useState<
-    | 'index'
-    | 'product'
-    | 'revenue'
-    | 'gross_sales'
-    | 'cogs'
-    | 'aov'
-    | 'cpp'
-    | 'processed_cpp'
-    | 'ad_spend'
-    | 'ar_pct'
-    | 'rts_pct'
-    | 'profit_efficiency'
-    | 'contribution_margin'
-    | 'cm_rts_forecast'
-    | 'net_margin'
-    | null
-  >(null);
+  const [sortKey, setSortKey] = useState<SalesProductsSortKey | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [deliverySortKey, setDeliverySortKey] = useState<
-    | 'index'
-    | 'product'
-    | 'total_orders'
-    | 'new_orders'
-    | 'restocking'
-    | 'confirmed'
-    | 'canceled'
-    | 'waiting_pickup'
-    | 'shipped'
-    | 'delivered'
-    | 'rts'
-    | null
-  >(null);
+  const [deliverySortKey, setDeliverySortKey] = useState<SalesDeliverySortKey | null>(null);
   const [deliverySortDir, setDeliverySortDir] = useState<'asc' | 'desc'>('desc');
 
-  const fetchData = async (opts?: { silent?: boolean }) => {
+  useEffect(() => {
+    mappingOptionsRef.current = mappingOptions;
+  }, [mappingOptions]);
+
+  useEffect(() => {
+    selectedMappingsRef.current = selectedMappings;
+  }, [selectedMappings]);
+
+  const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setIsLoading(true);
     setError(null);
     try {
-      const normalizedOptions = mappingOptions.map((m) => m.toLowerCase());
+      const currentOptions = mappingOptionsRef.current;
+      const currentSelected = selectedMappingsRef.current;
+      const normalizedOptions = currentOptions.map((m) => m.toLowerCase());
       const allPreviouslySelected =
         normalizedOptions.length === 0
-          ? selectedMappings.length === 0
-          : selectedMappings.length === 0 ||
-            (selectedMappings.length === normalizedOptions.length &&
-              normalizedOptions.every((m) => selectedMappings.includes(m)));
-      const effectiveSel = allPreviouslySelected ? normalizedOptions : selectedMappings;
+          ? currentSelected.length === 0
+          : currentSelected.length === 0 ||
+            (currentSelected.length === normalizedOptions.length &&
+              normalizedOptions.every((m) => currentSelected.includes(m)));
+      const effectiveSel = allPreviouslySelected ? normalizedOptions : currentSelected;
       const sendAll = allPreviouslySelected || effectiveSel.length === normalizedOptions.length;
       const params = new URLSearchParams();
       params.set('start_date', startDate);
@@ -413,86 +225,40 @@ export default function SalesAnalyticsPage() {
       params.set('exclude_rts', String(excludeRts));
       params.set('include_tax_12', String(includeTax12));
       params.set('include_tax_1', String(includeTax1));
-      const res = await apiClient.get<OverviewResponse>(`/analytics/sales/overview?${params.toString()}`);
+      const res = await analyticsOverviewApi.getSalesOverview<OverviewResponse>(params);
       setData(res.data);
       const optsList = res.data.filters.mappings || [];
       const normalized = optsList.map((m) => m.toLowerCase());
-      setMappingOptions(normalized);
-      setMappingDisplayMap(res.data.filters.mappingsDisplayMap || {});
+      setMappingOptions((prev) => (areArraysEqual(prev, normalized) ? prev : normalized));
+      const nextDisplayMap = res.data.filters.mappingsDisplayMap || {};
+      setMappingDisplayMap((prev) => (areRecordsEqual(prev, nextDisplayMap) ? prev : nextDisplayMap));
       if (allPreviouslySelected) {
-        setSelectedMappings(normalized);
+        setSelectedMappings((prev) => (areArraysEqual(prev, normalized) ? prev : normalized));
       } else {
-        const bounded = selectedMappings.filter((m) => normalized.includes(m));
-        setSelectedMappings(bounded);
+        const bounded = currentSelected.filter((m) => normalized.includes(m));
+        setSelectedMappings((prev) => (areArraysEqual(prev, bounded) ? prev : bounded));
       }
-      setStartDate(res.data.selected.start_date);
-      setEndDate(res.data.selected.end_date);
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Failed to load sales overview');
+      syncDateRangeFromApi(res.data.selected.start_date, res.data.selected.end_date);
+    } catch (error: unknown) {
+      setError(parseErrorMessage(error, 'Failed to load sales overview'));
     } finally {
       if (!opts?.silent) setIsLoading(false);
     }
-  };
+  }, [
+    endDate,
+    excludeAbandoned,
+    excludeCanceled,
+    excludeRestocking,
+    excludeRts,
+    includeTax1,
+    includeTax12,
+    startDate,
+    syncDateRangeFromApi,
+  ]);
 
   useEffect(() => {
     fetchDataRef.current = fetchData;
   }, [fetchData]);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('current_team_id');
-      if (stored) setCurrentTeamId(stored);
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        try {
-          const u = JSON.parse(userStr);
-          if (Array.isArray(u?.permissions) && u.permissions.includes('analytics.share')) {
-            setCanShare(true);
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (canShare) return;
-    const fetchPerms = async () => {
-      try {
-        const res = await apiClient.get('/auth/permissions');
-        const perms: string[] = res?.data?.permissions || [];
-        if (perms.includes('analytics.share')) setCanShare(true);
-      } catch {
-        // ignore; keep false
-      }
-    };
-    fetchPerms();
-  }, [canShare]);
-
-  const openShareModal = async () => {
-    if (!canShare) return;
-    setShareOpen(true);
-    setShareLoading(true);
-    try {
-      let teamList: any[] = [];
-      try {
-        const res = await apiClient.get('/teams');
-        teamList = res.data || [];
-      } catch {
-        const res = await apiClient.get('/teams/my-teams');
-        teamList = res.data || [];
-      }
-      setShareTeams(teamList);
-      const resShare = await apiClient.get('/analytics/shares', { params: { scope: 'sales' } });
-      setShareSelected(resShare.data?.sharedTeamIds || []);
-    } catch {
-      setShareTeams([]);
-      setShareSelected([]);
-    } finally {
-      setShareLoading(false);
-    }
-  };
 
   const reconcileRange = async () => {
     if (!startDate || !endDate) return;
@@ -510,8 +276,8 @@ export default function SalesAnalyticsPage() {
         addToast('success', 'Reconcile completed successfully');
       }
       await fetchData({ silent: true });
-    } catch (err: any) {
-      const message = err?.response?.data?.message || err?.message || 'Failed to reconcile sales data';
+    } catch (error: unknown) {
+      const message = parseErrorMessage(error, 'Failed to reconcile sales data');
       setError(message);
       addToast('error', message);
     } finally {
@@ -519,161 +285,66 @@ export default function SalesAnalyticsPage() {
     }
   };
 
-  const toggleShareTeam = (id: string) => {
-    setShareSelected((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
-  };
-
-  const saveShare = async () => {
-    setShareSaving(true);
-    try {
-      await apiClient.post('/analytics/shares', { scope: 'sales', sharedTeamIds: shareSelected });
-      setShareOpen(false);
-    } finally {
-      setShareSaving(false);
-    }
-  };
-
   useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void fetchData();
+  }, [fetchData, selectedMappings]);
 
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate, selectedMappings.join('|'), excludeCanceled, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1, rtsForecastPct]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        fetchData({ silent: true });
-      }
-    }, 60000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate, selectedMappings.join('|'), excludeCanceled, excludeRestocking, excludeAbandoned]);
+  useVisibleAutoRefresh(() => {
+    void fetchData({ silent: true });
+  });
 
   // Realtime refetch on marketing update events (reconcile_sales emits marketing:updated)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const tenantId = localStorage.getItem('current_tenant_id');
-    let teamId: string | null = null;
-    const teamIdsRaw = localStorage.getItem('current_team_ids');
-    const singleTeam = localStorage.getItem('current_team_id');
-    if (teamIdsRaw) {
-      try {
-        const parsed = JSON.parse(teamIdsRaw);
-        if (Array.isArray(parsed) && parsed.length === 1) {
-          teamId = parsed[0];
-        }
-      } catch {
-        // ignore
-      }
-    } else if (singleTeam && singleTeam !== 'ALL_TEAMS') {
-      teamId = singleTeam;
-    }
-    if (!tenantId) return;
-    const socket = workflowSocket.connect();
-    socket.emit('subscribe:tenant', { tenantId, teamId });
-    const handler = (payload: any) => {
-      if (!payload || payload.tenantId !== tenantId) return;
-      if (teamId && payload.teamId && payload.teamId !== teamId) return;
-      fetchDataRef.current?.({ silent: true });
-    };
-    socket.on('marketing:updated', handler);
-    return () => {
-      socket.off('marketing:updated', handler);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useWorkflowTenantEvent('marketing:updated', () => {
+    fetchDataRef.current?.({ silent: true });
+  });
 
   // Close popovers on outside click
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      const target = e.target as Node | null;
-      if (showMappingPicker && mappingPickerRef.current && target && !mappingPickerRef.current.contains(target)) {
-        setShowMappingPicker(false);
-      }
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as Node | null;
       const inFilter = filterMenuRef.current?.contains(target) || filterMenuContentRef.current?.contains(target);
       if (showFilterMenu && !inFilter) {
         setShowFilterMenu(false);
       }
-      if (showTableMenu && target && !e.composedPath().some((n) => (n as HTMLElement).dataset?.tableMenu === 'true')) {
-        setShowTableMenu(false);
-      }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showMappingPicker, showFilterMenu, showTableMenu]);
+  }, [showFilterMenu]);
 
   const mappingDisplay = (val: string) => mappingDisplayMap[val.toLowerCase()] || val;
+  const mappingPickerOptions = mappingOptions.map((mapping) => ({
+    value: mapping,
+    label: toTitleCase(mappingDisplay(mapping)),
+  }));
   const selectedMappingLabel =
     selectedMappings.length === mappingOptions.length
       ? 'All mappings'
       : `${selectedMappings.length} selected`;
   const isChecked = (norm: string) => selectedMappings.includes(norm);
-  const isSortActive = (key: NonNullable<typeof sortKey>, dir: 'asc' | 'desc') =>
-    sortKey === key && sortDir === dir;
-  const sortButtonClass = (key: NonNullable<typeof sortKey>, dir: 'asc' | 'desc') =>
-    `h-3 w-3 ${isSortActive(key, dir) ? 'text-slate-700' : 'text-slate-400'} hover:text-slate-600`;
   const setSort = (key: NonNullable<typeof sortKey>, dir: 'asc' | 'desc') => {
     setSortKey(key);
     setSortDir(dir);
   };
-  const renderSortLabel = (label: ReactNode, key: NonNullable<typeof sortKey>) => (
-    <span className="inline-flex items-center gap-1">
-      <span>{label}</span>
-      <span className="inline-flex flex-col -space-y-1 leading-none">
-        <button
-          type="button"
-          aria-label={`Sort ${String(label)} high to low`}
-          onClick={() => setSort(key, 'desc')}
-          className="leading-none"
-        >
-          <ChevronUp className={sortButtonClass(key, 'desc')} />
-        </button>
-        <button
-          type="button"
-          aria-label={`Sort ${String(label)} low to high`}
-          onClick={() => setSort(key, 'asc')}
-          className="leading-none"
-        >
-          <ChevronDown className={sortButtonClass(key, 'asc')} />
-        </button>
-      </span>
-    </span>
-  );
-
-  const isDeliverySortActive = (key: NonNullable<typeof deliverySortKey>, dir: 'asc' | 'desc') =>
-    deliverySortKey === key && deliverySortDir === dir;
-  const deliverySortButtonClass = (key: NonNullable<typeof deliverySortKey>, dir: 'asc' | 'desc') =>
-    `h-3 w-3 ${isDeliverySortActive(key, dir) ? 'text-slate-700' : 'text-slate-400'} hover:text-slate-600`;
   const setDeliverySort = (key: NonNullable<typeof deliverySortKey>, dir: 'asc' | 'desc') => {
     setDeliverySortKey(key);
     setDeliverySortDir(dir);
   };
+  const renderSortLabel = (label: ReactNode, key: NonNullable<typeof sortKey>) => (
+    <AnalyticsSortDirectionLabel
+      label={label}
+      activeDirection={sortKey === key ? sortDir : null}
+      onSort={(dir) => setSort(key, dir)}
+      ariaLabel={String(label)}
+    />
+  );
+
   const renderDeliverySortLabel = (label: ReactNode, key: NonNullable<typeof deliverySortKey>) => (
-    <span className="inline-flex items-center gap-1">
-      <span>{label}</span>
-      <span className="inline-flex flex-col -space-y-1 leading-none">
-        <button
-          type="button"
-          aria-label={`Sort ${String(label)} high to low`}
-          onClick={() => setDeliverySort(key, 'desc')}
-          className="leading-none"
-        >
-          <ChevronUp className={deliverySortButtonClass(key, 'desc')} />
-        </button>
-        <button
-          type="button"
-          aria-label={`Sort ${String(label)} low to high`}
-          onClick={() => setDeliverySort(key, 'asc')}
-          className="leading-none"
-        >
-          <ChevronDown className={deliverySortButtonClass(key, 'asc')} />
-        </button>
-      </span>
-    </span>
+    <AnalyticsSortDirectionLabel
+      label={label}
+      activeDirection={deliverySortKey === key ? deliverySortDir : null}
+      onSort={(dir) => setDeliverySort(key, dir)}
+      ariaLabel={String(label)}
+    />
   );
 
   const computedKpis = data
@@ -742,7 +413,7 @@ export default function SalesAnalyticsPage() {
     : null;
 
   const products = data?.products || [];
-  const sortableProducts = products.map((row, index) => {
+  const sortableProducts: SalesProductRowItem[] = products.map((row, index) => {
     const norm = (row.mapping || '__null__').toLowerCase();
     const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
     const baseCod = row.cod_raw ?? row.revenue ?? 0;
@@ -863,7 +534,7 @@ export default function SalesAnalyticsPage() {
   const productCanNext = productPage < totalProductPages;
 
   const deliveryStatuses = data?.deliveryStatuses || [];
-  const deliveryRows = deliveryStatuses.map((row, index) => {
+  const deliveryRows: SalesDeliveryRowItem[] = deliveryStatuses.map((row, index) => {
     const norm = (row.mapping || '__null__').toLowerCase();
     const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
     return {
@@ -924,15 +595,15 @@ export default function SalesAnalyticsPage() {
     ? metricDefinitions.map((def) => {
         const current = computedKpis?.[def.key] ?? 0;
         const previous = computedPrevKpis?.[def.key] ?? 0;
-        const delta = formatDelta(current, previous);
+        const delta = formatDeltaPercent(current, previous);
         const countCurrent = def.countKey ? data.counts?.[def.countKey] ?? 0 : null;
         const countPrev = def.countKey ? data.prevCounts?.[def.countKey] ?? 0 : null;
-        const countDelta = def.countKey ? formatDelta(countCurrent ?? 0, countPrev ?? 0) : null;
+        const countDelta = def.countKey ? formatDeltaPercent(countCurrent ?? 0, countPrev ?? 0) : null;
         return { ...def, current, previous, delta, countCurrent, countPrev, countDelta };
       })
     : [];
 
-  const tableOptions: Array<{ key: 'products' | 'delivery'; label: string }> = [
+  const tableOptions: AnalyticsTableSelectorOption<'products' | 'delivery'>[] = [
     { key: 'products', label: 'Revenue per Product' },
     { key: 'delivery', label: 'Delivery Status' },
   ];
@@ -946,7 +617,7 @@ export default function SalesAnalyticsPage() {
       ? secondaryMetricDefinitions.map((def) => {
           const current = computedKpis?.[def.key] ?? 0;
           const previous = computedPrevKpis?.[def.key] ?? 0;
-          const delta = formatDelta(current, previous);
+          const delta = formatDeltaPercent(current, previous);
           const label =
             def.key === 'cm_rts_forecast'
               ? `CM (RTS ${rtsForecastSafe}% )`
@@ -976,7 +647,7 @@ export default function SalesAnalyticsPage() {
 
   const buildCmTooltip = (kpis: OverviewResponse['kpis'] | undefined): ReactNode | null => {
     if (!kpis) return null;
-    const nf = (v: number) => formatValue(v, 'currency');
+    const nf = (v: number) => formatMetricValue(v, 'currency');
     const neg = (v: number) => (v === 0 ? nf(0) : `- ${nf(Math.abs(v))}`);
     const pos = (v: number) => (v === 0 ? nf(0) : `+ ${nf(Math.abs(v))}`);
     const fulfillment = (kpis.sf_fees ?? 0) + (kpis.ff_fees ?? 0) + (kpis.if_fees ?? 0);
@@ -1078,7 +749,7 @@ export default function SalesAnalyticsPage() {
 
   const buildNmTooltip = (kpis: OverviewResponse['kpis'] | undefined): ReactNode | null => {
     if (!kpis) return null;
-    const nf = (v: number) => formatValue(v, 'currency');
+    const nf = (v: number) => formatMetricValue(v, 'currency');
     const neg = (v: number) => (v === 0 ? nf(0) : `- ${nf(Math.abs(v))}`);
     const filtersLabel = [
       `${startDate} → ${endDate}`,
@@ -1128,15 +799,13 @@ export default function SalesAnalyticsPage() {
 
   const buildCmRtsTooltip = (kpis: OverviewResponse['kpis'] | undefined): ReactNode | null => {
     if (!kpis) return null;
-    const nf = (v: number) => formatValue(v, 'currency');
+    const nf = (v: number) => formatMetricValue(v, 'currency');
     const neg = (v: number) => (v === 0 ? nf(0) : `- ${nf(Math.abs(v))}`);
     const pos = (v: number) => (v === 0 ? nf(0) : `+ ${nf(Math.abs(v))}`);
     const cogsTotal = kpis.cogs ?? 0;
     const cogsCanceled = excludeCanceled ? kpis.cogs_canceled ?? 0 : 0;
     const cogsRestocking = excludeRestocking ? kpis.cogs_restocking ?? 0 : 0;
     const cogsAdjusted = cogsTotal - cogsCanceled - cogsRestocking;
-    const canceledCodAdj = excludeCanceled ? kpis.canceled_cod ?? 0 : 0;
-    const restockingCodAdj = excludeRestocking ? kpis.restocking_cod ?? 0 : 0;
     const adjustedGrossCod = computeAdjustedGrossCod(kpis, {
       excludeCancel: excludeCanceled,
       excludeRestocking: excludeRestocking,
@@ -1237,20 +906,6 @@ export default function SalesAnalyticsPage() {
   };
 
   const renderCard = (m: (typeof metricValues)[number]) => {
-    const delta = m.delta;
-    const deltaLabel = delta === null ? '--' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
-    const deltaColor =
-      delta === null ? 'text-slate-400' : delta >= 0 ? 'text-emerald-600' : 'text-rose-500';
-    const countDeltaLabel =
-      m.countDelta === null || m.countDelta === undefined
-        ? null
-        : `${m.countDelta > 0 ? '+' : ''}${m.countDelta.toFixed(1)}%`;
-    const countDeltaColor =
-          m.countDelta === null || m.countDelta === undefined
-        ? 'text-slate-400'
-        : m.countDelta >= 0
-          ? 'text-emerald-600'
-          : 'text-rose-500';
     const tooltip =
       m.key === 'cm_rts_forecast'
         ? buildCmRtsTooltip(data?.kpis)
@@ -1261,55 +916,28 @@ export default function SalesAnalyticsPage() {
             : m.key === 'ar_pct'
               ? null
               : null;
-    const isCmTooltip = m.key === 'contribution_margin' && tooltip;
 
     return (
-      <div
+      <AnalyticsMetricCard
         key={m.key}
-        className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 min-w-[190px]"
-      >
-        <div className="text-xs text-slate-500 flex items-center gap-1">
-          {m.label}
-          {isCmTooltip ? (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button type="button" className="inline-flex cursor-help" aria-label={`${m.label} formula`}>
-                  <Info className="h-4 w-4 text-slate-400 hover:text-emerald-600 focus:text-emerald-600" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="center" side="bottom" sideOffset={8} className="w-80">
-                {tooltip}
-              </PopoverContent>
-            </Popover>
-          ) : tooltip ? (
-            <span className="relative group inline-flex cursor-help" tabIndex={0} aria-label={`${m.label} formula`}>
-              <Info className="h-4 w-4 text-slate-400 group-hover:text-emerald-600 group-focus-within:text-emerald-600" />
-              <div className="absolute left-1/2 top-full z-30 mt-2 hidden w-80 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] leading-relaxed text-slate-700 shadow-lg group-hover:block group-focus-within:block">
-                {tooltip}
-              </div>
-            </span>
-          ) : null}
-        </div>
-        <div className="mt-1 flex items-center justify-between">
-          <p className="text-lg font-semibold text-slate-900">
-            {formatValue(m.current, m.format, m.format === 'percent' ? 1 : 2)}
-          </p>
-          <p className={`text-[11px] ${deltaColor}`}>{deltaLabel}</p>
-        </div>
-        {m.countKey && (
-          <div className="mt-1 flex items-center justify-between">
-            <span className="text-sm text-slate-700">
-              <span className="font-normal text-slate-600">ord:</span>{' '}
-              <span className="font-semibold text-slate-900">
-                {new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(m.countCurrent ?? 0)}
-              </span>
-            </span>
-            <span className={`text-[11px] ${countDeltaColor}`}>
-              {countDeltaLabel ?? '--'}
-            </span>
-          </div>
-        )}
-      </div>
+        label={m.label}
+        value={m.current}
+        format={m.format}
+        precision={m.format === 'percent' ? 1 : 2}
+        delta={m.delta}
+        count={
+          m.countKey
+            ? {
+                label: 'ord',
+                value: m.countCurrent ?? 0,
+                delta: m.countDelta ?? null,
+              }
+            : undefined
+        }
+        tooltip={tooltip}
+        tooltipMode={m.key === 'contribution_margin' ? 'popover' : 'hover'}
+        className="min-w-[190px]"
+      />
     );
   };
 
@@ -1336,102 +964,31 @@ export default function SalesAnalyticsPage() {
         <div className="flex flex-wrap items-end gap-x-8 gap-y-4 mt-5">
           <div>
             <p className="text-sm font-medium text-slate-700 mb-1.5">Mapping</p>
-            <div className="relative" ref={mappingPickerRef}>
-              <button
-                type="button"
-                onClick={() => setShowMappingPicker((p) => !p)}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white hover:border-slate-300 focus:outline-none"
-              >
-                <span className="text-slate-900">{selectedMappingLabel}</span>
-                <span className="text-slate-400 text-xs">(click to choose)</span>
-              </button>
-              {showMappingPicker && (
-                <div className="absolute z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg">
-                  <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 border-b border-slate-100">
-                    <span>Select mappings</span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMappings([])}
-                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="px-3 py-2 border-b border-slate-100">
-                    <input
-                      type="text"
-                      value={mappingSearch}
-                      onChange={(e) => setMappingSearch(e.target.value)}
-                      placeholder="Type to search"
-                      className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div className="max-h-64 overflow-auto">
-                    <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={
-                            mappingOptions.length > 0 &&
-                            selectedMappings.length === mappingOptions.length
-                          }
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setSelectedMappings(checked ? mappingOptions : []);
-                            setShowMappingPicker(true);
-                          }}
-                          className="rounded border-slate-300"
-                        />
-                        <span>All</span>
-                      </label>
-                    </div>
-                    {mappingOptions
-                      .filter((m) =>
-                        mappingSearch.trim()
-                          ? mappingDisplay(m).toLowerCase().includes(mappingSearch.toLowerCase())
-                          : true,
-                      )
-                      .map((mapping) => {
-                        const norm = mapping.toLowerCase();
-                        const checked = isChecked(norm);
-                        return (
-                          <div
-                            key={mapping}
-                            className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
-                          >
-                            <label className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  setSelectedMappings((prev) =>
-                                    prev.includes(norm)
-                                      ? prev.filter((v) => v !== norm)
-                                      : [...prev, norm],
-                                  );
-                                  setShowMappingPicker(true);
-                                }}
-                                className="rounded border-slate-300"
-                              />
-                              <span>{titleCase(mappingDisplay(mapping))}</span>
-                            </label>
-                            <button
-                              type="button"
-                              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                              onClick={() => {
-                                setSelectedMappings([norm]);
-                                setShowMappingPicker(true);
-                              }}
-                            >
-                              ONLY
-                            </button>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
-            </div>
+            <AnalyticsMultiSelectPicker
+              className="relative"
+              selectedLabel={selectedMappingLabel}
+              selectTitle="Select mappings"
+              options={mappingPickerOptions}
+              allChecked={
+                mappingOptions.length > 0 &&
+                selectedMappings.length === mappingOptions.length
+              }
+              isChecked={isChecked}
+              onToggleAll={(checked) => {
+                setSelectedMappings(checked ? mappingOptions : []);
+              }}
+              onToggle={(value) => {
+                setSelectedMappings((prev) =>
+                  prev.includes(value)
+                    ? prev.filter((entry) => entry !== value)
+                    : [...prev, value],
+                );
+              }}
+              onOnly={(value) => {
+                setSelectedMappings([value]);
+              }}
+              onClear={() => setSelectedMappings([])}
+            />
           </div>
 
           <div className="flex flex-col">
@@ -1440,20 +997,7 @@ export default function SalesAnalyticsPage() {
               <div className="relative" ref={filterMenuRef}>
                 <Datepicker
                   value={range}
-                  onChange={(val: any) => {
-                    const nextStart = val?.startDate || today;
-                    const nextEnd = val?.endDate || today;
-                    setRange({ startDate: nextStart, endDate: nextEnd });
-                    // Format dates as YYYY-MM-DD strings for API
-                    const formatDate = (d: any) => {
-                      if (!d) return today;
-                      if (typeof d === 'string') return d.slice(0, 10);
-                      if (d instanceof Date) return formatDateInTimezone(d);
-                      return today;
-                    };
-                    setStartDate(formatDate(nextStart));
-                    setEndDate(formatDate(nextEnd));
-                  }}
+                  onChange={handleDateRangeChange}
                   inputClassName="rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
                   containerClassName=""
                   popupClassName={(defaultClass) => `${defaultClass} z-50`}
@@ -1579,19 +1123,14 @@ export default function SalesAnalyticsPage() {
         </div>
 
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mt-4">
-            {error}
-          </div>
+          <AlertBanner tone="error" message={error} className="mt-4" />
         )}
 
         <div className="mt-5 flex gap-3">
           {isLoading ? (
             <div className="flex gap-3 w-full">
               {Array.from({ length: 8 }).map((_, idx) => (
-                <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 animate-pulse min-w-[180px]">
-                  <div className="h-3 w-20 bg-slate-200 rounded" />
-                  <div className="mt-1.5 h-5 w-16 bg-slate-200 rounded" />
-                </div>
+                <AnalyticsMetricCardSkeleton key={idx} className="min-w-[180px]" />
               ))}
             </div>
           ) : (
@@ -1614,10 +1153,7 @@ export default function SalesAnalyticsPage() {
           {isLoading ? (
             <div className="flex gap-3 w-full">
               {Array.from({ length: 3 }).map((_, idx) => (
-                <div key={`sec-skel-${idx}`} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 animate-pulse min-w-[190px]">
-                  <div className="h-3 w-20 bg-slate-200 rounded" />
-                  <div className="mt-1.5 h-5 w-16 bg-slate-200 rounded" />
-                </div>
+                <AnalyticsMetricCardSkeleton key={`sec-skel-${idx}`} className="min-w-[190px]" />
               ))}
             </div>
           ) : (
@@ -1644,326 +1180,67 @@ export default function SalesAnalyticsPage() {
       {/* Revenue per Product / Delivery Status */}
       <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
         <div className="flex items-center justify-between mb-3 px-2">
-          <div className="relative" data-table-menu="true">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-lg font-semibold text-slate-900"
-              onClick={() => setShowTableMenu((p) => !p)}
-            >
-              {tableOptions.find((t) => t.key === tableSelection)?.label || 'Revenue per Product'}
-              <span className="text-slate-500">▾</span>
-            </button>
-            {showTableMenu && (
-              <div className="absolute left-0 mt-2 w-52 rounded-xl border border-slate-200 bg-white shadow-lg z-20">
-                {tableOptions.map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    className={`block w-full text-left px-3 py-2 text-sm ${tableSelection === opt.key ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50'}`}
-                    onClick={() => {
-                      setTableSelection(opt.key);
-                      setProductPage(1);
-                      setDeliveryPage(1);
-                      setShowTableMenu(false);
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <AnalyticsTableSelector
+            className="relative"
+            options={tableOptions}
+            selectedKey={tableSelection}
+            fallbackLabel="Revenue per Product"
+            onSelect={(key) => {
+              setTableSelection(key);
+              setProductPage(1);
+              setDeliveryPage(1);
+            }}
+          />
         </div>
 
-        {tableSelection === 'products' && (
-          <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full table-fixed divide-y divide-slate-100">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="sticky left-0 z-10 w-16 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('#', 'index')}
-                    </th>
-                    <th className="sticky left-16 z-10 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('Product', 'product')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('Gross Revenue', 'revenue')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('Gross Sales', 'gross_sales')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('COGS', 'cogs')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('AOV', 'aov')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('CPP', 'cpp')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('Processed CPP', 'processed_cpp')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('Ad Spend', 'ad_spend')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('AR %', 'ar_pct')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('RTS %', 'rts_pct')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('P.E %', 'profit_efficiency')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('Contribution Margin', 'contribution_margin')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel(`CM (RTS ${rtsForecastSafe}% )`, 'cm_rts_forecast')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderSortLabel('Net Margin', 'net_margin')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {isLoading
-                    ? Array.from({ length: 5 }).map((_, idx) => (
-                        <tr key={`prod-skel-${idx}`}>
-                          {Array.from({ length: 15 }).map((__, cIdx) => (
-                            <td key={cIdx} className="px-3 sm:px-4 lg:px-6 py-3">
-                              <div className="h-3 w-16 bg-slate-200 animate-pulse rounded" />
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    : pagedProducts.map((item, idx) => {
-                        const { row, derived } = item;
-                        const { display, forecast, rtsPct, sf, ff, iF, codFeeDelivered, cogsAdjusted, cogsRts } = derived;
-
-                        return (
-                          <tr key={`${row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
-                            <td className="sticky left-0 z-10 w-16 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-700 whitespace-nowrap">
-                              {(productPage - 1) * pageSize + idx + 1}.
-                            </td>
-                            <td className="sticky left-16 z-10 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">
-                              {titleCase(display)}
-                            </td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.revenue, 'currency')}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.gross_sales, 'number', 0)}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.cogs, 'currency')}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.aov, 'currency')}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.cpp, 'currency')}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.processed_cpp, 'currency')}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.ad_spend, 'currency')}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.ar_pct, 'percent', 1)}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(rtsPct, 'percent', 1)}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.profit_efficiency, 'percent', 1)}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.contribution_margin, 'currency')}</td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">
-                              <span
-                                title={`CM (RTS ${rtsForecastSafe}%): ${(formatValue(forecast.revenueAfterRts,'currency'))} - ${(formatValue(row.ad_spend ?? 0,'currency'))} - ${(formatValue(sf,'currency'))} - ${(formatValue(ff,'currency'))} - ${(formatValue(iF,'currency'))} - ${(formatValue(codFeeDelivered,'currency'))} - ${(formatValue(cogsAdjusted,'currency'))} + ${(formatValue(cogsRts,'currency'))} = ${(formatValue(forecast.cmForecast,'currency'))}`}
-                              >
-                                {formatValue(forecast.cmForecast, 'currency')}
-                              </span>
-                            </td>
-                            <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(row.net_margin, 'currency')}</td>
-                          </tr>
-                        );
-                      })}
-                  {!isLoading && products.length === 0 && (
-                    <tr>
-                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-center text-slate-500" colSpan={15}>
-                        No products found for this range.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
-              <p className="text-sm text-slate-600">
-                Showing {productStart}-{productEnd} of {totalProducts}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  onClick={() => setProductPage((p) => Math.max(1, p - 1))}
-                  disabled={!productCanPrev || isLoading}
-                >
-                  Previous
-                </button>
-                <button
-                  className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  onClick={() => setProductPage((p) => Math.min(totalProductPages, p + 1))}
-                  disabled={!productCanNext || isLoading}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tableSelection === 'delivery' && (
-          <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full table-fixed divide-y divide-slate-100">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="sticky left-0 z-10 w-16 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('#', 'index')}
-                    </th>
-                    <th className="sticky left-16 z-10 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('Product', 'product')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('Total Order', 'total_orders')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('New', 'new_orders')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('Restocking', 'restocking')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('Confirmed', 'confirmed')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('Canceled', 'canceled')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('Waiting for Pickup', 'waiting_pickup')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('Shipped', 'shipped')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('Delivered', 'delivered')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                      {renderDeliverySortLabel('RTS', 'rts')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {isLoading
-                    ? Array.from({ length: 5 }).map((_, idx) => (
-                        <tr key={`delivery-skel-${idx}`}>
-                          {Array.from({ length: 11 }).map((__, cIdx) => (
-                            <td key={cIdx} className="px-3 sm:px-4 lg:px-6 py-3">
-                              <div className="h-3 w-16 bg-slate-200 animate-pulse rounded" />
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    : pagedDeliveryRows.map((item, idx) => (
-                        <tr key={`${item.row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
-                          <td className="sticky left-0 z-10 w-16 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-700 whitespace-nowrap">
-                            {(deliveryPage - 1) * pageSize + idx + 1}.
-                          </td>
-                          <td className="sticky left-16 z-10 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">
-                            {titleCase(item.display)}
-                          </td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.total_orders ?? 0, 'number', 0)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.new_orders ?? 0, 'number', 0)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.restocking ?? 0, 'number', 0)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.confirmed ?? 0, 'number', 0)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.canceled ?? 0, 'number', 0)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.waiting_pickup ?? 0, 'number', 0)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.shipped ?? 0, 'number', 0)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.delivered ?? 0, 'number', 0)}</td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatValue(item.row.rts ?? 0, 'number', 0)}</td>
-                        </tr>
-                      ))}
-                  {!isLoading && deliveryStatuses.length === 0 && (
-                    <tr>
-                      <td className="px-3 sm:px-4 lg:px-6 py-4 text-center text-slate-500" colSpan={11}>
-                        No delivery status found for this range.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
-              <p className="text-sm text-slate-600">
-                Showing {deliveryStart}-{deliveryEnd} of {totalDelivery}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  onClick={() => setDeliveryPage((p) => Math.max(1, p - 1))}
-                  disabled={!deliveryCanPrev || isLoading}
-                >
-                  Previous
-                </button>
-                <button
-                  className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  onClick={() => setDeliveryPage((p) => Math.min(totalDeliveryPages, p + 1))}
-                  disabled={!deliveryCanNext || isLoading}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
+        {tableSelection === 'products' ? (
+          <AnalyticsSalesProductsTable
+            isLoading={isLoading}
+            productStart={productStart}
+            productEnd={productEnd}
+            totalProducts={totalProducts}
+            onPrevious={() => setProductPage((p) => Math.max(1, p - 1))}
+            onNext={() => setProductPage((p) => Math.min(totalProductPages, p + 1))}
+            canPrevious={productCanPrev}
+            canNext={productCanNext}
+            pageSize={pageSize}
+            productPage={productPage}
+            rtsForecastSafe={rtsForecastSafe}
+            rows={pagedProducts}
+            sourceCount={products.length}
+            renderSortLabel={renderSortLabel}
+          />
+        ) : (
+          <AnalyticsSalesDeliveryTable
+            isLoading={isLoading}
+            deliveryStart={deliveryStart}
+            deliveryEnd={deliveryEnd}
+            totalDelivery={totalDelivery}
+            onPrevious={() => setDeliveryPage((p) => Math.max(1, p - 1))}
+            onNext={() => setDeliveryPage((p) => Math.min(totalDeliveryPages, p + 1))}
+            canPrevious={deliveryCanPrev}
+            canNext={deliveryCanNext}
+            pageSize={pageSize}
+            deliveryPage={deliveryPage}
+            rows={pagedDeliveryRows}
+            sourceCount={deliveryStatuses.length}
+            renderSortLabel={renderDeliverySortLabel}
+          />
         )}
       </Card>
 
-      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Share Sales Analytics</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            {shareLoading ? (
-              <p className="text-sm text-slate-600">Loading teams…</p>
-            ) : shareTeams.length === 0 ? (
-              <p className="text-sm text-slate-600">No teams available to share.</p>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {shareTeams
-                  .filter((t) => t.id !== currentTeamId)
-                  .map((team) => (
-                    <label key={team.id} className="flex items-center gap-2 text-sm text-slate-800">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        checked={shareSelected.includes(team.id)}
-                        onChange={() => toggleShareTeam(team.id)}
-                      />
-                      <span>{team.name}</span>
-                    </label>
-                  ))}
-                {shareTeams.filter((t) => t.id !== currentTeamId).length === 0 && (
-                  <p className="text-sm text-slate-600">No other teams to share with.</p>
-                )}
-              </div>
-            )}
-          </div>
-          <DialogFooter className="mt-4">
-            <button
-              onClick={() => setShareOpen(false)}
-              className="px-4 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 hover:bg-slate-50"
-              disabled={shareSaving}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={saveShare}
-              className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60"
-              disabled={shareSaving}
-            >
-              {shareSaving ? 'Saving…' : 'Save'}
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AnalyticsShareDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        title="Share Sales Analytics"
+        loading={shareLoading}
+        saving={shareSaving}
+        teams={shareTeams}
+        currentTeamId={currentTeamId}
+        selectedTeamIds={shareSelected}
+        onToggleTeam={toggleShareTeam}
+        onSave={saveShare}
+      />
 
     </div>
   );

@@ -5,7 +5,7 @@ import { create } from 'zustand';
 interface ExecutionEvent {
   timestamp: string;
   event: string;
-  data: any;
+  data: unknown;
 }
 
 interface ExecutionState {
@@ -53,7 +53,8 @@ export const useExecutionStore = create<ExecutionStore>((set) => ({
     })),
   clearExecution: (executionId) =>
     set((state) => {
-      const { [executionId]: _, ...rest } = state.executions;
+      const rest = { ...state.executions };
+      delete rest[executionId];
       return { executions: rest };
     }),
 }));

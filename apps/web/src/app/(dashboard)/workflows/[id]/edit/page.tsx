@@ -4,10 +4,47 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
+import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTeams } from '@/hooks/use-teams';
 
 type DateRangeType = 'rolling' | 'relative' | 'absolute';
+type WorkflowDateRange =
+  | { type: 'rolling'; offsetDays: number }
+  | { type: 'relative'; days: number }
+  | { type: 'absolute'; since: string; until: string };
+
+type WorkflowConfig = {
+  dateRange?: WorkflowDateRange;
+  sources?: {
+    meta?: { enabled?: boolean; dateRange?: WorkflowDateRange };
+    pos?: { enabled?: boolean; dateRange?: WorkflowDateRange };
+  };
+  rateLimit?: {
+    metaDelayMs?: number;
+    posDelayMs?: number;
+  };
+};
+
+type WorkflowUpdatePayload = {
+  name: string;
+  description?: string;
+  enabled: boolean;
+  schedule: string | null;
+  teamId?: string;
+  sharedTeamIds?: string[];
+  config: {
+    dateRange: WorkflowDateRange;
+    sources: {
+      meta: { enabled: boolean };
+      pos: { enabled: boolean };
+    };
+    rateLimit: {
+      metaDelayMs: number;
+      posDelayMs: number;
+    };
+  };
+};
 
 interface Workflow {
   id: string;
@@ -15,7 +52,7 @@ interface Workflow {
   description?: string;
   enabled: boolean;
   schedule?: string;
-  config: any;
+  config: WorkflowConfig;
   teamId?: string | null;
   sharedTeamIds?: string[];
 }
@@ -66,7 +103,32 @@ const defaultFormData: WorkflowFormData = {
   posDelayMs: 3000,
 };
 
-function extractDateRange(config: any) {
+const sanitizeTeamId = (value?: string | null) => {
+  if (!value || value === 'ALL_TEAMS') return undefined;
+  return value;
+};
+
+const filterSharedForSave = (ids: string[], owner?: string | null | undefined) => {
+  const ownerClean = sanitizeTeamId(owner);
+  return ids.filter((id) => id && id !== ownerClean);
+};
+
+const parseErrorMessage = (error: unknown, fallback: string) => {
+  if (!error || typeof error !== 'object') return fallback;
+  const maybeError = error as {
+    response?: { data?: { message?: unknown } };
+    message?: unknown;
+  };
+  const responseMessage = maybeError.response?.data?.message;
+  if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) return responseMessage;
+  if (typeof maybeError.message === 'string' && maybeError.message.trim().length > 0) return maybeError.message;
+  return fallback;
+};
+
+const toWorkflowFieldValue = (value: unknown) =>
+  value as WorkflowFormData[keyof WorkflowFormData];
+
+function extractDateRange(config: WorkflowConfig) {
   return (
     config?.dateRange ||
     config?.sources?.meta?.dateRange ||
@@ -90,16 +152,6 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
   const permissionsQuery = usePermissions();
   const teamsQuery = useTeams(hasTeamReadAll);
 
-  const sanitizeTeamId = (value?: string | null) => {
-    if (!value || value === 'ALL_TEAMS') return undefined;
-    return value;
-  };
-
-  const filterSharedForSave = (ids: string[], owner?: string | null | undefined) => {
-    const ownerClean = sanitizeTeamId(owner);
-    return ids.filter((id) => id && id !== ownerClean);
-  };
-
   const toggleSharedTeam = (id: string) => {
     setSharedTeamIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
   };
@@ -115,7 +167,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
     setTeams(list);
   }, [permissionsQuery.data, teamsQuery.data]);
 
-  const computeCron = (data: WorkflowFormData) => {
+  const computeCron = (data: Pick<WorkflowFormData, 'scheduleUnit' | 'everyMinutes' | 'everyHours' | 'atMinutes' | 'everyDays' | 'atHours'>) => {
     if (data.scheduleUnit === 'minutes') {
       const n = Math.min(59, Math.max(1, Math.round(data.everyMinutes || 1)));
       return `*/${n} * * * *`;
@@ -186,10 +238,10 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
           everyDays,
           atHours,
           dateRangeType: dateRange.type || 'rolling',
-          offsetDays: dateRange.offsetDays ?? 1,
-          days: dateRange.days ?? 7,
-          since: dateRange.since ?? '',
-          until: dateRange.until ?? '',
+          offsetDays: dateRange.type === 'rolling' ? dateRange.offsetDays ?? 1 : 1,
+          days: dateRange.type === 'relative' ? dateRange.days ?? 7 : 7,
+          since: dateRange.type === 'absolute' ? dateRange.since ?? '' : '',
+          until: dateRange.type === 'absolute' ? dateRange.until ?? '' : '',
           metaEnabled: wf.config?.sources?.meta?.enabled ?? true,
           posEnabled: wf.config?.sources?.pos?.enabled ?? true,
           metaDelayMs: wf.config?.rateLimit?.metaDelayMs ?? 3000,
@@ -197,8 +249,8 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
         });
         setTeamId(sanitizeTeamId(wf.teamId) || undefined);
         setSharedTeamIds(filterSharedForSave(wf.sharedTeamIds || [], wf.teamId));
-      } catch (err: any) {
-        setError(err.response?.data?.message || err.message || 'Failed to load workflow');
+      } catch (error: unknown) {
+        setError(parseErrorMessage(error, 'Failed to load workflow'));
       } finally {
         setIsLoading(false);
       }
@@ -212,7 +264,14 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
 
   useEffect(() => {
     if (formData.scheduleType !== 'scheduled') return;
-    const cron = computeCron(formData);
+    const cron = computeCron({
+      scheduleUnit: formData.scheduleUnit,
+      everyMinutes: formData.everyMinutes,
+      everyHours: formData.everyHours,
+      atMinutes: formData.atMinutes,
+      everyDays: formData.everyDays,
+      atHours: formData.atHours,
+    });
     setFormData((prev) => ({ ...prev, schedule: cron }));
   }, [
     formData.scheduleType,
@@ -233,12 +292,12 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
     }
   }, [teams, teamId]);
 
-  const updateField = (field: keyof WorkflowFormData, value: any) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const updateField = (field: keyof WorkflowFormData, value: unknown) => {
+    setFormData((prev) => ({ ...prev, [field]: toWorkflowFieldValue(value) }));
   };
 
   const buildPayload = () => {
-    let dateRange: any;
+    let dateRange: WorkflowDateRange;
     if (formData.dateRangeType === 'rolling') {
       dateRange = { type: 'rolling', offsetDays: formData.offsetDays };
     } else if (formData.dateRangeType === 'relative') {
@@ -247,7 +306,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
       dateRange = { type: 'absolute', since: formData.since, until: formData.until };
     }
 
-    const payload: any = {
+    const payload: WorkflowUpdatePayload = {
       name: formData.name,
       description: formData.description || undefined,
       enabled: formData.enabled,
@@ -283,25 +342,21 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
       }
       await apiClient.patch(`/workflows/${workflowId}`, payload);
       router.push(`/workflows/${workflowId}`);
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to update workflow');
+    } catch (error: unknown) {
+      setError(parseErrorMessage(error, 'Failed to update workflow'));
     } finally {
       setIsSaving(false);
     }
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-600"></div>
-      </div>
-    );
+    return <LoadingCard label="Loading workflow..." />;
   }
 
   if (!workflow) {
     return (
-      <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-        <p className="text-sm text-red-600">Workflow not found.</p>
+      <div className="space-y-4">
+        <AlertBanner tone="error" message="Workflow not found." />
         <Link
           href="/workflows"
           className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition"
@@ -331,9 +386,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
       </div>
 
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-          <p className="text-sm text-red-600">{error}</p>
-        </div>
+        <AlertBanner tone="error" message={error} />
       )}
 
       <div className="grid gap-6">

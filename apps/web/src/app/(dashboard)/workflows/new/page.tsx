@@ -4,10 +4,34 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import apiClient from '@/lib/api-client';
+import { AlertBanner } from '@/components/ui/feedback';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTeams } from '@/hooks/use-teams';
 
 type DateRangeType = 'rolling' | 'relative' | 'absolute';
+type WorkflowDateRange =
+  | { type: 'rolling'; offsetDays: number }
+  | { type: 'relative'; days: number }
+  | { type: 'absolute'; since: string; until: string };
+
+type WorkflowCreatePayload = {
+  name: string;
+  description?: string;
+  schedule?: string;
+  teamId?: string;
+  sharedTeamIds?: string[];
+  config: {
+    dateRange: WorkflowDateRange;
+    sources: {
+      meta: { enabled: boolean };
+      pos: { enabled: boolean };
+    };
+    rateLimit: {
+      metaDelayMs: number;
+      posDelayMs: number;
+    };
+  };
+};
 
 interface WorkflowFormData {
   name: string;
@@ -33,6 +57,32 @@ interface WorkflowFormData {
   enabled: boolean;
   scheduleType: 'manual' | 'scheduled';
 }
+
+const sanitizeTeamId = (value?: string | null) => {
+  if (!value || value === 'ALL_TEAMS') return undefined;
+  return value;
+};
+
+const filterSharedForSave = (ids: string[], owner?: string | null | undefined) => {
+  const ownerClean = sanitizeTeamId(owner);
+  return ids.filter((id) => id && id !== ownerClean);
+};
+
+const parseErrorMessage = (error: unknown, fallback: string) => {
+  if (!error || typeof error !== 'object') return fallback;
+  const maybeError = error as {
+    response?: { data?: { message?: unknown } };
+    message?: unknown;
+  };
+  const responseMessage = maybeError.response?.data?.message;
+  if (Array.isArray(responseMessage)) return responseMessage.join(', ');
+  if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) return responseMessage;
+  if (typeof maybeError.message === 'string' && maybeError.message.trim().length > 0) return maybeError.message;
+  return fallback;
+};
+
+const toWorkflowFieldValue = (value: unknown) =>
+  value as WorkflowFormData[keyof WorkflowFormData];
 
 export default function CreateWorkflowPage() {
   const router = useRouter();
@@ -69,16 +119,6 @@ export default function CreateWorkflowPage() {
     enabled: true,
     scheduleType: 'scheduled',
   });
-
-  const sanitizeTeamId = (value?: string | null) => {
-    if (!value || value === 'ALL_TEAMS') return undefined;
-    return value;
-  };
-
-  const filterSharedForSave = (ids: string[], owner?: string | null | undefined) => {
-    const ownerClean = sanitizeTeamId(owner);
-    return ids.filter((id) => id && id !== ownerClean);
-  };
 
   const toggleSharedTeam = (id: string) => {
     setSharedTeamIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
@@ -119,11 +159,11 @@ export default function CreateWorkflowPage() {
     setSharedTeamIds((prev) => filterSharedForSave(prev, teamId));
   }, [teamId]);
 
-  const updateField = (field: keyof WorkflowFormData, value: any) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const updateField = (field: keyof WorkflowFormData, value: unknown) => {
+    setFormData((prev) => ({ ...prev, [field]: toWorkflowFieldValue(value) }));
   };
 
-  const computeCron = (data: WorkflowFormData) => {
+  const computeCron = (data: Pick<WorkflowFormData, 'scheduleUnit' | 'everyMinutes' | 'everyHours' | 'atMinutes' | 'everyDays' | 'atHours'>) => {
     if (data.scheduleUnit === 'minutes') {
       const n = Math.min(59, Math.max(1, Math.round(data.everyMinutes || 1)));
       return `*/${n} * * * *`;
@@ -143,7 +183,14 @@ export default function CreateWorkflowPage() {
   // keep cron in sync with friendly inputs
   useEffect(() => {
     if (formData.scheduleType !== 'scheduled') return;
-    const cron = computeCron(formData);
+    const cron = computeCron({
+      scheduleUnit: formData.scheduleUnit,
+      everyMinutes: formData.everyMinutes,
+      everyHours: formData.everyHours,
+      atMinutes: formData.atMinutes,
+      everyDays: formData.everyDays,
+      atHours: formData.atHours,
+    });
     setFormData((prev) => ({ ...prev, schedule: cron }));
   }, [
     formData.scheduleType,
@@ -161,7 +208,7 @@ export default function CreateWorkflowPage() {
 
     try {
       // Build shared date range (applies to all enabled sources)
-      let dateRange: any;
+      let dateRange: WorkflowDateRange;
       if (formData.dateRangeType === 'rolling') {
         dateRange = { type: 'rolling', offsetDays: formData.offsetDays };
       } else if (formData.dateRangeType === 'relative') {
@@ -174,7 +221,7 @@ export default function CreateWorkflowPage() {
       const chosenTeamId = sanitizeTeamId(teamId) || sanitizeTeamId(formData.teamId);
 
       // Build the workflow payload
-      const payload: any = {
+      const payload: WorkflowCreatePayload = {
         name: formData.name,
         ...(formData.description && { description: formData.description }),
         ...(formData.scheduleType === 'scheduled' && { schedule: formData.schedule }),
@@ -205,18 +252,9 @@ export default function CreateWorkflowPage() {
 
       // Redirect to workflow detail page
       router.push(`/workflows/${response.data.id}`);
-    } catch (err: any) {
-      console.error('Error creating workflow:', err.response?.data);
-      const errorData = err.response?.data;
-
-      // Handle validation errors (array of messages)
-      if (errorData?.message && Array.isArray(errorData.message)) {
-        setError(errorData.message.join(', '));
-      } else if (errorData?.message) {
-        setError(errorData.message);
-      } else {
-        setError(err.message || 'Failed to create workflow');
-      }
+    } catch (error: unknown) {
+      console.error('Error creating workflow:', error);
+      setError(parseErrorMessage(error, 'Failed to create workflow'));
     } finally {
       setIsSubmitting(false);
     }
@@ -246,9 +284,7 @@ export default function CreateWorkflowPage() {
       </div>
 
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-          <p className="text-sm text-red-600">{error}</p>
-        </div>
+        <AlertBanner tone="error" message={error} />
       )}
 
       {/* Step 1: Basic Info */}

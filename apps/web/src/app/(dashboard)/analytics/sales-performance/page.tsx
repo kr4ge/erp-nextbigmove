@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import apiClient from '@/lib/api-client';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
+import { AlertBanner } from '@/components/ui/feedback';
 import { useToast } from '@/components/ui/toast';
 import {
   Dialog,
@@ -14,220 +15,44 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { BarChart3, ChevronDown, ChevronUp, Info, Trash2 } from 'lucide-react';
+import { BarChart3, ChevronDown, Trash2 } from 'lucide-react';
+import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
+import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
+import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
+import { AnalyticsRiskConfirmationTable } from '../_components/analytics-risk-confirmation-table';
+import { AnalyticsSalesPerformanceStoreTable } from '../_components/analytics-sales-performance-store-table';
+import { AnalyticsSalesPerformanceSummaryTable } from '../_components/analytics-sales-performance-summary-table';
+import { AnalyticsSortToggleLabel } from '../_components/analytics-sort-toggle-label';
+import {
+  AnalyticsTableSelector,
+  type AnalyticsTableSelectorOption,
+} from '../_components/analytics-table-selector';
+import {
+  formatDateInTimezone,
+} from '../_utils/date';
+import {
+  formatDeltaPercent,
+} from '../_utils/metrics';
+import { useAnalyticsDateRange } from '../_hooks/use-analytics-date-range';
+import { analyticsOverviewApi } from '../_services/analytics-overview-api';
+import {
+  type ProblematicDeliveryResponse,
+  type SalesPerformanceOverviewResponse as OverviewResponse,
+  type SalesPerformanceRow,
+  type SalesPerformanceSortKey as SortKey,
+  type SalesPerformanceSummary,
+  type SalesPerformanceSummaryRow,
+  type SunburstHoverInfo,
+  salesPerformanceMetricDefinitions as metricDefinitions,
+} from '../_types/sales-performance';
 
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
-
-const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
-
-const formatDateInTimezone = (date: Date) =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date);
-
-const parseYmdToLocalDate = (value: string) => {
-  const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) return new Date();
-  return new Date(year, month - 1, day);
-};
-
-type SalesPerformanceRow = {
-  salesAssignee: string | null;
-  shopId: string;
-  orderCount: number;
-  totalCod: number;
-  salesCod: number;
-  mktgCod: number;
-  salesCodCount: number;
-  mktgCodCount: number;
-  upsellDelta: number;
-  confirmedCount: number;
-  marketingLeadCount: number;
-  forUpsellCount: number;
-  upsellTagCount: number;
-  deliveredCount: number;
-  rtsCount: number;
-  pendingCount: number;
-  cancelledCount: number;
-  upsellCount: number;
-  statusCounts: Record<string, number>;
-  salesVsMktgPct: number;
-  confirmationRatePct: number;
-  rtsRatePct: number;
-  pendingRatePct: number;
-  cancellationRatePct: number;
-  upsellRatePct: number;
-};
-
-type SalesPerformanceSummaryRow = Omit<SalesPerformanceRow, 'shopId'>;
-type SortKey =
-  | 'assignee'
-  | 'shop'
-  | 'mktg_cod'
-  | 'sales_cod'
-  | 'smp'
-  | 'rts'
-  | 'confirmation'
-  | 'pending'
-  | 'cancellation'
-  | 'upsell_rate'
-  | 'upsell_delta';
-
-type SalesPerformanceSummary = {
-  upsell_delta: number;
-  sales_cod: number;
-  sales_cod_count: number;
-  mktg_cod: number;
-  mktg_cod_count: number;
-  sales_vs_mktg_pct: number;
-  confirmed_count: number;
-  marketing_lead_count: number;
-  confirmation_rate_pct: number;
-  delivered_count: number;
-  rts_count: number;
-  rts_rate_pct: number;
-  pending_count: number;
-  cancelled_count: number;
-  pending_rate_pct: number;
-  cancellation_rate_pct: number;
-  upsell_rate_pct: number;
-  total_cod: number;
-  order_count: number;
-  upsell_count: number;
-  for_upsell_count: number;
-  upsell_tag_count: number;
-};
-
-type OverviewResponse = {
-  summary: SalesPerformanceSummary;
-  prevSummary: SalesPerformanceSummary;
-  rows: SalesPerformanceRow[];
-  filters: {
-    salesAssignees: string[];
-    salesAssigneesDisplayMap?: Record<string, string>;
-    includeUnassigned: boolean;
-    shopDisplayMap?: Record<string, string>;
-  };
-  selected: {
-    start_date: string;
-    end_date: string;
-    sales_assignees: string[];
-  };
-  rangeDays: number;
-  lastUpdatedAt: string | null;
-};
-
-type SunburstNode = {
-  name: string;
-  value: number;
-  children?: SunburstNode[];
-};
-
-type ProblematicDeliveryResponse = {
-  data: SunburstNode[];
-  total: number;
-  trend: Array<{
-    date: string;
-    delivered_count: number;
-    rts_count: number;
-  }>;
-  undeliverableAllTime?: {
-    count: number;
-    totalCod: number;
-  };
-  undeliverableTrend?: Array<{
-    date: string;
-    count: number;
-  }>;
-  onDeliveryAllTime?: {
-    count: number;
-    totalCod: number;
-  };
-  onDeliveryTrend?: Array<{
-    date: string;
-    count: number;
-  }>;
-  deliveredInRange?: {
-    count: number;
-    totalCod: number;
-  };
-  deliveredInRangeTrend?: Array<{
-    date: string;
-    count: number;
-  }>;
-  returnedInRange?: {
-    count: number;
-    totalCod: number;
-  };
-  returnedInRangeTrend?: Array<{
-    date: string;
-    count: number;
-  }>;
-  riskConfirmationRows?: Array<{
-    riskTag: string;
-    confirmedCount: number;
-    restockingCount: number;
-    waitingForPickupCount: number;
-    shippedCount: number;
-    deliveredCount: number;
-    rtsCount: number;
-  }>;
-  filters: {
-    shops: string[];
-    shopDisplayMap?: Record<string, string>;
-  };
-  selected: {
-    start_date: string;
-    end_date: string;
-    shop_ids: string[];
-  };
-  lastUpdatedAt: string | null;
-};
-
-type SunburstHoverInfo = {
-  path: string;
-  orders: number;
-  pct: number;
-  color: string;
-};
 
 const formatCurrency = (val?: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);
 
 const formatPct = (val?: number) => `${(val || 0).toFixed(2)}%`;
-
-const metricDefinitions: { key: keyof OverviewResponse['summary']; label: string; format: 'currency' | 'percent' | 'number'; countKey?: keyof OverviewResponse['summary'] }[] = [
-  { key: 'mktg_cod', label: 'MKTG Cod (₱)', format: 'currency', countKey: 'mktg_cod_count' },
-  { key: 'sales_cod', label: 'Sales Cod (₱)', format: 'currency', countKey: 'sales_cod_count' },
-  { key: 'sales_vs_mktg_pct', label: 'SMP %', format: 'percent' },
-  { key: 'rts_rate_pct', label: 'RTS Rate (%)', format: 'percent' },
-  { key: 'confirmation_rate_pct', label: 'Confirmation Rate (%)', format: 'percent' },
-  { key: 'pending_rate_pct', label: 'Pending Rate (%)', format: 'percent' },
-  { key: 'cancellation_rate_pct', label: 'Cancellation Rate (%)', format: 'percent' },
-  { key: 'upsell_rate_pct', label: 'Upsell Rate (%)', format: 'percent' },
-];
-
-const formatValue = (val: number, format: 'currency' | 'percent' | 'number') => {
-  if (!Number.isFinite(val)) return '—';
-  if (format === 'currency') {
-    return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 }).format(val);
-  }
-  if (format === 'percent') {
-    return `${val.toFixed(2)}%`;
-  }
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(val);
-};
-
-const formatDelta = (current: number, previous: number) => {
-  if (!Number.isFinite(previous) || previous === 0) {
-    return null;
-  }
-  return ((current - previous) / Math.abs(previous)) * 100;
-};
 
 const formatCount = (val?: number) => new Intl.NumberFormat('en-US').format(val ?? 0);
 const formatShortDate = (dateStr: string) => {
@@ -251,7 +76,11 @@ const buildSparklineOption = (
   tooltip: {
     trigger: 'axis',
     confine: true,
-    formatter: (params: any) => {
+    formatter: (
+      params:
+        | { value?: unknown; axisValueLabel?: string; axisValue?: string }
+        | Array<{ value?: unknown; axisValueLabel?: string; axisValue?: string }>,
+    ) => {
       const row = Array.isArray(params) ? params[0] : params;
       const value = Number(row?.value ?? 0);
       const date = row?.axisValueLabel || row?.axisValue || '';
@@ -296,14 +125,26 @@ const TooltipRow = ({ label, value, bold = false }: { label: string; value: stri
   </div>
 );
 
+const areArraysEqual = (a: string[], b: string[]) => {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+};
+
+const areRecordsEqual = (a: Record<string, string>, b: Record<string, string>) => {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+};
+
 export default function SalesPerformancePage() {
-  const today = formatDateInTimezone(new Date());
-  const [range, setRange] = useState({
-    startDate: parseYmdToLocalDate(today),
-    endDate: parseYmdToLocalDate(today),
-  });
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
+  const { range, startDate, endDate, handleDateRangeChange } = useAnalyticsDateRange();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -311,7 +152,6 @@ export default function SalesPerformancePage() {
   const [deleteError, setDeleteError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [tableSelection, setTableSelection] = useState<'store' | 'summary'>('summary');
-  const [showTableMenu, setShowTableMenu] = useState(false);
   const [deliveryViewSelection, setDeliveryViewSelection] =
     useState<'delivery' | 'risk_confirmation'>('delivery');
   const [showDeliveryViewMenu, setShowDeliveryViewMenu] = useState(false);
@@ -327,8 +167,6 @@ export default function SalesPerformancePage() {
   const [chartShopOptions, setChartShopOptions] = useState<string[]>([]);
   const [selectedChartShops, setSelectedChartShops] = useState<string[]>([]);
   const [isAllChartShopsMode, setIsAllChartShopsMode] = useState(true);
-  const [showChartShopPicker, setShowChartShopPicker] = useState(false);
-  const [chartShopSearch, setChartShopSearch] = useState('');
   const [hasInitializedChartShops, setHasInitializedChartShops] = useState(false);
 
   const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
@@ -336,12 +174,8 @@ export default function SalesPerformancePage() {
   const [includeUnassigned, setIncludeUnassigned] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [isAllAssigneesMode, setIsAllAssigneesMode] = useState(true);
-  const [showAssigneePicker, setShowAssigneePicker] = useState(false);
-  const [assigneeSearch, setAssigneeSearch] = useState('');
   const [hasInitializedSelection, setHasInitializedSelection] = useState(false);
 
-  const assigneePickerRef = useRef<HTMLDivElement>(null);
-  const chartShopPickerRef = useRef<HTMLDivElement>(null);
   const lastSunburstHoverKeyRef = useRef<string>('');
   const { addToast } = useToast();
 
@@ -366,43 +200,6 @@ export default function SalesPerformancePage() {
 
   const selectedChartShopLabel =
     isAllChartShopsMode ? 'All shops' : `${selectedChartShops.length} selected`;
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (assigneePickerRef.current && !assigneePickerRef.current.contains(event.target as Node)) {
-        setShowAssigneePicker(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (chartShopPickerRef.current && !chartShopPickerRef.current.contains(event.target as Node)) {
-        setShowChartShopPicker(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    const handleTableMenuClose = (event: MouseEvent) => {
-      if (!showTableMenu) return;
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-      const path = event.composedPath ? event.composedPath() : [];
-      const withinMenu = path.some(
-        (node) => (node as HTMLElement | null)?.dataset?.tableMenu === 'true',
-      );
-      if (!withinMenu) {
-        setShowTableMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleTableMenuClose);
-    return () => document.removeEventListener('mousedown', handleTableMenuClose);
-  }, [showTableMenu]);
 
   useEffect(() => {
     const handleDeliveryMenuClose = (event: MouseEvent) => {
@@ -435,23 +232,32 @@ export default function SalesPerformancePage() {
             selectedAssignees.length > 0 ? selectedAssignees : ['__no_selection__'];
         }
 
-        const res = await apiClient.get<OverviewResponse>('/analytics/sales-performance/overview', {
-          params,
-        });
+        const res =
+          await analyticsOverviewApi.getSalesPerformanceOverview<OverviewResponse>(params);
         if (!isMounted) return;
         setData(res.data);
-        setAssigneeOptions(res.data.filters.salesAssignees || []);
-        setAssigneeDisplayMap(res.data.filters.salesAssigneesDisplayMap || {});
-        setIncludeUnassigned(!!res.data.filters.includeUnassigned);
+        const nextAssignees = res.data.filters.salesAssignees || [];
+        const nextAssigneeDisplayMap = res.data.filters.salesAssigneesDisplayMap || {};
+        const nextIncludeUnassigned = !!res.data.filters.includeUnassigned;
+        setAssigneeOptions((prev) => (areArraysEqual(prev, nextAssignees) ? prev : nextAssignees));
+        setAssigneeDisplayMap((prev) =>
+          areRecordsEqual(prev, nextAssigneeDisplayMap) ? prev : nextAssigneeDisplayMap,
+        );
+        setIncludeUnassigned((prev) =>
+          prev === nextIncludeUnassigned ? prev : nextIncludeUnassigned,
+        );
         const nextAll = [
           ...(res.data.filters.salesAssignees || []),
           ...(res.data.filters.includeUnassigned ? ['__null__'] : []),
         ];
         if (!hasInitializedSelection || isAllAssigneesMode) {
-          setSelectedAssignees([]);
+          setSelectedAssignees((prev) => (prev.length === 0 ? prev : []));
         } else {
           const allowed = new Set(nextAll);
-          setSelectedAssignees((prev) => prev.filter((v) => allowed.has(v)));
+          setSelectedAssignees((prev) => {
+            const next = prev.filter((v) => allowed.has(v));
+            return areArraysEqual(prev, next) ? prev : next;
+          });
         }
         if (!hasInitializedSelection) setHasInitializedSelection(true);
       } catch (error) {
@@ -466,7 +272,14 @@ export default function SalesPerformancePage() {
     return () => {
       isMounted = false;
     };
-  }, [startDate, endDate, isAllAssigneesMode, selectedAssignees.join('|'), refreshKey]);
+  }, [
+    endDate,
+    hasInitializedSelection,
+    isAllAssigneesMode,
+    refreshKey,
+    selectedAssignees,
+    startDate,
+  ]);
 
   useEffect(() => {
     let isMounted = true;
@@ -484,20 +297,21 @@ export default function SalesPerformancePage() {
             selectedChartShops.length > 0 ? selectedChartShops : ['__no_selection__'];
         }
 
-        const res = await apiClient.get<ProblematicDeliveryResponse>(
-          '/analytics/sales-performance/problematic-delivery',
-          {
-            params,
-          },
+        const res = await analyticsOverviewApi.getProblematicDelivery<ProblematicDeliveryResponse>(
+          params,
         );
         if (!isMounted) return;
         setProblematicData(res.data);
-        setChartShopOptions(res.data.filters.shops || []);
+        const nextShops = res.data.filters.shops || [];
+        setChartShopOptions((prev) => (areArraysEqual(prev, nextShops) ? prev : nextShops));
         if (!hasInitializedChartShops || isAllChartShopsMode) {
-          setSelectedChartShops([]);
+          setSelectedChartShops((prev) => (prev.length === 0 ? prev : []));
         } else {
           const allowed = new Set(res.data.filters.shops || []);
-          setSelectedChartShops((prev) => prev.filter((v) => allowed.has(v)));
+          setSelectedChartShops((prev) => {
+            const next = prev.filter((v) => allowed.has(v));
+            return areArraysEqual(prev, next) ? prev : next;
+          });
         }
         if (!hasInitializedChartShops) setHasInitializedChartShops(true);
       } catch (error) {
@@ -512,23 +326,16 @@ export default function SalesPerformancePage() {
     return () => {
       isMounted = false;
     };
-  }, [startDate, endDate, isAllChartShopsMode, selectedChartShops.join('|'), refreshKey]);
+  }, [
+    endDate,
+    hasInitializedChartShops,
+    isAllChartShopsMode,
+    refreshKey,
+    selectedChartShops,
+    startDate,
+  ]);
 
   const rangeLabel = startDate === endDate ? startDate : `${startDate} → ${endDate}`;
-
-  const handleDateRangeChange = (val: any) => {
-    const nextStart = val?.startDate || today;
-    const nextEnd = val?.endDate || today;
-    setRange({ startDate: nextStart, endDate: nextEnd });
-    const formatDate = (d: any) => {
-      if (!d) return today;
-      if (typeof d === 'string') return d.slice(0, 10);
-      if (d instanceof Date) return formatDateInTimezone(d);
-      return today;
-    };
-    setStartDate(formatDate(nextStart));
-    setEndDate(formatDate(nextEnd));
-  };
 
   const handleDeleteOrders = async () => {
     if (isDeleting) return;
@@ -558,7 +365,6 @@ export default function SalesPerformancePage() {
     if (isAllAssigneesMode) {
       setIsAllAssigneesMode(false);
       setSelectedAssignees(allAssigneeOptions.filter((v) => v !== value));
-      setShowAssigneePicker(true);
       return;
     }
     const has = selectedAssignees.includes(value);
@@ -571,10 +377,9 @@ export default function SalesPerformancePage() {
     } else {
       setSelectedAssignees(next);
     }
-    setShowAssigneePicker(true);
   };
 
-  const displayAssignee = (value: string | null) => {
+  const displayAssignee = useCallback((value: string | null) => {
     if (!value || value === '__null__') {
       return assigneeDisplayMap['__null__'] || 'Unassigned';
     }
@@ -583,15 +388,25 @@ export default function SalesPerformancePage() {
       assigneeDisplayMap[value.toLowerCase()] ||
       value
     );
-  };
+  }, [assigneeDisplayMap]);
 
-  const displayShop = (value: string) => {
+  const displayShop = useCallback((value: string) => {
     return data?.filters?.shopDisplayMap?.[value] || value;
-  };
+  }, [data?.filters?.shopDisplayMap]);
 
   const displayChartShop = (value: string) => {
     return problematicData?.filters?.shopDisplayMap?.[value] || data?.filters?.shopDisplayMap?.[value] || value;
   };
+
+  const assigneePickerOptions = allAssigneeOptions.map((value) => ({
+    value,
+    label: displayAssignee(value),
+  }));
+
+  const chartShopPickerOptions = chartShopOptions.map((value) => ({
+    value,
+    label: displayChartShop(value),
+  }));
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -603,26 +418,17 @@ export default function SalesPerformancePage() {
   };
 
   const renderSortLabel = (label: string, key: SortKey) => {
-    const isActive = sortKey === key;
     return (
-      <button
-        type="button"
-        onClick={() => handleSort(key)}
-        className="inline-flex items-center gap-1 text-xs font-semibold uppercase text-slate-500 hover:text-slate-700"
-      >
-        <span>{label}</span>
-        {isActive ? (
-          sortDir === 'asc' ? (
-            <ChevronUp className="h-3 w-3" />
-          ) : (
-            <ChevronDown className="h-3 w-3" />
-          )
-        ) : null}
-      </button>
+      <AnalyticsSortToggleLabel
+        label={label}
+        isActive={sortKey === key}
+        direction={sortDir}
+        onToggle={() => handleSort(key)}
+      />
     );
   };
 
-  const getSortValue = (row: SalesPerformanceRow | SalesPerformanceSummaryRow, key: SortKey, hasShop: boolean) => {
+  const getSortValue = useCallback((row: SalesPerformanceRow | SalesPerformanceSummaryRow, key: SortKey, hasShop: boolean) => {
     switch (key) {
       case 'assignee':
         return displayAssignee(row.salesAssignee).toLowerCase();
@@ -650,25 +456,12 @@ export default function SalesPerformancePage() {
       default:
         return 0;
     }
-  };
-
-  const filteredOptions = allAssigneeOptions.filter((value) =>
-    assigneeSearch.trim()
-      ? displayAssignee(value).toLowerCase().includes(assigneeSearch.toLowerCase())
-      : true,
-  );
-
-  const filteredChartShopOptions = chartShopOptions.filter((value) =>
-    chartShopSearch.trim()
-      ? displayChartShop(value).toLowerCase().includes(chartShopSearch.toLowerCase())
-      : true,
-  );
+  }, [displayAssignee, displayShop]);
 
   const toggleChartShop = (value: string) => {
     if (isAllChartShopsMode) {
       setIsAllChartShopsMode(false);
       setSelectedChartShops(chartShopOptions.filter((v) => v !== value));
-      setShowChartShopPicker(true);
       return;
     }
     const has = selectedChartShops.includes(value);
@@ -681,7 +474,6 @@ export default function SalesPerformancePage() {
     } else {
       setSelectedChartShops(next);
     }
-    setShowChartShopPicker(true);
   };
 
   const metrics = useMemo(() => {
@@ -696,8 +488,8 @@ export default function SalesPerformancePage() {
         previous,
         countCurrent,
         countPrevious,
-        countDelta: def.countKey ? formatDelta(countCurrent ?? 0, countPrevious ?? 0) : null,
-        delta: formatDelta(current, previous),
+        countDelta: def.countKey ? formatDeltaPercent(countCurrent ?? 0, countPrevious ?? 0) : null,
+        delta: formatDeltaPercent(current, previous),
       };
     });
   }, [data]);
@@ -796,12 +588,18 @@ export default function SalesPerformancePage() {
 
   const sunburstEvents = useMemo(
     () => ({
-      mouseover: (params: any) => {
+      mouseover: (params: {
+        seriesType?: string;
+        treePathInfo?: Array<{ name?: string }>;
+        name?: string;
+        value?: unknown;
+        color?: unknown;
+      }) => {
         if (params?.seriesType !== 'sunburst') return;
         const path =
           params?.treePathInfo
             ?.slice(1)
-            ?.map((p: any) => p?.name)
+            ?.map((p) => p?.name)
             ?.filter((name: string | undefined) => !!name)
             ?.join(' / ') || params?.name || 'Unknown';
         const orders = Number(params?.value || 0);
@@ -826,7 +624,11 @@ export default function SalesPerformancePage() {
 
   const sunburstLegend = useMemo(
     () =>
-      (sunburstSeriesData || []).map((node: any) => ({
+      (sunburstSeriesData || []).map((node: {
+        name?: string;
+        value?: unknown;
+        itemStyle?: { color?: string };
+      }) => ({
         name: node?.name || 'Unknown',
         count: Number(node?.value || 0),
         color: node?.itemStyle?.color || '#94A3B8',
@@ -1248,7 +1050,7 @@ export default function SalesPerformancePage() {
     }
   }, [tableSelection, sortKey]);
 
-  const tableOptions: Array<{ key: 'store' | 'summary'; label: string }> = [
+  const tableOptions: AnalyticsTableSelectorOption<'store' | 'summary'>[] = [
     { key: 'summary', label: 'Sales Performance' },
     { key: 'store', label: 'Sales Performance (Per Store)' },
   ];
@@ -1272,7 +1074,7 @@ export default function SalesPerformancePage() {
       }
       return (sortDir === 'asc' ? 1 : -1) * (Number(av) - Number(bv));
     });
-  }, [data?.rows, sortKey, sortDir]);
+  }, [data?.rows, getSortValue, sortKey, sortDir]);
 
   const sortedSummaryRows = useMemo(() => {
     const rows = [...summaryRows];
@@ -1285,7 +1087,7 @@ export default function SalesPerformancePage() {
       }
       return (sortDir === 'asc' ? 1 : -1) * (Number(av) - Number(bv));
     });
-  }, [summaryRows, sortKey, sortDir]);
+  }, [getSortValue, summaryRows, sortKey, sortDir]);
 
   const totalStoreRows = sortedStoreRows.length;
   const totalSummaryRows = sortedSummaryRows.length;
@@ -1341,90 +1143,27 @@ export default function SalesPerformancePage() {
         <div className="flex flex-wrap items-end gap-x-8 gap-y-4 mt-5">
           <div>
             <p className="text-sm font-medium text-slate-700 mb-1.5">Sales Assignee</p>
-            <div className="relative" ref={assigneePickerRef}>
-              <button
-                type="button"
-                onClick={() => setShowAssigneePicker((p) => !p)}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white hover:border-slate-300 focus:outline-none"
-              >
-                <span className="text-slate-900">{selectedLabel}</span>
-                <span className="text-slate-400 text-xs">(click to choose)</span>
-              </button>
-              {showAssigneePicker && (
-                <div className="absolute z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg">
-                  <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 border-b border-slate-100">
-                    <span>Select assignees</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAllAssigneesMode(true);
-                        setSelectedAssignees([]);
-                      }}
-                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="px-3 py-2 border-b border-slate-100">
-                    <input
-                      type="text"
-                      value={assigneeSearch}
-                      onChange={(e) => setAssigneeSearch(e.target.value)}
-                      placeholder="Type to search"
-                      className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div className="max-h-64 overflow-auto">
-                    <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={isAllAssigneesMode}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setIsAllAssigneesMode(checked);
-                            setSelectedAssignees([]);
-                            setShowAssigneePicker(true);
-                          }}
-                          className="rounded border-slate-300"
-                        />
-                        <span>All</span>
-                      </label>
-                    </div>
-                    {filteredOptions.map((value) => {
-                      const checked = resolvedSelection.includes(value);
-                      return (
-                        <div
-                          key={value}
-                          className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
-                        >
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleAssignee(value)}
-                              className="rounded border-slate-300"
-                            />
-                            <span>{displayAssignee(value)}</span>
-                          </label>
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                            onClick={() => {
-                              setIsAllAssigneesMode(false);
-                              setSelectedAssignees([value]);
-                              setShowAssigneePicker(true);
-                            }}
-                          >
-                            ONLY
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+            <AnalyticsMultiSelectPicker
+              className="relative"
+              selectedLabel={selectedLabel}
+              selectTitle="Select assignees"
+              options={assigneePickerOptions}
+              allChecked={isAllAssigneesMode}
+              isChecked={(value) => resolvedSelection.includes(value)}
+              onToggleAll={(checked) => {
+                setIsAllAssigneesMode(checked);
+                setSelectedAssignees([]);
+              }}
+              onToggle={toggleAssignee}
+              onOnly={(value) => {
+                setIsAllAssigneesMode(false);
+                setSelectedAssignees([value]);
+              }}
+              onClear={() => {
+                setIsAllAssigneesMode(true);
+                setSelectedAssignees([]);
+              }}
+            />
           </div>
 
           <div className="flex flex-col">
@@ -1461,28 +1200,9 @@ export default function SalesPerformancePage() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-5">
           {isLoading
             ? Array.from({ length: metricDefinitions.length }).map((_, idx) => (
-                <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 animate-pulse">
-                  <div className="h-3 w-20 bg-slate-200 rounded" />
-                  <div className="mt-1.5 h-5 w-16 bg-slate-200 rounded" />
-                  <div className="mt-1 h-2.5 w-14 bg-slate-200 rounded" />
-                </div>
+                <AnalyticsMetricCardSkeleton key={idx} />
               ))
             : metrics.map((m) => {
-                const delta = m.delta;
-                const deltaLabel =
-                  delta === null ? '--' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
-                const deltaColor =
-                  delta === null ? 'text-slate-400' : delta >= 0 ? 'text-emerald-600' : 'text-rose-500';
-                const countDeltaLabel =
-                  m.countDelta === null || m.countDelta === undefined
-                    ? '--'
-                    : `${m.countDelta > 0 ? '+' : ''}${m.countDelta.toFixed(1)}%`;
-                const countDeltaColor =
-                  m.countDelta === null || m.countDelta === undefined
-                    ? 'text-slate-400'
-                    : m.countDelta >= 0
-                      ? 'text-emerald-600'
-                      : 'text-rose-500';
                 const tooltip =
                   m.key === 'sales_vs_mktg_pct'
                     ? buildSmpTooltip(data?.summary)
@@ -1498,47 +1218,24 @@ export default function SalesPerformancePage() {
                               ? buildUpsellTooltip(data?.summary)
                               : null;
                 return (
-                  <div
+                  <AnalyticsMetricCard
                     key={m.key}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2.5"
-                  >
-                    <div className="text-xs text-slate-500 flex items-center gap-1">
-                      {m.label}
-                      {tooltip && (
-                        <span className="relative group inline-flex cursor-help" tabIndex={0} aria-label={`${m.label} formula`}>
-                          <Info className="h-4 w-4 text-slate-400 group-hover:text-emerald-600 group-focus-within:text-emerald-600" />
-                          <div className="absolute left-1/2 top-full z-30 mt-2 hidden w-80 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] leading-relaxed text-slate-700 shadow-lg group-hover:block group-focus-within:block">
-                            {tooltip}
-                          </div>
-                        </span>
-                      )}
-                    </div>
-                    {m.countKey ? (
-                      <>
-                        <div className="mt-1 flex items-center justify-between">
-                          <p className="text-lg font-semibold text-slate-900">
-                            {formatValue(m.current, m.format)}
-                          </p>
-                          <p className={`text-[11px] ${deltaColor}`}>{deltaLabel}</p>
-                        </div>
-                        <div className="mt-1 flex items-center justify-between">
-                          <span className="text-xs text-slate-600">
-                            ord: <span className="font-semibold text-slate-900">{formatCount(m.countCurrent ?? 0)}</span>
-                          </span>
-                          <span className={`text-[11px] ${countDeltaColor}`}>{countDeltaLabel}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="mt-1 flex items-center justify-between">
-                          <p className="text-lg font-semibold text-slate-900">
-                            {formatValue(m.current, m.format)}
-                          </p>
-                          <p className={`text-[11px] ${deltaColor}`}>{deltaLabel}</p>
-                        </div>
-                      </>
-                    )}
-                  </div>
+                    label={m.label}
+                    value={m.current}
+                    format={m.format}
+                    delta={m.delta}
+                    count={
+                      m.countKey
+                        ? {
+                            label: 'ord',
+                            value: m.countCurrent ?? 0,
+                            delta: m.countDelta ?? null,
+                          }
+                        : undefined
+                    }
+                    tooltip={tooltip}
+                    tooltipMode="hover"
+                  />
                 );
               })}
         </div>
@@ -1546,275 +1243,54 @@ export default function SalesPerformancePage() {
 
       <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
         <div className="flex items-center justify-between mb-3 px-2">
-          <div className="relative" data-table-menu="true">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-lg font-semibold text-slate-900"
-              onClick={() => setShowTableMenu((p) => !p)}
-            >
-              {tableOptions.find((t) => t.key === tableSelection)?.label || 'Sales Performance (Per Store)'}
-              <span className="text-slate-500">▾</span>
-            </button>
-            {showTableMenu && (
-              <div className="absolute left-0 mt-2 w-64 rounded-xl border border-slate-200 bg-white shadow-lg z-20">
-                {tableOptions.map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    className={`block w-full text-left px-3 py-2 text-sm ${tableSelection === opt.key ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50'}`}
-                    onClick={() => {
-                      setTableSelection(opt.key);
-                      if (opt.key === 'summary') {
-                        setSummaryPage(1);
-                      } else {
-                        setStorePage(1);
-                      }
-                      setShowTableMenu(false);
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <AnalyticsTableSelector
+            className="relative"
+            options={tableOptions}
+            selectedKey={tableSelection}
+            fallbackLabel="Sales Performance (Per Store)"
+            onSelect={(key) => {
+              setTableSelection(key);
+              if (key === 'summary') {
+                setSummaryPage(1);
+              } else {
+                setStorePage(1);
+              }
+            }}
+          />
           <span className="text-xs text-slate-400">{activeRowCount || 0} rows</span>
         </div>
 
         {tableSelection === 'store' && (
-          <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-100">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Sales Assignee', 'assignee')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Shop POS', 'shop')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('MKTG Cod', 'mktg_cod')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Sales Cod', 'sales_cod')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('SMP %', 'smp')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('RTS Rate %', 'rts')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Confirmation Rate %', 'confirmation')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Pending Rate %', 'pending')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Cancellation Rate %', 'cancellation')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Upsell Rate %', 'upsell_rate')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Sales Upsell', 'upsell_delta')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {isLoading ? (
-                    <tr>
-                      <td className="px-4 py-6 text-sm text-slate-400" colSpan={11}>
-                        Loading...
-                      </td>
-                    </tr>
-                  ) : pagedStoreRows.length ? (
-                    pagedStoreRows.map((row) => (
-                      <tr key={`${row.salesAssignee ?? 'unassigned'}-${row.shopId}`} className="bg-white">
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                          {displayAssignee(row.salesAssignee)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700 whitespace-nowrap">
-                          <span className="text-slate-900">{displayShop(row.shopId)}</span>
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                          {formatCurrency(row.mktgCod)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                          {formatCurrency(row.salesCod)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.salesVsMktgPct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.rtsRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.confirmationRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.pendingRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.cancellationRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.upsellRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                        {formatCurrency(row.upsellDelta)}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={11}>
-                      No data available for the selected filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
-            <p className="text-sm text-slate-600">
-              Showing {storeStart}-{storeEnd} of {totalStoreRows}
-            </p>
-            <div className="flex gap-2">
-              <button
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                onClick={() => setStorePage((p) => Math.max(1, p - 1))}
-                disabled={!storeCanPrev || isLoading}
-              >
-                Previous
-              </button>
-              <button
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                onClick={() => setStorePage((p) => Math.min(totalStorePages, p + 1))}
-                disabled={!storeCanNext || isLoading}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          <AnalyticsSalesPerformanceStoreTable
+            isLoading={isLoading}
+            rows={pagedStoreRows}
+            storeStart={storeStart}
+            storeEnd={storeEnd}
+            totalStoreRows={totalStoreRows}
+            canPrevious={storeCanPrev}
+            canNext={storeCanNext}
+            onPrevious={() => setStorePage((p) => Math.max(1, p - 1))}
+            onNext={() => setStorePage((p) => Math.min(totalStorePages, p + 1))}
+            displayAssignee={displayAssignee}
+            displayShop={displayShop}
+            renderSortLabel={renderSortLabel}
+          />
+        )}
 
         {tableSelection === 'summary' && (
-          <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-100">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Sales Assignee', 'assignee')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('MKTG Cod', 'mktg_cod')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Sales Cod', 'sales_cod')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('SMP %', 'smp')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('RTS Rate %', 'rts')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Confirmation Rate %', 'confirmation')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Pending Rate %', 'pending')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Cancellation Rate %', 'cancellation')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Upsell Rate %', 'upsell_rate')}
-                    </th>
-                    <th className="px-3 sm:px-4 lg:px-6 py-3 text-left whitespace-nowrap">
-                      {renderSortLabel('Sales Upsell', 'upsell_delta')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {isLoading ? (
-                    <tr>
-                      <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
-                        Loading...
-                      </td>
-                    </tr>
-                  ) : pagedSummaryRows.length ? (
-                    pagedSummaryRows.map((row) => (
-                      <tr key={row.salesAssignee ?? 'unassigned'} className="bg-white">
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                          {displayAssignee(row.salesAssignee)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                          {formatCurrency(row.mktgCod)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                          {formatCurrency(row.salesCod)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.salesVsMktgPct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.rtsRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.confirmationRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.pendingRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.cancellationRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900">
-                          {formatPct(row.upsellRatePct)}
-                        </td>
-                        <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700">
-                        {formatCurrency(row.upsellDelta)}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
-                      No data available for the selected filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
-            <p className="text-sm text-slate-600">
-              Showing {summaryStart}-{summaryEnd} of {totalSummaryRows}
-            </p>
-            <div className="flex gap-2">
-              <button
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                onClick={() => setSummaryPage((p) => Math.max(1, p - 1))}
-                disabled={!summaryCanPrev || isLoading}
-              >
-                Previous
-              </button>
-              <button
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                onClick={() => setSummaryPage((p) => Math.min(totalSummaryPages, p + 1))}
-                disabled={!summaryCanNext || isLoading}
-              >
-                Next
-              </button>
-            </div>
-            </div>
-          </div>
+          <AnalyticsSalesPerformanceSummaryTable
+            isLoading={isLoading}
+            rows={pagedSummaryRows}
+            summaryStart={summaryStart}
+            summaryEnd={summaryEnd}
+            totalSummaryRows={totalSummaryRows}
+            canPrevious={summaryCanPrev}
+            canNext={summaryCanNext}
+            onPrevious={() => setSummaryPage((p) => Math.max(1, p - 1))}
+            onNext={() => setSummaryPage((p) => Math.min(totalSummaryPages, p + 1))}
+            displayAssignee={displayAssignee}
+            renderSortLabel={renderSortLabel}
+          />
         )}
       </Card>
 
@@ -1853,90 +1329,27 @@ export default function SalesPerformancePage() {
             )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative" ref={chartShopPickerRef}>
-              <button
-                type="button"
-                onClick={() => setShowChartShopPicker((p) => !p)}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white hover:border-slate-300 focus:outline-none"
-              >
-                <span className="text-slate-900">{selectedChartShopLabel}</span>
-                <span className="text-slate-400 text-xs">(click to choose)</span>
-              </button>
-              {showChartShopPicker && (
-                <div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg">
-                  <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 border-b border-slate-100">
-                    <span>Select shops</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAllChartShopsMode(true);
-                        setSelectedChartShops([]);
-                      }}
-                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="px-3 py-2 border-b border-slate-100">
-                    <input
-                      type="text"
-                      value={chartShopSearch}
-                      onChange={(e) => setChartShopSearch(e.target.value)}
-                      placeholder="Type to search"
-                      className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div className="max-h-64 overflow-auto">
-                    <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={isAllChartShopsMode}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setIsAllChartShopsMode(checked);
-                            setSelectedChartShops([]);
-                            setShowChartShopPicker(true);
-                          }}
-                          className="rounded border-slate-300"
-                        />
-                        <span>All</span>
-                      </label>
-                    </div>
-                    {filteredChartShopOptions.map((value) => {
-                      const checked = resolvedChartShops.includes(value);
-                      return (
-                        <div
-                          key={value}
-                          className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
-                        >
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleChartShop(value)}
-                              className="rounded border-slate-300"
-                            />
-                            <span>{displayChartShop(value)}</span>
-                          </label>
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                            onClick={() => {
-                              setIsAllChartShopsMode(false);
-                              setSelectedChartShops([value]);
-                              setShowChartShopPicker(true);
-                            }}
-                          >
-                            ONLY
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+            <AnalyticsMultiSelectPicker
+              className="relative"
+              selectedLabel={selectedChartShopLabel}
+              selectTitle="Select shops"
+              options={chartShopPickerOptions}
+              allChecked={isAllChartShopsMode}
+              isChecked={(value) => resolvedChartShops.includes(value)}
+              onToggleAll={(checked) => {
+                setIsAllChartShopsMode(checked);
+                setSelectedChartShops([]);
+              }}
+              onToggle={toggleChartShop}
+              onOnly={(value) => {
+                setIsAllChartShopsMode(false);
+                setSelectedChartShops([value]);
+              }}
+              onClear={() => {
+                setIsAllChartShopsMode(true);
+                setSelectedChartShops([]);
+              }}
+            />
             <div className="relative">
               <Datepicker
                 value={range}
@@ -1954,99 +1367,17 @@ export default function SalesPerformancePage() {
         </div>
         <div className="p-1 sm:p-2">
           {deliveryViewSelection === 'risk_confirmation' ? (
-            <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-100">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                        Risk Confirmation
-                      </th>
-                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                        Restocking
-                      </th>
-                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                        Confirmed
-                      </th>
-                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                        Waiting For Pickup
-                      </th>
-                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                        Shipped
-                      </th>
-                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                        Delivered
-                      </th>
-                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                        RTS
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {isProblematicLoading ? (
-                      <tr>
-                        <td className="px-3 sm:px-4 lg:px-6 py-6 text-sm text-slate-400" colSpan={7}>
-                          Loading...
-                        </td>
-                      </tr>
-                    ) : pagedRiskRows.length ? (
-                      pagedRiskRows.map((row) => (
-                        <tr key={row.riskTag} className="bg-white">
-                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm text-slate-700 whitespace-nowrap">
-                            {row.riskTag}
-                          </td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
-                            {formatCount(row.restockingCount)}
-                          </td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
-                            {formatCount(row.confirmedCount)}
-                          </td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
-                            {formatCount(row.waitingForPickupCount)}
-                          </td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
-                            {formatCount(row.shippedCount)}
-                          </td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
-                            {formatCount(row.deliveredCount)}
-                          </td>
-                          <td className="px-3 sm:px-4 lg:px-6 py-4 text-sm font-semibold text-slate-900 whitespace-nowrap">
-                            {formatCount(row.rtsCount)}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td className="px-3 sm:px-4 lg:px-6 py-6 text-sm text-slate-400" colSpan={7}>
-                          No risk confirmation data for the selected scope.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
-                <p className="text-sm text-slate-600">
-                  Showing {riskStart}-{riskEnd} of {totalRiskRows}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    onClick={() => setRiskPage((p) => Math.max(1, p - 1))}
-                    disabled={!riskCanPrev || isProblematicLoading}
-                  >
-                    Previous
-                  </button>
-                  <button
-                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    onClick={() => setRiskPage((p) => Math.min(totalRiskPages, p + 1))}
-                    disabled={!riskCanNext || isProblematicLoading}
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </div>
+            <AnalyticsRiskConfirmationTable
+              isLoading={isProblematicLoading}
+              rows={pagedRiskRows}
+              riskStart={riskStart}
+              riskEnd={riskEnd}
+              totalRiskRows={totalRiskRows}
+              canPrevious={riskCanPrev}
+              canNext={riskCanNext}
+              onPrevious={() => setRiskPage((p) => Math.max(1, p - 1))}
+              onNext={() => setRiskPage((p) => Math.min(totalRiskPages, p + 1))}
+            />
           ) : (
             <>
           <div className="mb-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -2234,9 +1565,7 @@ export default function SalesPerformancePage() {
           </DialogHeader>
 
           <div className="space-y-3 text-sm text-slate-700">
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700">
-              This action cannot be undone.
-            </div>
+            <AlertBanner tone="warning" message="This action cannot be undone." />
             <div>
               <span className="text-slate-500">Date range:</span>{' '}
               <span className="font-semibold text-slate-900">{rangeLabel}</span>
@@ -2244,9 +1573,7 @@ export default function SalesPerformancePage() {
           </div>
 
           {deleteError && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {deleteError}
-            </div>
+            <AlertBanner tone="error" message={deleteError} />
           )}
 
           <div className="flex gap-2 pt-2">

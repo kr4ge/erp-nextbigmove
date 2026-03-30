@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backend Prisma Migrations Safe"
+  short_description: "Safe Prisma migration workflow"
+  default_prompt: "Use $backend-prisma-migrations-safe to apply this Prisma schema change without breaking migration history."

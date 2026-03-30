@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import apiClient from '@/lib/api-client';
+import { AlertBanner } from '@/components/ui/feedback';
 
 const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -27,6 +28,11 @@ const registerSchema = z.object({
 });
 
 type RegisterForm = z.infer<typeof registerSchema>;
+
+const parseRegisterError = (error: unknown) => {
+  const err = error as { response?: { data?: { message?: string } }; message?: string };
+  return err?.response?.data?.message || err?.message || 'Registration failed. Please try again.';
+};
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -66,8 +72,8 @@ export default function RegisterPage() {
 
       // Redirect to dashboard
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+    } catch (error: unknown) {
+      setError(parseRegisterError(error));
     } finally {
       setIsLoading(false);
     }
@@ -87,9 +93,7 @@ export default function RegisterPage() {
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-              {error}
-            </div>
+            <AlertBanner tone="error" message={error} />
           )}
 
           <div className="space-y-4">

@@ -21,24 +21,26 @@ export function useWorkflowExecution(executionId: string) {
     });
 
     socket.on('execution:progress', (data) => {
+      const current = useExecutionStore.getState().executions[executionId];
       setExecution(executionId, {
         progress: data.progress,
         dayProgress: data.dayProgress,
-        totalDays: data.dayProgress?.totalDays ?? execution?.totalDays,
+        totalDays: data.dayProgress?.totalDays ?? current?.totalDays,
         isLive: true,
       });
       addEvent(executionId, { timestamp: new Date().toISOString(), event: 'progress', data });
     });
 
     socket.on('execution:date_started', (data) => {
+      const current = useExecutionStore.getState().executions[executionId];
       setExecution(executionId, {
         activeDay: data.day,
-        totalDays: data.totalDays ?? execution?.totalDays,
+        totalDays: data.totalDays ?? current?.totalDays,
         currentDate: data.date,
         metaProcessed: 0,
         posProcessed: 0,
-        metaTotal: data.metaTotal ?? execution?.metaTotal,
-        posTotal: data.posTotal ?? execution?.posTotal,
+        metaTotal: data.metaTotal ?? current?.metaTotal,
+        posTotal: data.posTotal ?? current?.posTotal,
         isLive: true,
       });
       addEvent(executionId, {
@@ -117,10 +119,13 @@ export function useWorkflowExecution(executionId: string) {
         const logs = Array.isArray(logsRes.data) ? logsRes.data : [];
         if (logs.length > 0) {
           setExecution(executionId, {
-            events: logs.map((l: any) => ({
-              timestamp: l.createdAt || l.timestamp || new Date().toISOString(),
-              event: l.event || 'log',
-              data: l.metadata ?? l.message ?? l,
+            events: logs.map((log: Record<string, unknown>) => ({
+              timestamp:
+                (typeof log.createdAt === 'string' && log.createdAt) ||
+                (typeof log.timestamp === 'string' && log.timestamp) ||
+                new Date().toISOString(),
+              event: (typeof log.event === 'string' && log.event) || 'log',
+              data: log.metadata ?? log.message ?? log,
             })),
           });
         }

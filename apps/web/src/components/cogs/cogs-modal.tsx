@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -39,18 +39,10 @@ interface CogsModalProps {
 export function CogsModal({ product, storeId, isOpen, onClose }: CogsModalProps) {
   const [cogsHistory, setCogsHistory] = useState<CogsEntry[]>([]);
   const [currentCogs, setCurrentCogs] = useState<CogsEntry | null>(null);
-  const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<CogsEntry | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchCogsData();
-    }
-  }, [isOpen, product.id, storeId]);
-
-  const fetchCogsData = async () => {
-    setLoading(true);
+  const fetchCogsData = useCallback(async () => {
     try {
       const token = localStorage.getItem("access_token");
       if (!token) {
@@ -72,10 +64,14 @@ export function CogsModal({ product, storeId, isOpen, onClose }: CogsModalProps)
       setCurrentCogs(currentRes.data || null);
     } catch (error) {
       console.error("Failed to fetch COGS data:", error);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [product.id, storeId]);
+
+  useEffect(() => {
+    if (isOpen) {
+      void fetchCogsData();
+    }
+  }, [isOpen, fetchCogsData]);
 
   const hasOverlap = (newStart: Date, newEnd: Date | null, excludeId?: string) => {
     const toDate = (d: string | null) => (d ? new Date(d) : new Date("9999-12-31"));

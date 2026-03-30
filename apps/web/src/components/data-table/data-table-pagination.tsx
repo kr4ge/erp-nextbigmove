@@ -1,45 +1,62 @@
 "use client";
 
 import type { Table } from "@tanstack/react-table";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 interface DataTablePaginationProps<TData> extends React.ComponentProps<"div"> {
   table: Table<TData>;
   pageSizeOptions?: number[];
+  totalRows?: number;
+  showPageSizeSelector?: boolean;
 }
 
 export function DataTablePagination<TData>({
   table,
   pageSizeOptions = [10, 20, 30, 40, 50],
+  totalRows,
+  showPageSizeSelector = true,
   className,
   ...props
 }: DataTablePaginationProps<TData>) {
+  const paginationState = table.getState().pagination;
+  const pageIndex = paginationState.pageIndex;
+  const pageSize = paginationState.pageSize;
+  const resolvedTotalRows = totalRows ?? table.getFilteredRowModel().rows.length;
+  const from = resolvedTotalRows > 0 ? pageIndex * pageSize + 1 : 0;
+  const to =
+    resolvedTotalRows > 0
+      ? Math.min((pageIndex + 1) * pageSize, resolvedTotalRows)
+      : 0;
+  const pageCount = Math.max(table.getPageCount(), 1);
+
   return (
     <div
-      className={`flex items-center justify-between text-sm text-[#475569] ${className ?? ""}`}
+      className={cn(
+        "flex items-center justify-between text-sm text-[#475569]",
+        className,
+      )}
       {...props}
     >
       <div>
-        Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}-
-        {Math.min(
-          (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-          table.getFilteredRowModel().rows.length
-        )} of {table.getFilteredRowModel().rows.length}
+        Showing {from}-{to} of {resolvedTotalRows}
       </div>
       <div className="flex items-center gap-2">
-        <select
-          value={table.getState().pagination.pageSize}
-          onChange={(e) => {
-            table.setPageSize(Number(e.target.value));
-          }}
-          className="rounded-lg border border-[#E2E8F0] px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          {pageSizeOptions.map((pageSize) => (
-            <option key={pageSize} value={pageSize}>
-              {pageSize} per page
-            </option>
-          ))}
-        </select>
+        {showPageSizeSelector ? (
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              table.setPageSize(Number(e.target.value));
+            }}
+            className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {pageSizeOptions.map((pageSizeOption) => (
+              <option key={pageSizeOption} value={pageSizeOption}>
+                {pageSizeOption} per page
+              </option>
+            ))}
+          </select>
+        ) : null}
 
         <div className="flex items-center gap-1">
           <Button
@@ -59,8 +76,7 @@ export function DataTablePagination<TData>({
             Prev
           </Button>
           <span className="px-3 py-1.5 text-sm text-[#0F172A]">
-            Page {table.getState().pagination.pageIndex + 1} of{" "}
-            {table.getPageCount()}
+            Page {pageIndex + 1} of {pageCount}
           </span>
           <Button
             variant="outline"

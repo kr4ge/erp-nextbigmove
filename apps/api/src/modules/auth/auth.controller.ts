@@ -121,6 +121,13 @@ export class AuthController {
     const user = req.user;
     const userId = user.userId || user.id;
     const tenantId = user.tenantId;
+    const headerTeamId = req.headers['x-team-id'] as string | undefined;
+    const requestedTeamIds = headerTeamId
+      ? headerTeamId
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [];
 
     if (!userId || !tenantId) {
       return { permissions: [] };
@@ -138,7 +145,14 @@ export class AuthController {
       where: {
         userId,
         tenantId,
-        teamId: null, // Only tenant-wide roles for admin pages
+        ...(requestedTeamIds.length > 0
+          ? {
+              OR: [
+                { teamId: null },
+                { teamId: { in: requestedTeamIds } },
+              ],
+            }
+          : {}),
       },
       include: {
         role: {
@@ -162,7 +176,14 @@ export class AuthController {
       where: {
         userId,
         tenantId,
-        teamId: null,
+        ...(requestedTeamIds.length > 0
+          ? {
+              OR: [
+                { teamId: null },
+                { teamId: { in: requestedTeamIds } },
+              ],
+            }
+          : {}),
       },
       include: { permission: true },
     });

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frontend Modular DRY"
+  short_description: "Reusable modular frontend patterns"
+  default_prompt: "Use $frontend-modular-dry to refactor this frontend work into reusable components, hooks, and utilities."

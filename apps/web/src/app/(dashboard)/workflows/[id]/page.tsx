@@ -2,12 +2,41 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
+import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import { LiveExecutionMonitor } from '@/components/workflows/live-execution-monitor';
 import { useExecutionStore } from '@/stores/workflow-execution-store';
 import { ArrowBigLeft, Settings } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+
+type WorkflowDateRange = {
+  type?: 'rolling' | 'relative' | 'absolute';
+  offsetDays?: number;
+  days?: number;
+  since?: string;
+  until?: string;
+};
+
+type WorkflowConfig = {
+  dateRange?: WorkflowDateRange;
+  sources?: {
+    meta?: { enabled?: boolean; dateRange?: WorkflowDateRange };
+    pos?: { enabled?: boolean; dateRange?: WorkflowDateRange };
+  };
+  rateLimit?: {
+    metaDelayMs?: number;
+    posDelayMs?: number;
+  };
+};
+
+type WorkflowExecutionError = {
+  date?: string;
+  source?: string;
+  accountId?: string;
+  shopId?: string;
+  error?: string;
+  message?: string;
+};
 
 interface Workflow {
   id: string;
@@ -15,7 +44,7 @@ interface Workflow {
   description?: string;
   enabled: boolean;
   schedule?: string | null;
-  config: any;
+  config: WorkflowConfig;
   createdAt: string;
   updatedAt: string;
   lastRunAt?: string | null;
@@ -32,10 +61,22 @@ interface WorkflowExecution {
   daysProcessed: number;
   metaFetched: number;
   posFetched: number;
-  errors: any[];
+  errors: WorkflowExecutionError[];
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
+}
+
+function parseErrorMessage(error: unknown, fallback: string) {
+  if (!error || typeof error !== 'object') return fallback;
+  const maybeError = error as {
+    response?: { data?: { message?: unknown } };
+    message?: unknown;
+  };
+  const responseMessage = maybeError.response?.data?.message;
+  if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) return responseMessage;
+  if (typeof maybeError.message === 'string' && maybeError.message.trim().length > 0) return maybeError.message;
+  return fallback;
 }
 
 function getDateRangeLabel(workflow?: Workflow) {
@@ -145,7 +186,6 @@ function ExecutionCard({
 }
 
 export default function WorkflowDetailPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
   const { addToast } = useToast();
   const workflowId = params.id;
 
@@ -172,8 +212,8 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
         ]);
         setWorkflow(workflowRes.data);
         setExecutions(execRes.data || []);
-      } catch (err: any) {
-        setError(err.response?.data?.message || err.message || 'Failed to load workflow');
+      } catch (error: unknown) {
+        setError(parseErrorMessage(error, 'Failed to load workflow'));
       } finally {
         setIsLoading(false);
       }
@@ -189,8 +229,8 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
       await apiClient.post(`/workflows/${workflowId}/executions/${executionId}/cancel`);
       const execRes = await apiClient.get(`/workflows/${workflowId}/executions`);
       setExecutions(execRes.data || []);
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to cancel execution');
+    } catch (error: unknown) {
+      setError(parseErrorMessage(error, 'Failed to cancel execution'));
     } finally {
       setCancelling((prev) => ({ ...prev, [executionId]: false }));
     }
@@ -203,10 +243,10 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
       await apiClient.post(`/workflows/${workflowId}/trigger`, {});
       const execRes = await apiClient.get(`/workflows/${workflowId}/executions`);
       setExecutions(execRes.data || []);
-    } catch (err: any) {
+    } catch (error: unknown) {
       addToast(
         'error',
-        err.response?.data?.message || err.message || 'Failed to trigger workflow',
+        parseErrorMessage(error, 'Failed to trigger workflow'),
       );
     } finally {
       setTriggering(false);
@@ -214,19 +254,13 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-600"></div>
-      </div>
-    );
+    return <LoadingCard label="Loading workflow..." />;
   }
 
   if (error || !workflow) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-          <p className="text-sm text-red-600">Error: {error || 'Workflow not found'}</p>
-        </div>
+        <AlertBanner tone="error" message={error || 'Workflow not found'} />
         <Link
           href="/workflows"
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition"

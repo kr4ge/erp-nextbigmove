@@ -30,18 +30,26 @@ export function LiveExecutionMonitor({ executionId }: { executionId: string }) {
         : execution.activeDay ?? Math.min(completedDays + 1, totalDays);
   const metaDisplay = `${execution.metaFetched || 0}`;
   const posDisplay = `${execution.posFetched || 0}`;
-  const renderEvent = (evt: { event: string; data: any }) => {
+  const renderEvent = (evt: { event: string; data: unknown }) => {
+    const data =
+      evt.data && typeof evt.data === 'object'
+        ? (evt.data as Record<string, unknown>)
+        : {};
     if (evt.event === 'meta_fetched') {
-      const account = evt.data?.accountId ? `acct ${evt.data.accountId}` : 'meta';
-      const rows = evt.data?.count ?? 0;
+      const accountId = data.accountId;
+      const count = data.count;
+      const account = accountId ? `acct ${String(accountId)}` : 'meta';
+      const rows = Number(count ?? 0);
       return `${account} rows: ${rows}`;
     }
     if (evt.event === 'pos_fetched') {
-      const shop = evt.data?.shopId ? `shop ${evt.data.shopId}` : 'pos';
-      const rows = evt.data?.count ?? 0;
+      const shopId = data.shopId;
+      const count = data.count;
+      const shop = shopId ? `shop ${String(shopId)}` : 'pos';
+      const rows = Number(count ?? 0);
       return `${shop} rows: ${rows}`;
     }
-    return `${evt.event}: ${JSON.stringify(evt.data)}`;
+    return `${evt.event}: ${JSON.stringify(evt.data ?? {})}`;
   };
 
   return (

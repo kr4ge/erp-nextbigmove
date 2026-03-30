@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backend Webhook Queue Patterns"
+  short_description: "Reliable webhook and queue workflows"
+  default_prompt: "Use $backend-webhook-queue-patterns to implement this webhook/processor change with idempotent queue-safe design."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backend Orders Confirmation"
+  short_description: "Queue-safe confirmation order updates"
+  default_prompt: "Use $backend-orders-confirmation to implement this confirmation-order backend change with lock, queue, and webhook-safe behavior."

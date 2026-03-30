@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode } from "react";
 
 type Props = {
   title: string;
@@ -7,14 +7,27 @@ type Props = {
   actions?: ReactNode;
 };
 
-export function PageHeader({ title, description, breadcrumbs, actions }: Props) {
+export function PageHeader({
+  title,
+  description,
+  breadcrumbs,
+  actions,
+}: Props) {
   return (
-    <div className="mb-8 flex flex-col gap-4 border-b border-[#E2E8F0] pb-4">
-      {breadcrumbs && <div className="text-sm text-[#475569]">{breadcrumbs}</div>}
+    <div className="mb-6 flex flex-col gap-3 border-b border-slate-200 pb-3">
+      {breadcrumbs && (
+        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          {breadcrumbs}
+        </div>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold text-[#0F172A]">{title}</h1>
-          {description && <p className="mt-2 text-sm text-[#475569]">{description}</p>}
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            {title}
+          </h1>
+          {description && (
+            <p className="mt-1 text-sm text-slate-600">{description}</p>
+          )}
         </div>
         {actions && <div className="flex gap-2">{actions}</div>}
       </div>

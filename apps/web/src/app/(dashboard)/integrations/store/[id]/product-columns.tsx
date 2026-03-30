@@ -1,9 +1,7 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { useState } from "react";
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -13,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal, Trash2, DollarSign } from "lucide-react";
-import { CogsModal } from "@/components/cogs/cogs-modal";
 
 export interface Product {
   id: string;
@@ -25,7 +22,7 @@ export interface Product {
 }
 
 export function getProductColumns(
-  storeId: string,
+  _storeId: string,
   onManageCogs: (product: Product) => void
 ): ColumnDef<Product>[] {
   return [

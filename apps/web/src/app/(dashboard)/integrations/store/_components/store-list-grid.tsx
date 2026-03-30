@@ -1,0 +1,103 @@
+'use client';
+
+import Image from 'next/image';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import type { StoreCard } from '../_types/store-list';
+import { getStoreInitials } from '../_utils/store-list';
+
+interface StoreListGridProps {
+  stores: StoreCard[];
+  teamNames: Record<string, string>;
+  isFetching: boolean;
+  page: number;
+  pageCount: number;
+  onOpenStore: (storeId: string) => void;
+  onPrevPage: () => void;
+  onNextPage: () => void;
+}
+
+export function StoreListGrid({
+  stores,
+  teamNames,
+  isFetching,
+  page,
+  pageCount,
+  onOpenStore,
+  onPrevPage,
+  onNextPage,
+}: StoreListGridProps) {
+  return (
+    <>
+      {isFetching ? <div className="text-sm text-[#475569]">Updating results...</div> : null}
+
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+        {stores.map((store) => {
+          const displayName = store.shopName || store.name;
+          return (
+            <Card key={store.id} className="flex flex-col">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center rounded-full bg-[#FEF2F2] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#EF4444]">
+                  Shop
+                </span>
+                <span className="rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-medium text-[#475569]">
+                  {store.teamId ? `Team: ${teamNames[store.teamId] || store.teamId}` : 'All teams'}
+                </span>
+              </div>
+
+              <div className="mt-6 flex flex-col items-center text-center">
+                {store.shopAvatarUrl ? (
+                  <Image
+                    src={store.shopAvatarUrl}
+                    alt={displayName}
+                    width={64}
+                    height={64}
+                    className="h-16 w-16 rounded-full border border-[#E2E8F0] object-cover shadow-sm"
+                  />
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#F1F5F9] text-xl font-semibold text-[#475569]">
+                    {getStoreInitials(displayName)}
+                  </div>
+                )}
+                <h3 className="mt-4 text-lg font-semibold text-[#0F172A]">{displayName}</h3>
+                <p className="mt-1 text-sm text-[#475569]">Pancake POS</p>
+                {store.description ? (
+                  <p className="mt-1 line-clamp-2 text-xs text-[#94A3B8]">{store.description}</p>
+                ) : null}
+                {store.shopId ? (
+                  <p className="mt-2 text-xs text-[#94A3B8]">Shop ID: {store.shopId}</p>
+                ) : null}
+              </div>
+
+              <div className="mt-6">
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => onOpenStore(store.id)}
+                >
+                  Enter
+                </Button>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      {pageCount > 1 ? (
+        <div className="flex items-center justify-between rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#475569]">
+          <div>
+            Showing page {page} of {pageCount}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" disabled={page <= 1} onClick={onPrevPage}>
+              Previous
+            </Button>
+            <Button variant="ghost" size="sm" disabled={page >= pageCount} onClick={onNextPage}>
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}

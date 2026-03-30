@@ -3,829 +3,89 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronUp, ClipboardCopy, CreditCard, Link2, MapPin, MessageCircle, Package, PencilLine, PhoneCall, Search, StickyNote, Tag, User, Wifi, X } from 'lucide-react';
-import apiClient from '@/lib/api-client';
-import { workflowSocket } from '@/lib/socket-client';
+import {
+  ChevronDown,
+  ChevronUp,
+  ClipboardCopy,
+  CreditCard,
+  Link2,
+  MapPin,
+  MessageCircle,
+  Package,
+  PencilLine,
+  PhoneCall,
+  Search,
+  StickyNote,
+  Tag,
+  User,
+  Wifi,
+  X,
+} from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 
-const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
-
-const TIMEZONE = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Manila';
-const GEO_COUNTRY_CODE = '63';
-
-const formatDateInTimezone = (date: Date) =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date);
-
-const parseYmdToLocalDate = (value: string) => {
-  const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) return new Date();
-  return new Date(year, month - 1, day);
-};
-
-const toSafeDate = (value: Date | string | null | undefined): Date => {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
-    return parseYmdToLocalDate(value);
-  }
-  return new Date();
-};
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    maximumFractionDigits: 2,
-  }).format(Number.isFinite(value) ? value : 0);
-
-type OrderStatusMeta = {
-  label: string;
-  color: string;
-};
-
-const ORDER_STATUS_LABELS: Record<number, OrderStatusMeta> = {
-  0: { label: 'New', color: '#64748B' },
-  1: { label: 'Confirmed', color: '#003EB3' },
-  2: { label: 'Shipped', color: '#FA8C16' },
-  3: { label: 'Delivered', color: '#52C41A' },
-  4: { label: 'Returning', color: '#E0695C' },
-  5: { label: 'Returned', color: '#A8071A' },
-  6: { label: 'Canceled', color: '#F5222D' },
-  7: { label: 'Deleted recently', color: '#434343' },
-  8: { label: 'Packaging', color: '#722ED1' },
-  9: { label: 'Waiting for pick up', color: '#EB2F96' },
-  11: { label: 'Restocking', color: '#AD8B00' },
-  12: { label: 'Wait for printing', color: '#13C2C2' },
-  13: { label: 'Printed', color: '#08979C' },
-  15: { label: 'Partial return', color: '#531DAB' },
-  16: { label: 'Collected money', color: '#237804' },
-  17: { label: 'Waiting for confirmation', color: '#1677FF' },
-  20: { label: 'Purchased', color: '#389E0D' },
-};
-
-const FALLBACK_STATUS_META: OrderStatusMeta = {
-  label: '—',
-  color: '#64748B',
-};
-
-const getStatusMeta = (
-  status: number | string | null,
-  isAbandoned?: boolean | null,
-): OrderStatusMeta => {
-  const normalizedStatus = typeof status === 'string' ? Number(status) : status;
-
-  if (normalizedStatus === 0 && isAbandoned) {
-    return { label: 'Abandoned', color: ORDER_STATUS_LABELS[0].color };
-  }
-
-  if (typeof normalizedStatus === 'number' && Number.isFinite(normalizedStatus)) {
-    return ORDER_STATUS_LABELS[normalizedStatus] || { label: String(normalizedStatus), color: FALLBACK_STATUS_META.color };
-  }
-
-  if (normalizedStatus === null || normalizedStatus === undefined) return FALLBACK_STATUS_META;
-  return { label: String(normalizedStatus), color: FALLBACK_STATUS_META.color };
-};
-
-const formatStatusLabel = (
-  status: number | string | null,
-  _statusName?: string | null,
-  isAbandoned?: boolean | null,
-) => {
-  return getStatusMeta(status, isAbandoned).label;
-};
-
-const getHistoryStatusBadgeColor = (
-  status: number | string | null,
-  isAbandoned?: boolean | null,
-): string => {
-  return getStatusMeta(status, isAbandoned).color;
-};
-
-const StatusBadge = ({
-  status,
-  statusName,
-  isAbandoned,
-  className,
-  showChevron = true,
-}: {
-  status: number | string | null;
-  statusName?: string | null;
-  isAbandoned?: boolean | null;
-  className?: string;
-  showChevron?: boolean;
-}) => {
-  const statusLabel = formatStatusLabel(status, statusName, isAbandoned);
-  const statusColor = getHistoryStatusBadgeColor(status, isAbandoned);
-
-  return (
-    <div
-      className={`inline-flex items-center justify-between gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold text-white shadow-sm ${
-        className || ''
-      }`}
-      style={{ backgroundColor: statusColor }}
-    >
-      <span className="truncate">{statusLabel}</span>
-      {showChevron ? <ChevronDown className="h-3 w-3 shrink-0 text-white/90" /> : null}
-    </div>
-  );
-};
-
-const toNonNegativeNumber = (value: number | null | undefined): number => {
-  const num = Number(value ?? 0);
-  if (!Number.isFinite(num) || num < 0) return 0;
-  return num;
-};
-
-const computeReturnRate = (success: number | null | undefined, fail: number | null | undefined): number | null => {
-  const successCount = toNonNegativeNumber(success);
-  const failCount = toNonNegativeNumber(fail);
-  const total = successCount + failCount;
-  if (total <= 0) return null;
-  return (failCount / total) * 100;
-};
-
-const formatReturnRate = (success: number | null | undefined, fail: number | null | undefined): string => {
-  const rate = computeReturnRate(success, fail);
-  if (rate === null) return '—';
-  return `${rate.toFixed(2)}%`;
-};
-
-const getReturnRateColorClass = (success: number | null | undefined, fail: number | null | undefined): string => {
-  const successCount = toNonNegativeNumber(success);
-  const failCount = toNonNegativeNumber(fail);
-  const total = successCount + failCount;
-  const rate = computeReturnRate(successCount, failCount);
-
-  if (total <= 0 || rate === null) return 'text-slate-900';
-
-  if (successCount === 0) {
-    if (failCount >= 3) return 'text-red-600';
-    if (failCount === 2) return 'text-amber-500';
-    if (failCount === 1) return 'text-emerald-600';
-  }
-
-  if (total >= 3) {
-    if (rate <= 69) return 'text-emerald-600';
-    if (rate <= 80) return 'text-amber-500';
-    return 'text-red-600';
-  }
-
-  if (rate <= 69) return 'text-emerald-600';
-  if (rate <= 80) return 'text-amber-500';
-  return 'text-red-600';
-};
-
-type ShopOption = {
-  shop_id: string;
-  shop_name: string;
-};
-
-type ConfirmationOrderTagDetail = {
-  id: string | null;
-  name: string;
-};
-
-type ConfirmationOrderRow = {
-  id: string;
-  store_id?: string | null;
-  shop_id: string;
-  shop_name: string;
-  pos_order_id: string;
-  date_local: string;
-  inserted_at: string;
-  inserted_at_local?: string;
-  status: number | null;
-  status_name: string | null;
-  is_abandoned?: boolean | null;
-  cod: number;
-  reports_by_phone_fail: number | null;
-  reports_by_phone_success: number | null;
-  customer_name: string | null;
-  customer_phone: string | null;
-  customer_address: string | null;
-  item_data?: unknown;
-  order_snapshot?: unknown;
-  warehouse_id?: string | null;
-  warehouse_name?: string | null;
-  has_duplicated_phone?: boolean;
-  has_duplicated_ip?: boolean;
-  tags: string[];
-  tags_detail?: ConfirmationOrderTagDetail[];
-};
-
-type ConfirmationResponse = {
-  items: ConfirmationOrderRow[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    pageCount: number;
-  };
-  filters: {
-    shops: ShopOption[];
-  };
-  selected: {
-    start_date: string;
-    end_date: string;
-    shop_ids: string[];
-    search: string;
-  };
-};
-
-type PhoneHistoryResponse = {
-  items: ConfirmationOrderRow[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    pageCount: number;
-  };
-  selected: {
-    phone: string;
-    canonical_phone: string;
-  };
-};
-
-type TagOptionItem = {
-  tag_id: string;
-  name: string;
-};
-
-type TagOptionGroup = {
-  group_id: string;
-  group_name: string;
-  tags: TagOptionItem[];
-};
-
-type ConfirmationTagOptionsResponse = {
-  order_id: string;
-  shop_id: string;
-  groups: TagOptionGroup[];
-  individual: TagOptionItem[];
-  total: number;
-};
-
-type ProductOptionItem = {
-  variation_id: string;
-  product_id: string;
-  custom_id: string | null;
-  name: string;
-  retail_price: number;
-  image_url: string | null;
-};
-
-type ConfirmationProductOptionsResponse = {
-  order_id: string;
-  shop_id: string;
-  warehouse_id: string | null;
-  warehouse_name: string | null;
-  items: ProductOptionItem[];
-  total: number;
-};
-
-type GeoProvinceOption = {
-  id: string;
-  name: string;
-  name_en?: string | null;
-};
-
-type GeoDistrictOption = {
-  id: string;
-  name: string;
-  name_en?: string | null;
-};
-
-type GeoCommuneOption = {
-  id: string;
-  district_id: string;
-  name: string;
-  name_en?: string | null;
-};
-
-type GeoProvincesResponse = {
-  items?: GeoProvinceOption[];
-};
-
-type GeoDistrictsResponse = {
-  items?: GeoDistrictOption[];
-};
-
-type GeoCommunesResponse = {
-  items?: GeoCommuneOption[];
-};
-
-const normalizeTagNameKey = (value: string): string => value.trim().toLowerCase();
-
-const normalizeTagDetails = (
-  tagsDetailRaw: unknown,
-  fallbackTagsRaw: unknown,
-): ConfirmationOrderTagDetail[] => {
-  const normalized: ConfirmationOrderTagDetail[] = [];
-  const seen = new Set<string>();
-
-  if (Array.isArray(tagsDetailRaw)) {
-    for (const entry of tagsDetailRaw) {
-      const source = toRecord(entry);
-      if (!source) continue;
-      const name = toText(source.name).trim();
-      if (!name) continue;
-      const idText = toText(source.id).trim();
-      const id = idText || null;
-      const key = `${id || ''}|${normalizeTagNameKey(name)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      normalized.push({ id, name });
-    }
-  }
-
-  if (normalized.length > 0) return normalized;
-
-  if (Array.isArray(fallbackTagsRaw)) {
-    for (const entry of fallbackTagsRaw) {
-      const name = toText(entry).trim();
-      if (!name) continue;
-      const key = `|${normalizeTagNameKey(name)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      normalized.push({ id: null, name });
-    }
-  }
-
-  return normalized;
-};
-
-type ConfirmationResponseItemRaw = ConfirmationOrderRow & {
-  isAbandoned?: boolean | null;
-  status?: number | string | null;
-};
-
-type ParsedSnapshotItem = {
-  id: string;
-  variationId: string;
-  warehouseId: string;
-  quantity: number;
-  name: string;
-  productDisplayId: string;
-  displayId: string;
-  retailPrice: number;
-  imageUrl: string;
-};
-
-type ParsedOrderSnapshotCustomer = {
-  name: string;
-  phone: string;
-  email: string;
-  dateOfBirth: string;
-  gender: string;
-  conversationLink: string;
-  shopCustomerAddresses: ParsedDeliveryAddress[];
-  succeedOrderCount: number;
-  orderCount: number;
-};
-
-type ParsedDeliveryAddress = {
-  id: string;
-  fullName: string;
-  phoneNumber: string;
-  address: string;
-  fullAddress: string;
-  communeName: string;
-  districtName: string;
-  provinceName: string;
-  communeId: string;
-  districtId: string;
-  provinceId: string;
-  countryCode: string;
-  postCode: string;
-  payloadWithoutId: Record<string, unknown>;
-};
-
-type ParsedOrderSnapshotPayment = {
-  totalDiscount: number;
-  shippingFee: number;
-  surcharge: number;
-  bankPaymentsRaw: unknown;
-  bankTransfer: number;
-};
-
-type ParsedOrderSnapshot = {
-  note: string;
-  notePrint: string;
-  warehouseId: string;
-  items: ParsedSnapshotItem[];
-  customer: ParsedOrderSnapshotCustomer;
-  shippingAddress: ParsedDeliveryAddress;
-  payment: ParsedOrderSnapshotPayment;
-  orderLink: string;
-  conversationId: string;
-  duplicatedPhone: boolean;
-  duplicatedIp: boolean;
-};
-
-const CONFIRMATION_STATUS_OPTIONS = [
-  { label: 'Restocking', value: 11 },
-  { label: 'Cancel', value: 6 },
-  { label: 'Delete', value: 7 },
-  { label: 'Confirm', value: 1 },
-] as const;
-
-const getConfirmationStatusOptionLabel = (value: number | null): string | null => {
-  if (typeof value !== 'number') return null;
-  const found = CONFIRMATION_STATUS_OPTIONS.find((item) => item.value === value);
-  return found?.label || null;
-};
-
-const normalizeLineBreaks = (value: string) => value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-const toApiLineBreaks = (value: string) =>
-  normalizeLineBreaks(value).replace(/\n/g, '\r\n');
-
-const toRecord = (value: unknown): Record<string, unknown> | null => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-};
-
-const toText = (value: unknown): string => {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-  return '';
-};
-
-const hasNonEmptyText = (value: string | null | undefined): boolean =>
-  typeof value === 'string' && value.trim().length > 0;
-
-const composeDeliveryFullAddress = (value: Pick<
+import { StatusBadge } from '../_components/status-badge';
+import { ReturnRateCell } from '../_components/return-rate-cell';
+import { useConfirmationRealtime } from '../_hooks/use-confirmation-realtime';
+import {
+  fetchConfirmationOrders,
+  fetchConfirmationPhoneHistory,
+  fetchConfirmationProductOptions,
+  fetchConfirmationTagOptions,
+  fetchGeoCommunes,
+  fetchGeoDistricts,
+  fetchGeoProvinces,
+  syncStoreProductsByShop,
+  syncStoreTags,
+  syncStoreWarehouses,
+  updateConfirmationOrder,
+} from '../_services/confirmation-api';
+import type {
+  ConfirmationOrderRow,
+  ConfirmationOrderTagDetail,
+  ConfirmationTagOptionsResponse,
+  GeoCommuneOption,
+  GeoDistrictOption,
+  GeoProvinceOption,
   ParsedDeliveryAddress,
-  'address' | 'communeName' | 'districtName' | 'provinceName'
->): string => {
-  const street = value.address.trim();
-  const area = [value.communeName, value.districtName, value.provinceName]
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0)
-    .join(', ');
+  ParsedSnapshotItem,
+  ProductOptionItem,
+  ShopOption,
+  TagOptionItem,
+} from '../_types/confirmation';
+import { CONFIRMATION_STATUS_OPTIONS, GEO_COUNTRY_CODE } from '../_utils/constants';
+import {
+  buildBankPaymentsPayloadFromTransferAmount,
+  buildShippingAddressPayload,
+  cloneDeliveryAddress,
+  composeDeliveryFullAddress,
+  formatCurrency,
+  formatDateInTimezone,
+  getHistoryProductSummary,
+  hasNonEmptyText,
+  hasNumericDraftChanged,
+  hasRowProductItems,
+  normalizeLineBreaks,
+  normalizeItemsForUpdatePayload,
+  normalizeTagDetails,
+  normalizeTagNameKey,
+  parseApiErrorMessage,
+  parseNumericDraftInput,
+  parseOrderSnapshot,
+  parseYmdToLocalDate,
+  resolveNumericDraftForUi,
+  toApiLineBreaks,
+  toSafeDate,
+  toComparableShippingAddress,
+} from '../_utils/confirmation-helpers';
+import {
+  formatStatusLabel,
+  getConfirmationStatusOptionLabel,
+  getHistoryStatusBadgeColor,
+} from '../_utils/status';
 
-  if (street && area) return `${street}, ${area}`;
-  return street || area;
-};
-
-const toCount = (value: unknown): number => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-};
-
-const toAmount = (value: unknown): number => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-};
-
-const parseNumericDraftInput = (value: string): number | null => {
-  const trimmed = value.trim();
-  if (!trimmed) return 0;
-  const normalized = trimmed.replace(/,/g, '');
-  const parsed = Number.parseFloat(normalized);
-  if (!Number.isFinite(parsed)) return null;
-  return parsed;
-};
-
-const resolveNumericDraftForUi = (draftValue: string | null, fallbackValue: number): number => {
-  if (draftValue === null) return fallbackValue;
-  const parsed = parseNumericDraftInput(draftValue);
-  if (parsed === null) return fallbackValue;
-  return parsed;
-};
-
-const hasNumericDraftChanged = (draftValue: string | null, fallbackValue: number): boolean => {
-  if (draftValue === null) return false;
-  const parsed = parseNumericDraftInput(draftValue);
-  if (parsed === null) return false;
-  return Math.abs(parsed - fallbackValue) > 0.0001;
-};
-
-const buildBankPaymentsPayloadFromTransferAmount = (
-  currentRaw: unknown,
-  transferAmount: number,
-): unknown => {
-  if (currentRaw && typeof currentRaw === 'object' && !Array.isArray(currentRaw)) {
-    const next = { ...(currentRaw as Record<string, unknown>) };
-    const hasSnake = Object.prototype.hasOwnProperty.call(next, 'bank_transfer');
-    const hasCamel = Object.prototype.hasOwnProperty.call(next, 'bankTransfer');
-    if (hasSnake || hasCamel) {
-      if (hasSnake) next.bank_transfer = transferAmount;
-      if (hasCamel) next.bankTransfer = transferAmount;
-      return next;
-    }
-    const numericKeys = Object.keys(next).filter((key) => {
-      const value = next[key];
-      if (typeof value === 'number') return Number.isFinite(value);
-      if (typeof value === 'string') {
-        const parsed = Number.parseFloat(value);
-        return Number.isFinite(parsed);
-      }
-      return false;
-    });
-    if (numericKeys.length === 1) {
-      next[numericKeys[0]] = transferAmount;
-      return next;
-    }
-    return {
-      ...next,
-      bank_transfer: transferAmount,
-    };
-  }
-
-  return { bank_transfer: transferAmount };
-};
-
-const sumNumericValuesDeep = (value: unknown, depth = 0): number => {
-  if (depth > 4) return 0;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  if (Array.isArray(value)) {
-    return value.reduce((sum, entry) => sum + sumNumericValuesDeep(entry, depth + 1), 0);
-  }
-  if (value && typeof value === 'object') {
-    return Object.values(value as Record<string, unknown>).reduce<number>(
-      (sum, entry) => sum + sumNumericValuesDeep(entry, depth + 1),
-      0,
-    );
-  }
-  return 0;
-};
-
-const toBooleanFlag = (value: unknown): boolean => {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value === 1;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    return normalized === 'true' || normalized === '1' || normalized === 'yes';
-  }
-  return false;
-};
-
-const extractDuplicateFlagsFromSnapshot = (
-  snapshotValue: unknown,
-): { duplicatedPhone: boolean; duplicatedIp: boolean } => {
-  const snapshot = toRecord(snapshotValue);
-  return {
-    duplicatedPhone: toBooleanFlag(snapshot?.duplicated_phone ?? snapshot?.duplicatedPhone),
-    duplicatedIp: toBooleanFlag(snapshot?.duplicated_ip ?? snapshot?.duplicatedIp),
-  };
-};
-
-const parseSnapshotItems = (value: unknown): ParsedSnapshotItem[] => {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => {
-      const item = toRecord(entry);
-      if (!item) return null;
-      const variation = toRecord(item.variation_info || item.variationInfo);
-      const images = Array.isArray(variation?.images) ? variation.images : [];
-      const firstImage = images.find((img) => typeof img === 'string' && img.trim().length > 0);
-
-      return {
-        id: toText(item.id),
-        variationId: toText(
-          item.variation_id ||
-            item.variationId ||
-            variation?.id ||
-            item.id,
-        ),
-        warehouseId: toText(
-          item.warehouse_id ||
-            item.warehouseId ||
-            variation?.warehouse_id ||
-            variation?.warehouseId,
-        ),
-        quantity: toCount(item.quantity),
-        name: toText(variation?.name || item.note_product || item.variation_name),
-        productDisplayId: toText(variation?.product_display_id || item.product_display_id),
-        displayId: toText(variation?.display_id || item.display_id),
-        retailPrice: toAmount(variation?.retail_price || item.retail_price),
-        imageUrl: typeof firstImage === 'string' ? firstImage : '',
-      };
-    })
-    .filter((entry): entry is ParsedSnapshotItem => !!entry);
-};
-
-const removeIdFromAddressPayload = (value: Record<string, unknown> | null): Record<string, unknown> => {
-  if (!value) return {};
-  const next = { ...value };
-  delete (next as { id?: unknown }).id;
-  return next;
-};
-
-const parseDeliveryAddress = (value: Record<string, unknown> | null): ParsedDeliveryAddress => {
-  const address = value || {};
-  const payloadWithoutId = removeIdFromAddressPayload(value);
-
-  return {
-    id: toText(address.id),
-    fullName: toText(address.full_name || address.fullName),
-    phoneNumber: toText(address.phone_number || address.phoneNumber),
-    address: toText(address.address),
-    fullAddress: toText(address.full_address || address.fullAddress),
-    communeName: toText(address.commune_name || address.commnue_name || address.communeName),
-    districtName: toText(address.district_name || address.districtName),
-    provinceName: toText(address.province_name || address.provinceName),
-    communeId: toText(address.commune_id || address.communeId),
-    districtId: toText(address.district_id || address.districtId),
-    provinceId: toText(address.province_id || address.provinceId),
-    countryCode: toText(address.country_code || address.countryCode),
-    postCode: toText(address.post_code || address.postCode),
-    payloadWithoutId,
-  };
-};
-
-const parseCustomerShopAddresses = (value: unknown): ParsedDeliveryAddress[] => {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => parseDeliveryAddress(toRecord(entry)))
-    .filter((entry) => {
-      return (
-        hasNonEmptyText(entry.fullAddress) ||
-        hasNonEmptyText(entry.address) ||
-        hasNonEmptyText(entry.phoneNumber) ||
-        hasNonEmptyText(entry.fullName)
-      );
-    });
-};
-
-const cloneDeliveryAddress = (value: ParsedDeliveryAddress): ParsedDeliveryAddress => ({
-  ...value,
-  payloadWithoutId: { ...(value.payloadWithoutId || {}) },
-});
-
-const toNullableShippingText = (value: string): string | null => {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const toNullableShippingCountryCode = (value: string): number | string | null => {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const numeric = Number(trimmed);
-  return Number.isFinite(numeric) ? numeric : trimmed;
-};
-
-const buildShippingAddressPayload = (value: ParsedDeliveryAddress): Record<string, unknown> => {
-  const payload: Record<string, unknown> = {
-    ...(value.payloadWithoutId || {}),
-    full_name: toNullableShippingText(value.fullName),
-    phone_number: toNullableShippingText(value.phoneNumber),
-    address: toNullableShippingText(value.address),
-    full_address: toNullableShippingText(value.fullAddress),
-    commune_name: toNullableShippingText(value.communeName),
-    district_name: toNullableShippingText(value.districtName),
-    province_name: toNullableShippingText(value.provinceName),
-    commune_id: toNullableShippingText(value.communeId),
-    district_id: toNullableShippingText(value.districtId),
-    province_id: toNullableShippingText(value.provinceId),
-    country_code: toNullableShippingCountryCode(value.countryCode),
-    post_code: toNullableShippingText(value.postCode),
-  };
-  delete (payload as { id?: unknown }).id;
-  return payload;
-};
-
-const toComparableShippingAddress = (value: ParsedDeliveryAddress): Record<string, string> => ({
-  full_name: value.fullName,
-  phone_number: value.phoneNumber,
-  address: value.address,
-  full_address: value.fullAddress,
-  commune_name: value.communeName,
-  district_name: value.districtName,
-  province_name: value.provinceName,
-  commune_id: value.communeId,
-  district_id: value.districtId,
-  province_id: value.provinceId,
-  country_code: value.countryCode,
-  post_code: value.postCode,
-});
-
-const parseOrderSnapshot = (value: unknown): ParsedOrderSnapshot => {
-  const snapshot = toRecord(value);
-  const customerRaw = toRecord(snapshot?.customer);
-  const shippingRaw = toRecord(snapshot?.shipping_address || snapshot?.shippingAddress);
-  const bankPaymentsRaw = snapshot?.bank_payments ?? snapshot?.bankPayments ?? null;
-  const duplicateFlags = extractDuplicateFlagsFromSnapshot(snapshot);
-
-  const phoneFromList = Array.isArray(customerRaw?.phone_numbers)
-    ? toText(customerRaw?.phone_numbers[0])
-    : '';
-
-  return {
-    note: normalizeLineBreaks(toText(snapshot?.note)),
-    notePrint: normalizeLineBreaks(toText(snapshot?.note_print || snapshot?.notePrint)),
-    warehouseId: toText(snapshot?.warehouse_id || snapshot?.warehouseId),
-    items: parseSnapshotItems(snapshot?.items),
-    customer: {
-      name: toText(customerRaw?.name),
-      phone: toText(customerRaw?.phone_number) || phoneFromList,
-      email: Array.isArray(customerRaw?.emails) ? toText(customerRaw?.emails[0]) : '',
-      dateOfBirth: toText(customerRaw?.date_of_birth),
-      gender: toText(customerRaw?.gender),
-      conversationLink: toText(customerRaw?.conversation_link || customerRaw?.conversationLink),
-      shopCustomerAddresses: parseCustomerShopAddresses(customerRaw?.shop_customer_addresses),
-      succeedOrderCount: toCount(customerRaw?.succeed_order_count),
-      orderCount: toCount(customerRaw?.order_count),
-    },
-    shippingAddress: parseDeliveryAddress(shippingRaw),
-    payment: {
-      totalDiscount: toAmount(snapshot?.total_discount),
-      shippingFee: toAmount(snapshot?.shipping_fee),
-      surcharge: toAmount(snapshot?.surcharge),
-      bankPaymentsRaw,
-      bankTransfer: sumNumericValuesDeep(bankPaymentsRaw),
-    },
-    orderLink: toText(snapshot?.order_link || snapshot?.orderLink),
-    conversationId: toText(snapshot?.conversation_id || snapshot?.conversationId),
-    duplicatedPhone: duplicateFlags.duplicatedPhone,
-    duplicatedIp: duplicateFlags.duplicatedIp,
-  };
-};
-
-const getHistoryProductSummary = (row: Pick<ConfirmationOrderRow, 'order_snapshot' | 'item_data'>): string => {
-  const snapshotItems = parseOrderSnapshot(row.order_snapshot).items;
-  if (snapshotItems.length > 0) {
-    return snapshotItems
-      .map((item) => {
-        const itemName = item.name || item.productDisplayId || item.displayId || 'Item';
-        const quantity = item.quantity > 0 ? item.quantity : 1;
-        return `${itemName} x${quantity}`;
-      })
-      .join(', ');
-  }
-
-  if (Array.isArray(row.item_data)) {
-    const fallbackProducts = row.item_data
-      .map((entry) => {
-        const item = toRecord(entry);
-        if (!item) return '';
-        const itemName = toText(item.variationName || item.variation_name || item.name || item.note_product);
-        const quantity = toCount(item.quantity);
-        if (!itemName) return '';
-        return `${itemName} x${quantity > 0 ? quantity : 1}`;
-      })
-      .filter((value) => value.trim().length > 0);
-
-    if (fallbackProducts.length > 0) {
-      return fallbackProducts.join(', ');
-    }
-  }
-
-  return '—';
-};
-
-const hasRowProductItems = (row: Pick<ConfirmationOrderRow, 'order_snapshot' | 'item_data'>): boolean => {
-  const snapshotItems = parseOrderSnapshot(row.order_snapshot).items;
-  if (snapshotItems.length > 0) return true;
-
-  if (!Array.isArray(row.item_data)) return false;
-  return row.item_data.some((entry) => {
-    const item = toRecord(entry);
-    if (!item) return false;
-    const productId = toText(item.productId || item.product_id);
-    const variationName = toText(item.variationName || item.variation_name || item.name || item.note_product);
-    return productId.trim().length > 0 || variationName.trim().length > 0;
-  });
-};
-
-const normalizeItemsForUpdatePayload = (
-  items: ParsedSnapshotItem[],
-): Array<{ variation_id: string; quantity: number }> => {
-  const map = new Map<string, { variation_id: string; quantity: number }>();
-  for (const item of items) {
-    const variationId = (item.variationId || item.id || '').trim();
-    if (!variationId) continue;
-    const quantity = Number.isFinite(item.quantity) && item.quantity > 0 ? Math.floor(item.quantity) : 1;
-    map.set(variationId, { variation_id: variationId, quantity });
-  }
-  return Array.from(map.values());
-};
-
-type TenantSocketPayload = {
-  tenantId?: string;
-  teamId?: string | null;
-};
-
+const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 export default function OrdersConfirmationPage() {
   const { addToast } = useToast();
   const today = formatDateInTimezone(new Date());
@@ -957,29 +217,9 @@ export default function OrdersConfirmationPage() {
         selectedShopIds.forEach((shopId) => params.append('shop_id', shopId));
       }
 
-      const response = await apiClient.get<ConfirmationResponse>(
-        `/orders/confirmation?${params.toString()}`,
-      );
-      const data = response.data;
+      const data = await fetchConfirmationOrders(params);
 
-      const normalizedItems = ((data.items || []) as ConfirmationResponseItemRaw[]).map((item) => {
-        const duplicateFlags = extractDuplicateFlagsFromSnapshot(item.order_snapshot);
-        const tagDetails = normalizeTagDetails(
-          (item as ConfirmationOrderRow).tags_detail,
-          item.tags,
-        );
-        return {
-          ...item,
-          status: typeof item.status === 'string' ? Number(item.status) : item.status,
-          is_abandoned: item.is_abandoned ?? item.isAbandoned ?? false,
-          has_duplicated_phone: duplicateFlags.duplicatedPhone,
-          has_duplicated_ip: duplicateFlags.duplicatedIp,
-          tags_detail: tagDetails,
-          tags: tagDetails.map((entry) => entry.name),
-        };
-      }) as ConfirmationOrderRow[];
-
-      setRows(normalizedItems);
+      setRows(data.items || []);
       setPagination(data.pagination || { page: 1, limit: pageSize, total: 0, pageCount: 0 });
 
       const nextShopOptions = data.filters?.shops || [];
@@ -990,14 +230,7 @@ export default function OrdersConfirmationPage() {
         setSelectedShopIds((prev) => prev.filter((shopId) => validShopIds.has(shopId)));
       }
     } catch (err: unknown) {
-      const message =
-        (typeof err === 'object' &&
-          err !== null &&
-          'response' in err &&
-          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-        (err instanceof Error ? err.message : null) ||
-        'Failed to load confirmation orders';
+      const message = parseApiErrorMessage(err, 'Failed to load confirmation orders');
       setError(message);
     } finally {
       if (!silent) setIsLoading(false);
@@ -1013,29 +246,9 @@ export default function OrdersConfirmationPage() {
       params.set('phone', phone);
       params.set('page', String(targetPage));
       params.set('limit', String(phoneHistoryPageSize));
-      const response = await apiClient.get<PhoneHistoryResponse>(
-        `/orders/confirmation/history-by-phone?${params.toString()}`,
-      );
-      const data = response.data;
+      const data = await fetchConfirmationPhoneHistory(params);
 
-      const normalizedItems = ((data.items || []) as ConfirmationResponseItemRaw[]).map((item) => {
-        const duplicateFlags = extractDuplicateFlagsFromSnapshot(item.order_snapshot);
-        const tagDetails = normalizeTagDetails(
-          (item as ConfirmationOrderRow).tags_detail,
-          item.tags,
-        );
-        return {
-          ...item,
-          status: typeof item.status === 'string' ? Number(item.status) : item.status,
-          is_abandoned: item.is_abandoned ?? item.isAbandoned ?? false,
-          has_duplicated_phone: duplicateFlags.duplicatedPhone,
-          has_duplicated_ip: duplicateFlags.duplicatedIp,
-          tags_detail: tagDetails,
-          tags: tagDetails.map((entry) => entry.name),
-        };
-      }) as ConfirmationOrderRow[];
-
-      setPhoneHistoryRows(normalizedItems);
+      setPhoneHistoryRows(data.items || []);
       setPhoneHistoryPagination(
         data.pagination || {
           page: targetPage,
@@ -1047,14 +260,7 @@ export default function OrdersConfirmationPage() {
       setPhoneHistoryCanonicalPhone(data.selected?.canonical_phone || '');
       setPhoneHistoryLookupPhone(data.selected?.phone || phone);
     } catch (err: unknown) {
-      const message =
-        (typeof err === 'object' &&
-          err !== null &&
-          'response' in err &&
-          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-        (err instanceof Error ? err.message : null) ||
-        'Failed to load phone history';
+      const message = parseApiErrorMessage(err, 'Failed to load phone history');
       setPhoneHistoryError(message);
       setPhoneHistoryRows([]);
       setPhoneHistoryPagination({
@@ -1072,26 +278,10 @@ export default function OrdersConfirmationPage() {
     setIsTagOptionsLoading(true);
     setTagOptionsError(null);
     try {
-      const response = await apiClient.get<ConfirmationTagOptionsResponse>(
-        `/orders/confirmation/${orderRowId}/tag-options`,
-      );
-      const data = response.data;
-      setTagOptions({
-        order_id: data.order_id,
-        shop_id: data.shop_id,
-        groups: Array.isArray(data.groups) ? data.groups : [],
-        individual: Array.isArray(data.individual) ? data.individual : [],
-        total: Number(data.total || 0),
-      });
+      const data = await fetchConfirmationTagOptions(orderRowId);
+      setTagOptions(data);
     } catch (err: unknown) {
-      const message =
-        (typeof err === 'object' &&
-          err !== null &&
-          'response' in err &&
-          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-        (err instanceof Error ? err.message : null) ||
-        'Failed to load tag options';
+      const message = parseApiErrorMessage(err, 'Failed to load tag options');
       setTagOptionsError(message);
       setTagOptions(null);
     } finally {
@@ -1103,24 +293,11 @@ export default function OrdersConfirmationPage() {
     setIsProductOptionsLoading(true);
     setProductOptionsError(null);
     try {
-      const params = new URLSearchParams();
-      if (searchTerm.trim()) params.set('search', searchTerm.trim());
-      params.set('limit', '20');
-      const response = await apiClient.get<ConfirmationProductOptionsResponse>(
-        `/orders/confirmation/${orderRowId}/product-options?${params.toString()}`,
-      );
-      const data = response.data;
+      const data = await fetchConfirmationProductOptions(orderRowId, searchTerm);
       setProductOptions(Array.isArray(data.items) ? data.items : []);
       setProductOptionsWarehouseName(typeof data.warehouse_name === 'string' ? data.warehouse_name : null);
     } catch (err: unknown) {
-      const message =
-        (typeof err === 'object' &&
-          err !== null &&
-          'response' in err &&
-          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-        (err instanceof Error ? err.message : null) ||
-        'Failed to load product options';
+      const message = parseApiErrorMessage(err, 'Failed to load product options');
       setProductOptionsError(message);
       setProductOptions([]);
       setProductOptionsWarehouseName(null);
@@ -1162,57 +339,13 @@ export default function OrdersConfirmationPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showShopPicker, showTagPicker, showGeoPicker, showProductPicker]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const tenantId = localStorage.getItem('current_tenant_id');
-    if (!tenantId) return;
-
-    let teamId: string | null = null;
-    const teamIdsRaw = localStorage.getItem('current_team_ids');
-    const singleTeam = localStorage.getItem('current_team_id');
-    if (teamIdsRaw) {
-      try {
-        const parsed = JSON.parse(teamIdsRaw);
-        if (Array.isArray(parsed) && parsed.length === 1) {
-          teamId = parsed[0];
-        }
-      } catch {
-        // ignore
-      }
-    } else if (singleTeam && singleTeam !== 'ALL_TEAMS') {
-      teamId = singleTeam;
-    }
-
-    const socket = workflowSocket.connect();
-    socket.emit('subscribe:tenant', { tenantId, teamId });
-
-    const handler = (payload: TenantSocketPayload) => {
-      if (!payload || payload.tenantId !== tenantId) return;
-      if (teamId && payload.teamId && payload.teamId !== teamId) return;
-      fetchDataRef.current?.({ silent: true });
-    };
-
-    socket.on('orders:confirmation:updated', handler);
-    socket.on('marketing:updated', handler);
-
-    return () => {
-      socket.off('orders:confirmation:updated', handler);
-      socket.off('marketing:updated', handler);
-    };
-  }, []);
+  useConfirmationRealtime({
+    onRefresh: () => fetchDataRef.current?.({ silent: true }),
+  });
 
   useEffect(() => {
     setIsMounted(true);
     return () => setIsMounted(false);
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        fetchDataRef.current?.({ silent: true });
-      }
-    }, 15000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -1459,6 +592,10 @@ export default function OrdersConfirmationPage() {
     !!selectedStoreId &&
     !!modalWarehouseId &&
     !effectiveWarehouseName;
+  const selectedOrderHasProducts = selectedOrderForModal
+    ? hasRowProductItems(selectedOrderForModal)
+    : false;
+  const shouldShowEmptyCartState = !selectedOrderHasProducts && effectiveModalItems.length === 0;
   const shouldShowTagFallbackSync =
     isSelectedOrderEditable &&
     showTagPicker &&
@@ -1639,24 +776,14 @@ export default function OrdersConfirmationPage() {
     if (!selectedOrderForModal?.shop_id) return;
     setIsSyncingFallbackProducts(true);
     try {
-      const response = await apiClient.get(
-        `/integrations/shops/${encodeURIComponent(selectedOrderForModal.shop_id)}/products`,
-      );
-      const syncedRows = Array.isArray(response.data) ? response.data.length : 0;
+      const syncedRows = await syncStoreProductsByShop(selectedOrderForModal.shop_id);
       addToast('success', `Products synced (${syncedRows} rows).`);
       if (selectedOrderForModal.id && showProductPicker) {
         await fetchProductOptions(selectedOrderForModal.id, productSearchTerm);
       }
       fetchDataRef.current?.({ silent: true });
     } catch (err: unknown) {
-      const message =
-        (typeof err === 'object' &&
-          err !== null &&
-          'response' in err &&
-          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-        (err instanceof Error ? err.message : null) ||
-        'Failed to sync products';
+      const message = parseApiErrorMessage(err, 'Failed to sync products');
       addToast('error', message);
     } finally {
       setIsSyncingFallbackProducts(false);
@@ -1666,22 +793,11 @@ export default function OrdersConfirmationPage() {
     if (!selectedStoreId || !selectedOrderForModal?.id) return;
     setIsSyncingFallbackTags(true);
     try {
-      const response = await apiClient.post(
-        `/integrations/pos-stores/${encodeURIComponent(selectedStoreId)}/tags/sync`,
-        {},
-      );
-      const synced = Number(response?.data?.synced || 0);
+      const synced = await syncStoreTags(selectedStoreId);
       addToast('success', `Tags synced (${synced}).`);
       await fetchTagOptions(selectedOrderForModal.id);
     } catch (err: unknown) {
-      const message =
-        (typeof err === 'object' &&
-          err !== null &&
-          'response' in err &&
-          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-        (err instanceof Error ? err.message : null) ||
-        'Failed to sync tags';
+      const message = parseApiErrorMessage(err, 'Failed to sync tags');
       addToast('error', message);
     } finally {
       setIsSyncingFallbackTags(false);
@@ -1691,25 +807,14 @@ export default function OrdersConfirmationPage() {
     if (!selectedStoreId) return;
     setIsSyncingFallbackWarehouses(true);
     try {
-      const response = await apiClient.post(
-        `/integrations/pos-stores/${encodeURIComponent(selectedStoreId)}/warehouses/sync`,
-        {},
-      );
-      const synced = Number(response?.data?.synced || 0);
+      const synced = await syncStoreWarehouses(selectedStoreId);
       addToast('success', `Warehouses synced (${synced}).`);
       if (selectedOrderForModal?.id && showProductPicker) {
         await fetchProductOptions(selectedOrderForModal.id, productSearchTerm);
       }
       fetchDataRef.current?.({ silent: true });
     } catch (err: unknown) {
-      const message =
-        (typeof err === 'object' &&
-          err !== null &&
-          'response' in err &&
-          typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-          (err as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-        (err instanceof Error ? err.message : null) ||
-        'Failed to sync warehouses';
+      const message = parseApiErrorMessage(err, 'Failed to sync warehouses');
       addToast('error', message);
     } finally {
       setIsSyncingFallbackWarehouses(false);
@@ -1992,30 +1097,24 @@ export default function OrdersConfirmationPage() {
     setShowGeoPicker(true);
   };
 
+  const selectedOrderId = selectedOrderForModal?.id ?? '';
+
   useEffect(() => {
-    if (!selectedOrderForModal) return;
+    if (!selectedOrderId) return;
 
     let cancelled = false;
     setIsGeoProvincesLoading(true);
     setGeoLookupError(null);
 
-    apiClient
-      .get<GeoProvincesResponse>(`/orders/geo/provinces?country_code=${GEO_COUNTRY_CODE}`)
+    fetchGeoProvinces(GEO_COUNTRY_CODE)
       .then((response) => {
         if (cancelled) return;
-        const items = Array.isArray(response.data?.items) ? response.data.items : [];
+        const items = Array.isArray(response.items) ? response.items : [];
         setGeoProvinces(items);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        const message =
-          (typeof error === 'object' &&
-            error !== null &&
-            'response' in error &&
-            typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-            (error as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-          (error instanceof Error ? error.message : null) ||
-          'Failed to load province options';
+        const message = parseApiErrorMessage(error, 'Failed to load province options');
         setGeoLookupError(message);
         setGeoProvinces([]);
       })
@@ -2028,10 +1127,10 @@ export default function OrdersConfirmationPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedOrderForModal?.id]);
+  }, [selectedOrderId]);
 
   useEffect(() => {
-    if (!selectedOrderForModal) return;
+    if (!selectedOrderId) return;
 
     if (!selectedProvinceId) {
       setGeoDistricts([]);
@@ -2045,13 +1144,10 @@ export default function OrdersConfirmationPage() {
     setIsGeoDistrictsLoading(true);
     setGeoLookupError(null);
 
-    apiClient
-      .get<GeoDistrictsResponse>(
-        `/orders/geo/districts?province_id=${encodeURIComponent(selectedProvinceId)}`,
-      )
+    fetchGeoDistricts(selectedProvinceId)
       .then((response) => {
         if (cancelled) return;
-        const items = Array.isArray(response.data?.items) ? response.data.items : [];
+        const items = Array.isArray(response.items) ? response.items : [];
         setGeoDistricts(items);
         if (selectedDistrictId && !items.some((entry) => entry.id === selectedDistrictId)) {
           setDraftDeliveryAddress((prev) => {
@@ -2073,14 +1169,7 @@ export default function OrdersConfirmationPage() {
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        const message =
-          (typeof error === 'object' &&
-            error !== null &&
-            'response' in error &&
-            typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-            (error as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-          (error instanceof Error ? error.message : null) ||
-          'Failed to load city options';
+        const message = parseApiErrorMessage(error, 'Failed to load city options');
         setGeoLookupError(message);
         setGeoDistricts([]);
       })
@@ -2093,10 +1182,10 @@ export default function OrdersConfirmationPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedOrderForModal?.id, selectedProvinceId, selectedDistrictId]);
+  }, [selectedDistrictId, selectedOrderId, selectedProvinceId]);
 
   useEffect(() => {
-    if (!selectedOrderForModal) return;
+    if (!selectedOrderId) return;
 
     if (!selectedProvinceId || !selectedDistrictId) {
       setGeoCommunes([]);
@@ -2108,13 +1197,10 @@ export default function OrdersConfirmationPage() {
     setIsGeoCommunesLoading(true);
     setGeoLookupError(null);
 
-    apiClient
-      .get<GeoCommunesResponse>(
-        `/orders/geo/communes?province_id=${encodeURIComponent(selectedProvinceId)}&district_id=${encodeURIComponent(selectedDistrictId)}`,
-      )
+    fetchGeoCommunes(selectedProvinceId, selectedDistrictId)
       .then((response) => {
         if (cancelled) return;
-        const items = Array.isArray(response.data?.items) ? response.data.items : [];
+        const items = Array.isArray(response.items) ? response.items : [];
         setGeoCommunes(items);
         if (selectedCommuneId && !items.some((entry) => entry.id === selectedCommuneId)) {
           setDraftDeliveryAddress((prev) => {
@@ -2133,14 +1219,7 @@ export default function OrdersConfirmationPage() {
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        const message =
-          (typeof error === 'object' &&
-            error !== null &&
-            'response' in error &&
-            typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string' &&
-            (error as { response?: { data?: { message?: string } } }).response?.data?.message) ||
-          (error instanceof Error ? error.message : null) ||
-          'Failed to load barangay options';
+        const message = parseApiErrorMessage(error, 'Failed to load barangay options');
         setGeoLookupError(message);
         setGeoCommunes([]);
       })
@@ -2154,7 +1233,7 @@ export default function OrdersConfirmationPage() {
       cancelled = true;
     };
   }, [
-    selectedOrderForModal?.id,
+    selectedOrderId,
     selectedProvinceId,
     selectedDistrictId,
     selectedCommuneId,
@@ -2322,7 +1401,7 @@ export default function OrdersConfirmationPage() {
       addToast('info', `Updating order ${orderRef}...`);
     }
     try {
-      await apiClient.patch(`/orders/confirmation/${selectedOrderForModal.id}/status`, payload);
+      await updateConfirmationOrder(selectedOrderForModal.id, payload);
       addToast('success', `Order ${orderRef} successfully submitted for update.`);
       setSelectedOrderForModal(null);
       fetchDataRef.current?.({ silent: true });
@@ -2512,15 +1591,10 @@ export default function OrdersConfirmationPage() {
                         {formatCurrency(row.cod || 0)}
                       </td>
                       <td className="px-3 py-2 text-xs font-semibold whitespace-nowrap">
-                        <span className="relative inline-flex cursor-help group">
-                          <span className={getReturnRateColorClass(row.reports_by_phone_success, row.reports_by_phone_fail)}>
-                            {formatReturnRate(row.reports_by_phone_success, row.reports_by_phone_fail)}
-                          </span>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 z-[60] mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-md group-hover:block">
-                            Success: {toNonNegativeNumber(row.reports_by_phone_success)} | Fail:{' '}
-                            {toNonNegativeNumber(row.reports_by_phone_fail)}
-                          </span>
-                        </span>
+                        <ReturnRateCell
+                          success={row.reports_by_phone_success}
+                          fail={row.reports_by_phone_fail}
+                        />
                       </td>
                       <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">
                         {row.tags?.length ? row.tags.join(', ') : '—'}
@@ -2739,6 +1813,7 @@ export default function OrdersConfirmationPage() {
                               >
                                 <div className="h-7 w-7 shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-100">
                                   {option.image_url ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
                                     <img
                                       src={option.image_url}
                                       alt={option.name || 'Product image'}
@@ -2792,6 +1867,7 @@ export default function OrdersConfirmationPage() {
                             <div className="flex items-center gap-2">
                               <div className="h-10 w-10 shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-100">
                                 {item.imageUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
                                   <img
                                     src={item.imageUrl}
                                     alt={item.name || 'Product image'}
@@ -2851,8 +1927,12 @@ export default function OrdersConfirmationPage() {
                       </div>
                     ) : (
                       <div className="space-y-2 py-3 text-center">
-                        <p className="text-[11px] text-slate-400">No product data available</p>
-                        {isSelectedOrderEditable && (selectedOrderForModal?.shop_id || selectedStoreId) ? (
+                        <p className="text-[11px] text-slate-400">
+                          {shouldShowEmptyCartState ? 'Empty Cart' : 'No product data available'}
+                        </p>
+                        {!shouldShowEmptyCartState &&
+                        isSelectedOrderEditable &&
+                        (selectedOrderForModal?.shop_id || selectedStoreId) ? (
                           <div className="flex items-center justify-center gap-1.5">
                             {selectedStoreId && modalWarehouseId && !effectiveWarehouseName ? (
                               <button
