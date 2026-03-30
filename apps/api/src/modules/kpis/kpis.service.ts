@@ -879,15 +879,13 @@ export class KpisService {
       select: {
         adId: true,
         dateCreated: true,
-        teamCode: true,
       },
     });
 
     const filteredCreatedRows = createdRows.filter(
       (row) =>
         row.adId &&
-        row.dateCreated &&
-        this.normalize(row.teamCode) === normalizedTeamCode,
+        row.dateCreated,
     );
     const creativeIds = new Set(
       filteredCreatedRows.map((row) => row.adId).filter(Boolean),
