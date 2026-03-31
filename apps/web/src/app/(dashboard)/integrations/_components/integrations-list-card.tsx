@@ -54,20 +54,17 @@ function IntegrationActionsMenu({
   return (
     <DataTableActionCell>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-10 w-10 p-0"
-            aria-label="Integration actions"
-            iconLeft={<MoreVertical className="h-4 w-4" />}
-          />
+        <DropdownMenuTrigger
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-[#0F172A] transition hover:bg-[#F8FAFC] active:bg-[#E2E8F0] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+          aria-label="Integration actions"
+        >
+          <MoreVertical className="h-4 w-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40 rounded-2xl">
-          <DropdownMenuItem onClick={() => onView(integration)}>View</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onEdit(integration)}>Edit</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onView(integration)}>View</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onEdit(integration)}>Edit</DropdownMenuItem>
           <DropdownMenuItem
-            onClick={() => onDelete(integration)}
+            onSelect={() => onDelete(integration)}
             className="text-rose-600 focus:text-rose-700"
           >
             Delete

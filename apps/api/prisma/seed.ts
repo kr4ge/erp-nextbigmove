@@ -165,7 +165,6 @@ const ROLES: RoleDef[] = [
       'pos.cogs.manage',
       'meta.read',
       'dashboard.marketing',
-      'kpi.marketing.read',
     ],
     isSystem: true,
   },
