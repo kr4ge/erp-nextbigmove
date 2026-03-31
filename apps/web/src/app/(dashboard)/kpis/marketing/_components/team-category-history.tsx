@@ -1,5 +1,5 @@
-import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/emptystate';
+import { Target } from 'lucide-react';
 import type { KpiTargetRow } from '../types';
 import { formatMarketingMetricValue } from '../utils';
 
@@ -10,39 +10,44 @@ type TeamCategoryHistoryProps = {
 
 export function TeamCategoryHistory({ teamName, rows }: TeamCategoryHistoryProps) {
   return (
-    <Card>
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-slate-900">
-          History: Team + Category KPI {teamName ? `for ${teamName}` : ''}
-        </h2>
+    <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+        <Target className="h-3.5 w-3.5 text-orange-500" />
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+          Team + Category Targets
+        </h4>
+        {teamName ? <span className="ml-auto text-[10px] text-slate-500">{teamName}</span> : null}
+      </div>
+      <div className="space-y-3 p-3">
         {rows.length > 0 ? (
-          <div className="space-y-3">
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
             {rows.map((row) => (
-              <div key={row.id} className="rounded-xl border border-slate-200 px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{row.label}</p>
-                    <p className="text-xs text-slate-500">
-                      {row.scopeType === 'TEAM' ? 'Team KPI' : `${row.category} category KPI`}
-                    </p>
-                  </div>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {formatMarketingMetricValue(row.targetValue, row.format)}
+              <div
+                key={row.id}
+                className="grid gap-1 border-b border-slate-100 px-3 py-2.5 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-center"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-slate-900">{row.label}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {row.scopeType === 'TEAM' ? 'Team KPI' : `${row.category} category KPI`}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {row.startDate} to {row.endDate || 'Open ended'}
                   </p>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  {row.startDate} to {row.endDate || 'Open ended'}
+                <p className="text-sm font-semibold tabular-nums text-slate-900 sm:text-right">
+                  {formatMarketingMetricValue(row.targetValue, row.format)}
                 </p>
               </div>
             ))}
           </div>
         ) : (
           <EmptyState
-            title="No team or category KPI targets"
-            description="No historical team/category KPI records found for the selected range."
+            title="No team/category targets"
+            description="No records in this range."
           />
         )}
       </div>
-    </Card>
+    </section>
   );
 }

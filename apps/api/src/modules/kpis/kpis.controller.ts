@@ -8,12 +8,18 @@ import { CreateMarketingCategoryTargetDto } from './dto/create-marketing-categor
 import { CreateMarketingTeamTargetDto } from './dto/create-marketing-team-target.dto';
 import { CreateMarketingUserCategoryAssignmentDto } from './dto/create-marketing-user-category-assignment.dto';
 import { CreateMarketingUserTargetDto } from './dto/create-marketing-user-target.dto';
+import { DeleteMarketingTargetGroupDto } from './dto/delete-marketing-target-group.dto';
 import { KpisService } from './kpis.service';
 
 @Controller('kpis/marketing')
 @UseGuards(JwtAuthGuard, TenantGuard, TeamGuard, PermissionsGuard)
 export class KpisController {
   constructor(private readonly kpisService: KpisService) {}
+
+  private parseBool(value: string | undefined, defaultValue: boolean) {
+    if (value === undefined) return defaultValue;
+    return value.toLowerCase() === "true";
+  }
 
   @Get('overview')
   @Permissions('kpi.marketing.read', 'kpi.marketing.manage')
@@ -37,6 +43,12 @@ export class KpisController {
     return this.kpisService.createCategoryTargets(dto, req.user);
   }
 
+  @Post('target-groups/delete')
+  @Permissions('kpi.marketing.manage')
+  async deleteTargetGroup(@Body() dto: DeleteMarketingTargetGroupDto, @Req() req: any) {
+    return this.kpisService.deleteTargetGroup(dto, req.user);
+  }
+
   @Post('user-category-assignments')
   @Permissions('kpi.marketing.manage')
   async createUserCategoryAssignment(
@@ -58,8 +70,20 @@ export class KpisController {
     @Req() req: any,
     @Query('start_date') startDate?: string,
     @Query('end_date') endDate?: string,
+    @Query('exclude_cancel') excludeCancel?: string,
+    @Query('exclude_restocking') excludeRestocking?: string,
+    @Query('exclude_abandoned') excludeAbandoned?: string,
+    @Query('exclude_rts') excludeRts?: string,
   ) {
-    return this.kpisService.getMyDashboard({ actor: req.user, startDate, endDate });
+    return this.kpisService.getMyDashboard({
+      actor: req.user,
+      startDate,
+      endDate,
+      excludeCancel: this.parseBool(excludeCancel, true),
+      excludeRestocking: this.parseBool(excludeRestocking, true),
+      excludeAbandoned: this.parseBool(excludeAbandoned, true),
+      excludeRts: this.parseBool(excludeRts, true),
+    });
   }
 
   @Get('dashboard/team')
@@ -68,8 +92,20 @@ export class KpisController {
     @Query('team_code') teamCode?: string,
     @Query('start_date') startDate?: string,
     @Query('end_date') endDate?: string,
+    @Query('exclude_cancel') excludeCancel?: string,
+    @Query('exclude_restocking') excludeRestocking?: string,
+    @Query('exclude_abandoned') excludeAbandoned?: string,
+    @Query('exclude_rts') excludeRts?: string,
   ) {
-    return this.kpisService.getTeamDashboard({ teamCode, startDate, endDate });
+    return this.kpisService.getTeamDashboard({
+      teamCode,
+      startDate,
+      endDate,
+      excludeCancel: this.parseBool(excludeCancel, true),
+      excludeRestocking: this.parseBool(excludeRestocking, true),
+      excludeAbandoned: this.parseBool(excludeAbandoned, true),
+      excludeRts: this.parseBool(excludeRts, true),
+    });
   }
 
   @Get('dashboard/executive')
@@ -78,7 +114,19 @@ export class KpisController {
     @Query('team_code') teamCode?: string,
     @Query('start_date') startDate?: string,
     @Query('end_date') endDate?: string,
+    @Query('exclude_cancel') excludeCancel?: string,
+    @Query('exclude_restocking') excludeRestocking?: string,
+    @Query('exclude_abandoned') excludeAbandoned?: string,
+    @Query('exclude_rts') excludeRts?: string,
   ) {
-    return this.kpisService.getExecutiveDashboard({ teamCode, startDate, endDate });
+    return this.kpisService.getExecutiveDashboard({
+      teamCode,
+      startDate,
+      endDate,
+      excludeCancel: this.parseBool(excludeCancel, true),
+      excludeRestocking: this.parseBool(excludeRestocking, true),
+      excludeAbandoned: this.parseBool(excludeAbandoned, true),
+      excludeRts: this.parseBool(excludeRts, true),
+    });
   }
 }

@@ -15,6 +15,10 @@ import { CreateMarketingCategoryTargetDto } from "./dto/create-marketing-categor
 import { CreateMarketingTeamTargetDto } from "./dto/create-marketing-team-target.dto";
 import { CreateMarketingUserCategoryAssignmentDto } from "./dto/create-marketing-user-category-assignment.dto";
 import { CreateMarketingUserTargetDto } from "./dto/create-marketing-user-target.dto";
+import {
+  DeleteMarketingTargetGroupDto,
+  MarketingKpiTargetGroupScopeDto,
+} from "./dto/delete-marketing-target-group.dto";
 
 type TeamOption = {
   id: string;
@@ -50,6 +54,13 @@ type TeamMetricSeries = {
 type UserMetricSeries = {
   [MarketingKpiMetricKey.USER_CREATIVES_CREATED]: number;
   [MarketingKpiMetricKey.USER_AR_PCT]: number;
+};
+
+type KpiExclusionOptions = {
+  excludeCancel: boolean;
+  excludeRestocking: boolean;
+  excludeAbandoned: boolean;
+  excludeRts: boolean;
 };
 
 const TEAM_METRICS = [
@@ -99,6 +110,13 @@ const METRIC_FORMATS: Record<
   [MarketingKpiMetricKey.USER_AR_PCT]: "percent",
 };
 
+const DEFAULT_KPI_EXCLUSION_OPTIONS: KpiExclusionOptions = {
+  excludeCancel: true,
+  excludeRestocking: true,
+  excludeAbandoned: true,
+  excludeRts: true,
+};
+
 type TeamUserSummary = {
   id: string;
   name: string;
@@ -107,6 +125,11 @@ type TeamUserSummary = {
   firstName: string | null;
   lastName: string | null;
   currentCategory: MarketingKpiCategory | null;
+};
+
+type ReconcileTeamScopeRow = {
+  teamId: string | null;
+  teamCode: string | null;
 };
 
 @Injectable()
@@ -126,6 +149,14 @@ export class KpisService {
     return (value || "").trim().toLowerCase();
   }
 
+  private isRowInTeamScope(
+    row: ReconcileTeamScopeRow,
+    teamScope: { teamId: string | null; teamCode: string },
+  ): boolean {
+    // KPI matching is code-driven: teamCode is the source of truth.
+    return this.normalize(row.teamCode) === this.normalize(teamScope.teamCode);
+  }
+
   private buildUserDisplayName(user: {
     firstName: string | null;
     lastName: string | null;
@@ -133,6 +164,20 @@ export class KpisService {
   }): string {
     const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
     return fullName || user.email;
+  }
+
+  private resolveKpiExclusionOptions(
+    options?: Partial<KpiExclusionOptions>,
+  ): KpiExclusionOptions {
+    return {
+      excludeCancel: options?.excludeCancel ?? DEFAULT_KPI_EXCLUSION_OPTIONS.excludeCancel,
+      excludeRestocking:
+        options?.excludeRestocking ??
+        DEFAULT_KPI_EXCLUSION_OPTIONS.excludeRestocking,
+      excludeAbandoned:
+        options?.excludeAbandoned ?? DEFAULT_KPI_EXCLUSION_OPTIONS.excludeAbandoned,
+      excludeRts: options?.excludeRts ?? DEFAULT_KPI_EXCLUSION_OPTIONS.excludeRts,
+    };
   }
 
   private parseDate(value?: string, fallback?: string): Date {
@@ -157,6 +202,17 @@ export class KpisService {
     const next = new Date(value);
     next.setUTCDate(next.getUTCDate() - 1);
     return next;
+  }
+
+  private rangesOverlap(
+    startA: Date,
+    endA: Date | null,
+    startB: Date,
+    endB: Date | null,
+  ) {
+    const endAMs = endA ? endA.getTime() : Number.POSITIVE_INFINITY;
+    const endBMs = endB ? endB.getTime() : Number.POSITIVE_INFINITY;
+    return startA.getTime() <= endBMs && startB.getTime() <= endAMs;
   }
 
   private buildDateRange(startDate?: string, endDate?: string) {
@@ -453,20 +509,18 @@ export class KpisService {
       teamId,
       userIds,
     );
-    const activeAssignments =
+    const categoryAssignments =
       await this.prisma.marketingKpiUserCategoryAssignment.findMany({
         where: {
           tenantId,
           teamCode,
           userId: { in: userIds },
-          startDate: { lte: referenceDate },
-          OR: [{ endDate: null }, { endDate: { gte: referenceDate } }],
         },
-        orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
       });
 
     const currentCategoryMap = new Map<string, MarketingKpiCategory>();
-    activeAssignments.forEach((assignment) => {
+    categoryAssignments.forEach((assignment) => {
       if (!currentCategoryMap.has(assignment.userId)) {
         currentCategoryMap.set(assignment.userId, assignment.category);
       }
@@ -672,33 +726,15 @@ export class KpisService {
     tenantId: string,
     teamCode: string,
     userId: string,
-    referenceDate: Date,
+    _referenceDate: Date,
   ) {
-    const activeAssignment =
-      await this.prisma.marketingKpiUserCategoryAssignment.findFirst({
-        where: {
-          tenantId,
-          teamCode,
-          userId,
-          startDate: { lte: referenceDate },
-          OR: [{ endDate: null }, { endDate: { gte: referenceDate } }],
-        },
-        orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
-      });
-
-    if (activeAssignment) {
-      return activeAssignment;
-    }
-
-    // User category assignment no longer accepts date input.
-    // Fallback to the latest assignment so historical KPI targets can still resolve by category template dates.
     return this.prisma.marketingKpiUserCategoryAssignment.findFirst({
       where: {
         tenantId,
         teamCode,
         userId,
       },
-      orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     });
   }
 
@@ -709,7 +745,9 @@ export class KpisService {
       canceledCodPos: unknown;
       restockingCodPos: unknown;
       abandonedCodPos: unknown;
+      rtsCodPos: unknown;
     }>,
+    options: KpiExclusionOptions,
   ): TeamMetricSeries {
     const spend = rows.reduce((sum, row) => sum + this.toNumber(row.spend), 0);
     const revenueRaw = rows.reduce(
@@ -728,9 +766,14 @@ export class KpisService {
       (sum, row) => sum + this.toNumber(row.abandonedCodPos),
       0,
     );
+    const rtsCod = rows.reduce((sum, row) => sum + this.toNumber(row.rtsCodPos), 0);
     const revenue = Math.max(
       0,
-      revenueRaw - canceledCod - restockingCod - abandonedCod,
+      revenueRaw -
+        (options.excludeCancel ? canceledCod : 0) -
+        (options.excludeRestocking ? restockingCod : 0) -
+        (options.excludeAbandoned ? abandonedCod : 0) -
+        (options.excludeRts ? rtsCod : 0),
     );
     const ar = revenue > 0 ? (spend / revenue) * 100 : 0;
 
@@ -742,9 +785,10 @@ export class KpisService {
 
   private async computeTeamMetricsForRange(
     tenantId: string,
-    teamCode: string,
+    teamScope: { teamId: string | null; teamCode: string },
     start: Date,
     end: Date,
+    options: KpiExclusionOptions,
   ) {
     const rows = await this.prisma.reconcileMarketing.findMany({
       where: {
@@ -753,24 +797,25 @@ export class KpisService {
       },
       select: {
         date: true,
+        teamId: true,
         teamCode: true,
         spend: true,
         codPos: true,
         canceledCodPos: true,
         restockingCodPos: true,
         abandonedCodPos: true,
+        rtsCodPos: true,
       },
     });
 
-    const normalizedTeamCode = this.normalize(teamCode);
-    const filteredRows = rows.filter(
-      (row) => this.normalize(row.teamCode) === normalizedTeamCode,
+    const scopedRows = rows.filter((row) =>
+      this.isRowInTeamScope(row, teamScope),
     );
-    const totals = this.computeTeamMetricsFromRows(filteredRows);
+    const totals = this.computeTeamMetricsFromRows(scopedRows, options);
     const dateKeys = this.buildDateKeys(start, end);
-    const rowsByDate = new Map<string, typeof filteredRows>();
+    const rowsByDate = new Map<string, typeof scopedRows>();
 
-    filteredRows.forEach((row) => {
+    scopedRows.forEach((row) => {
       const key = this.formatDate(row.date)!;
       const bucket = rowsByDate.get(key) || [];
       bucket.push(row);
@@ -782,7 +827,7 @@ export class KpisService {
     >(
       (acc, dateKey) => {
         const rowsForDate = rowsByDate.get(dateKey) || [];
-        const metrics = this.computeTeamMetricsFromRows(rowsForDate);
+        const metrics = this.computeTeamMetricsFromRows(rowsForDate, options);
         acc[MarketingKpiMetricKey.TEAM_AD_SPEND].push({
           date: dateKey,
           actualValue: metrics[MarketingKpiMetricKey.TEAM_AD_SPEND],
@@ -806,7 +851,7 @@ export class KpisService {
 
   private async computeUserMetricsForRange(
     tenantId: string,
-    teamCode: string,
+    _teamScope: { teamId: string | null; teamCode: string },
     user: {
       employeeId: string | null;
       firstName: string | null;
@@ -814,6 +859,7 @@ export class KpisService {
     },
     start: Date,
     end: Date,
+    options: KpiExclusionOptions,
   ) {
     const associateKeys = this.buildAssociateKeysForUser(user);
     const dateKeys = this.buildDateKeys(start, end);
@@ -850,20 +896,19 @@ export class KpisService {
       },
       select: {
         date: true,
+        teamId: true,
         teamCode: true,
         spend: true,
         codPos: true,
         canceledCodPos: true,
         restockingCodPos: true,
         abandonedCodPos: true,
+        rtsCodPos: true,
       },
     });
 
-    const normalizedTeamCode = this.normalize(teamCode);
-    const filteredRows = matchingRows.filter(
-      (row) => this.normalize(row.teamCode) === normalizedTeamCode,
-    );
-    const arMetrics = this.computeTeamMetricsFromRows(filteredRows);
+    const memberRows = matchingRows;
+    const arMetrics = this.computeTeamMetricsFromRows(memberRows, options);
 
     const createdRows = await this.prisma.reconcileMarketing.findMany({
       where: {
@@ -879,6 +924,8 @@ export class KpisService {
       select: {
         adId: true,
         dateCreated: true,
+        teamId: true,
+        teamCode: true,
       },
     });
 
@@ -891,8 +938,8 @@ export class KpisService {
       filteredCreatedRows.map((row) => row.adId).filter(Boolean),
     );
 
-    const rowsByDate = new Map<string, typeof filteredRows>();
-    filteredRows.forEach((row) => {
+    const rowsByDate = new Map<string, typeof memberRows>();
+    memberRows.forEach((row) => {
       const key = this.formatDate(row.date)!;
       const bucket = rowsByDate.get(key) || [];
       bucket.push(row);
@@ -929,6 +976,7 @@ export class KpisService {
           date,
           actualValue: this.computeTeamMetricsFromRows(
             rowsByDate.get(date) || [],
+            options,
           )[MarketingKpiMetricKey.TEAM_AR_PCT],
           achievementPct: null,
         })),
@@ -974,6 +1022,7 @@ export class KpisService {
 
   private async buildExecutiveMemberRow(params: {
     tenantId: string;
+    teamId: string | null;
     teamCode: string;
     user: TeamUserSummary;
     start: Date;
@@ -993,13 +1042,15 @@ export class KpisService {
       startDate: Date;
       endDate: Date | null;
     }>;
+    options: KpiExclusionOptions;
   }) {
     const actuals = await this.computeUserMetricsForRange(
       params.tenantId,
-      params.teamCode,
+      { teamId: params.teamId, teamCode: params.teamCode },
       params.user,
       params.start,
       params.end,
+      params.options,
     );
     const userDailyTargets = this.buildDailyTargetByMetric(
       USER_METRICS,
@@ -1079,8 +1130,11 @@ export class KpisService {
         ],
       }),
       this.prisma.marketingKpiUserCategoryAssignment.findMany({
-        where: overlapWhere,
-        orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+        where: {
+          tenantId: context.tenantId,
+          teamCode: selectedTeam.teamCode,
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
       }),
       this.listEligibleUsersForTeam(
         context.tenantId,
@@ -1155,8 +1209,6 @@ export class KpisService {
         userId: row.userId,
         userName: userMap.get(row.userId)?.name || row.userId,
         category: row.category,
-        startDate: this.formatDate(row.startDate),
-        endDate: this.formatDate(row.endDate),
         createdAt: row.createdAt.toISOString(),
       })),
       eligibleUsers,
@@ -1259,6 +1311,73 @@ export class KpisService {
       );
     }
 
+    const requestedMetricKeys = dto.metrics.map((metric) => metric.metricKey);
+    const uniqueRequestedMetricKeys = new Set<MarketingKpiMetricKey>(
+      requestedMetricKeys,
+    );
+    if (
+      dto.metrics.length !== USER_METRICS.length ||
+      uniqueRequestedMetricKeys.size !== USER_METRICS.length ||
+      USER_METRICS.some((metricKey) => !uniqueRequestedMetricKeys.has(metricKey))
+    ) {
+      throw new BadRequestException(
+        "Category template must include exactly USER_CREATIVES_CREATED and USER_AR_PCT (no duplicates).",
+      );
+    }
+
+    const existingCategoryRows = await this.prisma.marketingKpiTarget.findMany({
+      where: {
+        tenantId: context.tenantId,
+        scopeType: MarketingKpiScopeType.CATEGORY,
+        teamCode: selectedTeam.teamCode,
+        userId: null,
+        category: dto.category as MarketingKpiCategory,
+        metricKey: { in: [...USER_METRICS] },
+      },
+      select: {
+        id: true,
+        metricKey: true,
+        startDate: true,
+        endDate: true,
+      },
+    });
+
+    for (const metricKey of USER_METRICS) {
+      const rowsForMetric = existingCategoryRows.filter(
+        (row) =>
+          row.metricKey === metricKey &&
+          row.startDate.getTime() !== startDate.getTime(),
+      );
+      const overlappingRows = rowsForMetric.filter((row) =>
+        this.rangesOverlap(startDate, endDate, row.startDate, row.endDate),
+      );
+      const pastOverlaps = overlappingRows.filter(
+        (row) => row.startDate.getTime() < startDate.getTime(),
+      );
+      const futureOverlaps = overlappingRows
+        .filter((row) => row.startDate.getTime() > startDate.getTime())
+        .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+
+      if (pastOverlaps.length > 1) {
+        throw new BadRequestException(
+          `Multiple overlapping historical ${METRIC_LABELS[metricKey]} templates exist for ${dto.category}. Resolve overlaps first.`,
+        );
+      }
+
+      if (pastOverlaps.length === 1 && pastOverlaps[0].endDate !== null) {
+        throw new BadRequestException(
+          `${METRIC_LABELS[metricKey]} template overlaps an existing closed window (${this.formatDate(pastOverlaps[0].startDate)} to ${this.formatDate(pastOverlaps[0].endDate)}). Edit that window instead of inserting inside it.`,
+        );
+      }
+
+      if (futureOverlaps.length > 0) {
+        const nextFuture = futureOverlaps[0];
+        throw new BadRequestException(
+          `${METRIC_LABELS[metricKey]} template overlaps with future window starting ${this.formatDate(nextFuture.startDate)}. Adjust endDate to finish before that date.`,
+        );
+      }
+    }
+
     const actorId = actor.userId || actor.id;
     const previousDate = this.previousDate(startDate);
     let createdCount = 0;
@@ -1316,6 +1435,66 @@ export class KpisService {
     };
   }
 
+  async deleteTargetGroup(dto: DeleteMarketingTargetGroupDto, _actor: any) {
+    const { context, selectedTeam } = await this.resolveTeamSelection(dto.teamCode);
+    if (!selectedTeam) {
+      throw new NotFoundException("Team not found");
+    }
+
+    if (dto.scopeType === MarketingKpiTargetGroupScopeDto.TEAM && !context.isAdmin) {
+      throw new ForbiddenException(
+        "Only tenant-wide managers can delete team KPI targets",
+      );
+    }
+
+    if (
+      dto.scopeType === MarketingKpiTargetGroupScopeDto.CATEGORY &&
+      !dto.category
+    ) {
+      throw new BadRequestException("category is required for CATEGORY scope");
+    }
+
+    if (
+      dto.scopeType !== MarketingKpiTargetGroupScopeDto.TEAM &&
+      dto.scopeType !== MarketingKpiTargetGroupScopeDto.CATEGORY
+    ) {
+      throw new BadRequestException("Unsupported target scope for delete");
+    }
+
+    const startDate = this.parseDate(dto.startDate);
+    const metricKeys =
+      dto.scopeType === MarketingKpiTargetGroupScopeDto.TEAM
+        ? TEAM_METRICS
+        : USER_METRICS;
+
+    const result = await this.prisma.marketingKpiTarget.deleteMany({
+      where: {
+        tenantId: context.tenantId,
+        scopeType:
+          dto.scopeType === MarketingKpiTargetGroupScopeDto.TEAM
+            ? MarketingKpiScopeType.TEAM
+            : MarketingKpiScopeType.CATEGORY,
+        teamCode: selectedTeam.teamCode,
+        userId: null,
+        category:
+          dto.scopeType === MarketingKpiTargetGroupScopeDto.CATEGORY
+            ? (dto.category as MarketingKpiCategory)
+            : null,
+        metricKey: { in: [...metricKeys] },
+        startDate,
+      },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException("Target group not found");
+    }
+
+    return {
+      success: true,
+      message: `Deleted ${result.count} target row(s).`,
+    };
+  }
+
   async createUserCategoryAssignment(
     dto: CreateMarketingUserCategoryAssignmentDto,
     actor: any,
@@ -1327,11 +1506,20 @@ export class KpisService {
       throw new NotFoundException("Team not found");
     }
 
-    const startDate = this.parseDate(
-      undefined,
-      new Date().toISOString().slice(0, 10),
-    );
-    const endDate: Date | null = null;
+    const categoryTemplate = await this.prisma.marketingKpiTarget.findFirst({
+      where: {
+        tenantId: context.tenantId,
+        scopeType: MarketingKpiScopeType.CATEGORY,
+        teamCode: selectedTeam.teamCode,
+        category: dto.category as MarketingKpiCategory,
+        metricKey: { in: [...USER_METRICS] },
+      },
+    });
+    if (!categoryTemplate) {
+      throw new BadRequestException(
+        `No ${dto.category} category KPI template found. Create a category template first.`,
+      );
+    }
 
     const actorId = actor.userId || actor.id;
     if (dto.userId === actorId && !context.isAdmin) {
@@ -1345,45 +1533,47 @@ export class KpisService {
       selectedTeam.id,
       selectedTeam.teamCode,
       dto.userId,
-      startDate,
+      new Date(),
     );
 
-    const previousDate = this.previousDate(startDate);
     await this.prisma.$transaction(async (tx) => {
-      await tx.marketingKpiUserCategoryAssignment.deleteMany({
+      const existingRows = await tx.marketingKpiUserCategoryAssignment.findMany({
         where: {
           tenantId: context.tenantId,
           teamCode: selectedTeam.teamCode,
           userId: dto.userId,
-          startDate,
         },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        select: { id: true },
       });
 
-      await tx.marketingKpiUserCategoryAssignment.updateMany({
-        where: {
-          tenantId: context.tenantId,
-          teamCode: selectedTeam.teamCode,
-          userId: dto.userId,
-          startDate: { lt: startDate },
-          OR: [{ endDate: null }, { endDate: { gte: startDate } }],
-        },
-        data: {
-          endDate: previousDate,
-          updatedByUserId: actorId,
-        },
-      });
-
-      await tx.marketingKpiUserCategoryAssignment.create({
-        data: {
-          tenantId: context.tenantId,
-          teamCode: selectedTeam.teamCode,
-          userId: dto.userId,
-          category: dto.category as MarketingKpiCategory,
-          startDate,
-          endDate,
-          createdByUserId: actorId,
-        },
-      });
+      if (existingRows.length > 0) {
+        const [primary, ...duplicates] = existingRows;
+        await tx.marketingKpiUserCategoryAssignment.update({
+          where: { id: primary.id },
+          data: {
+            category: dto.category as MarketingKpiCategory,
+            updatedByUserId: actorId,
+          },
+        });
+        if (duplicates.length > 0) {
+          await tx.marketingKpiUserCategoryAssignment.deleteMany({
+            where: {
+              id: { in: duplicates.map((row) => row.id) },
+            },
+          });
+        }
+      } else {
+        await tx.marketingKpiUserCategoryAssignment.create({
+          data: {
+            tenantId: context.tenantId,
+            teamCode: selectedTeam.teamCode,
+            userId: dto.userId,
+            category: dto.category as MarketingKpiCategory,
+            createdByUserId: actorId,
+          },
+        });
+      }
     });
 
     return {
@@ -1482,8 +1672,13 @@ export class KpisService {
   async getMyDashboard(params: {
     startDate?: string;
     endDate?: string;
+    excludeCancel?: boolean;
+    excludeRestocking?: boolean;
+    excludeAbandoned?: boolean;
+    excludeRts?: boolean;
     actor: any;
   }) {
+    const options = this.resolveKpiExclusionOptions(params);
     const { context, selectedTeam } = await this.resolveTeamSelection(null);
     const { start, end, startDate, endDate, referenceDate } =
       this.buildDateRange(params.startDate, params.endDate);
@@ -1544,10 +1739,11 @@ export class KpisService {
         : Promise.resolve([]),
       this.computeUserMetricsForRange(
         context.tenantId,
-        selectedTeam.teamCode,
+        { teamId: selectedTeam.id, teamCode: selectedTeam.teamCode },
         user,
         start,
         end,
+        options,
       ),
     ]);
 
@@ -1597,7 +1793,12 @@ export class KpisService {
     startDate?: string;
     endDate?: string;
     teamCode?: string;
+    excludeCancel?: boolean;
+    excludeRestocking?: boolean;
+    excludeAbandoned?: boolean;
+    excludeRts?: boolean;
   }) {
+    const options = this.resolveKpiExclusionOptions(params);
     const { context, selectedTeam } = await this.resolveTeamSelection(
       params.teamCode,
     );
@@ -1611,25 +1812,47 @@ export class KpisService {
       return {
         selected: { startDate, endDate, teamCode: null },
         cards: [],
+        members: [],
       };
     }
 
-    const [teamTargetRows, actuals] = await Promise.all([
-      this.getTargetRowsOverlappingRange({
-        tenantId: context.tenantId,
-        teamCode: selectedTeam.teamCode,
-        scopeType: MarketingKpiScopeType.TEAM,
-        metricKeys: TEAM_METRICS,
-        start,
-        end,
-      }),
-      this.computeTeamMetricsForRange(
-        context.tenantId,
-        selectedTeam.teamCode,
-        start,
-        end,
-      ),
-    ]);
+    const [teamTargetRows, memberTargetRows, teamMembers, actuals] =
+      await Promise.all([
+        this.getTargetRowsOverlappingRange({
+          tenantId: context.tenantId,
+          teamCode: selectedTeam.teamCode,
+          scopeType: MarketingKpiScopeType.TEAM,
+          metricKeys: TEAM_METRICS,
+          start,
+          end,
+        }),
+        this.prisma.marketingKpiTarget.findMany({
+          where: {
+            tenantId: context.tenantId,
+            scopeType: {
+              in: [MarketingKpiScopeType.USER, MarketingKpiScopeType.CATEGORY],
+            },
+            teamCode: selectedTeam.teamCode,
+            metricKey: { in: [...USER_METRICS] },
+            startDate: { lte: end },
+            OR: [{ endDate: null }, { endDate: { gte: start } }],
+          },
+          orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+        }),
+        this.listEligibleUsersForTeam(
+          context.tenantId,
+          selectedTeam.id,
+          selectedTeam.teamCode,
+          end,
+        ),
+        this.computeTeamMetricsForRange(
+          context.tenantId,
+          { teamId: selectedTeam.id, teamCode: selectedTeam.teamCode },
+          start,
+          end,
+          options,
+        ),
+      ]);
 
     const dailyTargets = this.buildDailyTargetByMetric(
       TEAM_METRICS,
@@ -1652,6 +1875,34 @@ export class KpisService {
         dailyTargets.get(metricKey),
       ),
     );
+    const members = await Promise.all(
+      teamMembers.map((user) =>
+        this.buildExecutiveMemberRow({
+          tenantId: context.tenantId,
+          teamId: selectedTeam.id,
+          teamCode: selectedTeam.teamCode,
+          user,
+          start,
+          end,
+          startDate,
+          endDate,
+          dateKeys,
+          userTargetRows: memberTargetRows.filter(
+            (row) =>
+              row.scopeType === MarketingKpiScopeType.USER &&
+              row.userId === user.id,
+          ),
+          categoryTargetRows: user.currentCategory
+            ? memberTargetRows.filter(
+                (row) =>
+                  row.scopeType === MarketingKpiScopeType.CATEGORY &&
+                  row.category === user.currentCategory,
+              )
+            : [],
+          options,
+        }),
+      ),
+    );
 
     return {
       selected: {
@@ -1661,6 +1912,7 @@ export class KpisService {
         teamName: selectedTeam.name,
       },
       cards,
+      members,
     };
   }
 
@@ -1668,7 +1920,12 @@ export class KpisService {
     startDate?: string;
     endDate?: string;
     teamCode?: string;
+    excludeCancel?: boolean;
+    excludeRestocking?: boolean;
+    excludeAbandoned?: boolean;
+    excludeRts?: boolean;
   }) {
+    const options = this.resolveKpiExclusionOptions(params);
     const { context, teams, selectedTeam } = await this.resolveTeamSelection(
       params.teamCode,
     );
@@ -1737,12 +1994,14 @@ export class KpisService {
         },
         select: {
           date: true,
+          teamId: true,
           teamCode: true,
           spend: true,
           codPos: true,
           canceledCodPos: true,
           restockingCodPos: true,
           abandonedCodPos: true,
+          rtsCodPos: true,
         },
       }),
       Promise.all(
@@ -1764,10 +2023,13 @@ export class KpisService {
 
     const rows = await Promise.all(
       teamsToShow.map(async (team) => {
-        const normalizedTeamCode = this.normalize(team.teamCode);
-        const filteredRows = reconcileRows.filter(
-          (row) => this.normalize(row.teamCode) === normalizedTeamCode,
+        const filteredRows = reconcileRows.filter((row) =>
+          this.isRowInTeamScope(row, {
+            teamId: team.id,
+            teamCode: team.teamCode,
+          }),
         );
+        const normalizedTeamCode = this.normalize(team.teamCode);
         const teamTargetRows = targetRows.filter(
           (row) => this.normalize(row.teamCode) === normalizedTeamCode,
         );
@@ -1776,7 +2038,7 @@ export class KpisService {
           dateKeys,
           teamTargetRows,
         );
-        const totals = this.computeTeamMetricsFromRows(filteredRows);
+        const totals = this.computeTeamMetricsFromRows(filteredRows, options);
         const cards = TEAM_METRICS.map((metricKey) =>
           this.buildDashboardCard(
             metricKey,
@@ -1800,6 +2062,7 @@ export class KpisService {
           teamMembers.map((user) =>
             this.buildExecutiveMemberRow({
               tenantId: context.tenantId,
+              teamId: team.id,
               teamCode: team.teamCode,
               user,
               start,
@@ -1819,6 +2082,7 @@ export class KpisService {
                       row.category === user.currentCategory,
                   )
                 : [],
+              options,
             }),
           ),
         );

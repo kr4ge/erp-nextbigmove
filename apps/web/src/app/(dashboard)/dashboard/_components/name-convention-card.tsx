@@ -96,6 +96,7 @@ export function NameConventionCard({
     <DashboardSection
       title="Name Convention"
       icon={<ClipboardList className="h-3.5 w-3.5 text-orange-500" />}
+      className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
       contentClassName="space-y-3"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

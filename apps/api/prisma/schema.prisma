@@ -1044,15 +1044,13 @@ model MarketingKpiUserCategoryAssignment {
   teamCode        String
   userId          String               @db.Uuid
   category        MarketingKpiCategory
-  startDate       DateTime             @db.Date
-  endDate         DateTime?            @db.Date
   createdByUserId String               @db.Uuid
   updatedByUserId String?              @db.Uuid
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
-  @@index([tenantId, teamCode, userId, startDate, endDate])
-  @@index([tenantId, category, teamCode, startDate, endDate])
+  @@unique([tenantId, teamCode, userId])
+  @@index([tenantId, teamCode, category])
   @@map("marketing_kpi_user_category_assignments")
 }
 

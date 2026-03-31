@@ -11,13 +11,82 @@ import {
   INITIAL_USER_TARGET_FORM,
   TODAY,
 } from '../constants';
-import type { OverviewResponse } from '../types';
+import type {
+  CategoryTargetGroup,
+  KpiTargetRow,
+  OverviewResponse,
+  TeamTargetGroup,
+} from '../types';
 import { parseErrorMessage } from '../utils';
 
 type SubmitActionConfig = {
   key: string;
   request: () => Promise<unknown>;
   successMessage: string;
+};
+
+const buildTeamTargetGroups = (rows: KpiTargetRow[]): TeamTargetGroup[] => {
+  const grouped = new Map<string, TeamTargetGroup>();
+
+  rows.forEach((row) => {
+    const startDate = row.startDate || TODAY;
+    const key = `${row.teamCode}|${startDate}|${row.endDate || ''}`;
+    const existing = grouped.get(key) || {
+      id: key,
+      teamCode: row.teamCode,
+      startDate,
+      endDate: row.endDate || null,
+      adSpendTarget: null,
+      arPctTarget: null,
+    };
+
+    if (row.metricKey === 'TEAM_AD_SPEND') {
+      existing.adSpendTarget = row.targetValue;
+    }
+    if (row.metricKey === 'TEAM_AR_PCT') {
+      existing.arPctTarget = row.targetValue;
+    }
+
+    grouped.set(key, existing);
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    if (a.startDate !== b.startDate) return b.startDate.localeCompare(a.startDate);
+    return (b.endDate || '').localeCompare(a.endDate || '');
+  });
+};
+
+const buildCategoryTargetGroups = (rows: KpiTargetRow[]): CategoryTargetGroup[] => {
+  const grouped = new Map<string, CategoryTargetGroup>();
+
+  rows.forEach((row) => {
+    const startDate = row.startDate || TODAY;
+    const category = (row.category || 'SCALING') as CategoryTargetGroup['category'];
+    const key = `${row.teamCode}|${category}|${startDate}|${row.endDate || ''}`;
+    const existing = grouped.get(key) || {
+      id: key,
+      teamCode: row.teamCode,
+      category,
+      startDate,
+      endDate: row.endDate || null,
+      creativesTarget: null,
+      arPctTarget: null,
+    };
+
+    if (row.metricKey === 'USER_CREATIVES_CREATED') {
+      existing.creativesTarget = row.targetValue;
+    }
+    if (row.metricKey === 'USER_AR_PCT') {
+      existing.arPctTarget = row.targetValue;
+    }
+
+    grouped.set(key, existing);
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    if (a.startDate !== b.startDate) return b.startDate.localeCompare(a.startDate);
+    return (b.endDate || '').localeCompare(a.endDate || '');
+  });
 };
 
 export const useMarketingKpiManager = () => {
@@ -36,6 +105,8 @@ export const useMarketingKpiManager = () => {
   const [assignmentForm, setAssignmentForm] = useState(INITIAL_USER_CATEGORY_FORM);
   const [userTargetForm, setUserTargetForm] = useState(INITIAL_USER_TARGET_FORM);
   const [submittingKey, setSubmittingKey] = useState<string | null>(null);
+  const [editingTeamTargetId, setEditingTeamTargetId] = useState<string | null>(null);
+  const [editingCategoryTargetId, setEditingCategoryTargetId] = useState<string | null>(null);
 
   const selectedTeam = useMemo(
     () => overview?.teamOptions.find((team) => team.teamCode === selectedTeamCode) || null,
@@ -45,6 +116,16 @@ export const useMarketingKpiManager = () => {
   const canManageMarketingKpi = useMemo(
     () => permissions.includes('kpi.marketing.manage'),
     [permissions],
+  );
+
+  const teamTargetGroups = useMemo(
+    () => buildTeamTargetGroups(overview?.teamTargets || []),
+    [overview?.teamTargets],
+  );
+
+  const categoryTargetGroups = useMemo(
+    () => buildCategoryTargetGroups(overview?.categoryTargets || []),
+    [overview?.categoryTargets],
   );
 
   const fetchPermissions = useCallback(async () => {
@@ -108,7 +189,7 @@ export const useMarketingKpiManager = () => {
     async ({ key, request, successMessage }: SubmitActionConfig) => {
       if (!selectedTeamCode) {
         addToast('error', 'Select a team first.');
-        return;
+        return false;
       }
 
       setSubmittingKey(key);
@@ -116,8 +197,10 @@ export const useMarketingKpiManager = () => {
         await request();
         addToast('success', successMessage);
         await fetchOverview(selectedTeamCode);
+        return true;
       } catch (error) {
         addToast('error', parseErrorMessage(error));
+        return false;
       } finally {
         setSubmittingKey(null);
       }
@@ -126,10 +209,10 @@ export const useMarketingKpiManager = () => {
   );
 
   const saveTeamTargets = useCallback(
-    () =>
-      runSubmitAction({
+    async () => {
+      const success = await runSubmitAction({
         key: 'team-targets',
-        successMessage: 'Team KPI saved.',
+        successMessage: editingTeamTargetId ? 'Team KPI updated.' : 'Team KPI saved.',
         request: () =>
           apiClient.post('/kpis/marketing/team-targets', {
             teamCode: selectedTeamCode,
@@ -146,15 +229,20 @@ export const useMarketingKpiManager = () => {
               },
             ],
           }),
-      }),
-    [runSubmitAction, selectedTeamCode, teamTargetForm],
+      });
+
+      if (success) {
+        setEditingTeamTargetId(null);
+      }
+    },
+    [editingTeamTargetId, runSubmitAction, selectedTeamCode, teamTargetForm],
   );
 
   const saveCategoryTargets = useCallback(
-    () =>
-      runSubmitAction({
+    async () => {
+      const success = await runSubmitAction({
         key: 'category-targets',
-        successMessage: 'Category KPI saved.',
+        successMessage: editingCategoryTargetId ? 'Category KPI updated.' : 'Category KPI saved.',
         request: () =>
           apiClient.post('/kpis/marketing/category-targets', {
             teamCode: selectedTeamCode,
@@ -172,8 +260,13 @@ export const useMarketingKpiManager = () => {
               },
             ],
           }),
-      }),
-    [categoryTargetForm, runSubmitAction, selectedTeamCode],
+      });
+
+      if (success) {
+        setEditingCategoryTargetId(null);
+      }
+    },
+    [categoryTargetForm, editingCategoryTargetId, runSubmitAction, selectedTeamCode],
   );
 
   const saveUserCategoryAssignment = useCallback(
@@ -217,6 +310,96 @@ export const useMarketingKpiManager = () => {
     [runSubmitAction, selectedTeamCode, userTargetForm],
   );
 
+  const beginEditTeamTarget = useCallback((target: TeamTargetGroup) => {
+    setTeamTargetForm({
+      startDate: target.startDate,
+      endDate: target.endDate || '',
+      adSpend: target.adSpendTarget !== null ? target.adSpendTarget.toString() : '',
+      arPct: target.arPctTarget !== null ? target.arPctTarget.toString() : '',
+    });
+    setEditingTeamTargetId(target.id);
+  }, []);
+
+  const cancelEditTeamTarget = useCallback(() => {
+    setTeamTargetForm(INITIAL_TEAM_TARGET_FORM);
+    setEditingTeamTargetId(null);
+  }, []);
+
+  const beginEditCategoryTarget = useCallback((target: CategoryTargetGroup) => {
+    setCategoryTargetForm({
+      category: target.category,
+      startDate: target.startDate,
+      endDate: target.endDate || '',
+      creativesCreated:
+        target.creativesTarget !== null ? target.creativesTarget.toString() : '',
+      arPct: target.arPctTarget !== null ? target.arPctTarget.toString() : '',
+    });
+    setEditingCategoryTargetId(target.id);
+  }, []);
+
+  const cancelEditCategoryTarget = useCallback(() => {
+    setCategoryTargetForm(INITIAL_CATEGORY_TARGET_FORM);
+    setEditingCategoryTargetId(null);
+  }, []);
+
+  const deleteTeamTarget = useCallback(
+    async (target: TeamTargetGroup) => {
+      const success = await runSubmitAction({
+        key: `delete-team-target-${target.id}`,
+        successMessage: 'Team KPI deleted.',
+        request: () =>
+          apiClient.post('/kpis/marketing/target-groups/delete', {
+            teamCode: target.teamCode,
+            scopeType: 'TEAM',
+            startDate: target.startDate,
+            endDate: target.endDate || undefined,
+          }),
+      });
+
+      if (success && editingTeamTargetId === target.id) {
+        cancelEditTeamTarget();
+      }
+    },
+    [cancelEditTeamTarget, editingTeamTargetId, runSubmitAction],
+  );
+
+  const deleteCategoryTarget = useCallback(
+    async (target: CategoryTargetGroup) => {
+      const success = await runSubmitAction({
+        key: `delete-category-target-${target.id}`,
+        successMessage: 'Category template deleted.',
+        request: () =>
+          apiClient.post('/kpis/marketing/target-groups/delete', {
+            teamCode: target.teamCode,
+            scopeType: 'CATEGORY',
+            category: target.category,
+            startDate: target.startDate,
+            endDate: target.endDate || undefined,
+          }),
+      });
+
+      if (success && editingCategoryTargetId === target.id) {
+        cancelEditCategoryTarget();
+      }
+    },
+    [cancelEditCategoryTarget, editingCategoryTargetId, runSubmitAction],
+  );
+
+  useEffect(() => {
+    if (editingTeamTargetId && !teamTargetGroups.some((group) => group.id === editingTeamTargetId)) {
+      setEditingTeamTargetId(null);
+    }
+  }, [editingTeamTargetId, teamTargetGroups]);
+
+  useEffect(() => {
+    if (
+      editingCategoryTargetId &&
+      !categoryTargetGroups.some((group) => group.id === editingCategoryTargetId)
+    ) {
+      setEditingCategoryTargetId(null);
+    }
+  }, [categoryTargetGroups, editingCategoryTargetId]);
+
   return {
     permissions,
     selectedTeamCode,
@@ -239,6 +422,16 @@ export const useMarketingKpiManager = () => {
     userTargetForm,
     setUserTargetForm,
     submittingKey,
+    teamTargetGroups,
+    categoryTargetGroups,
+    isEditingTeamTarget: Boolean(editingTeamTargetId),
+    isEditingCategoryTarget: Boolean(editingCategoryTargetId),
+    beginEditTeamTarget,
+    cancelEditTeamTarget,
+    beginEditCategoryTarget,
+    cancelEditCategoryTarget,
+    deleteTeamTarget,
+    deleteCategoryTarget,
     saveTeamTargets,
     saveCategoryTargets,
     saveUserCategoryAssignment,

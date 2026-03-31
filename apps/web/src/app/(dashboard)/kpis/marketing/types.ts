@@ -38,8 +38,6 @@ export type CategoryAssignmentRow = {
   userId: string;
   userName: string;
   category: MarketingKpiCategory;
-  startDate: string | null;
-  endDate: string | null;
   createdAt: string;
 };
 
@@ -85,4 +83,23 @@ export type UserTargetFormState = {
   endDate: string;
   creativesCreated: string;
   arPct: string;
+};
+
+export type TeamTargetGroup = {
+  id: string;
+  teamCode: string;
+  startDate: string;
+  endDate: string | null;
+  adSpendTarget: number | null;
+  arPctTarget: number | null;
+};
+
+export type CategoryTargetGroup = {
+  id: string;
+  teamCode: string;
+  category: MarketingKpiCategory;
+  startDate: string;
+  endDate: string | null;
+  creativesTarget: number | null;
+  arPctTarget: number | null;
 };

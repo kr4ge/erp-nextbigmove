@@ -28,6 +28,7 @@ import { DashboardSection } from "./_components/dashboard-section";
 import {
   ExecutiveKpiSection,
   KpiProgressSection,
+  TeamKpiSection,
 } from "./_components/kpi-sections";
 import { NameConventionCard } from "./_components/name-convention-card";
 import {
@@ -102,6 +103,7 @@ export default function DashboardPage() {
   const [perms, setPerms] = useState<string[]>([]);
   const [excludeCancel, setExcludeCancel] = useState(true);
   const [excludeRestocking, setExcludeRestocking] = useState(true);
+  const [excludeAbandoned, setExcludeAbandoned] = useState(true);
   const [showAllWinning, setShowAllWinning] = useState(false);
   const [excludeRts, setExcludeRts] = useState(true);
   const [includeTax12, setIncludeTax12] = useState(false);
@@ -290,6 +292,7 @@ export default function DashboardPage() {
           params.end_date = formatDateInTimezone(range.endDate);
         params.exclude_cancel = excludeCancel;
         params.exclude_restocking = excludeRestocking;
+        params.exclude_abandoned = excludeAbandoned;
         params.exclude_rts = excludeRts;
         params.include_tax_12 = includeTax12;
         params.include_tax_1 = includeTax1;
@@ -314,6 +317,7 @@ export default function DashboardPage() {
     range.endDate,
     excludeCancel,
     excludeRestocking,
+    excludeAbandoned,
     excludeRts,
     includeTax12,
     includeTax1,
@@ -335,6 +339,7 @@ export default function DashboardPage() {
           params.end_date = formatDateInTimezone(range.endDate);
         params.exclude_cancel = excludeCancel;
         params.exclude_restocking = excludeRestocking;
+        params.exclude_abandoned = excludeAbandoned;
         const data = await getMarketingMyStats(params);
         if (data?.kpis) {
           setMyStats({
@@ -353,7 +358,14 @@ export default function DashboardPage() {
     };
 
     fetchMyStats();
-  }, [perms, range.startDate, range.endDate, excludeCancel, excludeRestocking]);
+  }, [
+    perms,
+    range.startDate,
+    range.endDate,
+    excludeCancel,
+    excludeRestocking,
+    excludeAbandoned,
+  ]);
 
   useEffect(() => {
     const fetchLeaderStats = async () => {
@@ -368,6 +380,7 @@ export default function DashboardPage() {
           params.end_date = formatDateInTimezone(range.endDate);
         params.exclude_cancel = excludeCancel;
         params.exclude_restocking = excludeRestocking;
+        params.exclude_abandoned = excludeAbandoned;
         if (teamCode) params.team_code = teamCode;
         setLeaderStats((await getMarketingLeaderStats(params)) || null);
       } catch (error: unknown) {
@@ -385,6 +398,7 @@ export default function DashboardPage() {
     range.endDate,
     excludeCancel,
     excludeRestocking,
+    excludeAbandoned,
     teamCode,
   ]);
 
@@ -399,6 +413,10 @@ export default function DashboardPage() {
           params.start_date = formatDateInTimezone(range.startDate);
         if (range.endDate)
           params.end_date = formatDateInTimezone(range.endDate);
+        params.exclude_cancel = excludeCancel;
+        params.exclude_restocking = excludeRestocking;
+        params.exclude_abandoned = excludeAbandoned;
+        params.exclude_rts = excludeRts;
         setMarketingKpiData(await getMarketingKpiMe(params));
       } catch (error: unknown) {
         setMarketingKpiError(
@@ -411,7 +429,15 @@ export default function DashboardPage() {
     };
 
     fetchMarketingKpi();
-  }, [canViewMarketingDashboard, range.startDate, range.endDate]);
+  }, [
+    canViewMarketingDashboard,
+    range.startDate,
+    range.endDate,
+    excludeCancel,
+    excludeRestocking,
+    excludeAbandoned,
+    excludeRts,
+  ]);
 
   useEffect(() => {
     const fetchTeamKpi = async () => {
@@ -424,6 +450,10 @@ export default function DashboardPage() {
           params.start_date = formatDateInTimezone(range.startDate);
         if (range.endDate)
           params.end_date = formatDateInTimezone(range.endDate);
+        params.exclude_cancel = excludeCancel;
+        params.exclude_restocking = excludeRestocking;
+        params.exclude_abandoned = excludeAbandoned;
+        params.exclude_rts = excludeRts;
         if (teamCode) params.team_code = teamCode;
         setTeamKpiData(await getMarketingKpiTeam(params));
       } catch (error: unknown) {
@@ -437,7 +467,16 @@ export default function DashboardPage() {
     };
 
     fetchTeamKpi();
-  }, [canViewMarketingLeader, range.startDate, range.endDate, teamCode]);
+  }, [
+    canViewMarketingLeader,
+    range.startDate,
+    range.endDate,
+    teamCode,
+    excludeCancel,
+    excludeRestocking,
+    excludeAbandoned,
+    excludeRts,
+  ]);
 
   useEffect(() => {
     const fetchExecutiveKpi = async () => {
@@ -450,6 +489,10 @@ export default function DashboardPage() {
           params.start_date = formatDateInTimezone(range.startDate);
         if (range.endDate)
           params.end_date = formatDateInTimezone(range.endDate);
+        params.exclude_cancel = excludeCancel;
+        params.exclude_restocking = excludeRestocking;
+        params.exclude_abandoned = excludeAbandoned;
+        params.exclude_rts = excludeRts;
         setExecutiveKpiData(await getMarketingKpiExecutive(params));
       } catch (error: unknown) {
         setExecutiveKpiError(
@@ -462,7 +505,15 @@ export default function DashboardPage() {
     };
 
     fetchExecutiveKpi();
-  }, [canViewExecutives, range.startDate, range.endDate]);
+  }, [
+    canViewExecutives,
+    range.startDate,
+    range.endDate,
+    excludeCancel,
+    excludeRestocking,
+    excludeAbandoned,
+    excludeRts,
+  ]);
 
   const resolvedShopSelection = useMemo(
     () => (isAllShopsMode ? shopOptions : selectedShops),
@@ -1671,6 +1722,12 @@ export default function DashboardPage() {
               checked: excludeRestocking,
               onChange: setExcludeRestocking,
             },
+            {
+              id: "exclude-abandoned",
+              label: "Exclude abandoned",
+              checked: excludeAbandoned,
+              onChange: setExcludeAbandoned,
+            },
           ]}
         />
       </div>
@@ -1809,15 +1866,20 @@ export default function DashboardPage() {
   );
 
   const renderExecutiveDashboard = () => (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {execError && (
         <AlertBanner tone="error" message={execError} className="mb-2" />
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-          Executive Dashboard
-        </h1>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Executive Dashboard
+          </h1>
+          <p className="text-sm text-slate-600">
+            Challenge-driven KPI command center for team and member performance.
+          </p>
+        </div>
         <DashboardDateControls
           range={range}
           onRangeChange={setRange}
@@ -1834,6 +1896,12 @@ export default function DashboardPage() {
               label: "Exclude Restocking",
               checked: excludeRestocking,
               onChange: setExcludeRestocking,
+            },
+            {
+              id: "exclude-abandoned",
+              label: "Exclude Abandoned",
+              checked: excludeAbandoned,
+              onChange: setExcludeAbandoned,
             },
             {
               id: "exclude-rts",
@@ -1861,14 +1929,14 @@ export default function DashboardPage() {
         <AlertBanner tone="info" message="Loading executive stats..." />
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <MetricCard
           label="Total Revenue"
           value={formatCurrency(execStats?.revenue)}
           icon={<DollarSignIcon className="h-5 w-5" />}
           tone="success"
           className="h-full"
-          valueClassName="text-xl"
+          valueClassName="text-2xl"
         />
         <MetricCard
           label="Total Sales"
@@ -1877,7 +1945,7 @@ export default function DashboardPage() {
           icon={<TrendingUp className="h-5 w-5" />}
           tone="default"
           className="h-full"
-          valueClassName="text-xl"
+          valueClassName="text-2xl"
         />
         <MetricCard
           label="Confirmed Sales"
@@ -1885,7 +1953,7 @@ export default function DashboardPage() {
           icon={<CheckCircle2 className="h-5 w-5" />}
           tone="success"
           className="h-full"
-          valueClassName="text-xl"
+          valueClassName="text-2xl"
         />
         <MetricCard
           label="Ad Spend"
@@ -1894,7 +1962,7 @@ export default function DashboardPage() {
           icon={<Coins className="h-5 w-5" />}
           tone="warning"
           className="h-full"
-          valueClassName="text-xl"
+          valueClassName="text-2xl"
         />
         <MetricCard
           label="AR %"
@@ -1903,7 +1971,7 @@ export default function DashboardPage() {
           icon={<PieChart className="h-5 w-5" />}
           tone="default"
           className="h-full"
-          valueClassName="text-xl"
+          valueClassName="text-2xl"
         />
         <MetricCard
           label="CM (RTS 20%)"
@@ -1912,7 +1980,7 @@ export default function DashboardPage() {
           icon={<Zap className="h-5 w-5" />}
           tone="warning"
           className="h-full"
-          valueClassName="text-xl"
+          valueClassName="text-2xl"
         />
       </div>
 
@@ -1966,6 +2034,12 @@ export default function DashboardPage() {
               checked: excludeRestocking,
               onChange: setExcludeRestocking,
             },
+            {
+              id: "exclude-abandoned",
+              label: "Exclude abandoned",
+              checked: excludeAbandoned,
+              onChange: setExcludeAbandoned,
+            },
           ]}
         />
       </div>
@@ -1974,19 +2048,10 @@ export default function DashboardPage() {
         <AlertBanner tone="info" message="Loading your stats..." />
       )}
 
-      <KpiProgressSection
-        title="Team KPI Progress"
-        description="Live team KPI performance for the selected range."
-        cards={teamKpiData?.cards || []}
+      <TeamKpiSection
+        data={teamKpiData}
         loading={teamKpiLoading}
         error={teamKpiError}
-        meta={
-          teamKpiData?.selected?.teamName ? (
-            <span className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
-              {teamKpiData.selected.teamName}
-            </span>
-          ) : null
-        }
       />
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">

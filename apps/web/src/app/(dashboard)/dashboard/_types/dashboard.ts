@@ -175,6 +175,7 @@ export type MarketingKpiTeamDashboardResponse = {
     teamName?: string;
   };
   cards: KpiDashboardCard[];
+  members: ExecutiveKpiMemberRow[];
 };
 
 export type MarketingKpiExecutiveDashboardResponse = {

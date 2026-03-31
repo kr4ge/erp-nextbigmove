@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
-import { Card } from '@/components/ui/card';
+import { useMemo, useState } from 'react';
+import { Layers, Lock, Target, Users, Zap } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
+import { DashboardTabs } from '@/components/ui/dashboard-tabs';
 import { HeaderFilters } from './_components/header-filters';
 import { TeamTargetForm } from './_components/team-target-form';
 import { CategoryTargetForm } from './_components/category-target-form';
@@ -10,10 +11,10 @@ import { UserCategoryAssignmentForm } from './_components/user-category-assignme
 import { UserTargetOverrideForm } from './_components/user-target-override-form';
 import { TeamCategoryHistory } from './_components/team-category-history';
 import { UserHistory } from './_components/user-history';
-import { OverviewStrip } from './_components/overview-strip';
 import { OverviewError } from './_components/overview-error';
 import { useMarketingKpiManager } from './hooks/use-marketing-kpi-manager';
-import { formatDateRangeLabel } from './utils';
+
+type SetupTab = 'team' | 'category' | 'assignment' | 'override';
 
 export default function MarketingKpiPage() {
   const {
@@ -37,6 +38,16 @@ export default function MarketingKpiPage() {
     userTargetForm,
     setUserTargetForm,
     submittingKey,
+    teamTargetGroups,
+    categoryTargetGroups,
+    isEditingTeamTarget,
+    isEditingCategoryTarget,
+    beginEditTeamTarget,
+    cancelEditTeamTarget,
+    beginEditCategoryTarget,
+    cancelEditCategoryTarget,
+    deleteTeamTarget,
+    deleteCategoryTarget,
     saveTeamTargets,
     saveCategoryTargets,
     saveUserCategoryAssignment,
@@ -54,12 +65,37 @@ export default function MarketingKpiPage() {
   const eligibleUsers = overview?.eligibleUsers || [];
   const teamName = selectedTeam?.name || '';
   const teamCode = selectedTeam?.teamCode || selectedTeamCode;
+  const [activeSetupTab, setActiveSetupTab] = useState<SetupTab>('team');
+
+  const setupTabs = useMemo(
+    () => [
+      { value: 'team' as const, label: 'Team KPI', icon: <Target className="h-3.5 w-3.5" /> },
+      {
+        value: 'category' as const,
+        label: 'Category Template',
+        icon: <Layers className="h-3.5 w-3.5" />,
+      },
+      {
+        value: 'assignment' as const,
+        label: 'User Category',
+        icon: <Users className="h-3.5 w-3.5" />,
+        badge: eligibleUsers.length,
+      },
+      {
+        value: 'override' as const,
+        label: 'User Override',
+        icon: <Zap className="h-3.5 w-3.5" />,
+        badge: eligibleUsers.length,
+      },
+    ],
+    [eligibleUsers.length],
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="KPI Marketing"
-        description="Assign team KPI, category KPI, and individual KPI for marketing."
+        title="Marketing KPI"
+        description="Set targets and manage assignments."
         actions={
           <HeaderFilters
             selectedTeamCode={selectedTeamCode}
@@ -73,17 +109,9 @@ export default function MarketingKpiPage() {
         }
       />
 
-      <OverviewStrip
-        teamName={teamName}
-        teamCode={teamCode}
-        dateRange={formatDateRangeLabel(filterStartDate, filterEndDate)}
-        eligibleUserCount={eligibleUsers.length}
-        loading={loading}
-      />
-
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-          Refreshing KPI data…
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
+          Refreshing…
         </div>
       ) : null}
 
@@ -96,53 +124,112 @@ export default function MarketingKpiPage() {
       ) : null}
 
       {canManageMarketingKpi ? (
-        <>
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <TeamTargetForm
-              form={teamTargetForm}
-              setForm={setTeamTargetForm}
-              loading={submittingKey === 'team-targets'}
-              disabled={!hasSelectedTeam || loading}
-              onSave={() => void saveTeamTargets()}
-            />
-
-            <CategoryTargetForm
-              form={categoryTargetForm}
-              setForm={setCategoryTargetForm}
-              categories={categories}
-              loading={submittingKey === 'category-targets'}
-              disabled={!hasSelectedTeam || loading}
-              onSave={() => void saveCategoryTargets()}
-            />
+        <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+            <Target className="h-3.5 w-3.5 text-orange-500" />
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+              KPI Settings
+            </h2>
+            <span className="ml-auto text-[11px] text-slate-500">{teamName || teamCode || 'No team selected'}</span>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <UserCategoryAssignmentForm
-              form={assignmentForm}
-              setForm={setAssignmentForm}
-              categories={categories}
-              eligibleUsers={eligibleUsers}
-              loading={submittingKey === 'user-category'}
-              disabled={!hasSelectedTeam || loading}
-              onSave={() => void saveUserCategoryAssignment()}
+          <div className="space-y-3 p-3">
+            <DashboardTabs
+              items={setupTabs}
+              value={activeSetupTab}
+              onValueChange={setActiveSetupTab}
             />
 
-            <UserTargetOverrideForm
-              form={userTargetForm}
-              setForm={setUserTargetForm}
-              eligibleUsers={eligibleUsers}
-              loading={submittingKey === 'user-targets'}
-              disabled={!hasSelectedTeam || loading}
-              onSave={() => void saveUserTargetOverride()}
-            />
+            {!hasSelectedTeam ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
+                Select a team to configure KPI settings.
+              </div>
+            ) : null}
+
+            {activeSetupTab === 'team' ? (
+              <TeamTargetForm
+                form={teamTargetForm}
+                setForm={setTeamTargetForm}
+                loading={submittingKey === 'team-targets'}
+                disabled={!hasSelectedTeam || loading}
+                onSave={() => void saveTeamTargets()}
+                variant="plain"
+                targets={teamTargetGroups}
+                isEditing={isEditingTeamTarget}
+                onEditTarget={beginEditTeamTarget}
+                onCancelEdit={cancelEditTeamTarget}
+                onDeleteTarget={(target) => {
+                  if (window.confirm('Delete this team KPI target?')) {
+                    void deleteTeamTarget(target);
+                  }
+                }}
+                submittingKey={submittingKey}
+              />
+            ) : null}
+
+            {activeSetupTab === 'category' ? (
+              <CategoryTargetForm
+                form={categoryTargetForm}
+                setForm={setCategoryTargetForm}
+                categories={categories}
+                loading={submittingKey === 'category-targets'}
+                disabled={!hasSelectedTeam || loading}
+                onSave={() => void saveCategoryTargets()}
+                variant="plain"
+                targets={categoryTargetGroups}
+                isEditing={isEditingCategoryTarget}
+                onEditTarget={beginEditCategoryTarget}
+                onCancelEdit={cancelEditCategoryTarget}
+                onDeleteTarget={(target) => {
+                  if (window.confirm('Delete this category KPI template?')) {
+                    void deleteCategoryTarget(target);
+                  }
+                }}
+                submittingKey={submittingKey}
+              />
+            ) : null}
+
+            {activeSetupTab === 'assignment' ? (
+              <UserCategoryAssignmentForm
+                form={assignmentForm}
+                setForm={setAssignmentForm}
+                categories={categories}
+                eligibleUsers={eligibleUsers}
+                loading={submittingKey === 'user-category'}
+                disabled={!hasSelectedTeam || loading}
+                onSave={() => void saveUserCategoryAssignment()}
+                variant="plain"
+              />
+            ) : null}
+
+            {activeSetupTab === 'override' ? (
+              <UserTargetOverrideForm
+                form={userTargetForm}
+                setForm={setUserTargetForm}
+                eligibleUsers={eligibleUsers}
+                loading={submittingKey === 'user-targets'}
+                disabled={!hasSelectedTeam || loading}
+                onSave={() => void saveUserTargetOverride()}
+                variant="plain"
+              />
+            ) : null}
           </div>
-        </>
+        </section>
       ) : (
-        <Card>
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-            Read-only KPI view. Historical targets and assignments are visible below, but write access is limited to users with <span className="font-semibold text-slate-900">`kpi.marketing.manage`</span>.
+        <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+            <Lock className="h-3.5 w-3.5 text-orange-500" />
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+              KPI Settings
+            </h2>
           </div>
-        </Card>
+          <div className="p-3">
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+              Read-only mode. Request{' '}
+              <span className="font-semibold text-slate-900">kpi.marketing.manage</span> to edit KPI settings.
+            </div>
+          </div>
+        </section>
       )}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

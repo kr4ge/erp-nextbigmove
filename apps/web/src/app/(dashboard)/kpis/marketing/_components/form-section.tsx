@@ -1,15 +1,21 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import clsx from 'clsx';
 import { type ReactNode } from 'react';
 
 type FormSectionProps = {
   title: string;
-  description: string;
+  description?: string;
   children: ReactNode;
   actionLabel: string;
   onAction: () => void;
   loading?: boolean;
   disabled?: boolean;
+  variant?: 'card' | 'plain';
+  footerHint?: string;
+  secondaryActionLabel?: string;
+  onSecondaryAction?: () => void;
+  secondaryActionDisabled?: boolean;
 };
 
 export function FormSection({
@@ -20,21 +26,60 @@ export function FormSection({
   onAction,
   loading,
   disabled,
+  variant = 'card',
+  footerHint = 'Applies to selected team and date window.',
+  secondaryActionLabel,
+  onSecondaryAction,
+  secondaryActionDisabled,
 }: FormSectionProps) {
-  return (
-    <Card>
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-          <p className="text-sm text-slate-600">{description}</p>
+  const content = (
+    <div
+      className={clsx(
+        'space-y-3 rounded-lg border border-slate-200 bg-gradient-to-b from-white to-orange-50/20 p-3',
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+        <div className="space-y-0.5">
+          <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+          {description ? <p className="text-xs text-slate-600">{description}</p> : null}
         </div>
+      </div>
+      <div>
         {children}
-        <div className="flex justify-end">
-          <Button loading={loading} disabled={disabled} onClick={onAction}>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
+        <p className="text-[11px] text-slate-500">{footerHint}</p>
+        <div className="flex items-center gap-2">
+          {secondaryActionLabel && onSecondaryAction ? (
+            <Button
+              variant="outline"
+              className="h-9 rounded-lg"
+              disabled={secondaryActionDisabled || loading}
+              onClick={onSecondaryAction}
+            >
+              {secondaryActionLabel}
+            </Button>
+          ) : null}
+          <Button
+            className="h-9 rounded-lg bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700 focus:ring-orange-200 focus:ring-offset-0"
+            loading={loading}
+            disabled={disabled}
+            onClick={onAction}
+          >
             {actionLabel}
           </Button>
         </div>
       </div>
+    </div>
+  );
+
+  if (variant === 'plain') {
+    return <section>{content}</section>;
+  }
+
+  return (
+    <Card padding="sm">
+      {content}
     </Card>
   );
 }

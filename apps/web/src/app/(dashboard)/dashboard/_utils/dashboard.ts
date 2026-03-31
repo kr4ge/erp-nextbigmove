@@ -30,26 +30,71 @@ export const KPI_STATUS_META: Record<
   { label: string; badgeClass: string; progressClass: string }
 > = {
   ON_TRACK: {
-    label: "On Track",
+    label: "Winning Pace",
     badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
     progressClass: "bg-emerald-500",
   },
   AT_RISK: {
-    label: "At Risk",
+    label: "Needs Push",
     badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
     progressClass: "bg-amber-500",
   },
   MISSED: {
-    label: "Missed",
-    badgeClass: "border-rose-200 bg-rose-50 text-rose-700",
-    progressClass: "bg-rose-500",
+    label: "Recovery Mode",
+    badgeClass: "border-orange-200 bg-orange-50 text-orange-700",
+    progressClass: "bg-orange-500",
   },
   NO_TARGET: {
-    label: "No Target",
+    label: "Set Goal",
     badgeClass: "border-slate-200 bg-slate-50 text-slate-600",
     progressClass: "bg-slate-300",
   },
 };
+
+/**
+ * Calculate the current streak of consecutive days where achievement >= threshold.
+ * Counts backwards from the most recent day in dailyProgress.
+ */
+export function calculateStreak(
+  dailyProgress: KpiDashboardCard["dailyProgress"],
+  threshold = 100,
+): number {
+  if (!dailyProgress || dailyProgress.length === 0) return 0;
+  const sorted = [...dailyProgress].sort(
+    (a, b) => b.date.localeCompare(a.date),
+  );
+  let streak = 0;
+  for (const day of sorted) {
+    if (day.achievementPct !== null && day.achievementPct >= threshold) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+/** Motivational message based on streak length */
+export function getStreakMessage(streak: number): string {
+  if (streak >= 14) return "Unstoppable!";
+  if (streak >= 7) return "On fire!";
+  if (streak >= 3) return "Building momentum!";
+  if (streak >= 1) return "Keep it up!";
+  return "";
+}
+
+/** Summary-level motivational message for executive view */
+export function getTeamSummaryMessage(
+  onTrack: number,
+  total: number,
+): string {
+  if (total === 0) return "No teams with active targets";
+  const pct = onTrack / total;
+  if (pct >= 0.8) return "Outstanding performance across teams!";
+  if (pct >= 0.5) return "Good progress — keep the momentum going";
+  if (pct > 0) return "Room to grow — let's push for more";
+  return "Let's get those numbers moving!";
+}
 
 export const formatDateInTimezone = (date: Date) =>
   new Intl.DateTimeFormat("en-CA", {
