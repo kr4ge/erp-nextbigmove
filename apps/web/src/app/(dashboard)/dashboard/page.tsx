@@ -88,6 +88,59 @@ type DashboardTenant = {
 
 const EMPTY_SHOP_SELECTION: string[] = [];
 
+function toSafeNumber(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function computeAdjustedCod(
+  cod: number,
+  canceled: number,
+  restocking: number,
+  abandoned: number,
+  opts: {
+    excludeCancel: boolean;
+    excludeRestocking: boolean;
+    excludeAbandoned: boolean;
+  },
+) {
+  return (
+    cod -
+    (opts.excludeCancel ? canceled : 0) -
+    (opts.excludeRestocking ? restocking : 0) -
+    (opts.excludeAbandoned ? abandoned : 0)
+  );
+}
+
+function computeCmRtsForecast(params: {
+  revenueBase: number;
+  adSpend: number;
+  sf: number;
+  ff: number;
+  iF: number;
+  codFeeDelivered: number;
+  cogsAdjusted: number;
+  cogsRts: number;
+  rtsPct: number;
+}) {
+  const rtsFraction = Math.max(0, Math.min(100, params.rtsPct)) / 100;
+  const revenueAfterRts = (1 - rtsFraction) * params.revenueBase;
+  return (
+    revenueAfterRts -
+    params.adSpend -
+    params.sf -
+    params.ff -
+    params.iF -
+    params.codFeeDelivered -
+    params.cogsAdjusted +
+    params.cogsRts
+  );
+}
+
 export default function DashboardPage() {
   const today = useMemo(() => formatDateInTimezone(new Date()), []);
   const todayRange = useMemo(() => getTodayRange(), []);
@@ -299,8 +352,51 @@ export default function DashboardPage() {
         const overview = await getExecutiveOverview(params);
         const kpis = overview?.kpis || null;
         const counts = overview?.counts || {};
+        const adjustedGrossCod = kpis
+          ? computeAdjustedCod(
+              toSafeNumber(kpis.gross_cod),
+              toSafeNumber(kpis.canceled_cod),
+              toSafeNumber(kpis.restocking_cod),
+              toSafeNumber(kpis.abandoned_cod),
+              {
+                excludeCancel,
+                excludeRestocking,
+                excludeAbandoned,
+              },
+            )
+          : 0;
+        const purchasesForCmRts =
+          toSafeNumber(counts.purchases) +
+          (excludeRts ? toSafeNumber(counts.rts) : 0);
+        const aovForCmRts =
+          purchasesForCmRts > 0 ? adjustedGrossCod / purchasesForCmRts : 0;
+        const revenueBaseForCmRts = aovForCmRts * purchasesForCmRts;
+        const cogsAdjusted = kpis
+          ? toSafeNumber(kpis.cogs) -
+            (excludeCancel ? toSafeNumber(kpis.cogs_canceled) : 0) -
+            (excludeRestocking ? toSafeNumber(kpis.cogs_restocking) : 0)
+          : 0;
+        const cmRtsForecast = kpis
+          ? computeCmRtsForecast({
+              revenueBase: revenueBaseForCmRts,
+              adSpend: toSafeNumber(kpis.ad_spend),
+              sf: toSafeNumber(kpis.sf_fees),
+              ff: toSafeNumber(kpis.ff_fees),
+              iF: toSafeNumber(kpis.if_fees),
+              codFeeDelivered: toSafeNumber(kpis.cod_fee_delivered),
+              cogsAdjusted,
+              cogsRts: toSafeNumber(kpis.cogs_rts),
+              rtsPct: 20,
+            })
+          : 0;
         setExecStats(
-          kpis ? { ...kpis, purchases: counts.purchases ?? 0 } : null,
+          kpis
+            ? {
+                ...kpis,
+                purchases: toSafeNumber(counts.purchases),
+                cm_rts_forecast: cmRtsForecast,
+              }
+            : null,
         );
       } catch (error: unknown) {
         setExecError(
