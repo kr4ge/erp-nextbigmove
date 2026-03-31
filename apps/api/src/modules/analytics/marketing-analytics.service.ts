@@ -616,6 +616,7 @@ export class MarketingAnalyticsService {
     excludeCancel: boolean;
     excludeRestocking: boolean;
     excludeAbandoned: boolean;
+    excludeRts: boolean;
     user: any;
   }) {
     const startStr = (opts.startDate && opts.startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
@@ -662,6 +663,7 @@ export class MarketingAnalyticsService {
         spend: true,
         codPos: true,
         canceledCodPos: true,
+        rtsCodPos: true,
         restockingCodPos: true,
         abandonedCodPos: true,
       },
@@ -670,12 +672,14 @@ export class MarketingAnalyticsService {
     const spend = this.toNumber(agg?._sum?.spend);
     const revenueRaw = this.toNumber(agg?._sum?.codPos);
     const canceledCod = this.toNumber(agg?._sum?.canceledCodPos);
+    const rtsCod = this.toNumber(agg?._sum?.rtsCodPos);
     const restockingCod = this.toNumber(agg?._sum?.restockingCodPos);
     const abandonedCod = this.toNumber(agg?._sum?.abandonedCodPos);
     const revenue = Math.max(
       0,
       revenueRaw -
         (opts.excludeCancel ? canceledCod : 0) -
+        (opts.excludeRts ? rtsCod : 0) -
         (opts.excludeRestocking ? restockingCod : 0) -
         (opts.excludeAbandoned ? abandonedCod : 0),
     );
@@ -728,6 +732,7 @@ export class MarketingAnalyticsService {
     excludeCancel: boolean;
     excludeRestocking: boolean;
     excludeAbandoned: boolean;
+    excludeRts: boolean;
     user: User;
     teamCodeOverride?: string | null;
   }) {
@@ -771,6 +776,7 @@ export class MarketingAnalyticsService {
         spend: true,
         codPos: true,
         canceledCodPos: true,
+        rtsCodPos: true,
         restockingCodPos: true,
         abandonedCodPos: true,
       },
@@ -786,12 +792,14 @@ export class MarketingAnalyticsService {
     const spend = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.spend), 0));
     const revenueRaw = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.codPos), 0));
     const canceledCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.canceledCodPos), 0));
+    const rtsCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.rtsCodPos), 0));
     const restockingCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.restockingCodPos), 0));
     const abandonedCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.abandonedCodPos), 0));
     const revenue = Math.max(
       0,
       revenueRaw -
         (opts.excludeCancel ? canceledCod : 0) -
+        (opts.excludeRts ? rtsCod : 0) -
         (opts.excludeRestocking ? restockingCod : 0) -
         (opts.excludeAbandoned ? abandonedCod : 0),
     );

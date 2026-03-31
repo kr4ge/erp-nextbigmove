@@ -27,7 +27,7 @@ import { DashboardDateControls } from "./_components/dashboard-date-controls";
 import { DashboardSection } from "./_components/dashboard-section";
 import {
   ExecutiveKpiSection,
-  KpiProgressSection,
+  PersonalKpiSection,
   TeamKpiSection,
 } from "./_components/kpi-sections";
 import { NameConventionCard } from "./_components/name-convention-card";
@@ -340,6 +340,7 @@ export default function DashboardPage() {
         params.exclude_cancel = excludeCancel;
         params.exclude_restocking = excludeRestocking;
         params.exclude_abandoned = excludeAbandoned;
+        params.exclude_rts = excludeRts;
         const data = await getMarketingMyStats(params);
         if (data?.kpis) {
           setMyStats({
@@ -365,6 +366,7 @@ export default function DashboardPage() {
     excludeCancel,
     excludeRestocking,
     excludeAbandoned,
+    excludeRts,
   ]);
 
   useEffect(() => {
@@ -381,6 +383,7 @@ export default function DashboardPage() {
         params.exclude_cancel = excludeCancel;
         params.exclude_restocking = excludeRestocking;
         params.exclude_abandoned = excludeAbandoned;
+        params.exclude_rts = excludeRts;
         if (teamCode) params.team_code = teamCode;
         setLeaderStats((await getMarketingLeaderStats(params)) || null);
       } catch (error: unknown) {
@@ -399,6 +402,7 @@ export default function DashboardPage() {
     excludeCancel,
     excludeRestocking,
     excludeAbandoned,
+    excludeRts,
     teamCode,
   ]);
 
@@ -1728,6 +1732,12 @@ export default function DashboardPage() {
               checked: excludeAbandoned,
               onChange: setExcludeAbandoned,
             },
+            {
+              id: "exclude-rts",
+              label: "Exclude RTS",
+              checked: excludeRts,
+              onChange: setExcludeRts,
+            },
           ]}
         />
       </div>
@@ -1736,7 +1746,7 @@ export default function DashboardPage() {
         <AlertBanner tone="info" message="Loading your stats..." />
       )}
 
-      <KpiProgressSection
+      <PersonalKpiSection
         title="My Marketing KPI"
         description="Live KPI progress for your current active targets."
         cards={marketingKpiData?.cards || []}
@@ -1751,17 +1761,11 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-4">
         <MetricCard
           label="My Ad Spent"
           value={formatCurrency(myStats?.ad_spend)}
           icon={<Coins className="h-5 w-5 text-emerald-600" />}
-          tone="default"
-        />
-        <MetricCard
-          label="My AR"
-          value={formatPercent(myStats?.ar)}
-          icon={<PieChart className="h-5 w-5 text-red-600" />}
           tone="default"
         />
         <MetricCard
@@ -2039,6 +2043,12 @@ export default function DashboardPage() {
               label: "Exclude abandoned",
               checked: excludeAbandoned,
               onChange: setExcludeAbandoned,
+            },
+            {
+              id: "exclude-rts",
+              label: "Exclude RTS",
+              checked: excludeRts,
+              onChange: setExcludeRts,
             },
           ]}
         />

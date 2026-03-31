@@ -18,6 +18,13 @@ function clampPercent(value: number | null | undefined) {
   return Math.max(0, Math.min(value ?? 0, 100));
 }
 
+function getProgressColor(progress: number) {
+  if (progress < 25) return "#F97316";
+  if (progress < 50) return "#FDBA74";
+  if (progress < 75) return "#86EFAC";
+  return "#10B981";
+}
+
 interface KpiMilestoneTrackProps {
   progress: number | null | undefined;
   activeColor: string;
@@ -28,12 +35,14 @@ interface KpiMilestoneTrackProps {
 
 export function KpiMilestoneTrack({
   progress,
-  activeColor,
+  activeColor: _activeColor,
   steps = DEFAULT_STEPS,
   size = "md",
   className,
 }: KpiMilestoneTrackProps) {
   const safeProgress = clampPercent(progress);
+  const orderedSteps = [...steps].sort((a, b) => a.value - b.value);
+  const progressColor = getProgressColor(safeProgress);
   const trackHeight = size === "sm" ? "h-1.5" : "h-2.5";
   const dotSize = size === "sm" ? "h-3 w-3" : "h-4 w-4";
   const labelSize = size === "sm" ? "text-[10px]" : "text-[11px]";
@@ -49,12 +58,12 @@ export function KpiMilestoneTrack({
           )}
           style={{
             width: `${safeProgress}%`,
-            backgroundColor: activeColor,
-            boxShadow: `0 0 8px ${activeColor}40`,
+            backgroundColor: progressColor,
+            boxShadow: `0 0 8px ${progressColor}40`,
           }}
         />
 
-        {steps.map((step) => {
+        {orderedSteps.map((step) => {
           const reached = safeProgress >= step.value;
           return (
             <div
@@ -68,7 +77,7 @@ export function KpiMilestoneTrack({
                   dotSize,
                   reached ? "" : "bg-slate-200",
                 )}
-                style={reached ? { backgroundColor: activeColor } : undefined}
+                style={reached ? { backgroundColor: progressColor } : undefined}
               />
             </div>
           );
@@ -76,14 +85,17 @@ export function KpiMilestoneTrack({
       </div>
 
       <div className="relative h-4">
-        {steps.map((step) => (
+        {orderedSteps.map((step) => (
           <span
             key={step.value}
             className={clsx(
               "absolute top-0 -translate-x-1/2 text-center font-medium text-slate-400",
               labelSize,
             )}
-            style={{ left: `${step.value}%` }}
+            style={{
+              left: `${step.value}%`,
+              color: safeProgress >= step.value ? progressColor : undefined,
+            }}
           >
             {step.label}
           </span>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layers, Lock, Target, Users, Zap } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { DashboardTabs } from '@/components/ui/dashboard-tabs';
@@ -29,6 +29,8 @@ export default function MarketingKpiPage() {
     overviewError,
     selectedTeam,
     canManageMarketingKpi,
+    canManageTeamKpi,
+    isMarketingLeaderOnly,
     teamTargetForm,
     setTeamTargetForm,
     categoryTargetForm,
@@ -65,30 +67,48 @@ export default function MarketingKpiPage() {
   const eligibleUsers = overview?.eligibleUsers || [];
   const teamName = selectedTeam?.name || '';
   const teamCode = selectedTeam?.teamCode || selectedTeamCode;
-  const [activeSetupTab, setActiveSetupTab] = useState<SetupTab>('team');
+  const [activeSetupTab, setActiveSetupTab] = useState<SetupTab>(
+    canManageTeamKpi ? 'team' : 'category',
+  );
+
+  useEffect(() => {
+    if (!canManageTeamKpi && activeSetupTab === 'team') {
+      setActiveSetupTab('category');
+    }
+  }, [activeSetupTab, canManageTeamKpi]);
 
   const setupTabs = useMemo(
-    () => [
-      { value: 'team' as const, label: 'Team KPI', icon: <Target className="h-3.5 w-3.5" /> },
-      {
-        value: 'category' as const,
-        label: 'Category Template',
-        icon: <Layers className="h-3.5 w-3.5" />,
-      },
-      {
-        value: 'assignment' as const,
-        label: 'User Category',
-        icon: <Users className="h-3.5 w-3.5" />,
-        badge: eligibleUsers.length,
-      },
-      {
-        value: 'override' as const,
-        label: 'User Override',
-        icon: <Zap className="h-3.5 w-3.5" />,
-        badge: eligibleUsers.length,
-      },
-    ],
-    [eligibleUsers.length],
+    () => {
+      const tabs = [];
+      if (canManageTeamKpi) {
+        tabs.push({
+          value: 'team' as const,
+          label: 'Team KPI',
+          icon: <Target className="h-3.5 w-3.5" />,
+        });
+      }
+      tabs.push(
+        {
+          value: 'category' as const,
+          label: 'Category Template',
+          icon: <Layers className="h-3.5 w-3.5" />,
+        },
+        {
+          value: 'assignment' as const,
+          label: 'User Category',
+          icon: <Users className="h-3.5 w-3.5" />,
+          badge: eligibleUsers.length,
+        },
+        {
+          value: 'override' as const,
+          label: 'User Override',
+          icon: <Zap className="h-3.5 w-3.5" />,
+          badge: eligibleUsers.length,
+        },
+      );
+      return tabs;
+    },
+    [canManageTeamKpi, eligibleUsers.length],
   );
 
   return (
@@ -102,6 +122,12 @@ export default function MarketingKpiPage() {
             filterStartDate={filterStartDate}
             filterEndDate={filterEndDate}
             teamOptions={overview?.teamOptions || []}
+            showTeamSelector={!isMarketingLeaderOnly}
+            fixedTeamLabel={
+              isMarketingLeaderOnly
+                ? teamName || teamCode || 'Assigned team'
+                : undefined
+            }
             onTeamCodeChange={setSelectedTeamCode}
             onFilterStartDateChange={setFilterStartDate}
             onFilterEndDateChange={setFilterEndDate}
@@ -146,7 +172,7 @@ export default function MarketingKpiPage() {
               </div>
             ) : null}
 
-            {activeSetupTab === 'team' ? (
+            {canManageTeamKpi && activeSetupTab === 'team' ? (
               <TeamTargetForm
                 form={teamTargetForm}
                 setForm={setTeamTargetForm}

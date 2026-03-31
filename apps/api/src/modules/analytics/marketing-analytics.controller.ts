@@ -56,6 +56,7 @@ export class MarketingAnalyticsController {
     @Query('exclude_cancel') excludeCancel?: string,
     @Query('exclude_restocking') excludeRestocking?: string,
     @Query('exclude_abandoned') excludeAbandoned?: string,
+    @Query('exclude_rts') excludeRts?: string,
   ) {
     const parseBool = (val: string | undefined, defaultVal = true) => {
       if (val === undefined) return defaultVal;
@@ -68,6 +69,7 @@ export class MarketingAnalyticsController {
       excludeCancel: parseBool(excludeCancel, true),
       excludeRestocking: parseBool(excludeRestocking, true),
       excludeAbandoned: parseBool(excludeAbandoned, true),
+      excludeRts: parseBool(excludeRts, true),
       user: req.user,
     });
   }
@@ -81,6 +83,7 @@ export class MarketingAnalyticsController {
     @Query('exclude_cancel') excludeCancel?: string,
     @Query('exclude_restocking') excludeRestocking?: string,
     @Query('exclude_abandoned') excludeAbandoned?: string,
+    @Query('exclude_rts') excludeRts?: string,
     @Query('team_code') teamCode?: string,
   ) {
     const parseBool = (val: string | undefined, defaultVal = true) => {
@@ -94,6 +97,7 @@ export class MarketingAnalyticsController {
       excludeCancel: parseBool(excludeCancel, true),
       excludeRestocking: parseBool(excludeRestocking, true),
       excludeAbandoned: parseBool(excludeAbandoned, true),
+      excludeRts: parseBool(excludeRts, true),
       user: req.user,
       teamCodeOverride: teamCode,
     });

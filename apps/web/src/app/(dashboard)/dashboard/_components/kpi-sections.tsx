@@ -462,6 +462,66 @@ export function KpiProgressSection({
   );
 }
 
+/* ── Personal KPI Section (marketing dashboard) ─────────────── */
+
+interface PersonalKpiSectionProps {
+  title: string;
+  description: string;
+  cards: KpiDashboardCard[];
+  loading: boolean;
+  error: string;
+  meta?: ReactNode;
+  loadingLabel?: string;
+  emptyLabel?: string;
+}
+
+export function PersonalKpiSection({
+  title,
+  description,
+  cards,
+  loading,
+  error,
+  meta,
+  loadingLabel = "Loading KPI progress…",
+  emptyLabel = "No KPI target is active for the selected date range.",
+}: PersonalKpiSectionProps) {
+  return (
+    <DashboardSection
+      title={title}
+      icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
+      contentClassName="space-y-3"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-2xl text-sm text-slate-600">{description}</p>
+        {meta}
+      </div>
+
+      {loading ? (
+        <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+          {loadingLabel}
+        </div>
+      ) : error ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : cards.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+          {emptyLabel}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-2.5 xl:grid-cols-2">
+            {cards.map((card) => (
+              <KpiGaugeCard key={card.metricKey} card={card} />
+            ))}
+          </div>
+          <CombinedProgressBar cards={cards} />
+        </div>
+      )}
+    </DashboardSection>
+  );
+}
+
 /* ── Executive KPI Section ──────────────────────────────────── */
 
 interface ExecutiveKpiSectionProps {

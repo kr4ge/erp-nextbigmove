@@ -25,6 +25,13 @@ type SubmitActionConfig = {
   successMessage: string;
 };
 
+const TEAM_KPI_ADMIN_PERMISSION_KEYS = [
+  'team.manage',
+  'permission.assign',
+  'user.manage',
+  'team.read_all',
+] as const;
+
 const buildTeamTargetGroups = (rows: KpiTargetRow[]): TeamTargetGroup[] => {
   const grouped = new Map<string, TeamTargetGroup>();
 
@@ -116,6 +123,28 @@ export const useMarketingKpiManager = () => {
   const canManageMarketingKpi = useMemo(
     () => permissions.includes('kpi.marketing.manage'),
     [permissions],
+  );
+
+  const isMarketingLeader = useMemo(
+    () => permissions.includes('dashboard.marketing_leader'),
+    [permissions],
+  );
+
+  const isMarketingLeaderOnly = useMemo(
+    () =>
+      isMarketingLeader &&
+      !permissions.includes('dashboard.executives'),
+    [isMarketingLeader, permissions],
+  );
+
+  const canManageTeamKpi = useMemo(
+    () =>
+      canManageMarketingKpi &&
+      !isMarketingLeader &&
+      TEAM_KPI_ADMIN_PERMISSION_KEYS.some((permissionKey) =>
+        permissions.includes(permissionKey),
+      ),
+    [canManageMarketingKpi, isMarketingLeader, permissions],
   );
 
   const teamTargetGroups = useMemo(
@@ -413,6 +442,8 @@ export const useMarketingKpiManager = () => {
     overviewError,
     selectedTeam,
     canManageMarketingKpi,
+    canManageTeamKpi,
+    isMarketingLeaderOnly,
     teamTargetForm,
     setTeamTargetForm,
     categoryTargetForm,

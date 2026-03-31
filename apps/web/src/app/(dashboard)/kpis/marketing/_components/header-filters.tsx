@@ -24,6 +24,8 @@ type HeaderFiltersProps = {
   filterStartDate: string;
   filterEndDate: string;
   teamOptions: TeamOption[];
+  showTeamSelector?: boolean;
+  fixedTeamLabel?: string;
   onTeamCodeChange: (value: string) => void;
   onFilterStartDateChange: (value: string) => void;
   onFilterEndDateChange: (value: string) => void;
@@ -34,6 +36,8 @@ export function HeaderFilters({
   filterStartDate,
   filterEndDate,
   teamOptions,
+  showTeamSelector = true,
+  fixedTeamLabel,
   onTeamCodeChange,
   onFilterStartDateChange,
   onFilterEndDateChange,
@@ -69,25 +73,31 @@ export function HeaderFilters({
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <div className="relative min-w-[220px]">
-        <label htmlFor="kpi-team-filter" className="sr-only">
-          Team filter
-        </label>
-        <select
-          id="kpi-team-filter"
-          value={selectedTeamCode}
-          onChange={(event) => onTeamCodeChange(event.target.value)}
-          className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white pl-3 pr-9 text-sm text-slate-900 shadow-sm transition hover:border-slate-300 focus:border-slate-300 focus:outline-none"
-        >
-          <option value="">Select team</option>
-          {teamOptions.map((team) => (
-            <option key={team.id} value={team.teamCode}>
-              {team.name} ({team.teamCode})
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-      </div>
+      {showTeamSelector ? (
+        <div className="relative min-w-[220px]">
+          <label htmlFor="kpi-team-filter" className="sr-only">
+            Team filter
+          </label>
+          <select
+            id="kpi-team-filter"
+            value={selectedTeamCode}
+            onChange={(event) => onTeamCodeChange(event.target.value)}
+            className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white pl-3 pr-9 text-sm text-slate-900 shadow-sm transition hover:border-slate-300 focus:border-slate-300 focus:outline-none"
+          >
+            <option value="">Select team</option>
+            {teamOptions.map((team) => (
+              <option key={team.id} value={team.teamCode}>
+                {team.name} ({team.teamCode})
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        </div>
+      ) : fixedTeamLabel ? (
+        <div className="inline-flex h-10 items-center rounded-lg border border-orange-200 bg-orange-50 px-3 text-sm font-medium text-orange-700">
+          {fixedTeamLabel}
+        </div>
+      ) : null}
 
       <div className="relative min-w-[250px]">
         <Datepicker
