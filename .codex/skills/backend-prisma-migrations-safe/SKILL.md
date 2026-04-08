@@ -12,6 +12,8 @@ Ship schema changes without breaking migration history or requiring destructive 
 - Never edit an already-applied migration in shared environments.
 - Create a new migration for every schema evolution.
 - Keep schema and generated client consistent.
+- Every migration must be shadow-database safe when replayed from the first migration.
+- Never reference/alter a table, column, enum, or index that is only created in a later migration.
 
 ## Workflow
 1. Plan the change.
@@ -21,6 +23,7 @@ Ship schema changes without breaking migration history or requiring destructive 
 2. Create migration in dev.
 - Update `schema.prisma`.
 - Generate a new migration file.
+- Validate the generated SQL ordering (create before alter).
 - Apply migration locally.
 
 3. Validate behavior.
@@ -35,6 +38,13 @@ Ship schema changes without breaking migration history or requiring destructive 
 - If drift is reported, inspect migration history and DB schema mismatch.
 - Do not fix drift by rewriting old migration files.
 - Resolve by creating forward migration or aligning DB manually with explicit SQL, then mark migration state correctly.
+
+## Shadow DB Guardrail
+- `prisma migrate dev` replays migrations on a shadow database from zero.
+- If migration `N` alters an object created in migration `N+1`, dev migrate will fail with `P3006/P1014`.
+- Fix pattern:
+- If broken migration is not applied anywhere, make it safe/no-op and move SQL into the migration that creates the target object (or a new forward migration after creation).
+- Keep resulting SQL idempotent for replay order.
 
 ## References
 - Use [references/prisma-migration-checklist.md](references/prisma-migration-checklist.md) before finalizing.

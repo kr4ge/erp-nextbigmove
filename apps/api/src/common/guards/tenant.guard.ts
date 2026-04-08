@@ -13,6 +13,7 @@ export class TenantGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
+    const userId = user?.userId || user?.id;
 
     if (!user) {
       throw new ForbiddenException('User context is required');
@@ -21,6 +22,33 @@ export class TenantGuard implements CanActivate {
     // Skip tenant validation for SUPER_ADMIN (platform administrators)
     if (user.role === 'SUPER_ADMIN') {
       this.cls.set('userId', user.userId);
+      this.cls.set('userRole', user.role);
+      this.cls.set('userPermissions', user.permissions || []);
+      return true;
+    }
+
+    if (!user.tenantId) {
+      if (!userId) {
+        throw new ForbiddenException('User context is required');
+      }
+
+      const hasGlobalAccess = await this.prisma.userRoleAssignment.findFirst({
+        where: {
+          userId,
+          tenantId: null,
+          teamId: null,
+          role: {
+            scope: 'GLOBAL',
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!hasGlobalAccess) {
+        throw new ForbiddenException('Tenant context is required');
+      }
+
+      this.cls.set('userId', userId);
       this.cls.set('userRole', user.role);
       this.cls.set('userPermissions', user.permissions || []);
       return true;

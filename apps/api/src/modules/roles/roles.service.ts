@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { RoleScope } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -10,6 +11,8 @@ export class RolesService {
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
   ) {}
+
+  private readonly erpRoleScopes = [RoleScope.TENANT, RoleScope.TEAM];
 
   private getContext() {
     const tenantId = this.cls.get('tenantId');
@@ -23,11 +26,12 @@ export class RolesService {
 
   async list() {
     const { tenantId, role } = this.getContext();
-    // SUPER_ADMIN sees all, otherwise system + tenant-specific
+    // ERP roles endpoint must never expose WMS-global roles
     const where =
       role === 'SUPER_ADMIN'
-        ? {}
+        ? { scope: { in: this.erpRoleScopes } }
         : {
+            scope: { in: this.erpRoleScopes },
             OR: [{ tenantId: null }, { tenantId }],
           };
     const roles = await this.prisma.role.findMany({
@@ -48,6 +52,13 @@ export class RolesService {
 
   async listPermissions() {
     return this.prisma.permission.findMany({
+      where: {
+        NOT: {
+          key: {
+            startsWith: 'wms.',
+          },
+        },
+      },
       orderBy: { key: 'asc' },
     });
   }
@@ -58,6 +69,10 @@ export class RolesService {
 
     if (isSystem && role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Only platform administrators can create system roles');
+    }
+
+    if (dto.permissionKeys?.some((permissionKey) => permissionKey.startsWith('wms.'))) {
+      throw new ForbiddenException('WMS permissions are not assignable in ERP tenant roles');
     }
 
     const targetTenantId = isSystem ? null : tenantId;
@@ -104,6 +119,9 @@ export class RolesService {
     if (!existing) {
       throw new NotFoundException('Role not found');
     }
+    if (existing.scope === RoleScope.GLOBAL) {
+      throw new ForbiddenException('Global WMS roles are managed separately from ERP tenant roles');
+    }
     if (existing.tenantId && existing.tenantId !== tenantId && role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Cannot modify role from another tenant');
     }
@@ -118,6 +136,9 @@ export class RolesService {
       });
 
       if (dto.permissionKeys) {
+        if (dto.permissionKeys.some((permissionKey) => permissionKey.startsWith('wms.'))) {
+          throw new ForbiddenException('WMS permissions are not assignable in ERP tenant roles');
+        }
         // Reset and reattach permissions
         await tx.rolePermission.deleteMany({ where: { roleId: id } });
         for (const permKey of dto.permissionKeys) {
@@ -150,6 +171,9 @@ export class RolesService {
     const existing = await this.prisma.role.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Role not found');
+    }
+    if (existing.scope === RoleScope.GLOBAL) {
+      throw new ForbiddenException('Global WMS roles are managed separately from ERP tenant roles');
     }
     if (existing.tenantId && existing.tenantId !== tenantId && role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Cannot delete role from another tenant');

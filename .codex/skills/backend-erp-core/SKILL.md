@@ -30,16 +30,25 @@ Ship backend changes that are modular, scoped correctly, and safe under concurre
 - Apply team scope where required by feature permissions.
 - Do not widen scope implicitly.
 
-5. Make writes concurrency-safe.
+5. Add permission contracts deliberately.
+- For new modules that require RBAC, define permission keys explicitly instead of reusing broad legacy access by default.
+- Prefer CRUD-shaped permission sets when the module owns records or workflows:
+  - `<module>.create`
+  - `<module>.read`
+  - `<module>.update`
+  - `<module>.delete`
+- Only add module permissions when the feature actually needs guarded access.
+
+6. Make writes concurrency-safe.
 - Use transactional updates for multi-step state changes.
 - Add idempotent conditions for repeated webhook/queue executions.
 - Prefer retry wrappers for transient DB errors (deadlock/serialization).
 
-6. Preserve behavior and compatibility.
+7. Preserve behavior and compatibility.
 - Do not break existing payload contracts unless requested.
 - Gate new behavior behind explicit request fields if needed.
 
-7. Verify.
+8. Verify.
 - Build API workspace and run focused checks for touched modules.
 
 ## Required Output

@@ -3,6 +3,27 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+const DEFAULT_PARTNER_TYPES = [
+  {
+    key: 'BUSINESS_BUILDER',
+    name: 'Business Builder',
+    description: 'Core growth partner with regular stock request and billing workflows.',
+    isDefault: true,
+  },
+  {
+    key: 'AFFILIATES',
+    name: 'Affiliates',
+    description: 'Affiliate-led partner relationship with request and billing visibility.',
+    isDefault: true,
+  },
+  {
+    key: 'MARKETING_PARTNER',
+    name: 'Marketing Partner',
+    description: 'Marketing-led partner relationship with stock request collaboration.',
+    isDefault: true,
+  },
+] as const;
+
 type RoleDef = {
   key: string;
   name: string;
@@ -11,6 +32,51 @@ type RoleDef = {
   permissions: string[];
   isSystem?: boolean;
 };
+
+const WMS_PERMISSIONS: { key: string; description: string }[] = [
+  { key: 'wms.settings.profile.read', description: 'Read WMS profile settings' },
+  { key: 'wms.settings.profile.update', description: 'Update WMS profile settings' },
+  { key: 'wms.settings.users.create', description: 'Create WMS users' },
+  { key: 'wms.settings.users.read', description: 'Read WMS users' },
+  { key: 'wms.settings.users.update', description: 'Update WMS users' },
+  { key: 'wms.settings.users.delete', description: 'Delete WMS users' },
+  { key: 'wms.settings.roles.create', description: 'Create WMS roles' },
+  { key: 'wms.settings.roles.read', description: 'Read WMS roles' },
+  { key: 'wms.settings.roles.update', description: 'Update WMS roles' },
+  { key: 'wms.settings.roles.delete', description: 'Delete WMS roles' },
+  { key: 'wms.partners.create', description: 'Create WMS partners' },
+  { key: 'wms.partners.read', description: 'Read WMS partners' },
+  { key: 'wms.partners.update', description: 'Update WMS partners' },
+  { key: 'wms.partners.delete', description: 'Delete WMS partners' },
+  { key: 'wms.warehouses.create', description: 'Create WMS warehouses' },
+  { key: 'wms.warehouses.read', description: 'Read WMS warehouses' },
+  { key: 'wms.warehouses.update', description: 'Update WMS warehouses' },
+  { key: 'wms.warehouses.delete', description: 'Delete WMS warehouses' },
+  { key: 'wms.inventory.create', description: 'Create WMS inventory records' },
+  { key: 'wms.inventory.read', description: 'Read WMS inventory records' },
+  { key: 'wms.inventory.update', description: 'Update WMS inventory records' },
+  { key: 'wms.inventory.delete', description: 'Delete WMS inventory records' },
+  { key: 'wms.requests.create', description: 'Create WMS stock requests' },
+  { key: 'wms.requests.read', description: 'Read WMS stock requests' },
+  { key: 'wms.requests.update', description: 'Update WMS stock requests' },
+  { key: 'wms.requests.delete', description: 'Delete WMS stock requests' },
+  { key: 'wms.purchasing.create', description: 'Create WMS purchasing records' },
+  { key: 'wms.purchasing.read', description: 'Read WMS purchasing records' },
+  { key: 'wms.purchasing.update', description: 'Update WMS purchasing records' },
+  { key: 'wms.purchasing.delete', description: 'Delete WMS purchasing records' },
+  { key: 'wms.fulfillment.create', description: 'Create WMS fulfillment records' },
+  { key: 'wms.fulfillment.read', description: 'Read WMS fulfillment records' },
+  { key: 'wms.fulfillment.update', description: 'Update WMS fulfillment records' },
+  { key: 'wms.fulfillment.delete', description: 'Delete WMS fulfillment records' },
+  { key: 'wms.rts.create', description: 'Create WMS RTS records' },
+  { key: 'wms.rts.read', description: 'Read WMS RTS records' },
+  { key: 'wms.rts.update', description: 'Update WMS RTS records' },
+  { key: 'wms.rts.delete', description: 'Delete WMS RTS records' },
+  { key: 'wms.billing.create', description: 'Create WMS billing records' },
+  { key: 'wms.billing.read', description: 'Read WMS billing records' },
+  { key: 'wms.billing.update', description: 'Update WMS billing records' },
+  { key: 'wms.billing.delete', description: 'Delete WMS billing records' },
+];
 
 const PERMISSIONS: { key: string; description: string }[] = [
   { key: 'tenant.manage', description: 'Manage tenant settings' },
@@ -52,6 +118,138 @@ const PERMISSIONS: { key: string; description: string }[] = [
   { key: 'kpi.marketing.manage', description: 'Manage marketing KPI targets and assignments' },
   { key: 'kpi.funnel.read', description: 'Read funnel KPI placeholder pages' },
   { key: 'kpi.sales.read', description: 'Read sales KPI placeholder pages' },
+  ...WMS_PERMISSIONS,
+];
+
+const WMS_ROLES: RoleDef[] = [
+  {
+    key: 'ACCOUNTING_OFFICER',
+    name: 'Accounting Officer',
+    description: 'Accounting oversight for partner billing and operations.',
+    scope: RoleScope.GLOBAL,
+    permissions: [
+      'wms.settings.profile.read',
+      'wms.settings.profile.update',
+      'wms.partners.read',
+      'wms.requests.read',
+      'wms.billing.read',
+      'wms.billing.update',
+    ],
+    isSystem: true,
+  },
+  {
+    key: 'FINANCE_OFFICER',
+    name: 'Finance Officer',
+    description: 'Finance and payout operations across the warehouse platform.',
+    scope: RoleScope.GLOBAL,
+    permissions: [
+      'wms.settings.profile.read',
+      'wms.settings.profile.update',
+      'wms.partners.read',
+      'wms.requests.read',
+      'wms.requests.update',
+      'wms.billing.read',
+      'wms.billing.create',
+      'wms.billing.update',
+    ],
+    isSystem: true,
+  },
+  {
+    key: 'PACKER',
+    name: 'Packer',
+    description: 'Packing execution and outbound handoff.',
+    scope: RoleScope.GLOBAL,
+    permissions: [
+      'wms.settings.profile.read',
+      'wms.settings.profile.update',
+      'wms.fulfillment.read',
+      'wms.fulfillment.update',
+    ],
+    isSystem: true,
+  },
+  {
+    key: 'PICKER',
+    name: 'Picker',
+    description: 'Picking execution and order preparation.',
+    scope: RoleScope.GLOBAL,
+    permissions: [
+      'wms.settings.profile.read',
+      'wms.settings.profile.update',
+      'wms.inventory.read',
+      'wms.fulfillment.read',
+      'wms.fulfillment.update',
+    ],
+    isSystem: true,
+  },
+  {
+    key: 'PURCHASING_OFFICER',
+    name: 'Purchasing Officer',
+    description: 'Vendor, inbound, and stock procurement workflows.',
+    scope: RoleScope.GLOBAL,
+    permissions: [
+      'wms.settings.profile.read',
+      'wms.settings.profile.update',
+      'wms.inventory.read',
+      'wms.requests.read',
+      'wms.requests.create',
+      'wms.requests.update',
+      'wms.purchasing.create',
+      'wms.purchasing.read',
+      'wms.purchasing.update',
+    ],
+    isSystem: true,
+  },
+  {
+    key: 'RECEIVING_DISPATCH_OFFICER',
+    name: 'Receiving & Dispatch Officer',
+    description: 'Inbound receiving and outbound dispatch control.',
+    scope: RoleScope.GLOBAL,
+    permissions: [
+      'wms.settings.profile.read',
+      'wms.settings.profile.update',
+      'wms.inventory.read',
+      'wms.inventory.update',
+      'wms.requests.read',
+      'wms.purchasing.read',
+      'wms.fulfillment.read',
+      'wms.fulfillment.update',
+      'wms.rts.read',
+      'wms.rts.update',
+    ],
+    isSystem: true,
+  },
+  {
+    key: 'SALES_MANAGER',
+    name: 'Sales Manager',
+    description: 'Read-only operational visibility for sales-side coordination.',
+    scope: RoleScope.GLOBAL,
+    permissions: [
+      'wms.settings.profile.read',
+      'wms.settings.profile.update',
+      'wms.partners.read',
+      'wms.inventory.read',
+      'wms.requests.read',
+      'wms.fulfillment.read',
+      'wms.billing.read',
+    ],
+    isSystem: true,
+  },
+  {
+    key: 'STOCKMAN',
+    name: 'Stockman',
+    description: 'Stock handling, storage, and return flow execution.',
+    scope: RoleScope.GLOBAL,
+    permissions: [
+      'wms.settings.profile.read',
+      'wms.settings.profile.update',
+      'wms.warehouses.read',
+      'wms.inventory.read',
+      'wms.inventory.update',
+      'wms.rts.read',
+      'wms.rts.update',
+    ],
+    isSystem: true,
+  },
 ];
 
 const ROLES: RoleDef[] = [
@@ -202,6 +400,7 @@ const ROLES: RoleDef[] = [
     ],
     isSystem: true,
   },
+  ...WMS_ROLES,
 ];
 
 async function ensureSuperAdmin() {
@@ -322,6 +521,29 @@ async function seedRoles() {
   console.log(`✓ Ensured ${ROLES.length} roles and their permissions`);
 }
 
+async function seedPartnerTypes() {
+  for (const type of DEFAULT_PARTNER_TYPES) {
+    await prisma.partnerType.upsert({
+      where: { key: type.key },
+      update: {
+        name: type.name,
+        description: type.description,
+        isDefault: type.isDefault,
+        isActive: true,
+      },
+      create: {
+        key: type.key,
+        name: type.name,
+        description: type.description,
+        isDefault: type.isDefault,
+        isActive: true,
+      },
+    });
+  }
+
+  console.log(`✓ Ensured ${DEFAULT_PARTNER_TYPES.length} partner types`);
+}
+
 async function ensureDefaultTeamsAndBackfill() {
   // Default team creation/backfill disabled per request
   console.log('✓ Skipped default team creation/backfill (per request)');
@@ -414,6 +636,7 @@ async function main() {
   await ensureSuperAdmin();
   await seedPermissions();
   await seedRoles();
+  await seedPartnerTypes();
   await ensureDefaultTeamsAndBackfill();
   await assignRolesToUsers();
   console.log('Seed completed successfully!');

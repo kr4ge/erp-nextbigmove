@@ -37,6 +37,8 @@ apiClient.interceptors.response.use(
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         localStorage.removeItem('current_tenant_id');
+        localStorage.removeItem('admin_permissions');
+        localStorage.removeItem('user');
         window.location.href = '/login';
       }
     }

@@ -1,116 +1,111 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { WmsShellLoading } from './_components/wms-shell-loading';
+import { WmsSidebar } from './_components/wms-sidebar';
+import { WmsTopbar } from './_components/wms-topbar';
+import { WMS_NAV_ITEMS } from './_constants/navigation';
+import { useAdminSession } from './_hooks/use-admin-session';
+import {
+  canAccessAdminPath,
+  getFirstAllowedAdminPath,
+  hasAnyAdminPermission,
+  WMS_SETTINGS_PROFILE_PERMISSION,
+} from './_utils/access';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { user, permissions, isLoading, logout } = useAdminSession();
 
   useEffect(() => {
-    // Check if user is authenticated and has admin role
-    const token = localStorage.getItem('access_token');
-    const userStr = localStorage.getItem('user');
+    const stored = localStorage.getItem('wms_sidebar_collapsed');
+    setIsSidebarCollapsed(stored === 'true');
+  }, []);
 
-    if (!token) {
-      router.push('/login');
+  const filteredNavItems = useMemo(() => {
+    if (user?.role === 'SUPER_ADMIN') {
+      return WMS_NAV_ITEMS;
+    }
+
+    return WMS_NAV_ITEMS.flatMap((item) => {
+      const visibleChildren = item.children?.filter((child) =>
+        hasAnyAdminPermission(user?.role, permissions, child.requiredPermissions),
+      );
+
+      const parentAllowed = hasAnyAdminPermission(user?.role, permissions, item.requiredPermissions);
+      const shouldInclude = parentAllowed || (visibleChildren && visibleChildren.length > 0);
+
+      if (!shouldInclude) {
+        return [];
+      }
+
+      return [
+        {
+          ...item,
+          children: visibleChildren,
+        },
+      ];
+    });
+  }, [permissions, user?.role]);
+
+  const canAccessSettings =
+    user?.role === 'SUPER_ADMIN' || permissions.includes(WMS_SETTINGS_PROFILE_PERMISSION);
+  const isPathAllowed = user ? canAccessAdminPath(pathname, user.role, permissions) : false;
+
+  useEffect(() => {
+    if (isLoading || !user || isPathAllowed) {
       return;
     }
 
-    if (userStr) {
-      const userData = JSON.parse(userStr);
+    router.replace(getFirstAllowedAdminPath(user.role, permissions));
+  }, [isLoading, isPathAllowed, pathname, permissions, router, user]);
 
-      // Verify user has SUPER_ADMIN privileges (platform administrators only)
-      if (userData.role !== 'SUPER_ADMIN') {
-        router.push('/login');
-        return;
-      }
-
-      setUser(userData);
-    }
-
-    setIsLoading(false);
-  }, [router]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('current_tenant_id');
-    localStorage.removeItem('user');
-    router.push('/login');
+  const handleSidebarToggle = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('wms_sidebar_collapsed', String(next));
+      return next;
+    });
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900">
-        <div className="text-white text-lg">Loading...</div>
-      </div>
-    );
+    return <WmsShellLoading />;
   }
 
   if (!user) {
     return null;
   }
 
-  return (
-    <div className="min-h-screen bg-slate-900">
-      {/* Top Navigation */}
-      <nav className="bg-slate-800 border-b border-slate-700">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <h1 className="text-2xl font-bold text-white">Admin Panel</h1>
-              </div>
-              <div className="hidden md:block">
-                <div className="ml-10 flex items-baseline space-x-4">
-                  <Link
-                    href="/tenants"
-                    className="rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-slate-700 hover:text-white"
-                  >
-                    Tenants
-                  </Link>
-                  <Link
-                    href="/users"
-                    className="rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-slate-700 hover:text-white"
-                  >
-                    Users
-                  </Link>
-                  <Link
-                    href="/settings"
-                    className="rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-slate-700 hover:text-white"
-                  >
-                    Settings
-                  </Link>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <div className="flex items-center space-x-4">
-                <span className="text-sm text-gray-300">
-                  {user?.firstName} {user?.lastName}
-                </span>
-                <span className="inline-flex items-center rounded-md bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-400/30">
-                  {user?.role}
-                </span>
-                <button
-                  onClick={handleLogout}
-                  className="rounded-md bg-slate-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-600"
-                >
-                  Logout
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </nav>
+  if (!isPathAllowed) {
+    return <WmsShellLoading />;
+  }
 
-      {/* Main Content */}
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
+  return (
+    <div className="wms-density-compact flex h-screen overflow-hidden bg-white text-slate-900">
+      <WmsSidebar
+        pathname={pathname}
+        user={user}
+        navItems={filteredNavItems}
+        showSettingsLink={canAccessSettings}
+        mobileOpen={mobileOpen}
+        isCollapsed={isSidebarCollapsed}
+        onCloseMobile={() => setMobileOpen(false)}
+        onToggleCollapse={handleSidebarToggle}
+        onLogout={logout}
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
+        <WmsTopbar onOpenMobileNav={() => setMobileOpen(true)} />
+        <main className="flex-1 overflow-y-auto bg-slate-100 lg:rounded-tl-[1.75rem]">
+          <div className="mx-auto h-full w-full max-w-[1560px] px-3 py-4 sm:px-4 lg:px-5">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

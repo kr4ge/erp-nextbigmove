@@ -16,6 +16,11 @@
 - Extract repeated transform/formatter logic that appears 2+ times.
 - Extract repeated button/table/filter patterns into local reusable components.
 
+## Minimal UI Writing
+- Labels and helper copy are concise and functional.
+- Pages are not overloaded with descriptive paragraphs by default.
+- Additional explanatory text exists only where it materially improves task success.
+
 ## State Rules
 - Keep local UI state local.
 - Use custom hooks for screen orchestration (modal + filter + table + submit state).

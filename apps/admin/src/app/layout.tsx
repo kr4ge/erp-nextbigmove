@@ -7,8 +7,8 @@ import type { ReactNode } from 'react';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'ERP Analytics - Admin Dashboard',
-  description: 'Admin Dashboard for Multi-tenant ERP Analytics Platform',
+  title: 'Warehouse Connex',
+  description: 'Internal warehouse and partner operations workspace for the ERP platform.',
 };
 
 export default function RootLayout({
@@ -17,7 +17,7 @@ export default function RootLayout({
   children: ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className="text-[15px]">
       <body className={inter.className}>
         <Providers>{children}</Providers>
       </body>

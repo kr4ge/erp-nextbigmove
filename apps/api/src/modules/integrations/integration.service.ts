@@ -3828,12 +3828,16 @@ export class IntegrationService {
           return {
             productId,
             variationId,
+            variationCustomId:
+              item?.display_id ||
+              item?.variation_info?.display_id ||
+              item?.variation?.display_id ||
+              null,
             warehouseId: this.extractWarehouseIdFromPancakeProduct(item),
             productSnapshot: this.extractProductSnapshotFromPancakeProduct(item),
             customId:
               item?.custom_id ||
               item?.code ||
-              item?.display_id ||
               item?.product_display_id ||
               item?.product?.display_id ||
               null,
@@ -4575,70 +4579,150 @@ export class IntegrationService {
   private async upsertStoreProducts(storeId: string, products: any[]) {
     if (!products?.length) return;
 
-    await this.prisma.$transaction(async (tx) => {
-      const filteredProducts = products.filter(
-        (p: any) =>
-          (p?.productId || p?.id)?.toString().trim().length > 0 &&
-          (p?.variationId || p?.id)?.toString().trim().length > 0,
-      );
+    const filteredProducts = products.filter(
+      (p: any) =>
+        (p?.productId || p?.id)?.toString().trim().length > 0 &&
+        (p?.variationId || p?.id)?.toString().trim().length > 0,
+    );
 
-      for (const p of filteredProducts) {
-        const productId = (p?.productId || p?.id)?.toString().trim();
-        const variationId = (p?.variationId || p?.id)?.toString().trim();
-        const parsedRetailPrice = this.toRetailPriceDecimal(p.retailPrice);
-        const productSnapshot = p?.productSnapshot ?? null;
+    if (!filteredProducts.length) return;
 
-        const existing = await tx.posProduct.findFirst({
-          where: {
-            storeId,
-            OR: [
-              { variationId },
+    const normalizedProducts = Array.from(
+      new Map(
+        filteredProducts.map((product: any) => {
+          const variationId = (product?.variationId || product?.id)?.toString().trim();
+          return [variationId, product];
+        }),
+      ).values(),
+    );
+
+    const variationIds = normalizedProducts.map((product: any) =>
+      (product?.variationId || product?.id)?.toString().trim(),
+    );
+    const productIds = Array.from(
+      new Set(
+        normalizedProducts.map((product: any) =>
+          (product?.productId || product?.id)?.toString().trim(),
+        ),
+      ),
+    );
+
+    const existingRows = await this.prisma.posProduct.findMany({
+      where: {
+        storeId,
+        OR: [
+          { variationId: { in: variationIds } },
+          {
+            AND: [
+              { productId: { in: productIds } },
               {
-                AND: [
-                  { productId },
-                  {
-                    OR: [
-                      { variationId: null },
-                      { variationId: productId },
-                    ],
-                  },
-                ],
+                OR: [{ variationId: null }, { variationId: { in: productIds } }],
               },
             ],
           },
-          select: { id: true },
-        });
-
-        if (existing) {
-          await tx.posProduct.update({
-            where: { id: existing.id },
-            data: {
-              productId,
-              variationId,
-              warehouseId: p.warehouseId || null,
-              productSnapshot,
-              customId: p.customId || null,
-              name: p.name || 'Unnamed product',
-              ...(parsedRetailPrice !== null ? { retailPrice: parsedRetailPrice } : {}),
-            },
-          });
-          continue;
-        }
-
-        await tx.posProduct.create({
-          data: {
-            storeId,
-            productId,
-            variationId,
-            warehouseId: p.warehouseId || null,
-            productSnapshot,
-            customId: p.customId || null,
-            name: p.name || 'Unnamed product',
-            retailPrice: parsedRetailPrice,
-          },
-        });
-      }
+        ],
+      },
+      select: {
+        id: true,
+        productId: true,
+        variationId: true,
+      },
     });
+
+    const exactRowsByVariationId = new Map(
+      existingRows
+        .filter((row) => row.variationId && variationIds.includes(row.variationId))
+        .map((row) => [row.variationId as string, row]),
+    );
+    const legacyRowsByProductId = new Map(
+      existingRows
+        .filter((row) => !row.variationId || row.variationId === row.productId)
+        .map((row) => [row.productId, row]),
+    );
+
+    const updates: Array<{
+      id: string;
+      data: Prisma.PosProductUpdateInput;
+    }> = [];
+    const creates: Prisma.PosProductCreateManyInput[] = [];
+
+    for (const product of normalizedProducts) {
+      const productId = (product?.productId || product?.id)?.toString().trim();
+      const variationId = (product?.variationId || product?.id)?.toString().trim();
+      const parsedRetailPrice = this.toRetailPriceDecimal(product.retailPrice);
+      const productSnapshot = product?.productSnapshot ?? null;
+
+      const writeData: Prisma.PosProductUpdateInput = {
+        productId,
+        variationId,
+        variationCustomId: product.variationCustomId || null,
+        warehouseId: product.warehouseId || null,
+        productSnapshot,
+        customId: product.customId || null,
+        name: product.name || 'Unnamed product',
+        ...(parsedRetailPrice !== null ? { retailPrice: parsedRetailPrice } : {}),
+      };
+
+      const exactMatch = exactRowsByVariationId.get(variationId);
+      if (exactMatch) {
+        updates.push({
+          id: exactMatch.id,
+          data: writeData,
+        });
+        continue;
+      }
+
+      const legacyMatch = legacyRowsByProductId.get(productId);
+      if (legacyMatch) {
+        updates.push({
+          id: legacyMatch.id,
+          data: writeData,
+        });
+        legacyRowsByProductId.delete(productId);
+        continue;
+      }
+
+      creates.push({
+        storeId,
+        productId,
+        variationId,
+        variationCustomId: product.variationCustomId || null,
+        warehouseId: product.warehouseId || null,
+        productSnapshot,
+        customId: product.customId || null,
+        name: product.name || 'Unnamed product',
+        retailPrice: parsedRetailPrice,
+      });
+    }
+
+    for (const batch of this.chunkItems(updates, 50)) {
+      await this.prisma.$transaction(
+        batch.map((entry) =>
+          this.prisma.posProduct.update({
+            where: { id: entry.id },
+            data: entry.data,
+          }),
+        ),
+      );
+    }
+
+    for (const batch of this.chunkItems(creates, 100)) {
+      await this.prisma.posProduct.createMany({
+        data: batch,
+        skipDuplicates: true,
+      });
+    }
+  }
+
+  private chunkItems<T>(items: T[], size: number): T[][] {
+    if (items.length === 0) return [];
+
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+      chunks.push(items.slice(index, index + size));
+    }
+
+    return chunks;
   }
 
   private extractProductIdFromPancakeProduct(item: any): string | null {
@@ -4686,6 +4770,14 @@ export class IntegrationService {
   private extractProductSnapshotFromPancakeProduct(item: any): Record<string, any> {
     const product = item?.product ?? null;
     return {
+      id: item?.id ?? null,
+      display_id:
+        item?.display_id ??
+        item?.variation_info?.display_id ??
+        item?.variation?.display_id ??
+        null,
+      barcode: item?.barcode ?? item?.variation_info?.barcode ?? null,
+      fields: Array.isArray(item?.fields) ? item.fields : [],
       product,
       images: this.normalizeProductImages(
         item?.images ?? product?.images ?? product?.image ?? null,

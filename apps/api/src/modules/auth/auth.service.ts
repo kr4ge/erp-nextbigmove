@@ -14,6 +14,22 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
+  private async hasGlobalWorkspaceAccess(userId: string) {
+    const assignment = await this.prisma.userRoleAssignment.findFirst({
+      where: {
+        userId,
+        tenantId: null,
+        teamId: null,
+        role: {
+          scope: 'GLOBAL',
+        },
+      },
+      select: { id: true },
+    });
+
+    return Boolean(assignment);
+  }
+
   /**
    * Register a new tenant and admin user
    */
@@ -124,10 +140,14 @@ export class AuthService {
       throw new UnauthorizedException('Account is not active');
     }
 
-    // Check tenant status (skip for SUPER_ADMIN platform administrators)
+    // SUPER_ADMIN bypasses workspace checks
     if (user.role !== 'SUPER_ADMIN') {
-      if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
-        throw new UnauthorizedException('Tenant account is not active');
+      if (user.tenantId) {
+        if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
+          throw new UnauthorizedException('Tenant account is not active');
+        }
+      } else if (!(await this.hasGlobalWorkspaceAccess(user.id))) {
+        throw new UnauthorizedException('Account is not provisioned for an active workspace');
       }
     }
 
@@ -168,10 +188,13 @@ export class AuthService {
         throw new UnauthorizedException('User not found or inactive');
       }
 
-      // Check tenant status (skip for SUPER_ADMIN platform administrators)
       if (user.role !== 'SUPER_ADMIN') {
-        if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
-          throw new UnauthorizedException('Tenant account is not active');
+        if (user.tenantId) {
+          if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
+            throw new UnauthorizedException('Tenant account is not active');
+          }
+        } else if (!(await this.hasGlobalWorkspaceAccess(user.id))) {
+          throw new UnauthorizedException('Account is not provisioned for an active workspace');
         }
       }
 
@@ -205,10 +228,13 @@ export class AuthService {
       throw new UnauthorizedException('User account is not active');
     }
 
-    // Check tenant status (skip for SUPER_ADMIN platform administrators)
     if (user.role !== 'SUPER_ADMIN') {
-      if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
-        throw new UnauthorizedException('Tenant account is not active');
+      if (user.tenantId) {
+        if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
+          throw new UnauthorizedException('Tenant account is not active');
+        }
+      } else if (!(await this.hasGlobalWorkspaceAccess(user.id))) {
+        throw new UnauthorizedException('Account is not provisioned for an active workspace');
       }
     }
 

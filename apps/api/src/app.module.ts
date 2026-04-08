@@ -20,6 +20,11 @@ import { RolesModule } from './modules/roles/roles.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { KpisModule } from './modules/kpis/kpis.module';
+import { WmsIdentityModule } from './modules/wms-identity/wms-identity.module';
+import { WmsInventoryModule } from './modules/wms-inventory/wms-inventory.module';
+import { WmsPurchasingModule } from './modules/wms-purchasing/wms-purchasing.module';
+import { WmsRequestsModule } from './modules/wms-requests/wms-requests.module';
+import { WmsWarehousesModule } from './modules/wms-warehouses/wms-warehouses.module';
 
 @Module({
   imports: [
@@ -94,6 +99,11 @@ import { KpisModule } from './modules/kpis/kpis.module';
     AnalyticsModule,
     OrdersModule,
     KpisModule,
+    WmsIdentityModule,
+    WmsInventoryModule,
+    WmsPurchasingModule,
+    WmsRequestsModule,
+    WmsWarehousesModule,
   ],
   controllers: [],
   providers: [],

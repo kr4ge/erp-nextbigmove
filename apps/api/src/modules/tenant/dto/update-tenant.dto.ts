@@ -1,15 +1,19 @@
 import {
-  IsString,
-  IsNotEmpty,
-  MinLength,
-  MaxLength,
-  Matches,
   IsEnum,
+  IsNotEmpty,
   IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
   Min,
   Max,
-  IsOptional,
+  MaxLength,
+  MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { BillingAddressDto } from '../../../common/dto/billing-address.dto';
 
 export class UpdateTenantDto {
   @IsOptional()
@@ -28,6 +32,20 @@ export class UpdateTenantDto {
     message: 'Tenant slug must be lowercase alphanumeric with hyphens',
   })
   slug?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  companyName?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BillingAddressDto)
+  billingAddress?: BillingAddressDto;
+
+  @IsOptional()
+  @IsUUID()
+  partnerTypeId?: string;
 
   @IsOptional()
   @IsEnum(['trial', 'starter', 'professional', 'enterprise'])

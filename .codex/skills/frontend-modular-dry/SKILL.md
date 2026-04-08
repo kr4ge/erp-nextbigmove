@@ -34,6 +34,11 @@ Implement frontend work with small reusable units instead of large page files. K
 - UI submit -> form state -> payload builder -> API.
 - Keep mapping logic outside JSX.
 
+5b. Keep interface writing minimal.
+- Default to concise labels, helper text, and short section intros.
+- Avoid text-heavy modules unless the workflow depends on detailed explanation.
+- When a screen feels noisy, reduce copy before adding more structure.
+
 6. Validate before finishing.
 - Run relevant build/lint checks.
 - Confirm no visual regressions and no behavior regressions.

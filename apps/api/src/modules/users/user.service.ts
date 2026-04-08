@@ -1,4 +1,5 @@
 import { Injectable, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { RoleScope } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -20,6 +21,23 @@ export class UserService {
     return tenantId;
   }
 
+  private async getAssignableRole(roleId: string, tenantId: string, scope: RoleScope) {
+    const role = await this.prisma.role.findFirst({
+      where: {
+        id: roleId,
+        scope,
+        OR: [{ tenantId }, { tenantId: null }],
+      },
+      select: { id: true, key: true, scope: true },
+    });
+
+    if (!role) {
+      throw new ForbiddenException('Role is not assignable in ERP tenant context');
+    }
+
+    return role;
+  }
+
   async create(dto: CreateUserDto) {
     const tenantId = this.getTenant();
 
@@ -33,11 +51,12 @@ export class UserService {
     // Check if roleId is TENANT_ADMIN
     let isTenantAdmin = false;
     if (dto.roleId) {
-      const role = await this.prisma.role.findUnique({
-        where: { id: dto.roleId },
-        select: { key: true },
-      });
+      const role = await this.getAssignableRole(dto.roleId, tenantId, RoleScope.TENANT);
       isTenantAdmin = role?.key === 'TENANT_ADMIN';
+    }
+
+    if (dto.teamRoleId) {
+      await this.getAssignableRole(dto.teamRoleId, tenantId, RoleScope.TEAM);
     }
 
     const hashed = await bcrypt.hash(dto.password, 10);
@@ -155,11 +174,12 @@ export class UserService {
     // Check if roleId is being set to TENANT_ADMIN
     let isTenantAdmin = false;
     if (dto.roleId) {
-      const role = await this.prisma.role.findUnique({
-        where: { id: dto.roleId },
-        select: { key: true },
-      });
+      const role = await this.getAssignableRole(dto.roleId, tenantId, RoleScope.TENANT);
       isTenantAdmin = role?.key === 'TENANT_ADMIN';
+    }
+
+    if (dto.teamRoleId) {
+      await this.getAssignableRole(dto.teamRoleId, tenantId, RoleScope.TEAM);
     }
 
     // If assigning TENANT_ADMIN role, automatically clear defaultTeamId

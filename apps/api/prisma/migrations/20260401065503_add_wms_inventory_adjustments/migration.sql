@@ -1,0 +1,3 @@
+-- No-op migration kept for timeline compatibility.
+-- The table "wms_inventory_adjustment_items" is created in:
+-- 20260401174500_add_wms_inventory_adjustments

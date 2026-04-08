@@ -129,7 +129,7 @@ export class AuthController {
           .filter(Boolean)
       : [];
 
-    if (!userId || !tenantId) {
+    if (!userId) {
       return { permissions: [] };
     }
 
@@ -142,18 +142,27 @@ export class AuthController {
 
     // Role-based permissions via UserRoleAssignment
     const roleAssignments = await this.prisma.userRoleAssignment.findMany({
-      where: {
-        userId,
-        tenantId,
-        ...(requestedTeamIds.length > 0
-          ? {
-              OR: [
-                { teamId: null },
-                { teamId: { in: requestedTeamIds } },
-              ],
-            }
-          : {}),
-      },
+      where: tenantId
+        ? {
+            userId,
+            tenantId,
+            ...(requestedTeamIds.length > 0
+              ? {
+                  OR: [
+                    { teamId: null },
+                    { teamId: { in: requestedTeamIds } },
+                  ],
+                }
+              : {}),
+          }
+        : {
+            userId,
+            tenantId: null,
+            teamId: null,
+            role: {
+              scope: 'GLOBAL',
+            },
+          },
       include: {
         role: {
           include: {
@@ -173,18 +182,24 @@ export class AuthController {
 
     // User permission overrides
     const userPerms = await this.prisma.userPermissionAssignment.findMany({
-      where: {
-        userId,
-        tenantId,
-        ...(requestedTeamIds.length > 0
-          ? {
-              OR: [
-                { teamId: null },
-                { teamId: { in: requestedTeamIds } },
-              ],
-            }
-          : {}),
-      },
+      where: tenantId
+        ? {
+            userId,
+            tenantId,
+            ...(requestedTeamIds.length > 0
+              ? {
+                  OR: [
+                    { teamId: null },
+                    { teamId: { in: requestedTeamIds } },
+                  ],
+                }
+              : {}),
+          }
+        : {
+            userId,
+            tenantId: null,
+            teamId: null,
+          },
       include: { permission: true },
     });
 
@@ -210,12 +225,21 @@ export class AuthController {
   async getMyRole(@Request() req) {
     const userId = req.user.userId || req.user.id;
     const tenantId = req.user.tenantId;
-    if (!userId || !tenantId) {
+    if (!userId) {
       return { roles: [] };
     }
 
     const assignments = await this.prisma.userRoleAssignment.findMany({
-      where: { userId, tenantId },
+      where: tenantId
+        ? { userId, tenantId }
+        : {
+            userId,
+            tenantId: null,
+            teamId: null,
+            role: {
+              scope: 'GLOBAL',
+            },
+          },
       include: { role: true },
     });
 

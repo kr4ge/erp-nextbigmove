@@ -1,0 +1,5 @@
+-- RenameIndex
+ALTER INDEX "marketing_kpi_user_category_assignments_tenantId_teamCode_categ" RENAME TO "marketing_kpi_user_category_assignments_tenantId_teamCode_c_idx";
+
+-- RenameIndex
+ALTER INDEX "marketing_kpi_user_category_assignments_tenantId_teamCode_userI" RENAME TO "marketing_kpi_user_category_assignments_tenantId_teamCode_u_key";

@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto';
 import * as bcrypt from 'bcrypt';
@@ -20,6 +21,9 @@ export class TenantService {
     const {
       tenantName,
       tenantSlug,
+      companyName,
+      billingAddress,
+      partnerTypeId,
       email,
       password,
       firstName,
@@ -49,6 +53,17 @@ export class TenantService {
       throw new ConflictException('Email already registered');
     }
 
+    if (partnerTypeId) {
+      const partnerType = await this.prisma.partnerType.findUnique({
+        where: { id: partnerTypeId },
+        select: { id: true, isActive: true },
+      });
+
+      if (!partnerType || !partnerType.isActive) {
+        throw new BadRequestException('Partner type is invalid or inactive');
+      }
+    }
+
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -61,6 +76,11 @@ export class TenantService {
         data: {
           name: tenantName,
           slug: tenantSlug,
+          companyName: companyName?.trim() || null,
+          billingAddress: billingAddress
+            ? (billingAddress as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+          partnerTypeId: partnerTypeId || null,
           encryptionKey,
           status: status as any,
           planType,
@@ -113,6 +133,13 @@ export class TenantService {
   async findAll() {
     const tenants = await this.prisma.tenant.findMany({
       include: {
+        partnerType: {
+          select: {
+            id: true,
+            key: true,
+            name: true,
+          },
+        },
         _count: {
           select: {
             users: true,
@@ -135,6 +162,13 @@ export class TenantService {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id },
       include: {
+        partnerType: {
+          select: {
+            id: true,
+            key: true,
+            name: true,
+          },
+        },
         _count: {
           select: {
             users: true,
@@ -175,11 +209,38 @@ export class TenantService {
       }
     }
 
+    if (updateTenantDto.partnerTypeId) {
+      const partnerType = await this.prisma.partnerType.findUnique({
+        where: { id: updateTenantDto.partnerTypeId },
+        select: { id: true, isActive: true },
+      });
+
+      if (!partnerType || !partnerType.isActive) {
+        throw new BadRequestException('Partner type is invalid or inactive');
+      }
+    }
+
     // Update tenant
     const updatedTenant = await this.prisma.tenant.update({
       where: { id },
-      data: updateTenantDto as any,
+      data: {
+        ...updateTenantDto,
+        companyName: updateTenantDto.companyName?.trim() || null,
+        billingAddress:
+          updateTenantDto.billingAddress !== undefined
+            ? updateTenantDto.billingAddress
+              ? (updateTenantDto.billingAddress as unknown as Prisma.InputJsonValue)
+              : Prisma.JsonNull
+            : undefined,
+      } as any,
       include: {
+        partnerType: {
+          select: {
+            id: true,
+            key: true,
+            name: true,
+          },
+        },
         _count: {
           select: {
             users: true,

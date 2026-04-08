@@ -36,12 +36,9 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
+    const userId = user.userId || user.id;
     const tenantId = this.cls.get('tenantId') || user.tenantId;
     const teamId = this.cls.get('teamId') || null;
-    if (!tenantId) {
-      throw new ForbiddenException('Tenant context is required');
-    }
-
     const effective = new Set<string>();
 
     // User.permissions array (legacy)
@@ -49,35 +46,49 @@ export class PermissionsGuard implements CanActivate {
       user.permissions.forEach((p: string) => effective.add(p));
     }
 
-    // Role-based permissions via assignments
     const roleAssignments = await this.prisma.userRoleAssignment.findMany({
-      where: {
-        userId: user.userId || user.id,
-        OR: [
-          { tenantId, teamId: teamId || undefined },
-          { tenantId, teamId: null },
-        ],
-      },
+      where: tenantId
+        ? {
+            userId,
+            OR: [
+              { tenantId, teamId: teamId || undefined },
+              { tenantId, teamId: null },
+            ],
+          }
+        : {
+            userId,
+            tenantId: null,
+            teamId: null,
+            role: {
+              scope: 'GLOBAL',
+            },
+          },
       select: { roleId: true },
     });
-    const roleIds = roleAssignments.map((ra) => ra.roleId);
+
+    const roleIds = roleAssignments.map((assignment) => assignment.roleId);
     if (roleIds.length > 0) {
       const rolePerms = await this.prisma.rolePermission.findMany({
         where: { roleId: { in: roleIds } },
         include: { permission: true },
       });
-      rolePerms.forEach((rp) => effective.add(rp.permission.key));
+      rolePerms.forEach((rolePermission) => effective.add(rolePermission.permission.key));
     }
 
-    // User permission overrides
     const userPerms = await this.prisma.userPermissionAssignment.findMany({
-      where: {
-        userId: user.userId || user.id,
-        OR: [
-          { tenantId, teamId: teamId || undefined },
-          { tenantId, teamId: null },
-        ],
-      },
+      where: tenantId
+        ? {
+            userId,
+            OR: [
+              { tenantId, teamId: teamId || undefined },
+              { tenantId, teamId: null },
+            ],
+          }
+        : {
+            userId,
+            tenantId: null,
+            teamId: null,
+          },
       include: { permission: true },
     });
     userPerms.forEach((up) => {

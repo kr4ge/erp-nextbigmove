@@ -1,16 +1,20 @@
 import {
   IsEmail,
-  IsString,
-  IsNotEmpty,
-  MinLength,
-  MaxLength,
-  Matches,
   IsEnum,
+  IsNotEmpty,
   IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
   Min,
   Max,
-  IsOptional,
+  MaxLength,
+  MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { BillingAddressDto } from '../../../common/dto/billing-address.dto';
 
 export class CreateTenantDto {
   // Tenant Information
@@ -28,6 +32,20 @@ export class CreateTenantDto {
     message: 'Tenant slug must be lowercase alphanumeric with hyphens',
   })
   tenantSlug: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  companyName?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BillingAddressDto)
+  billingAddress?: BillingAddressDto;
+
+  @IsOptional()
+  @IsUUID()
+  partnerTypeId?: string;
 
   // Admin User Information
   @IsEmail()
