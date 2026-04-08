@@ -12,6 +12,8 @@ import {
   Target,
   Package,
   FileSpreadsheet,
+  Menu,
+  X
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
@@ -25,7 +27,8 @@ interface NavLink {
   children?: { href: string; label: string; icon?: ReactNode }[];
 }
 
-const iconClasses = 'h-5 w-5';
+const iconClasses = 'h-4 w-4';
+const MOBILE_DRAWER_TRANSITION_MS = 220;
 
 const baseNavigation: NavLink[] = [
   {
@@ -164,6 +167,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [isLoadingTeams, setIsLoadingTeams] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isMobileNavMounted, setIsMobileNavMounted] = useState(false);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [canViewAllTeams, setCanViewAllTeams] = useState(false);
   const [isTeamMenuOpen, setIsTeamMenuOpen] = useState(false);
@@ -171,6 +176,44 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [collapsedPopupItem, setCollapsedPopupItem] = useState<string | null>(null);
   const [popupPosition, setPopupPosition] = useState<{ top: number; left: number } | null>(null);
   const navButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const mobileNavCloseTimerRef = useRef<number | null>(null);
+
+  const openMobileNav = () => {
+    if (typeof window === 'undefined') {
+      setIsMobileNavMounted(true);
+      setIsMobileNavOpen(true);
+      return;
+    }
+
+    if (mobileNavCloseTimerRef.current !== null) {
+      window.clearTimeout(mobileNavCloseTimerRef.current);
+      mobileNavCloseTimerRef.current = null;
+    }
+
+    setIsMobileNavMounted(true);
+    window.requestAnimationFrame(() => {
+      setIsMobileNavOpen(true);
+    });
+  };
+
+  const closeMobileNav = () => {
+    if (typeof window === 'undefined') {
+      setIsMobileNavOpen(false);
+      setIsMobileNavMounted(false);
+      return;
+    }
+
+    setIsMobileNavOpen(false);
+
+    if (mobileNavCloseTimerRef.current !== null) {
+      window.clearTimeout(mobileNavCloseTimerRef.current);
+    }
+
+    mobileNavCloseTimerRef.current = window.setTimeout(() => {
+      setIsMobileNavMounted(false);
+      mobileNavCloseTimerRef.current = null;
+    }, MOBILE_DRAWER_TRANSITION_MS);
+  };
 
   const filteredNavigation = useMemo<NavLink[]>(() => {
     const hasMarketing = permissions.includes('analytics.marketing');
@@ -409,6 +452,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setIsProfileMenuOpen(false);
+    setIsMobileNavOpen(false);
+    setIsMobileNavMounted(false);
     setCollapsedPopupItem(null);
   }, [pathname]);
 
@@ -419,6 +464,27 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }
   }, [isSidebarCollapsed]);
 
+  useEffect(() => {
+    if (!isMobileNavMounted) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobileNavMounted]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && mobileNavCloseTimerRef.current !== null) {
+        window.clearTimeout(mobileNavCloseTimerRef.current);
+      }
+    };
+  }, []);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -427,7 +493,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  const sidebarWidth = isSidebarCollapsed ? 'md:w-16 lg:w-16 xl:w-18' : 'md:w-56 lg:w-60 xl:w-64';
+  const sidebarWidth = isSidebarCollapsed ? 'md:w-14 lg:w-14 xl:w-[60px]' : 'md:w-52 lg:w-56 xl:w-60';
 
   return (
     <ToastProvider>
@@ -439,11 +505,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           {/* Collapse toggle pinned to the right edge, vertically centered */}
           <button
             onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-            className="absolute -right-3 top-1/2 z-50 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm hover:border-orange-300 hover:text-orange-600 transition-all duration-300"
+            className="absolute -right-3 top-1/2 z-50 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm hover:border-orange-300 hover:text-orange-600 transition-all duration-300"
             aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             <svg
-              className={`h-4 w-4 transition-transform duration-300 ${isSidebarCollapsed ? 'rotate-180' : ''}`}
+              className={`h-3.5 w-3.5 transition-transform duration-300 ${isSidebarCollapsed ? 'rotate-180' : ''}`}
               viewBox="0 0 20 20"
               fill="none"
               stroke="currentColor"
@@ -453,11 +519,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </svg>
           </button>
           <div
-            className={`px-4 py-3 flex relative z-40 transition-all duration-300 ${
-              isSidebarCollapsed ? 'justify-center' : 'items-center gap-3'
+            className={`px-3 py-4 flex relative z-40 transition-all duration-300 ${
+              isSidebarCollapsed ? 'justify-center' : 'flex-col items-center gap-3 text-center'
             }`}
           >
-            <div className="h-12 w-12 flex-shrink-0 rounded-2xl bg-orange-500 text-white flex items-center justify-center text-xl font-semibold transition-all duration-300">
+            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[1.35rem] bg-orange-500 text-xl font-semibold text-white transition-all duration-300">
               {organizationName
                 .split(' ')
                 .map((word: string) => word.charAt(0))
@@ -466,13 +532,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 .toUpperCase() || 'EA'}
             </div>
             <div className={`min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
-              <p className="text-base font-semibold text-slate-900 whitespace-nowrap">{organizationName}</p>
+              <p className="whitespace-nowrap text-base font-semibold text-slate-900">{organizationName}</p>
             </div>
           </div>
 
         {/* Scrollable nav and profile section */}
           <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden">
-        <nav className="flex-1 px-2 py-6 space-y-2">
+        <nav className="flex-1 px-2 py-4 space-y-2">
           {filteredNavigation.map((link) => {
             const normalizedPath = pathname?.split('?')[0] || '/';
             const isActive =
@@ -501,7 +567,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                           setExpandedItem((prev) => (prev === link.href ? null : link.href));
                         }
                       }}
-                      className={`group flex w-full items-center rounded-xl px-3 py-2 transition ${
+                      className={`group flex w-full items-center rounded-xl px-3 py-3 transition-all duration-300 ${
                         isSidebarCollapsed ? 'justify-center' : ''
                       } ${hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href) ? 'text-slate-800' : 'text-slate-500 hover:bg-slate-50'}`}
                     >
@@ -515,8 +581,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       <div className={`ml-3 flex-1 text-left transition-all duration-300 overflow-hidden ${
                         isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100'
                       }`}>
-                        <span className="text-sm font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
-                        <span className="text-xs text-slate-500 group-hover:text-slate-600 whitespace-nowrap">{link.description}</span>
+                        <span className="text-[0.82rem] font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
                       </div>
                       <svg
                         className={`h-4 w-4 text-slate-400 transition-all duration-300 ${
@@ -533,7 +598,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   ) : (
                     <Link
                       href={link.href}
-                      className={`group flex items-center rounded-xl px-3 py-2 transition-all duration-300 ${
+                      className={`group flex items-center rounded-xl px-3 py-3 transition-all duration-300 ${
                         isActive ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
                       } ${isSidebarCollapsed ? 'justify-center' : ''}`}
                     >
@@ -547,14 +612,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       <div className={`ml-3 flex-1 transition-all duration-300 overflow-hidden ${
                         isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100'
                       }`}>
-                        <span className="text-sm font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
-                        <span className="text-xs text-slate-500 group-hover:text-slate-600 whitespace-nowrap">{link.description}</span>
+                        <span className="text-[0.82rem] font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
                       </div>
                     </Link>
                   )}
                   {/* Expanded submenu when sidebar is open */}
                   {hasChildren && !isSidebarCollapsed && isExpanded && (
-                    <div className="ml-11 space-y-1">
+                    <div className="ml-9 space-y-1">
                       {link.children!.map((child) => {
                         const isRootIntegration = child.href === '/integrations';
                         const childActive = isRootIntegration
@@ -564,14 +628,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                           <Link
                             key={child.href}
                             href={child.href}
-                            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                            className={`flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-[0.82rem] transition ${
                               childActive
                                 ? 'bg-orange-50 text-orange-700 shadow-sm'
                                 : 'text-slate-600 hover:bg-slate-50'
                             }`}
                           >
                             <span
-                            className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                            className={`flex h-6 w-6 items-center justify-center rounded-full ${
                               childActive ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
                             }`}
                           >
@@ -589,7 +653,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        <div className={`px-4 py-4 space-y-3 sticky bottom-0 bg-white transition-all duration-300 ${isSidebarCollapsed ? 'px-2' : ''}`}>
+        <div className={`px-3 py-3 space-y-3 sticky bottom-0 bg-white transition-all duration-300 ${isSidebarCollapsed ? 'px-2' : ''}`}>
           <div className="relative">
             <button
               onClick={() => isSidebarCollapsed ? handleLogout() : setIsProfileMenuOpen((prev) => !prev)}
@@ -598,11 +662,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               }`}
             >
               <div className={`flex items-center transition-all duration-300 ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                <div className="h-10 w-10 flex-shrink-0 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-sm font-semibold">
+                <div className="h-9 w-9 flex-shrink-0 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold">
                   {`${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.trim() || '??'}
                 </div>
                 <div className={`flex-1 transition-all duration-300 overflow-hidden ${isSidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
-                  <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
+                  <div className="text-[0.82rem] font-semibold text-slate-900 whitespace-nowrap">
                     {user?.firstName} {user?.lastName}
                   </div>
                 </div>
@@ -620,14 +684,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             {isProfileMenuOpen && !isSidebarCollapsed && (
               <div className="absolute inset-x-0 bottom-full mb-2 rounded-2xl border border-slate-200 bg-white shadow-lg z-40">
                 <div className="px-4 py-3 border-b border-slate-100">
-                  <div className="text-sm font-semibold text-slate-900">
+                  <div className="text-[0.82rem] font-semibold text-slate-900">
                     {user?.firstName} {user?.lastName}
                   </div>
                   <div className="text-xs text-slate-500 truncate">{user?.email}</div>
                 </div>
                 <Link
                   href="/settings/profile"
-                  className="flex items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50"
+                  className="flex items-center gap-3 px-4 py-3 text-[0.82rem] text-slate-700 hover:bg-slate-50"
                   onClick={() => setIsProfileMenuOpen(false)}
                 >
                   <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
@@ -642,7 +706,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 </Link>
                 <button
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-[0.82rem] text-slate-700 hover:bg-slate-50"
                 >
                   <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
                     <path d="M11 5v10M7 9l-2 2 2 2M11 10H4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -656,9 +720,202 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
+      {isMobileNavMounted ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            type="button"
+            aria-label="Close navigation"
+            className={`absolute inset-0 bg-slate-950/25 transition-opacity duration-200 ${
+              isMobileNavOpen ? 'opacity-100' : 'opacity-0'
+            }`}
+            onClick={closeMobileNav}
+          />
+          <aside
+            className={`absolute inset-y-0 left-0 flex w-[85vw] max-w-sm flex-col bg-white shadow-xl transition-transform duration-200 ease-out ${
+              isMobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+            }`}
+          >
+            <div className="flex items-center justify-end px-4 py-3">
+              <button
+                type="button"
+                onClick={closeMobileNav}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="relative z-40 flex flex-col items-center gap-3 px-3 py-4 text-center">
+              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[1.35rem] bg-orange-500 text-xl font-semibold text-white">
+                {organizationName
+                  .split(' ')
+                  .map((word: string) => word.charAt(0))
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase() || 'EA'}
+              </div>
+              <div className="min-w-0">
+                <p className="whitespace-nowrap text-base font-semibold text-slate-900">{organizationName}</p>
+              </div>
+            </div>
+
+            <nav className="flex-1 space-y-2 overflow-y-auto px-2 py-4">
+              {filteredNavigation.map((link) => {
+                const normalizedPath = pathname?.split('?')[0] || '/';
+                const isActive =
+                  normalizedPath === link.href ||
+                  (link.href !== '/dashboard' && normalizedPath.startsWith(`${link.href}/`));
+                const hasChildren = Boolean(link.children && link.children.length > 0);
+                const isExpanded = expandedItem === link.href;
+                const hasActiveChild = Boolean(
+                  link.children?.some(
+                    (child) => normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`),
+                  ),
+                );
+
+                return (
+                  <div key={`mobile-${link.href}`} className="space-y-1">
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedItem((prev) => (prev === link.href ? null : link.href))}
+                        className={`group flex w-full items-center rounded-xl px-3 py-3 transition-all duration-300 ${
+                          hasActiveChild || isExpanded ? 'text-slate-800' : 'text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span
+                          className={`flex-shrink-0 transition-colors duration-300 ${
+                            hasActiveChild || isExpanded
+                              ? 'text-orange-500'
+                              : 'text-slate-400 group-hover:text-orange-500'
+                          }`}
+                        >
+                          {link.icon}
+                        </span>
+                        <span className="ml-3 flex-1 text-left text-[0.82rem] font-semibold text-slate-900">
+                          {link.label}
+                        </span>
+                        <svg
+                          className={`h-4 w-4 text-slate-400 transition-all duration-300 ${
+                            isExpanded ? 'rotate-90 text-orange-500' : ''
+                          }`}
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 5l6 5-6 5" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <Link
+                        href={link.href}
+                        onClick={closeMobileNav}
+                        className={`group flex items-center rounded-xl px-3 py-3 transition-all duration-300 ${
+                          isActive ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span
+                          className={`flex-shrink-0 transition-colors duration-300 ${
+                            isActive ? 'text-orange-500' : 'text-slate-400 group-hover:text-orange-500'
+                          }`}
+                        >
+                          {link.icon}
+                        </span>
+                        <span className="ml-3 text-[0.82rem] font-semibold text-slate-900">{link.label}</span>
+                      </Link>
+                    )}
+
+                    {hasChildren && isExpanded ? (
+                      <div className="ml-9 space-y-1">
+                        {link.children!.map((child) => {
+                          const isRootIntegration = child.href === '/integrations';
+                          const childActive = isRootIntegration
+                            ? normalizedPath === child.href
+                            : normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`);
+                          return (
+                            <Link
+                              key={`mobile-child-${child.href}`}
+                              href={child.href}
+                              onClick={closeMobileNav}
+                              className={`flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-[0.82rem] transition ${
+                                childActive
+                                  ? 'bg-orange-50 text-orange-700 shadow-sm'
+                                  : 'text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span
+                                className={`flex h-6 w-6 items-center justify-center rounded-full ${
+                                  childActive ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
+                                }`}
+                              >
+                                {child.icon ?? <span className="h-4 w-4" />}
+                              </span>
+                              <span className="font-medium">{child.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </nav>
+
+            <div className="border-t border-slate-200 px-3 py-3">
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700">
+                    {`${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.trim() || '??'}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-[0.82rem] font-semibold text-slate-900">
+                      {user?.firstName} {user?.lastName}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">{user?.email}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-1">
+                  <Link
+                    href="/settings/profile"
+                    onClick={closeMobileNav}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-[0.82rem] text-slate-700 transition-colors hover:bg-slate-50"
+                  >
+                    <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                      <path
+                        d="M4.5 10a5.5 5.5 0 0 1 10 0 5.5 5.5 0 0 1-10 0Zm5.5-3v3l2 1"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span>Settings</span>
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeMobileNav();
+                      handleLogout();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-[0.82rem] text-slate-700 transition-colors hover:bg-slate-50"
+                  >
+                    <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                      <path d="M11 5v10M7 9l-2 2 2 2M11 10H4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span>Log out</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
       {/* Collapsed sidebar popup - rendered outside sidebar to avoid clipping */}
-      {isSidebarCollapsed && collapsedPopupItem && popupPosition && (
-        <>
+      {isSidebarCollapsed && collapsedPopupItem && popupPosition && !isMobileNavMounted && (
+        <div className="hidden md:block">
           {/* Backdrop to close popup when clicking outside */}
           <div
             className="fixed inset-0 z-40"
@@ -676,9 +933,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   top: `${popupPosition.top}px`
                 }}
               >
-                <div className="px-4 py-3 border-b border-slate-100">
-                  <div className="text-sm font-semibold text-slate-900">{link.label}</div>
-                  <div className="text-xs text-slate-500">{link.description}</div>
+                <div className="px-4 py-2.5 border-b border-slate-100">
+                  <div className="text-[0.82rem] font-semibold text-slate-900">{link.label}</div>
                 </div>
                 <div className="py-2">
                   {link.children!.map((child) => {
@@ -691,14 +947,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         key={child.href}
                         href={child.href}
                         onClick={() => setCollapsedPopupItem(null)}
-                        className={`flex items-center gap-3 px-4 py-2 text-sm transition ${
+                        className={`flex items-center gap-3 px-4 py-2.5 text-[0.82rem] transition ${
                           childActive
                             ? 'bg-orange-50 text-orange-700'
                             : 'text-slate-600 hover:bg-slate-50'
                         }`}
                       >
                         <span
-                          className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                          className={`flex h-6 w-6 items-center justify-center rounded-full ${
                             childActive ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
                           }`}
                         >
@@ -712,14 +968,26 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               </div>
             );
           })}
-        </>
+        </div>
       )}
 
       {/* Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-white">
         {/* Top bar - connected to sidebar (no border between them) */}
-        <header className="bg-white px-4 sm:px-5 lg:px-6 py-1.5 flex-shrink-0 sticky top-0 z-30">
-          <div className="max-w-full flex items-center justify-end min-h-[36px]">
+        <header className="bg-white px-3 py-1 sm:px-4 lg:px-5 flex-shrink-0 sticky top-0 z-30">
+          <div className="max-w-full flex min-h-[32px] items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openMobileNav}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm md:hidden"
+                aria-label="Open navigation"
+              >
+                <Menu className="h-4 w-4" />
+              </button>
+              <div className="h-10 md:hidden" />
+            </div>
+
             {canViewAllTeams ? (
               <div className="relative">
                 {isLoadingTeams ? (
@@ -792,8 +1060,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Main content area - rounded top-left corner for App Shell look */}
-        <main className="flex-1 overflow-y-auto bg-slate-100 rounded-tl-3xl">
-          <div className="max-w-full h-full px-4 sm:px-6 lg:px-8 py-5">{children}</div>
+        <main className="flex-1 overflow-y-auto bg-slate-100 lg:rounded-tl-[1.75rem]">
+          <div className="max-w-full h-full px-3 py-4 sm:px-4 lg:px-5">{children}</div>
         </main>
       </div>
       </div>
