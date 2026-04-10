@@ -50,19 +50,16 @@ export function DashboardDateControls({
       return { showRangeText: false, rangeLabel: "" };
     }
 
-    const formatCompactDate = (ymd: string) => {
-      const [year, month, day] = ymd.split("-").map(Number);
+    const formatRangeDate = (ymd: string) => {
+      const [year, month, day] = ymd.split("-");
       if (!year || !month || !day) return ymd;
-      return new Date(year, month - 1, day).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      });
+      return `${month.padStart(2, "0")}/${day.padStart(2, "0")}/${year}`;
     };
 
     const label =
       startYmd === endYmd
-        ? formatCompactDate(startYmd)
-        : `${formatCompactDate(startYmd)} - ${formatCompactDate(endYmd)}`;
+        ? formatRangeDate(startYmd)
+        : `${formatRangeDate(startYmd)} - ${formatRangeDate(endYmd)}`;
 
     return { showRangeText: true, rangeLabel: label };
   }, [range.endDate, range.startDate, todayYmd]);
@@ -104,7 +101,7 @@ export function DashboardDateControls({
             });
           }}
           inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
-            showRangeText ? "w-[182px]" : "w-10"
+            showRangeText ? "w-[236px]" : "w-10"
           }`}
           displayFormat="MM/DD/YYYY"
           separator=" – "
@@ -114,7 +111,7 @@ export function DashboardDateControls({
               <span
                 className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
                   showRangeText
-                    ? "max-w-[130px] translate-x-0 opacity-100"
+                    ? "max-w-[184px] translate-x-0 opacity-100"
                     : "max-w-0 -translate-x-1 opacity-0"
                 }`}
               >

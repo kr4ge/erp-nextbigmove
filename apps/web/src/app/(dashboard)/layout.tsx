@@ -1018,6 +1018,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             <label className="flex cursor-pointer items-center gap-2">
                               <input
                                 type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
                                 checked={selectedTeamIds.length === 0}
                                 onChange={() => handleTeamSelection('__all__')}
                               />
@@ -1032,6 +1033,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                               <label className="flex cursor-pointer items-center gap-2">
                                 <input
                                   type="checkbox"
+                                  className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
                                   checked={selectedTeamIds.includes(team.id)}
                                   onChange={() => handleTeamSelection(team.id)}
                                 />

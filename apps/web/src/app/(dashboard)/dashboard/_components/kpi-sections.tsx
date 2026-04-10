@@ -70,7 +70,13 @@ function formatGaugeValue(
   format: "currency" | "percent" | "number",
   mode: GaugeTextMode,
 ) {
-  if (mode === "abbrev") {
+  const shouldAbbreviate =
+    mode === "abbrev" ||
+    (mode === "dynamic" &&
+      (format === "currency" || format === "number") &&
+      Math.abs(value) >= 1_000_000);
+
+  if (shouldAbbreviate) {
     if (format === "currency") {
       return new Intl.NumberFormat("en-PH", {
         style: "currency",
