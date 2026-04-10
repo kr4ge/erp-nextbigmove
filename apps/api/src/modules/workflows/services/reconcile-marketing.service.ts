@@ -376,7 +376,7 @@ export class ReconcileMarketingService {
       const codVal = parseFloat(order.cod ?? '0') || 0;
       const cogsVal = parseFloat(order.cogs ?? '0') || 0;
       const statusNum = Number.isFinite(order.status as any) ? Number(order.status) : -1;
-      const isUnconfirmed = statusNum === 0 || statusNum === 11;
+      const isUnconfirmed = statusNum === 0;
       const isAbandoned = order.isAbandoned === true;
       const isWaitingPickup = statusNum === 9;
       const isShipped = statusNum === 2;
