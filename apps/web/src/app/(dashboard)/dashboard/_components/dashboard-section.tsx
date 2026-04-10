@@ -10,6 +10,8 @@ interface DashboardSectionProps {
   meta?: ReactNode;
   className?: string;
   contentClassName?: string;
+  headerClassName?: string;
+  titleClassName?: string;
 }
 
 export function DashboardSection({
@@ -19,6 +21,8 @@ export function DashboardSection({
   meta,
   className,
   contentClassName,
+  headerClassName,
+  titleClassName,
 }: DashboardSectionProps) {
   return (
     <section
@@ -27,9 +31,19 @@ export function DashboardSection({
         className,
       )}
     >
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+      <div
+        className={clsx(
+          "flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2",
+          headerClassName,
+        )}
+      >
         {icon}
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+        <h4
+          className={clsx(
+            "text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700",
+            titleClassName,
+          )}
+        >
           {title}
         </h4>
         {typeof meta === "string" ? (

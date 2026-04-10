@@ -98,6 +98,8 @@ export function NameConventionCard({
       icon={<ClipboardList className="h-3.5 w-3.5 text-orange-500" />}
       className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
       contentClassName="space-y-3"
+      headerClassName="px-3 py-2.5"
+      titleClassName="text-[11px] tracking-[0.18em]"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="max-w-2xl text-sm text-slate-600">

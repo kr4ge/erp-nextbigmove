@@ -770,6 +770,8 @@ export function ExecutiveKpiSection({
       title="Marketing KPI Overview"
       icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
       contentClassName="space-y-3"
+      headerClassName="px-3 py-2.5"
+      titleClassName="text-[11px] tracking-[0.18em]"
     >
       {loading ? (
         <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
@@ -822,6 +824,8 @@ export function TeamKpiSection({ data, loading, error }: TeamKpiSectionProps) {
       title="Marketing KPI Overview"
       icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
       contentClassName="space-y-3"
+      headerClassName="px-3 py-2.5"
+      titleClassName="text-[11px] tracking-[0.18em]"
     >
       {loading ? (
         <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
