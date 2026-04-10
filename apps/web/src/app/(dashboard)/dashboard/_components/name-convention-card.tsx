@@ -18,7 +18,9 @@ const namingInputClass =
 const namingReadOnlyInputClass =
   "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const namingSoftButtonClass =
-  "inline-flex items-center rounded-2xl border border-orange-200 bg-orange-50 px-5 py-3 text-sm font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 px-5 py-3 text-center text-sm font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50";
+const namingSoftActionButtonClass =
+  "inline-flex items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 px-3 py-1.5 text-center text-xs font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100";
 
 export function NameConventionCard({
   teamCode,
@@ -115,7 +117,7 @@ export function NameConventionCard({
           Generate standardized ad and campaign names without leaving the
           dashboard.
         </p>
-        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm font-medium text-slate-700">
+        <div className="inline-flex self-start rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm font-medium text-slate-700">
           <button
             className={`rounded-md px-3 py-1 ${
               nameTab === "ads"
@@ -208,7 +210,7 @@ export function NameConventionCard({
               Generate
             </button>
             {nameResult ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-sm text-slate-700">
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-700">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Result
                 </span>
@@ -218,7 +220,7 @@ export function NameConventionCard({
                 <button
                   type="button"
                   onClick={copyNameResult}
-                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-orange-200 hover:text-orange-700"
+                  className={namingSoftActionButtonClass}
                   title="Copy"
                 >
                   Copy
@@ -337,7 +339,7 @@ export function NameConventionCard({
               Generate
             </button>
             {nameResult ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-sm text-slate-700">
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-700">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Result
                 </span>
@@ -347,7 +349,7 @@ export function NameConventionCard({
                 <button
                   type="button"
                   onClick={copyNameResult}
-                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-orange-200 hover:text-orange-700"
+                  className={namingSoftActionButtonClass}
                   title="Copy"
                 >
                   Copy
