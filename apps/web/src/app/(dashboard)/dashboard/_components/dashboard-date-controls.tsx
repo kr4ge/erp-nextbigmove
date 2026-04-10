@@ -146,7 +146,7 @@ export function DashboardDateControls({
         {isFilterOpen ? (
           <div
             ref={filterMenuRef}
-            className={`absolute right-0 mt-2 rounded-xl border border-slate-200 bg-white shadow-lg z-30 p-3 space-y-3 ${filterMenuWidthClassName}`}
+            className={`absolute left-0 right-auto mt-2 max-w-[calc(100vw-1rem)] rounded-xl border border-slate-200 bg-white shadow-lg z-30 p-3 space-y-3 sm:left-auto sm:right-0 ${filterMenuWidthClassName}`}
           >
             {filters.map((filter) => (
               <label
