@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { ClipboardList } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { DashboardSection } from "./dashboard-section";
 
 interface NameConventionCardProps {
@@ -10,6 +9,16 @@ interface NameConventionCardProps {
   teamCodeLoading: boolean;
   employeeId?: string | null;
 }
+
+const namingLabelClass = "space-y-2 text-sm";
+const namingLabelTextClass =
+  "text-xs font-semibold uppercase tracking-[0.16em] text-slate-500";
+const namingInputClass =
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
+const namingReadOnlyInputClass =
+  "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
+const namingSoftButtonClass =
+  "inline-flex items-center rounded-2xl border border-orange-200 bg-orange-50 px-5 py-3 text-sm font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function NameConventionCard({
   teamCode,
@@ -132,55 +141,58 @@ export function NameConventionCard({
       {nameTab === "ads" ? (
         <div className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Collection / Product Name</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Collection / Product Name</span>
               <input
                 type="text"
                 value={adsInputs.f1}
                 onChange={(e) =>
                   setAdsInputs((prev) => ({ ...prev, f1: e.target.value }))
                 }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                placeholder="e.g. Summer Glow Kit"
+                className={namingInputClass}
               />
             </label>
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Summary</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Summary</span>
               <input
                 type="text"
                 value={adsInputs.f2}
                 onChange={(e) =>
                   setAdsInputs((prev) => ({ ...prev, f2: e.target.value }))
                 }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                placeholder="e.g. UGC Hook v2"
+                className={namingInputClass}
               />
             </label>
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Team Code</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Team Code</span>
               <input
                 type="text"
                 value={teamCodeLoading ? "Loading..." : teamCode}
                 readOnly
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                className={namingReadOnlyInputClass}
               />
             </label>
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Marketing Associate (employeeId)</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Marketing Associate (employeeId)</span>
               <input
                 type="text"
                 value={employeeId || ""}
                 readOnly
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                className={namingReadOnlyInputClass}
               />
             </label>
-            <label className="space-y-1 text-sm text-slate-700 sm:col-span-2">
-              <span>Date Version</span>
+            <label className={`${namingLabelClass} sm:col-span-2`}>
+              <span className={namingLabelTextClass}>Date Version</span>
               <input
                 type="text"
                 value={adsInputs.f5}
                 onChange={(e) =>
                   setAdsInputs((prev) => ({ ...prev, f5: e.target.value }))
                 }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                placeholder="e.g. 041026-v1"
+                className={namingInputClass}
               />
             </label>
           </div>
@@ -188,7 +200,13 @@ export function NameConventionCard({
             <p className="text-sm text-red-600">{nameError}</p>
           ) : null}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Button onClick={generateName}>Generate</Button>
+            <button
+              type="button"
+              onClick={generateName}
+              className={namingSoftButtonClass}
+            >
+              Generate
+            </button>
             {nameResult ? (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-sm text-slate-700">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -212,8 +230,8 @@ export function NameConventionCard({
       ) : (
         <div className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Type</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Type</span>
               <select
                 value={campaignInputs.type}
                 onChange={(e) =>
@@ -222,7 +240,7 @@ export function NameConventionCard({
                     type: e.target.value,
                   }))
                 }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                className={namingInputClass}
               >
                 <option value="">Select type</option>
                 <option value="Testing">Testing</option>
@@ -231,8 +249,8 @@ export function NameConventionCard({
                 <option value="Repost Winning">Repost Winning</option>
               </select>
             </label>
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Employee ID</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Employee ID</span>
               <input
                 type="text"
                 value={campaignInputs.emp || employeeId || ""}
@@ -242,11 +260,12 @@ export function NameConventionCard({
                     emp: e.target.value,
                   }))
                 }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                placeholder="e.g. EMP-102"
+                className={namingInputClass}
               />
             </label>
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Shop Name</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Shop Name</span>
               <input
                 type="text"
                 value={campaignInputs.shop}
@@ -256,11 +275,12 @@ export function NameConventionCard({
                     shop: e.target.value,
                   }))
                 }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                placeholder="e.g. TikTok Main"
+                className={namingInputClass}
               />
             </label>
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Collection / Product Name</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Collection / Product Name</span>
               <input
                 type="text"
                 value={campaignInputs.product}
@@ -270,11 +290,12 @@ export function NameConventionCard({
                     product: e.target.value,
                   }))
                 }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                placeholder="e.g. Glow Serum"
+                className={namingInputClass}
               />
             </label>
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Mapping Code</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Mapping Code</span>
               <input
                 type="text"
                 value={campaignInputs.mapping}
@@ -284,11 +305,12 @@ export function NameConventionCard({
                     mapping: e.target.value,
                   }))
                 }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                placeholder="e.g. M08"
+                className={namingInputClass}
               />
             </label>
-            <label className="space-y-1 text-sm text-slate-700">
-              <span>Date</span>
+            <label className={namingLabelClass}>
+              <span className={namingLabelTextClass}>Date</span>
               <input
                 type="text"
                 value={campaignInputs.date}
@@ -298,7 +320,8 @@ export function NameConventionCard({
                     date: e.target.value,
                   }))
                 }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                placeholder="e.g. 041026"
+                className={namingInputClass}
               />
             </label>
           </div>
@@ -306,7 +329,13 @@ export function NameConventionCard({
             <p className="text-sm text-red-600">{nameError}</p>
           ) : null}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Button onClick={generateName}>Generate</Button>
+            <button
+              type="button"
+              onClick={generateName}
+              className={namingSoftButtonClass}
+            >
+              Generate
+            </button>
             {nameResult ? (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-sm text-slate-700">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
