@@ -17,10 +17,9 @@ import {
   CheckCircle2,
   Coins,
   PieChart,
-  Lightbulb,
-  Boxes,
   DollarSignIcon,
   ClipboardList,
+  Columns,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { DashboardDateControls } from "./_components/dashboard-date-controls";
@@ -31,6 +30,9 @@ import {
   TeamKpiSection,
 } from "./_components/kpi-sections";
 import { NameConventionCard } from "./_components/name-convention-card";
+import { AnalyticsKpiVisibilityDialog } from "../analytics/_components/analytics-kpi-visibility-dialog";
+import { AnalyticsMetricCard } from "../analytics/_components/analytics-metric-card";
+import { AnalyticsMetricCardSkeleton } from "../analytics/_components/analytics-metric-card-skeleton";
 import {
   getExecutiveOverview,
   getIntegrationCount,
@@ -46,9 +48,11 @@ import {
 import type {
   DashboardStats,
   ExecutiveOverviewStats,
+  MarketingLeaderStatsResponse,
   MarketingKpiDashboardResponse,
   MarketingKpiExecutiveDashboardResponse,
   MarketingKpiTeamDashboardResponse,
+  MarketingMonitoringStats,
   MyStats,
   ProblematicDeliveryResponse,
   SalesDashboardResponse,
@@ -68,6 +72,7 @@ import {
   getTodayRange,
   salesMetricDefinitions,
 } from "./_utils/dashboard";
+import { formatDeltaPercent } from "../analytics/_utils/metrics";
 
 const Datepicker = dynamic(() => import("react-tailwindcss-datepicker"), {
   ssr: false,
@@ -87,6 +92,69 @@ type DashboardTenant = {
 };
 
 const EMPTY_SHOP_SELECTION: string[] = [];
+const MARKETING_KPI_VISIBILITY_STORAGE_KEY =
+  "dashboard-marketing-visible-kpis";
+const MARKETING_LEADER_KPI_VISIBILITY_STORAGE_KEY =
+  "dashboard-marketing-leader-visible-kpis";
+
+type MarketingMonitoringMetricKey = keyof MarketingMonitoringStats;
+type MarketingMonitoringCardDefinition = {
+  key: MarketingMonitoringMetricKey;
+  label: string;
+  format: "currency" | "percent";
+  section: "Primary" | "Secondary";
+};
+
+const MARKETING_MONITORING_CARD_DEFINITIONS: MarketingMonitoringCardDefinition[] =
+  [
+    {
+      key: "revenue",
+      label: "Revenue (₱)",
+      format: "currency",
+      section: "Primary",
+    },
+    {
+      key: "canceled",
+      label: "Canceled (₱)",
+      format: "currency",
+      section: "Primary",
+    },
+    {
+      key: "delivered",
+      label: "Delivered (₱)",
+      format: "currency",
+      section: "Primary",
+    },
+    {
+      key: "ad_spend",
+      label: "Ad Spend (₱)",
+      format: "currency",
+      section: "Primary",
+    },
+    { key: "aov", label: "AOV (₱)", format: "currency", section: "Secondary" },
+    {
+      key: "cancellation_pct",
+      label: "Cancellation (%)",
+      format: "percent",
+      section: "Secondary",
+    },
+    {
+      key: "rts_pct",
+      label: "RTS (%)",
+      format: "percent",
+      section: "Secondary",
+    },
+    {
+      key: "ar_pct",
+      label: "AR (%)",
+      format: "percent",
+      section: "Secondary",
+    },
+  ];
+
+const DEFAULT_VISIBLE_MARKETING_KPI_KEYS = MARKETING_MONITORING_CARD_DEFINITIONS.map(
+  (card) => card.key,
+);
 
 function toSafeNumber(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -151,16 +219,32 @@ export default function DashboardPage() {
     totalUsers: 1,
   });
   const [myStats, setMyStats] = useState<MyStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
+  const [myStatsLoading, setMyStatsLoading] = useState(false);
+  const [myStatsError, setMyStatsError] = useState("");
+  const [leaderStatsLoading, setLeaderStatsLoading] = useState(false);
+  const [leaderStatsError, setLeaderStatsError] = useState("");
   const [range, setRange] = useState(todayRange);
   const [perms, setPerms] = useState<string[]>([]);
-  const [excludeCancel, setExcludeCancel] = useState(true);
-  const [excludeRestocking, setExcludeRestocking] = useState(true);
-  const [excludeAbandoned, setExcludeAbandoned] = useState(true);
-  const [showAllWinning, setShowAllWinning] = useState(false);
-  const [excludeRts, setExcludeRts] = useState(true);
-  const [includeTax12, setIncludeTax12] = useState(false);
-  const [includeTax1, setIncludeTax1] = useState(false);
+  const [excludeCancel, setExcludeCancel] = useState(false);
+  const [excludeRestocking, setExcludeRestocking] = useState(false);
+  const [excludeAbandoned, setExcludeAbandoned] = useState(false);
+  const [excludeRts, setExcludeRts] = useState(false);
+  const [includeTax12, setIncludeTax12] = useState(true);
+  const [includeTax1, setIncludeTax1] = useState(true);
+  const [showMarketingKpiVisibilityModal, setShowMarketingKpiVisibilityModal] =
+    useState(false);
+  const [visibleMarketingKpiKeys, setVisibleMarketingKpiKeys] = useState<
+    MarketingMonitoringMetricKey[]
+  >(DEFAULT_VISIBLE_MARKETING_KPI_KEYS);
+  const [hasLoadedMarketingKpiVisibility, setHasLoadedMarketingKpiVisibility] =
+    useState(false);
+  const [showLeaderKpiVisibilityModal, setShowLeaderKpiVisibilityModal] =
+    useState(false);
+  const [visibleLeaderKpiKeys, setVisibleLeaderKpiKeys] = useState<
+    MarketingMonitoringMetricKey[]
+  >(DEFAULT_VISIBLE_MARKETING_KPI_KEYS);
+  const [hasLoadedLeaderKpiVisibility, setHasLoadedLeaderKpiVisibility] =
+    useState(false);
   const [execStats, setExecStats] = useState<ExecutiveOverviewStats | null>(
     null,
   );
@@ -169,11 +253,8 @@ export default function DashboardPage() {
   const [teamCode, setTeamCode] = useState<string>("");
   const [teamName, setTeamName] = useState<string>("");
   const [teamCodeLoading, setTeamCodeLoading] = useState(false);
-  const [leaderStats, setLeaderStats] = useState<{
-    team_ad_spend: number;
-    team_ar: number;
-    team_overall_ranking: number | null;
-  } | null>(null);
+  const [leaderStats, setLeaderStats] =
+    useState<MarketingLeaderStatsResponse | null>(null);
   const [marketingKpiData, setMarketingKpiData] =
     useState<MarketingKpiDashboardResponse | null>(null);
   const [marketingKpiLoading, setMarketingKpiLoading] = useState(false);
@@ -249,6 +330,20 @@ export default function DashboardPage() {
     () => perms.includes("dashboard.sales"),
     [perms],
   );
+  const activeDashboardMode = useMemo<
+    "executive" | "leader" | "marketing" | "sales" | "default"
+  >(() => {
+    if (canViewExecutives) return "executive";
+    if (canViewMarketingLeader) return "leader";
+    if (canViewMarketingDashboard) return "marketing";
+    if (canViewSalesDashboard) return "sales";
+    return "default";
+  }, [
+    canViewExecutives,
+    canViewMarketingLeader,
+    canViewMarketingDashboard,
+    canViewSalesDashboard,
+  ]);
 
   useEffect(() => {
     const userStr = localStorage.getItem("user");
@@ -294,6 +389,99 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const stored = window.localStorage.getItem(
+        MARKETING_KPI_VISIBILITY_STORAGE_KEY,
+      );
+      if (!stored) {
+        setHasLoadedMarketingKpiVisibility(true);
+        return;
+      }
+
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) {
+        setHasLoadedMarketingKpiVisibility(true);
+        return;
+      }
+
+      const next = parsed
+        .map((value) => String(value) as MarketingMonitoringMetricKey)
+        .filter((value) =>
+          DEFAULT_VISIBLE_MARKETING_KPI_KEYS.includes(value),
+        );
+
+      setVisibleMarketingKpiKeys(
+        next.length > 0 ? next : DEFAULT_VISIBLE_MARKETING_KPI_KEYS,
+      );
+    } catch {
+      setVisibleMarketingKpiKeys(DEFAULT_VISIBLE_MARKETING_KPI_KEYS);
+    } finally {
+      setHasLoadedMarketingKpiVisibility(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (
+      !hasLoadedMarketingKpiVisibility ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      MARKETING_KPI_VISIBILITY_STORAGE_KEY,
+      JSON.stringify(visibleMarketingKpiKeys),
+    );
+  }, [hasLoadedMarketingKpiVisibility, visibleMarketingKpiKeys]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const stored = window.localStorage.getItem(
+        MARKETING_LEADER_KPI_VISIBILITY_STORAGE_KEY,
+      );
+      if (!stored) {
+        setHasLoadedLeaderKpiVisibility(true);
+        return;
+      }
+
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) {
+        setHasLoadedLeaderKpiVisibility(true);
+        return;
+      }
+
+      const next = parsed
+        .map((value) => String(value) as MarketingMonitoringMetricKey)
+        .filter((value) =>
+          DEFAULT_VISIBLE_MARKETING_KPI_KEYS.includes(value),
+        );
+
+      setVisibleLeaderKpiKeys(
+        next.length > 0 ? next : DEFAULT_VISIBLE_MARKETING_KPI_KEYS,
+      );
+    } catch {
+      setVisibleLeaderKpiKeys(DEFAULT_VISIBLE_MARKETING_KPI_KEYS);
+    } finally {
+      setHasLoadedLeaderKpiVisibility(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedLeaderKpiVisibility || typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(
+      MARKETING_LEADER_KPI_VISIBILITY_STORAGE_KEY,
+      JSON.stringify(visibleLeaderKpiKeys),
+    );
+  }, [hasLoadedLeaderKpiVisibility, visibleLeaderKpiKeys]);
+
+  useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (
         showShopPicker &&
@@ -334,7 +522,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchExecStats = async () => {
-      if (!canViewExecutives) return;
+      if (activeDashboardMode !== "executive") return;
       setExecLoading(true);
       setExecError("");
       try {
@@ -408,7 +596,7 @@ export default function DashboardPage() {
     };
     fetchExecStats();
   }, [
-    canViewExecutives,
+    activeDashboardMode,
     range.startDate,
     range.endDate,
     excludeCancel,
@@ -421,12 +609,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchMyStats = async () => {
-      const canView =
-        perms.includes("dashboard.marketing") ||
-        perms.includes("dashboard.marketing_leader");
-      if (!canView) return;
-      setStatsLoading(true);
-      setError("");
+      if (activeDashboardMode !== "marketing") return;
+      setMyStatsLoading(true);
+      setMyStatsError("");
       try {
         const params: Record<string, string | boolean | string[]> = {};
         if (range.startDate)
@@ -437,39 +622,46 @@ export default function DashboardPage() {
         params.exclude_restocking = excludeRestocking;
         params.exclude_abandoned = excludeAbandoned;
         params.exclude_rts = excludeRts;
+        params.include_tax_12 = includeTax12;
+        params.include_tax_1 = includeTax1;
+        if (teamCode) params.team_code = teamCode;
         const data = await getMarketingMyStats(params);
         if (data?.kpis) {
           setMyStats({
             ...data.kpis,
             winning_creatives_list: data?.winning_creatives_list || [],
+            monitoring: data?.monitoring,
           });
         } else {
           setMyStats(null);
         }
       } catch (error: unknown) {
-        setError(parseErrorMessage(error, "Failed to load your stats"));
+        setMyStatsError(parseErrorMessage(error, "Failed to load your stats"));
         setMyStats(null);
       } finally {
-        setStatsLoading(false);
+        setMyStatsLoading(false);
       }
     };
 
     fetchMyStats();
   }, [
-    perms,
+    activeDashboardMode,
     range.startDate,
     range.endDate,
     excludeCancel,
     excludeRestocking,
     excludeAbandoned,
     excludeRts,
+    includeTax12,
+    includeTax1,
+    teamCode,
   ]);
 
   useEffect(() => {
     const fetchLeaderStats = async () => {
-      if (!canViewMarketingLeader) return;
-      setStatsLoading(true);
-      setError("");
+      if (activeDashboardMode !== "leader") return;
+      setLeaderStatsLoading(true);
+      setLeaderStatsError("");
       try {
         const params: Record<string, string | boolean | string[]> = {};
         if (range.startDate)
@@ -480,31 +672,37 @@ export default function DashboardPage() {
         params.exclude_restocking = excludeRestocking;
         params.exclude_abandoned = excludeAbandoned;
         params.exclude_rts = excludeRts;
+        params.include_tax_12 = includeTax12;
+        params.include_tax_1 = includeTax1;
         if (teamCode) params.team_code = teamCode;
         setLeaderStats((await getMarketingLeaderStats(params)) || null);
       } catch (error: unknown) {
-        setError(parseErrorMessage(error, "Failed to load leader stats"));
+        setLeaderStatsError(
+          parseErrorMessage(error, "Failed to load leader stats"),
+        );
         setLeaderStats(null);
       } finally {
-        setStatsLoading(false);
+        setLeaderStatsLoading(false);
       }
     };
 
     fetchLeaderStats();
   }, [
-    canViewMarketingLeader,
+    activeDashboardMode,
     range.startDate,
     range.endDate,
     excludeCancel,
     excludeRestocking,
     excludeAbandoned,
     excludeRts,
+    includeTax12,
+    includeTax1,
     teamCode,
   ]);
 
   useEffect(() => {
     const fetchMarketingKpi = async () => {
-      if (!canViewMarketingDashboard) return;
+      if (activeDashboardMode !== "marketing") return;
       setMarketingKpiLoading(true);
       setMarketingKpiError("");
       try {
@@ -517,6 +715,9 @@ export default function DashboardPage() {
         params.exclude_restocking = excludeRestocking;
         params.exclude_abandoned = excludeAbandoned;
         params.exclude_rts = excludeRts;
+        params.include_tax_12 = includeTax12;
+        params.include_tax_1 = includeTax1;
+        if (teamCode) params.team_code = teamCode;
         setMarketingKpiData(await getMarketingKpiMe(params));
       } catch (error: unknown) {
         setMarketingKpiError(
@@ -530,18 +731,21 @@ export default function DashboardPage() {
 
     fetchMarketingKpi();
   }, [
-    canViewMarketingDashboard,
+    activeDashboardMode,
     range.startDate,
     range.endDate,
     excludeCancel,
     excludeRestocking,
     excludeAbandoned,
     excludeRts,
+    includeTax12,
+    includeTax1,
+    teamCode,
   ]);
 
   useEffect(() => {
     const fetchTeamKpi = async () => {
-      if (!canViewMarketingLeader) return;
+      if (activeDashboardMode !== "leader") return;
       setTeamKpiLoading(true);
       setTeamKpiError("");
       try {
@@ -554,6 +758,8 @@ export default function DashboardPage() {
         params.exclude_restocking = excludeRestocking;
         params.exclude_abandoned = excludeAbandoned;
         params.exclude_rts = excludeRts;
+        params.include_tax_12 = includeTax12;
+        params.include_tax_1 = includeTax1;
         if (teamCode) params.team_code = teamCode;
         setTeamKpiData(await getMarketingKpiTeam(params));
       } catch (error: unknown) {
@@ -568,7 +774,7 @@ export default function DashboardPage() {
 
     fetchTeamKpi();
   }, [
-    canViewMarketingLeader,
+    activeDashboardMode,
     range.startDate,
     range.endDate,
     teamCode,
@@ -576,11 +782,13 @@ export default function DashboardPage() {
     excludeRestocking,
     excludeAbandoned,
     excludeRts,
+    includeTax12,
+    includeTax1,
   ]);
 
   useEffect(() => {
     const fetchExecutiveKpi = async () => {
-      if (!canViewExecutives) return;
+      if (activeDashboardMode !== "executive") return;
       setExecutiveKpiLoading(true);
       setExecutiveKpiError("");
       try {
@@ -593,6 +801,8 @@ export default function DashboardPage() {
         params.exclude_restocking = excludeRestocking;
         params.exclude_abandoned = excludeAbandoned;
         params.exclude_rts = excludeRts;
+        params.include_tax_12 = includeTax12;
+        params.include_tax_1 = includeTax1;
         setExecutiveKpiData(await getMarketingKpiExecutive(params));
       } catch (error: unknown) {
         setExecutiveKpiError(
@@ -606,13 +816,15 @@ export default function DashboardPage() {
 
     fetchExecutiveKpi();
   }, [
-    canViewExecutives,
+    activeDashboardMode,
     range.startDate,
     range.endDate,
     excludeCancel,
     excludeRestocking,
     excludeAbandoned,
     excludeRts,
+    includeTax12,
+    includeTax1,
   ]);
 
   const resolvedShopSelection = useMemo(
@@ -708,6 +920,89 @@ export default function DashboardPage() {
       };
     });
   }, [salesData]);
+
+  const marketingMonitoringCards = useMemo(() => {
+    const current = myStats?.monitoring?.current;
+    const previous = myStats?.monitoring?.previous;
+
+    return MARKETING_MONITORING_CARD_DEFINITIONS.map((card) => {
+      const currentValue = current?.[card.key] ?? 0;
+      const previousValue = previous?.[card.key] ?? 0;
+
+      return {
+        ...card,
+        currentValue,
+        previousValue,
+        delta: formatDeltaPercent(currentValue, previousValue),
+      };
+    });
+  }, [myStats]);
+
+  const visiblePrimaryMarketingMonitoringCards = useMemo(
+    () =>
+      marketingMonitoringCards.filter(
+        (card) =>
+          card.section === "Primary" &&
+          visibleMarketingKpiKeys.includes(card.key),
+      ),
+    [marketingMonitoringCards, visibleMarketingKpiKeys],
+  );
+
+  const visibleSecondaryMarketingMonitoringCards = useMemo(
+    () =>
+      marketingMonitoringCards.filter(
+        (card) =>
+          card.section === "Secondary" &&
+          visibleMarketingKpiKeys.includes(card.key),
+      ),
+    [marketingMonitoringCards, visibleMarketingKpiKeys],
+  );
+
+  const marketingKpiVisibilityOptions = useMemo(
+    () =>
+      MARKETING_MONITORING_CARD_DEFINITIONS.map((card) => ({
+        key: card.key,
+        label: card.label,
+        section: card.section,
+      })),
+    [],
+  );
+
+  const leaderMonitoringCards = useMemo(() => {
+    const current = leaderStats?.monitoring?.current;
+    const previous = leaderStats?.monitoring?.previous;
+
+    return MARKETING_MONITORING_CARD_DEFINITIONS.map((card) => {
+      const currentValue = current?.[card.key] ?? 0;
+      const previousValue = previous?.[card.key] ?? 0;
+
+      return {
+        ...card,
+        currentValue,
+        previousValue,
+        delta: formatDeltaPercent(currentValue, previousValue),
+      };
+    });
+  }, [leaderStats]);
+
+  const visiblePrimaryLeaderMonitoringCards = useMemo(
+    () =>
+      leaderMonitoringCards.filter(
+        (card) =>
+          card.section === "Primary" && visibleLeaderKpiKeys.includes(card.key),
+      ),
+    [leaderMonitoringCards, visibleLeaderKpiKeys],
+  );
+
+  const visibleSecondaryLeaderMonitoringCards = useMemo(
+    () =>
+      leaderMonitoringCards.filter(
+        (card) =>
+          card.section === "Secondary" &&
+          visibleLeaderKpiKeys.includes(card.key),
+      ),
+    [leaderMonitoringCards, visibleLeaderKpiKeys],
+  );
 
   const salesSunburstSeriesData = useMemo(() => {
     const baseHues = [24, 205, 142, 268, 347, 192, 48, 285];
@@ -1097,6 +1392,7 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Welcome back! Here’s what’s happening with your business today."
       />
+      {error && <AlertBanner tone="error" message={error} className="mb-2" />}
       {isLoading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600 shadow-sm">
           Loading dashboard...
@@ -1790,7 +2086,9 @@ export default function DashboardPage() {
 
   const renderMarketingDashboard = () => (
     <div className="space-y-6">
-      {error && <AlertBanner tone="error" message={error} className="mb-2" />}
+      {myStatsError && (
+        <AlertBanner tone="error" message={myStatsError} className="mb-2" />
+      )}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -1809,6 +2107,7 @@ export default function DashboardPage() {
         <DashboardDateControls
           range={range}
           onRangeChange={setRange}
+          filterMenuWidthClassName="w-64"
           filters={[
             {
               id: "exclude-canceled",
@@ -1834,11 +2133,34 @@ export default function DashboardPage() {
               checked: excludeRts,
               onChange: setExcludeRts,
             },
+            {
+              id: "include-tax-12",
+              label: "Include 12% ads tax",
+              checked: includeTax12,
+              onChange: setIncludeTax12,
+            },
+            {
+              id: "include-tax-1",
+              label: "Include 1% transaction fee",
+              checked: includeTax1,
+              onChange: setIncludeTax1,
+            },
           ]}
+          extraAction={
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:text-orange-700"
+              onClick={() => setShowMarketingKpiVisibilityModal(true)}
+              aria-label="Configure visible KPI boxes"
+            >
+              <Columns className="h-4 w-4" />
+            </Button>
+          }
         />
       </div>
 
-      {statsLoading && (
+      {myStatsLoading && (
         <AlertBanner tone="info" message="Loading your stats..." />
       )}
 
@@ -1857,105 +2179,68 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-4">
-        <MetricCard
-          label="My Ad Spent"
-          value={formatCurrency(myStats?.ad_spend)}
-          icon={<Coins className="h-5 w-5 text-emerald-600" />}
-          tone="default"
-        />
-        <MetricCard
-          label="Winning Creatives"
-          value={formatNumber(myStats?.winning_creatives)}
-          icon={<Lightbulb className="h-5 w-5 text-amber-500" />}
-          tone="default"
-        />
-        <MetricCard
-          label="Creatives Created"
-          value={formatNumber(myStats?.creatives_created)}
-          icon={<Zap className="h-5 w-5 text-emerald-600" />}
-          tone="default"
-        />
-        <MetricCard
-          label="Overall Ranking"
-          value={myStats?.overall_ranking ?? "—"}
-          icon={<BarChart3 className="h-5 w-5" />}
-          tone="default"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <DashboardSection
-          title="Winning Creatives"
-          icon={<Lightbulb className="h-3.5 w-3.5 text-orange-500" />}
-          meta={
-            myStats?.winning_creatives_list &&
-            myStats.winning_creatives_list.length > 3 ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowAllWinning((p) => !p)}
-              >
-                {showAllWinning ? "Collapse" : "View all"}
-              </Button>
-            ) : null
-          }
-          contentClassName="space-y-2"
-        >
-          {myStats?.winning_creatives_list &&
-          myStats.winning_creatives_list.length > 0 ? (
-            (showAllWinning
-              ? myStats.winning_creatives_list
-              : myStats.winning_creatives_list.slice(0, 3)
-            ).map((item, idx) => (
-              <div
-                key={`${item.adId || "ad"}-${idx}`}
-                className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5"
-              >
-                <div>
-                  <p className="text-sm font-medium text-slate-900">
-                    {item.adName || "Unnamed creative"}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-400">
-                    {item.adId || "No Ad ID"}
-                  </p>
-                </div>
-                <StatusBadge status="ACTIVE" />
+      <DashboardSection
+        title="KPI Monitoring"
+        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        contentClassName="space-y-3"
+      >
+        {myStatsLoading ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <AnalyticsMetricCardSkeleton key={`marketing-primary-${index}`} />
+              ))}
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <AnalyticsMetricCardSkeleton
+                  key={`marketing-secondary-${index}`}
+                />
+              ))}
+            </div>
+          </div>
+        ) : visiblePrimaryMarketingMonitoringCards.length > 0 ||
+          visibleSecondaryMarketingMonitoringCards.length > 0 ? (
+          <div className="space-y-3">
+            {visiblePrimaryMarketingMonitoringCards.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {visiblePrimaryMarketingMonitoringCards.map((card) => (
+                  <AnalyticsMetricCard
+                    key={card.key}
+                    label={card.label}
+                    value={card.currentValue}
+                    format={card.format}
+                    delta={card.delta}
+                    precision={card.format === "percent" ? 1 : 2}
+                    className="min-h-[92px]"
+                  />
+                ))}
               </div>
-            ))
-          ) : (
-            <p className="text-sm text-slate-600">
-              No winning creatives in this range.
-            </p>
-          )}
-        </DashboardSection>
+            ) : null}
 
-        <DashboardSection
-          title="Quick Links"
-          icon={<LinkIcon className="h-3.5 w-3.5 text-orange-500" />}
-          meta={
-            <Button variant="ghost" size="sm">
-              Manage
-            </Button>
-          }
-          contentClassName="space-y-2"
-        >
-          {[
-            { label: "Marketer leaderboard", href: "#marketer" },
-            { label: "Team leaderboard", href: "#team" },
-            { label: "Marketing analytics", href: "/analytics/marketing" },
-          ].map((link) => (
-            <a
-              key={`${link.href}-${link.label}`}
-              href={link.href}
-              className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-900 hover:bg-slate-50"
-            >
-              <span>{link.label}</span>
-              <span className="text-slate-400">→</span>
-            </a>
-          ))}
-        </DashboardSection>
-      </div>
+            {visibleSecondaryMarketingMonitoringCards.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {visibleSecondaryMarketingMonitoringCards.map((card) => (
+                  <AnalyticsMetricCard
+                    key={card.key}
+                    label={card.label}
+                    value={card.currentValue}
+                    format={card.format}
+                    delta={card.delta}
+                    precision={card.format === "percent" ? 1 : 2}
+                    className="min-h-[92px]"
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
+            No KPI cards selected. Use the columns button to show the metrics
+            you want in Marketing Monitoring.
+          </div>
+        )}
+      </DashboardSection>
 
       <NameConventionCard
         teamCode={teamCode}
@@ -2100,7 +2385,9 @@ export default function DashboardPage() {
 
   const renderLeaderDashboard = () => (
     <div className="space-y-6">
-      {error && <AlertBanner tone="error" message={error} className="mb-2" />}
+      {leaderStatsError && (
+        <AlertBanner tone="error" message={leaderStatsError} className="mb-2" />
+      )}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
@@ -2121,6 +2408,7 @@ export default function DashboardPage() {
         <DashboardDateControls
           range={range}
           onRangeChange={setRange}
+          filterMenuWidthClassName="w-64"
           filters={[
             {
               id: "exclude-canceled",
@@ -2146,11 +2434,34 @@ export default function DashboardPage() {
               checked: excludeRts,
               onChange: setExcludeRts,
             },
+            {
+              id: "include-tax-12",
+              label: "Include 12% ads tax",
+              checked: includeTax12,
+              onChange: setIncludeTax12,
+            },
+            {
+              id: "include-tax-1",
+              label: "Include 1% transaction fee",
+              checked: includeTax1,
+              onChange: setIncludeTax1,
+            },
           ]}
+          extraAction={
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:text-orange-700"
+              onClick={() => setShowLeaderKpiVisibilityModal(true)}
+              aria-label="Configure visible KPI boxes"
+            >
+              <Columns className="h-4 w-4" />
+            </Button>
+          }
         />
       </div>
 
-      {statsLoading && (
+      {leaderStatsLoading && (
         <AlertBanner tone="info" message="Loading your stats..." />
       )}
 
@@ -2160,43 +2471,66 @@ export default function DashboardPage() {
         error={teamKpiError}
       />
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
-        <MetricCard
-          label="My Ad Spend"
-          value={formatCurrency(myStats?.ad_spend)}
-          helper="Across selected range"
-          icon={<Coins className="h-5 w-5 text-emerald-600" />}
-          tone="default"
-        />
-        <MetricCard
-          label="My AR"
-          value={formatPercent(myStats?.ar)}
-          helper="Spend / Revenue"
-          icon={<PieChart className="h-5 w-5" />}
-          tone="default"
-        />
-        <MetricCard
-          label="Team Ad Spend"
-          value={formatCurrency(leaderStats?.team_ad_spend)}
-          helper={teamName ? `${teamName} total spend` : "Team total spend"}
-          icon={<Users className="h-5 w-5" />}
-          tone="default"
-        />
-        <MetricCard
-          label="Team AR"
-          value={formatPercent(leaderStats?.team_ar)}
-          helper="Team Spend / Revenue"
-          icon={<Boxes className="h-5 w-5" />}
-          tone="default"
-        />
-        <MetricCard
-          label="Overall Team Ranking"
-          value={leaderStats?.team_overall_ranking ?? "—"}
-          helper="Coming soon"
-          icon={<BarChart3 className="h-5 w-5" />}
-          tone="default"
-        />
-      </div>
+      <DashboardSection
+        title="KPI Monitoring"
+        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        contentClassName="space-y-3"
+      >
+        {leaderStatsLoading ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <AnalyticsMetricCardSkeleton key={`leader-primary-${index}`} />
+              ))}
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <AnalyticsMetricCardSkeleton key={`leader-secondary-${index}`} />
+              ))}
+            </div>
+          </div>
+        ) : visiblePrimaryLeaderMonitoringCards.length > 0 ||
+          visibleSecondaryLeaderMonitoringCards.length > 0 ? (
+          <div className="space-y-3">
+            {visiblePrimaryLeaderMonitoringCards.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {visiblePrimaryLeaderMonitoringCards.map((card) => (
+                  <AnalyticsMetricCard
+                    key={card.key}
+                    label={card.label}
+                    value={card.currentValue}
+                    format={card.format}
+                    delta={card.delta}
+                    precision={card.format === "percent" ? 1 : 2}
+                    className="min-h-[92px]"
+                  />
+                ))}
+              </div>
+            ) : null}
+
+            {visibleSecondaryLeaderMonitoringCards.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {visibleSecondaryLeaderMonitoringCards.map((card) => (
+                  <AnalyticsMetricCard
+                    key={card.key}
+                    label={card.label}
+                    value={card.currentValue}
+                    format={card.format}
+                    delta={card.delta}
+                    precision={card.format === "percent" ? 1 : 2}
+                    className="min-h-[92px]"
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
+            No KPI cards selected. Use the columns button to show the metrics
+            you want in Team Monitoring.
+          </div>
+        )}
+      </DashboardSection>
 
       <NameConventionCard
         teamCode={teamCode}
@@ -2213,10 +2547,53 @@ export default function DashboardPage() {
         : canViewMarketingLeader
           ? renderLeaderDashboard()
           : canViewMarketingDashboard
-            ? renderMarketingDashboard()
-            : canViewSalesDashboard
-              ? renderSalesDashboard()
-              : renderDefaultDashboard()}
+          ? renderMarketingDashboard()
+          : canViewSalesDashboard
+            ? renderSalesDashboard()
+            : renderDefaultDashboard()}
+
+      <AnalyticsKpiVisibilityDialog
+        open={showMarketingKpiVisibilityModal}
+        onOpenChange={setShowMarketingKpiVisibilityModal}
+        title="Visible KPI boxes"
+        description="Choose which KPI cards appear in Marketing Monitoring."
+        options={marketingKpiVisibilityOptions}
+        selectedKeys={visibleMarketingKpiKeys}
+        onToggleKey={(key) =>
+          setVisibleMarketingKpiKeys((prev) =>
+            prev.includes(key as MarketingMonitoringMetricKey)
+              ? prev.filter((entry) => entry !== key)
+              : [...prev, key as MarketingMonitoringMetricKey],
+          )
+        }
+        onSelectAll={() =>
+          setVisibleMarketingKpiKeys(DEFAULT_VISIBLE_MARKETING_KPI_KEYS)
+        }
+        onResetDefaults={() =>
+          setVisibleMarketingKpiKeys(DEFAULT_VISIBLE_MARKETING_KPI_KEYS)
+        }
+      />
+      <AnalyticsKpiVisibilityDialog
+        open={showLeaderKpiVisibilityModal}
+        onOpenChange={setShowLeaderKpiVisibilityModal}
+        title="Visible KPI boxes"
+        description="Choose which KPI cards appear in Team Monitoring."
+        options={marketingKpiVisibilityOptions}
+        selectedKeys={visibleLeaderKpiKeys}
+        onToggleKey={(key) =>
+          setVisibleLeaderKpiKeys((prev) =>
+            prev.includes(key as MarketingMonitoringMetricKey)
+              ? prev.filter((entry) => entry !== key)
+              : [...prev, key as MarketingMonitoringMetricKey],
+          )
+        }
+        onSelectAll={() =>
+          setVisibleLeaderKpiKeys(DEFAULT_VISIBLE_MARKETING_KPI_KEYS)
+        }
+        onResetDefaults={() =>
+          setVisibleLeaderKpiKeys(DEFAULT_VISIBLE_MARKETING_KPI_KEYS)
+        }
+      />
     </div>
   );
 }

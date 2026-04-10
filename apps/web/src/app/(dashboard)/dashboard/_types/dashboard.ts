@@ -8,6 +8,22 @@ export interface DashboardStats {
   totalUsers: number;
 }
 
+export type MarketingMonitoringStats = {
+  revenue: number;
+  canceled: number;
+  delivered: number;
+  ad_spend: number;
+  aov: number;
+  cancellation_pct: number;
+  rts_pct: number;
+  ar_pct: number;
+};
+
+export type MarketingMonitoringEnvelope = {
+  current: MarketingMonitoringStats;
+  previous: MarketingMonitoringStats;
+};
+
 export type MyStats = {
   ad_spend: number;
   ar: number;
@@ -15,6 +31,21 @@ export type MyStats = {
   creatives_created: number;
   overall_ranking: number | null;
   winning_creatives_list?: { adId: string | null; adName: string | null }[];
+  monitoring?: MarketingMonitoringEnvelope;
+};
+
+export type MarketingMyStatsResponse = {
+  matchedAs: string | null;
+  kpis: Omit<MyStats, "winning_creatives_list" | "monitoring">;
+  winning_creatives_list?: { adId: string | null; adName: string | null }[];
+  monitoring?: MarketingMonitoringEnvelope;
+};
+
+export type MarketingLeaderStatsResponse = {
+  team_ad_spend: number;
+  team_ar: number;
+  team_overall_ranking: number | null;
+  monitoring?: MarketingMonitoringEnvelope;
 };
 
 export type SalesDashboardRow = {

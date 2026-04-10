@@ -75,6 +75,17 @@ type TopCreativeRow = {
   ar_pct: number;
 };
 
+type MarketingMonitoringSnapshot = {
+  revenue: number;
+  canceled: number;
+  delivered: number;
+  ad_spend: number;
+  aov: number;
+  cancellation_pct: number;
+  rts_pct: number;
+  ar_pct: number;
+};
+
 @Injectable()
 export class MarketingAnalyticsService {
   constructor(
@@ -92,6 +103,91 @@ export class MarketingAnalyticsService {
   private toNumber(val: any): number {
     const n = typeof val === 'string' ? parseFloat(val) : Number(val);
     return Number.isFinite(n) ? n : 0;
+  }
+
+  private applyMarketingSpendTaxes(
+    spend: number,
+    opts: { includeTax12: boolean; includeTax1: boolean },
+  ) {
+    const multiplier =
+      1 + (opts.includeTax12 ? 0.12 : 0) + (opts.includeTax1 ? 0.01 : 0);
+    return spend * multiplier;
+  }
+
+  private computeMarketingMonitoringSnapshot(
+    sum: {
+      spend?: unknown;
+      codPos?: unknown;
+      canceledCodPos?: unknown;
+      deliveredCodPos?: unknown;
+      rtsCodPos?: unknown;
+      restockingCodPos?: unknown;
+      abandonedCodPos?: unknown;
+      purchasesPos?: unknown;
+      canceledCount?: unknown;
+      deliveredCount?: unknown;
+      rtsCount?: unknown;
+      restockingCount?: unknown;
+      abandonedCount?: unknown;
+    } | null | undefined,
+    opts: {
+      excludeCancel: boolean;
+      excludeRestocking: boolean;
+      excludeAbandoned: boolean;
+      excludeRts: boolean;
+      includeTax12: boolean;
+      includeTax1: boolean;
+    },
+  ): MarketingMonitoringSnapshot {
+    const spendBase = this.toNumber(sum?.spend);
+    const adSpend = this.applyMarketingSpendTaxes(spendBase, opts);
+    const revenueRaw = this.toNumber(sum?.codPos);
+    const canceledCod = this.toNumber(sum?.canceledCodPos);
+    const deliveredCod = this.toNumber(sum?.deliveredCodPos);
+    const rtsCod = this.toNumber(sum?.rtsCodPos);
+    const restockingCod = this.toNumber(sum?.restockingCodPos);
+    const abandonedCod = this.toNumber(sum?.abandonedCodPos);
+    const purchasesRaw = this.toNumber(sum?.purchasesPos);
+    const canceledCount = this.toNumber(sum?.canceledCount);
+    const deliveredCount = this.toNumber(sum?.deliveredCount);
+    const rtsCount = this.toNumber(sum?.rtsCount);
+    const restockingCount = this.toNumber(sum?.restockingCount);
+    const abandonedCount = this.toNumber(sum?.abandonedCount);
+
+    const adjustedRevenue = Math.max(
+      0,
+      revenueRaw -
+        (opts.excludeCancel ? canceledCod : 0) -
+        (opts.excludeRts ? rtsCod : 0) -
+        (opts.excludeRestocking ? restockingCod : 0) -
+        (opts.excludeAbandoned ? abandonedCod : 0),
+    );
+
+    const adjustedPurchases = Math.max(
+      0,
+      purchasesRaw -
+        (opts.excludeCancel ? canceledCount : 0) -
+        (opts.excludeRts ? rtsCount : 0) -
+        (opts.excludeRestocking ? restockingCount : 0) -
+        (opts.excludeAbandoned ? abandonedCount : 0),
+    );
+
+    const cancellationPct =
+      purchasesRaw > 0 ? (canceledCount / purchasesRaw) * 100 : 0;
+    const rtsBase = deliveredCount + rtsCount;
+    const rtsPct = rtsBase > 0 ? (rtsCount / rtsBase) * 100 : 0;
+    const arPct = adjustedRevenue > 0 ? (adSpend / adjustedRevenue) * 100 : 0;
+
+    return {
+      revenue: adjustedRevenue,
+      canceled: canceledCod,
+      delivered: deliveredCod,
+      ad_spend: adSpend,
+      aov: adjustedPurchases > 0 ? adjustedRevenue / adjustedPurchases : 0,
+      cancellation_pct: cancellationPct,
+      rts_pct: rtsPct,
+      ar_pct: arPct,
+    };
   }
 
   private computeKpis(sum: KpiSums, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean }): Kpis {
@@ -617,6 +713,9 @@ export class MarketingAnalyticsService {
     excludeRestocking: boolean;
     excludeAbandoned: boolean;
     excludeRts: boolean;
+    includeTax12: boolean;
+    includeTax1: boolean;
+    teamCodeOverride?: string | null;
     user: any;
   }) {
     const startStr = (opts.startDate && opts.startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
@@ -627,6 +726,28 @@ export class MarketingAnalyticsService {
     if (start > end) {
       throw new BadRequestException('start_date must be before or equal to end_date');
     }
+    const rangeDays =
+      Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    const prevEndStr = dayjs(startStr, 'YYYY-MM-DD')
+      .subtract(1, 'day')
+      .format('YYYY-MM-DD');
+    const prevStartStr = dayjs(startStr, 'YYYY-MM-DD')
+      .subtract(rangeDays, 'day')
+      .format('YYYY-MM-DD');
+    const prevStart = new Date(`${prevStartStr}T00:00:00.000Z`);
+    const prevEnd = new Date(`${prevEndStr}T23:59:59.999Z`);
+    const monitoringOptions = {
+      excludeCancel: opts.excludeCancel,
+      excludeRestocking: opts.excludeRestocking,
+      excludeAbandoned: opts.excludeAbandoned,
+      excludeRts: opts.excludeRts,
+      includeTax12: opts.includeTax12,
+      includeTax1: opts.includeTax1,
+    };
+    const emptyMonitoring = {
+      current: this.computeMarketingMonitoringSnapshot(null, monitoringOptions),
+      previous: this.computeMarketingMonitoringSnapshot(null, monitoringOptions),
+    };
 
     const associateKeys = this.buildAssociateKeysForUser(opts.user);
     if (associateKeys.length === 0) {
@@ -639,23 +760,78 @@ export class MarketingAnalyticsService {
           creatives_created: 0,
           overall_ranking: null,
         },
+        monitoring: emptyMonitoring,
       };
     }
 
-    const { tenantId, teamId } = await this.teamContext.getContext();
+    const { tenantId } = await this.teamContext.getContext();
     const effectiveTeams = await this.teamContext.getAnalyticsTeamIds('marketing');
+    const teamCodeFilter =
+      opts.teamCodeOverride && opts.teamCodeOverride.trim()
+        ? {
+            teamCode: {
+              equals: opts.teamCodeOverride.trim(),
+              mode: 'insensitive' as const,
+            },
+          }
+        : null;
 
     const associateFilter = {
       OR: associateKeys.map((a) => ({ marketingAssociate: { equals: a, mode: 'insensitive' as const } })),
     };
 
-    const baseWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        date: { gte: start, lte: end },
-        ...associateFilter,
-      },
-      effectiveTeams || undefined,
+    const buildWhereForDateRange = (
+      dateRange: { gte: Date; lte: Date },
+      includeTeamCode: boolean,
+    ) =>
+      this.teamContext.buildTeamWhereClause(
+        {
+          date: dateRange,
+          ...associateFilter,
+          ...(includeTeamCode && teamCodeFilter ? teamCodeFilter : {}),
+        },
+        effectiveTeams || undefined,
+      );
+
+    let shouldApplyTeamCodeFilter = Boolean(teamCodeFilter);
+    let baseWhere = await buildWhereForDateRange(
+      { gte: start, lte: end },
+      shouldApplyTeamCodeFilter,
     );
+
+    if (shouldApplyTeamCodeFilter) {
+      const scopedRowCount = await this.prisma.reconcileMarketing.count({
+        where: baseWhere,
+      });
+
+      if (scopedRowCount === 0) {
+        shouldApplyTeamCodeFilter = false;
+        baseWhere = await buildWhereForDateRange(
+          { gte: start, lte: end },
+          false,
+        );
+      }
+    }
+
+    const prevWhere = await buildWhereForDateRange(
+      { gte: prevStart, lte: prevEnd },
+      shouldApplyTeamCodeFilter,
+    );
+    const monitoringAggregateFields = {
+      spend: true,
+      codPos: true,
+      canceledCodPos: true,
+      deliveredCodPos: true,
+      rtsCodPos: true,
+      restockingCodPos: true,
+      abandonedCodPos: true,
+      purchasesPos: true,
+      canceledCount: true,
+      deliveredCount: true,
+      rtsCount: true,
+      restockingCount: true,
+      abandonedCount: true,
+    } as const;
 
     const agg = await this.prisma.reconcileMarketing.aggregate({
       where: baseWhere,
@@ -668,8 +844,19 @@ export class MarketingAnalyticsService {
         abandonedCodPos: true,
       },
     });
+    const monitoringAgg = await this.prisma.reconcileMarketing.aggregate({
+      where: baseWhere,
+      _sum: monitoringAggregateFields,
+    });
+    const prevMonitoringAgg = await this.prisma.reconcileMarketing.aggregate({
+      where: prevWhere,
+      _sum: monitoringAggregateFields,
+    });
 
-    const spend = this.toNumber(agg?._sum?.spend);
+    const spend = this.applyMarketingSpendTaxes(
+      this.toNumber(agg?._sum?.spend),
+      monitoringOptions,
+    );
     const revenueRaw = this.toNumber(agg?._sum?.codPos);
     const canceledCod = this.toNumber(agg?._sum?.canceledCodPos);
     const rtsCod = this.toNumber(agg?._sum?.rtsCodPos);
@@ -687,11 +874,27 @@ export class MarketingAnalyticsService {
 
     const winningRows = await this.prisma.reconcileMarketing.findMany({
       where: baseWhere,
-      select: { spend: true, codPos: true, adId: true, adName: true },
+      select: {
+        spend: true,
+        codPos: true,
+        canceledCodPos: true,
+        rtsCodPos: true,
+        restockingCodPos: true,
+        abandonedCodPos: true,
+        adId: true,
+        adName: true,
+      },
     });
     const winningList = winningRows.filter((r) => {
       const s = this.toNumber(r.spend);
-      const rev = this.toNumber(r.codPos);
+      const rev = Math.max(
+        0,
+        this.toNumber(r.codPos) -
+          (opts.excludeCancel ? this.toNumber(r.canceledCodPos) : 0) -
+          (opts.excludeRts ? this.toNumber(r.rtsCodPos) : 0) -
+          (opts.excludeRestocking ? this.toNumber(r.restockingCodPos) : 0) -
+          (opts.excludeAbandoned ? this.toNumber(r.abandonedCodPos) : 0),
+      );
       if (s <= 5000) return false;
       const arPct = rev > 0 ? (s / rev) * 100 : 0;
       return arPct < 30;
@@ -707,6 +910,7 @@ export class MarketingAnalyticsService {
         tenantId,
         ...associateFilter,
         ...(effectiveTeams ? { teamId: effectiveTeams.length === 1 ? effectiveTeams[0] : { in: effectiveTeams } } : {}),
+        ...(shouldApplyTeamCodeFilter && teamCodeFilter ? teamCodeFilter : {}),
         dateCreated: { gte: start, lte: end },
       },
       select: { adId: true },
@@ -723,6 +927,16 @@ export class MarketingAnalyticsService {
         overall_ranking: null,
       },
       winning_creatives_list,
+      monitoring: {
+        current: this.computeMarketingMonitoringSnapshot(
+          monitoringAgg?._sum,
+          monitoringOptions,
+        ),
+        previous: this.computeMarketingMonitoringSnapshot(
+          prevMonitoringAgg?._sum,
+          monitoringOptions,
+        ),
+      },
     };
   }
 
@@ -733,6 +947,8 @@ export class MarketingAnalyticsService {
     excludeRestocking: boolean;
     excludeAbandoned: boolean;
     excludeRts: boolean;
+    includeTax12: boolean;
+    includeTax1: boolean;
     user: User;
     teamCodeOverride?: string | null;
   }) {
@@ -744,8 +960,27 @@ export class MarketingAnalyticsService {
     if (start > end) {
       throw new BadRequestException('start_date must be before or equal to end_date');
     }
+    const rangeDays =
+      Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    const prevEndStr = dayjs(startStr, 'YYYY-MM-DD')
+      .subtract(1, 'day')
+      .format('YYYY-MM-DD');
+    const prevStartStr = dayjs(startStr, 'YYYY-MM-DD')
+      .subtract(rangeDays, 'day')
+      .format('YYYY-MM-DD');
+    const prevStart = new Date(`${prevStartStr}T00:00:00.000Z`);
+    const prevEnd = new Date(`${prevEndStr}T23:59:59.999Z`);
+    const monitoringOptions = {
+      excludeCancel: opts.excludeCancel,
+      excludeRestocking: opts.excludeRestocking,
+      excludeAbandoned: opts.excludeAbandoned,
+      excludeRts: opts.excludeRts,
+      includeTax12: opts.includeTax12,
+      includeTax1: opts.includeTax1,
+    };
 
     const { tenantId, teamId } = await this.teamContext.getContext();
+    const effectiveTeams = await this.teamContext.getAnalyticsTeamIds('marketing');
 
     // Derive leader's teamCode, allow explicit override from caller
     const teamCodeRaw =
@@ -758,57 +993,71 @@ export class MarketingAnalyticsService {
       )?.teamCode;
     const teamCode = teamCodeRaw ? teamCodeRaw.trim() : '';
     if (!teamCode) {
-      return { team_ad_spend: 0, team_ar: 0, team_overall_ranking: null };
+      const empty = this.computeMarketingMonitoringSnapshot(
+        null,
+        monitoringOptions,
+      );
+      return {
+        team_ad_spend: 0,
+        team_ar: 0,
+        team_overall_ranking: null,
+        monitoring: {
+          current: empty,
+          previous: empty,
+        },
+      };
     }
 
-    // Normalize helper (trim + lowercase) for matching
-    const norm = (v: string | null | undefined) => (v || '').trim().toLowerCase();
-    const targetCode = norm(teamCode);
-
-    // Fetch rows in range for tenant, then match by normalized teamCode
-    const rows = await this.prisma.reconcileMarketing.findMany({
-      where: {
-        tenantId,
-        date: { gte: start, lte: end },
-      },
-      select: {
-        teamCode: true,
-        spend: true,
-        codPos: true,
-        canceledCodPos: true,
-        rtsCodPos: true,
-        restockingCodPos: true,
-        abandonedCodPos: true,
-      },
-    });
-
-    const filtered = rows.filter((r) => norm(r.teamCode) === targetCode);
-
-    // If no matching rows, return zeros
-    if (filtered.length === 0) {
-      return { team_ad_spend: 0, team_ar: 0, team_overall_ranking: null };
-    }
-
-    const spend = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.spend), 0));
-    const revenueRaw = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.codPos), 0));
-    const canceledCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.canceledCodPos), 0));
-    const rtsCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.rtsCodPos), 0));
-    const restockingCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.restockingCodPos), 0));
-    const abandonedCod = this.toNumber(filtered.reduce((acc, r) => acc + this.toNumber(r.abandonedCodPos), 0));
-    const revenue = Math.max(
-      0,
-      revenueRaw -
-        (opts.excludeCancel ? canceledCod : 0) -
-        (opts.excludeRts ? rtsCod : 0) -
-        (opts.excludeRestocking ? restockingCod : 0) -
-        (opts.excludeAbandoned ? abandonedCod : 0),
+    const buildTeamWhere = (date: { gte: Date; lte: Date }) =>
+      this.teamContext.buildTeamWhereClause(
+        {
+          date,
+          teamCode: { equals: teamCode, mode: 'insensitive' as const },
+        },
+        effectiveTeams || undefined,
+      );
+    const aggregateFields = {
+      spend: true,
+      codPos: true,
+      canceledCodPos: true,
+      deliveredCodPos: true,
+      rtsCodPos: true,
+      restockingCodPos: true,
+      abandonedCodPos: true,
+      purchasesPos: true,
+      canceledCount: true,
+      deliveredCount: true,
+      rtsCount: true,
+      restockingCount: true,
+      abandonedCount: true,
+    } as const;
+    const [currentAgg, previousAgg] = await Promise.all([
+      this.prisma.reconcileMarketing.aggregate({
+        where: await buildTeamWhere({ gte: start, lte: end }),
+        _sum: aggregateFields,
+      }),
+      this.prisma.reconcileMarketing.aggregate({
+        where: await buildTeamWhere({ gte: prevStart, lte: prevEnd }),
+        _sum: aggregateFields,
+      }),
+    ]);
+    const current = this.computeMarketingMonitoringSnapshot(
+      currentAgg?._sum,
+      monitoringOptions,
     );
-    const ar = revenue > 0 ? (spend / revenue) * 100 : 0;
+    const previous = this.computeMarketingMonitoringSnapshot(
+      previousAgg?._sum,
+      monitoringOptions,
+    );
 
     return {
-      team_ad_spend: spend,
-      team_ar: ar,
+      team_ad_spend: current.ad_spend,
+      team_ar: current.ar_pct,
       team_overall_ranking: null,
+      monitoring: {
+        current,
+        previous,
+      },
     };
   }
 }

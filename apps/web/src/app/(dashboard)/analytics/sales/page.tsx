@@ -5,9 +5,10 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
 import { AlertBanner } from '@/components/ui/feedback';
 import apiClient from '@/lib/api-client';
-import { Filter, RefreshCw, ShoppingBag, Share2 } from 'lucide-react';
+import { Columns, Filter, RefreshCw, ShoppingBag, Share2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/components/ui/toast';
+import { AnalyticsKpiVisibilityDialog } from '../_components/analytics-kpi-visibility-dialog';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
 import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
 import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
@@ -43,6 +44,19 @@ import {
   toTitleCase,
 } from '../_utils/metrics';
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
+
+const KPI_VISIBILITY_STORAGE_KEY = 'sales-analytics-visible-kpis';
+const DEFAULT_HIDDEN_KPI_KEYS = new Set([
+  'cpp',
+  'processed_cpp',
+  'conversion_rate',
+  'profit_efficiency',
+  'contribution_margin',
+]);
+const DEFAULT_VISIBLE_KPI_KEYS = [
+  ...metricDefinitions.map((def) => String(def.key)),
+  ...secondaryMetricDefinitions.map((def) => String(def.key)),
+].filter((key) => !DEFAULT_HIDDEN_KPI_KEYS.has(key));
 
 function getSafeRtsForecastPct(pct: number) {
   return Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 20));
@@ -157,14 +171,19 @@ export default function SalesAnalyticsPage() {
   const [excludeRestocking, setExcludeRestocking] = useState(true);
   const [excludeAbandoned, setExcludeAbandoned] = useState(true);
   const [excludeRts, setExcludeRts] = useState(true);
-  const [includeTax12, setIncludeTax12] = useState(false);
-  const [includeTax1, setIncludeTax1] = useState(false);
+  const [includeTax12, setIncludeTax12] = useState(true);
+  const [includeTax1, setIncludeTax1] = useState(true);
   const [rtsForecastPct, setRtsForecastPct] = useState<number>(20);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const filterMenuContentRef = useRef<HTMLDivElement | null>(null);
   const scrollStripRef = useRef<HTMLDivElement | null>(null);
   const fetchDataRef = useRef<((opts?: { silent?: boolean }) => Promise<void>) | null>(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [showKpiVisibilityModal, setShowKpiVisibilityModal] = useState(false);
+  const [visibleKpiKeys, setVisibleKpiKeys] = useState<string[]>(
+    DEFAULT_VISIBLE_KPI_KEYS,
+  );
+  const [hasLoadedKpiVisibility, setHasLoadedKpiVisibility] = useState(false);
   const pageSize = 10;
   const [tableSelection, setTableSelection] = useState<'products' | 'delivery'>('products');
   const [productPage, setProductPage] = useState(1);
@@ -197,6 +216,47 @@ export default function SalesAnalyticsPage() {
   useEffect(() => {
     selectedMappingsRef.current = selectedMappings;
   }, [selectedMappings]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const stored = window.localStorage.getItem(KPI_VISIBILITY_STORAGE_KEY);
+      if (!stored) {
+        setHasLoadedKpiVisibility(true);
+        return;
+      }
+
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) {
+        setHasLoadedKpiVisibility(true);
+        return;
+      }
+
+      const next = parsed
+        .map((value) => String(value))
+        .filter((value) => DEFAULT_VISIBLE_KPI_KEYS.includes(value));
+
+      setVisibleKpiKeys(next.length > 0 ? next : DEFAULT_VISIBLE_KPI_KEYS);
+    } catch {
+      setVisibleKpiKeys(DEFAULT_VISIBLE_KPI_KEYS);
+    } finally {
+      setHasLoadedKpiVisibility(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedKpiVisibility || typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(
+      KPI_VISIBILITY_STORAGE_KEY,
+      JSON.stringify(visibleKpiKeys),
+    );
+  }, [hasLoadedKpiVisibility, visibleKpiKeys]);
 
   const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setIsLoading(true);
@@ -602,15 +662,20 @@ export default function SalesAnalyticsPage() {
         return { ...def, current, previous, delta, countCurrent, countPrev, countDelta };
       })
     : [];
+  const visibleMetricValues = metricValues.filter((metric) =>
+    visibleKpiKeys.includes(String(metric.key)),
+  );
 
   const tableOptions: AnalyticsTableSelectorOption<'products' | 'delivery'>[] = [
     { key: 'products', label: 'Revenue per Product' },
     { key: 'delivery', label: 'Delivery Status' },
   ];
 
-  const leftCard = metricValues.find((m) => m.key === 'revenue');
-  const rightCard = metricValues.find((m) => m.key === 'ad_spend');
-  const middleCards = metricValues.filter((m) => m.key !== 'revenue' && m.key !== 'ad_spend');
+  const leftCard = visibleMetricValues.find((m) => m.key === 'revenue');
+  const rightCard = visibleMetricValues.find((m) => m.key === 'ad_spend');
+  const middleCards = visibleMetricValues.filter(
+    (m) => m.key !== 'revenue' && m.key !== 'ad_spend',
+  );
 
   const secondaryCards =
     data
@@ -635,15 +700,30 @@ export default function SalesAnalyticsPage() {
           };
         })
       : [];
-  const leftSecondary = secondaryCards.find((m) => m.key === 'cm_rts_forecast');
-  const fixedRightSecondary = secondaryCards.filter(
+  const visibleSecondaryCards = secondaryCards.filter((metric) =>
+    visibleKpiKeys.includes(String(metric.key)),
+  );
+  const leftSecondary = visibleSecondaryCards.find((m) => m.key === 'cm_rts_forecast');
+  const fixedRightSecondary = visibleSecondaryCards.filter(
     (m) => m.key === 'net_margin',
   );
-  const middleSecondary = secondaryCards.filter(
+  const middleSecondary = visibleSecondaryCards.filter(
     (m) =>
       m.key !== 'cm_rts_forecast' &&
       m.key !== 'net_margin',
   );
+  const kpiVisibilityOptions = [
+    ...metricDefinitions.map((metric) => ({
+      key: String(metric.key),
+      label: metric.label,
+      section: 'Primary' as const,
+    })),
+    ...secondaryMetricDefinitions.map((metric) => ({
+      key: String(metric.key),
+      label: metric.label,
+      section: 'Secondary' as const,
+    })),
+  ];
 
   const buildCmTooltip = (kpis: OverviewResponse['kpis'] | undefined): ReactNode | null => {
     if (!kpis) return null;
@@ -1026,6 +1106,15 @@ export default function SalesAnalyticsPage() {
                 >
                   <RefreshCw className={`h-4 w-4 ${isReconciling ? 'animate-spin' : ''}`} />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowKpiVisibilityModal(true)}
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-2.5 py-2 text-slate-600 bg-white hover:border-slate-300 ml-2"
+                  aria-label="Show or hide KPI boxes"
+                  title="Show or hide KPI boxes"
+                >
+                  <Columns className="h-4 w-4" />
+                </button>
                 {canShare && (
                   <button
                     type="button"
@@ -1113,7 +1202,7 @@ export default function SalesAnalyticsPage() {
                         checked={includeTax1}
                         onChange={(e) => setIncludeTax1(e.target.checked)}
                       />
-                      <span className="text-sm text-slate-800">Include 1% Ads Tax</span>
+                      <span className="text-sm text-slate-800">Include 1% transaction fee</span>
                     </label>
                   </div>
                 )}
@@ -1135,17 +1224,25 @@ export default function SalesAnalyticsPage() {
             </div>
           ) : (
             <>
-              {leftCard && renderCard(leftCard)}
-              <div
-                className="flex-1 overflow-x-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 [&::-webkit-scrollbar]:hidden [scrollbar-width:'none']"
-                ref={scrollStripRef}
-                onWheel={handleWheelScroll}
-              >
-                <div className="flex gap-3 min-w-full">
-                  {middleCards.map((m) => renderCard(m))}
+              {visibleMetricValues.length === 0 ? (
+                <div className="flex w-full items-center justify-center rounded-lg border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
+                  No KPI boxes selected.
                 </div>
-              </div>
-              {rightCard && renderCard(rightCard)}
+              ) : (
+                <>
+                  {leftCard && renderCard(leftCard)}
+                  <div
+                    className="flex-1 overflow-x-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 [&::-webkit-scrollbar]:hidden [scrollbar-width:'none']"
+                    ref={scrollStripRef}
+                    onWheel={handleWheelScroll}
+                  >
+                    <div className="flex gap-3 min-w-full">
+                      {middleCards.map((m) => renderCard(m))}
+                    </div>
+                  </div>
+                  {rightCard && renderCard(rightCard)}
+                </>
+              )}
             </>
           )}
         </div>
@@ -1158,19 +1255,23 @@ export default function SalesAnalyticsPage() {
             </div>
           ) : (
             <>
-              {leftSecondary && renderCard(leftSecondary)}
-              <div
-                className="flex-1 overflow-x-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 [&::-webkit-scrollbar]:hidden [scrollbar-width:'none']"
-                onWheel={handleWheelScroll}
-              >
-                <div className="flex gap-3 min-w-full">
-                  {middleSecondary.map((m) => renderCard(m))}
-                </div>
-              </div>
-              {fixedRightSecondary.length > 0 && (
-                <div className="flex flex-col sm:flex-row gap-3">
-                  {fixedRightSecondary.map((m) => renderCard(m))}
-                </div>
+              {visibleSecondaryCards.length === 0 ? null : (
+                <>
+                  {leftSecondary && renderCard(leftSecondary)}
+                  <div
+                    className="flex-1 overflow-x-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 [&::-webkit-scrollbar]:hidden [scrollbar-width:'none']"
+                    onWheel={handleWheelScroll}
+                  >
+                    <div className="flex gap-3 min-w-full">
+                      {middleSecondary.map((m) => renderCard(m))}
+                    </div>
+                  </div>
+                  {fixedRightSecondary.length > 0 && (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      {fixedRightSecondary.map((m) => renderCard(m))}
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -1240,6 +1341,21 @@ export default function SalesAnalyticsPage() {
         selectedTeamIds={shareSelected}
         onToggleTeam={toggleShareTeam}
         onSave={saveShare}
+      />
+      <AnalyticsKpiVisibilityDialog
+        open={showKpiVisibilityModal}
+        onOpenChange={setShowKpiVisibilityModal}
+        options={kpiVisibilityOptions}
+        selectedKeys={visibleKpiKeys}
+        onToggleKey={(key) =>
+          setVisibleKpiKeys((prev) =>
+            prev.includes(key)
+              ? prev.filter((entry) => entry !== key)
+              : [...prev, key],
+          )
+        }
+        onSelectAll={() => setVisibleKpiKeys(DEFAULT_VISIBLE_KPI_KEYS)}
+        onResetDefaults={() => setVisibleKpiKeys(DEFAULT_VISIBLE_KPI_KEYS)}
       />
 
     </div>

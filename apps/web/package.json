@@ -8,7 +8,7 @@
     "build": "TZ=Asia/Manila next build",
     "start": "TZ=Asia/Manila next start -p 3000",
     "lint": "next lint",
-    "clean": "rm -rf .next"
+    "clean": "rm -rf .next .next-dev"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.0",

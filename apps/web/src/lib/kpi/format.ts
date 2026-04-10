@@ -14,7 +14,7 @@ export const formatKpiValue = (
     }).format(value);
   }
   if (format === 'percent') {
-    return `${value.toFixed(2)}%`;
+    return `${value.toFixed(1)}%`;
   }
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
 };

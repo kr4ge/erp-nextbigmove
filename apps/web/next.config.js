@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Keep dev artifacts separate from production build output so the browser
+  // does not request stale chunk paths after switching between `next dev`
+  // and `next build` / `next start`.
+  distDir: process.env.NODE_ENV === 'development' ? '.next-dev' : '.next',
   reactStrictMode: true,
   swcMinify: true,
   transpilePackages: ['@erp/types', '@erp/ui'],

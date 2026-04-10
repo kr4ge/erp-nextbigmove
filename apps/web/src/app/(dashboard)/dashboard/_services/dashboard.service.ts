@@ -1,5 +1,7 @@
 import apiClient from "@/lib/api-client";
 import type {
+  MarketingLeaderStatsResponse,
+  MarketingMyStatsResponse,
   MarketingKpiDashboardResponse,
   MarketingKpiExecutiveDashboardResponse,
   MarketingKpiTeamDashboardResponse,
@@ -35,14 +37,18 @@ export async function getExecutiveOverview(params: QueryParams) {
 }
 
 export async function getMarketingMyStats(params: QueryParams) {
-  const res = await apiClient.get("/analytics/marketing/my-stats", { params });
+  const res = await apiClient.get<MarketingMyStatsResponse>(
+    "/analytics/marketing/my-stats",
+    { params },
+  );
   return res.data;
 }
 
 export async function getMarketingLeaderStats(params: QueryParams) {
-  const res = await apiClient.get("/analytics/marketing/leader-stats", {
-    params,
-  });
+  const res = await apiClient.get<MarketingLeaderStatsResponse>(
+    "/analytics/marketing/leader-stats",
+    { params },
+  );
   return res.data;
 }
 

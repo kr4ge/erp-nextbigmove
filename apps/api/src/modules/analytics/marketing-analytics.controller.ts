@@ -57,6 +57,9 @@ export class MarketingAnalyticsController {
     @Query('exclude_restocking') excludeRestocking?: string,
     @Query('exclude_abandoned') excludeAbandoned?: string,
     @Query('exclude_rts') excludeRts?: string,
+    @Query('include_tax_12') includeTax12?: string,
+    @Query('include_tax_1') includeTax1?: string,
+    @Query('team_code') teamCode?: string,
   ) {
     const parseBool = (val: string | undefined, defaultVal = true) => {
       if (val === undefined) return defaultVal;
@@ -70,6 +73,9 @@ export class MarketingAnalyticsController {
       excludeRestocking: parseBool(excludeRestocking, true),
       excludeAbandoned: parseBool(excludeAbandoned, true),
       excludeRts: parseBool(excludeRts, true),
+      includeTax12: parseBool(includeTax12, false),
+      includeTax1: parseBool(includeTax1, false),
+      teamCodeOverride: teamCode,
       user: req.user,
     });
   }
@@ -84,6 +90,8 @@ export class MarketingAnalyticsController {
     @Query('exclude_restocking') excludeRestocking?: string,
     @Query('exclude_abandoned') excludeAbandoned?: string,
     @Query('exclude_rts') excludeRts?: string,
+    @Query('include_tax_12') includeTax12?: string,
+    @Query('include_tax_1') includeTax1?: string,
     @Query('team_code') teamCode?: string,
   ) {
     const parseBool = (val: string | undefined, defaultVal = true) => {
@@ -98,6 +106,8 @@ export class MarketingAnalyticsController {
       excludeRestocking: parseBool(excludeRestocking, true),
       excludeAbandoned: parseBool(excludeAbandoned, true),
       excludeRts: parseBool(excludeRts, true),
+      includeTax12: parseBool(includeTax12, false),
+      includeTax1: parseBool(includeTax1, false),
       user: req.user,
       teamCodeOverride: teamCode,
     });

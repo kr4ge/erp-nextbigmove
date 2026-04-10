@@ -59,6 +59,7 @@ type SalesCounts = {
   shipped: number;
   waiting_pickup: number;
   rts: number;
+  restocking: number;
   confirmed: number;
   unconfirmed: number;
   canceled: number;
@@ -296,6 +297,7 @@ export class SalesAnalyticsService {
       waiting_pickup: this.toNumber(sum?._sum?.waitingPickupCount),
       // Keep RTS count constant regardless of excludeRts toggle so KPI remains comparable
       rts: this.toNumber(sum?._sum?.rtsCount),
+      restocking: this.toNumber(sum?._sum?.restockingCount),
       confirmed: this.toNumber(sum?._sum?.confirmedCount),
       unconfirmed: this.toNumber(sum?._sum?.unconfirmedCount),
       // Show canceled count regardless of exclude_cancel toggle for KPI display

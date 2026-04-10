@@ -68,21 +68,27 @@ export class KpisController {
   @Permissions('dashboard.marketing')
   async getMyDashboard(
     @Req() req: any,
+    @Query('team_code') teamCode?: string,
     @Query('start_date') startDate?: string,
     @Query('end_date') endDate?: string,
     @Query('exclude_cancel') excludeCancel?: string,
     @Query('exclude_restocking') excludeRestocking?: string,
     @Query('exclude_abandoned') excludeAbandoned?: string,
     @Query('exclude_rts') excludeRts?: string,
+    @Query('include_tax_12') includeTax12?: string,
+    @Query('include_tax_1') includeTax1?: string,
   ) {
     return this.kpisService.getMyDashboard({
       actor: req.user,
+      teamCode,
       startDate,
       endDate,
       excludeCancel: this.parseBool(excludeCancel, true),
       excludeRestocking: this.parseBool(excludeRestocking, true),
       excludeAbandoned: this.parseBool(excludeAbandoned, true),
       excludeRts: this.parseBool(excludeRts, true),
+      includeTax12: this.parseBool(includeTax12, false),
+      includeTax1: this.parseBool(includeTax1, false),
     });
   }
 
@@ -96,6 +102,8 @@ export class KpisController {
     @Query('exclude_restocking') excludeRestocking?: string,
     @Query('exclude_abandoned') excludeAbandoned?: string,
     @Query('exclude_rts') excludeRts?: string,
+    @Query('include_tax_12') includeTax12?: string,
+    @Query('include_tax_1') includeTax1?: string,
   ) {
     return this.kpisService.getTeamDashboard({
       teamCode,
@@ -105,6 +113,8 @@ export class KpisController {
       excludeRestocking: this.parseBool(excludeRestocking, true),
       excludeAbandoned: this.parseBool(excludeAbandoned, true),
       excludeRts: this.parseBool(excludeRts, true),
+      includeTax12: this.parseBool(includeTax12, false),
+      includeTax1: this.parseBool(includeTax1, false),
     });
   }
 
@@ -118,6 +128,8 @@ export class KpisController {
     @Query('exclude_restocking') excludeRestocking?: string,
     @Query('exclude_abandoned') excludeAbandoned?: string,
     @Query('exclude_rts') excludeRts?: string,
+    @Query('include_tax_12') includeTax12?: string,
+    @Query('include_tax_1') includeTax1?: string,
   ) {
     return this.kpisService.getExecutiveDashboard({
       teamCode,
@@ -127,6 +139,8 @@ export class KpisController {
       excludeRestocking: this.parseBool(excludeRestocking, true),
       excludeAbandoned: this.parseBool(excludeAbandoned, true),
       excludeRts: this.parseBool(excludeRts, true),
+      includeTax12: this.parseBool(includeTax12, false),
+      includeTax1: this.parseBool(includeTax1, false),
     });
   }
 }

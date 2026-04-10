@@ -83,6 +83,7 @@ export type SalesOverviewResponse = {
     shipped: number;
     waiting_pickup: number;
     rts: number;
+    restocking: number;
     confirmed: number;
     unconfirmed: number;
     canceled: number;
@@ -93,6 +94,7 @@ export type SalesOverviewResponse = {
     shipped: number;
     waiting_pickup: number;
     rts: number;
+    restocking: number;
     confirmed: number;
     unconfirmed: number;
     canceled: number;
@@ -159,10 +161,9 @@ export const salesMetricDefinitions: Array<{
   { key: 'unconfirmed', label: 'New (₱)', format: 'currency', countKey: 'unconfirmed', countLabel: 'Orders' },
   { key: 'confirmed', label: 'Confirmed (₱)', format: 'currency', countKey: 'confirmed', countLabel: 'Orders' },
   { key: 'canceled', label: 'Canceled (₱)', format: 'currency', countKey: 'canceled', countLabel: 'Orders' },
+  { key: 'restocking_cod', label: 'Restocking (₱)', format: 'currency', countKey: 'restocking', countLabel: 'Orders' },
   { key: 'waiting_pickup', label: 'Wait for Pickup (₱)', format: 'currency', countKey: 'waiting_pickup', countLabel: 'Waiting' },
   { key: 'shipped', label: 'Shipped (₱)', format: 'currency', countKey: 'shipped', countLabel: 'Shipped' },
-  { key: 'delivered', label: 'Delivered (₱)', format: 'currency', countKey: 'delivered', countLabel: 'Delivered' },
-  { key: 'rts', label: 'RTS (₱)', format: 'currency', countKey: 'rts', countLabel: 'RTS' },
   { key: 'ad_spend', label: 'Ad Spend (₱)', format: 'currency' },
 ] as const;
 
@@ -177,6 +178,8 @@ export const salesSecondaryMetricDefinitions: Array<{
   { key: 'cpp', label: 'CPP (₱)', format: 'currency' },
   { key: 'processed_cpp', label: 'Processed CPP (₱)', format: 'currency' },
   { key: 'rts_pct', label: 'RTS (%)', format: 'percent' },
+  { key: 'delivered', label: 'Delivered (₱)', format: 'currency' },
+  { key: 'rts', label: 'RTS (₱)', format: 'currency' },
   { key: 'conversion_rate', label: 'Conversion Rate (%)', format: 'percent' },
   { key: 'profit_efficiency', label: 'Profit Efficiency (%)', format: 'percent' },
   { key: 'contribution_margin', label: 'Contribution Margin (₱)', format: 'currency' },

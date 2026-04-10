@@ -61,6 +61,8 @@ type KpiExclusionOptions = {
   excludeRestocking: boolean;
   excludeAbandoned: boolean;
   excludeRts: boolean;
+  includeTax12: boolean;
+  includeTax1: boolean;
 };
 
 const TEAM_METRICS = [
@@ -115,6 +117,8 @@ const DEFAULT_KPI_EXCLUSION_OPTIONS: KpiExclusionOptions = {
   excludeRestocking: true,
   excludeAbandoned: true,
   excludeRts: true,
+  includeTax12: false,
+  includeTax1: false,
 };
 
 type TeamUserSummary = {
@@ -177,7 +181,16 @@ export class KpisService {
       excludeAbandoned:
         options?.excludeAbandoned ?? DEFAULT_KPI_EXCLUSION_OPTIONS.excludeAbandoned,
       excludeRts: options?.excludeRts ?? DEFAULT_KPI_EXCLUSION_OPTIONS.excludeRts,
+      includeTax12:
+        options?.includeTax12 ?? DEFAULT_KPI_EXCLUSION_OPTIONS.includeTax12,
+      includeTax1: options?.includeTax1 ?? DEFAULT_KPI_EXCLUSION_OPTIONS.includeTax1,
     };
+  }
+
+  private applySpendTaxes(spend: number, options: KpiExclusionOptions) {
+    const multiplier =
+      1 + (options.includeTax12 ? 0.12 : 0) + (options.includeTax1 ? 0.01 : 0);
+    return spend * multiplier;
   }
 
   private parseDate(value?: string, fallback?: string): Date {
@@ -749,7 +762,11 @@ export class KpisService {
     }>,
     options: KpiExclusionOptions,
   ): TeamMetricSeries {
-    const spend = rows.reduce((sum, row) => sum + this.toNumber(row.spend), 0);
+    const spendBase = rows.reduce(
+      (sum, row) => sum + this.toNumber(row.spend),
+      0,
+    );
+    const spend = this.applySpendTaxes(spendBase, options);
     const revenueRaw = rows.reduce(
       (sum, row) => sum + this.toNumber(row.codPos),
       0,
@@ -1670,16 +1687,21 @@ export class KpisService {
   }
 
   async getMyDashboard(params: {
+    teamCode?: string;
     startDate?: string;
     endDate?: string;
     excludeCancel?: boolean;
     excludeRestocking?: boolean;
     excludeAbandoned?: boolean;
     excludeRts?: boolean;
+    includeTax12?: boolean;
+    includeTax1?: boolean;
     actor: any;
   }) {
     const options = this.resolveKpiExclusionOptions(params);
-    const { context, selectedTeam } = await this.resolveTeamSelection(null);
+    const { context, selectedTeam } = await this.resolveTeamSelection(
+      params.teamCode,
+    );
     const { start, end, startDate, endDate, referenceDate } =
       this.buildDateRange(params.startDate, params.endDate);
     const dateKeys = this.buildDateKeys(start, end);
@@ -1797,6 +1819,8 @@ export class KpisService {
     excludeRestocking?: boolean;
     excludeAbandoned?: boolean;
     excludeRts?: boolean;
+    includeTax12?: boolean;
+    includeTax1?: boolean;
   }) {
     const options = this.resolveKpiExclusionOptions(params);
     const { context, selectedTeam } = await this.resolveTeamSelection(
@@ -1924,6 +1948,8 @@ export class KpisService {
     excludeRestocking?: boolean;
     excludeAbandoned?: boolean;
     excludeRts?: boolean;
+    includeTax12?: boolean;
+    includeTax1?: boolean;
   }) {
     const options = this.resolveKpiExclusionOptions(params);
     const { context, teams, selectedTeam } = await this.resolveTeamSelection(
