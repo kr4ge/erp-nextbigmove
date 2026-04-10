@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Printer, X } from "lucide-react";
 import { WmsCode128Barcode } from "../../_components/wms-code128-barcode";
 import { getCode128BPattern, isCode128BValue } from "../../_utils/wms-barcodes";
@@ -10,6 +12,8 @@ const LABEL_HEIGHT_MM = 24;
 const LABEL_GAP_MM = 3;
 const LABELS_PER_PAGE = 10;
 const PRINT_BARCODE_HEIGHT = 75;
+const UUID_LIKE_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function escapeHtml(value: string) {
   return value
@@ -18,6 +22,22 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function getDisplayCode(value: string | null | undefined) {
+  if (!value || UUID_LIKE_PATTERN.test(value)) {
+    return null;
+  }
+
+  return value;
+}
+
+function getVariationLabel(value: string | null | undefined) {
+  if (!value || value.trim().length === 0) {
+    return null;
+  }
+
+  return value;
 }
 
 function buildBarcodeValueMarkup(
@@ -108,7 +128,34 @@ export function InventoryUnitLabelSheetModal({
   sheet,
   onClose,
 }: InventoryUnitLabelSheetModalProps) {
-  if (!open || !sheet) {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
+
+  if (!open || !sheet || !isMounted) {
     return null;
   }
 
@@ -295,109 +342,107 @@ export function InventoryUnitLabelSheetModal({
   const renderLabelCard = (
     label: InventoryUnitLabelSheetUnit,
     mode: "screen" | "print",
-  ) => (
-    <div
-      key={`${mode}-${label.id}`}
-      className={
-        mode === "print"
-          ? "wms-unit-label-print-card"
-          : "rounded-[18px] border border-slate-200 bg-white p-3 shadow-sm"
-      }
-    >
-      <div className={mode === "print" ? "hidden" : "flex items-start justify-between gap-3"}>
-        <div className="min-w-0">
-          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-            {label.sku}
-          </div>
-          <div className="mt-1 line-clamp-2 text-[13px] font-semibold leading-4 text-slate-950">
-            {label.productName}
-          </div>
-          <div className="mt-1 truncate text-[11px] text-slate-500">
-            {label.variationName || "Default variation"}
-          </div>
-        </div>
-        <div className="rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-[10px] font-semibold tracking-[0.12em] text-orange-700">
-          #{label.batchSequence}
-        </div>
-      </div>
+  ) => {
+    const displayCode = getDisplayCode(label.sku);
+    const variationLabel = getVariationLabel(label.variationName);
 
+    return (
       <div
+        key={`${mode}-${label.id}`}
         className={
           mode === "print"
-            ? "h-full rounded-none border-0 bg-white px-0 py-0"
-            : "mt-3 rounded-[14px] border border-slate-200 bg-slate-50 px-2.5 py-2"
+            ? "wms-unit-label-print-card"
+            : "w-full max-w-[232px] rounded-[18px] border border-slate-200 bg-white p-3 shadow-sm"
         }
       >
-        {isCode128BValue(label.unitBarcode) ? (
-          <WmsCode128Barcode
-            value={label.unitBarcode}
-            className="h-auto w-full"
-            moduleWidth={1.15}
-            height={PRINT_BARCODE_HEIGHT}
-          />
-        ) : (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-2 py-2 text-[11px] text-amber-800">
-            Barcode preview unavailable
+        <div
+          className={
+            mode === "print" ? "hidden" : "flex items-start justify-between gap-3"
+          }
+        >
+          <div className="min-w-0">
+            <div className="line-clamp-2 text-[13px] font-semibold leading-4 text-slate-950">
+              {label.productName}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              {displayCode ? (
+                <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-[10px] font-semibold tracking-[0.12em] text-orange-700">
+                  {displayCode}
+                </span>
+              ) : null}
+              {variationLabel ? (
+                <span className="truncate text-[11px] text-slate-500">
+                  {variationLabel}
+                </span>
+              ) : null}
+            </div>
           </div>
-        )}
+          <div className="rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-[10px] font-semibold tracking-[0.12em] text-orange-700">
+            {label.batchSequence}
+          </div>
+        </div>
+
         <div
           className={
             mode === "print"
-              ? "relative mt-[1mm] block w-full font-mono text-[9px] font-semibold tracking-[0.18em] text-black"
-              : "relative mt-1.5 block w-full font-mono text-[10px] font-semibold tracking-[0.22em] text-slate-700"
+              ? "h-full rounded-none border-0 bg-white px-0 py-0"
+              : "mt-3 rounded-[14px] border border-slate-200 bg-slate-50 px-2.5 py-2"
           }
         >
-          <span className="block text-center">{label.unitBarcode}</span>
-          <span
+          {isCode128BValue(label.unitBarcode) ? (
+            <WmsCode128Barcode
+              value={label.unitBarcode}
+              className="h-auto w-full"
+              moduleWidth={1.15}
+              height={PRINT_BARCODE_HEIGHT}
+            />
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-2 py-2 text-[11px] text-amber-800">
+              Barcode preview unavailable
+            </div>
+          )}
+          <div
             className={
               mode === "print"
-                ? "absolute right-0 top-0 text-[6px] tracking-[0.04em]"
-                : "absolute right-0 top-0 text-[7px] tracking-[0.04em]"
+                ? "relative mt-[1mm] block w-full font-mono text-[9px] font-semibold tracking-[0.18em] text-black"
+                : "relative mt-1.5 block w-full font-mono text-[10px] font-semibold tracking-[0.22em] text-slate-700"
             }
           >
-            <sup>{label.batchSequence}</sup>
+            <span className="block text-center">{label.unitBarcode}</span>
+            <span
+              className={
+                mode === "print"
+                  ? "absolute right-0 top-0 text-[6px] tracking-[0.04em]"
+                  : "absolute right-0 top-0 text-[7px] tracking-[0.04em]"
+              }
+            >
+              <sup>{label.batchSequence}</sup>
+            </span>
+          </div>
+        </div>
+
+        <div
+          className={
+            mode === "print"
+              ? "hidden"
+              : "mt-3 flex flex-wrap items-center gap-2 text-[10px] text-slate-600"
+          }
+        >
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+            {label.serialNo}
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+            {label.lotCode}
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+            {label.locationLabel}
           </span>
         </div>
       </div>
+    );
+  };
 
-      <div className={mode === "print" ? "hidden" : "mt-3 grid grid-cols-2 gap-2 text-[10px] text-slate-600"}>
-        <div>
-          <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Serial
-          </div>
-          <div className="mt-0.5 font-mono text-[11px] text-slate-900">
-            {label.serialNo}
-          </div>
-        </div>
-        <div>
-          <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Batch
-          </div>
-          <div className="mt-0.5 truncate text-[11px] text-slate-900">
-            {label.lotCode}
-          </div>
-        </div>
-        <div>
-          <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Location
-          </div>
-          <div className="mt-0.5 truncate text-[11px] text-slate-900">
-            {label.locationLabel}
-          </div>
-        </div>
-        <div>
-          <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Source
-          </div>
-          <div className="mt-0.5 truncate text-[11px] text-slate-900">
-            {label.sourceLabel}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
+  return createPortal(
     <>
       <style jsx global>{`
         @page {
@@ -483,94 +528,71 @@ export function InventoryUnitLabelSheetModal({
           className="absolute inset-0 bg-slate-950/45 backdrop-blur-[3px] print:hidden"
           onClick={onClose}
         />
-        <div className="absolute inset-0 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
-          <div className="mx-auto flex min-h-full max-w-6xl items-center justify-center">
-            <div className="flex w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl print:max-w-none print:rounded-none print:border-0 print:shadow-none">
-              <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50/80 px-6 py-4 print:hidden">
+        <div className="absolute inset-0 overflow-hidden px-0 sm:px-4">
+          <div className="mx-auto flex h-full max-w-6xl items-stretch justify-center">
+            <div className="flex h-full w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl sm:my-0 sm:rounded-[28px] sm:border sm:border-slate-200 print:max-w-none print:rounded-none print:border-0 print:shadow-none">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 print:hidden">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-600">
                     {sheet.eyebrow}
                   </div>
-                  <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">
+                  <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-950 sm:text-xl">
                     {sheet.title}
                   </h2>
-                  {sheet.subtitle ? (
-                    <p className="mt-1 text-sm text-slate-600">{sheet.subtitle}</p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-orange-200 hover:text-orange-700"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="border-b border-slate-200 bg-[linear-gradient(135deg,rgba(249,115,22,0.08),rgba(255,255,255,1)_58%)] px-6 py-4 print:hidden">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                    <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 font-semibold text-orange-700">
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                    {sheet.subtitle ? <span>{sheet.subtitle}</span> : null}
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
                       {sheet.labels.length} labels
                     </span>
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1">
-                      {LABELS_PER_PAGE} per page
-                    </span>
                     {sheet.metadata ? (
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
                         {sheet.metadata}
                       </span>
                     ) : null}
                   </div>
+                </div>
+                <div className="flex items-center gap-2">
                   {!printable ? (
-                    <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm text-amber-800">
-                      Some unit barcodes are not printable unit-label values.
+                    <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
+                      Some labels cannot be printed yet
                     </div>
                   ) : null}
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    disabled={!printable}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Printer className="h-4 w-4" />
+                    Print Batch
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-orange-200 hover:text-orange-700"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
 
-              <div className="bg-white p-6 print:p-0">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-4 sm:p-5 print:bg-white print:p-0">
                 <div
                   id="wms-unit-label-sheet"
-                  className="mx-auto w-full max-w-[960px] print:max-w-none"
+                  className="mx-auto w-full max-w-[1180px] print:max-w-none"
                 >
-                  <div className="space-y-8">
+                  <div className="space-y-4">
                     {pagedLabels.map((pageLabels, pageIndex) => (
                       <section
                         key={`page-${pageIndex}`}
-                        className="min-h-[720px] rounded-[24px] border border-dashed border-slate-200 bg-slate-50/40 px-8 py-6"
+                        className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-sm sm:min-h-[640px] sm:px-6"
                       >
-                        <div className="mx-auto flex w-full max-w-[232px] flex-col items-stretch gap-3">
+                        <div className="mx-auto grid w-full max-w-[760px] grid-cols-1 justify-items-center gap-3 sm:grid-cols-2 xl:grid-cols-3">
                           {pageLabels.map((label) => renderLabelCard(label, "screen"))}
                         </div>
                       </section>
                     ))}
                   </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4 print:hidden">
-                <div className="text-sm text-slate-500">
-                  Print this sheet, cut each label, and patch it onto the received units.
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="inline-flex items-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950"
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handlePrint}
-                    disabled={!printable}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Printer className="h-4 w-4" />
-                    Print Batch
-                  </button>
                 </div>
               </div>
             </div>
@@ -590,6 +612,7 @@ export function InventoryUnitLabelSheetModal({
           </section>
         ))}
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

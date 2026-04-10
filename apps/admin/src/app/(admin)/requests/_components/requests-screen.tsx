@@ -54,6 +54,8 @@ import {
 import type {
   UpsertWmsCompanyBillingSettingsInput,
   WmsCompanyBillingSettings,
+  WmsInvoiceStatus,
+  WmsPaymentStatus,
   WmsRequestStatus,
   WmsRequestType,
   WmsStockRequest,
@@ -416,6 +418,28 @@ export function RequestsScreen() {
   >("ALL");
   const [reviewPageIndex, setReviewPageIndex] = useState(0);
   const [reviewPageSize, setReviewPageSize] = useState(10);
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<
+    WmsInvoiceStatus | "ALL"
+  >("ALL");
+  const [invoicePageIndex, setInvoicePageIndex] = useState(0);
+  const [invoicePageSize, setInvoicePageSize] = useState(10);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(
+    null,
+  );
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<
+    WmsPaymentStatus | "ALL"
+  >("ALL");
+  const [paymentPageIndex, setPaymentPageIndex] = useState(0);
+  const [paymentPageSize, setPaymentPageSize] = useState(10);
+  const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(
+    null,
+  );
+  const [isBillingSettingsModalOpen, setIsBillingSettingsModalOpen] =
+    useState(false);
+  const [isSubmitPaymentModalOpen, setIsSubmitPaymentModalOpen] =
+    useState(false);
   const [tenantId, setTenantId] = useState("");
   const [storeId, setStoreId] = useState("");
   const [simulationRequestType, setSimulationRequestType] =
@@ -681,6 +705,54 @@ export function RequestsScreen() {
   const selectedRequestProducts = selectedRequestProductsQuery.data || [];
   const invoices = invoicesQuery.data || [];
   const payments = paymentsQuery.data || [];
+  const filteredInvoices = useMemo(() => {
+    const normalizedSearch = invoiceSearch.trim().toLowerCase();
+
+    return invoices.filter((invoice) => {
+      const matchesStatus =
+        invoiceStatusFilter === "ALL" || invoice.status === invoiceStatusFilter;
+      const matchesSearch =
+        normalizedSearch.length === 0 ||
+        invoice.invoiceCode.toLowerCase().includes(normalizedSearch) ||
+        invoice.request.requestCode.toLowerCase().includes(normalizedSearch) ||
+        invoice.tenant.name.toLowerCase().includes(normalizedSearch);
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [invoiceSearch, invoiceStatusFilter, invoices]);
+  const paginatedInvoices = useMemo(() => {
+    const start = invoicePageIndex * invoicePageSize;
+    return filteredInvoices.slice(start, start + invoicePageSize);
+  }, [filteredInvoices, invoicePageIndex, invoicePageSize]);
+  const selectedInvoice =
+    invoices.find((invoice) => invoice.id === selectedInvoiceId) || null;
+  const selectedInvoiceRequestQuery = useQuery({
+    queryKey: ["wms-invoice-request", selectedInvoice?.request.id],
+    queryFn: () => fetchWmsStockRequest(selectedInvoice!.request.id),
+    enabled: Boolean(selectedInvoice?.request.id),
+  });
+  const selectedInvoiceDetails = selectedInvoiceRequestQuery.data?.invoice || null;
+  const filteredPayments = useMemo(() => {
+    const normalizedSearch = paymentSearch.trim().toLowerCase();
+
+    return payments.filter((payment) => {
+      const matchesStatus =
+        paymentStatusFilter === "ALL" || payment.status === paymentStatusFilter;
+      const matchesSearch =
+        normalizedSearch.length === 0 ||
+        (payment.request?.requestCode || "").toLowerCase().includes(normalizedSearch) ||
+        (payment.request?.tenant.name || "").toLowerCase().includes(normalizedSearch) ||
+        (payment.invoice?.invoiceCode || "").toLowerCase().includes(normalizedSearch);
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [paymentSearch, paymentStatusFilter, payments]);
+  const paginatedPayments = useMemo(() => {
+    const start = paymentPageIndex * paymentPageSize;
+    return filteredPayments.slice(start, start + paymentPageSize);
+  }, [filteredPayments, paymentPageIndex, paymentPageSize]);
+  const selectedPayment =
+    payments.find((payment) => payment.id === selectedPaymentId) || null;
   const editingSimulationRequest =
     (simulationEditingRequestId
       ? (selectedRequest?.id === simulationEditingRequestId
@@ -817,6 +889,52 @@ export function RequestsScreen() {
       setReviewPageIndex(pageCount - 1);
     }
   }, [filteredReviewRequests.length, reviewPageIndex, reviewPageSize]);
+
+  useEffect(() => {
+    setInvoicePageIndex(0);
+  }, [invoiceSearch, invoiceStatusFilter]);
+
+  useEffect(() => {
+    const pageCount = Math.max(
+      Math.ceil(filteredInvoices.length / invoicePageSize),
+      1,
+    );
+    if (invoicePageIndex > pageCount - 1) {
+      setInvoicePageIndex(pageCount - 1);
+    }
+  }, [filteredInvoices.length, invoicePageIndex, invoicePageSize]);
+
+  useEffect(() => {
+    if (
+      selectedInvoiceId &&
+      !invoices.some((invoice) => invoice.id === selectedInvoiceId)
+    ) {
+      setSelectedInvoiceId(null);
+    }
+  }, [invoices, selectedInvoiceId]);
+
+  useEffect(() => {
+    setPaymentPageIndex(0);
+  }, [paymentSearch, paymentStatusFilter]);
+
+  useEffect(() => {
+    const pageCount = Math.max(
+      Math.ceil(filteredPayments.length / paymentPageSize),
+      1,
+    );
+    if (paymentPageIndex > pageCount - 1) {
+      setPaymentPageIndex(pageCount - 1);
+    }
+  }, [filteredPayments.length, paymentPageIndex, paymentPageSize]);
+
+  useEffect(() => {
+    if (
+      selectedPaymentId &&
+      !payments.some((payment) => payment.id === selectedPaymentId)
+    ) {
+      setSelectedPaymentId(null);
+    }
+  }, [payments, selectedPaymentId]);
 
   useEffect(() => {
     const nextQuantities: SimulationQuantityMap = {};
@@ -1383,6 +1501,16 @@ export function RequestsScreen() {
   function resetReviewWorkspace() {
     setReviewSearch("");
     setReviewStatusFilter("ALL");
+  }
+
+  function resetInvoiceWorkspace() {
+    setInvoiceSearch("");
+    setInvoiceStatusFilter("ALL");
+  }
+
+  function resetPaymentWorkspace() {
+    setPaymentSearch("");
+    setPaymentStatusFilter("ALL");
   }
 
   return (
@@ -2464,237 +2592,816 @@ export function RequestsScreen() {
       ) : null}
 
       {activeTab === "invoices" ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <WmsSectionCard title="Invoice Feed" metadata={`${invoices.length} invoices`}>
-            {invoices.length === 0 ? (
+        <>
+          <WmsSectionCard
+            title="Invoice Feed"
+            metadata={
+              <div className="flex items-center gap-3">
+                <span className="hidden text-[11px] text-slate-500 lg:inline">
+                  {filteredInvoices.length} invoices
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsBillingSettingsModalOpen(true)}
+                  className="inline-flex h-9 items-center justify-center rounded-full border border-orange-200 bg-orange-50 px-3 text-sm font-semibold text-orange-700 transition hover:bg-orange-100"
+                >
+                  Billing Settings
+                </button>
+              </div>
+            }
+            bodyClassName="p-0"
+          >
+            <div className="border-b border-slate-100 px-3 py-3">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                <div className="relative min-w-0 xl:flex-[1.1]">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={invoiceSearch}
+                    onChange={(event) => setInvoiceSearch(event.target.value)}
+                    placeholder="Search invoice, request, or partner"
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                  />
+                </div>
+
+                <select
+                  value={invoiceStatusFilter}
+                  onChange={(event) =>
+                    setInvoiceStatusFilter(
+                      event.target.value as WmsInvoiceStatus | "ALL",
+                    )
+                  }
+                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100 xl:w-[220px]"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="UNPAID">Unpaid</option>
+                  <option value="PAYMENT_SUBMITTED">Payment Submitted</option>
+                  <option value="PAID">Paid</option>
+                  <option value="CANCELED">Canceled</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={resetInvoiceWorkspace}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:border-orange-200 hover:text-orange-700"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            {filteredInvoices.length === 0 ? (
               <div className="px-4 py-14 text-center text-sm text-slate-500">
-                No invoices yet.
+                No invoices found.
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Invoice</th>
-                      <th className="px-4 py-3">Partner</th>
-                      <th className="px-4 py-3">Due</th>
-                      <th className="px-4 py-3">Total</th>
-                      <th className="px-4 py-3 text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {invoices.map((invoice) => (
-                      <tr key={invoice.id}>
-                        <td className="px-4 py-4">
-                          <div className="font-semibold text-slate-950">
-                            {invoice.invoiceCode}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {invoice.request.requestCode}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-slate-700">
-                          {invoice.tenant.name}
-                        </td>
-                        <td className="px-4 py-4 text-slate-600">
-                          {formatDate(invoice.dueDate)}
-                        </td>
-                        <td className="px-4 py-4 font-semibold tabular-nums text-slate-950">
-                          {formatMoney(invoice.totalAmount, invoice.currency)}
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <RequestStatusBadge
-                            status={invoice.status}
-                            kind="invoice"
-                          />
-                        </td>
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full table-fixed text-sm">
+                    <colgroup>
+                      <col className="w-[24%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[14%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[10%]" />
+                    </colgroup>
+                    <thead className="border-y border-slate-200 bg-slate-50/70">
+                      <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        <th className="px-4 py-3.5">Invoice</th>
+                        <th className="px-4 py-3.5">Partner</th>
+                        <th className="px-4 py-3.5">Request</th>
+                        <th className="px-4 py-3.5 text-right">Due</th>
+                        <th className="px-4 py-3.5 text-right">Amount Due</th>
+                        <th className="px-4 py-3.5 text-center">Status</th>
+                        <th className="px-4 py-3.5 text-center">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {paginatedInvoices.map((invoice) => (
+                        <tr
+                          key={invoice.id}
+                          className={`align-top transition hover:bg-slate-50/80 ${
+                            selectedInvoiceId === invoice.id ? "bg-orange-50/70" : ""
+                          }`}
+                        >
+                          <td className="px-4 py-4">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-slate-950">
+                                {invoice.invoiceCode}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {formatDate(invoice.invoiceDate)} • {invoice.lines.length} lines
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="truncate text-sm font-medium text-slate-900">
+                              {invoice.tenant.name}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-sm text-slate-600">
+                            {invoice.request.requestCode}
+                          </td>
+                          <td className="px-4 py-4 text-right text-sm text-slate-600">
+                            {formatDate(invoice.dueDate)}
+                          </td>
+                          <td className="px-4 py-4 text-right font-semibold tabular-nums text-slate-950">
+                            {formatMoney(invoice.amountDue, invoice.currency)}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <RequestStatusBadge
+                              status={invoice.status}
+                              kind="invoice"
+                            />
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedInvoiceId(invoice.id)}
+                              className="inline-flex h-9 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-orange-200 hover:text-orange-700"
+                            >
+                              Open
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <WmsTablePagination
+                  pageIndex={invoicePageIndex}
+                  pageSize={invoicePageSize}
+                  pageSizeOptions={[10, 25, 50]}
+                  totalItems={filteredInvoices.length}
+                  onPageIndexChange={setInvoicePageIndex}
+                  onPageSizeChange={(nextPageSize) => {
+                    setInvoicePageSize(nextPageSize);
+                    setInvoicePageIndex(0);
+                  }}
+                />
+              </>
             )}
           </WmsSectionCard>
 
-          <WmsSectionCard
-            title="WMS Billing Settings"
-            icon={<Banknote className="h-3.5 w-3.5" />}
-          >
-            <BillingSettingsForm
-              value={billingSettingsForm}
-              onChange={setBillingSettingsForm}
-              onSubmit={() => saveBillingMutation.mutate()}
-              isSaving={saveBillingMutation.isPending}
-            />
-          </WmsSectionCard>
-        </div>
+          {isBillingSettingsModalOpen ? (
+            <div className="fixed inset-0 z-40" aria-modal="true" role="dialog">
+              <div
+                className="absolute inset-0 bg-slate-950/45 backdrop-blur-[3px]"
+                onClick={() => setIsBillingSettingsModalOpen(false)}
+              />
+              <div className="absolute inset-0 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
+                <div className="mx-auto flex min-h-full max-w-4xl items-center justify-center">
+                  <div className="flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+                    <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50/80 px-6 py-5">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-600">
+                          Billing Settings
+                        </div>
+                        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
+                          WMS Billing Identity
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Company details and offline bank information used on request invoices.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsBillingSettingsModalOpen(false)}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-orange-200 hover:text-orange-700"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="min-h-0 overflow-y-auto p-6">
+                      <BillingSettingsForm
+                        value={billingSettingsForm}
+                        onChange={setBillingSettingsForm}
+                        onSubmit={() => saveBillingMutation.mutate()}
+                        isSaving={saveBillingMutation.isPending}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {selectedInvoiceId ? (
+            <div className="fixed inset-0 z-40" aria-modal="true" role="dialog">
+              <div
+                className="absolute inset-0 bg-slate-950/45 backdrop-blur-[3px]"
+                onClick={() => setSelectedInvoiceId(null)}
+              />
+              <div className="absolute inset-0 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
+                <div className="mx-auto flex min-h-full max-w-6xl items-center justify-center">
+                  <div className="flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+                    <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50/80 px-6 py-5">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-600">
+                          Invoice
+                        </div>
+                        <h2 className="mt-1 truncate text-2xl font-semibold tracking-tight text-slate-950">
+                          {selectedInvoice?.invoiceCode || "Loading invoice"}
+                        </h2>
+                        {selectedInvoice ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+                            <span>{selectedInvoice.tenant.name}</span>
+                            <span>{selectedInvoice.request.requestCode}</span>
+                            <span>Due {formatDate(selectedInvoice.dueDate)}</span>
+                            <span className="font-semibold tabular-nums text-slate-950">
+                              {formatMoney(
+                                selectedInvoice.amountDue,
+                                selectedInvoice.currency,
+                              )}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {selectedInvoice ? (
+                          <RequestStatusBadge
+                            status={selectedInvoice.status}
+                            kind="invoice"
+                          />
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInvoiceId(null)}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-orange-200 hover:text-orange-700"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="min-h-0 overflow-y-auto bg-slate-50/40 p-6">
+                      {selectedInvoiceRequestQuery.isLoading ? (
+                        <div className="px-2 py-16 text-center text-sm text-slate-500">
+                          Loading invoice...
+                        </div>
+                      ) : selectedInvoiceRequestQuery.error ? (
+                        <div className="px-2 py-16 text-center">
+                          <div className="text-sm text-rose-600">
+                            {selectedInvoiceRequestQuery.error instanceof Error
+                              ? selectedInvoiceRequestQuery.error.message
+                              : "Unable to load invoice."}
+                          </div>
+                        </div>
+                      ) : selectedInvoice ? (
+                        <div className="space-y-6">
+                          <div className="grid gap-4 md:grid-cols-4">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Invoice Date
+                              </div>
+                              <div className="mt-2 text-base font-semibold text-slate-950">
+                                {formatDate(selectedInvoice.invoiceDate)}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Due Date
+                              </div>
+                              <div className="mt-2 text-base font-semibold text-slate-950">
+                                {formatDate(selectedInvoice.dueDate)}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Total
+                              </div>
+                              <div className="mt-2 text-base font-semibold text-slate-950">
+                                {formatMoney(
+                                  selectedInvoice.totalAmount,
+                                  selectedInvoice.currency,
+                                )}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Amount Due
+                              </div>
+                              <div className="mt-2 text-base font-semibold text-slate-950">
+                                {formatMoney(
+                                  selectedInvoice.amountDue,
+                                  selectedInvoice.currency,
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="overflow-x-auto rounded-[24px] border border-slate-200 bg-white">
+                            <table className="min-w-full table-fixed text-sm">
+                              <colgroup>
+                                <col className="w-[46%]" />
+                                <col className="w-[12%]" />
+                                <col className="w-[18%]" />
+                                <col className="w-[24%]" />
+                              </colgroup>
+                              <thead className="border-b border-slate-200 bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                <tr>
+                                  <th className="px-4 py-3.5">Item</th>
+                                  <th className="px-4 py-3.5 text-right">Qty</th>
+                                  <th className="px-4 py-3.5 text-right">WMS Price</th>
+                                  <th className="px-4 py-3.5 text-right">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {(selectedInvoiceDetails?.lines || selectedInvoice.lines).map((line) => (
+                                  <tr key={line.id}>
+                                    <td className="px-4 py-4">
+                                      <div className="font-semibold text-slate-950">
+                                        {line.productName}
+                                      </div>
+                                      {line.variationName ? (
+                                        <div className="mt-1 text-sm text-slate-500">
+                                          {line.variationName}
+                                        </div>
+                                      ) : null}
+                                    </td>
+                                    <td className="px-4 py-4 text-right font-semibold tabular-nums text-slate-950">
+                                      {line.quantity}
+                                    </td>
+                                    <td className="px-4 py-4 text-right tabular-nums text-slate-700">
+                                      {formatMoney(line.wmsUnitPrice, selectedInvoice.currency)}
+                                    </td>
+                                    <td className="px-4 py-4 text-right font-semibold tabular-nums text-slate-950">
+                                      {formatMoney(line.lineAmount, selectedInvoice.currency)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Company
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-slate-950">
+                                {selectedInvoiceDetails?.companyName || billingSettingsForm.companyName || "Not configured"}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {buildBillingAddressLabel(
+                                  selectedInvoiceDetails?.companyBillingAddress ||
+                                    billingSettingsForm.billingAddress,
+                                )}
+                              </div>
+                              <div className="mt-4 space-y-1 text-sm text-slate-600">
+                                <div>
+                                  {selectedInvoiceDetails?.bankName ||
+                                    billingSettingsForm.bankName ||
+                                    "No bank name"}
+                                </div>
+                                <div>
+                                  {selectedInvoiceDetails?.bankAccountName ||
+                                    billingSettingsForm.bankAccountName ||
+                                    "No account name"}
+                                </div>
+                                <div>
+                                  {selectedInvoiceDetails?.bankAccountNumber ||
+                                    billingSettingsForm.bankAccountNumber ||
+                                    "No account number"}
+                                </div>
+                                <div>
+                                  {selectedInvoiceDetails?.bankAccountType ||
+                                    billingSettingsForm.bankAccountType ||
+                                    "No account type"}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Partner Bill To
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-slate-950">
+                                {selectedInvoiceDetails?.partnerCompanyName ||
+                                  selectedInvoice.tenant.name}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {buildBillingAddressLabel(
+                                  selectedInvoiceDetails?.partnerBillingAddress,
+                                )}
+                              </div>
+                              {selectedInvoiceDetails?.note ? (
+                                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                                  {selectedInvoiceDetails.note}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : null}
 
       {activeTab === "payments" ? (
-        <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <>
           <WmsSectionCard
-            title="Submit Payment Proof"
-            metadata={`${stockRequests.filter((request) => request.status === "INVOICED").length} open invoices`}
-          >
-            <div className="space-y-4">
-              <label className="space-y-2 block">
-                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Request
+            title="Payment Feed"
+            metadata={
+              <div className="flex items-center gap-3">
+                <span className="hidden text-[11px] text-slate-500 lg:inline">
+                  {filteredPayments.length} proofs
                 </span>
-                <select
-                  value={paymentRequestId}
-                  onChange={(event) => setPaymentRequestId(event.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                <button
+                  type="button"
+                  onClick={() => setIsSubmitPaymentModalOpen(true)}
+                  className="inline-flex h-9 items-center justify-center rounded-full border border-orange-200 bg-orange-50 px-3 text-sm font-semibold text-orange-700 transition hover:bg-orange-100"
                 >
-                  <option value="">Select invoiced request</option>
-                  {stockRequests
-                    .filter((request) => request.status === "INVOICED")
-                    .map((request) => (
-                      <option key={request.id} value={request.id}>
-                        {request.requestCode} · {request.tenant.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className="space-y-2 block">
-                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Proof URL
-                </span>
-                <input
-                  value={paymentProofUrl}
-                  onChange={(event) => setPaymentProofUrl(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
-                />
-              </label>
-              <label className="space-y-2 block">
-                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Note
-                </span>
-                <textarea
-                  value={paymentProofNote}
-                  onChange={(event) => setPaymentProofNote(event.target.value)}
-                  rows={3}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={
-                  !paymentRequestId ||
-                  !paymentProofUrl ||
-                  submitPaymentMutation.isPending
-                }
-                onClick={() => submitPaymentMutation.mutate()}
-                className="inline-flex w-full items-center justify-center rounded-2xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {submitPaymentMutation.isPending
-                  ? "Submitting..."
-                  : "Submit Proof"}
-              </button>
-            </div>
-          </WmsSectionCard>
+                  Submit Proof
+                </button>
+              </div>
+            }
+            bodyClassName="p-0"
+          >
+            <div className="border-b border-slate-100 px-3 py-3">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                <div className="relative min-w-0 xl:flex-[1.1]">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={paymentSearch}
+                    onChange={(event) => setPaymentSearch(event.target.value)}
+                    placeholder="Search request, invoice, or partner"
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                  />
+                </div>
 
-          <WmsSectionCard title="Payment Feed" metadata={`${payments.length} proofs`}>
-            {payments.length === 0 ? (
+                <select
+                  value={paymentStatusFilter}
+                  onChange={(event) =>
+                    setPaymentStatusFilter(
+                      event.target.value as WmsPaymentStatus | "ALL",
+                    )
+                  }
+                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100 xl:w-[220px]"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="SUBMITTED">Submitted</option>
+                  <option value="VERIFIED">Verified</option>
+                  <option value="REJECTED">Rejected</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={resetPaymentWorkspace}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:border-orange-200 hover:text-orange-700"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            {filteredPayments.length === 0 ? (
               <div className="px-4 py-14 text-center text-sm text-slate-500">
-                No payment proof yet.
+                No payment proof found.
               </div>
             ) : (
-              <div className="space-y-4">
-                {payments.map((payment) => (
-                  <div
-                    key={payment.id}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full table-fixed text-sm">
+                    <colgroup>
+                      <col className="w-[18%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[14%]" />
+                      <col className="w-[14%]" />
+                    </colgroup>
+                    <thead className="border-y border-slate-200 bg-slate-50/70">
+                      <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        <th className="px-4 py-3.5">Request</th>
+                        <th className="px-4 py-3.5">Partner</th>
+                        <th className="px-4 py-3.5">Invoice</th>
+                        <th className="px-4 py-3.5 text-right">Submitted</th>
+                        <th className="px-4 py-3.5 text-center">Status</th>
+                        <th className="px-4 py-3.5 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {paginatedPayments.map((payment) => (
+                        <tr
+                          key={payment.id}
+                          className={`align-top transition hover:bg-slate-50/80 ${
+                            selectedPaymentId === payment.id ? "bg-orange-50/70" : ""
+                          }`}
+                        >
+                          <td className="px-4 py-4">
+                            <div className="font-semibold text-slate-950">
+                              {payment.request?.requestCode || "No request"}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="truncate text-sm font-medium text-slate-900">
+                              {payment.request?.tenant.name || "No partner"}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-sm text-slate-600">
+                            {payment.invoice?.invoiceCode || "No invoice"}
+                          </td>
+                          <td className="px-4 py-4 text-right text-sm text-slate-600">
+                            {formatDate(payment.submittedAt)}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <RequestStatusBadge
+                              status={payment.status}
+                              kind="payment"
+                            />
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPaymentId(payment.id)}
+                              className="inline-flex h-9 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-orange-200 hover:text-orange-700"
+                            >
+                              Open
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <WmsTablePagination
+                  pageIndex={paymentPageIndex}
+                  pageSize={paymentPageSize}
+                  pageSizeOptions={[10, 25, 50]}
+                  totalItems={filteredPayments.length}
+                  onPageIndexChange={setPaymentPageIndex}
+                  onPageSizeChange={(nextPageSize) => {
+                    setPaymentPageSize(nextPageSize);
+                    setPaymentPageIndex(0);
+                  }}
+                />
+              </>
+            )}
+          </WmsSectionCard>
+
+          {isSubmitPaymentModalOpen ? (
+            <div className="fixed inset-0 z-40" aria-modal="true" role="dialog">
+              <div
+                className="absolute inset-0 bg-slate-950/45 backdrop-blur-[3px]"
+                onClick={() => setIsSubmitPaymentModalOpen(false)}
+              />
+              <div className="absolute inset-0 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
+                <div className="mx-auto flex min-h-full max-w-3xl items-center justify-center">
+                  <div className="flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+                    <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50/80 px-6 py-5">
                       <div>
-                        <div className="text-sm font-semibold text-slate-950">
-                          {payment.request?.requestCode || "Request"}
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-600">
+                          Payment Proof
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          {payment.request?.tenant.name || "Partner"} ·{" "}
-                          {payment.invoice?.invoiceCode || "No invoice"}
-                        </div>
+                        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
+                          Submit Payment Proof
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Link an invoiced request to its proof of payment.
+                        </p>
                       </div>
-                      <RequestStatusBadge
-                        status={payment.status}
-                        kind="payment"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsSubmitPaymentModalOpen(false)}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-orange-200 hover:text-orange-700"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
                     </div>
-                    <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_200px]">
-                      <div className="space-y-2 text-sm text-slate-600">
-                        <div>
-                          Submitted {formatDate(payment.submittedAt)}
-                        </div>
-                        {payment.proofUrl ? (
-                          <Link
-                            href={payment.proofUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-orange-700 underline-offset-2 hover:underline"
+                    <div className="min-h-0 overflow-y-auto p-6">
+                      <div className="space-y-4">
+                        <label className="block space-y-2">
+                          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Request
+                          </span>
+                          <select
+                            value={paymentRequestId}
+                            onChange={(event) => setPaymentRequestId(event.target.value)}
+                            className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
                           >
-                            Open proof
-                          </Link>
-                        ) : null}
-                        <div>{payment.proofNote || "No note"}</div>
-                      </div>
-                      <div className="space-y-3">
-                        <textarea
-                          value={paymentRemarks[payment.id] || ""}
-                          onChange={(event) =>
-                            setPaymentRemarks((current) => ({
-                              ...current,
-                              [payment.id]: event.target.value,
-                            }))
-                          }
-                          rows={3}
-                          placeholder="Verification remarks"
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
-                        />
-                        {payment.status === "SUBMITTED" ? (
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                verifyPaymentMutation.mutate({
-                                  paymentId: payment.id,
-                                  approve: true,
-                                })
-                              }
-                              disabled={verifyPaymentMutation.isPending}
-                              className="inline-flex flex-1 items-center justify-center rounded-2xl bg-orange-500 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                verifyPaymentMutation.mutate({
-                                  paymentId: payment.id,
-                                  approve: false,
-                                })
-                              }
-                              disabled={verifyPaymentMutation.isPending}
-                              className="inline-flex flex-1 items-center justify-center rounded-2xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="text-xs text-slate-500">
-                            {payment.verifiedAt
-                              ? `Resolved ${formatDate(payment.verifiedAt)}`
-                              : "Already resolved"}
-                          </div>
-                        )}
+                            <option value="">Select invoiced request</option>
+                            {stockRequests
+                              .filter((request) => request.status === "INVOICED")
+                              .map((request) => (
+                                <option key={request.id} value={request.id}>
+                                  {request.requestCode} · {request.tenant.name}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                        <label className="block space-y-2">
+                          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Proof URL
+                          </span>
+                          <input
+                            value={paymentProofUrl}
+                            onChange={(event) => setPaymentProofUrl(event.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                          />
+                        </label>
+                        <label className="block space-y-2">
+                          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Note
+                          </span>
+                          <textarea
+                            value={paymentProofNote}
+                            onChange={(event) => setPaymentProofNote(event.target.value)}
+                            rows={4}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                          />
+                        </label>
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            disabled={
+                              !paymentRequestId ||
+                              !paymentProofUrl ||
+                              submitPaymentMutation.isPending
+                            }
+                            onClick={() => submitPaymentMutation.mutate()}
+                            className="inline-flex items-center rounded-2xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {submitPaymentMutation.isPending
+                              ? "Submitting..."
+                              : "Submit Proof"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
-            )}
-          </WmsSectionCard>
-        </div>
+            </div>
+          ) : null}
+
+          {selectedPaymentId ? (
+            <div className="fixed inset-0 z-40" aria-modal="true" role="dialog">
+              <div
+                className="absolute inset-0 bg-slate-950/45 backdrop-blur-[3px]"
+                onClick={() => setSelectedPaymentId(null)}
+              />
+              <div className="absolute inset-0 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
+                <div className="mx-auto flex min-h-full max-w-5xl items-center justify-center">
+                  <div className="flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+                    <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50/80 px-6 py-5">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-600">
+                          Payment Review
+                        </div>
+                        <h2 className="mt-1 truncate text-2xl font-semibold tracking-tight text-slate-950">
+                          {selectedPayment?.request?.requestCode || "Payment proof"}
+                        </h2>
+                        {selectedPayment ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+                            <span>{selectedPayment.request?.tenant.name || "No partner"}</span>
+                            <span>{selectedPayment.invoice?.invoiceCode || "No invoice"}</span>
+                            <span>Submitted {formatDate(selectedPayment.submittedAt)}</span>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {selectedPayment ? (
+                          <RequestStatusBadge
+                            status={selectedPayment.status}
+                            kind="payment"
+                          />
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPaymentId(null)}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-orange-200 hover:text-orange-700"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="min-h-0 overflow-y-auto bg-slate-50/40 p-6">
+                      {selectedPayment ? (
+                        <div className="space-y-6">
+                          <div className="grid gap-4 md:grid-cols-3">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Request
+                              </div>
+                              <div className="mt-2 text-base font-semibold text-slate-950">
+                                {selectedPayment.request?.requestCode || "No request"}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Invoice
+                              </div>
+                              <div className="mt-2 text-base font-semibold text-slate-950">
+                                {selectedPayment.invoice?.invoiceCode || "No invoice"}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Submitted
+                              </div>
+                              <div className="mt-2 text-base font-semibold text-slate-950">
+                                {formatDate(selectedPayment.submittedAt)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Proof
+                              </div>
+                              <div className="mt-3 space-y-3 text-sm text-slate-600">
+                                {selectedPayment.proofUrl ? (
+                                  <Link
+                                    href={selectedPayment.proofUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center rounded-2xl border border-orange-200 bg-orange-50 px-4 py-2.5 font-semibold text-orange-700 transition hover:bg-orange-100"
+                                  >
+                                    Open Proof
+                                  </Link>
+                                ) : (
+                                  <div>No proof URL</div>
+                                )}
+                                <div>{selectedPayment.proofNote || "No note"}</div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Verification
+                              </div>
+                              <textarea
+                                value={paymentRemarks[selectedPayment.id] || ""}
+                                onChange={(event) =>
+                                  setPaymentRemarks((current) => ({
+                                    ...current,
+                                    [selectedPayment.id]: event.target.value,
+                                  }))
+                                }
+                                rows={4}
+                                placeholder="Verification remarks"
+                                className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                              />
+                              {selectedPayment.status === "SUBMITTED" ? (
+                                <div className="mt-3 flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      verifyPaymentMutation.mutate({
+                                        paymentId: selectedPayment.id,
+                                        approve: true,
+                                      })
+                                    }
+                                    disabled={verifyPaymentMutation.isPending}
+                                    className="inline-flex flex-1 items-center justify-center rounded-2xl bg-orange-500 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      verifyPaymentMutation.mutate({
+                                        paymentId: selectedPayment.id,
+                                        approve: false,
+                                      })
+                                    }
+                                    disabled={verifyPaymentMutation.isPending}
+                                    className="inline-flex flex-1 items-center justify-center rounded-2xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="mt-3 text-sm text-slate-500">
+                                  {selectedPayment.verifiedAt
+                                    ? `Resolved ${formatDate(selectedPayment.verifiedAt)}`
+                                    : "Already resolved"}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : null}
 
       <SkuProfileModal
