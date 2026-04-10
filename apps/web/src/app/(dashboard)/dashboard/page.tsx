@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { MetricCard } from "@/components/ui/card";
@@ -206,6 +206,46 @@ function computeCmRtsForecast(params: {
     params.codFeeDelivered -
     params.cogsAdjusted +
     params.cogsRts
+  );
+}
+
+type ExecutiveOverviewCardTone = "default" | "success" | "warning";
+
+const EXECUTIVE_CARD_TONE_MAP: Record<ExecutiveOverviewCardTone, string> = {
+  default: "bg-orange-50 text-orange-600 ring-orange-100",
+  success: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+  warning: "bg-amber-50 text-amber-600 ring-amber-100",
+};
+
+function ExecutiveOverviewCard({
+  label,
+  value,
+  icon,
+  tone = "default",
+}: {
+  label: string;
+  value: string | number;
+  icon: ReactNode;
+  tone?: ExecutiveOverviewCardTone;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            {label}
+          </p>
+          <p className="text-[1.75rem] font-semibold tracking-tight text-slate-950 tabular-nums">
+            {value}
+          </p>
+        </div>
+        <div
+          className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ring-1 ${EXECUTIVE_CARD_TONE_MAP[tone]}`}
+        >
+          {icon}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2320,57 +2360,41 @@ export default function DashboardPage() {
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <MetricCard
+        <ExecutiveOverviewCard
           label="Total Revenue"
           value={formatCurrency(execStats?.revenue)}
-          icon={<DollarSignIcon className="h-5 w-5" />}
+          icon={<DollarSignIcon className="h-4 w-4" />}
           tone="success"
-          className="h-full"
-          valueClassName="text-2xl"
         />
-        <MetricCard
+        <ExecutiveOverviewCard
           label="Total Sales"
           value={formatNumber(execStats?.purchases)}
-          helper="Orders placed"
-          icon={<TrendingUp className="h-5 w-5" />}
+          icon={<TrendingUp className="h-4 w-4" />}
           tone="default"
-          className="h-full"
-          valueClassName="text-2xl"
         />
-        <MetricCard
+        <ExecutiveOverviewCard
           label="Confirmed Sales"
           value={formatCurrency(execStats?.confirmed ?? 0)}
-          icon={<CheckCircle2 className="h-5 w-5" />}
+          icon={<CheckCircle2 className="h-4 w-4" />}
           tone="success"
-          className="h-full"
-          valueClassName="text-2xl"
         />
-        <MetricCard
+        <ExecutiveOverviewCard
           label="Ad Spend"
           value={formatCurrency(execStats?.ad_spend)}
-          helper="Tax inclusive if selected"
-          icon={<Coins className="h-5 w-5" />}
+          icon={<Coins className="h-4 w-4" />}
           tone="warning"
-          className="h-full"
-          valueClassName="text-2xl"
         />
-        <MetricCard
+        <ExecutiveOverviewCard
           label="AR %"
           value={formatPercent(execStats?.ar_pct)}
-          helper="Spend / Revenue"
-          icon={<PieChart className="h-5 w-5" />}
+          icon={<PieChart className="h-4 w-4" />}
           tone="default"
-          className="h-full"
-          valueClassName="text-2xl"
         />
-        <MetricCard
+        <ExecutiveOverviewCard
           label="CM (RTS 20%)"
           value={formatCurrency(execStats?.cm_rts_forecast)}
-          helper="Contribution margin forecast"
-          icon={<Zap className="h-5 w-5" />}
+          icon={<Zap className="h-4 w-4" />}
           tone="warning"
-          className="h-full"
-          valueClassName="text-2xl"
         />
       </div>
 
