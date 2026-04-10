@@ -2251,19 +2251,24 @@ export default function DashboardPage() {
   );
 
   const renderExecutiveDashboard = () => (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {execError && (
         <AlertBanner tone="error" message={execError} className="mb-2" />
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Executive Dashboard
-          </h1>
-          <p className="text-sm text-slate-600">
-            Challenge-driven KPI command center for team and member performance.
+      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Dashboard
           </p>
+          <div className="space-y-0.5">
+            <h1 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">
+              Executive Dashboard
+            </h1>
+            <p className="max-w-2xl text-[0.82rem] text-slate-500">
+              Challenge-driven KPI command center for team and member performance.
+            </p>
+          </div>
         </div>
         <DashboardDateControls
           range={range}
@@ -2308,7 +2313,7 @@ export default function DashboardPage() {
             },
           ]}
         />
-      </div>
+      </header>
 
       {execLoading && (
         <AlertBanner tone="info" message="Loading executive stats..." />
