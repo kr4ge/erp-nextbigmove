@@ -66,3 +66,28 @@
     z-index: 9999 !important;
   }
 }
+
+@media (prefers-color-scheme: dark) {
+  .kpi-datepicker-light .dark\:bg-slate-800,
+  .kpi-datepicker-light .dark\:bg-white\/5 {
+    background-color: #ffffff !important;
+  }
+
+  .kpi-datepicker-light .dark\:bg-white\/10,
+  .kpi-datepicker-light .dark\:hover\:bg-white\/10:hover,
+  .kpi-datepicker-light .dark\:focus\:bg-white\/10:focus {
+    background-color: #f8fafc !important;
+  }
+
+  .kpi-datepicker-light .dark\:text-white,
+  .kpi-datepicker-light .dark\:text-white\/80,
+  .kpi-datepicker-light .dark\:text-white\/70,
+  .kpi-datepicker-light .dark\:text-gray-700 {
+    color: #0f172a !important;
+  }
+
+  .kpi-datepicker-light .dark\:border-slate-600,
+  .kpi-datepicker-light .dark\:border-gray-700 {
+    border-color: #e2e8f0 !important;
+  }
+}

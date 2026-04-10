@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/emptystate";
 import {
   BarChart3,
+  CalendarDays,
   LinkIcon,
   StoreIcon,
   Zap,
@@ -1403,6 +1404,18 @@ export default function DashboardPage() {
     return `Returned ${formatShortDate(salesStartDate)}`;
   }, [salesStartDate, salesEndDate]);
 
+  const salesDateRangeIsToday = useMemo(
+    () => salesStartDate === today && salesEndDate === today,
+    [salesEndDate, salesStartDate, today],
+  );
+
+  const salesDateRangeButtonLabel = useMemo(() => {
+    if (salesStartDate === salesEndDate) {
+      return formatShortDate(salesStartDate);
+    }
+    return `${formatShortDate(salesStartDate)} - ${formatShortDate(salesEndDate)}`;
+  }, [salesEndDate, salesStartDate]);
+
   const toggleShop = (value: string) => {
     if (isAllShopsMode) {
       setIsAllShopsMode(false);
@@ -1693,6 +1706,12 @@ export default function DashboardPage() {
             <div className="relative">
               <Datepicker
                 value={salesRange}
+                useRange={false}
+                asSingle={false}
+                showShortcuts={false}
+                showFooter={false}
+                primaryColor="orange"
+                readOnly
                 onChange={(
                   val: { startDate?: unknown; endDate?: unknown } | null,
                 ) => {
@@ -1709,15 +1728,31 @@ export default function DashboardPage() {
                   setSalesStartDate(formatDatepickerValue(nextStartRaw, today));
                   setSalesEndDate(formatDatepickerValue(nextEndRaw, today));
                 }}
-                inputClassName="rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-10 text-sm text-slate-900 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                  salesDateRangeIsToday ? "w-10" : "w-[182px]"
+                }`}
                 containerClassName=""
                 popupClassName={(defaultClass: string) =>
-                  `${defaultClass} z-50`
+                  `${defaultClass} z-50 kpi-datepicker-light`
                 }
                 displayFormat="MM/DD/YYYY"
                 separator=" – "
-                toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                placeholder=""
+                toggleIcon={() => (
+                  <span className="flex w-full items-center gap-2 overflow-hidden">
+                    <CalendarDays className="h-4 w-4 shrink-0" />
+                    <span
+                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                        salesDateRangeIsToday
+                          ? "max-w-0 -translate-x-1 opacity-0"
+                          : "max-w-[130px] translate-x-0 opacity-100"
+                      }`}
+                    >
+                      {salesDateRangeButtonLabel}
+                    </span>
+                  </span>
+                )}
+                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                placeholder=" "
               />
             </div>
           </div>
