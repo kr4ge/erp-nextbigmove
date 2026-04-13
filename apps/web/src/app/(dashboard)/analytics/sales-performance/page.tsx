@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import apiClient from '@/lib/api-client';
 import { PageHeader } from '@/components/ui/page-header';
-import { Card } from '@/components/ui/card';
 import { AlertBanner } from '@/components/ui/feedback';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -35,6 +34,7 @@ import {
 } from '../_utils/metrics';
 import { useAnalyticsDateRange } from '../_hooks/use-analytics-date-range';
 import { analyticsOverviewApi } from '../_services/analytics-overview-api';
+import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import {
   type ProblematicDeliveryResponse,
   type SalesPerformanceOverviewResponse as OverviewResponse,
@@ -1127,6 +1127,9 @@ export default function SalesPerformancePage() {
   const riskCanNext = riskPage < totalRiskPages;
 
   const activeRowCount = tableSelection === 'summary' ? totalSummaryRows : totalStoreRows;
+  const selectedDeliveryViewLabel =
+    deliveryViewOptions.find((opt) => opt.key === deliveryViewSelection)?.label ||
+    'Delivery Monitoring';
 
   return (
     <div className="space-y-5">
@@ -1140,23 +1143,14 @@ export default function SalesPerformancePage() {
         description="Track performance by sales assignee and shop to understand upsell impact."
       />
 
-      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
-        <div className="flex flex-wrap items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <BarChart3 className="h-5 w-5" />
-            </span>
-            <p className="text-lg font-semibold text-slate-900">Monitoring</p>
-          </div>
-          <p className="text-sm text-slate-400">
-            Last updated:{' '}
-            <span className="font-medium text-slate-600">
-              {data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '—'}
-            </span>
-          </p>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
+      <DashboardSection
+        title="Sales Performance Monitoring"
+        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        contentClassName="space-y-5"
+      >
+        <div className="flex flex-wrap items-center gap-3">
           <AnalyticsMultiSelectPicker
             className="relative"
             selectedLabel={selectedLabel}
@@ -1228,7 +1222,7 @@ export default function SalesPerformancePage() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {isLoading
             ? Array.from({ length: metricDefinitions.length }).map((_, idx) => (
                 <AnalyticsMetricCardSkeleton key={idx} />
@@ -1270,10 +1264,16 @@ export default function SalesPerformancePage() {
                 );
               })}
         </div>
-      </Card>
+      </DashboardSection>
 
-      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
-        <div className="flex items-center justify-between mb-3 px-2">
+      <DashboardSection
+        title="Performance Breakdown"
+        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        meta={`${activeRowCount || 0} rows`}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        contentClassName="space-y-3"
+      >
+        <div className="flex items-center justify-between">
           <AnalyticsTableSelector
             className="relative"
             options={tableOptions}
@@ -1323,22 +1323,25 @@ export default function SalesPerformancePage() {
             renderSortLabel={renderSortLabel}
           />
         )}
-      </Card>
+      </DashboardSection>
 
-      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3 px-2">
+      <DashboardSection
+        title="Delivery Monitoring"
+        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        contentClassName="space-y-3"
+        meta={
           <div className="relative" data-delivery-menu="true">
             <button
               type="button"
               onClick={() => setShowDeliveryViewMenu((p) => !p)}
-              className="inline-flex items-center gap-1 text-lg font-semibold text-slate-900 hover:text-slate-700"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-orange-600"
             >
-              {deliveryViewOptions.find((opt) => opt.key === deliveryViewSelection)?.label ||
-                'Delivery Monitoring'}
-              <ChevronDown className="h-5 w-5 text-slate-500" />
+              {selectedDeliveryViewLabel}
+              <ChevronDown className="h-3.5 w-3.5" />
             </button>
             {showDeliveryViewMenu && (
-              <div className="absolute left-0 z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
                 {deliveryViewOptions.map((opt) => (
                   <button
                     key={opt.key}
@@ -1359,7 +1362,9 @@ export default function SalesPerformancePage() {
               </div>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+        }
+      >
+        <div className="flex flex-wrap items-center justify-end gap-3">
             <AnalyticsMultiSelectPicker
               className="relative"
               selectedLabel={selectedChartShopLabel}
@@ -1417,7 +1422,6 @@ export default function SalesPerformancePage() {
               />
             </div>
           </div>
-        </div>
         <div className="p-1 sm:p-2">
           {deliveryViewSelection === 'risk_confirmation' ? (
             <AnalyticsRiskConfirmationTable
@@ -1434,7 +1438,7 @@ export default function SalesPerformancePage() {
           ) : (
             <>
           <div className="mb-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
               <div className="px-1 pb-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">On Delivery</p>
                 <p className="text-3xl font-bold text-slate-900">
@@ -1454,7 +1458,7 @@ export default function SalesPerformancePage() {
                 </div>
               )}
             </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
               <div className="px-1 pb-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Undeliverable</p>
                 <p className="text-3xl font-bold text-slate-900">
@@ -1474,7 +1478,7 @@ export default function SalesPerformancePage() {
                 </div>
               )}
             </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
               <div className="px-1 pb-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   {deliveredInRangeLabel}
@@ -1496,7 +1500,7 @@ export default function SalesPerformancePage() {
                 </div>
               )}
             </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
               <div className="px-1 pb-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   {returnedInRangeLabel}
@@ -1520,7 +1524,7 @@ export default function SalesPerformancePage() {
             </div>
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-            <div className="xl:col-span-2 rounded-xl border border-slate-100 bg-slate-50/40 p-2">
+            <div className="xl:col-span-2 rounded-xl border border-slate-200 bg-slate-50/40 p-2">
               <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">RTS Reason Data</p>
               {isProblematicLoading ? (
                 <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
@@ -1582,7 +1586,7 @@ export default function SalesPerformancePage() {
                 </div>
               )}
             </div>
-            <div className="xl:col-span-3 rounded-xl border border-slate-100 bg-slate-50/40 p-2">
+            <div className="xl:col-span-3 rounded-xl border border-slate-200 bg-slate-50/40 p-2">
               <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Delivered vs RTS Trend</p>
               {isProblematicLoading ? (
                 <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
@@ -1598,7 +1602,7 @@ export default function SalesPerformancePage() {
             </>
           )}
         </div>
-      </Card>
+      </DashboardSection>
 
       <Dialog
         open={showDeleteModal}
@@ -1657,3 +1661,4 @@ export default function SalesPerformancePage() {
     </div>
   );
 }
+

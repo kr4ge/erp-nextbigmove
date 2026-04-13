@@ -1,11 +1,11 @@
 'use client';
 
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { Card } from '@/components/ui/card';
 import { AlertBanner } from '@/components/ui/feedback';
 import { Button } from '@/components/ui/button';
 import apiClient from '@/lib/api-client';
 import {
+  BarChart3,
   CalendarDays,
   Columns,
   Download,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/components/ui/toast';
+import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import { AnalyticsKpiVisibilityDialog } from '../_components/analytics-kpi-visibility-dialog';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
 import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
@@ -1133,20 +1134,14 @@ export default function SalesAnalyticsPage() {
         </div>
       </header>
 
-      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
-        <div className="flex flex-wrap items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-              <ShoppingBag className="h-5 w-5" />
-            </span>
-            <p className="text-lg font-semibold text-slate-900">Sales Monitoring</p>
-          </div>
-          <p className="text-sm text-slate-400">
-            Last updated: <span className="font-medium text-slate-600">{data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '—'}</span>
-          </p>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
+      <DashboardSection
+        title="Sales Monitoring"
+        icon={<ShoppingBag className="h-3.5 w-3.5 text-orange-500" />}
+        meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        contentClassName="space-y-5"
+      >
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-stretch">
               <AnalyticsMultiSelectPicker
                 className="relative [&>button]:h-10 [&>button]:rounded-r-none [&>button]:rounded-l-xl [&>button]:border-r-0 [&>button]:border-slate-200"
@@ -1340,7 +1335,7 @@ export default function SalesAnalyticsPage() {
           <AlertBanner tone="error" message={error} className="mt-4" />
         )}
 
-        <div className="mt-5 flex flex-col gap-3 xl:flex-row">
+        <div className="flex flex-col gap-3 xl:flex-row">
           {isLoading ? (
             <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 8 }).map((_, idx) => (
@@ -1370,7 +1365,7 @@ export default function SalesAnalyticsPage() {
             </>
           )}
         </div>
-        <div className="mt-4 flex flex-col gap-3 xl:flex-row">
+        <div className="flex flex-col gap-3 xl:flex-row">
           {isLoading ? (
             <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 3 }).map((_, idx) => (
@@ -1400,11 +1395,18 @@ export default function SalesAnalyticsPage() {
             </>
           )}
         </div>
-      </Card>
+      </DashboardSection>
 
       {/* Revenue per Product / Delivery Status */}
       <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-2">
+      <DashboardSection
+        title="Sales Breakdown"
+        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        contentClassName="space-y-3"
+      >
+        <div className="flex items-center justify-between">
           <AnalyticsTableSelector
             className="relative"
             options={tableOptions}
@@ -1475,7 +1477,7 @@ export default function SalesAnalyticsPage() {
             renderSortLabel={renderDeliverySortLabel}
           />
         )}
-      </Card>
+      </DashboardSection>
 
       <AnalyticsShareDialog
         open={shareOpen}
@@ -1508,3 +1510,4 @@ export default function SalesAnalyticsPage() {
     </div>
   );
 }
+

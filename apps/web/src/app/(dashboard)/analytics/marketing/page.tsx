@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '@/components/ui/page-header';
-import { Card } from '@/components/ui/card';
 import { AlertBanner } from '@/components/ui/feedback';
-import { Filter, Gauge, Share2 } from 'lucide-react';
+import { BarChart3, Filter, Gauge, Share2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import { AnalyticsShareDialog } from '../_components/analytics-share-dialog';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
 import {
@@ -366,6 +366,12 @@ export default function MarketingAnalyticsPage() {
   const topCreativeEnd = Math.min(topCreativePage * pageSize, totalTopCreatives);
   const topCreativeCanPrev = topCreativePage > 1;
   const topCreativeCanNext = topCreativePage < totalCreativePages;
+  const activeMarketingRowCount =
+    tableSelection === 'associates'
+      ? totalTopAssociates
+      : tableSelection === 'campaigns'
+        ? totalTopCampaigns
+        : totalTopCreatives;
 
   return (
     <div className="space-y-5">
@@ -374,22 +380,15 @@ export default function MarketingAnalyticsPage() {
         description="Monitor revenue, spend, and efficiency by marketing associate."
       />
 
-      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
-        {/* Header Row */}
-        <div className="flex flex-wrap items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-500">
-              <Gauge className="h-5 w-5" />
-            </span>
-            <p className="text-lg font-semibold text-slate-900">Monitoring</p>
-          </div>
-          <p className="text-sm text-slate-400">
-            Last updated: <span className="font-medium text-slate-600">{lastUpdatedLabel}</span>
-          </p>
-        </div>
-
+      <DashboardSection
+        title="Marketing Monitoring"
+        icon={<Gauge className="h-3.5 w-3.5 text-orange-500" />}
+        meta={`Last updated: ${lastUpdatedLabel}`}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        contentClassName="space-y-5"
+      >
         {/* Filters Row */}
-        <div className="flex flex-wrap items-start gap-x-8 mt-5">
+        <div className="flex flex-wrap items-start gap-x-8">
           {/* Marketing Associate */}
           <div>
             <p className="text-sm font-medium text-slate-700 mb-1.5">Marketing Associate</p>
@@ -492,7 +491,7 @@ export default function MarketingAnalyticsPage() {
           <AlertBanner tone="error" message={error} className="mt-4" />
         )}
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 mt-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {isLoading
             ? Array.from({ length: metricDefinitions.length }).map((_, idx) => (
                 <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 animate-pulse">
@@ -524,11 +523,17 @@ export default function MarketingAnalyticsPage() {
                 );
               })}
         </div>
-      </Card>
+      </DashboardSection>
 
       {/* Top Tables */}
-      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
-        <div className="flex items-center justify-between mb-3 px-2">
+      <DashboardSection
+        title="Marketing Breakdown"
+        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        meta={`${activeMarketingRowCount} rows`}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        contentClassName="space-y-3"
+      >
+        <div className="flex items-center justify-between">
           <AnalyticsTableSelector
             className="relative"
             options={tableOptions}
@@ -700,7 +705,7 @@ export default function MarketingAnalyticsPage() {
             </div>
           </AnalyticsTableShell>
         )}
-      </Card>
+      </DashboardSection>
       <AnalyticsShareDialog
         open={shareOpen}
         onOpenChange={setShareOpen}
