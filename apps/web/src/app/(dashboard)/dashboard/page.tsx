@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Coins,
   PieChart,
+  Lightbulb,
   DollarSignIcon,
   ClipboardList,
   Columns,
@@ -267,6 +268,7 @@ export default function DashboardPage() {
   const [excludeCancel, setExcludeCancel] = useState(false);
   const [excludeRestocking, setExcludeRestocking] = useState(false);
   const [excludeAbandoned, setExcludeAbandoned] = useState(false);
+  const [showAllWinning, setShowAllWinning] = useState(false);
   const [excludeRts, setExcludeRts] = useState(false);
   const [includeTax12, setIncludeTax12] = useState(true);
   const [includeTax1, setIncludeTax1] = useState(true);
@@ -1489,6 +1491,7 @@ export default function DashboardPage() {
           <DashboardSection
             title="Quick Actions"
             icon={<Zap className="h-3.5 w-3.5 text-orange-500" />}
+            className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
             contentClassName="space-y-3"
           >
             <p className="text-sm text-slate-600">
@@ -1520,6 +1523,7 @@ export default function DashboardPage() {
             <DashboardSection
               title="Recent Activity"
               icon={<TrendingUp className="h-3.5 w-3.5 text-orange-500" />}
+              className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
               meta={
                 <Button
                   variant="ghost"
@@ -1566,6 +1570,7 @@ export default function DashboardPage() {
             <DashboardSection
               title="Quick Links"
               icon={<LinkIcon className="h-3.5 w-3.5 text-orange-500" />}
+              className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
               meta={
                 <Button
                   variant="ghost"
@@ -2251,6 +2256,7 @@ export default function DashboardPage() {
       <DashboardSection
         title="KPI Monitoring"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
         contentClassName="space-y-3"
       >
         {myStatsLoading ? (
@@ -2281,7 +2287,6 @@ export default function DashboardPage() {
                     format={card.format}
                     delta={card.delta}
                     precision={card.format === "percent" ? 1 : 2}
-                    className="min-h-[92px]"
                   />
                 ))}
               </div>
@@ -2297,7 +2302,6 @@ export default function DashboardPage() {
                     format={card.format}
                     delta={card.delta}
                     precision={card.format === "percent" ? 1 : 2}
-                    className="min-h-[92px]"
                   />
                 ))}
               </div>
@@ -2310,6 +2314,86 @@ export default function DashboardPage() {
           </div>
         )}
       </DashboardSection>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <DashboardSection
+          title="Winning Creatives"
+          icon={<Lightbulb className="h-3.5 w-3.5 text-orange-500" />}
+          className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+          meta={
+            myStats?.winning_creatives_list &&
+            myStats.winning_creatives_list.length > 3 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-auto px-0 py-0 text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+                onClick={() => setShowAllWinning((prev) => !prev)}
+              >
+                {showAllWinning ? "Collapse" : "View all"}
+              </Button>
+            ) : null
+          }
+          contentClassName="space-y-2"
+        >
+          {myStats?.winning_creatives_list &&
+          myStats.winning_creatives_list.length > 0 ? (
+            (showAllWinning
+              ? myStats.winning_creatives_list
+              : myStats.winning_creatives_list.slice(0, 3)
+            ).map((item, index) => (
+              <div
+                key={`${item.adId || "ad"}-${index}`}
+                className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5"
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-900">
+                    {item.adName || "Unnamed creative"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {item.adId || "No Ad ID"}
+                  </p>
+                </div>
+                <StatusBadge status="ACTIVE" />
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-slate-600">
+              No winning creatives in this range.
+            </p>
+          )}
+        </DashboardSection>
+
+        <DashboardSection
+          title="Quick Links"
+          icon={<LinkIcon className="h-3.5 w-3.5 text-orange-500" />}
+          className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+          meta={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="!h-auto !px-0 !py-0 text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+            >
+              Manage
+            </Button>
+          }
+          contentClassName="space-y-2"
+        >
+          {[
+            { label: "Marketer leaderboard", href: "#marketer" },
+            { label: "Team leaderboard", href: "#team" },
+            { label: "Marketing analytics", href: "/analytics/marketing" },
+          ].map((link) => (
+            <a
+              key={`${link.href}-${link.label}`}
+              href={link.href}
+              className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-900 hover:bg-slate-50"
+            >
+              <span>{link.label}</span>
+              <span className="text-slate-400">&rarr;</span>
+            </a>
+          ))}
+        </DashboardSection>
+      </div>
 
       <NameConventionCard
         teamCode={teamCode}
@@ -2532,6 +2616,7 @@ export default function DashboardPage() {
       <DashboardSection
         title="KPI Monitoring"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
         contentClassName="space-y-3"
       >
         {leaderStatsLoading ? (
