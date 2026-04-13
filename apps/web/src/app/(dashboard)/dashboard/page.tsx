@@ -1,9 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
-import { MetricCard } from "@/components/ui/card";
 import { AlertBanner } from "@/components/ui/feedback";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/emptystate";
@@ -1441,10 +1439,21 @@ export default function DashboardPage() {
 
   const renderDefaultDashboard = () => (
     <>
-      <PageHeader
-        title="Dashboard"
-        description="Welcome back! Here’s what’s happening with your business today."
-      />
+      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Dashboard
+          </p>
+          <div className="space-y-0.5">
+            <h1 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">
+              Dashboard
+            </h1>
+            <p className="text-[0.82rem] text-slate-500">
+              Welcome back! Here’s what’s happening with your business today.
+            </p>
+          </div>
+        </div>
+      </header>
       {error && <AlertBanner tone="error" message={error} className="mb-2" />}
       {isLoading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600 shadow-sm">
@@ -1452,31 +1461,27 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <ExecutiveOverviewCard
               label="Total Users"
-              value={stats.totalUsers}
-              helper="Active this month"
-              icon={<Users className="h-5 w-5" />}
-              tone="default"
+              value={formatNumber(stats.totalUsers)}
+              icon={<Users className="h-4 w-4" />}
             />
-            <MetricCard
+            <ExecutiveOverviewCard
               label="Integrations"
-              value={stats.integrationCount}
-              helper="Meta + POS"
-              icon={<LinkIcon className="h-5 w-5" />}
+              value={formatNumber(stats.integrationCount)}
+              icon={<LinkIcon className="h-4 w-4" />}
             />
-            <MetricCard
+            <ExecutiveOverviewCard
               label="Stores"
               value="—"
-              helper="Connected POS stores"
-              icon={<StoreIcon className="h-5 w-5" />}
+              icon={<StoreIcon className="h-4 w-4" />}
+              tone="success"
             />
-            <MetricCard
+            <ExecutiveOverviewCard
               label="Account Status"
               value={accountStatus}
-              helper="Manage billing in settings"
-              icon={<BarChart3 className="h-5 w-5" />}
+              icon={<BarChart3 className="h-4 w-4" />}
               tone="warning"
             />
           </div>
@@ -1516,7 +1521,11 @@ export default function DashboardPage() {
               title="Recent Activity"
               icon={<TrendingUp className="h-3.5 w-3.5 text-orange-500" />}
               meta={
-                <Button variant="ghost" size="sm">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-0 py-0 text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+                >
                   View all
                 </Button>
               }
@@ -1558,7 +1567,11 @@ export default function DashboardPage() {
               title="Quick Links"
               icon={<LinkIcon className="h-3.5 w-3.5 text-orange-500" />}
               meta={
-                <Button variant="ghost" size="sm">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-0 py-0 text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+                >
                   Manage
                 </Button>
               }
