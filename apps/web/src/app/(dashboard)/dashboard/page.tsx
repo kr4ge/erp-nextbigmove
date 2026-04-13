@@ -2566,7 +2566,6 @@ export default function DashboardPage() {
                     format={card.format}
                     delta={card.delta}
                     precision={card.format === "percent" ? 1 : 2}
-                    className="min-h-[92px]"
                   />
                 ))}
               </div>
@@ -2582,7 +2581,6 @@ export default function DashboardPage() {
                     format={card.format}
                     delta={card.delta}
                     precision={card.format === "percent" ? 1 : 2}
-                    className="min-h-[92px]"
                   />
                 ))}
               </div>
