@@ -190,7 +190,6 @@ export default function SalesAnalyticsPage() {
   const [rtsForecastPct, setRtsForecastPct] = useState<number>(20);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const filterMenuContentRef = useRef<HTMLDivElement | null>(null);
-  const scrollStripRef = useRef<HTMLDivElement | null>(null);
   const fetchDataRef = useRef<((opts?: { silent?: boolean }) => Promise<void>) | null>(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showKpiVisibilityModal, setShowKpiVisibilityModal] = useState(false);
@@ -1070,10 +1069,13 @@ export default function SalesAnalyticsPage() {
   };
 
   const handleWheelScroll = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (!scrollStripRef.current) return;
+    const container = e.currentTarget;
+    const hasHorizontalOverflow = container.scrollWidth > container.clientWidth + 1;
+    if (!hasHorizontalOverflow) return;
+
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
       e.preventDefault();
-      scrollStripRef.current.scrollLeft += e.deltaY;
+      container.scrollLeft += e.deltaY;
     }
   };
 
@@ -1108,7 +1110,7 @@ export default function SalesAnalyticsPage() {
         }
         tooltip={tooltip}
         tooltipMode={m.key === 'contribution_margin' ? 'popover' : 'hover'}
-        className="min-w-[190px]"
+        className="w-full xl:min-w-[190px] xl:w-auto"
       />
     );
   };
@@ -1338,11 +1340,11 @@ export default function SalesAnalyticsPage() {
           <AlertBanner tone="error" message={error} className="mt-4" />
         )}
 
-        <div className="mt-5 flex gap-3">
+        <div className="mt-5 flex flex-col gap-3 xl:flex-row">
           {isLoading ? (
-            <div className="flex gap-3 w-full">
+            <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 8 }).map((_, idx) => (
-                <AnalyticsMetricCardSkeleton key={idx} className="min-w-[180px]" />
+                <AnalyticsMetricCardSkeleton key={idx} className="w-full xl:min-w-[180px]" />
               ))}
             </div>
           ) : (
@@ -1355,11 +1357,10 @@ export default function SalesAnalyticsPage() {
                 <>
                   {leftCard && renderCard(leftCard)}
                   <div
-                    className="flex-1 overflow-x-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 [&::-webkit-scrollbar]:hidden [scrollbar-width:'none']"
-                    ref={scrollStripRef}
+                    className="w-full max-h-[30vh] overflow-y-auto overscroll-contain [scrollbar-width:thin] [scrollbar-color:rgb(148_163_184_/_0.45)_transparent] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400/40 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400/60 xl:flex-1 xl:max-h-none xl:overflow-x-auto xl:overflow-y-hidden xl:[scrollbar-width:none] xl:[&::-webkit-scrollbar]:h-0 xl:[&::-webkit-scrollbar]:w-0"
                     onWheel={handleWheelScroll}
                   >
-                    <div className="flex gap-3 min-w-full">
+                    <div className="flex flex-col gap-3 xl:min-w-full xl:flex-row">
                       {middleCards.map((m) => renderCard(m))}
                     </div>
                   </div>
@@ -1369,11 +1370,11 @@ export default function SalesAnalyticsPage() {
             </>
           )}
         </div>
-        <div className="mt-4 flex flex-wrap gap-3">
+        <div className="mt-4 flex flex-col gap-3 xl:flex-row">
           {isLoading ? (
-            <div className="flex gap-3 w-full">
+            <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 3 }).map((_, idx) => (
-                <AnalyticsMetricCardSkeleton key={`sec-skel-${idx}`} className="min-w-[190px]" />
+                <AnalyticsMetricCardSkeleton key={`sec-skel-${idx}`} className="w-full xl:min-w-[190px]" />
               ))}
             </div>
           ) : (
@@ -1382,15 +1383,15 @@ export default function SalesAnalyticsPage() {
                 <>
                   {leftSecondary && renderCard(leftSecondary)}
                   <div
-                    className="flex-1 overflow-x-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 [&::-webkit-scrollbar]:hidden [scrollbar-width:'none']"
+                    className="w-full max-h-[30vh] overflow-y-auto overscroll-contain [scrollbar-width:thin] [scrollbar-color:rgb(148_163_184_/_0.45)_transparent] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400/40 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400/60 xl:flex-1 xl:max-h-none xl:overflow-x-auto xl:overflow-y-hidden xl:[scrollbar-width:none] xl:[&::-webkit-scrollbar]:h-0 xl:[&::-webkit-scrollbar]:w-0"
                     onWheel={handleWheelScroll}
                   >
-                    <div className="flex gap-3 min-w-full">
+                    <div className="flex flex-col gap-3 xl:min-w-full xl:flex-row">
                       {middleSecondary.map((m) => renderCard(m))}
                     </div>
                   </div>
                   {fixedRightSecondary.length > 0 && (
-                    <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex w-full flex-col gap-3 xl:w-auto xl:flex-row">
                       {fixedRightSecondary.map((m) => renderCard(m))}
                     </div>
                   )}
