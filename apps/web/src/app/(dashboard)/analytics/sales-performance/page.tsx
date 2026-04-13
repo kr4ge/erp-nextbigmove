@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { BarChart3, ChevronDown, Trash2 } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronDown, Trash2 } from 'lucide-react';
 import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
 import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
@@ -144,7 +144,7 @@ const areRecordsEqual = (a: Record<string, string>, b: Record<string, string>) =
 };
 
 export default function SalesPerformancePage() {
-  const { range, startDate, endDate, handleDateRangeChange } = useAnalyticsDateRange();
+  const { today, range, startDate, endDate, handleDateRangeChange } = useAnalyticsDateRange();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -200,6 +200,17 @@ export default function SalesPerformancePage() {
 
   const selectedChartShopLabel =
     isAllChartShopsMode ? 'All shops' : `${selectedChartShops.length} selected`;
+
+  const salesPerformanceDateRangeIsToday = startDate === today && endDate === today;
+  const formatDateRangeButtonDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-');
+    if (!year || !month || !day) return dateStr;
+    return `${month.padStart(2, '0')}/${day.padStart(2, '0')}/${year}`;
+  };
+  const salesPerformanceDateRangeButtonLabel =
+    startDate === endDate
+      ? formatDateRangeButtonDate(startDate)
+      : `${formatDateRangeButtonDate(startDate)} - ${formatDateRangeButtonDate(endDate)}`;
 
   useEffect(() => {
     const handleDeliveryMenuClose = (event: MouseEvent) => {
@@ -1120,6 +1131,11 @@ export default function SalesPerformancePage() {
   return (
     <div className="space-y-5">
       <PageHeader
+        breadcrumbs={
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Analytics
+          </span>
+        }
         title="Sales Performance"
         description="Track performance by sales assignee and shop to understand upsell impact."
       />
@@ -1140,63 +1156,78 @@ export default function SalesPerformancePage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-end gap-x-8 gap-y-4 mt-5">
-          <div>
-            <p className="text-sm font-medium text-slate-700 mb-1.5">Sales Assignee</p>
-            <AnalyticsMultiSelectPicker
-              className="relative"
-              selectedLabel={selectedLabel}
-              selectTitle="Select assignees"
-              options={assigneePickerOptions}
-              allChecked={isAllAssigneesMode}
-              isChecked={(value) => resolvedSelection.includes(value)}
-              onToggleAll={(checked) => {
-                setIsAllAssigneesMode(checked);
-                setSelectedAssignees([]);
-              }}
-              onToggle={toggleAssignee}
-              onOnly={(value) => {
-                setIsAllAssigneesMode(false);
-                setSelectedAssignees([value]);
-              }}
-              onClear={() => {
-                setIsAllAssigneesMode(true);
-                setSelectedAssignees([]);
-              }}
-            />
-          </div>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <AnalyticsMultiSelectPicker
+            className="relative"
+            selectedLabel={selectedLabel}
+            selectTitle="Select assignees"
+            options={assigneePickerOptions}
+            allChecked={isAllAssigneesMode}
+            isChecked={(value) => resolvedSelection.includes(value)}
+            onToggleAll={(checked) => {
+              setIsAllAssigneesMode(checked);
+              setSelectedAssignees([]);
+            }}
+            onToggle={toggleAssignee}
+            onOnly={(value) => {
+              setIsAllAssigneesMode(false);
+              setSelectedAssignees([value]);
+            }}
+            onClear={() => {
+              setIsAllAssigneesMode(true);
+              setSelectedAssignees([]);
+            }}
+          />
 
-          <div className="flex flex-col">
-            <p className="text-sm font-medium text-slate-700 mb-1.5">Date range</p>
-            <div className="flex items-end gap-2">
-              <div className="relative">
-                <Datepicker
-                  value={range}
-                  onChange={handleDateRangeChange}
-                  inputClassName="rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
-                  containerClassName=""
-                  popupClassName={(defaultClass: string) => `${defaultClass} z-50`}
-                  displayFormat="MM/DD/YYYY"
-                  separator=" – "
-                  toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  placeholder=""
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setDeleteError('');
-                  setShowDeleteModal(true);
-                }}
-                className="inline-flex items-center justify-center rounded-lg border border-rose-200 px-2.5 py-2 text-rose-600 bg-rose-50 hover:border-rose-300 hover:text-rose-700"
-                aria-label="Delete POS orders in range"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Datepicker
+                value={range}
+                onChange={handleDateRangeChange}
+                useRange={false}
+                asSingle={false}
+                showShortcuts={false}
+                showFooter={false}
+                primaryColor="orange"
+                readOnly
+                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                  salesPerformanceDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
+                }`}
+                containerClassName=""
+                popupClassName={(defaultClass: string) => `${defaultClass} z-50 kpi-datepicker-light`}
+                displayFormat="MM/DD/YYYY"
+                separator=" - "
+                toggleIcon={() => (
+                  <span className="flex w-full items-center gap-2 overflow-hidden">
+                    <CalendarDays className="h-4 w-4 shrink-0" />
+                    <span
+                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                        salesPerformanceDateRangeIsToday
+                          ? 'max-w-0 -translate-x-1 opacity-0'
+                          : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
+                      }`}
+                    >
+                      {salesPerformanceDateRangeButtonLabel}
+                    </span>
+                  </span>
+                )}
+                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                placeholder=" "
+              />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteError('');
+                setShowDeleteModal(true);
+              }}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:border-rose-300 hover:text-rose-700"
+              aria-label="Delete POS orders in range"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
           </div>
         </div>
-
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-5">
           {isLoading
             ? Array.from({ length: metricDefinitions.length }).map((_, idx) => (
@@ -1354,13 +1385,35 @@ export default function SalesPerformancePage() {
               <Datepicker
                 value={range}
                 onChange={handleDateRangeChange}
-                inputClassName="w-[220px] rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
+                useRange={false}
+                asSingle={false}
+                showShortcuts={false}
+                showFooter={false}
+                primaryColor="orange"
+                readOnly
+                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                  salesPerformanceDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
+                }`}
                 containerClassName=""
-                popupClassName={(defaultClass: string) => `${defaultClass} z-50`}
+                popupClassName={(defaultClass: string) => `${defaultClass} z-50 kpi-datepicker-light`}
                 displayFormat="MM/DD/YYYY"
-                separator=" – "
-                toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                placeholder=""
+                separator=" - "
+                toggleIcon={() => (
+                  <span className="flex w-full items-center gap-2 overflow-hidden">
+                    <CalendarDays className="h-4 w-4 shrink-0" />
+                    <span
+                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                        salesPerformanceDateRangeIsToday
+                          ? 'max-w-0 -translate-x-1 opacity-0'
+                          : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
+                      }`}
+                    >
+                      {salesPerformanceDateRangeButtonLabel}
+                    </span>
+                  </span>
+                )}
+                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                placeholder=" "
               />
             </div>
           </div>
