@@ -1615,6 +1615,7 @@ export default function DashboardPage() {
         title="Monitoring"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
         meta={`Last updated: ${salesData?.lastUpdatedAt ? new Date(salesData.lastUpdatedAt).toLocaleString() : "—"}`}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
         contentClassName="space-y-4"
       >
         <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
@@ -1791,6 +1792,7 @@ export default function DashboardPage() {
         title="Sales Performance"
         icon={<TrendingUp className="h-3.5 w-3.5 text-orange-500" />}
         meta={`${salesData?.rows?.length || 0} rows`}
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
         contentClassName="p-0"
       >
         <div className="overflow-hidden rounded-b-xl">
@@ -1907,6 +1909,7 @@ export default function DashboardPage() {
         title="Delivery Monitoring"
         icon={<ClipboardList className="h-3.5 w-3.5 text-orange-500" />}
         meta="Scoped to your matched sales assignee and selected shops"
+        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-end">
@@ -1919,7 +1922,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               On Delivery
             </p>
@@ -1932,7 +1935,7 @@ export default function DashboardPage() {
                 salesProblematicData?.onDeliveryAllTime?.totalCod || 0,
               )}
             </p>
-            <div className="mt-2 overflow-hidden rounded-lg border border-slate-100 bg-white">
+            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
               {salesLoading ? (
                 <div className="h-[140px] animate-pulse" />
               ) : (salesProblematicData?.onDeliveryTrend?.length || 0) > 0 ? (
@@ -1948,7 +1951,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Undeliverable
             </p>
@@ -1963,7 +1966,7 @@ export default function DashboardPage() {
                 salesProblematicData?.undeliverableAllTime?.totalCod || 0,
               )}
             </p>
-            <div className="mt-2 overflow-hidden rounded-lg border border-slate-100 bg-white">
+            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
               {salesLoading ? (
                 <div className="h-[140px] animate-pulse" />
               ) : (salesProblematicData?.undeliverableTrend?.length || 0) >
@@ -1982,7 +1985,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               {salesDeliveredInRangeLabel}
             </p>
@@ -1995,7 +1998,7 @@ export default function DashboardPage() {
                 salesProblematicData?.deliveredInRange?.totalCod || 0,
               )}
             </p>
-            <div className="mt-2 overflow-hidden rounded-lg border border-slate-100 bg-white">
+            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
               {salesLoading ? (
                 <div className="h-[140px] animate-pulse" />
               ) : (salesProblematicData?.deliveredInRangeTrend?.length || 0) >
@@ -2012,7 +2015,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               {salesReturnedInRangeLabel}
             </p>
@@ -2025,7 +2028,7 @@ export default function DashboardPage() {
                 salesProblematicData?.returnedInRange?.totalCod || 0,
               )}
             </p>
-            <div className="mt-2 overflow-hidden rounded-lg border border-slate-100 bg-white">
+            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
               {salesLoading ? (
                 <div className="h-[140px] animate-pulse" />
               ) : (salesProblematicData?.returnedInRangeTrend?.length || 0) >
@@ -2044,7 +2047,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
-          <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 lg:col-span-2">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 lg:col-span-2">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
               RTS Reason Data
             </p>
@@ -2076,7 +2079,7 @@ export default function DashboardPage() {
                   onEvents={salesSunburstEvents}
                   style={{ height: 420 }}
                 />
-                <div className="mt-2 min-h-[76px] rounded-lg border border-slate-100 bg-white px-3 py-2">
+                <div className="mt-2 min-h-[76px] rounded-lg border border-slate-200 bg-white px-3 py-2">
                   {salesSunburstHoverInfo ? (
                     <div className="space-y-1">
                       <div className="flex min-w-0 items-start gap-2">
@@ -2115,7 +2118,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 lg:col-span-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 lg:col-span-3">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
               Delivered vs RTS Trend
             </p>

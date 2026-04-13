@@ -47,7 +47,7 @@ export function DashboardSection({
           {title}
         </h4>
         {typeof meta === "string" ? (
-          <span className="ml-auto min-w-0 text-[10px] text-slate-500">
+          <span className="ml-auto hidden min-w-0 text-[10px] text-slate-500 sm:inline">
             {meta}
           </span>
         ) : meta ? (
