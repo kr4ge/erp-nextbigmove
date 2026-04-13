@@ -1595,10 +1595,21 @@ export default function DashboardPage() {
 
   const renderSalesDashboard = () => (
     <div className="space-y-4">
-      <PageHeader
-        title="Sales Dashboard"
-        description="Your performance overview based on the selected date range."
-      />
+      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Dashboard
+          </p>
+          <div className="space-y-0.5">
+            <h1 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">
+              Sales Dashboard
+            </h1>
+            <p className="text-[0.82rem] text-slate-500">
+              Your performance overview based on the selected date range.
+            </p>
+          </div>
+        </div>
+      </header>
 
       <DashboardSection
         title="Monitoring"
@@ -1761,51 +1772,18 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {salesLoading
             ? Array.from({ length: salesMetricDefinitions.length }).map(
-                (_, idx) => (
-                  <div
-                    key={idx}
-                    className="animate-pulse rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2.5"
-                  >
-                    <div className="h-3 w-20 bg-slate-200 rounded" />
-                    <div className="mt-1.5 h-5 w-16 bg-slate-200 rounded" />
-                    <div className="mt-1 h-2.5 w-14 bg-slate-200 rounded" />
-                  </div>
-                ),
+                (_, idx) => <AnalyticsMetricCardSkeleton key={idx} />,
               )
-            : salesMetrics.map((m) => {
-                const delta = m.delta;
-                const deltaLabel =
-                  delta === null
-                    ? "N/A"
-                    : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}%`;
-                const deltaColor =
-                  delta === null
-                    ? "text-slate-400"
-                    : delta >= 0
-                      ? "text-emerald-600"
-                      : "text-rose-500";
-                return (
-                  <div
-                    key={m.key}
-                    className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5"
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      {m.label}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
-                      {formatSalesValue(m.current, m.format)}
-                    </p>
-                    <p
-                      className={`mt-0.5 text-[10px] tabular-nums ${deltaColor}`}
-                    >
-                      {deltaLabel}
-                      {salesData?.rangeDays
-                        ? ` from previous ${salesData.rangeDays} day${salesData.rangeDays > 1 ? "s" : ""}`
-                        : ""}
-                    </p>
-                  </div>
-                );
-              })}
+            : salesMetrics.map((m) => (
+                <AnalyticsMetricCard
+                  key={m.key}
+                  label={m.label}
+                  value={m.current}
+                  format={m.format}
+                  precision={m.format === "percent" ? 1 : 2}
+                  delta={m.delta}
+                />
+              ))}
         </div>
       </DashboardSection>
 
