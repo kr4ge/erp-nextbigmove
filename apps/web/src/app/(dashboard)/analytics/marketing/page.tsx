@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '@/components/ui/page-header';
 import { AlertBanner } from '@/components/ui/feedback';
-import { BarChart3, Filter, Gauge, Share2 } from 'lucide-react';
+import { BarChart3, CalendarDays, Filter, Gauge, Share2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import { AnalyticsShareDialog } from '../_components/analytics-share-dialog';
@@ -105,7 +105,7 @@ const areRecordsEqual = (a: Record<string, string>, b: Record<string, string>) =
 };
 
 export default function MarketingAnalyticsPage() {
-  const { range, startDate, endDate, handleDateRangeChange, syncDateRangeFromApi } =
+  const { today, range, startDate, endDate, handleDateRangeChange, syncDateRangeFromApi } =
     useAnalyticsDateRange();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -317,6 +317,16 @@ export default function MarketingAnalyticsPage() {
       ? 'All associates'
       : `${selectedAssociates.length} selected`;
   const isChecked = (norm: string) => isAllAssociatesMode || selectedAssociates.includes(norm);
+  const marketingDateRangeIsToday = startDate === today && endDate === today;
+  const formatDateRangeButtonDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-');
+    if (!year || !month || !day) return dateStr;
+    return `${month.padStart(2, '0')}/${day.padStart(2, '0')}/${year}`;
+  };
+  const marketingDateRangeButtonLabel =
+    startDate === endDate
+      ? formatDateRangeButtonDate(startDate)
+      : `${formatDateRangeButtonDate(startDate)} - ${formatDateRangeButtonDate(endDate)}`;
 
   const metrics = data ? metricDefinitions.map((def) => {
     const current = data.kpis[def.key] ?? 0;
@@ -376,6 +386,11 @@ export default function MarketingAnalyticsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
+        breadcrumbs={
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Analytics
+          </span>
+        }
         title="Marketing Analytics"
         description="Monitor revenue, spend, and efficiency by marketing associate."
       />
@@ -387,13 +402,10 @@ export default function MarketingAnalyticsPage() {
         className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
         contentClassName="space-y-5"
       >
-        {/* Filters Row */}
-        <div className="flex flex-wrap items-start gap-x-8">
-          {/* Marketing Associate */}
-          <div>
-            <p className="text-sm font-medium text-slate-700 mb-1.5">Marketing Associate</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-stretch">
             <AnalyticsMultiSelectPicker
-              className="relative"
+              className="relative [&>button]:h-10 [&>button]:rounded-r-none [&>button]:rounded-l-xl [&>button]:border-r-0 [&>button]:border-slate-200"
               selectedLabel={selectedAssociateLabel}
               selectTitle="Select associates"
               options={associatePickerOptions}
@@ -410,83 +422,97 @@ export default function MarketingAnalyticsPage() {
               }}
               onClear={handleResetAssociates}
             />
-          </div>
-
-          {/* Date Range */}
-          <div>
-            <p className="text-sm font-medium text-slate-700 mb-1.5">Date range</p>
-            <div className="flex items-center gap-2">
-              <div className="relative" ref={filterMenuRef}>
-                <Datepicker
-                  value={range}
-                  onChange={handleDateRangeChange}
-                  inputClassName="rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
-                  containerClassName=""
-                  popupClassName={(defaultClass) => `${defaultClass} z-50`}
-                  displayFormat="MM/DD/YYYY"
-                  separator=" – "
-                  toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  placeholder=""
-                />
-              </div>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowFilterMenu((p) => !p)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-2 text-slate-600 bg-white hover:border-slate-300"
-                >
-                  <Filter className="h-4 w-4" />
-                  <span className="text-sm"></span>
-                </button>
-                {canShare && (
-                  <button
-                    type="button"
-                    onClick={openShareModal}
-                    className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-2 py-2 text-slate-600 bg-white hover:border-slate-300 ml-2"
-                    aria-label="Share analytics"
-                  >
-                    <Share2 className="h-4 w-4" />
-                  </button>
-                )}
-                {showFilterMenu && (
-                  <div
-                    ref={filterMenuContentRef}
-                    className="absolute right-0 mt-2 w-60 rounded-xl border border-slate-200 bg-white shadow-lg z-30 p-3 space-y-3"
-                  >
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        className="rounded border-slate-300"
-                        checked={excludeCanceled}
-                        onChange={(e) => setExcludeCanceled(e.target.checked)}
-                      />
-                      <span className="text-sm text-slate-800">Exclude Canceled</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        className="rounded border-slate-300"
-                        checked={excludeRestocking}
-                        onChange={(e) => setExcludeRestocking(e.target.checked)}
-                      />
-                      <span className="text-sm text-slate-800">Exclude Restocking</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        className="rounded border-slate-300"
-                        checked={excludeAbandoned}
-                        onChange={(e) => setExcludeAbandoned(e.target.checked)}
-                      />
-                      <span className="text-sm text-slate-800">Exclude Abandoned</span>
-                    </label>
-                  </div>
-                )}
-              </div>
+            <div className="relative" ref={filterMenuContentRef}>
+              <button
+                type="button"
+                onClick={() => setShowFilterMenu((p) => !p)}
+                className="inline-flex h-10 items-center justify-center rounded-r-xl rounded-l-none border border-slate-200 bg-white px-3 text-slate-600 hover:border-orange-200 hover:text-orange-700"
+                aria-label="Filters"
+              >
+                <Filter className="h-4 w-4" />
+              </button>
+              {showFilterMenu && (
+                <div className="absolute right-0 top-full mt-2 w-60 rounded-xl border border-slate-200 bg-white p-3 space-y-3 shadow-lg z-30">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                      checked={excludeCanceled}
+                      onChange={(e) => setExcludeCanceled(e.target.checked)}
+                    />
+                    <span className="text-sm text-slate-800">Exclude Canceled</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                      checked={excludeRestocking}
+                      onChange={(e) => setExcludeRestocking(e.target.checked)}
+                    />
+                    <span className="text-sm text-slate-800">Exclude Restocking</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                      checked={excludeAbandoned}
+                      onChange={(e) => setExcludeAbandoned(e.target.checked)}
+                    />
+                    <span className="text-sm text-slate-800">Exclude Abandoned</span>
+                  </label>
+                </div>
+              )}
             </div>
           </div>
-        </div>
 
+          <div className="flex items-center gap-2">
+            <div className="relative" ref={filterMenuRef}>
+              <Datepicker
+                value={range}
+                onChange={handleDateRangeChange}
+                useRange={false}
+                asSingle={false}
+                showShortcuts={false}
+                showFooter={false}
+                primaryColor="orange"
+                readOnly
+                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                  marketingDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
+                }`}
+                containerClassName=""
+                popupClassName={(defaultClass) => `${defaultClass} z-50 kpi-datepicker-light`}
+                displayFormat="MM/DD/YYYY"
+                separator=" - "
+                toggleIcon={() => (
+                  <span className="flex w-full items-center gap-2 overflow-hidden">
+                    <CalendarDays className="h-4 w-4 shrink-0" />
+                    <span
+                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                        marketingDateRangeIsToday
+                          ? 'max-w-0 -translate-x-1 opacity-0'
+                          : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
+                      }`}
+                    >
+                      {marketingDateRangeButtonLabel}
+                    </span>
+                  </span>
+                )}
+                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                placeholder=" "
+              />
+            </div>
+            {canShare && (
+              <button
+                type="button"
+                onClick={openShareModal}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                aria-label="Share analytics"
+              >
+                <Share2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
         {error && (
           <AlertBanner tone="error" message={error} className="mt-4" />
         )}
@@ -721,3 +747,4 @@ export default function MarketingAnalyticsPage() {
     </div>
   );
 }
+
