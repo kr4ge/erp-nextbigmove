@@ -6,6 +6,8 @@ import { AlertBanner } from '@/components/ui/feedback';
 import { BarChart3, CalendarDays, Filter, Gauge, Share2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { DashboardSection } from '../../dashboard/_components/dashboard-section';
+import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
+import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
 import { AnalyticsShareDialog } from '../_components/analytics-share-dialog';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
 import {
@@ -24,7 +26,6 @@ import { useWorkflowTenantEvent } from '../_hooks/use-workflow-tenant-event';
 import { analyticsOverviewApi } from '../_services/analytics-overview-api';
 import {
   formatDeltaPercent,
-  formatMetricValue,
   formatPhpCurrency,
   toTitleCase,
 } from '../_utils/metrics';
@@ -517,35 +518,20 @@ export default function MarketingAnalyticsPage() {
           <AlertBanner tone="error" message={error} className="mt-4" />
         )}
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {isLoading
             ? Array.from({ length: metricDefinitions.length }).map((_, idx) => (
-                <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 animate-pulse">
-                  <div className="h-3 w-20 bg-slate-200 rounded" />
-                  <div className="mt-1.5 h-5 w-16 bg-slate-200 rounded" />
-                  <div className="mt-1 h-2.5 w-14 bg-slate-200 rounded" />
-                </div>
+                <AnalyticsMetricCardSkeleton key={idx} />
               ))
             : metrics.map((m) => {
-                const delta = m.delta;
-                const deltaLabel =
-                  delta === null ? 'N/A' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
-                const deltaColor =
-                  delta === null ? 'text-slate-400' : delta >= 0 ? 'text-emerald-600' : 'text-rose-500';
                 return (
-                  <div
+                  <AnalyticsMetricCard
                     key={m.key}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2.5"
-                  >
-                    <p className="text-xs text-slate-500">{m.label}</p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900">
-                      {formatMetricValue(m.current, m.format)}
-                    </p>
-                    <p className={`mt-0.5 text-[11px] ${deltaColor}`}>
-                      {deltaLabel}
-                      {data?.rangeDays ? ` from previous ${data.rangeDays} day${data.rangeDays > 1 ? 's' : ''}` : ''}
-                    </p>
-                  </div>
+                    label={m.label}
+                    value={m.current}
+                    format={m.format}
+                    delta={m.delta}
+                  />
                 );
               })}
         </div>
