@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { BarChart3, ClipboardList, DollarSign, Package } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { useDataTable } from '@/hooks/use-data-table';
 import { getProductColumns, type Product } from './product-columns';
@@ -13,12 +14,86 @@ import { parseIntegrationErrorMessage } from '../../_utils/integration-error';
 import { StoreDetailBackButton } from './_components/store-detail-back-button';
 import { StoreDetailOverview } from './_components/store-detail-overview';
 import { StoreDetailQuickActions } from './_components/store-detail-quick-actions';
-import { StoreDetailMetrics } from './_components/store-detail-metrics';
 import { StoreDetailTabSwitcher, type StoreDetailTab } from './_components/store-detail-tab-switcher';
 import { StoreInitialOfferModal } from './_components/store-initial-offer-modal';
 import { StoreProductsTab } from './_components/store-products-tab';
 import { StoreOrdersTab } from './_components/store-orders-tab';
 import { useStoreDetailController } from './_hooks/use-store-detail-controller';
+
+function formatCurrency(value: number) {
+  return `PHP ${value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+type StoreExecutiveCardTone = 'default' | 'success' | 'warning';
+
+const STORE_CARD_TONE_MAP: Record<StoreExecutiveCardTone, string> = {
+  default: 'bg-orange-50 text-orange-600 ring-orange-100',
+  success: 'bg-emerald-50 text-emerald-600 ring-emerald-100',
+  warning: 'bg-amber-50 text-amber-600 ring-amber-100',
+};
+
+function StoreExecutiveOverviewCard({
+  label,
+  value,
+  icon,
+  tone = 'default',
+}: {
+  label: string;
+  value: string | number;
+  icon: ReactNode;
+  tone?: StoreExecutiveCardTone;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            {label}
+          </p>
+          <p className="text-[1.75rem] font-semibold tracking-tight text-slate-950 tabular-nums">
+            {value}
+          </p>
+        </div>
+        <div
+          className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ring-1 ${STORE_CARD_TONE_MAP[tone]}`}
+        >
+          {icon}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const panelThemeClass = [
+  '[&_section]:bg-gradient-to-br',
+  '[&_section]:from-white',
+  '[&_section]:via-orange-50/35',
+  '[&_section]:to-amber-50/25',
+  '[&_svg.text-indigo-500]:text-orange-500',
+  '[&_svg.text-blue-500]:text-orange-500',
+  '[&_svg.text-amber-500]:text-orange-500',
+].join(' ');
+
+const softOrangeButtonsClass = [
+  '[&_button]:!border-orange-200',
+  '[&_button]:!bg-orange-50',
+  '[&_button]:!text-orange-700',
+  '[&_button:hover]:!bg-orange-100',
+  '[&_button:hover]:!text-orange-800',
+  '[&_button:focus-visible]:!ring-orange-200',
+].join(' ');
+
+const orangeTabsClass = [
+  '[&_button.border-indigo-500]:!border-orange-500',
+  '[&_button.text-indigo-600]:!text-orange-600',
+  '[&_button:hover]:!text-orange-700',
+  '[&_button_svg]:text-orange-500',
+  '[&_span.bg-indigo-100]:!bg-orange-100',
+  '[&_span.text-indigo-700]:!text-orange-700',
+].join(' ');
 
 export default function StoreDetailPage() {
   const router = useRouter();
@@ -145,7 +220,7 @@ export default function StoreDetailPage() {
     <div className="space-y-4">
       <StoreDetailBackButton onBack={() => router.push('/integrations/store')} />
 
-      <div className="space-y-3">
+      <div className={`space-y-3 ${panelThemeClass}`}>
         <StoreDetailOverview
           store={store}
           storeName={storeName}
@@ -156,30 +231,54 @@ export default function StoreDetailPage() {
           onToggleApiKey={() => setShowApiKey((prev) => !prev)}
           onCopyApiKey={handleCopyApiKey}
         />
-        <StoreDetailQuickActions
-          isSyncingProducts={isSyncingProducts}
-          isSyncingTags={isSyncingTags}
-          isSyncingWarehouses={isSyncingWarehouses}
-          onSetInitialOffer={() => setInitialOfferModalOpen(true)}
-          onSyncProducts={handleSyncProducts}
-          onSyncTags={handleSyncTags}
-          onSyncWarehouses={handleSyncWarehouses}
+        <div className={softOrangeButtonsClass}>
+          <StoreDetailQuickActions
+            isSyncingProducts={isSyncingProducts}
+            isSyncingTags={isSyncingTags}
+            isSyncingWarehouses={isSyncingWarehouses}
+            onSetInitialOffer={() => setInitialOfferModalOpen(true)}
+            onSyncProducts={handleSyncProducts}
+            onSyncTags={handleSyncTags}
+            onSyncWarehouses={handleSyncWarehouses}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StoreExecutiveOverviewCard
+          label="Products"
+          value={products.length}
+          icon={<Package className="h-4 w-4" />}
+          tone="default"
+        />
+        <StoreExecutiveOverviewCard
+          label="Orders"
+          value={orders.length}
+          icon={<ClipboardList className="h-4 w-4" />}
+          tone="default"
+        />
+        <StoreExecutiveOverviewCard
+          label="Initial Offer"
+          value={formatCurrency(Number(store.initialValueOffer || 0))}
+          icon={<DollarSign className="h-4 w-4" />}
+          tone="success"
+        />
+        <StoreExecutiveOverviewCard
+          label="Status"
+          value={store.status || 'ACTIVE'}
+          icon={<BarChart3 className="h-4 w-4" />}
+          tone="warning"
         />
       </div>
 
-      <StoreDetailMetrics
-        store={store}
-        productsCount={products.length}
-        ordersCount={orders.length}
-        createdAtLabel={formatDate(store.createdAt)}
-      />
-
-      <StoreDetailTabSwitcher
-        activeTab={activeTab}
-        productsCount={products.length}
-        ordersCount={orders.length}
-        onTabChange={setActiveTab}
-      />
+      <div className={orangeTabsClass}>
+        <StoreDetailTabSwitcher
+          activeTab={activeTab}
+          productsCount={products.length}
+          ordersCount={orders.length}
+          onTabChange={setActiveTab}
+        />
+      </div>
 
       <StoreInitialOfferModal
         isOpen={initialOfferModalOpen}
@@ -191,26 +290,34 @@ export default function StoreDetailPage() {
       />
 
       {activeTab === 'products' ? (
-        <StoreProductsTab
-          products={products}
-          filteredProducts={filteredProducts}
-          table={table}
-          selectedCount={selectedCount}
-          searchInput={productSearchInput}
-          searchTerm={productSearchTerm}
-          isSyncingProducts={isSyncingProducts}
-          onSearchInputChange={setProductSearchInput}
-          onSyncProducts={handleSyncProducts}
-          onOpenBulkMapping={() => setBulkMappingModalOpen(true)}
-        />
+        <div
+          className={`${panelThemeClass} [&_input:focus]:!border-orange-300 [&_input:focus]:!ring-orange-100`}
+        >
+          <StoreProductsTab
+            products={products}
+            filteredProducts={filteredProducts}
+            table={table}
+            selectedCount={selectedCount}
+            searchInput={productSearchInput}
+            searchTerm={productSearchTerm}
+            isSyncingProducts={isSyncingProducts}
+            onSearchInputChange={setProductSearchInput}
+            onSyncProducts={handleSyncProducts}
+            onOpenBulkMapping={() => setBulkMappingModalOpen(true)}
+          />
+        </div>
       ) : (
-        <StoreOrdersTab
-          orders={orders}
-          ordersLoading={ordersLoading}
-          table={orderTable}
-          dateRange={orderDateRange}
-          onDateRangeChange={setOrderDateRange}
-        />
+        <div
+          className={`${panelThemeClass} [&_input:focus]:!border-orange-300 [&_input:focus]:!ring-orange-100 [&_select:focus]:!border-orange-300 [&_select:focus]:!ring-orange-100`}
+        >
+          <StoreOrdersTab
+            orders={orders}
+            ordersLoading={ordersLoading}
+            table={orderTable}
+            dateRange={orderDateRange}
+            onDateRangeChange={setOrderDateRange}
+          />
+        </div>
       )}
 
       {cogsModalOpen && selectedProduct && (
