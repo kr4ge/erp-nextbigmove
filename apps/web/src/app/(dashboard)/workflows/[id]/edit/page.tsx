@@ -542,9 +542,9 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
                 )}
 
                 {formData.scheduleUnit === 'days' && (
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
                     <div>
-                      <label className="text-xs font-medium text-slate-700">Every (days)</label>
+                      <label className="whitespace-nowrap text-xs font-medium text-slate-700">Every (days)</label>
                       <input
                         type="number"
                         min={1}
@@ -603,14 +603,14 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
               <span className="ml-auto text-[10px] text-slate-500">Applies to Meta & POS</span>
             </div>
 
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
               {(['rolling', 'relative', 'absolute'] as DateRangeType[]).map((type) => {
                 const active = formData.dateRangeType === type;
                 return (
                   <button
                     key={type}
                     onClick={() => updateField('dateRangeType', type)}
-                    className={`flex-1 rounded-lg border px-4 py-2 text-sm capitalize transition ${
+                    className={`w-full rounded-lg border px-3 py-2 text-xs capitalize leading-tight transition ${
                       active
                         ? 'border-orange-300 bg-orange-50 text-orange-700'
                         : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
@@ -681,7 +681,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                   <div className="text-sm font-semibold text-slate-800">Meta Ads</div>
                   <label className="flex items-center gap-2">
                     <input
@@ -705,7 +705,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
                 </div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                   <div className="text-sm font-semibold text-slate-800">Pancake POS</div>
                   <label className="flex items-center gap-2">
                     <input
