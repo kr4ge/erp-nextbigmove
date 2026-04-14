@@ -64,6 +64,11 @@ export default function IntegrationsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        breadcrumbs={
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Integrations
+          </span>
+        }
         title="Integrations"
         description="Connect your Meta Ads and Pancake POS systems to sync data."
       />

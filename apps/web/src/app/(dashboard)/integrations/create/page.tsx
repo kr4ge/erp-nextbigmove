@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { AlertBanner } from '@/components/ui/feedback';
 import { FormInput } from '@/components/ui/form-input';
 import { FormSelect } from '@/components/ui/form-select';
@@ -31,6 +30,28 @@ const parseCreateIntegrationError = (error: unknown, fallback: string) => {
   const err = error as { response?: { data?: { message?: string } }; message?: string };
   return err?.response?.data?.message || err?.message || fallback;
 };
+
+function ProviderGlyph({
+  provider,
+  className = 'h-4 w-4',
+}: {
+  provider: IntegrationProvider;
+  className?: string;
+}) {
+  if (provider === 'META_ADS') {
+    return (
+      <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+    </svg>
+  );
+}
 
 export default function CreateIntegrationPage() {
   const router = useRouter();
@@ -256,6 +277,11 @@ export default function CreateIntegrationPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        breadcrumbs={
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Integrations
+          </span>
+        }
         title="Create Integration"
         description="Connect your Meta Ads or Pancake POS account"
       />
@@ -268,201 +294,209 @@ export default function CreateIntegrationPage() {
           {/* Meta Ads Card */}
           <button
             onClick={() => handleProviderSelect('META_ADS')}
-            className="rounded-2xl border-2 border-[#E2E8F0] bg-white p-6 text-left shadow-sm transition-all hover:border-[#2563EB] hover:shadow-md"
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50/30"
           >
-            <div className="mb-4 flex items-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-[#2563EB]">
-                <svg className="h-8 w-8" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                </svg>
-              </div>
-              <h3 className="ml-4 text-xl font-semibold text-[#0F172A]">Meta Ads</h3>
+            <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+              <ProviderGlyph provider="META_ADS" className="h-3.5 w-3.5 text-orange-500" />
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Meta Ads</h3>
             </div>
-            <p className="mb-4 text-[#475569]">
-              Connect your Meta Marketing API to sync ad campaign data
-            </p>
-            <ul className="space-y-1 text-sm text-[#94A3B8]">
-              <li>• Campaign performance</li>
-              <li>• Ad spend tracking</li>
-              <li>• Conversion data</li>
-            </ul>
+            <div className="space-y-3 px-5 py-5">
+              <p className="text-[0.82rem] text-slate-600">
+                Connect your Meta Marketing API to sync ad campaign data.
+              </p>
+              <ul className="space-y-1 text-[0.82rem] text-slate-500">
+                <li>- Campaign performance</li>
+                <li>- Ad spend tracking</li>
+                <li>- Conversion data</li>
+              </ul>
+            </div>
           </button>
 
           {/* Pancake POS Card */}
           <button
             onClick={() => handleProviderSelect('PANCAKE_POS')}
-            className="rounded-2xl border-2 border-[#E2E8F0] bg-white p-6 text-left shadow-sm transition-all hover:border-[#7C3AED] hover:shadow-md"
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50/30"
           >
-            <div className="mb-4 flex items-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-50 text-[#7C3AED]">
-                <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                </svg>
-              </div>
-              <h3 className="ml-4 text-xl font-semibold text-[#0F172A]">Pancake POS</h3>
+            <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+              <ProviderGlyph provider="PANCAKE_POS" className="h-3.5 w-3.5 text-orange-500" />
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Pancake POS</h3>
             </div>
-            <p className="mb-4 text-[#475569]">
-              Connect your Pancake POS to sync sales and product data
-            </p>
-            <ul className="space-y-1 text-sm text-[#94A3B8]">
-              <li>• Product catalog</li>
-              <li>• Sales transactions</li>
-              <li>• Inventory data</li>
-            </ul>
+            <div className="space-y-3 px-5 py-5">
+              <p className="text-[0.82rem] text-slate-600">
+                Connect your Pancake POS to sync sales and product data.
+              </p>
+              <ul className="space-y-1 text-[0.82rem] text-slate-500">
+                <li>- Product catalog</li>
+                <li>- Sales transactions</li>
+                <li>- Inventory data</li>
+              </ul>
+            </div>
           </button>
         </div>
       )}
-
       {/* Step 2: Enter Credentials */}
       {step === 'credentials' && provider && (
-        <Card>
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold text-[#0F172A]">
-              {provider === 'META_ADS' ? 'Meta Ads' : 'Pancake POS'} Credentials
-            </h2>
-            <p className="mt-1 text-sm text-[#475569]">
-              Enter your API credentials to connect
-            </p>
+        <section className="overflow-visible rounded-xl border border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
+          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+            <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-orange-500" />
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Credentials</h2>
           </div>
 
-          <form onSubmit={(e) => { e.preventDefault(); handleCreateIntegration(); }} className="space-y-6">
-            {provider === 'META_ADS' ? (
-              <FormInput
-                type="password"
-                label="Access Token"
-                value={accessToken}
-                onChange={(e) => setAccessToken(e.target.value)}
-                placeholder="Enter your Meta access token"
-                helper="Get your access token from the Meta Developer Portal"
-                required
-              />
-            ) : (
-              <FormInput
-                type="password"
-                label="API Key"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Enter your Pancake POS API key"
-                helper="Get your API key from your Pancake POS settings"
-                required
-              />
-            )}
-
-            <FormTextarea
-              label="Description (Optional)"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Description of this integration"
-            />
-
-            <div className="flex gap-4">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setStep('select');
-                  setProvider(null);
-                  setError('');
-                }}
-                className="flex-1"
-              >
-                Back
-              </Button>
-              <Button
-                type="submit"
-                disabled={!canTestConnection() || isLoading}
-                loading={isLoading}
-                className="flex-1"
-              >
-                {isLoading ? 'Creating...' : 'Create Integration'}
-              </Button>
+          <div className="p-4 sm:p-5">
+            <div className="mb-5">
+              <p className="text-[0.82rem] font-semibold text-slate-900">
+                {provider === 'META_ADS' ? 'Meta Ads' : 'Pancake POS'} Credentials
+              </p>
+              <p className="mt-1 text-[0.82rem] text-slate-500">
+                Enter your API credentials to connect.
+              </p>
             </div>
-          </form>
-        </Card>
-      )}
 
+            <form onSubmit={(e) => { e.preventDefault(); handleCreateIntegration(); }} className="space-y-6">
+              {provider === 'META_ADS' ? (
+                <FormInput
+                  type="password"
+                  label="Access Token"
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  placeholder="Enter your Meta access token"
+                  helper="Get your access token from the Meta Developer Portal"
+                  required
+                />
+              ) : (
+                <FormInput
+                  type="password"
+                  label="API Key"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Enter your Pancake POS API key"
+                  helper="Get your API key from your Pancake POS settings"
+                  required
+                />
+              )}
+
+              <FormTextarea
+                label="Description (Optional)"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Description of this integration"
+              />
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setStep('select');
+                    setProvider(null);
+                    setError('');
+                  }}
+                  className="flex-1 border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={!canTestConnection() || isLoading}
+                  loading={isLoading}
+                  className="flex-1 !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+                >
+                  {isLoading ? 'Creating...' : 'Create Integration'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </section>
+      )}
       {/* Step 3: Configure (Select Shop or Ad Account) */}
       {step === 'configure' && provider && (
-        <Card>
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold text-[#0F172A]">
-              {provider === 'META_ADS' ? 'Select Ad Account' : 'Select Shop'}
-            </h2>
-            <p className="mt-1 text-sm text-[#475569]">
-              {provider === 'META_ADS'
-                ? 'Choose which ad account to sync data from'
-                : 'Choose which shop to sync data from'}
-            </p>
+        <section className="overflow-visible rounded-xl border border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
+          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+            <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-orange-500" />
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h2>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {provider === 'PANCAKE_POS' && shops.length > 0 && (
-              <FormSelect
-                label="Shop"
-                value={selectedShopId}
-                onChange={(e) => {
-                  const shopId = e.target.value;
-                  setSelectedShopId(shopId);
-                  // Auto-set the integration name to the shop name
-                  if (shopId) {
-                    const selectedShop = shops.find(s => s.id === shopId);
-                    if (selectedShop) {
-                      setName(selectedShop.name);
-                    }
-                  }
-                }}
-                options={shops.map((shop) => ({
-                  value: shop.id,
-                  label: `${shop.name}${shop.status ? ` (${shop.status})` : ''}`,
-                }))}
-                placeholder="Select a shop"
-                helper="Products will be synced from this shop"
-                required
-              />
-            )}
-
-            {provider === 'META_ADS' && adAccounts.length > 0 && (
-              <FormSelect
-                label="Ad Account"
-                value={selectedAdAccountId}
-                onChange={(e) => setSelectedAdAccountId(e.target.value)}
-                options={adAccounts.map((account) => ({
-                  value: account.id,
-                  label: `${account.name} (${account.id})`,
-                }))}
-                placeholder="Select an ad account"
-                helper="Campaign data will be synced from this ad account"
-                required
-              />
-            )}
-
-            <div className="flex gap-4">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setStep('credentials');
-                  setShops([]);
-                  setAdAccounts([]);
-                  setSelectedShopId('');
-                  setSelectedAdAccountId('');
-                }}
-                className="flex-1"
-              >
-                Back
-              </Button>
-              <Button
-                type="submit"
-                disabled={!canSubmit() || isLoading}
-                loading={isLoading}
-                className="flex-1"
-              >
-                {isLoading ? 'Creating...' : 'Create Integration'}
-              </Button>
+          <div className="p-4 sm:p-5">
+            <div className="mb-5">
+              <p className="text-[0.82rem] font-semibold text-slate-900">
+                {provider === 'META_ADS' ? 'Select Ad Account' : 'Select Shop'}
+              </p>
+              <p className="mt-1 text-[0.82rem] text-slate-500">
+                {provider === 'META_ADS'
+                  ? 'Choose which ad account to sync data from.'
+                  : 'Choose which shop to sync data from.'}
+              </p>
             </div>
-          </form>
-        </Card>
+
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {provider === 'PANCAKE_POS' && shops.length > 0 && (
+                <FormSelect
+                  label="Shop"
+                  value={selectedShopId}
+                  onChange={(e) => {
+                    const shopId = e.target.value;
+                    setSelectedShopId(shopId);
+                    if (shopId) {
+                      const selectedShop = shops.find((s) => s.id === shopId);
+                      if (selectedShop) {
+                        setName(selectedShop.name);
+                      }
+                    }
+                  }}
+                  options={shops.map((shop) => ({
+                    value: shop.id,
+                    label: `${shop.name}${shop.status ? ` (${shop.status})` : ''}`,
+                  }))}
+                  placeholder="Select a shop"
+                  helper="Products will be synced from this shop"
+                  required
+                />
+              )}
+
+              {provider === 'META_ADS' && adAccounts.length > 0 && (
+                <FormSelect
+                  label="Ad Account"
+                  value={selectedAdAccountId}
+                  onChange={(e) => setSelectedAdAccountId(e.target.value)}
+                  options={adAccounts.map((account) => ({
+                    value: account.id,
+                    label: `${account.name} (${account.id})`,
+                  }))}
+                  placeholder="Select an ad account"
+                  helper="Campaign data will be synced from this ad account"
+                  required
+                />
+              )}
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setStep('credentials');
+                    setShops([]);
+                    setAdAccounts([]);
+                    setSelectedShopId('');
+                    setSelectedAdAccountId('');
+                  }}
+                  className="flex-1 border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={!canSubmit() || isLoading}
+                  loading={isLoading}
+                  className="flex-1 !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+                >
+                  {isLoading ? 'Creating...' : 'Create Integration'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </section>
       )}
     </div>
   );
 }
+
