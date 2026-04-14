@@ -156,12 +156,21 @@ export function IntegrationsListCard({
 
   const emptyState =
     allCount === 0 ? (
-      <DataTableState
-        icon={<PlugZap className="h-5 w-5 text-[#2563EB]" />}
-        title="No integrations yet"
-        description="Connect Meta Ads or Pancake POS to get started."
-        action={<Button onClick={onAddIntegration}>Add Integration</Button>}
-      />
+      <div className="flex flex-col items-center justify-center py-10 text-center">
+        <div className="mb-3 text-orange-500">
+          <PlugZap className="h-6 w-6" />
+        </div>
+        <p className="text-base font-semibold text-slate-700">No integrations yet</p>
+        <p className="mt-1 text-[0.95rem] text-slate-500">
+          Connect Meta Ads or Pancake POS to get started.
+        </p>
+        <Button
+          onClick={onAddIntegration}
+          className="mt-4 !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+        >
+          Add Integration
+        </Button>
+      </div>
     ) : (
       <DataTableState
         title={`No results for "${searchInput || 'your query'}"`}
