@@ -24,16 +24,19 @@ export function IntegrationTeamAssignmentFields({
   onToggleSharedTeam,
 }: IntegrationTeamAssignmentFieldsProps) {
   const shareableTeams = teams.filter((team) => team.id !== ownerTeamId);
+  const labelClass = 'block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500';
+  const controlClass =
+    'mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition hover:border-orange-200 focus:border-orange-300 focus:ring-4 focus:ring-orange-100';
 
   return (
     <>
       <div>
-        <label className="block text-sm font-semibold text-[#0F172A]">Team</label>
+        <label className={labelClass}>Team</label>
         <select
           value={teamId || 'ALL_TEAMS'}
           onChange={(e) => onTeamIdChange(e.target.value)}
           disabled={!isAdmin}
-          className="mt-2 w-full rounded-xl border border-[#E2E8F0] px-4 py-2 text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+          className={controlClass}
         >
           {isAdmin && <option value="ALL_TEAMS">All teams (admin)</option>}
           {teams.map((team) => (
@@ -46,16 +49,16 @@ export function IntegrationTeamAssignmentFields({
 
       {canShareIntegrations && (
         <div>
-          <label className="block text-sm font-semibold text-[#0F172A]">Share with teams</label>
-          <div className="mt-2 space-y-2 rounded-xl border border-[#E2E8F0] px-4 py-3">
+          <label className={labelClass}>Share with teams</label>
+          <div className="mt-2 space-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
             {shareableTeams.length === 0 ? (
               <p className="text-sm text-slate-500">No other teams available</p>
             ) : (
               shareableTeams.map((team) => (
-                <label key={team.id} className="flex items-center gap-2 text-sm text-[#0F172A]">
+                <label key={team.id} className="flex items-center gap-2 text-sm text-slate-800">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    className="h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
                     checked={sharedTeamIds.includes(team.id)}
                     onChange={() => onToggleSharedTeam(team.id)}
                   />
