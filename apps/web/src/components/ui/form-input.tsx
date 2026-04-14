@@ -5,10 +5,12 @@ type FormInputProps = InputHTMLAttributes<HTMLInputElement> & {
   label?: string;
   helper?: string;
   error?: string;
+  labelClassName?: string;
+  helperClassName?: string;
 };
 
 export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
-  ({ label, helper, error, className, id, ...props }, ref) => {
+  ({ label, helper, error, className, labelClassName, helperClassName, id, ...props }, ref) => {
     const inputId = id || props.name;
 
     return (
@@ -16,7 +18,7 @@ export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-semibold text-[#0F172A]"
+            className={clsx('block text-sm font-semibold text-[#0F172A]', labelClassName)}
           >
             {label}
           </label>
@@ -39,7 +41,8 @@ export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
           <p
             className={clsx(
               'text-xs',
-              error ? 'text-[#EF4444]' : 'text-[#94A3B8]'
+              error ? 'text-[#EF4444]' : 'text-[#94A3B8]',
+              helperClassName
             )}
           >
             {error || helper}

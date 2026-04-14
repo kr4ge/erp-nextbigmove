@@ -4,6 +4,7 @@ import type { FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FormInput } from '@/components/ui/form-input';
+import { User } from 'lucide-react';
 
 interface PersonalInfoFormProps {
   isLoading: boolean;
@@ -21,6 +22,13 @@ interface PersonalInfoFormProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
+const profileFormLabelClass =
+  'text-xs font-semibold uppercase tracking-[0.16em] text-slate-500';
+const profileFormInputClass =
+  'rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100';
+const profileFormHelperClass = 'text-[11px] text-slate-500';
+const profileFormReadOnlyClass = 'bg-slate-50 text-slate-700';
+
 export function PersonalInfoForm({
   isLoading,
   isSavingProfile,
@@ -37,20 +45,25 @@ export function PersonalInfoForm({
   onSubmit,
 }: PersonalInfoFormProps) {
   return (
-    <Card className="lg:col-span-2">
+    <Card className="lg:col-span-2 border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25">
       <form className="space-y-4" onSubmit={onSubmit}>
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">Personal info</h3>
-            <p className="text-sm text-slate-500">
-              These details are visible across your workspace.
-            </p>
-          </div>
-          <Button type="submit" disabled={isLoading || isSavingProfile || !isProfileDirty}>
+        <div className="-mx-6 -mt-6 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+          <User className="h-3.5 w-3.5 text-orange-500" />
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+            Personal Information
+          </h3>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <p className="text-sm text-slate-500">These details are visible across your workspace.</p>
+          <Button
+            type="submit"
+            disabled={isLoading || isSavingProfile || !isProfileDirty}
+            className="border !border-orange-200 bg-orange-50 !text-orange-700 hover:bg-orange-100 focus:ring-orange-200"
+          >
             {isSavingProfile ? 'Saving...' : 'Save changes'}
           </Button>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           <FormInput
             label="First name"
             name="firstName"
@@ -58,6 +71,9 @@ export function PersonalInfoForm({
             onChange={(event) => onFirstNameChange(event.target.value)}
             placeholder="Your first name"
             disabled={isLoading}
+            labelClassName={profileFormLabelClass}
+            className={profileFormInputClass}
+            helperClassName={profileFormHelperClass}
           />
           <FormInput
             label="Last name"
@@ -66,9 +82,20 @@ export function PersonalInfoForm({
             onChange={(event) => onLastNameChange(event.target.value)}
             placeholder="Your last name"
             disabled={isLoading}
+            labelClassName={profileFormLabelClass}
+            className={profileFormInputClass}
+            helperClassName={profileFormHelperClass}
           />
         </div>
-        <FormInput label="Email" name="email" value={email} disabled />
+        <FormInput
+          label="Email"
+          name="email"
+          value={email}
+          disabled
+          labelClassName={profileFormLabelClass}
+          className={`${profileFormInputClass} ${profileFormReadOnlyClass}`}
+          helperClassName={profileFormHelperClass}
+        />
         <FormInput
           label="Employee ID"
           name="employeeId"
@@ -77,6 +104,9 @@ export function PersonalInfoForm({
           placeholder="EMP-1234"
           disabled={isLoading}
           helper="Use your internal employee code for reconciliation."
+          labelClassName={profileFormLabelClass}
+          className={profileFormInputClass}
+          helperClassName={profileFormHelperClass}
         />
         <FormInput
           label="Avatar URL"
@@ -86,6 +116,9 @@ export function PersonalInfoForm({
           placeholder="https://example.com/avatar.png"
           disabled={isLoading}
           helper="Optional. Paste an image URL to personalize your avatar."
+          labelClassName={profileFormLabelClass}
+          className={profileFormInputClass}
+          helperClassName={profileFormHelperClass}
         />
       </form>
     </Card>

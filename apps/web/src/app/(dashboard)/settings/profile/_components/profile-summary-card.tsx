@@ -1,6 +1,7 @@
 'use client';
 
 import { Card } from '@/components/ui/card';
+import { User } from 'lucide-react';
 
 interface ProfileSummaryCardProps {
   initials: string;
@@ -24,9 +25,15 @@ export function ProfileSummaryCard({
   teamText,
 }: ProfileSummaryCardProps) {
   return (
-    <Card className="lg:col-span-1">
+    <Card className="lg:col-span-1 border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25">
+      <div className="-mx-6 -mt-6 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+        <User className="h-3.5 w-3.5 text-orange-500" />
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+          Profile Summary
+        </h3>
+      </div>
       <div className="flex items-center gap-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-lg font-semibold text-white">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-500 text-lg font-semibold text-white">
           {initials}
         </div>
         <div className="space-y-1">
@@ -34,7 +41,7 @@ export function ProfileSummaryCard({
           <p className="text-sm text-slate-600">{email}</p>
         </div>
       </div>
-      <div className="mt-4 space-y-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+      <div className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50/85 px-4 py-3 text-sm text-slate-600">
         <div className="flex items-center justify-between">
           <span>Tenant</span>
           <span className="font-semibold text-slate-900">{tenantName || '—'}</span>

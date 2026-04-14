@@ -393,7 +393,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
       <div className="grid gap-6">
         <div className="grid gap-6 md:grid-cols-2">
           <div className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 p-5 shadow-sm">
-            <div className="-mx-5 -mt-5 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-5 py-2">
+            <div className="-mx-5 -mt-5 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
               <Info className="h-3.5 w-3.5 text-orange-500" />
               <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Basic Information</h3>
             </div>
@@ -461,7 +461,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
           </div>
 
           <div className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 p-5 shadow-sm">
-            <div className="-mx-5 -mt-5 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-5 py-2">
+            <div className="-mx-5 -mt-5 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
               <Activity className="h-3.5 w-3.5 text-orange-500" />
               <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Schedule & Status</h3>
             </div>
@@ -597,7 +597,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
 
         <div className="grid gap-6 md:grid-cols-2">
           <div className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 p-5 shadow-sm space-y-4">
-            <div className="-mx-5 -mt-5 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-5 py-2">
+            <div className="-mx-5 -mt-5 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
               <CalendarClock className="h-3.5 w-3.5 text-orange-500" />
               <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Date Range</h3>
               <span className="ml-auto text-[10px] text-slate-500">Applies to Meta & POS</span>
@@ -674,7 +674,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
           </div>
 
           <div className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 p-5 shadow-sm space-y-4">
-            <div className="-mx-5 -mt-5 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-5 py-2">
+            <div className="-mx-5 -mt-5 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
               <SlidersHorizontal className="h-3.5 w-3.5 text-orange-500" />
               <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Sources & Rate Limits</h3>
               <span className="ml-auto text-[10px] text-slate-500">Control API pacing</span>
