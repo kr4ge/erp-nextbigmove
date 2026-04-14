@@ -38,10 +38,10 @@ export function MetaIntegrationsGrid({
           onClick={() => onOpenDetail(integration.id)}
         >
           <div className="mb-4 flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50">
+            <div className="flex items-start gap-3">
+              <div className="mt-1 flex shrink-0 items-center text-orange-500">
                 <svg
-                  className="h-6 w-6 text-blue-600"
+                  className="h-5 w-5"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -55,11 +55,11 @@ export function MetaIntegrationsGrid({
                 </svg>
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-[#0F172A]">{integration.name}</h3>
-                <p className="text-sm text-[#475569]">Meta Marketing API</p>
-                <span className="mt-1 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                <h3 className="text-base font-semibold leading-5 text-[#0F172A]">{integration.name}</h3>
+                <p className="text-[0.82rem] text-[#475569]">Meta Marketing API</p>
+                <span className="mt-1 inline-flex items-center rounded-full border border-orange-100 bg-orange-50/60 px-2.5 py-1 text-[11px] font-medium text-orange-600">
                   {integration.teamId
-                    ? `Team: ${teamNames[integration.teamId] || integration.teamId}`
+                    ? `Team: ${teamNames[integration.teamId] || 'Unknown team'}`
                     : 'All teams'}
                 </span>
               </div>
@@ -77,8 +77,7 @@ export function MetaIntegrationsGrid({
 
           <div className="mt-4 flex gap-2">
             <Button
-              variant="secondary"
-              className="flex-1"
+              className="flex-1 !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
               onClick={(event) => {
                 event.stopPropagation();
                 onOpenDetail(integration.id);
