@@ -143,8 +143,15 @@ export function WorkflowsTable({
         <DataTableState
           title="No workflows yet"
           description="Create your first workflow to automate data fetching."
-          icon={<Workflow className="h-5 w-5" />}
-          action={<Button onClick={onCreateWorkflow}>Create Workflow</Button>}
+          icon={<Workflow className="h-6 w-6 text-orange-500" />}
+          action={
+            <Button
+              onClick={onCreateWorkflow}
+              className="!border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+            >
+              Create Workflow
+            </Button>
+          }
         />
       }
     />

@@ -41,6 +41,11 @@ export default function WorkflowsPage() {
     return (
       <div className="space-y-6">
         <PageHeader
+          breadcrumbs={
+            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+              Workflows
+            </span>
+          }
           title="Workflows"
           description="Automate Meta Ads and POS data fetching on a schedule"
         />
@@ -51,27 +56,33 @@ export default function WorkflowsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <PageHeader
-          title="Workflows"
-          description="Automate Meta Ads and POS data fetching on a schedule"
-        />
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            iconLeft={<Upload className="h-4 w-4" />}
-            onClick={openUploadModal}
-          >
-            Upload Meta
-          </Button>
-          <Button
-            iconLeft={<Plus className="h-4 w-4" />}
-            onClick={navigateToNew}
-          >
-            Create Workflow
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        breadcrumbs={
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Workflows
+          </span>
+        }
+        title="Workflows"
+        description="Automate Meta Ads and POS data fetching on a schedule"
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="outline"
+              iconLeft={<Upload className="h-4 w-4" />}
+              onClick={openUploadModal}
+            >
+              Upload Meta
+            </Button>
+            <Button
+              iconLeft={<Plus className="h-4 w-4" />}
+              onClick={navigateToNew}
+              className="!border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+            >
+              Create Workflow
+            </Button>
+          </div>
+        }
+      />
 
       <WorkflowsTable
         workflows={workflows}
