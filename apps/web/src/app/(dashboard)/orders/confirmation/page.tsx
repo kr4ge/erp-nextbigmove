@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
 import {
+  CalendarDays,
   ChevronDown,
   ChevronUp,
   ClipboardCopy,
@@ -201,6 +202,24 @@ export default function OrdersConfirmationPage() {
     : selectedShopIds.length === 0
       ? 'No shops selected'
       : `${selectedShopIds.length} selected`;
+  const confirmationDateRangeIsToday = startDate === today && endDate === today;
+  const confirmationDateRangeButtonLabel = useMemo(() => {
+    const formatYmdForButton = (value: string) => {
+      const parsed = parseYmdToLocalDate(value);
+      if (!parsed) return value;
+      return parsed.toLocaleDateString('en-US', {
+        month: '2-digit',
+        day: '2-digit',
+        year: 'numeric',
+      });
+    };
+
+    const startLabel = formatYmdForButton(startDate);
+    const endLabel = formatYmdForButton(endDate);
+
+    if (startLabel === endLabel) return startLabel;
+    return `${startLabel} – ${endLabel}`;
+  }, [endDate, startDate]);
 
   const fetchData = async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -1423,9 +1442,16 @@ export default function OrdersConfirmationPage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between pb-2">
-        <h1 className="text-lg font-semibold text-slate-900">Confirmation of Order</h1>
-      </div>
+      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Orders
+          </p>
+          <div className="space-y-0.5">
+            <h1 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">Confirmation of Order</h1>
+          </div>
+        </div>
+      </header>
 
       <Card padding="sm" className="border-slate-200 shadow-sm bg-white">
         <div className="flex flex-wrap items-center justify-end gap-2 mb-2">
@@ -1520,12 +1546,35 @@ export default function OrdersConfirmationPage() {
             <Datepicker
               value={range}
               onChange={handleDateRangeChange}
-              inputClassName="w-[240px] rounded-lg border border-slate-200 pl-3 pr-10 py-1.5 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
-              popupClassName={(defaultClass: string) => `${defaultClass} z-50`}
+              useRange={false}
+              asSingle={false}
+              showShortcuts={false}
+              showFooter={false}
+              primaryColor="orange"
+              readOnly
+              inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 transition-[width] duration-300 ease-out ${
+                confirmationDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
+              }`}
+              containerClassName=""
+              popupClassName={(defaultClass: string) => `${defaultClass} z-50 kpi-datepicker-light`}
               displayFormat="MM/DD/YYYY"
-              separator=" - "
-              toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              placeholder=""
+              separator=" – "
+              toggleIcon={() => (
+                <span className="flex w-full items-center gap-2 overflow-hidden">
+                  <CalendarDays className="h-4 w-4 shrink-0" />
+                  <span
+                    className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                      confirmationDateRangeIsToday
+                        ? 'max-w-0 -translate-x-1 opacity-0'
+                        : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
+                    }`}
+                  >
+                    {confirmationDateRangeButtonLabel}
+                  </span>
+                </span>
+              )}
+              toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+              placeholder=" "
             />
           </div>
         </div>
