@@ -568,7 +568,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         }
                       }}
                       className={`group flex w-full items-center rounded-xl px-3 py-3 transition-all duration-300 ${
-                        isSidebarCollapsed ? 'justify-center' : ''
+                        isSidebarCollapsed ? 'justify-center px-0' : ''
                       } ${hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href) ? 'text-slate-800' : 'text-slate-500 hover:bg-slate-50'}`}
                     >
                       <span
@@ -578,15 +578,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       >
                         {link.icon}
                       </span>
-                      <div className={`ml-3 flex-1 text-left transition-all duration-300 overflow-hidden ${
-                        isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100'
-                      }`}>
+                      <div
+                        className={
+                          isSidebarCollapsed
+                            ? 'hidden'
+                            : 'ml-3 flex-1 text-left transition-all duration-300 overflow-hidden'
+                        }
+                      >
                         <span className="text-[0.82rem] font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
                       </div>
                       <svg
                         className={`h-4 w-4 text-slate-400 transition-all duration-300 ${
                           isExpanded ? 'rotate-90 text-orange-500' : ''
-                        } ${isSidebarCollapsed ? 'w-0 opacity-0' : 'opacity-100'}`}
+                        } ${isSidebarCollapsed ? 'hidden' : 'opacity-100'}`}
                         viewBox="0 0 20 20"
                         fill="none"
                         stroke="currentColor"
@@ -600,7 +604,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       href={link.href}
                       className={`group flex items-center rounded-xl px-3 py-3 transition-all duration-300 ${
                         isActive ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
-                      } ${isSidebarCollapsed ? 'justify-center' : ''}`}
+                      } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}
                     >
                       <span
                         className={`flex-shrink-0 transition-colors duration-300 ${
@@ -609,9 +613,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       >
                         {link.icon}
                       </span>
-                      <div className={`ml-3 flex-1 transition-all duration-300 overflow-hidden ${
-                        isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100'
-                      }`}>
+                      <div
+                        className={
+                          isSidebarCollapsed
+                            ? 'hidden'
+                            : 'ml-3 flex-1 transition-all duration-300 overflow-hidden'
+                        }
+                      >
                         <span className="text-[0.82rem] font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
                       </div>
                     </Link>
@@ -661,17 +669,23 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 isSidebarCollapsed ? 'px-0 py-2 flex justify-center' : 'px-3 py-2'
               }`}
             >
-              <div className={`flex items-center transition-all duration-300 ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                <div className="h-9 w-9 flex-shrink-0 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold">
-                  {`${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.trim() || '??'}
-                </div>
-                <div className={`flex-1 transition-all duration-300 overflow-hidden ${isSidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
+                <div className={`flex items-center transition-all duration-300 ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                  <div className="h-9 w-9 flex-shrink-0 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold">
+                    {`${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.trim() || '??'}
+                  </div>
+                <div
+                  className={
+                    isSidebarCollapsed
+                      ? 'hidden'
+                      : 'flex-1 transition-all duration-300 overflow-hidden'
+                  }
+                >
                   <div className="text-[0.82rem] font-semibold text-slate-900 whitespace-nowrap">
                     {user?.firstName} {user?.lastName}
                   </div>
                 </div>
                 <svg
-                  className={`h-4 w-4 text-slate-500 transition-all duration-300 ${isProfileMenuOpen ? 'rotate-180' : ''} ${isSidebarCollapsed ? 'w-0 opacity-0' : 'opacity-100'}`}
+                  className={`h-4 w-4 text-slate-500 transition-all duration-300 ${isProfileMenuOpen ? 'rotate-180' : ''} ${isSidebarCollapsed ? 'hidden' : 'opacity-100'}`}
                   viewBox="0 0 20 20"
                   fill="none"
                   stroke="currentColor"
