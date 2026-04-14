@@ -336,7 +336,7 @@ export default function CreateIntegrationPage() {
       )}
       {/* Step 2: Enter Credentials */}
       {step === 'credentials' && provider && (
-        <section className="overflow-visible rounded-xl border border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
+        <section className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
           <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
             <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-orange-500" />
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Credentials</h2>
@@ -361,6 +361,7 @@ export default function CreateIntegrationPage() {
                   onChange={(e) => setAccessToken(e.target.value)}
                   placeholder="Enter your Meta access token"
                   helper="Get your access token from the Meta Developer Portal"
+                  className="py-2.5 focus:!ring-orange-200 hover:!border-orange-200 focus:!border-orange-200"
                   required
                 />
               ) : (
@@ -371,6 +372,7 @@ export default function CreateIntegrationPage() {
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Enter your Pancake POS API key"
                   helper="Get your API key from your Pancake POS settings"
+                  className="py-2.5 focus:!ring-orange-200 hover:!border-orange-200 focus:!border-orange-200"
                   required
                 />
               )}
@@ -380,6 +382,7 @@ export default function CreateIntegrationPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Description of this integration"
+                className="py-2.5 focus:!ring-orange-200 hover:!border-orange-200 focus:!border-orange-200"
               />
 
               <div className="flex gap-3">
@@ -410,7 +413,7 @@ export default function CreateIntegrationPage() {
       )}
       {/* Step 3: Configure (Select Shop or Ad Account) */}
       {step === 'configure' && provider && (
-        <section className="overflow-visible rounded-xl border border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
+        <section className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
           <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
             <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-orange-500" />
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h2>
@@ -449,6 +452,7 @@ export default function CreateIntegrationPage() {
                   }))}
                   placeholder="Select a shop"
                   helper="Products will be synced from this shop"
+                  className="py-2.5 focus:!ring-orange-200 hover:!border-orange-200 focus:!border-orange-200"
                   required
                 />
               )}
@@ -464,6 +468,7 @@ export default function CreateIntegrationPage() {
                   }))}
                   placeholder="Select an ad account"
                   helper="Campaign data will be synced from this ad account"
+                  className="py-2.5 focus:!ring-orange-200 hover:!border-orange-200 focus:!border-orange-200"
                   required
                 />
               )}
