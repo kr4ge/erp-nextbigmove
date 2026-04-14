@@ -34,6 +34,11 @@ export default function StorePage() {
     return (
       <div className="space-y-6">
         <PageHeader
+          breadcrumbs={
+            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+              Integrations
+            </span>
+          }
           title="POS Stores"
           description="View and manage your connected Pancake POS stores."
         />
@@ -45,6 +50,11 @@ export default function StorePage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        breadcrumbs={
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Integrations
+          </span>
+        }
         title="POS Stores"
         description="View and manage your connected Pancake POS stores."
       />

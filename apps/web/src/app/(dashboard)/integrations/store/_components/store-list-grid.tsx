@@ -35,11 +35,11 @@ export function StoreListGrid({
           const displayName = store.shopName || store.name;
           return (
             <Card key={store.id} className="flex flex-col">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center rounded-full bg-[#FEF2F2] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#EF4444]">
+              <div className="flex items-center gap-2 2xl:justify-between 2xl:gap-0">
+                <span className="hidden items-center rounded-full bg-[#FEF2F2] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#EF4444] 2xl:inline-flex">
                   Shop
                 </span>
-                <span className="rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-medium text-[#475569]">
+                <span className="w-full rounded-full border border-orange-100 bg-orange-50/60 px-2.5 py-1 text-center text-xs font-medium text-orange-600 2xl:w-auto 2xl:text-left">
                   {store.teamId ? `Team: ${teamNames[store.teamId] || store.teamId}` : 'All teams'}
                 </span>
               </div>
@@ -69,8 +69,7 @@ export function StoreListGrid({
 
               <div className="mt-6">
                 <Button
-                  variant="secondary"
-                  className="w-full"
+                  className="w-full !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
                   onClick={() => onOpenStore(store.id)}
                 >
                   Enter
