@@ -69,6 +69,7 @@ model Tenant {
   partnerType                         PartnerType?                         @relation(fields: [partnerTypeId], references: [id], onDelete: SetNull)
   wmsStockRequests                    WmsStockRequest[]
   wmsStockInvoices                    WmsStockRequestInvoice[]
+  wmsFulfillmentOrders                WmsFulfillmentOrder[]
 
   @@index([slug])
   @@index([status])
@@ -292,6 +293,12 @@ model User {
   wmsStockReceipts          WmsStockReceipt[]          @relation("WmsReceiptActor")
   wmsInventoryAdjustments   WmsInventoryAdjustment[]   @relation("WmsAdjustmentActor")
   wmsInventoryTransfers     WmsInventoryTransfer[]     @relation("WmsTransferActor")
+  wmsPackingStations               WmsPackingStationUser[]
+  wmsFulfillmentPickedOrders      WmsFulfillmentOrder[]          @relation("WmsFulfillmentPicker")
+  wmsFulfillmentPackedOrders      WmsFulfillmentOrder[]          @relation("WmsFulfillmentPacker")
+  wmsFulfillmentScans             WmsFulfillmentScanLog[]        @relation("WmsFulfillmentScanActor")
+  wmsFulfillmentPickedAssignments WmsFulfillmentUnitAssignment[] @relation("WmsFulfillmentAssignmentPickedBy")
+  wmsFulfillmentPackedAssignments WmsFulfillmentUnitAssignment[] @relation("WmsFulfillmentAssignmentPackedBy")
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -396,6 +403,7 @@ enum WmsInventoryMovementType {
   RESERVE
   RELEASE
   PICK
+  PACK
   DISPATCH
   RTS_RECEIPT
   DAMAGE
@@ -434,6 +442,36 @@ enum WmsInventoryUnitStatus {
   RETURNED
   DAMAGED
   ADJUSTED_OUT
+}
+
+enum WmsPackingStationStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WmsFulfillmentOrderStatus {
+  PENDING
+  WAITING_FOR_STOCK
+  PICKING
+  PICKED
+  PACKING_PENDING
+  PACKING_ASSIGNED
+  PACKING
+  PACKED
+  DISPATCHED
+  HOLD
+  CANCELED
+}
+
+enum WmsFulfillmentScanStage {
+  PICKING
+  PACKING
+  DISPATCH
+}
+
+enum WmsFulfillmentScanResult {
+  ACCEPTED
+  REJECTED
 }
 
 model PartnerType {
@@ -498,6 +536,8 @@ model WmsWarehouse {
   stockReceipts          WmsStockReceipt[]
   inventoryAdjustments   WmsInventoryAdjustment[]
   inventoryTransfers     WmsInventoryTransfer[]
+  packingStations        WmsPackingStation[]
+  fulfillmentOrders      WmsFulfillmentOrder[]
 
   @@index([status])
   @@index([isDefault])
@@ -722,6 +762,8 @@ model WmsInventoryUnit {
   updatedAt              DateTime                    @updatedAt
 
   transferItems WmsInventoryTransferItem[]
+  fulfillmentAssignments WmsFulfillmentUnitAssignment[]
+  fulfillmentScanLogs WmsFulfillmentScanLog[]
 
   @@unique([lotId, batchSequence])
   @@index([warehouseId, status, receivedAt])
@@ -871,6 +913,162 @@ model WmsStockReceiptItem {
   @@index([sku])
   @@index([lotCode])
   @@map("wms_stock_receipt_items")
+}
+
+model WmsPackingStation {
+  id          String                  @id @default(uuid()) @db.Uuid
+  warehouseId String                  @db.Uuid
+  warehouse   WmsWarehouse            @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  code        String                  @unique
+  name        String
+  status      WmsPackingStationStatus @default(ACTIVE)
+  notes       String?
+  metadata    Json                   @default("{}")
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  assignedUsers WmsPackingStationUser[]
+  orders        WmsFulfillmentOrder[]
+  scanLogs      WmsFulfillmentScanLog[]
+
+  @@index([warehouseId, status, name])
+  @@map("wms_packing_stations")
+}
+
+model WmsPackingStationUser {
+  id        String            @id @default(uuid()) @db.Uuid
+  stationId String            @db.Uuid
+  station   WmsPackingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  userId    String            @db.Uuid
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime          @default(now())
+
+  @@unique([stationId, userId])
+  @@index([userId])
+  @@map("wms_packing_station_users")
+}
+
+model WmsFulfillmentOrder {
+  id               String                    @id @default(uuid()) @db.Uuid
+  fulfillmentCode  String                    @unique
+  tenantId         String                    @db.Uuid
+  tenant           Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId          String?                   @db.Uuid
+  store            PosStore?                 @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  posOrderId       String                    @unique @db.Uuid
+  posOrder         PosOrder                  @relation(fields: [posOrderId], references: [id], onDelete: Cascade)
+  warehouseId      String?                   @db.Uuid
+  warehouse        WmsWarehouse?             @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  packingStationId String?                   @db.Uuid
+  packingStation   WmsPackingStation?        @relation(fields: [packingStationId], references: [id], onDelete: SetNull)
+  pickerUserId     String?                   @db.Uuid
+  pickerUser       User?                     @relation("WmsFulfillmentPicker", fields: [pickerUserId], references: [id], onDelete: SetNull)
+  packerUserId     String?                   @db.Uuid
+  packerUser       User?                     @relation("WmsFulfillmentPacker", fields: [packerUserId], references: [id], onDelete: SetNull)
+  status           WmsFulfillmentOrderStatus @default(PENDING)
+  trackingNumber   String
+  posStatus        Int?
+  posStatusName    String?
+  orderDateLocal   String?
+  customerName     String?
+  customerPhone    String?
+  customerAddress  String?
+  totalLines       Int                       @default(0)
+  totalQuantity    Int                       @default(0)
+  submittedAt      DateTime?
+  pickedAt         DateTime?
+  packedAt         DateTime?
+  dispatchedAt     DateTime?
+  notes            String?
+  metadata         Json                      @default("{}")
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  items           WmsFulfillmentOrderItem[]
+  scanLogs        WmsFulfillmentScanLog[]
+  unitAssignments WmsFulfillmentUnitAssignment[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([storeId, status, createdAt])
+  @@index([warehouseId, status, createdAt])
+  @@index([packingStationId, status, createdAt])
+  @@index([trackingNumber])
+  @@map("wms_fulfillment_orders")
+}
+
+model WmsFulfillmentOrderItem {
+  id                 String               @id @default(uuid()) @db.Uuid
+  fulfillmentOrderId String               @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder  @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  lineNo             Int
+  sourceProductId    String?
+  variationId        String?
+  productName        String
+  variationName      String?
+  displayCode        String?
+  quantity           Int
+  pickedQuantity     Int                  @default(0)
+  packedQuantity     Int                  @default(0)
+  metadata           Json                 @default("{}")
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  scanLogs         WmsFulfillmentScanLog[]
+  unitAssignments  WmsFulfillmentUnitAssignment[]
+
+  @@unique([fulfillmentOrderId, lineNo])
+  @@index([variationId])
+  @@map("wms_fulfillment_order_items")
+}
+
+model WmsFulfillmentUnitAssignment {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  fulfillmentOrderId String                   @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder      @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  orderItemId        String                   @db.Uuid
+  orderItem          WmsFulfillmentOrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  unitId             String                   @db.Uuid
+  unit               WmsInventoryUnit         @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  pickedByUserId     String?                  @db.Uuid
+  pickedByUser       User?                    @relation("WmsFulfillmentAssignmentPickedBy", fields: [pickedByUserId], references: [id], onDelete: SetNull)
+  packedByUserId     String?                  @db.Uuid
+  packedByUser       User?                    @relation("WmsFulfillmentAssignmentPackedBy", fields: [packedByUserId], references: [id], onDelete: SetNull)
+  pickedAt           DateTime?
+  packedAt           DateTime?
+  metadata           Json                     @default("{}")
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@unique([fulfillmentOrderId, unitId])
+  @@index([orderItemId, createdAt])
+  @@index([unitId])
+  @@map("wms_fulfillment_unit_assignments")
+}
+
+model WmsFulfillmentScanLog {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  fulfillmentOrderId String                   @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder      @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  orderItemId        String?                  @db.Uuid
+  orderItem          WmsFulfillmentOrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  unitId             String?                  @db.Uuid
+  unit               WmsInventoryUnit?        @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  stationId          String?                  @db.Uuid
+  station            WmsPackingStation?       @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  actorUserId        String?                  @db.Uuid
+  actorUser          User?                    @relation("WmsFulfillmentScanActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  stage              WmsFulfillmentScanStage
+  result             WmsFulfillmentScanResult
+  action             String                   @db.VarChar(64)
+  scannedValue       String
+  message            String?
+  metadata           Json                     @default("{}")
+  createdAt          DateTime                 @default(now())
+
+  @@index([fulfillmentOrderId, createdAt])
+  @@index([stage, createdAt])
+  @@index([stationId, createdAt])
+  @@map("wms_fulfillment_scan_logs")
 }
 
 model WmsStockRequest {
@@ -1218,6 +1416,7 @@ model PosStore {
   tags              PosTag[]
   warehouses        PosWarehouse[]
   wmsStockRequests  WmsStockRequest[]
+  wmsFulfillmentOrders WmsFulfillmentOrder[]
 
   @@index([tenantId])
   @@index([tenantId, teamId])
@@ -1698,6 +1897,8 @@ model PosOrder {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  wmsFulfillmentOrder WmsFulfillmentOrder?
 
   @@unique([tenantId, shopId, posOrderId])
   @@index([tenantId, shopId, dateLocal])

@@ -25,6 +25,7 @@ import { WmsInventoryModule } from './modules/wms-inventory/wms-inventory.module
 import { WmsPurchasingModule } from './modules/wms-purchasing/wms-purchasing.module';
 import { WmsRequestsModule } from './modules/wms-requests/wms-requests.module';
 import { WmsWarehousesModule } from './modules/wms-warehouses/wms-warehouses.module';
+import { WmsFulfillmentModule } from './modules/wms-fulfillment/wms-fulfillment.module';
 
 @Module({
   imports: [
@@ -104,6 +105,7 @@ import { WmsWarehousesModule } from './modules/wms-warehouses/wms-warehouses.mod
     WmsPurchasingModule,
     WmsRequestsModule,
     WmsWarehousesModule,
+    WmsFulfillmentModule,
   ],
   controllers: [],
   providers: [],
