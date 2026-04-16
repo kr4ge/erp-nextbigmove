@@ -194,6 +194,20 @@ function isSummaryRow(row: unknown[], indexes: Record<ColumnKey, number>): boole
   );
 }
 
+function hasRequiredIdentityValues(
+  row: unknown[],
+  indexes: Record<ColumnKey, number>,
+): boolean {
+  return [
+    indexes.accountId,
+    indexes.campaignId,
+    indexes.campaignName,
+    indexes.adsetId,
+    indexes.adId,
+    indexes.adName,
+  ].every((index) => toCellString(getCell(row, index)) !== '');
+}
+
 export async function parseManualMetaUploadFile(file: File): Promise<WorkflowManualMetaUploadRow[]> {
   const XLSX = await import('xlsx');
   const buffer = await file.arrayBuffer();
@@ -218,14 +232,18 @@ export async function parseManualMetaUploadFile(file: File): Promise<WorkflowMan
   const indexes = resolveColumnIndexes(rows[0]);
   const parsedRows = rows
     .slice(1)
+    .map((row, index) => ({
+      row,
+      rowNumber: index + 2,
+    }))
     .filter(
-      (row) =>
+      ({ row }) =>
         Array.isArray(row) &&
         !isEmptyRow(row) &&
-        !isSummaryRow(row, indexes),
+        !isSummaryRow(row, indexes) &&
+        hasRequiredIdentityValues(row, indexes),
     )
-    .map((row, index) => {
-      const rowNumber = index + 2;
+    .map(({ row, rowNumber }) => {
       const reportingStarts = normalizeDate(
         getCell(row, indexes.reportingStarts),
         'Reporting starts',
