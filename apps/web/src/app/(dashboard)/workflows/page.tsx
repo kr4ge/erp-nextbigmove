@@ -1,10 +1,11 @@
 'use client';
 
-import { Plus } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import { WorkflowsTable } from './_components/workflows-table';
+import { ManualMetaUploadModal } from './_components/manual-meta-upload-modal';
 import { useWorkflowsController } from './_hooks/use-workflows-controller';
 
 export default function WorkflowsPage() {
@@ -14,7 +15,17 @@ export default function WorkflowsPage() {
     error,
     runningById,
     teamNames,
+    metaIntegrations,
+    showUploadModal,
+    selectedIntegrationId,
+    selectedUploadFile,
+    isUploadingMeta,
     handleRunWorkflow,
+    openUploadModal,
+    closeUploadModal,
+    setSelectedIntegrationId,
+    setSelectedUploadFile,
+    handleUploadMeta,
     navigateToNew,
     navigateToView,
     navigateToSettings,
@@ -43,12 +54,21 @@ export default function WorkflowsPage() {
           title="Workflows"
           description="Automate Meta Ads and POS data fetching on a schedule"
         />
-        <Button
-          iconLeft={<Plus className="h-4 w-4" />}
-          onClick={navigateToNew}
-        >
-          Create Workflow
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            iconLeft={<Upload className="h-4 w-4" />}
+            onClick={openUploadModal}
+          >
+            Upload Meta
+          </Button>
+          <Button
+            iconLeft={<Plus className="h-4 w-4" />}
+            onClick={navigateToNew}
+          >
+            Create Workflow
+          </Button>
+        </div>
       </div>
 
       <WorkflowsTable
@@ -59,6 +79,18 @@ export default function WorkflowsPage() {
         onView={navigateToView}
         onSettings={navigateToSettings}
         onRun={(workflow) => handleRunWorkflow(workflow.id)}
+      />
+
+      <ManualMetaUploadModal
+        isOpen={showUploadModal}
+        integrations={metaIntegrations}
+        selectedIntegrationId={selectedIntegrationId}
+        selectedFile={selectedUploadFile}
+        isUploading={isUploadingMeta}
+        onClose={closeUploadModal}
+        onIntegrationChange={setSelectedIntegrationId}
+        onFileChange={setSelectedUploadFile}
+        onSubmit={handleUploadMeta}
       />
     </div>
   );

@@ -14,6 +14,7 @@ import {
 import { WorkflowService } from './workflow.service';
 import {
   CreateWorkflowDto,
+  ManualMetaUploadDto,
   UpdateWorkflowDto,
   WorkflowResponseDto,
   WorkflowExecutionResponseDto,
@@ -49,6 +50,24 @@ export class WorkflowController {
   @Permissions('workflow.read')
   async findAll(): Promise<WorkflowResponseDto[]> {
     return this.workflowService.findAll();
+  }
+
+  /**
+   * Manually upload Meta insights rows and run downstream reconciliation.
+   * Requires workflow.execute permission.
+   */
+  @Post('meta-upload')
+  @Permissions('workflow.execute')
+  async uploadManualMeta(
+    @Body() body: ManualMetaUploadDto,
+  ): Promise<{
+    rowsReceived: number;
+    insightsUpserted: number;
+    datesProcessed: string[];
+    reconcileMarketingCompleted: boolean;
+    reconcileSalesCompleted: boolean;
+  }> {
+    return this.workflowService.uploadManualMeta(body);
   }
 
   /**

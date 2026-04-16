@@ -6,6 +6,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import {
   CreateWorkflowDto,
+  ManualMetaUploadDto,
+  ManualMetaUploadRowDto,
   UpdateWorkflowDto,
   WorkflowResponseDto,
   WorkflowExecutionResponseDto,
@@ -18,6 +20,9 @@ import { WorkflowProcessorService } from './services/workflow-processor.service'
 import { WorkflowSchedulerService } from './services/workflow-scheduler.service';
 import { WorkflowLogService } from './services/workflow-log.service';
 import { WorkflowProgressCacheService } from './services/workflow-progress-cache.service';
+import { MetaInsightService } from '../integrations/services/meta-insight.service';
+import { ReconcileMarketingService } from './services/reconcile-marketing.service';
+import { ReconcileSalesService } from './services/reconcile-sales.service';
 
 @Injectable()
 export class WorkflowService {
@@ -31,6 +36,9 @@ export class WorkflowService {
     private readonly schedulerService: WorkflowSchedulerService,
     private readonly workflowLogService: WorkflowLogService,
     private readonly workflowProgressCache: WorkflowProgressCacheService,
+    private readonly metaInsightService: MetaInsightService,
+    private readonly reconcileMarketingService: ReconcileMarketingService,
+    private readonly reconcileSalesService: ReconcileSalesService,
     @InjectQueue(WORKFLOW_QUEUE) private readonly workflowQueue: Queue<WorkflowJobData>,
   ) {}
 
@@ -73,6 +81,104 @@ export class WorkflowService {
     } catch {
       return null;
     }
+  }
+
+  private normalizeAccountId(value: string): string {
+    return String(value || '').trim().replace(/^act_/i, '');
+  }
+
+  private isIsoDate(value: string): boolean {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value);
+  }
+
+  private assertWholeNumber(value: number, label: string, rowNumber: number): number {
+    if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+      throw new BadRequestException(`Row ${rowNumber}: ${label} must be a non-negative whole number`);
+    }
+    return value;
+  }
+
+  private buildMetaUploadIntegrationWhere(
+    tenantId: string,
+    allowedTeams: string[],
+    isAdmin: boolean,
+    integrationId: string,
+  ) {
+    const base: any = {
+      id: integrationId,
+      tenantId,
+      provider: 'META_ADS',
+    };
+
+    const restrictAdminToScope = isAdmin && allowedTeams.length > 0;
+    if (isAdmin && !restrictAdminToScope) {
+      return base;
+    }
+
+    if (!isAdmin && allowedTeams.length === 0) {
+      return null;
+    }
+
+    return {
+      ...base,
+      OR: [
+        { teamId: { in: allowedTeams } },
+        { sharedTeams: { some: { teamId: { in: allowedTeams } } } },
+      ],
+    };
+  }
+
+  private buildMetaUploadAccountWhere(
+    tenantId: string,
+    allowedTeams: string[],
+    isAdmin: boolean,
+    integrationId?: string,
+  ) {
+    const base: any = {
+      tenantId,
+      ...(integrationId ? { integrationId } : {}),
+    };
+
+    const restrictAdminToScope = isAdmin && allowedTeams.length > 0;
+    if (isAdmin && !restrictAdminToScope) {
+      return base;
+    }
+
+    if (!isAdmin && allowedTeams.length === 0) {
+      return null;
+    }
+
+    return {
+      ...base,
+      OR: [
+        { teamId: { in: allowedTeams } },
+        { integration: { sharedTeams: { some: { teamId: { in: allowedTeams } } } } },
+      ],
+    };
+  }
+
+  private toUploadedRawInsight(row: ManualMetaUploadRowDto) {
+    const websitePurchases = Number(row.websitePurchases || 0);
+
+    return {
+      campaign_id: row.campaignId.trim(),
+      campaign_name: row.campaignName.trim(),
+      adset_id: row.adsetId.trim(),
+      ad_id: row.adId.trim(),
+      ad_name: row.adName.trim(),
+      date_start: row.reportingStarts.trim(),
+      spend: String(row.amountSpent),
+      inline_link_clicks: String(row.linkClicks),
+      clicks: String(row.clicks),
+      impressions: String(row.impressions),
+      created_time: row.dateCreated?.trim() || null,
+      actions: [
+        {
+          action_type: 'landing_page_view',
+          value: String(websitePurchases),
+        },
+      ],
+    };
   }
 
   /**
@@ -162,6 +268,152 @@ export class WorkflowService {
       const nextRunAt = workflow.enabled ? this.computeNextRunAt(workflow.schedule) : null;
       return new WorkflowResponseDto({ ...workflow, lastRunAt, nextRunAt });
     });
+  }
+
+  async uploadManualMeta(
+    payload: ManualMetaUploadDto,
+  ): Promise<{
+    rowsReceived: number;
+    insightsUpserted: number;
+    datesProcessed: string[];
+    reconcileMarketingCompleted: boolean;
+    reconcileSalesCompleted: boolean;
+  }> {
+    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
+    let selectedIntegration: { id: string; teamId: string | null } | null = null;
+
+    if (payload.integrationId) {
+      const integrationWhere = this.buildMetaUploadIntegrationWhere(
+        tenantId,
+        allowedTeams,
+        isAdmin,
+        payload.integrationId,
+      );
+
+      if (!integrationWhere) {
+        throw new NotFoundException('Meta integration not found');
+      }
+
+      selectedIntegration = await this.prisma.integration.findFirst({
+        where: integrationWhere,
+        select: {
+          id: true,
+          teamId: true,
+        },
+      });
+
+      if (!selectedIntegration) {
+        throw new NotFoundException('Meta integration not found');
+      }
+    }
+
+    const accountWhere = this.buildMetaUploadAccountWhere(
+      tenantId,
+      allowedTeams,
+      isAdmin,
+      selectedIntegration?.id,
+    );
+
+    if (!accountWhere) {
+      throw new BadRequestException('No accessible Meta ad accounts found for this upload');
+    }
+
+    const accounts = await this.prisma.metaAdAccount.findMany({
+      where: accountWhere,
+      select: {
+        accountId: true,
+        teamId: true,
+        integrationId: true,
+      },
+    });
+
+    const accountMap = new Map(
+      accounts.map((account) => [this.normalizeAccountId(account.accountId), account]),
+    );
+    const groupedInsights = new Map<
+      string,
+      {
+        teamId: string | null;
+        rawInsights: any[];
+      }
+    >();
+    const affectedDates = new Set<string>();
+
+    payload.rows.forEach((row, index) => {
+      const rowNumber = index + 2;
+      const accountId = this.normalizeAccountId(row.accountId);
+      const reportingStart = row.reportingStarts.trim();
+      const reportingEnd = row.reportingEnds.trim();
+      const dateCreated = row.dateCreated?.trim() || '';
+
+      if (!accountId) {
+        throw new BadRequestException(`Row ${rowNumber}: Account ID is required`);
+      }
+      if (!this.isIsoDate(reportingStart)) {
+        throw new BadRequestException(`Row ${rowNumber}: Reporting starts must be YYYY-MM-DD`);
+      }
+      if (!this.isIsoDate(reportingEnd)) {
+        throw new BadRequestException(`Row ${rowNumber}: Reporting ends must be YYYY-MM-DD`);
+      }
+      if (reportingStart !== reportingEnd) {
+        throw new BadRequestException(
+          `Row ${rowNumber}: Reporting starts and Reporting ends must be the same date`,
+        );
+      }
+      if (dateCreated && !this.isIsoDate(dateCreated)) {
+        throw new BadRequestException(`Row ${rowNumber}: Date created must be YYYY-MM-DD`);
+      }
+      if (!Number.isFinite(row.amountSpent) || row.amountSpent < 0) {
+        throw new BadRequestException(`Row ${rowNumber}: Amount spent must be a non-negative number`);
+      }
+
+      this.assertWholeNumber(row.linkClicks, 'Link clicks', rowNumber);
+      this.assertWholeNumber(row.clicks, 'Clicks (all)', rowNumber);
+      this.assertWholeNumber(row.impressions, 'Impressions', rowNumber);
+      this.assertWholeNumber(row.websitePurchases, 'Website purchases', rowNumber);
+
+      const account = accountMap.get(accountId);
+      const teamId = account?.teamId ?? selectedIntegration?.teamId ?? null;
+      const existingGroup = groupedInsights.get(accountId);
+      if (existingGroup) {
+        existingGroup.rawInsights.push(this.toUploadedRawInsight(row));
+      } else {
+        groupedInsights.set(accountId, {
+          teamId,
+          rawInsights: [this.toUploadedRawInsight(row)],
+        });
+      }
+
+      affectedDates.add(reportingStart);
+    });
+
+    let insightsUpserted = 0;
+    for (const [accountId, group] of groupedInsights.entries()) {
+      insightsUpserted += await this.metaInsightService.upsertMetaInsights(
+        tenantId,
+        accountId,
+        group.rawInsights,
+        group.teamId,
+        1,
+      );
+    }
+
+    const datesProcessed = Array.from(affectedDates).sort((a, b) => a.localeCompare(b));
+    for (const date of datesProcessed) {
+      await this.reconcileMarketingService.reconcileDay(tenantId, date, null);
+    }
+    for (const date of datesProcessed) {
+      await this.reconcileSalesService.aggregateDay(tenantId, date, null);
+    }
+
+    return {
+      rowsReceived: payload.rows.length,
+      insightsUpserted,
+      datesProcessed,
+      reconcileMarketingCompleted: true,
+      reconcileSalesCompleted: true,
+    };
   }
 
   /**

@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/toast';
 import { workflowsService } from '../_services/workflows.service';
 import type { WorkflowItem } from '../_types/workflow';
+import type { WorkflowMetaIntegrationOption } from '../_types/manual-meta-upload';
 import { parseWorkflowError } from '../_utils/workflow-errors';
+import { parseManualMetaUploadFile } from '../_utils/meta-upload-parser';
 
 export function useWorkflowsController() {
   const router = useRouter();
@@ -16,6 +18,11 @@ export function useWorkflowsController() {
   const [error, setError] = useState<string | null>(null);
   const [runningById, setRunningById] = useState<Record<string, boolean>>({});
   const [teamNames, setTeamNames] = useState<Record<string, string>>({});
+  const [metaIntegrations, setMetaIntegrations] = useState<WorkflowMetaIntegrationOption[]>([]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedIntegrationId, setSelectedIntegrationId] = useState('');
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [isUploadingMeta, setIsUploadingMeta] = useState(false);
 
   const fetchWorkflows = useCallback(async () => {
     try {
@@ -38,6 +45,18 @@ export function useWorkflowsController() {
     }
   }, []);
 
+  const fetchMetaIntegrations = useCallback(async () => {
+    try {
+      const data = await workflowsService.fetchMetaIntegrations();
+      setMetaIntegrations(data);
+      setSelectedIntegrationId((prev) =>
+        prev && data.some((integration) => integration.id === prev) ? prev : '',
+      );
+    } catch (fetchError) {
+      addToast('error', parseWorkflowError(fetchError, 'Failed to load Meta integrations'));
+    }
+  }, [addToast]);
+
   useEffect(() => {
     void fetchWorkflows();
   }, [fetchWorkflows]);
@@ -47,13 +66,19 @@ export function useWorkflowsController() {
   }, [fetchTeamNameMap]);
 
   useEffect(() => {
+    void fetchMetaIntegrations();
+  }, [fetchMetaIntegrations]);
+
+  useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key === 'current_team_ids' || event.key === 'current_team_id') {
         void fetchWorkflows();
+        void fetchMetaIntegrations();
       }
     };
     const onTeamScope = () => {
       void fetchWorkflows();
+      void fetchMetaIntegrations();
     };
 
     window.addEventListener('storage', onStorage);
@@ -62,7 +87,7 @@ export function useWorkflowsController() {
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('teamScopeChanged', onTeamScope as EventListener);
     };
-  }, [fetchWorkflows]);
+  }, [fetchMetaIntegrations, fetchWorkflows]);
 
   const handleRunWorkflow = useCallback(
     async (workflowId: string) => {
@@ -85,6 +110,55 @@ export function useWorkflowsController() {
     router.push('/workflows/new');
   }, [router]);
 
+  const openUploadModal = useCallback(() => {
+    setShowUploadModal(true);
+  }, []);
+
+  const closeUploadModal = useCallback(() => {
+    if (isUploadingMeta) return;
+    setShowUploadModal(false);
+    setSelectedUploadFile(null);
+  }, [isUploadingMeta]);
+
+  const handleUploadMeta = useCallback(async () => {
+    if (!selectedUploadFile) {
+      addToast('error', 'Select a CSV or XLSX file to upload');
+      return;
+    }
+
+    setIsUploadingMeta(true);
+    try {
+      const rows = await parseManualMetaUploadFile(selectedUploadFile);
+      const response = await workflowsService.uploadManualMeta({
+        integrationId: selectedIntegrationId || undefined,
+        rows,
+      });
+
+      addToast('success', `Populated ${response.insightsUpserted} Meta ad insights`, 5000);
+      window.setTimeout(() => {
+        addToast(
+          'success',
+          `Reconcile marketing completed for ${response.datesProcessed.length} date(s)`,
+          5000,
+        );
+      }, 150);
+      window.setTimeout(() => {
+        addToast(
+          'success',
+          `Reconcile sales completed for ${response.datesProcessed.length} date(s)`,
+          5000,
+        );
+      }, 300);
+
+      setShowUploadModal(false);
+      setSelectedUploadFile(null);
+    } catch (uploadError) {
+      addToast('error', parseWorkflowError(uploadError, 'Failed to upload Meta ads manually'), 6000);
+    } finally {
+      setIsUploadingMeta(false);
+    }
+  }, [addToast, selectedIntegrationId, selectedUploadFile]);
+
   const navigateToView = useCallback(
     (workflow: WorkflowItem) => {
       router.push(`/workflows/${workflow.id}`);
@@ -105,8 +179,18 @@ export function useWorkflowsController() {
     error,
     runningById,
     teamNames,
+    metaIntegrations,
+    showUploadModal,
+    selectedIntegrationId,
+    selectedUploadFile,
+    isUploadingMeta,
     fetchWorkflows,
     handleRunWorkflow,
+    openUploadModal,
+    closeUploadModal,
+    setSelectedIntegrationId,
+    setSelectedUploadFile,
+    handleUploadMeta,
     navigateToNew,
     navigateToView,
     navigateToSettings,
