@@ -294,17 +294,17 @@ export default function CreateIntegrationPage() {
           {/* Meta Ads Card */}
           <button
             onClick={() => handleProviderSelect('META_ADS')}
-            className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50/30"
+            className="panel panel-content text-left transition-all hover:border-orange-200 hover:bg-orange-50/30"
           >
             <div className="panel-header">
               <ProviderGlyph provider="META_ADS" className="h-3.5 w-3.5 text-orange-500" />
-              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Meta Ads</h3>
+              <h3 className="panel-title">Meta Ads</h3>
             </div>
             <div className="space-y-3 px-5 py-5">
-              <p className="text-sm-custom text-slate-600">
+              <p className="text-sm-custom text-foreground">
                 Connect your Meta Marketing API to sync ad campaign data.
               </p>
-              <ul className="space-y-1 text-sm-custom text-slate-500">
+              <ul className="space-y-1 text-sm-custom text-foreground/60">
                 <li>- Campaign performance</li>
                 <li>- Ad spend tracking</li>
                 <li>- Conversion data</li>
@@ -315,17 +315,17 @@ export default function CreateIntegrationPage() {
           {/* Pancake POS Card */}
           <button
             onClick={() => handleProviderSelect('PANCAKE_POS')}
-            className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50/30"
+            className="panel panel-content text-left transition-all hover:border-orange-200 hover:bg-orange-50/30"
           >
             <div className="panel-header">
-              <ProviderGlyph provider="PANCAKE_POS" className="h-3.5 w-3.5 text-orange-500" />
-              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Pancake POS</h3>
+              <ProviderGlyph provider="PANCAKE_POS" className="h-3.5 w-3.5 text-primary" />
+              <h3 className="panel-title">Pancake POS</h3>
             </div>
             <div className="space-y-3 px-5 py-5">
-              <p className="text-sm-custom text-slate-600">
+              <p className="text-sm-custom text-foreground">
                 Connect your Pancake POS to sync sales and product data.
               </p>
-              <ul className="space-y-1 text-sm-custom text-slate-500">
+              <ul className="space-y-1 text-sm-custom text-foreground/60">
                 <li>- Product catalog</li>
                 <li>- Sales transactions</li>
                 <li>- Inventory data</li>
@@ -361,7 +361,7 @@ export default function CreateIntegrationPage() {
                   onChange={(e) => setAccessToken(e.target.value)}
                   placeholder="Enter your Meta access token"
                   helper="Get your access token from the Meta Developer Portal"
-                  className="py-2.5 focus:!ring-orange-200 hover:!border-orange-200 focus:!border-orange-200"
+                  className="py-2.5"
                   required
                 />
               ) : (

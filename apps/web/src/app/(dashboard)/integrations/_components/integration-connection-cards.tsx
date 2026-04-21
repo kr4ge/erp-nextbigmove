@@ -20,10 +20,10 @@ export function IntegrationConnectionCards({
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <section className="panel panel-content">
         <div className="panel-header">
-          <span className="text-orange-500 [&>svg]:!h-3.5 [&>svg]:!w-3.5">
+          <span className="text-primary [&>svg]:!h-3.5 [&>svg]:!w-3.5">
             {getProviderIcon('META_ADS')}
           </span>
-          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+          <h3 className="panel-title">
             Meta Marketing API
           </h3>
         </div>
