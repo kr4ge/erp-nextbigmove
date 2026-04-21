@@ -1145,7 +1145,7 @@ export default function SalesPerformancePage() {
 
       <DashboardSection
         title="Sales Performance Monitoring"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
         className="panel panel-content"
         contentClassName="space-y-5"
@@ -1268,7 +1268,7 @@ export default function SalesPerformancePage() {
 
       <DashboardSection
         title="Performance Breakdown"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         meta={`${activeRowCount || 0} rows`}
         className="panel panel-content"
         contentClassName="space-y-3"
@@ -1327,7 +1327,7 @@ export default function SalesPerformancePage() {
 
       <DashboardSection
         title="Delivery Monitoring"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         className="panel panel-content"
         contentClassName="space-y-3"
         meta={

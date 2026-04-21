@@ -400,7 +400,6 @@ export default function MarketingAnalyticsPage() {
         title="Marketing Monitoring"
         icon={<Gauge className="h-3.5 w-3.5 text-orange-500" />}
         meta={`Last updated: ${lastUpdatedLabel}`}
-        className="panel panel-content"
         contentClassName="space-y-5"
       >
         <div className="flex flex-wrap items-center gap-3">

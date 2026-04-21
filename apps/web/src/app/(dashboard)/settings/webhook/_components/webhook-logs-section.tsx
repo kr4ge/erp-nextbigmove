@@ -75,7 +75,7 @@ export function WebhookLogsSection({
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
           <select
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            className="input"
             value={filters.receiveStatus}
             onChange={(event) => onFiltersChange({ receiveStatus: event.target.value })}
           >
@@ -88,7 +88,7 @@ export function WebhookLogsSection({
           </select>
 
           <select
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            className="input"
             value={filters.processStatus}
             onChange={(event) => onFiltersChange({ processStatus: event.target.value })}
           >
@@ -102,7 +102,7 @@ export function WebhookLogsSection({
           </select>
 
           <select
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            className="input"
             value={filters.relayStatus}
             onChange={(event) => onFiltersChange({ relayStatus: event.target.value })}
           >
@@ -113,21 +113,21 @@ export function WebhookLogsSection({
           </select>
 
           <input
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            className="input"
             value={filters.shopId}
             onChange={(event) => onFiltersChange({ shopId: event.target.value })}
             placeholder="Shop ID"
           />
 
           <input
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            className="input"
             value={filters.orderId}
             onChange={(event) => onFiltersChange({ orderId: event.target.value })}
             placeholder="Order ID"
           />
 
           <input
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            className="input"
             value={filters.search}
             onChange={(event) => onFiltersChange({ search: event.target.value })}
             placeholder="Search request/error"
@@ -137,13 +137,13 @@ export function WebhookLogsSection({
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
           <input
             type="date"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            className="input"
             value={filters.startDate}
             onChange={(event) => onFiltersChange({ startDate: event.target.value })}
           />
           <input
             type="date"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            className="input"
             value={filters.endDate}
             onChange={(event) => onFiltersChange({ endDate: event.target.value })}
           />

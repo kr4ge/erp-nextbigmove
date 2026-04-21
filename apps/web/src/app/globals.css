@@ -28,7 +28,7 @@
     --foreground: 15 23 42;
 
     --surface: 255 255 255;
-    --surface-warm: 255, 237 213 / 0.35;
+    --surface-warm: 255 237 213 / 0.35;
     --surface-warm-soft: 255 247 237 / 0.25;
 
     --primary: 255 105 0;
@@ -304,6 +304,12 @@
         text-destructive
         border-destructive/30
         bg-primary-soft/50
+    }
+
+    .pill-neutral {
+      @apply
+        border-none
+        bg-secondary/40 text-foreground/80
     }
 }
 

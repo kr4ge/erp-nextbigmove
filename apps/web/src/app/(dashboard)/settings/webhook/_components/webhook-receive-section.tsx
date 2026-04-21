@@ -44,7 +44,7 @@ export function WebhookReceiveSection({
       <div className="space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+            <div className="inline-flex items-center gap-2 rounded-lg bg-orange-50 px-3 py-1 text-xs font-semibold text-primary">
               <Webhook className="h-4 w-4" />
               Receive
             </div>
@@ -79,8 +79,8 @@ export function WebhookReceiveSection({
             aria-checked={!!config?.enabled}
             onClick={() => onToggleEnabled(!config?.enabled)}
             disabled={!canManage || loading || !config || isUpdating}
-            className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-              config?.enabled ? 'bg-blue-600' : 'bg-slate-300'
+            className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+              config?.enabled ? 'bg-primary' : 'bg-slate-300'
             } ${!canManage || loading || !config || isUpdating ? 'cursor-not-allowed opacity-60' : ''}`}
           >
             <span

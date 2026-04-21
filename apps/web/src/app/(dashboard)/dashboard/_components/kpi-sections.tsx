@@ -846,7 +846,6 @@ export function ExecutiveKpiSection({
     <DashboardSection
       title="Marketing KPI Overview"
       icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
-      className="panel-content"
       contentClassName="space-y-3"
       headerClassName="px-3 py-2.5"
       titleClassName="text-xs tracking-[0.18em]"
@@ -903,7 +902,6 @@ export function TeamKpiSection({ data, loading, error }: TeamKpiSectionProps) {
     <DashboardSection
       title="Marketing KPI Overview"
       icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
-      className="panel panel-content"
       contentClassName="space-y-3"
       headerClassName="px-3 py-2.5"
       titleClassName="text-xs tracking-[0.18em]"

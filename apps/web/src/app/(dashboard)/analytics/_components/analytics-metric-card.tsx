@@ -88,15 +88,15 @@ export function AnalyticsMetricCard({
 
   return (
     <div
-      className={`rounded-lg border border-slate-200 bg-white px-3 py-2.5 ${className ?? ''}`.trim()}
+      className={`card ${className ?? ''}`.trim()}
     >
-      <div className="text-xs text-slate-500 flex items-center gap-1">
+      <div className="text-xs text-foreground/60 flex items-center gap-1">
         {label}
         {tooltip ? <TooltipIcon label={label} content={tooltip} mode={tooltipMode} /> : null}
       </div>
 
       <div className="mt-1 flex items-center justify-between">
-        <p className="text-lg font-semibold text-slate-900">
+        <p className="text-lg font-semibold text-foreground">
           {formatMetricValue(value, format, valuePrecision)}
         </p>
         <p className={`text-xs ${getDeltaColor(delta)}`}>{formatDeltaLabel(delta)}</p>
@@ -105,8 +105,8 @@ export function AnalyticsMetricCard({
       {count ? (
         <div className="mt-1 flex items-center justify-between">
           <span className="text-sm text-slate-700">
-            <span className="font-normal text-slate-600">{count.label ?? 'ord'}:</span>{' '}
-            <span className="font-semibold text-slate-900">{formatCountValue(count.value)}</span>
+            <span className="font-normal text-foreground/80">{count.label ?? 'ord'}:</span>{' '}
+            <span className="font-semibold text-foreground">{formatCountValue(count.value)}</span>
           </span>
           <span className={`text-xs ${getDeltaColor(count.delta)}`}>
             {formatDeltaLabel(count.delta)}

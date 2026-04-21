@@ -1810,7 +1810,6 @@ export default function DashboardPage() {
         title="Sales Performance"
         icon={<TrendingUp className="h-3.5 w-3.5 text-orange-500" />}
         meta={`${salesData?.rows?.length || 0} rows`}
-        className="panel panel-content"
         contentClassName="p-0"
       >
         <div className="overflow-hidden rounded-b-xl">

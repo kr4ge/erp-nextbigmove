@@ -27,7 +27,7 @@ export function DashboardSection({
   return (
     <section
       className={clsx(
-        "panel", // "panel panel-content"
+        "panel panel-content", // "panel panel-content"
         className,
       )}
     >

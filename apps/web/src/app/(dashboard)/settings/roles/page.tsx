@@ -339,7 +339,7 @@ export default function RolesPage() {
                           {role.permissions.map((perm) => (
                             <span
                               key={perm}
-                              className="inline-flex items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-medium text-[#475569]"
+                              className="pill pill-neutral"
                             >
                               {perm}
                             </span>

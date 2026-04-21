@@ -1111,7 +1111,7 @@ export default function SalesAnalyticsPage() {
         }
         tooltip={tooltip}
         tooltipMode={m.key === 'contribution_margin' ? 'popover' : 'hover'}
-        className="w-full xl:min-w-[190px] xl:w-auto"
+        className="w-full panel panel-content xl:min-w-[190px] xl:w-auto"
       />
     );
   };
@@ -1403,7 +1403,6 @@ export default function SalesAnalyticsPage() {
       <DashboardSection
         title="Sales Breakdown"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
-        className="panel panel-content"
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-between">
