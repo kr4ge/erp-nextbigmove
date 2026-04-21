@@ -40,7 +40,7 @@ export function UserCategoryAssignmentForm({
       footerHint="Category assignment follows the selected category template date window and KPI targets."
     >
       <div className={FIELD_GROUP_CLASS}>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
           Assignment Details
         </p>
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">

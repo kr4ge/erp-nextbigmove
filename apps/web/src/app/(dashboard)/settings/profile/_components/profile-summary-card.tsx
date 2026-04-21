@@ -25,10 +25,10 @@ export function ProfileSummaryCard({
   teamText,
 }: ProfileSummaryCardProps) {
   return (
-    <Card className="lg:col-span-1 border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25">
-      <div className="-mx-6 -mt-6 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+    <Card className="lg:col-span-1 panel panel-content">
+      <div className="-mx-6 -mt-6 mb-4 panel-header">
         <User className="h-3.5 w-3.5 text-orange-500" />
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
           Profile Summary
         </h3>
       </div>

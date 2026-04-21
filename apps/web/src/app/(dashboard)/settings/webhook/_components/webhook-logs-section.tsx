@@ -198,22 +198,22 @@ export function WebhookLogsSection({
                         {formatWebhookDateTime(row.receivedAt)}
                       </td>
                       <td className="px-3 py-3 text-xs text-slate-700">
-                        <div className="font-mono text-[11px] text-slate-900">{row.requestId}</div>
+                        <div className="font-mono text-xs text-slate-900">{row.requestId}</div>
                         <div className="text-slate-500">job: {row.queueJobId || '--'}</div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-700">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${toStatusBadgeClass(row.receiveStatus)}`}>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${toStatusBadgeClass(row.receiveStatus)}`}>
                           {row.receiveStatus}
                         </span>
                         <div className="mt-1 text-slate-500">{row.receiveHttpStatus ?? '--'}</div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-700">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${toStatusBadgeClass(row.processStatus)}`}>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${toStatusBadgeClass(row.processStatus)}`}>
                           {row.processStatus}
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-700">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${toStatusBadgeClass(row.relayStatus)}`}>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${toStatusBadgeClass(row.relayStatus)}`}>
                           {row.relayStatus || 'SKIPPED'}
                         </span>
                       </td>
@@ -245,12 +245,12 @@ export function WebhookLogsSection({
                               <table className="min-w-full divide-y divide-slate-100">
                                 <thead className="bg-slate-50">
                                   <tr>
-                                    <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Shop ID</th>
-                                    <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Order ID</th>
-                                    <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Status</th>
-                                    <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Result</th>
-                                    <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Reason</th>
-                                    <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase text-slate-500">Warning</th>
+                                    <th className="px-2 py-2 text-left text-xs font-semibold uppercase text-slate-500">Shop ID</th>
+                                    <th className="px-2 py-2 text-left text-xs font-semibold uppercase text-slate-500">Order ID</th>
+                                    <th className="px-2 py-2 text-left text-xs font-semibold uppercase text-slate-500">Status</th>
+                                    <th className="px-2 py-2 text-left text-xs font-semibold uppercase text-slate-500">Result</th>
+                                    <th className="px-2 py-2 text-left text-xs font-semibold uppercase text-slate-500">Reason</th>
+                                    <th className="px-2 py-2 text-left text-xs font-semibold uppercase text-slate-500">Warning</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -261,7 +261,7 @@ export function WebhookLogsSection({
                                         <td className="px-2 py-2 text-xs text-slate-700">{order.orderId || '--'}</td>
                                         <td className="px-2 py-2 text-xs text-slate-700">{order.status ?? '--'}</td>
                                         <td className="px-2 py-2 text-xs text-slate-700">
-                                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${toStatusBadgeClass(order.upsertStatus)}`}>
+                                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${toStatusBadgeClass(order.upsertStatus)}`}>
                                             {order.upsertStatus}
                                           </span>
                                         </td>

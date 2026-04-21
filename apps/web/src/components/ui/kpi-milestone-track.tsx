@@ -45,7 +45,7 @@ export function KpiMilestoneTrack({
   const progressColor = getProgressColor(safeProgress);
   const trackHeight = size === "sm" ? "h-1.5" : "h-2.5";
   const dotSize = size === "sm" ? "h-3 w-3" : "h-4 w-4";
-  const labelSize = size === "sm" ? "text-[10px]" : "text-[11px]";
+  const labelSize = size === "sm" ? "text-xs-tight" : "text-xs";
 
   return (
     <div className={clsx("space-y-2", className)}>

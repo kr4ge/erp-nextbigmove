@@ -10,13 +10,13 @@ type TeamCategoryHistoryProps = {
 
 export function TeamCategoryHistory({ teamName, rows }: TeamCategoryHistoryProps) {
   return (
-    <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+    <section className="panel panel-content">
+      <div className="panel-header">
         <Target className="h-3.5 w-3.5 text-orange-500" />
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+        <h4 className="panel-title">
           Team + Category Targets
         </h4>
-        {teamName ? <span className="ml-auto text-[10px] text-slate-500">{teamName}</span> : null}
+        {teamName ? <span className="ml-auto text-xs-tight text-slate-500">{teamName}</span> : null}
       </div>
       <div className="space-y-3 p-3">
         {rows.length > 0 ? (
@@ -28,10 +28,10 @@ export function TeamCategoryHistory({ teamName, rows }: TeamCategoryHistoryProps
               >
                 <div className="min-w-0">
                   <p className="truncate text-xs font-semibold text-slate-900">{row.label}</p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-xs text-slate-500">
                     {row.scopeType === 'TEAM' ? 'Team KPI' : `${row.category} category KPI`}
                   </p>
-                  <p className="mt-1 text-[11px] text-slate-500">
+                  <p className="mt-1 text-xs text-slate-500">
                     {row.startDate} to {row.endDate || 'Open ended'}
                   </p>
                 </div>

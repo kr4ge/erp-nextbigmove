@@ -41,7 +41,7 @@ export function UserTargetOverrideForm({
     >
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
         <div className={FIELD_GROUP_CLASS}>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
             Member + Validity
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -92,7 +92,7 @@ export function UserTargetOverrideForm({
         </div>
 
         <div className={FIELD_GROUP_CLASS}>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
             Override Targets
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -48,7 +48,7 @@ export function FormSection({
         {children}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
-        <p className="text-[11px] text-slate-500">{footerHint}</p>
+        <p className="text-xs text-slate-500">{footerHint}</p>
         <div className="flex items-center gap-2">
           {secondaryActionLabel && onSecondaryAction ? (
             <Button

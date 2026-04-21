@@ -26,7 +26,7 @@ const profileFormLabelClass =
   'text-xs font-semibold uppercase tracking-[0.16em] text-slate-500';
 const profileFormInputClass =
   'rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100';
-const profileFormHelperClass = 'text-[11px] text-slate-500';
+const profileFormHelperClass = 'text-xs text-slate-500';
 const profileFormReadOnlyClass = 'bg-slate-50 text-slate-700';
 
 export function PersonalInfoForm({
@@ -45,11 +45,11 @@ export function PersonalInfoForm({
   onSubmit,
 }: PersonalInfoFormProps) {
   return (
-    <Card className="lg:col-span-2 border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25">
+    <Card className="lg:col-span-2 panel panel-content">
       <form className="space-y-4" onSubmit={onSubmit}>
-        <div className="-mx-6 -mt-6 mb-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+        <div className="-mx-6 -mt-6 mb-4 panel-header">
           <User className="h-3.5 w-3.5 text-orange-500" />
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
             Personal Information
           </h3>
         </div>

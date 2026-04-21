@@ -964,7 +964,7 @@ export default function SalesAnalyticsPage() {
           <span>Net Margin</span>
           <span>{nf(kpis.net_margin ?? 0)}</span>
         </div>
-        <p className="text-[11px] text-slate-500">{filtersLabel}</p>
+        <p className="text-xs text-slate-500">{filtersLabel}</p>
       </div>
     );
   };
@@ -1064,7 +1064,7 @@ export default function SalesAnalyticsPage() {
           <span>CM (RTS {rtsForecastSafe}%)</span>
           <span>{nf(forecast.cmForecast)}</span>
         </div>
-        <p className="text-[11px] text-slate-500">{filtersLabel}</p>
+        <p className="text-xs text-slate-500">{filtersLabel}</p>
       </div>
     );
   };
@@ -1120,14 +1120,14 @@ export default function SalesAnalyticsPage() {
     <div className="space-y-5">
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+          <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Analytics
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">
+            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">
               Sales Analytics
             </h1>
-            <p className="text-[0.82rem] text-slate-500">
+            <p className="text-sm-custom text-slate-500">
               Monitor sales performance by mapping.
             </p>
           </div>
@@ -1138,7 +1138,7 @@ export default function SalesAnalyticsPage() {
         title="Sales Monitoring"
         icon={<ShoppingBag className="h-3.5 w-3.5 text-orange-500" />}
         meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-5"
       >
         <div className="flex flex-wrap items-center gap-3">
@@ -1235,7 +1235,7 @@ export default function SalesAnalyticsPage() {
                           className="w-20 rounded border border-slate-200 px-2 py-1 text-sm text-slate-900 focus:outline-none focus:border-indigo-300"
                         />
                       </label>
-                      <p className="text-[11px] text-slate-500">Used for CM (RTS %) forecast column</p>
+                      <p className="text-xs text-slate-500">Used for CM (RTS %) forecast column</p>
                     </div>
                     <div className="h-px bg-slate-100 my-1" />
                     <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -1403,7 +1403,7 @@ export default function SalesAnalyticsPage() {
       <DashboardSection
         title="Sales Breakdown"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-between">

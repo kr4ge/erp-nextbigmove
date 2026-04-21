@@ -59,9 +59,13 @@ const config: Config = {
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
-      // fontSize: {
-        
-      // }
+      fontSize: {
+        'xs-tight': '10px',
+        'xs': '11px',
+        'sm-custom': '0.82rem',
+        'lg-loose': '1.75rem',
+        'xl-loose': '1.85rem'
+      }
     },
   },
   plugins: [],

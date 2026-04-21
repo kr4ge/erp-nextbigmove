@@ -278,7 +278,7 @@ export default function CreateIntegrationPage() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={
-          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+          <span className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Integrations
           </span>
         }
@@ -296,15 +296,15 @@ export default function CreateIntegrationPage() {
             onClick={() => handleProviderSelect('META_ADS')}
             className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50/30"
           >
-            <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+            <div className="panel-header">
               <ProviderGlyph provider="META_ADS" className="h-3.5 w-3.5 text-orange-500" />
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Meta Ads</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Meta Ads</h3>
             </div>
             <div className="space-y-3 px-5 py-5">
-              <p className="text-[0.82rem] text-slate-600">
+              <p className="text-sm-custom text-slate-600">
                 Connect your Meta Marketing API to sync ad campaign data.
               </p>
-              <ul className="space-y-1 text-[0.82rem] text-slate-500">
+              <ul className="space-y-1 text-sm-custom text-slate-500">
                 <li>- Campaign performance</li>
                 <li>- Ad spend tracking</li>
                 <li>- Conversion data</li>
@@ -317,15 +317,15 @@ export default function CreateIntegrationPage() {
             onClick={() => handleProviderSelect('PANCAKE_POS')}
             className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50/30"
           >
-            <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+            <div className="panel-header">
               <ProviderGlyph provider="PANCAKE_POS" className="h-3.5 w-3.5 text-orange-500" />
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Pancake POS</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Pancake POS</h3>
             </div>
             <div className="space-y-3 px-5 py-5">
-              <p className="text-[0.82rem] text-slate-600">
+              <p className="text-sm-custom text-slate-600">
                 Connect your Pancake POS to sync sales and product data.
               </p>
-              <ul className="space-y-1 text-[0.82rem] text-slate-500">
+              <ul className="space-y-1 text-sm-custom text-slate-500">
                 <li>- Product catalog</li>
                 <li>- Sales transactions</li>
                 <li>- Inventory data</li>
@@ -336,18 +336,18 @@ export default function CreateIntegrationPage() {
       )}
       {/* Step 2: Enter Credentials */}
       {step === 'credentials' && provider && (
-        <section className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
-          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+        <section className="panel panel-content">
+          <div className="panel-header">
             <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-orange-500" />
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Credentials</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Credentials</h2>
           </div>
 
           <div className="p-4 sm:p-5">
             <div className="mb-5">
-              <p className="text-[0.82rem] font-semibold text-slate-900">
+              <p className="text-sm-custom font-semibold text-slate-900">
                 {provider === 'META_ADS' ? 'Meta Ads' : 'Pancake POS'} Credentials
               </p>
-              <p className="mt-1 text-[0.82rem] text-slate-500">
+              <p className="mt-1 text-sm-custom text-slate-500">
                 Enter your API credentials to connect.
               </p>
             </div>
@@ -413,18 +413,18 @@ export default function CreateIntegrationPage() {
       )}
       {/* Step 3: Configure (Select Shop or Ad Account) */}
       {step === 'configure' && provider && (
-        <section className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
-          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+        <section className="panel panel-content">
+          <div className="panel-header">
             <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-orange-500" />
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h2>
           </div>
 
           <div className="p-4 sm:p-5">
             <div className="mb-5">
-              <p className="text-[0.82rem] font-semibold text-slate-900">
+              <p className="text-sm-custom font-semibold text-slate-900">
                 {provider === 'META_ADS' ? 'Select Ad Account' : 'Select Shop'}
               </p>
-              <p className="mt-1 text-[0.82rem] text-slate-500">
+              <p className="mt-1 text-sm-custom text-slate-500">
                 {provider === 'META_ADS'
                   ? 'Choose which ad account to sync data from.'
                   : 'Choose which shop to sync data from.'}

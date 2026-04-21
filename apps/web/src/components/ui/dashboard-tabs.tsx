@@ -43,7 +43,7 @@ export function DashboardTabs<T extends string>({
               {item.badge !== undefined && item.badge !== null ? (
                 <span
                   className={clsx(
-                    'rounded-full px-1.5 py-px text-[10px] font-medium tabular-nums',
+                    'rounded-full px-1.5 py-px text-xs-tight font-medium tabular-nums',
                     active ? 'bg-orange-100 text-orange-700' : 'bg-slate-200/80 text-slate-500',
                   )}
                 >

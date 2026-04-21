@@ -49,10 +49,10 @@ export function StoreDetailOverview({
 
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
-          <Store className="h-3.5 w-3.5 text-indigo-500" />
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Store Details</h4>
+      <section className="panel panel-content">
+        <div className="panel-header">
+          <Store className="h-3.5 w-3.5 text-primary" />
+          <h4 className="panel-title">Store Details</h4>
           <div className="ml-auto">
             <StatusBadge status={normalizeStatus(store.status)} />
           </div>
@@ -73,15 +73,15 @@ export function StoreDetailOverview({
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold text-slate-900">{storeName}</h2>
             <p className="mt-0.5 text-xs text-slate-500">Shop ID: {store.shopId}</p>
-            <p className="mt-0.5 text-[10px] text-slate-400">Created: {createdAtLabel}</p>
+            <p className="mt-0.5 text-xs-tight text-slate-400">Created: {createdAtLabel}</p>
           </div>
         </div>
       </section>
 
-      <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
-          <Key className="h-3.5 w-3.5 text-amber-500" />
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">API Key</h4>
+      <section className="panel panel-content">
+        <div className="panel-header">
+          <Key className="h-3.5 w-3.5 text-primary" />
+          <h4 className="panel-title">API Key</h4>
         </div>
         <div className="p-3">
           <div className="relative">
@@ -89,7 +89,7 @@ export function StoreDetailOverview({
               readOnly
               value={showApiKey ? apiKey : maskedApiKey}
               onClick={apiKey ? onCopyApiKey : undefined}
-              className="w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 pr-16 font-mono text-xs text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100/30"
+              className="input bg-secondary"
             />
             <div className="absolute inset-y-0 right-2 flex items-center gap-1.5">
               {apiKey && (
@@ -112,7 +112,7 @@ export function StoreDetailOverview({
               )}
             </div>
           </div>
-          <p className="mt-1 text-[10px] text-slate-400">
+          <p className="mt-1 text-xs-tight text-slate-400">
             {apiKeyCopied ? <span className="text-emerald-600">Copied!</span> : 'Click to copy'}
           </p>
         </div>

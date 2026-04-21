@@ -70,7 +70,7 @@ export function IntegrationConnectModal({
       <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#E2E8F0] pl-6 pr-3 py-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+            <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
               Integrations
             </p>
             <h2 className="text-xl font-semibold text-[#0F172A]">

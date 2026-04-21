@@ -506,7 +506,7 @@ export default function SalesPerformancePage() {
   }, [data]);
 
   const tooltipFooter = (
-    <p className="text-[11px] text-slate-500">
+    <p className="text-xs text-slate-500">
       {startDate} → {endDate} • {selectedLabel}
     </p>
   );
@@ -1135,7 +1135,7 @@ export default function SalesPerformancePage() {
     <div className="space-y-5">
       <PageHeader
         breadcrumbs={
-          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+          <span className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Analytics
           </span>
         }
@@ -1147,7 +1147,7 @@ export default function SalesPerformancePage() {
         title="Sales Performance Monitoring"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
         meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-5"
       >
         <div className="flex flex-wrap items-center gap-3">
@@ -1270,7 +1270,7 @@ export default function SalesPerformancePage() {
         title="Performance Breakdown"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
         meta={`${activeRowCount || 0} rows`}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-between">
@@ -1328,14 +1328,14 @@ export default function SalesPerformancePage() {
       <DashboardSection
         title="Delivery Monitoring"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-3"
         meta={
           <div className="relative" data-delivery-menu="true">
             <button
               type="button"
               onClick={() => setShowDeliveryViewMenu((p) => !p)}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-orange-600"
+              className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-orange-600"
             >
               {selectedDeliveryViewLabel}
               <ChevronDown className="h-3.5 w-3.5" />

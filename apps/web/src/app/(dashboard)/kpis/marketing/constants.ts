@@ -17,7 +17,7 @@ export const NUMBER_FIELD_CLASS = `${FIELD_BASE} tabular-nums`;
 export const SELECT_FIELD_CLASS =
   `${FIELD_BASE} appearance-none bg-[url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2394A3B8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")] bg-[length:1rem_1rem] bg-[position:right_0.75rem_center] bg-no-repeat pr-9`;
 export const FIELD_LABEL_CLASS =
-  'block text-[11px] font-semibold uppercase tracking-wide text-slate-500';
+  'block text-xs font-semibold uppercase tracking-wide text-slate-500';
 export const FIELD_GROUP_CLASS =
   'space-y-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3';
 

@@ -56,8 +56,8 @@ export function MetaIntegrationsGrid({
               </div>
               <div>
                 <h3 className="text-base font-semibold leading-5 text-[#0F172A]">{integration.name}</h3>
-                <p className="text-[0.82rem] text-[#475569]">Meta Marketing API</p>
-                <span className="mt-1 inline-flex items-center rounded-full border border-orange-100 bg-orange-50/60 px-2.5 py-1 text-[11px] font-medium text-orange-600">
+                <p className="text-sm-custom text-[#475569]">Meta Marketing API</p>
+                <span className="mt-1 inline-flex items-center rounded-full border border-orange-100 bg-orange-50/60 px-2.5 py-1 text-xs font-medium text-orange-600">
                   {integration.teamId
                     ? `Team: ${teamNames[integration.teamId] || 'Unknown team'}`
                     : 'All teams'}

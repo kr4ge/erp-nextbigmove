@@ -47,7 +47,7 @@ export function StoreInitialOfferModal({
                 className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-7 pr-3 text-sm tabular-nums text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
               />
             </div>
-            <p className="text-[10px] text-slate-400">Leave blank to clear the initial offer.</p>
+            <p className="text-xs-tight text-slate-400">Leave blank to clear the initial offer.</p>
           </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50/50 px-4 py-3">

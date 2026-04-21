@@ -585,7 +585,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             : 'ml-3 flex-1 text-left transition-all duration-300 overflow-hidden'
                         }
                       >
-                        <span className="text-[0.82rem] font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
+                        <span className="text-sm-custom font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
                       </div>
                       <svg
                         className={`h-4 w-4 text-slate-400 transition-all duration-300 ${
@@ -620,7 +620,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             : 'ml-3 flex-1 transition-all duration-300 overflow-hidden'
                         }
                       >
-                        <span className="text-[0.82rem] font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
+                        <span className="text-sm-custom font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
                       </div>
                     </Link>
                   )}
@@ -636,7 +636,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                           <Link
                             key={child.href}
                             href={child.href}
-                            className={`flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-[0.82rem] transition ${
+                            className={`flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-sm-custom transition ${
                               childActive
                                 ? 'bg-orange-50 text-orange-700 shadow-sm'
                                 : 'text-slate-600 hover:bg-slate-50'
@@ -680,7 +680,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       : 'flex-1 transition-all duration-300 overflow-hidden'
                   }
                 >
-                  <div className="text-[0.82rem] font-semibold text-slate-900 whitespace-nowrap">
+                  <div className="text-sm-custom font-semibold text-slate-900 whitespace-nowrap">
                     {user?.firstName} {user?.lastName}
                   </div>
                 </div>
@@ -698,14 +698,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             {isProfileMenuOpen && !isSidebarCollapsed && (
               <div className="absolute inset-x-0 bottom-full mb-2 rounded-2xl border border-slate-200 bg-white shadow-lg z-40">
                 <div className="px-4 py-3 border-b border-slate-100">
-                  <div className="text-[0.82rem] font-semibold text-slate-900">
+                  <div className="text-sm-custom font-semibold text-slate-900">
                     {user?.firstName} {user?.lastName}
                   </div>
                   <div className="text-xs text-slate-500 truncate">{user?.email}</div>
                 </div>
                 <Link
                   href="/settings/profile"
-                  className="flex items-center gap-3 px-4 py-3 text-[0.82rem] text-slate-700 hover:bg-slate-50"
+                  className="flex items-center gap-3 px-4 py-3 text-sm-custom text-slate-700 hover:bg-slate-50"
                   onClick={() => setIsProfileMenuOpen(false)}
                 >
                   <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
@@ -720,7 +720,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 </Link>
                 <button
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-[0.82rem] text-slate-700 hover:bg-slate-50"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-sm-custom text-slate-700 hover:bg-slate-50"
                 >
                   <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
                     <path d="M11 5v10M7 9l-2 2 2 2M11 10H4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -806,7 +806,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         >
                           {link.icon}
                         </span>
-                        <span className="ml-3 flex-1 text-left text-[0.82rem] font-semibold text-slate-900">
+                        <span className="ml-3 flex-1 text-left text-sm-custom font-semibold text-slate-900">
                           {link.label}
                         </span>
                         <svg
@@ -836,7 +836,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         >
                           {link.icon}
                         </span>
-                        <span className="ml-3 text-[0.82rem] font-semibold text-slate-900">{link.label}</span>
+                        <span className="ml-3 text-sm-custom font-semibold text-slate-900">{link.label}</span>
                       </Link>
                     )}
 
@@ -852,7 +852,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                               key={`mobile-child-${child.href}`}
                               href={child.href}
                               onClick={closeMobileNav}
-                              className={`flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-[0.82rem] transition ${
+                              className={`flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-sm-custom transition ${
                                 childActive
                                   ? 'bg-orange-50 text-orange-700 shadow-sm'
                                   : 'text-slate-600 hover:bg-slate-50'
@@ -883,7 +883,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     {`${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.trim() || '??'}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-[0.82rem] font-semibold text-slate-900">
+                    <p className="truncate text-sm-custom font-semibold text-slate-900">
                       {user?.firstName} {user?.lastName}
                     </p>
                     <p className="truncate text-xs text-slate-500">{user?.email}</p>
@@ -894,7 +894,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   <Link
                     href="/settings/profile"
                     onClick={closeMobileNav}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-[0.82rem] text-slate-700 transition-colors hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm-custom text-slate-700 transition-colors hover:bg-slate-50"
                   >
                     <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
                       <path
@@ -913,7 +913,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       closeMobileNav();
                       handleLogout();
                     }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-[0.82rem] text-slate-700 transition-colors hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm-custom text-slate-700 transition-colors hover:bg-slate-50"
                   >
                     <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
                       <path d="M11 5v10M7 9l-2 2 2 2M11 10H4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -948,7 +948,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 }}
               >
                 <div className="px-4 py-2.5 border-b border-slate-100">
-                  <div className="text-[0.82rem] font-semibold text-slate-900">{link.label}</div>
+                  <div className="text-sm-custom font-semibold text-slate-900">{link.label}</div>
                 </div>
                 <div className="py-2">
                   {link.children!.map((child) => {
@@ -961,7 +961,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         key={child.href}
                         href={child.href}
                         onClick={() => setCollapsedPopupItem(null)}
-                        className={`flex items-center gap-3 px-4 py-2.5 text-[0.82rem] transition ${
+                        className={`flex items-center gap-3 px-4 py-2.5 text-sm-custom transition ${
                           childActive
                             ? 'bg-orange-50 text-orange-700'
                             : 'text-slate-600 hover:bg-slate-50'

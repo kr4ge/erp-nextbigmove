@@ -99,7 +99,7 @@ export function AnalyticsMetricCard({
         <p className="text-lg font-semibold text-slate-900">
           {formatMetricValue(value, format, valuePrecision)}
         </p>
-        <p className={`text-[11px] ${getDeltaColor(delta)}`}>{formatDeltaLabel(delta)}</p>
+        <p className={`text-xs ${getDeltaColor(delta)}`}>{formatDeltaLabel(delta)}</p>
       </div>
 
       {count ? (
@@ -108,7 +108,7 @@ export function AnalyticsMetricCard({
             <span className="font-normal text-slate-600">{count.label ?? 'ord'}:</span>{' '}
             <span className="font-semibold text-slate-900">{formatCountValue(count.value)}</span>
           </span>
-          <span className={`text-[11px] ${getDeltaColor(count.delta)}`}>
+          <span className={`text-xs ${getDeltaColor(count.delta)}`}>
             {formatDeltaLabel(count.delta)}
           </span>
         </div>

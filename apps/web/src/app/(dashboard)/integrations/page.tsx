@@ -65,7 +65,7 @@ export default function IntegrationsPage() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={
-          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+          <span className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Integrations
           </span>
         }

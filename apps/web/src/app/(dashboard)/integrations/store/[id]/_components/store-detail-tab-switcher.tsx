@@ -32,7 +32,7 @@ export function StoreDetailTabSwitcher({
           Products
           {productsCount > 0 && (
             <span
-              className={`rounded-full px-1.5 py-px text-[10px] font-medium tabular-nums ${
+              className={`rounded-full px-1.5 py-px text-xs-tight font-medium tabular-nums ${
                 activeTab === 'products'
                   ? 'bg-indigo-100 text-indigo-700'
                   : 'bg-slate-100 text-slate-500'
@@ -54,7 +54,7 @@ export function StoreDetailTabSwitcher({
           Orders
           {ordersCount > 0 && (
             <span
-              className={`rounded-full px-1.5 py-px text-[10px] font-medium tabular-nums ${
+              className={`rounded-full px-1.5 py-px text-xs-tight font-medium tabular-nums ${
                 activeTab === 'orders'
                   ? 'bg-indigo-100 text-indigo-700'
                   : 'bg-slate-100 text-slate-500'

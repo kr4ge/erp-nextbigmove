@@ -1444,11 +1444,11 @@ export default function OrdersConfirmationPage() {
     <div className="space-y-3">
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+          <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Orders
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">Confirmation of Order</h1>
+            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">Confirmation of Order</h1>
           </div>
         </div>
       </header>
@@ -1712,7 +1712,7 @@ export default function OrdersConfirmationPage() {
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Order Detail</p>
+                <p className="text-xs-tight font-semibold uppercase tracking-wide text-slate-500">Order Detail</p>
                 <div className="flex items-center gap-1.5">
                   <h3 className="text-sm font-semibold text-slate-900">
                     {selectedOrderForModal.shop_id} - {selectedOrderForModal.pos_order_id}
@@ -1732,7 +1732,7 @@ export default function OrdersConfirmationPage() {
               </div>
               <div className="flex items-center gap-1.5">
                 {isConversationLinkCopied ? (
-                  <span className="text-[10px] font-semibold text-emerald-600">Copied</span>
+                  <span className="text-xs-tight font-semibold text-emerald-600">Copied</span>
                 ) : null}
                 {modalSnapshot.customer.conversationLink ? (
                   <button
@@ -1761,18 +1761,18 @@ export default function OrdersConfirmationPage() {
 
               {/* ── LEFT COLUMN: Products + Payment ── */}
               <div className="space-y-3 lg:col-span-7">
-                <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+                <section className="panel panel-content">
                   {/* Header row 1: Title + warehouse + counts */}
-                  <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                  <div className="panel-header">
                     <Package className="h-3.5 w-3.5 text-indigo-500" />
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Products</h4>
+                    <h4 className="panel-title">Products</h4>
                     {modalWarehouseName || modalWarehouseId ? (
-                      <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                      <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-xs-tight font-medium text-slate-600">
                         {modalWarehouseName || modalWarehouseId}
                       </span>
                     ) : null}
                     {effectiveModalItems.length > 0 ? (
-                      <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-500">
+                      <div className="ml-auto flex items-center gap-2 text-xs-tight text-slate-500">
                         <span>
                           {effectiveModalItems.length} variation
                           {effectiveModalItems.length !== 1 ? 's' : ''}
@@ -1799,7 +1799,7 @@ export default function OrdersConfirmationPage() {
                           }}
                           onFocus={() => setShowProductPicker(true)}
                           placeholder="Search product to add"
-                          className="w-full bg-transparent text-[11px] text-slate-900 outline-none placeholder:text-slate-400"
+                          className="w-full bg-transparent text-xs text-slate-900 outline-none placeholder:text-slate-400"
                         />
                         <button
                           type="button"
@@ -1817,12 +1817,12 @@ export default function OrdersConfirmationPage() {
                       {showProductPicker ? (
                         <div className="absolute left-0 right-0 top-full z-30 mt-px max-h-56 overflow-y-auto rounded-b-lg border border-t-0 border-slate-200 bg-white shadow-lg">
                           {isProductOptionsLoading ? (
-                            <div className="px-2.5 py-2 text-[11px] text-slate-500">Loading products...</div>
+                            <div className="px-2.5 py-2 text-xs text-slate-500">Loading products...</div>
                           ) : productOptionsError ? (
-                            <div className="px-2.5 py-2 text-[11px] text-rose-600">{productOptionsError}</div>
+                            <div className="px-2.5 py-2 text-xs text-rose-600">{productOptionsError}</div>
                           ) : productOptions.length === 0 ? (
                             <div className="space-y-2 px-2.5 py-2">
-                              <div className="text-[11px] text-slate-500">
+                              <div className="text-xs text-slate-500">
                                 {shouldShowWarehouseFallbackSync
                                   ? 'Warehouse is not matched yet for this order. Sync warehouse and products.'
                                   : 'No products available for this warehouse.'}
@@ -1834,7 +1834,7 @@ export default function OrdersConfirmationPage() {
                                       type="button"
                                       onClick={handleFallbackSyncWarehouses}
                                       disabled={isSyncingFallbackWarehouses || isSyncingFallbackProducts}
-                                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                       {isSyncingFallbackWarehouses ? 'Syncing warehouse...' : 'Sync Warehouse'}
                                     </button>
@@ -1844,7 +1844,7 @@ export default function OrdersConfirmationPage() {
                                       type="button"
                                       onClick={handleFallbackSyncProducts}
                                       disabled={isSyncingFallbackProducts || isSyncingFallbackWarehouses}
-                                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                       {isSyncingFallbackProducts ? 'Syncing products...' : 'Sync Products'}
                                     </button>
@@ -1875,14 +1875,14 @@ export default function OrdersConfirmationPage() {
                                   )}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <p className="truncate text-[11px] font-medium text-slate-900">
+                                  <p className="truncate text-xs font-medium text-slate-900">
                                     {option.name || 'Unnamed product'}
                                   </p>
-                                  <p className="truncate text-[10px] text-slate-400">
+                                  <p className="truncate text-xs-tight text-slate-400">
                                     {option.custom_id || option.variation_id}
                                   </p>
                                 </div>
-                                <span className="shrink-0 text-[11px] font-semibold tabular-nums text-emerald-600">
+                                <span className="shrink-0 text-xs font-semibold tabular-nums text-emerald-600">
                                   {formatCurrency(option.retail_price || 0)}
                                 </span>
                               </button>
@@ -1942,11 +1942,11 @@ export default function OrdersConfirmationPage() {
                                     </span>
                                   ) : null}
                                 </div>
-                                <p className="mt-0.5 truncate text-[11px] font-medium text-slate-900">{item.name || '—'}</p>
+                                <p className="mt-0.5 truncate text-xs font-medium text-slate-900">{item.name || '—'}</p>
                               </div>
 
                               <div className="flex shrink-0 flex-col items-end gap-0.5">
-                                <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                                <div className="flex items-center gap-1 text-xs text-slate-500">
                                   <span className="tabular-nums">{Math.round(item.retailPrice)}</span>
                                   <span className="text-slate-300">x</span>
                                   {isSelectedOrderEditable ? (
@@ -1960,13 +1960,13 @@ export default function OrdersConfirmationPage() {
                                           event.target.value,
                                         )
                                       }
-                                      className="h-5 w-12 rounded border border-slate-200 bg-white px-1 text-right text-[11px] tabular-nums font-medium text-slate-900 outline-none focus:border-indigo-400"
+                                      className="h-5 w-12 rounded border border-slate-200 bg-white px-1 text-right text-xs tabular-nums font-medium text-slate-900 outline-none focus:border-indigo-400"
                                     />
                                   ) : (
                                     <span className="tabular-nums font-medium">{item.quantity}</span>
                                   )}
                                 </div>
-                                <p className="text-[11px] font-semibold tabular-nums text-indigo-600">
+                                <p className="text-xs font-semibold tabular-nums text-indigo-600">
                                   {formatCurrency(item.retailPrice * item.quantity)}
                                 </p>
                               </div>
@@ -1976,7 +1976,7 @@ export default function OrdersConfirmationPage() {
                       </div>
                     ) : (
                       <div className="space-y-2 py-3 text-center">
-                        <p className="text-[11px] text-slate-400">
+                        <p className="text-xs text-slate-400">
                           {shouldShowEmptyCartState ? 'Empty Cart' : 'No product data available'}
                         </p>
                         {!shouldShowEmptyCartState &&
@@ -1988,7 +1988,7 @@ export default function OrdersConfirmationPage() {
                                 type="button"
                                 onClick={handleFallbackSyncWarehouses}
                                 disabled={isSyncingFallbackWarehouses || isSyncingFallbackProducts}
-                                className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {isSyncingFallbackWarehouses ? 'Syncing warehouse...' : 'Sync Warehouse'}
                               </button>
@@ -1998,7 +1998,7 @@ export default function OrdersConfirmationPage() {
                                 type="button"
                                 onClick={handleFallbackSyncProducts}
                                 disabled={isSyncingFallbackProducts || isSyncingFallbackWarehouses}
-                                className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {isSyncingFallbackProducts ? 'Syncing products...' : 'Sync Products'}
                               </button>
@@ -2011,7 +2011,7 @@ export default function OrdersConfirmationPage() {
                 </section>
 
                 {/* ── Payment (collapsible) ── */}
-                <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+                <section className="panel panel-content">
                   <button
                     type="button"
                     onClick={() => setIsPaymentExpanded((prev) => !prev)}
@@ -2019,7 +2019,7 @@ export default function OrdersConfirmationPage() {
                   >
                     <div className="flex items-center gap-2">
                       <CreditCard className="h-3.5 w-3.5 text-emerald-500" />
-                      <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Payment</h4>
+                      <h4 className="panel-title">Payment</h4>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-indigo-600">
@@ -2148,10 +2148,10 @@ export default function OrdersConfirmationPage() {
                 </section>
 
                 {/* ── Notes (full width in left column) ── */}
-                <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                <section className="panel panel-content">
+                  <div className="panel-header">
                     <StickyNote className="h-3.5 w-3.5 text-amber-500" />
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Notes</h4>
+                    <h4 className="panel-title">Notes</h4>
                     {effectiveInternalNote.trim() || effectivePrintingNote.trim() ? (
                       <span className="ml-0.5 inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" title="Has notes" />
                     ) : null}
@@ -2203,7 +2203,7 @@ export default function OrdersConfirmationPage() {
                       <div className="space-y-2">
                         <div className="rounded-md border border-slate-100 bg-slate-50/50 p-2">
                           <div className="mb-1.5 flex items-center justify-between gap-2">
-                            <span className="inline-flex rounded border border-violet-200 bg-violet-50 px-1.5 py-px text-[10px] font-semibold text-violet-700">
+                            <span className="inline-flex rounded border border-violet-200 bg-violet-50 px-1.5 py-px text-xs-tight font-semibold text-violet-700">
                               Internal
                             </span>
                             {isSelectedOrderEditable ? (
@@ -2225,7 +2225,7 @@ export default function OrdersConfirmationPage() {
 
                         <div className="rounded-md border border-slate-100 bg-slate-50/50 p-2">
                           <div className="mb-1.5 flex items-center justify-between gap-2">
-                            <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-px text-[10px] font-semibold text-orange-700">
+                            <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-px text-xs-tight font-semibold text-orange-700">
                               Printing
                             </span>
                             {isSelectedOrderEditable ? (
@@ -2248,7 +2248,7 @@ export default function OrdersConfirmationPage() {
                     ) : activeNoteTab === 'internal' ? (
                       <div>
                         <div className="mb-1.5">
-                          <span className="inline-flex rounded border border-violet-200 bg-violet-50 px-1.5 py-px text-[10px] font-semibold text-violet-700">
+                          <span className="inline-flex rounded border border-violet-200 bg-violet-50 px-1.5 py-px text-xs-tight font-semibold text-violet-700">
                             Internal
                           </span>
                         </div>
@@ -2268,7 +2268,7 @@ export default function OrdersConfirmationPage() {
                     ) : (
                       <div>
                         <div className="mb-1.5">
-                          <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-px text-[10px] font-semibold text-orange-700">
+                          <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-px text-xs-tight font-semibold text-orange-700">
                             Printing
                           </span>
                         </div>
@@ -2294,11 +2294,11 @@ export default function OrdersConfirmationPage() {
               <div className="space-y-3 lg:col-span-5">
 
                 {/* ── Order Info: Date + Status + Tags ── */}
-                <section className="relative overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
+                <section className="relative panel panel-content">
                   <div className="flex items-center gap-2 rounded-t-xl border-b border-slate-100 bg-slate-50/80 px-3 py-2">
                     <Package className="h-3.5 w-3.5 text-blue-500" />
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Order Info</h4>
-                    <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-600 tabular-nums">
+                    <h4 className="panel-title">Order Info</h4>
+                    <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-xs-tight font-medium text-slate-600 tabular-nums">
                       {selectedOrderForModal.date_local}
                     </span>
                   </div>
@@ -2361,9 +2361,9 @@ export default function OrdersConfirmationPage() {
                     <div className="border-t border-slate-100 pt-2">
                       <div className="mb-1.5 flex items-center gap-1.5">
                         <Tag className="h-3 w-3 text-slate-400" />
-                        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Tags</span>
+                        <span className="text-xs-tight font-medium uppercase tracking-wide text-slate-500">Tags</span>
                         {effectiveDraftTags.length > 0 ? (
-                          <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                          <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-xs-tight font-semibold text-indigo-700">
                             {effectiveDraftTags.length}
                           </span>
                         ) : null}
@@ -2416,7 +2416,7 @@ export default function OrdersConfirmationPage() {
                                           type="button"
                                           onClick={handleFallbackSyncTags}
                                           disabled={isSyncingFallbackTags}
-                                          className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
                                         >
                                           {isSyncingFallbackTags ? 'Syncing tags...' : 'Sync Tags'}
                                         </button>
@@ -2429,7 +2429,7 @@ export default function OrdersConfirmationPage() {
                                           key={group.group_id}
                                           type="button"
                                           onMouseEnter={() => setActiveTagGroupId(group.group_id)}
-                                          className="flex w-full items-center justify-between border-b border-dashed border-slate-100 px-2.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-800 hover:bg-slate-50"
+                                          className="flex w-full items-center justify-between border-b border-dashed border-slate-100 px-2.5 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-800 hover:bg-slate-50"
                                         >
                                           <span>{group.group_name}</span>
                                           <ChevronDown className="-rotate-90 h-3 w-3 text-slate-500" />
@@ -2443,7 +2443,7 @@ export default function OrdersConfirmationPage() {
                                             key={tag.tag_id}
                                             type="button"
                                             onClick={() => addDraftTag(tag)}
-                                            className={`flex w-full items-center gap-1.5 border-b border-dashed border-slate-100 px-2.5 py-1.5 text-left text-[11px] ${
+                                            className={`flex w-full items-center gap-1.5 border-b border-dashed border-slate-100 px-2.5 py-1.5 text-left text-xs ${
                                               selected
                                                 ? 'bg-indigo-50 font-semibold text-indigo-700'
                                                 : 'text-slate-800 hover:bg-slate-50'
@@ -2463,7 +2463,7 @@ export default function OrdersConfirmationPage() {
                                               type="button"
                                               onClick={handleFallbackSyncTags}
                                               disabled={isSyncingFallbackTags}
-                                              className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
                                             >
                                               {isSyncingFallbackTags ? 'Syncing tags...' : 'Sync Tags'}
                                             </button>
@@ -2484,7 +2484,7 @@ export default function OrdersConfirmationPage() {
                                             key={tag.tag_id}
                                             type="button"
                                             onClick={() => addDraftTag(tag, activeTagGroup.tags)}
-                                            className={`flex w-full items-center gap-1.5 border-b border-dashed border-slate-100 px-2.5 py-1.5 text-left text-[11px] ${
+                                            className={`flex w-full items-center gap-1.5 border-b border-dashed border-slate-100 px-2.5 py-1.5 text-left text-xs ${
                                               selected
                                                 ? 'bg-indigo-50 font-semibold text-indigo-700'
                                                 : 'text-slate-800 hover:bg-slate-50'
@@ -2538,11 +2538,11 @@ export default function OrdersConfirmationPage() {
 
                 {/* ── Customer ── */}
                 <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                  <div className="panel-header">
                     <User className="h-3.5 w-3.5 text-sky-500" />
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Customer</h4>
+                    <h4 className="panel-title">Customer</h4>
                     {modalSnapshot.customer.gender ? (
-                      <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">
+                      <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-xs-tight font-medium text-slate-500">
                         {modalSnapshot.customer.gender}
                       </span>
                     ) : null}
@@ -2551,13 +2551,13 @@ export default function OrdersConfirmationPage() {
                     {(modalSnapshot.duplicatedPhone || modalSnapshot.duplicatedIp) ? (
                       <div className="mb-2 space-y-1">
                         {modalSnapshot.duplicatedPhone ? (
-                          <div className="flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-800">
+                          <div className="flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs-tight font-medium text-amber-800">
                             <PhoneCall className="h-3 w-3 text-amber-500" />
                             <span>Multiple orders from this phone</span>
                           </div>
                         ) : null}
                         {modalSnapshot.duplicatedIp ? (
-                          <div className="flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-medium text-rose-800">
+                          <div className="flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs-tight font-medium text-rose-800">
                             <Wifi className="h-3 w-3 text-rose-500" />
                             <span>Multiple IP detected</span>
                           </div>
@@ -2636,7 +2636,7 @@ export default function OrdersConfirmationPage() {
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <p className="truncate text-xs font-semibold text-slate-900">{effectiveCustomerName || '—'}</p>
-                          <p className="text-[10px] text-blue-600">{effectiveCustomerPhone || '—'}</p>
+                          <p className="text-xs-tight text-blue-600">{effectiveCustomerPhone || '—'}</p>
                         </div>
                         {(() => {
                           const total = modalSnapshot.customer.orderCount;
@@ -2650,7 +2650,7 @@ export default function OrdersConfirmationPage() {
                                 ? 'border-amber-200 bg-amber-50 text-amber-700'
                                 : 'border-rose-200 bg-rose-50 text-rose-700';
                           return (
-                            <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${badgeColor}`}>
+                            <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-xs-tight font-semibold tabular-nums ${badgeColor}`}>
                               {success}/{total} order{total !== 1 ? 's' : ''}
                             </span>
                           );
@@ -2661,10 +2661,10 @@ export default function OrdersConfirmationPage() {
                 </section>
 
                 {/* ── Delivery ── */}
-                <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                <section className="panel panel-content">
+                  <div className="panel-header">
                     <MapPin className="h-3.5 w-3.5 text-rose-500" />
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Delivery</h4>
+                    <h4 className="panel-title">Delivery</h4>
                     {deliveryAddressOptions.length > 0 ? (
                       <select
                         value={selectedDeliveryAddressKey}
@@ -2673,7 +2673,7 @@ export default function OrdersConfirmationPage() {
                           setDraftDeliveryAddress(null);
                         }}
                         disabled={!isSelectedOrderEditable}
-                        className={`ml-auto max-w-[160px] truncate rounded-md border px-1.5 py-0.5 text-[10px] transition ${
+                        className={`ml-auto max-w-[160px] truncate rounded-md border px-1.5 py-0.5 text-xs-tight transition ${
                           isSelectedOrderEditable
                             ? 'border-slate-200 bg-white text-slate-800 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100'
                             : 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-500'
@@ -2972,10 +2972,10 @@ export default function OrdersConfirmationPage() {
                         />
                       </div>
                       {missingGeoMessage ? (
-                        <p className="text-[11px] text-rose-600">{missingGeoMessage}</p>
+                        <p className="text-xs text-rose-600">{missingGeoMessage}</p>
                       ) : null}
                       {geoLookupError ? (
-                        <p className="text-[11px] text-rose-600">{geoLookupError}</p>
+                        <p className="text-xs text-rose-600">{geoLookupError}</p>
                       ) : null}
                     </div>
                   </div>

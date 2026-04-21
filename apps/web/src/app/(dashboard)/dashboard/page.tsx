@@ -229,13 +229,19 @@ function ExecutiveOverviewCard({
   tone?: ExecutiveOverviewCardTone;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="card"
+    // "rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <p className="card-label"
+          // "text-xs-tight font-semibold uppercase tracking-[0.18em] text-slate-500"
+          >
             {label}
           </p>
-          <p className="text-[1.75rem] font-semibold tracking-tight text-slate-950 tabular-nums">
+          <p className="card-value"
+          // "text-lg-loose font-semibold tracking-tight text-slate-950 tabular-nums"
+          >
             {value}
           </p>
         </div>
@@ -1443,14 +1449,14 @@ export default function DashboardPage() {
     <>
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+          <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Dashboard
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">
+            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">
               Dashboard
             </h1>
-            <p className="text-[0.82rem] text-slate-500">
+            <p className="text-sm-custom text-slate-500">
               Welcome back! Here’s what’s happening with your business today.
             </p>
           </div>
@@ -1491,7 +1497,7 @@ export default function DashboardPage() {
           <DashboardSection
             title="Quick Actions"
             icon={<Zap className="h-3.5 w-3.5 text-orange-500" />}
-            className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+            className="panel panel-content"
             contentClassName="space-y-3"
           >
             <p className="text-sm text-slate-600">
@@ -1523,12 +1529,12 @@ export default function DashboardPage() {
             <DashboardSection
               title="Recent Activity"
               icon={<TrendingUp className="h-3.5 w-3.5 text-orange-500" />}
-              className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+              className="panel panel-content"
               meta={
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-auto px-0 py-0 text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+                  className="h-auto px-0 py-0 text-xs font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
                 >
                   View all
                 </Button>
@@ -1570,12 +1576,12 @@ export default function DashboardPage() {
             <DashboardSection
               title="Quick Links"
               icon={<LinkIcon className="h-3.5 w-3.5 text-orange-500" />}
-              className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+              className="panel panel-content"
               meta={
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-auto px-0 py-0 text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+                  className="h-auto px-0 py-0 text-xs font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
                 >
                   Manage
                 </Button>
@@ -1615,14 +1621,14 @@ export default function DashboardPage() {
     <div className="space-y-4">
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+          <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Dashboard
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">
+            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">
               Sales Dashboard
             </h1>
-            <p className="text-[0.82rem] text-slate-500">
+            <p className="text-sm-custom text-slate-500">
               Your performance overview based on the selected date range.
             </p>
           </div>
@@ -1633,14 +1639,11 @@ export default function DashboardPage() {
         title="Monitoring"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
         meta={`Last updated: ${salesData?.lastUpdatedAt ? new Date(salesData.lastUpdatedAt).toLocaleString() : "—"}`}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-4"
       >
         <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
           <div>
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Shop POS
-            </p>
             <div className="relative" ref={shopPickerRef}>
               <button
                 type="button"
@@ -1730,9 +1733,6 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex flex-col">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Date range
-            </p>
             <div className="relative">
               <Datepicker
                 value={salesRange}
@@ -1810,7 +1810,7 @@ export default function DashboardPage() {
         title="Sales Performance"
         icon={<TrendingUp className="h-3.5 w-3.5 text-orange-500" />}
         meta={`${salesData?.rows?.length || 0} rows`}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="p-0"
       >
         <div className="overflow-hidden rounded-b-xl">
@@ -1872,7 +1872,7 @@ export default function DashboardPage() {
                             {displayShop(row.shopId)}
                           </span>
                           {displayShop(row.shopId) !== row.shopId && (
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-xs text-slate-400">
                               {row.shopId}
                             </span>
                           )}
@@ -1927,7 +1927,7 @@ export default function DashboardPage() {
         title="Delivery Monitoring"
         icon={<ClipboardList className="h-3.5 w-3.5 text-orange-500" />}
         meta="Scoped to your matched sales assignee and selected shops"
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-end">
@@ -1941,7 +1941,7 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               On Delivery
             </p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
@@ -1970,7 +1970,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Undeliverable
             </p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
@@ -2004,7 +2004,7 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               {salesDeliveredInRangeLabel}
             </p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
@@ -2034,7 +2034,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               {salesReturnedInRangeLabel}
             </p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
@@ -2066,7 +2066,7 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 lg:col-span-2">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
+            <p className="mb-2 panel-title">
               RTS Reason Data
             </p>
             {salesLoading ? (
@@ -2077,7 +2077,7 @@ export default function DashboardPage() {
                   {salesSunburstLegend.map((item) => (
                     <div
                       key={item.name}
-                      className="flex items-center gap-1.5 text-[11px] text-slate-600"
+                      className="flex items-center gap-1.5 text-xs text-slate-600"
                     >
                       <span
                         className="inline-block h-2.5 w-2.5 rounded-full"
@@ -2137,7 +2137,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 lg:col-span-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
+            <p className="mb-2 panel-title">
               Delivered vs RTS Trend
             </p>
             {salesLoading ? (
@@ -2256,7 +2256,7 @@ export default function DashboardPage() {
       <DashboardSection
         title="KPI Monitoring"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-3"
       >
         {myStatsLoading ? (
@@ -2319,14 +2319,14 @@ export default function DashboardPage() {
         <DashboardSection
           title="Winning Creatives"
           icon={<Lightbulb className="h-3.5 w-3.5 text-orange-500" />}
-          className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+          className="panel panel-content"
           meta={
             myStats?.winning_creatives_list &&
             myStats.winning_creatives_list.length > 3 ? (
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-auto px-0 py-0 text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+                className="h-auto px-0 py-0 text-xs font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
                 onClick={() => setShowAllWinning((prev) => !prev)}
               >
                 {showAllWinning ? "Collapse" : "View all"}
@@ -2366,12 +2366,12 @@ export default function DashboardPage() {
         <DashboardSection
           title="Quick Links"
           icon={<LinkIcon className="h-3.5 w-3.5 text-orange-500" />}
-          className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+          className="panel panel-content"
           meta={
             <Button
               variant="ghost"
               size="sm"
-              className="text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+              className="text-xs font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
             >
               Manage
             </Button>
@@ -2411,14 +2411,14 @@ export default function DashboardPage() {
 
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+          <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Dashboard
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">
+            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">
               Executive Dashboard
             </h1>
-            <p className="max-w-2xl text-[0.82rem] text-slate-500">
+            <p className="max-w-2xl text-sm-custom text-slate-500">
               Challenge-driven KPI command center for team and member performance.
             </p>
           </div>
@@ -2616,7 +2616,7 @@ export default function DashboardPage() {
       <DashboardSection
         title="KPI Monitoring"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-3"
       >
         {leaderStatsLoading ? (

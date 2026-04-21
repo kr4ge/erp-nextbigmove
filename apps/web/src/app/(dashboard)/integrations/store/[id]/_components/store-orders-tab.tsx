@@ -81,12 +81,12 @@ export function StoreOrdersTab({
   }, [dateRange.endDate, dateRange.startDate, todayYmd]);
 
   return (
-    <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
-        <ClipboardList className="h-3.5 w-3.5 text-blue-500" />
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Orders</h4>
+    <section className="panel panel-content">
+      <div className="panel-header">
+        <ClipboardList className="h-3.5 w-3.5 text-primary" />
+        <h4 className="panel-title">Orders</h4>
         {orders.length > 0 && (
-          <span className="ml-auto text-[10px] text-slate-500">
+          <span className="panel-title">
             {orders.length} order{orders.length !== 1 ? 's' : ''}
           </span>
         )}
@@ -142,7 +142,7 @@ export function StoreOrdersTab({
           <EmptyState
             title="No orders found"
             description="Adjust the date range or sync workflows to load POS orders."
-            icon={<ShoppingBag className="h-8 w-8" />}
+            icon={<ShoppingBag className="h-8 w-8 text-primary" />}
           />
         ) : (
           <DataTable table={table} />

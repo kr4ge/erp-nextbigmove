@@ -17,13 +17,13 @@ export function UserHistory({
   const hasRows = userCategoryAssignments.length > 0 || userTargets.length > 0;
 
   return (
-    <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+    <section className="panel panel-content">
+      <div className="panel-header">
         <Users className="h-3.5 w-3.5 text-orange-500" />
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+        <h4 className="panel-title">
           User Assignments + Overrides
         </h4>
-        {teamName ? <span className="ml-auto text-[10px] text-slate-500">{teamName}</span> : null}
+        {teamName ? <span className="ml-auto text-xs-tight text-slate-500">{teamName}</span> : null}
       </div>
       <div className="space-y-3 p-3">
         {hasRows ? (
@@ -37,9 +37,9 @@ export function UserHistory({
                   >
                     <div className="min-w-0">
                       <p className="truncate text-xs font-semibold text-slate-900">{row.userName}</p>
-                      <p className="text-[11px] text-slate-500">Category: {row.category}</p>
+                      <p className="text-xs text-slate-500">Category: {row.category}</p>
                     </div>
-                    <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700 sm:justify-self-end">
+                    <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs-tight font-semibold uppercase tracking-wide text-orange-700 sm:justify-self-end">
                       Assignment
                     </span>
                   </div>
@@ -56,8 +56,8 @@ export function UserHistory({
                   >
                     <div className="min-w-0">
                       <p className="truncate text-xs font-semibold text-slate-900">{row.userName}</p>
-                      <p className="text-[11px] text-slate-500">{row.label} override</p>
-                      <p className="mt-1 text-[11px] text-slate-500">
+                      <p className="text-xs text-slate-500">{row.label} override</p>
+                      <p className="mt-1 text-xs text-slate-500">
                         {row.startDate} to {row.endDate || 'Open ended'}
                       </p>
                     </div>

@@ -50,10 +50,10 @@ function StoreExecutiveOverviewCard({
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <p className="card-label">
             {label}
           </p>
-          <p className="text-[1.75rem] font-semibold tracking-tight text-slate-950 tabular-nums">
+          <p className="card-value">
             {value}
           </p>
         </div>
@@ -68,22 +68,22 @@ function StoreExecutiveOverviewCard({
 }
 
 const panelThemeClass = [
-  '[&_section]:bg-gradient-to-br',
-  '[&_section]:from-white',
-  '[&_section]:via-orange-50/35',
-  '[&_section]:to-amber-50/25',
-  '[&_svg.text-indigo-500]:text-orange-500',
-  '[&_svg.text-blue-500]:text-orange-500',
-  '[&_svg.text-amber-500]:text-orange-500',
+  // '[&_section]:bg-gradient-to-br',
+  // '[&_section]:from-white',
+  // '[&_section]:via-orange-50/35',
+  // '[&_section]:to-amber-50/25',
+  // '[&_svg.text-indigo-500]:text-orange-500',
+  // '[&_svg.text-blue-500]:text-orange-500',
+  // '[&_svg.text-amber-500]:text-orange-500',
 ].join(' ');
 
 const softOrangeButtonsClass = [
-  '[&_button]:!border-orange-200',
-  '[&_button]:!bg-orange-50',
-  '[&_button]:!text-orange-700',
-  '[&_button:hover]:!bg-orange-100',
-  '[&_button:hover]:!text-orange-800',
-  '[&_button:focus-visible]:!ring-orange-200',
+  // '[&_button]:!border-orange-200',
+  // '[&_button]:!bg-orange-50',
+  // '[&_button]:!text-orange-700',
+  // '[&_button:hover]:!bg-orange-100',
+  // '[&_button:hover]:!text-orange-800',
+  // '[&_button:focus-visible]:!ring-orange-200',
 ].join(' ');
 
 const orangeTabsClass = [
@@ -291,7 +291,7 @@ export default function StoreDetailPage() {
 
       {activeTab === 'products' ? (
         <div
-          className={`${panelThemeClass} [&_input:focus]:!border-orange-300 [&_input:focus]:!ring-orange-100`}
+          className={`border-primary ring-primary/10`}
         >
           <StoreProductsTab
             products={products}
@@ -308,7 +308,7 @@ export default function StoreDetailPage() {
         </div>
       ) : (
         <div
-          className={`${panelThemeClass} [&_input:focus]:!border-orange-300 [&_input:focus]:!ring-orange-100 [&_select:focus]:!border-orange-300 [&_select:focus]:!ring-orange-100`}
+          className={`border-primary ring-primary/10`}
         >
           <StoreOrdersTab
             orders={orders}

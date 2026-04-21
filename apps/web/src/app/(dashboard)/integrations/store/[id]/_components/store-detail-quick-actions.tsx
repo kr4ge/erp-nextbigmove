@@ -23,10 +23,10 @@ export function StoreDetailQuickActions({
   onSyncWarehouses,
 }: StoreDetailQuickActionsProps) {
   return (
-    <section className="overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
-        <RefreshCcw className="h-3.5 w-3.5 text-blue-500" />
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">Quick Actions</h4>
+    <section className="panel panel-content">
+      <div className="panel-header">
+        <RefreshCcw className="h-3.5 w-3.5 text-primary" />
+        <h4 className="panel-title">Quick Actions</h4>
       </div>
       <div className="flex flex-wrap items-center gap-2 p-3">
         <Button

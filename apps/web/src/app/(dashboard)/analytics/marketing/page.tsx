@@ -388,7 +388,7 @@ export default function MarketingAnalyticsPage() {
     <div className="space-y-5">
       <PageHeader
         breadcrumbs={
-          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">
+          <span className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Analytics
           </span>
         }
@@ -400,7 +400,7 @@ export default function MarketingAnalyticsPage() {
         title="Marketing Monitoring"
         icon={<Gauge className="h-3.5 w-3.5 text-orange-500" />}
         meta={`Last updated: ${lastUpdatedLabel}`}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-5"
       >
         <div className="flex flex-wrap items-center gap-3">
@@ -542,7 +542,7 @@ export default function MarketingAnalyticsPage() {
         title="Marketing Breakdown"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
         meta={`${activeMarketingRowCount} rows`}
-        className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+        className="panel panel-content"
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-between">

@@ -55,7 +55,7 @@ export function TeamTargetForm({
       <div className="space-y-3">
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
         <div className={FIELD_GROUP_CLASS}>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
             Validity Window
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -88,7 +88,7 @@ export function TeamTargetForm({
         </div>
 
         <div className={FIELD_GROUP_CLASS}>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
             KPI Targets
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -124,10 +124,10 @@ export function TeamTargetForm({
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
               Existing Team Targets
             </p>
-            <span className="text-[11px] tabular-nums text-slate-500">{targets.length}</span>
+            <span className="text-xs tabular-nums text-slate-500">{targets.length}</span>
           </div>
 
           {targets.length > 0 ? (
@@ -141,7 +141,7 @@ export function TeamTargetForm({
                     <p className="text-xs font-semibold text-slate-900">
                       {target.startDate} to {target.endDate || 'Open ended'}
                     </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
                       <span className="tabular-nums">
                         Ad Spend: {formatMarketingMetricValue(target.adSpendTarget || 0, 'currency')}
                       </span>
@@ -154,7 +154,7 @@ export function TeamTargetForm({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-7 rounded-md px-2 text-[11px]"
+                      className="h-7 rounded-md px-2 text-xs"
                       disabled={disabled || Boolean(submittingKey)}
                       onClick={() => onEditTarget(target)}
                     >
@@ -163,7 +163,7 @@ export function TeamTargetForm({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-7 rounded-md border-rose-200 px-2 text-[11px] text-rose-700 hover:bg-rose-50 hover:text-rose-700"
+                      className="h-7 rounded-md border-rose-200 px-2 text-xs text-rose-700 hover:bg-rose-50 hover:text-rose-700"
                       loading={submittingKey === `delete-team-target-${target.id}`}
                       disabled={disabled || Boolean(submittingKey && submittingKey !== `delete-team-target-${target.id}`)}
                       onClick={() => onDeleteTarget(target)}

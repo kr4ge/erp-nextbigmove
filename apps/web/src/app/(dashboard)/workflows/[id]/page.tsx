@@ -263,7 +263,8 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
         <AlertBanner tone="error" message={error || 'Workflow not found'} />
         <Link
           href="/workflows"
-          className="inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700 transition hover:bg-orange-100"
+          className="inline-flex items-center gap-2 btn btn-lg btn-primary"
+          // "inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700 transition hover:bg-orange-100"
         >
           <ArrowBigLeft className="h-4 w-4" />
           Back to Workflows
@@ -276,23 +277,25 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
     <div className="space-y-6">
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-orange-600">Workflows</p>
+          <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">Workflows</p>
           <div className="space-y-0.5">
-            <h2 className="text-[1.85rem] font-semibold tracking-tight text-slate-900">{workflow.name}</h2>
-            <p className="text-[0.82rem] text-slate-500">{workflow.description || 'No description'}</p>
+            <h2 className="text-xl-loose font-semibold tracking-tight text-slate-900">{workflow.name}</h2>
+            <p className="text-sm-custom text-slate-500">{workflow.description || 'No description'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Link
             href="/workflows"
-            className="inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-100"
+            className="inline-flex items-center gap-2 btn btn-md btn-ghost"
+            // "inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-100"
           >
             <ArrowBigLeft className="h-4 w-4" />
             Back
           </Link>
           <Link
             href={`/workflows/${workflowId}/edit`}
-            className="inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-100"
+            className="inline-flex items-center gap-2 btn btn-md btn-primary-soft"
+            // "inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-100"
           >
             <Settings className="h-4 w-4" />
             Settings
@@ -301,10 +304,10 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
-        <div className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
-          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+        <div className="panel panel-content">
+          <div className="panel-header">
             <SlidersHorizontal className="h-3.5 w-3.5 text-orange-500" />
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h3>
           </div>
           <div className="space-y-3 p-4 text-sm text-slate-700">
             <div className="flex justify-between">
@@ -334,10 +337,10 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
           </div>
         </div>
 
-        <div className="overflow-visible rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 shadow-sm">
-          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+        <div className="panel panel-content">
+          <div className="panel-header">
             <Activity className="h-3.5 w-3.5 text-orange-500" />
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">Rate Limits</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Rate Limits</h3>
           </div>
           <div className="space-y-3 p-4 text-sm text-slate-700">
             <div className="flex justify-between">
@@ -364,10 +367,10 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25 p-4 shadow-sm space-y-4">
+      <div className="panel panel-content p-4 shadow-sm space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="-mx-4 -mt-4 mb-3 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+            <h3 className="-mx-4 -mt-4 mb-3 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
               <CalendarClock className="h-3.5 w-3.5 text-orange-500" />
               Execution History
             </h3>
@@ -382,7 +385,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
           <button
             onClick={triggerWorkflow}
             disabled={triggering}
-            className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            className="btn btn-md btn-primary-soft disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
           >
             {triggering ? 'Starting…' : 'Trigger Execution'}
           </button>
