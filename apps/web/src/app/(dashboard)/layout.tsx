@@ -1014,7 +1014,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-800 shadow-sm hover:border-orange-400 focus:border-orange-500 focus:outline-none"
                     >
                       <span>Team scope:</span>
-                      <span className="text-orange-600">
+                      <span className="text-primary">
                         {selectedTeamIds.length === 0
                           ? 'All teams'
                           : selectedTeamIds

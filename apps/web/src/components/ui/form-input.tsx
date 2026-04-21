@@ -18,7 +18,7 @@ export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className={clsx('block text-sm font-semibold text-[#0F172A]', labelClassName)}
+            className={clsx('form-label', labelClassName)}
           >
             {label}
           </label>
@@ -27,11 +27,9 @@ export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
           ref={ref}
           id={inputId}
           className={clsx(
-            'w-full rounded-xl border px-4 py-2 text-sm text-[#0F172A] placeholder:text-[#94A3B8]',
-            'focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent',
-            'transition-colors',
+            'input',
             error
-              ? 'border-[#EF4444] bg-[#FEF2F2]'
+              ? 'border-destructive bg-destructive-soft/50'
               : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1]',
             className
           )}

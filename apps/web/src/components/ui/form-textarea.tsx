@@ -16,7 +16,7 @@ export const FormTextarea = forwardRef<HTMLTextAreaElement, FormTextareaProps>(
         {label && (
           <label
             htmlFor={textareaId}
-            className="block text-sm font-semibold text-[#0F172A]"
+            className="form-label"
           >
             {label}
           </label>
@@ -25,12 +25,10 @@ export const FormTextarea = forwardRef<HTMLTextAreaElement, FormTextareaProps>(
           ref={ref}
           id={textareaId}
           className={clsx(
-            'w-full rounded-xl border px-4 py-2 text-sm text-[#0F172A] placeholder:text-[#94A3B8]',
-            'focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent',
-            'transition-colors resize-none',
+            'input',
             error
-              ? 'border-[#EF4444] bg-[#FEF2F2]'
-              : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1]',
+              ? 'border-destructive bg-destructive/10'
+              : 'border-[#E2E8F0] bg-surface hover:border-[#CBD5E1]',
             className
           )}
           rows={4}
