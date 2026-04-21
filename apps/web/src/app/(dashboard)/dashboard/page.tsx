@@ -2371,7 +2371,7 @@ export default function DashboardPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="!h-auto !px-0 !py-0 text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+              className="text-[11px] font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
             >
               Manage
             </Button>

@@ -402,7 +402,7 @@ export default function CreateIntegrationPage() {
                   type="submit"
                   disabled={!canTestConnection() || isLoading}
                   loading={isLoading}
-                  className="flex-1 !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+                  className="flex-1"
                 >
                   {isLoading ? 'Creating...' : 'Create Integration'}
                 </Button>
@@ -492,7 +492,7 @@ export default function CreateIntegrationPage() {
                   type="submit"
                   disabled={!canSubmit() || isLoading}
                   loading={isLoading}
-                  className="flex-1 !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+                  className="flex-1"
                 >
                   {isLoading ? 'Creating...' : 'Create Integration'}
                 </Button>

@@ -28,26 +28,26 @@
     Small note: color hexcodes will be moved over to CSS variables will be removed in the style guide
 
     TOKENS:
-    background: #f1f5f9 (app background)
-    foreground: #0f172a (main text)
-    surface: #ffffff (cards)
+    background (app background)
+    foreground (main text)
+    surface (cards)
 
-    primary: #ff6900 (actions)
-    primary-soft: #fff7ed
-    primary-foreground: #ffffff (text in actions)
-    primary-soft-foreground: #c2410c
+    primary (actions)
+    primary-soft
+    primary-foreground (text in actions)
+    primary-soft-foreground
 
-    secondary: #e2e8f0
-    muted: #64748b
+    secondary
+    muted
 
-    success: #16a34a
-    success-soft: #a7f3d0
-    destructive: #d91414 (delete buttons, close popup modals)
-    destructive-soft: 
-    warning: #d97706
-    warning-soft: #fef3c7
+    success
+    success-soft
+    destructive (delete buttons, close popup modals)
+    destructive-soft
+    warning
+    warning-soft
 
-    border: #bfc4c9
+    border
 
     STATES
         hover:
@@ -139,7 +139,7 @@
         focus:ring-secondary
     btn-ghost:
         bg-transparent
-        text-foreground
+        text-muted
         hover:bg-secondary/50
         active:bg-secondary/40
         focus:ring-secondary
@@ -262,11 +262,15 @@
 
 ### Buttons
 ```
-<button className="btn btn-sm btn-primary-soft">
+<button className="btn btn-sm btn-primary-soft focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed hover:bg-primary/90 active:bg-primary/80 focus:ring-primary">
     <span>Submit</span>
 </button>
 
-<button className="btn btn-sm btn-ghost">
+<button className="btn btn-sm btn-primary-soft focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed hover:bg-primary/90 active:bg-primary/80 focus:ring-primary hover:bg-primary-soft/85 active:bg-primary-soft/95 focus:ring-primary">
+    <span>Submit</span>
+</button>
+
+<button className="btn btn-sm btn-ghost hover:bg-secondary/50 active:bg-secondary/40 focus:ring-secondary">
     <span>Cancel</span>
 </button>
 

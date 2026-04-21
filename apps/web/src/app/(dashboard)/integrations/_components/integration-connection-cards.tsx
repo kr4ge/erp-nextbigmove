@@ -39,7 +39,7 @@ export function IntegrationConnectionCards({
 
           <Button
             onClick={onAddMeta}
-            className="w-full !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+            className="w-full"
           >
             Add Meta API
           </Button>
@@ -67,7 +67,7 @@ export function IntegrationConnectionCards({
 
           <Button
             onClick={onAddPos}
-            className="w-full !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+            className="w-full"
           >
             {posCount === 0 ? 'Connect Pancake POS' : 'Add Another Store'}
           </Button>

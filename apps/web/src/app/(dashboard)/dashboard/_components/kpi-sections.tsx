@@ -846,7 +846,7 @@ export function ExecutiveKpiSection({
     <DashboardSection
       title="Marketing KPI Overview"
       icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
-      className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+      className="panel-content"
       contentClassName="space-y-3"
       headerClassName="px-3 py-2.5"
       titleClassName="text-[11px] tracking-[0.18em]"

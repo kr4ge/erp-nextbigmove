@@ -64,8 +64,6 @@ export function IntegrationConnectModal({
   const labelClass = 'block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500';
   const inputClass =
     'mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-orange-200 focus:border-orange-300 focus:ring-4 focus:ring-orange-100';
-  const primaryActionClass =
-    '!border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
@@ -124,7 +122,6 @@ export function IntegrationConnectModal({
                   type="submit"
                   disabled={isSubmitting}
                   loading={isSubmitting}
-                  className={primaryActionClass}
                 >
                   {isSubmitting ? 'Connecting...' : 'Connect'}
                 </Button>
@@ -194,7 +191,6 @@ export function IntegrationConnectModal({
                   type="submit"
                   disabled={isSubmitting}
                   loading={isSubmitting}
-                  className={primaryActionClass}
                 >
                   {isSubmitting ? 'Connecting...' : posShops.length > 1 ? 'Create Store' : 'Fetch Shops'}
                 </Button>

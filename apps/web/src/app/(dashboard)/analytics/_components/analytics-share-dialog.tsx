@@ -94,7 +94,7 @@ export function AnalyticsShareDialog({
               onClick={onSave}
               variant="secondary"
               size="sm"
-              className="min-w-[92px] !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 focus:!ring-orange-300"
+              className="min-w-[92px]"
               disabled={saving}
             >
               {saving ? 'Saving...' : 'Save'}

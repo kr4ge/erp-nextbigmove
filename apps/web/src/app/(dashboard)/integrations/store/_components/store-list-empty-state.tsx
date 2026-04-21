@@ -42,7 +42,7 @@ export function StoreListEmptyState({
       </p>
       <Button
         onClick={onConnectStore}
-        className="mt-6 !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+        className="mt-6"
       >
         Connect Store
       </Button>

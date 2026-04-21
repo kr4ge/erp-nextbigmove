@@ -376,7 +376,7 @@ export default function CreateWorkflowPage() {
             <button
               onClick={() => setStep(2)}
               disabled={!formData.name || !formData.teamId}
-              className="rounded-xl border border-orange-200 bg-orange-50 px-6 py-2 text-sm font-semibold text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              className="btn btn-lg btn-primary-soft disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
             >
               Next Step
             </button>
@@ -557,14 +557,14 @@ export default function CreateWorkflowPage() {
           <div className="flex justify-between">
             <button
               onClick={() => setStep(1)}
-              className="px-6 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+              className="btn btn-lg btn-ghost"
             >
               ← Back
             </button>
             <button
               onClick={() => setStep(3)}
               disabled={!formData.metaEnabled && !formData.posEnabled}
-              className="rounded-xl border border-orange-200 bg-orange-50 px-6 py-2 text-sm font-semibold text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              className="btn btn-lg btn-primary-soft disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
             >
               Next Step →
             </button>
@@ -728,14 +728,14 @@ export default function CreateWorkflowPage() {
           <div className="flex justify-between">
             <button
               onClick={() => setStep(2)}
-              className="px-6 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+              className="btn btn-lg btn-ghost"
             >
               ← Back
             </button>
             <button
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className="rounded-xl border border-orange-200 bg-orange-50 px-6 py-2 text-sm font-semibold text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              className='btn btn-lg btn-primary-soft'
             >
               {isSubmitting ? 'Creating...' : 'Create Workflow'}
             </button>

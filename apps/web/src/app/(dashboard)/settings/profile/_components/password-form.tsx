@@ -50,7 +50,7 @@ export function PasswordForm({
             type="submit"
             variant="secondary"
             disabled={isSavingPassword || isLoading}
-            className="border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 focus:ring-orange-200"
+            className='border-none'
           >
             {isSavingPassword ? 'Updating...' : 'Update password'}
           </Button>

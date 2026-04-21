@@ -146,8 +146,8 @@ export function WorkflowsTable({
           icon={<Workflow className="h-6 w-6 text-orange-500" />}
           action={
             <Button
+              variant="primary"
               onClick={onCreateWorkflow}
-              className="!border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
             >
               Create Workflow
             </Button>

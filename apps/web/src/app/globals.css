@@ -3,7 +3,7 @@
 @tailwind utilities;
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    /* --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
@@ -22,7 +22,31 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem; */
     --radius: 0.5rem;
+    --background: 241 245 249;
+    --foreground: 15 23 42;
+
+    --surface: 255 255 255;
+    --surface-warm: 255, 237 213 / 0.35;
+    --surface-warm-soft: 255 247 237 / 0.25;
+
+    --primary: 255 105 0;
+    --primary-soft: 255 247 237;
+    --primary-foreground: 255 255 255;
+    --primary-soft-foreground: 194 65 12;
+
+    --secondary: 226 232 240;
+    --muted: 100 116 139;
+
+    --success: 22 163 74;
+    --success-soft: 167 243 208;
+    --destructive: 217, 20, 20;
+    --destructive-soft: 254 202 202;
+    --warning: 217 119 6;
+    --warning-soft: 254 243 199;
+
+    --border: 191 196 201;
   }
 
   .dark {
@@ -64,6 +88,192 @@
   /* Fix react-tailwindcss-datepicker z-index to appear above modals */
   .react-datepicker-popper {
     z-index: 9999 !important;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply
+      inline-flex items-center justify-center
+      font-semibold
+      rounded-2xl
+      border
+      transition;
+
+    &:focus {
+      @apply outline-none ring-2 ring-offset-2
+    }
+
+    &:disabled {
+      @apply disabled:opacity-60 disabled:cursor-not-allowed
+    }
+  }
+
+  .btn-sm {
+    @apply
+      h-9
+      px-3
+      text-xs
+  }
+
+  .btn-md {
+    @apply
+      h-10
+      px-4
+      text-sm
+    }
+
+  .btn-lg {
+    @apply
+      h-11
+      px-5
+      text-base
+  }
+
+  .btn-primary {
+    @apply
+      bg-primary
+      text-primary-foreground;
+
+    &:hover {
+      @apply bg-primary/80
+    }
+
+    &:active {
+      @apply bg-primary/80
+    }
+
+    &:focus {
+      @apply ring-primary
+    }
+  }
+  .btn-primary-soft {
+    @apply
+      bg-primary-soft
+      text-primary-soft-foreground
+      border-primary/40;
+
+    &:hover {
+      @apply bg-primary-soft/80
+    }
+
+    &:active {
+      @apply bg-primary-soft/75
+    }
+
+    &:focus {
+      @apply ring-primary/50
+    }
+
+  }
+  .btn-secondary {
+    @apply
+      bg-secondary
+      text-foreground
+  }
+
+  .btn-outline {
+    @apply
+      bg-surface
+      text-foreground
+  }
+
+  .btn-ghost {
+    @apply
+      bg-transparent
+      text-foreground
+  }
+  .btn-destructive {
+    @apply
+      bg-destructive
+      text-primary-foreground
+  }
+
+  /* Panels and Cards */
+  .panel {
+    @apply
+      overflow-visible
+      rounded-xl
+      border border-border/20
+      bg-surface
+      shadow-sm
+  }
+  .panel-header {
+    @apply
+      flex items-center gap-2
+      border-b border-border/10
+      bg-secondary/20
+      px-3 py-2.5
+  }
+  .panel-title {
+    @apply
+      text-xs font-semibold uppercase tracking-[0.18em]
+      text-muted
+  }
+  .panel-content {
+    @apply
+      bg-gradient-to-br
+      from-surface via-orange-50/35 to-amber-50/25;
+  }
+
+  /* KPI Cards */
+  .card {
+    @apply
+      rounded-xl
+      border border-border
+      bg-surface
+      p-3
+      shadow-sm
+  }
+  .card-label {
+    @apply
+      text-sm font-semibold uppercase tracking-[0.18em]
+      text-slate-500
+  }
+  .card-value {
+    @apply
+      text-2xl
+      font-semibold
+      tracking-tight
+      text-slate-950 tabular-nums
+  }
+
+  /* Inputs and Labels */
+  .form-label {
+    @apply
+      text-xs font-semibold uppercase
+      tracking-[0.16rem]
+      text-muted
+  }
+
+  .input {
+    @apply
+      w-full
+      rounded-2xl
+      border border-border
+      bg-surface
+      px-4 py-3
+      text-sm text-foreground
+      outline-none
+      transition;
+
+    &:placeholder {
+      @apply text-muted
+    }
+
+    &:focus {
+      @apply border-primary/70 ring-4 ring-primary/30
+    }
+  }
+
+  .read-only-input {
+    @apply
+      w-full
+      rounded-2xl
+      border border-border
+      bg-secondary/40
+      px-4 py-3
+      text-sm text-foreground
+      outline-none
   }
 }
 

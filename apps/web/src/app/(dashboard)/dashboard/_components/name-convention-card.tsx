@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ClipboardList } from "lucide-react";
 import { DashboardSection } from "./dashboard-section";
+import clsx from "clsx";
 
 interface NameConventionCardProps {
   teamCode: string;
@@ -12,15 +13,19 @@ interface NameConventionCardProps {
 
 const namingLabelClass = "space-y-2 text-sm";
 const namingLabelTextClass =
-  "text-xs font-semibold uppercase tracking-[0.16em] text-slate-500";
+  "form-label";
 const namingInputClass =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
+  "input"
+  // "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100";
 const namingReadOnlyInputClass =
-  "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
+  "read-only-input"
+  // "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const namingSoftButtonClass =
-  "inline-flex items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 px-5 py-3 text-center text-sm font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50";
+  // "inline-flex items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 px-5 py-3 text-center text-sm font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50";
+  "btn btn-lg btn-primary-soft"
 const namingSoftActionButtonClass =
-  "inline-flex items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 px-3 py-1.5 text-center text-xs font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100";
+  "btn btn-sm btn-primary-soft"
+  // "inline-flex items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 px-3 py-1.5 text-center text-xs font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100";
 
 export function NameConventionCard({
   teamCode,
@@ -107,10 +112,10 @@ export function NameConventionCard({
     <DashboardSection
       title="Name Convention"
       icon={<ClipboardList className="h-3.5 w-3.5 text-orange-500" />}
-      className="border-orange-100 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/25"
+      className="panel-content"
       contentClassName="space-y-3"
-      headerClassName="px-3 py-2.5"
-      titleClassName="text-[11px] tracking-[0.18em]"
+      headerClassName=""
+      titleClassName=""
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="max-w-2xl text-sm text-slate-600">
@@ -121,7 +126,7 @@ export function NameConventionCard({
           <button
             className={`rounded-md px-3 py-1 ${
               nameTab === "ads"
-                ? "bg-white text-orange-700 shadow-sm ring-1 ring-orange-100"
+              ? "btn btn-md btn-primary-soft"  // "bg-white text-orange-700 shadow-sm ring-1 ring-orange-100"
                 : "text-slate-500"
             }`}
             onClick={() => setNameTab("ads")}
@@ -131,8 +136,8 @@ export function NameConventionCard({
           <button
             className={`rounded-md px-3 py-1 ${
               nameTab === "campaign"
-                ? "bg-white text-orange-700 shadow-sm ring-1 ring-orange-100"
-                : "text-slate-500"
+              ? "btn btn-md btn-primary-soft"
+                : "text-muted"
             }`}
             onClick={() => setNameTab("campaign")}
           >

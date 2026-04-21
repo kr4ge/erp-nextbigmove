@@ -57,8 +57,8 @@ export function PersonalInfoForm({
           <p className="text-sm text-slate-500">These details are visible across your workspace.</p>
           <Button
             type="submit"
+            variant='primary'
             disabled={isLoading || isSavingProfile || !isProfileDirty}
-            className="border !border-orange-200 bg-orange-50 !text-orange-700 hover:bg-orange-100 focus:ring-orange-200"
           >
             {isSavingProfile ? 'Saving...' : 'Save changes'}
           </Button>

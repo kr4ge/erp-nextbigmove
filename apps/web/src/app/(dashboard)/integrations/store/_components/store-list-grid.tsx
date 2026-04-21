@@ -69,7 +69,7 @@ export function StoreListGrid({
 
               <div className="mt-6">
                 <Button
-                  className="w-full !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+                  className="w-full"
                   onClick={() => onOpenStore(store.id)}
                 >
                   Enter

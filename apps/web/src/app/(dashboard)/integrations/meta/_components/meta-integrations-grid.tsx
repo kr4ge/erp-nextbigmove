@@ -77,7 +77,7 @@ export function MetaIntegrationsGrid({
 
           <div className="mt-4 flex gap-2">
             <Button
-              className="flex-1 !border !border-orange-200 !bg-orange-50 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800 focus-visible:!ring-orange-200"
+              className="flex-1"
               onClick={(event) => {
                 event.stopPropagation();
                 onOpenDetail(integration.id);
