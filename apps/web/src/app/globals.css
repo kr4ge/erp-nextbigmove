@@ -41,7 +41,7 @@
 
     --success: 22 163 74;
     --success-soft: 167 243 208;
-    --destructive: 217, 20, 20;
+    --destructive: 217 20 20;
     --destructive-soft: 254 202 202;
     --warning: 217 119 6;
     --warning-soft: 254 243 199;
@@ -280,6 +280,31 @@
       text-sm text-foreground
       outline-none
   }
+
+  /* Pill */
+
+  .pill {
+    @apply
+      rounded-full border 
+    border-orange-100 bg-orange-50/60 text-orange-600
+      px-2.5 py-1
+      text-center text-xs font-medium
+      2xl:w-auto 2xl:text-left;
+    }
+
+    .pill-primary {
+      @apply
+        text-primary-soft-foreground
+        border-primary/10
+        bg-primary-soft/50
+    }
+
+    .pill-destructive {
+      @apply
+        text-destructive
+        border-destructive/30
+        bg-primary-soft/50
+    }
 }
 
 @media (prefers-color-scheme: dark) {

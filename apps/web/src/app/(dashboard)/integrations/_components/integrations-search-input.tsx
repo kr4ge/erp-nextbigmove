@@ -18,7 +18,7 @@ export function IntegrationsSearchInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl border border-[#D5DAE0] bg-[#EEF1F5] px-4 py-2.5 pr-10 text-sm text-[#334155] placeholder:text-[#94A3B8] outline-none transition focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/30"
+        className="input"
       />
       <svg
         xmlns="http://www.w3.org/2000/svg"

@@ -34,12 +34,12 @@ export function StoreListGrid({
         {stores.map((store) => {
           const displayName = store.shopName || store.name;
           return (
-            <Card key={store.id} className="flex flex-col">
+            <Card key={store.id} className="flex flex-col bg-surface border-border/10 rounded-2xl">
               <div className="flex items-center gap-2 2xl:justify-between 2xl:gap-0">
-                <span className="hidden items-center rounded-full bg-[#FEF2F2] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#EF4444] 2xl:inline-flex">
+                <span className="hidden pill pill-destructive 2xl:inline-flex">
                   Shop
                 </span>
-                <span className="w-full rounded-full border border-orange-100 bg-orange-50/60 px-2.5 py-1 text-center text-xs font-medium text-orange-600 2xl:w-auto 2xl:text-left">
+                <span className="pill pill-primary">
                   {store.teamId ? `Team: ${teamNames[store.teamId] || store.teamId}` : 'All teams'}
                 </span>
               </div>
@@ -58,12 +58,12 @@ export function StoreListGrid({
                   </div>
                 )}
                 <h3 className="mt-4 text-lg font-semibold text-[#0F172A]">{displayName}</h3>
-                <p className="mt-1 text-sm text-[#475569]">Pancake POS</p>
+                <p className="mt-1 text-sm text-foreground">Pancake POS</p>
                 {store.description ? (
-                  <p className="mt-1 line-clamp-2 text-xs text-[#94A3B8]">{store.description}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-secondary/20">{store.description}</p>
                 ) : null}
                 {store.shopId ? (
-                  <p className="mt-2 text-xs text-[#94A3B8]">Shop ID: {store.shopId}</p>
+                  <p className="mt-2 text-xs text-muted">Shop ID: {store.shopId}</p>
                 ) : null}
               </div>
 
@@ -81,7 +81,7 @@ export function StoreListGrid({
       </div>
 
       {pageCount > 1 ? (
-        <div className="flex items-center justify-between rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#475569]">
+        <div className="flex items-center justify-between rounded-xl border border-surface bg-surface px-4 py-3 text-sm text-foreground shadow-sm">
           <div>
             Showing page {page} of {pageCount}
           </div>

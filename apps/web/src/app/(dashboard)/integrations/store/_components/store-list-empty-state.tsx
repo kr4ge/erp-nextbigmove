@@ -20,11 +20,11 @@ export function StoreListEmptyState({
   if (hasSearch) {
     return (
       <Card className="flex flex-col items-center justify-center gap-3 px-8 py-12 text-center">
-        <div className="text-lg font-semibold text-[#0F172A]">No results for "{searchLabel}"</div>
-        <p className="text-sm text-[#475569]">
+        <div className="text-lg font-semibold text-foreground">No results for "{searchLabel}"</div>
+        <p className="text-sm text-secondary">
           Try a different keyword or clear the search to see all stores.
         </p>
-        <Button variant="ghost" onClick={onClearSearch}>
+        <Button variant="ghost" size="md" onClick={onClearSearch}>
           Clear search
         </Button>
       </Card>
@@ -36,13 +36,15 @@ export function StoreListEmptyState({
       <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center text-orange-500">
         <Store className="h-8 w-8" />
       </div>
-      <h3 className="text-lg font-semibold text-[#0F172A]">No POS stores connected</h3>
-      <p className="mt-2 text-sm text-[#475569]">
+      <h3 className="text-lg font-semibold text-foreground">No POS stores connected</h3>
+      <p className="mt-2 text-sm text-secondary">
         Connect your first store to see it listed here.
       </p>
       <Button
         onClick={onConnectStore}
         className="mt-6"
+        variant="primary"
+        size="lg"
       >
         Connect Store
       </Button>
