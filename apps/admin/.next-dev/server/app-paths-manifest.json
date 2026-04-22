@@ -1,9 +1,0 @@
-{
-  "/(auth)/login/page": "app/(auth)/login/page.js",
-  "/(admin)/warehouses/page": "app/(admin)/warehouses/page.js",
-  "/(admin)/products/page": "app/(admin)/products/page.js",
-  "/(admin)/inventory/stock/page": "app/(admin)/inventory/stock/page.js",
-  "/(admin)/inventory/stock-receiving/page": "app/(admin)/inventory/stock-receiving/page.js",
-  "/(admin)/wms/page": "app/(admin)/wms/page.js",
-  "/(admin)/inventory/transfer/page": "app/(admin)/inventory/transfer/page.js"
-}
