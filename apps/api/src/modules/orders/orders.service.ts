@@ -202,6 +202,45 @@ export class OrdersService {
     return value as Record<string, unknown>;
   }
 
+  private extractSnapshotAmount(
+    orderSnapshot: Prisma.JsonValue | null | undefined,
+    key: string,
+  ): number | undefined {
+    const snapshot = this.toObject(orderSnapshot);
+    if (!snapshot || !Object.prototype.hasOwnProperty.call(snapshot, key)) {
+      return undefined;
+    }
+
+    const raw = snapshot[key];
+    if (typeof raw === 'number') {
+      return Number.isFinite(raw) ? raw : undefined;
+    }
+
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (!trimmed) return 0;
+      const parsed = Number.parseFloat(trimmed);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+
+    return undefined;
+  }
+
+  private extractSnapshotField(
+    orderSnapshot: Prisma.JsonValue | null | undefined,
+    key: string,
+  ): { exists: boolean; value: unknown } {
+    const snapshot = this.toObject(orderSnapshot);
+    if (!snapshot || !Object.prototype.hasOwnProperty.call(snapshot, key)) {
+      return { exists: false, value: undefined };
+    }
+
+    return {
+      exists: true,
+      value: snapshot[key],
+    };
+  }
+
   private extractOrderWarehouseId(orderSnapshot: Prisma.JsonValue | null): string | null {
     const snapshot = this.toObject(orderSnapshot);
     const warehouseIdRaw = snapshot?.warehouse_id ?? snapshot?.warehouseId ?? null;
@@ -1531,6 +1570,7 @@ export class OrdersService {
         posOrderId: true,
         status: true,
         confirmationUpdateTargetStatus: true,
+        orderSnapshot: true,
       },
     });
 
@@ -1576,6 +1616,45 @@ export class OrdersService {
       return { success: false, reason: 'MISSING_API_KEY' };
     }
 
+    const shouldPreservePaymentFields =
+      hasShippingAddressUpdate ||
+      hasShippingFeeUpdate ||
+      hasTotalDiscountUpdate ||
+      hasBankPaymentsUpdate ||
+      hasSurchargeUpdate;
+    const preservedShippingFee =
+      shouldPreservePaymentFields && !hasShippingFeeUpdate
+        ? this.extractSnapshotAmount(order.orderSnapshot, 'shipping_fee')
+        : undefined;
+    const effectiveShippingFee =
+      typeof jobData.targetShippingFee === 'number'
+        ? jobData.targetShippingFee
+        : preservedShippingFee;
+    const preservedTotalDiscount =
+      shouldPreservePaymentFields && !hasTotalDiscountUpdate
+        ? this.extractSnapshotAmount(order.orderSnapshot, 'total_discount')
+        : undefined;
+    const effectiveTotalDiscount =
+      typeof jobData.targetTotalDiscount === 'number'
+        ? jobData.targetTotalDiscount
+        : preservedTotalDiscount;
+    const preservedSurcharge =
+      shouldPreservePaymentFields && !hasSurchargeUpdate
+        ? this.extractSnapshotAmount(order.orderSnapshot, 'surcharge')
+        : undefined;
+    const effectiveSurcharge =
+      typeof jobData.targetSurcharge === 'number'
+        ? jobData.targetSurcharge
+        : preservedSurcharge;
+    const preservedBankPaymentsField =
+      shouldPreservePaymentFields && !hasBankPaymentsUpdate
+        ? this.extractSnapshotField(order.orderSnapshot, 'bank_payments')
+        : { exists: false, value: undefined };
+    const hasEffectiveBankPayments = hasBankPaymentsUpdate || preservedBankPaymentsField.exists;
+    const effectiveBankPayments = hasBankPaymentsUpdate
+      ? jobData.targetBankPayments
+      : preservedBankPaymentsField.value;
+
     const params = new URLSearchParams();
     params.set('api_key', apiKey);
     const requestBody: Record<string, unknown> = {
@@ -1606,17 +1685,17 @@ export class OrdersService {
     if (hasShippingAddressUpdate) {
       requestBody.shipping_address = jobData.targetShippingAddress;
     }
-    if (hasShippingFeeUpdate) {
-      requestBody.shipping_fee = jobData.targetShippingFee;
+    if (typeof effectiveShippingFee === 'number') {
+      requestBody.shipping_fee = effectiveShippingFee;
     }
-    if (hasTotalDiscountUpdate) {
-      requestBody.total_discount = jobData.targetTotalDiscount;
+    if (typeof effectiveTotalDiscount === 'number') {
+      requestBody.total_discount = effectiveTotalDiscount;
     }
-    if (hasBankPaymentsUpdate) {
-      requestBody.bank_payments = jobData.targetBankPayments;
+    if (hasEffectiveBankPayments) {
+      requestBody.bank_payments = effectiveBankPayments;
     }
-    if (hasSurchargeUpdate) {
-      requestBody.surcharge = jobData.targetSurcharge;
+    if (typeof effectiveSurcharge === 'number') {
+      requestBody.surcharge = effectiveSurcharge;
     }
 
     let response: Response;
