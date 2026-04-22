@@ -69,8 +69,26 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%; */
-    --background: 0 0 0;
-     
+
+    --background: 27, 25, 25;
+    --background-secondary: 34, 32, 32;
+    --foreground: 255 255 255;
+    --surface: 41, 39, 39;
+
+    --primary: 249 115 22;
+    --primary-soft: 255 247 237;
+    --primary-foreground: 255 255 255;
+    --primary-soft-foreground: 194 65 12;
+
+    --secondary: 226 232 240;
+    --muted: 100 116 139;
+
+    --success: 22 163 74;
+    --success-soft: 167 243 208;
+    --destructive: 245 32 32;
+    --destructive-soft: 254 202 202;
+    --warning: 217 119 6;
+    --warning-soft: 254 243 199;
   }
 
   /* Pill */

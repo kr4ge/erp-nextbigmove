@@ -152,7 +152,7 @@ export default function MarketingKpiPage() {
       {canManageMarketingKpi ? (
         <section className="panel panel-content">
           <div className="panel-header">
-            <Target className="h-3.5 w-3.5 text-orange-500" />
+            <Target className="h-3.5 w-3.5 text-primary" />
             <h2 className="panel-title">
               KPI Settings
             </h2>
@@ -244,7 +244,7 @@ export default function MarketingKpiPage() {
       ) : (
         <section className="panel panel-content">
           <div className="panel-header">
-            <Lock className="h-3.5 w-3.5 text-orange-500" />
+            <Lock className="h-3.5 w-3.5 text-primary" />
             <h2 className="panel-title">
               KPI Settings
             </h2>

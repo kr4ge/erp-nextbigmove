@@ -185,7 +185,7 @@ export function CategoryTargetForm({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-7 rounded-md px-2 text-xs"
+                      className="btn btn-sm btn-secondary"
                       disabled={disabled || Boolean(submittingKey)}
                       onClick={() => onEditTarget(target)}
                     >
@@ -194,7 +194,7 @@ export function CategoryTargetForm({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-7 rounded-md border-rose-200 px-2 text-xs text-rose-700 hover:bg-rose-50 hover:text-rose-700"
+                      className="btn btn-sm btn-destructive"
                       loading={submittingKey === `delete-category-target-${target.id}`}
                       disabled={disabled || Boolean(submittingKey && submittingKey !== `delete-category-target-${target.id}`)}
                       onClick={() => onDeleteTarget(target)}

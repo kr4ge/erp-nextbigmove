@@ -13,7 +13,10 @@ const config: Config = {
         border: 'rgb(var(--border))',
         input: 'rgb(var(--input))',
         ring: 'rgb(var(--ring))',
-        background: 'rgb(var(--background))',
+        background: {
+          DEFAULT: 'rgb(var(--background))',
+          secondary: 'rgb(var(--background-secondary))'
+        },
         foreground: 'rgb(var(--foreground))',
         surface: {
           DEFAULT: 'rgb(var(--surface))',

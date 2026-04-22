@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { ChevronDown } from 'lucide-react';
+import { CalendarDays, ChevronDown } from 'lucide-react';
 import type { TeamOption } from '../types';
 
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
@@ -17,6 +17,12 @@ const parseYmdToLocalDate = (value: string) => {
   const [year, month, day] = value.split('-').map(Number);
   if (!year || !month || !day) return new Date();
   return new Date(year, month - 1, day);
+};
+
+const formatYmdToDisplay = (ymd: string) => {
+  const [year, month, day] = ymd.split('-');
+  if (!year || !month || !day) return ymd;
+  return `${month.padStart(2, '0')}/${day.padStart(2, '0')}/${year}`;
 };
 
 type HeaderFiltersProps = {
@@ -42,6 +48,13 @@ export function HeaderFilters({
   onFilterStartDateChange,
   onFilterEndDateChange,
 }: HeaderFiltersProps) {
+  const today = toYmd(new Date());
+  const isTodayRange = filterStartDate === today && filterEndDate === today;
+  const dateRangeLabel =
+    filterStartDate === filterEndDate
+      ? formatYmdToDisplay(filterStartDate)
+      : `${formatYmdToDisplay(filterStartDate)} - ${formatYmdToDisplay(filterEndDate)}`;
+
   const range = {
     startDate: parseYmdToLocalDate(filterStartDate),
     endDate: parseYmdToLocalDate(filterEndDate),
@@ -99,17 +112,39 @@ export function HeaderFilters({
         </div>
       ) : null}
 
-      <div className="relative min-w-[250px]">
+      <div className="relative">
         <Datepicker
           value={range}
           onChange={handleDateRangeChange}
-          inputClassName="rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white shadow-sm focus:outline-none focus:border-slate-300"
+          useRange={false}
+          asSingle={false}
+          showShortcuts={false}
+          showFooter={false}
+          primaryColor="orange"
+          readOnly
+          inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+            isTodayRange ? 'w-10' : 'w-[200px] sm:w-[236px]'
+          }`}
           containerClassName=""
-          popupClassName={(defaultClass: string) => `${defaultClass} z-50`}
+          popupClassName={(defaultClass: string) => `${defaultClass} z-50 kpi-datepicker-light`}
           displayFormat="MM/DD/YYYY"
-          separator=" – "
-          toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-          placeholder=""
+          separator=" - "
+          toggleIcon={() => (
+            <span className="flex w-full items-center gap-2 overflow-hidden">
+              <CalendarDays className="h-4 w-4 shrink-0" />
+              <span
+                className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                  isTodayRange
+                    ? 'max-w-0 -translate-x-1 opacity-0'
+                    : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
+                }`}
+              >
+                {dateRangeLabel}
+              </span>
+            </span>
+          )}
+          toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+          placeholder=" "
         />
       </div>
     </div>
