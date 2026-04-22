@@ -553,8 +553,8 @@ export function PersonalKpiSection({
       icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
       className="panel panel-content"
       contentClassName="space-y-3"
-      headerClassName="px-3 py-2.5"
-      titleClassName="text-xs tracking-[0.18em]"
+      headerClassName=""
+      titleClassName=""
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="max-w-2xl text-sm text-slate-600">{description}</p>

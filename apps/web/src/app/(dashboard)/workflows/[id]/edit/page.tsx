@@ -612,7 +612,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
                     onClick={() => updateField('dateRangeType', type)}
                     className={`btn px-3 py-2 text-xs capitalize leading-tight ${
                       active
-                        ? 'btn-primary-soft'
+                        ? 'btn-primary'
                         : 'btn-outline'
                     }`}
                   >
@@ -742,7 +742,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
           <button
             onClick={handleSubmit}
             disabled={isSaving}
-            className="btn btn-md btn-primary-soft"
+            className="btn btn-md btn-primary"
           >
             {isSaving ? 'Saving…' : 'Save Changes'}
           </button>

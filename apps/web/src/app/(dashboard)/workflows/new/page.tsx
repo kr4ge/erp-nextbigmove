@@ -376,7 +376,7 @@ export default function CreateWorkflowPage() {
             <button
               onClick={() => setStep(2)}
               disabled={!formData.name || !formData.teamId}
-              className="btn btn-lg btn-primary-soft disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              className="btn btn-lg btn-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
             >
               Next Step
             </button>
@@ -564,7 +564,7 @@ export default function CreateWorkflowPage() {
             <button
               onClick={() => setStep(3)}
               disabled={!formData.metaEnabled && !formData.posEnabled}
-              className="btn btn-lg btn-primary-soft disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              className="btn btn-lg btn-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
             >
               Next Step →
             </button>
@@ -735,7 +735,7 @@ export default function CreateWorkflowPage() {
             <button
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className='btn btn-lg btn-primary-soft'
+              className='btn btn-lg btn-primary'
             >
               {isSubmitting ? 'Creating...' : 'Create Workflow'}
             </button>

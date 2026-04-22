@@ -63,6 +63,7 @@ const config: Config = {
         'xs-tight': '10px',
         'xs': '11px',
         'sm-custom': '0.82rem',
+        'base': '15px',
         'lg-loose': '1.75rem',
         'xl-loose': '1.85rem'
       }

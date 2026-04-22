@@ -294,7 +294,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
           </Link>
           <Link
             href={`/workflows/${workflowId}/edit`}
-            className="inline-flex items-center gap-2 btn btn-md btn-primary-soft"
+            className="inline-flex items-center gap-2 btn btn-md btn-primary"
             // "inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-100"
           >
             <Settings className="h-4 w-4" />
@@ -385,7 +385,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
           <button
             onClick={triggerWorkflow}
             disabled={triggering}
-            className="btn btn-md btn-primary-soft disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            className="btn btn-md btn-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
           >
             {triggering ? 'Starting…' : 'Trigger Execution'}
           </button>

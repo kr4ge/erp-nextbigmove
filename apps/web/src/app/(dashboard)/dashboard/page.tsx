@@ -1575,13 +1575,13 @@ export default function DashboardPage() {
 
             <DashboardSection
               title="Quick Links"
-              icon={<LinkIcon className="h-3.5 w-3.5 text-orange-500" />}
+              icon={<LinkIcon className="h-3.5 w-3.5 text-primary" />}
               className="panel panel-content"
               meta={
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-auto px-0 py-0 text-xs font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+                  className="hover:text-orange-600"
                 >
                   Manage
                 </Button>
