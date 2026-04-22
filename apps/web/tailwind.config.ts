@@ -35,6 +35,10 @@ const config: Config = {
           soft: 'rgb(var())',
           foreground: 'rgb(var(--secondary-foreground))',
         },
+        success: {
+          DEFAULT: 'rgb(var(--success))',
+          soft: 'rgb(var(--success-soft))'
+        },
         destructive: {
           DEFAULT: 'rgb(var(--destructive))',
           soft: 'rgb(var())',

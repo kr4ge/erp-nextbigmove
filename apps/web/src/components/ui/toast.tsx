@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 
 type ToastType = 'success' | 'error' | 'info';
 type ToastItem = { id: number; type: ToastType; message: string };
@@ -27,31 +27,32 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ addToast }}>
       {children}
-      <div className="fixed top-4 right-4 z-[9999] space-y-3">
+      <div className="fixed top-4 right-4 sm:right-8 z-[9999] space-y-3">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`flex items-center w-full max-w-sm p-4 text-sm text-slate-800 bg-white border rounded-lg shadow ${
-              t.type === 'success' ? 'border-green-200' : t.type === 'error' ? 'border-red-200' : 'border-slate-200'
+            className={`flex items-center w-full max-w-sm p-4 text-sm text-foreground bg-surface border rounded-lg shadow ${
+              t.type === 'success' ? 'border-success' : t.type === 'error' ? 'border-destructive' : 'border-border/80'
             }`}
             role="alert"
           >
             <div
               className={`inline-flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-lg ${
                 t.type === 'success'
-                  ? 'text-green-600 bg-green-100'
+                  ? 'text-success bg-success-soft'
                   : t.type === 'error'
-                  ? 'text-red-600 bg-red-100'
-                  : 'text-slate-600 bg-slate-100'
+                  ? 'text-destructive bg-destructive/20'
+                  : 'text-muted bg-secondary/80'
               }`}
             >
               {t.type === 'success' ? '✓' : t.type === 'error' ? '!' : 'i'}
             </div>
-            <div className="ml-3 text-sm font-medium text-slate-900">{t.message}</div>
+            <div className="ml-3 mr-2 min-w-0 flex-1 text-sm font-medium text-slate-900">{t.message}</div>
             <button
               type="button"
-              className="ml-auto text-slate-400 hover:text-slate-700"
+              className="ml-auto inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-border/70 bg-surface-soft text-slate-500 transition hover:border-border hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
               onClick={() => removeToast(t.id)}
+              aria-label="Close toast"
             >
               ×
             </button>
