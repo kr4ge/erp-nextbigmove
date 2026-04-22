@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Target,
   Package,
+  FileSpreadsheet,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
@@ -108,6 +109,12 @@ const baseNavigation: NavLink[] = [
     ],
   },
   {
+    href: '/reports',
+    label: 'Reports',
+    description: 'Tenant-wide POS exports',
+    icon: <FileSpreadsheet className={iconClasses} />,
+  },
+  {
     href: '/kpis',
     label: 'KPIs',
     description: 'Targets & performance tracking',
@@ -173,6 +180,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const hasMeta = permissions.includes('meta.read');
     const hasWorkflow = permissions.includes('workflow.read');
     const hasOrderConfirmation = permissions.includes('pos.read');
+    const hasReports = permissions.includes('reports.pos_orders.read');
     const hasPurchasing =
       permissions.includes('wms.purchasing.read')
       || permissions.includes('wms.purchasing.write')
@@ -196,6 +204,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           });
           if (children.length === 0) return [];
           return [{ ...link, children }];
+        }
+        if (link.href === '/reports') {
+          return hasReports ? [link] : [];
         }
         if (link.href === '/kpis') {
           const children = (link.children || []).filter((child) => {
