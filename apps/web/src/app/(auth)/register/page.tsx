@@ -81,7 +81,7 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg">
+      <div className="max-w-md w-full space-y-4 bg-white p-8 rounded-xl shadow-lg">
         <div>
           <h2 className="text-center text-3xl font-bold text-gray-900">
             Create your account
@@ -100,13 +100,13 @@ export default function RegisterPage() {
             {/* Personal Info */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="firstName" className="form-label">
                   First Name
                 </label>
                 <input
                   {...register('firstName')}
                   type="text"
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-900 focus:border-gray-900"
+                  className="input"
                 />
                 {errors.firstName && (
                   <p className="mt-1 text-sm text-red-600">{errors.firstName.message}</p>
@@ -114,13 +114,13 @@ export default function RegisterPage() {
               </div>
 
               <div>
-                <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="lastName" className="form-label">
                   Last Name
                 </label>
                 <input
                   {...register('lastName')}
                   type="text"
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-900 focus:border-gray-900"
+                  className="input"
                 />
                 {errors.lastName && (
                   <p className="mt-1 text-sm text-red-600">{errors.lastName.message}</p>
@@ -130,14 +130,14 @@ export default function RegisterPage() {
 
             {/* Email */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="form-label">
                 Email address
               </label>
               <input
                 {...register('email')}
                 type="email"
                 autoComplete="email"
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-900 focus:border-gray-900"
+                className="input"
               />
               {errors.email && (
                 <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
@@ -146,14 +146,14 @@ export default function RegisterPage() {
 
             {/* Password */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="form-label">
                 Password
               </label>
               <input
                 {...register('password')}
                 type="password"
                 autoComplete="new-password"
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-900 focus:border-gray-900"
+                className="input"
               />
               {errors.password && (
                 <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
@@ -162,10 +162,10 @@ export default function RegisterPage() {
 
             {/* Organization Info */}
             <div className="pt-4 border-t border-gray-200">
-              <h3 className="text-sm font-medium text-gray-900 mb-3">Organization Details</h3>
+              <h3 className="text-md font-medium text-gray-900 mb-3">Organization Details</h3>
 
               <div>
-                <label htmlFor="tenantName" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="tenantName" className="form-label">
                   Organization Name
                 </label>
                 <input
@@ -173,7 +173,7 @@ export default function RegisterPage() {
                     onChange: (e) => handleTenantNameChange(e.target.value),
                   })}
                   type="text"
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-900 focus:border-gray-900"
+                  className="input"
                   placeholder="Acme Inc."
                 />
                 {errors.tenantName && (
@@ -182,13 +182,13 @@ export default function RegisterPage() {
               </div>
 
               <div className="mt-4">
-                <label htmlFor="tenantSlug" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="tenantSlug" className="form-label">
                   Organization Slug
                 </label>
                 <input
                   {...register('tenantSlug')}
                   type="text"
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-900 focus:border-gray-900 font-mono text-sm"
+                  className="input font-mono text-sm"
                   placeholder="acme-inc"
                 />
                 <p className="mt-1 text-xs text-gray-500">
@@ -205,7 +205,7 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full btn btn-lg btn-primary"
             >
               {isLoading ? 'Creating account...' : 'Create account'}
             </button>

@@ -13,13 +13,13 @@ export default function HomePage() {
         <div className="flex gap-4 justify-center">
           <Link
             href="/login"
-            className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+            className="btn btn-lg btn-primary"
           >
             Login
           </Link>
           <Link
             href="/register"
-            className="px-6 py-3 bg-white text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            className="btn btn-lg btn-ghost"
           >
             Sign Up
           </Link>
