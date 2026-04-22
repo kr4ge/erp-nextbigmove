@@ -879,7 +879,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <div className="border-t border-slate-200 px-3 py-3">
               <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700">
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
                     {`${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.trim() || '??'}
                   </div>
                   <div className="min-w-0">

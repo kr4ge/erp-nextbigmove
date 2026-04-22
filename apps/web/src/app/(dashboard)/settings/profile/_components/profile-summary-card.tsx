@@ -33,7 +33,7 @@ export function ProfileSummaryCard({
         </h3>
       </div>
       <div className="flex items-center gap-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-500 text-lg font-semibold text-white">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-lg font-semibold text-primary-foreground">
           {initials}
         </div>
         <div className="space-y-1">

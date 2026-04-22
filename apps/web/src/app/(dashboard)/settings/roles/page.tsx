@@ -387,7 +387,7 @@ export default function RolesPage() {
 
               <div className="space-y-2">
                 <p className="text-sm font-semibold text-[#0F172A]">Permissions</p>
-                <div className="grid max-h-56 grid-cols-1 gap-2 overflow-auto rounded-xl border border-[#E2E8F0] p-3 sm:grid-cols-2">
+                <div className="grid max-h-56 grid-cols-1 gap-2 overflow-auto rounded-xl border border-[#E2E8F0] p-3 min-[1730px]:grid-cols-2">
                   {permissions?.map((p) => {
                     const checked = createForm.permissionKeys.includes(p.key);
                     return (
