@@ -34,7 +34,7 @@ export function DashboardTabs<T extends string>({
               className={clsx(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors',
                 active
-                  ? 'bg-white text-orange-700 shadow-sm ring-1 ring-orange-100'
+                  ? 'btn btn-primary-soft'
                   : 'text-slate-500 hover:bg-white hover:text-slate-800',
               )}
             >
@@ -44,7 +44,7 @@ export function DashboardTabs<T extends string>({
                 <span
                   className={clsx(
                     'rounded-full px-1.5 py-px text-xs-tight font-medium tabular-nums',
-                    active ? 'bg-orange-100 text-orange-700' : 'bg-slate-200/80 text-slate-500',
+                    active ? 'btn btn-primary-soft' : 'bg-slate-200/80 text-slate-500',
                   )}
                 >
                   {item.badge}

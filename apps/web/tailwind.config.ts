@@ -39,6 +39,10 @@ const config: Config = {
           DEFAULT: 'rgb(var(--success))',
           soft: 'rgb(var(--success-soft))'
         },
+        warning: {
+          DEFAULT: 'rgb(var(--warning))',
+          soft: 'rgb(var(--warning-soft))',
+        },
         destructive: {
           DEFAULT: 'rgb(var(--destructive))',
           soft: 'rgb(var())',

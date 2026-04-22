@@ -288,7 +288,6 @@
   .pill {
     @apply
       rounded-full border 
-    border-orange-100 bg-orange-50/60 text-orange-600
       px-2.5 py-1
       text-center text-xs font-medium
       2xl:w-auto 2xl:text-left;
@@ -312,6 +311,12 @@
       @apply
         border-none
         bg-secondary/40 text-foreground/80
+    }
+
+    .pill-info {
+      @apply
+        border-none
+        bg-warning/40 text-foreground/80
     }
 }
 
