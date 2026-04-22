@@ -14,7 +14,7 @@ import { Cache } from 'cache-manager';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { ClsService } from 'nestjs-cls';
-import { Prisma } from '@prisma/client';
+import { Prisma, WmsProductProfileStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import { EncryptionService } from './services/encryption.service';
@@ -3833,9 +3833,6 @@ export class IntegrationService {
             customId:
               item?.custom_id ||
               item?.code ||
-              item?.display_id ||
-              item?.product_display_id ||
-              item?.product?.display_id ||
               null,
             name:
               item?.name ||
@@ -4576,6 +4573,15 @@ export class IntegrationService {
     if (!products?.length) return;
 
     await this.prisma.$transaction(async (tx) => {
+      const store = await tx.posStore.findUnique({
+        where: { id: storeId },
+        select: { tenantId: true },
+      });
+
+      if (!store) {
+        throw new NotFoundException('POS store not found');
+      }
+
       const filteredProducts = products.filter(
         (p: any) =>
           (p?.productId || p?.id)?.toString().trim().length > 0 &&
@@ -4610,7 +4616,7 @@ export class IntegrationService {
         });
 
         if (existing) {
-          await tx.posProduct.update({
+          const updated = await tx.posProduct.update({
             where: { id: existing.id },
             data: {
               productId,
@@ -4622,10 +4628,33 @@ export class IntegrationService {
               ...(parsedRetailPrice !== null ? { retailPrice: parsedRetailPrice } : {}),
             },
           });
+
+          await tx.wmsProductProfile.upsert({
+            where: {
+              posProductId: updated.id,
+            },
+            update: {
+              tenantId: store.tenantId,
+              storeId,
+              productId,
+              variationId,
+              posWarehouseRef: p.warehouseId || null,
+            },
+            create: {
+              tenantId: store.tenantId,
+              storeId,
+              posProductId: updated.id,
+              productId,
+              variationId,
+              posWarehouseRef: p.warehouseId || null,
+              status: WmsProductProfileStatus.DEFAULT,
+              isSerialized: true,
+            },
+          });
           continue;
         }
 
-        await tx.posProduct.create({
+        const created = await tx.posProduct.create({
           data: {
             storeId,
             productId,
@@ -4635,6 +4664,19 @@ export class IntegrationService {
             customId: p.customId || null,
             name: p.name || 'Unnamed product',
             retailPrice: parsedRetailPrice,
+          },
+        });
+
+        await tx.wmsProductProfile.create({
+          data: {
+            tenantId: store.tenantId,
+            storeId,
+            posProductId: created.id,
+            productId,
+            variationId,
+            posWarehouseRef: p.warehouseId || null,
+            status: WmsProductProfileStatus.DEFAULT,
+            isSerialized: true,
           },
         });
       }
@@ -4684,9 +4726,24 @@ export class IntegrationService {
   }
 
   private extractProductSnapshotFromPancakeProduct(item: any): Record<string, any> {
-    const product = item?.product ?? null;
+    const displayId =
+      item?.display_id ??
+      item?.product_display_id ??
+      item?.product?.display_id ??
+      null;
+    const product =
+      item?.product && typeof item.product === 'object' && !Array.isArray(item.product)
+        ? {
+            ...item.product,
+            ...(displayId !== null && displayId !== undefined ? { display_id: displayId } : {}),
+          }
+        : displayId !== null && displayId !== undefined
+          ? { display_id: displayId }
+          : null;
+
     return {
       product,
+      ...(displayId !== null && displayId !== undefined ? { display_id: displayId } : {}),
       images: this.normalizeProductImages(
         item?.images ?? product?.images ?? product?.image ?? null,
       ),
@@ -4886,6 +4943,50 @@ export class IntegrationService {
       where: { storeId: store.id },
       orderBy: { name: 'asc' },
     });
+  }
+
+  async syncPancakeProductsByStoreId(storeId: string, tenantIdOverride?: string) {
+    const store = tenantIdOverride
+      ? await this.prisma.posStore.findFirst({
+          where: {
+            id: storeId,
+            tenantId: tenantIdOverride,
+          },
+        })
+      : await this.getPosStore(storeId);
+
+    if (!store) {
+      throw new NotFoundException(`Store with ID ${storeId} not found`);
+    }
+
+    let apiKeyToUse = store.apiKey;
+
+    if (!apiKeyToUse && store.integrationId) {
+      try {
+        const creds = await this.getDecryptedCredentials(store.integrationId, store.tenantId);
+        if (creds?.apiKey) {
+          apiKeyToUse = creds.apiKey;
+          await this.prisma.posStore.update({
+            where: { id: store.id },
+            data: { apiKey: apiKeyToUse },
+          });
+        }
+      } catch {
+        // Fall through to conflict below.
+      }
+    }
+
+    if (!apiKeyToUse) {
+      throw new ConflictException('Missing API key for this store');
+    }
+
+    const products = await this.fetchProductsFromPancake(store.shopId, apiKeyToUse);
+    await this.upsertStoreProducts(store.id, products);
+
+    return {
+      storeId: store.id,
+      syncedCount: products.length,
+    };
   }
 
   /**

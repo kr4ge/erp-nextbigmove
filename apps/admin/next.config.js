@@ -1,7 +1,10 @@
 /** @type {import('next').NextConfig} */
+const isDev = process.env.NODE_ENV === 'development';
+
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  distDir: isDev ? '.next-dev' : '.next',
   transpilePackages: ['@erp/types', '@erp/ui'],
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1',

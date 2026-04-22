@@ -3,7 +3,15 @@
 import { ReactNode, useEffect, useState, useRef, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Layers, StoreIcon, Network, BarChart3, ClipboardList, Target } from 'lucide-react';
+import {
+  Layers,
+  StoreIcon,
+  Network,
+  BarChart3,
+  ClipboardList,
+  Target,
+  Package,
+} from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
 
@@ -85,6 +93,12 @@ const baseNavigation: NavLink[] = [
     ),
   },
   {
+    href: '/requests',
+    label: 'Stock Requests',
+    description: 'Partner request to WMS purchasing',
+    icon: <Package className={iconClasses} />,
+  },
+  {
     href: '/orders',
     label: 'Orders',
     description: 'Order operations queue',
@@ -159,6 +173,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const hasMeta = permissions.includes('meta.read');
     const hasWorkflow = permissions.includes('workflow.read');
     const hasOrderConfirmation = permissions.includes('pos.read');
+    const hasPurchasing =
+      permissions.includes('wms.purchasing.read')
+      || permissions.includes('wms.purchasing.write')
+      || permissions.includes('wms.purchasing.edit');
     const hasMarketingKpi = permissions.includes('kpi.marketing.read') || permissions.includes('kpi.marketing.manage');
     const hasFunnelKpi = permissions.includes('kpi.funnel.read');
     const hasSalesKpi = permissions.includes('kpi.sales.read');
@@ -167,6 +185,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       if (link.href !== '/analytics') {
         if (link.href === '/workflows') {
           return hasWorkflow ? [link] : [];
+        }
+        if (link.href === '/requests') {
+          return hasPurchasing ? [link] : [];
         }
         if (link.href === '/orders') {
           const children = (link.children || []).filter((child) => {

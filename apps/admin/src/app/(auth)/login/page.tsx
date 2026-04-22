@@ -6,6 +6,12 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import apiClient from '@/lib/api-client';
+import {
+  clearAdminSession,
+  fetchEffectivePermissions,
+  storePermissions,
+} from '@/lib/admin-session';
+import { hasWmsAccess } from '@/lib/wms-access';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -34,13 +40,6 @@ export default function AdminLoginPage() {
     try {
       const response = await apiClient.post('/auth/login', data);
 
-      // Check if user has SUPER_ADMIN role (platform administrators only)
-      if (response.data.user.role !== 'SUPER_ADMIN') {
-        setError('Access denied. Platform administrator privileges required.');
-        setIsLoading(false);
-        return;
-      }
-
       // Store tokens and user info
       localStorage.setItem('access_token', response.data.accessToken);
       localStorage.setItem('refresh_token', response.data.refreshToken);
@@ -49,8 +48,20 @@ export default function AdminLoginPage() {
       }
       localStorage.setItem('user', JSON.stringify(response.data.user));
 
-      // Redirect to admin dashboard
-      router.push('/tenants');
+      let permissions: string[] = [];
+      if (response.data.user.role !== 'SUPER_ADMIN') {
+        permissions = await fetchEffectivePermissions();
+        if (!hasWmsAccess(response.data.user.role, permissions)) {
+          clearAdminSession();
+          setError('Access denied. WMS permissions are required for this workspace.');
+          return;
+        }
+      }
+
+      storePermissions(permissions);
+
+      // Redirect to WMS workspace
+      router.push('/wms');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
     } finally {
@@ -63,10 +74,10 @@ export default function AdminLoginPage() {
       <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-2xl">
         <div>
           <h2 className="text-center text-3xl font-bold text-gray-900">
-            Admin Panel
+            WMS Workspace
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Sign in to manage tenants and platform settings
+            Sign in with WMS access, or use a platform super-admin session.
           </p>
         </div>
 
@@ -115,7 +126,7 @@ export default function AdminLoginPage() {
               disabled={isLoading}
               className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Signing in...' : 'Sign in to Admin Panel'}
+              {isLoading ? 'Signing in...' : 'Sign in to WMS'}
             </button>
           </div>
         </form>
