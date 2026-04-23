@@ -4,8 +4,17 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
 import { AlertBanner } from '@/components/ui/feedback';
+import { Button } from '@/components/ui/button';
 import apiClient from '@/lib/api-client';
-import { Columns, Filter, RefreshCw, ShoppingBag, Share2 } from 'lucide-react';
+import {
+  Columns,
+  Download,
+  FileSpreadsheet,
+  Filter,
+  RefreshCw,
+  ShoppingBag,
+  Share2,
+} from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/components/ui/toast';
 import { AnalyticsKpiVisibilityDialog } from '../_components/analytics-kpi-visibility-dialog';
@@ -43,6 +52,11 @@ import {
   formatMetricValue,
   toTitleCase,
 } from '../_utils/metrics';
+import {
+  exportSalesProductsCsv,
+  exportSalesProductsXlsx,
+  type SalesProductsExportRow,
+} from '../_utils/sales-products-export';
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
 const KPI_VISIBILITY_STORAGE_KEY = 'sales-analytics-visible-kpis';
@@ -208,6 +222,8 @@ export default function SalesAnalyticsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [deliverySortKey, setDeliverySortKey] = useState<SalesDeliverySortKey | null>(null);
   const [deliverySortDir, setDeliverySortDir] = useState<'asc' | 'desc'>('desc');
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [isExportingXlsx, setIsExportingXlsx] = useState(false);
 
   useEffect(() => {
     mappingOptionsRef.current = mappingOptions;
@@ -592,6 +608,68 @@ export default function SalesAnalyticsPage() {
   const productEnd = Math.min(productPage * pageSize, totalProducts);
   const productCanPrev = productPage > 1;
   const productCanNext = productPage < totalProductPages;
+  const cmRtsExportLabel = `CM (RTS ${rtsForecastSafe}%)`;
+  const exportableProducts: SalesProductsExportRow[] = sortedProducts
+    .filter((item) => {
+      const adSpend = item.row.ad_spend ?? 0;
+      if (adSpend !== 0) return true;
+      const revenue = item.row.revenue ?? 0;
+      return revenue !== 0;
+    })
+    .map((item) => ({
+      product: toTitleCase(item.derived.display),
+      grossRevenue: item.row.revenue ?? 0,
+      grossSales: item.row.gross_sales ?? 0,
+      cogs: item.row.cogs ?? 0,
+      aov: item.row.aov ?? 0,
+      cpp: item.row.cpp ?? 0,
+      processedCpp: item.row.processed_cpp ?? 0,
+      adSpend: item.row.ad_spend ?? 0,
+      arPct: item.row.ar_pct ?? 0,
+      rtsPct: item.derived.rtsPct ?? 0,
+      pePct: item.row.profit_efficiency ?? 0,
+      contributionMargin: item.row.contribution_margin ?? 0,
+      cmRtsForecast: item.derived.forecast.cmForecast ?? 0,
+      netMargin: item.row.net_margin ?? 0,
+    }));
+
+  const handleExportProductsCsv = async () => {
+    if (isLoading || exportableProducts.length === 0) return;
+    setIsExportingCsv(true);
+    try {
+      exportSalesProductsCsv({
+        startDate,
+        endDate,
+        cmRtsLabel: cmRtsExportLabel,
+        rows: exportableProducts,
+      });
+      addToast('success', 'CSV export generated.');
+    } catch (err) {
+      console.error('Failed to export Sales Analytics CSV', err);
+      addToast('error', 'Failed to export CSV report.');
+    } finally {
+      setIsExportingCsv(false);
+    }
+  };
+
+  const handleExportProductsXlsx = async () => {
+    if (isLoading || exportableProducts.length === 0) return;
+    setIsExportingXlsx(true);
+    try {
+      await exportSalesProductsXlsx({
+        startDate,
+        endDate,
+        cmRtsLabel: cmRtsExportLabel,
+        rows: exportableProducts,
+      });
+      addToast('success', 'XLSX export generated.');
+    } catch (err) {
+      console.error('Failed to export Sales Analytics XLSX', err);
+      addToast('error', 'Failed to export XLSX report.');
+    } finally {
+      setIsExportingXlsx(false);
+    }
+  };
 
   const deliveryStatuses = data?.deliveryStatuses || [];
   const deliveryRows: SalesDeliveryRowItem[] = deliveryStatuses.map((row, index) => {
@@ -1280,7 +1358,7 @@ export default function SalesAnalyticsPage() {
 
       {/* Revenue per Product / Delivery Status */}
       <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
-        <div className="flex items-center justify-between mb-3 px-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-2">
           <AnalyticsTableSelector
             className="relative"
             options={tableOptions}
@@ -1292,6 +1370,29 @@ export default function SalesAnalyticsPage() {
               setDeliveryPage(1);
             }}
           />
+          {tableSelection === 'products' && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                iconLeft={<Download className="h-4 w-4" />}
+                onClick={() => void handleExportProductsCsv()}
+                disabled={isLoading || exportableProducts.length === 0}
+                loading={isExportingCsv}
+              >
+                Export CSV
+              </Button>
+              <Button
+                size="sm"
+                iconLeft={<FileSpreadsheet className="h-4 w-4" />}
+                onClick={() => void handleExportProductsXlsx()}
+                disabled={isLoading || exportableProducts.length === 0}
+                loading={isExportingXlsx}
+              >
+                Export XLSX
+              </Button>
+            </div>
+          )}
         </div>
 
         {tableSelection === 'products' ? (

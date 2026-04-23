@@ -8,6 +8,8 @@ dist/
 build/
 .next/
 .next-dev/
+apps/web/.next-dev/
+apps/admin/.next-dev/
 out/
 .turbo/
 
