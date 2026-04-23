@@ -4,6 +4,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'rea
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
+import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
 import {
   hasAnyAdminPermission,
   WMS_RECEIVING_CREATE_BATCH_PERMISSIONS,
@@ -82,9 +83,9 @@ export function useReceivingController() {
   const queryClient = useQueryClient();
   const user = useMemo(() => readStoredAdminUser(), []);
   const permissions = useMemo(() => readStoredPermissions(), []);
-  const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>();
-  const [selectedStoreId, setSelectedStoreId] = useState<string | undefined>();
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | undefined>();
+  const [selectedTenantId, setSelectedTenantIdState] = useState<string | undefined>();
+  const [selectedStoreId, setSelectedStoreIdState] = useState<string | undefined>();
+  const [selectedWarehouseId, setSelectedWarehouseIdState] = useState<string | undefined>();
   const [searchText, setSearchText] = useState('');
   const [banner, setBanner] = useState<BannerState>(null);
   const [receiveModal, setReceiveModal] = useState<ReceiveModalState>({
@@ -128,37 +129,17 @@ export function useReceivingController() {
       }),
   });
 
-  useEffect(() => {
-    const activeTenantId = overviewQuery.data?.filters.activeTenantId;
-    if (
-      activeTenantId
-      && (!selectedTenantId || !overviewQuery.data?.filters.tenants.some((tenant) => tenant.id === selectedTenantId))
-    ) {
-      setSelectedTenantId(activeTenantId);
-    }
-  }, [overviewQuery.data?.filters.activeTenantId, overviewQuery.data?.filters.tenants, selectedTenantId]);
-
-  useEffect(() => {
-    if (!selectedStoreId) {
-      return;
-    }
-
-    const stores = overviewQuery.data?.filters.stores;
-    if (!stores?.some((store) => store.id === selectedStoreId)) {
-      setSelectedStoreId(undefined);
-    }
-  }, [overviewQuery.data?.filters.stores, selectedStoreId]);
-
-  useEffect(() => {
-    if (!selectedWarehouseId) {
-      return;
-    }
-
-    const warehouses = overviewQuery.data?.filters.warehouses;
-    if (!warehouses?.some((warehouse) => warehouse.id === selectedWarehouseId)) {
-      setSelectedWarehouseId(undefined);
-    }
-  }, [overviewQuery.data?.filters.warehouses, selectedWarehouseId]);
+  const { setSelectedTenantId, setSelectedStoreId, setSelectedWarehouseId } = useWmsScopeFilters({
+    filters: overviewQuery.data?.filters,
+    selectedTenantId,
+    setSelectedTenantIdState,
+    selectedStoreId,
+    setSelectedStoreIdState,
+    selectedWarehouseId,
+    setSelectedWarehouseIdState,
+    includeWarehouse: true,
+    autoSelectWarehouseOnStoreChange: true,
+  });
 
   const selectedWarehouseOption = useMemo(
     () => overviewQuery.data?.warehouseOptions.find((option) => option.id === receiveWarehouseId) ?? null,
@@ -186,9 +167,9 @@ export function useReceivingController() {
       return;
     }
 
-    const firstWarehouseId = overviewQuery.data?.warehouseOptions[0]?.id ?? '';
-    setReceiveWarehouseId((current) => current || firstWarehouseId);
-  }, [overviewQuery.data?.warehouseOptions, receiveModal.batch, receiveModal.open]);
+    const defaultWarehouseId = selectedWarehouseId || overviewQuery.data?.warehouseOptions[0]?.id || '';
+    setReceiveWarehouseId((current) => current || defaultWarehouseId);
+  }, [overviewQuery.data?.warehouseOptions, receiveModal.batch, receiveModal.open, selectedWarehouseId]);
 
   useEffect(() => {
     if (!selectedWarehouseOption) {
@@ -213,9 +194,9 @@ export function useReceivingController() {
       return;
     }
 
-    const firstWarehouseId = overviewQuery.data?.warehouseOptions[0]?.id ?? '';
-    setManualWarehouseId((current) => current || firstWarehouseId);
-  }, [manualReceiveModal.open, overviewQuery.data?.warehouseOptions]);
+    const defaultWarehouseId = selectedWarehouseId || overviewQuery.data?.warehouseOptions[0]?.id || '';
+    setManualWarehouseId((current) => current || defaultWarehouseId);
+  }, [manualReceiveModal.open, overviewQuery.data?.warehouseOptions, selectedWarehouseId]);
 
   useEffect(() => {
     if (!selectedManualWarehouseOption) {
@@ -357,7 +338,7 @@ export function useReceivingController() {
     setManualWarehouseId('');
     setManualStagingLocationId('');
     setManualNotes('');
-    setManualLines([{ id: `manual-${Date.now()}`, profileId: '', quantity: 1 }]);
+    setManualLines([]);
   }, []);
 
   const closeManualReceiveModal = useCallback(() => {
@@ -475,7 +456,9 @@ export function useReceivingController() {
         .filter((product) => product.status !== 'ARCHIVED')
         .map((product) => ({
           id: product.id,
-          label: `${product.name} · ${product.variationDisplayId ?? product.variationId}`,
+          label: product.name,
+          variationLabel: product.variationDisplayId ?? product.variationId ?? 'No variation',
+          customId: product.productCustomId ?? product.customId ?? null,
           hint: product.productCustomId ?? product.customId ?? null,
         })),
     [manualProductsQuery.data?.products],
@@ -511,10 +494,7 @@ export function useReceivingController() {
     selectedStoreId,
     selectedWarehouseId,
     searchText,
-    setSelectedTenantId: (tenantId: string | undefined) => {
-      setSelectedTenantId(tenantId);
-      setSelectedStoreId(undefined);
-    },
+    setSelectedTenantId,
     setSelectedStoreId,
     setSelectedWarehouseId,
     setSearchText,
@@ -557,6 +537,22 @@ export function useReceivingController() {
         ...current,
         { id: `manual-${Date.now()}-${current.length}`, profileId: '', quantity: 1 },
       ]),
+    addManualProduct: (profileId: string) =>
+      setManualLines((current) => {
+        const existingLine = current.find((line) => line.profileId === profileId);
+        if (existingLine) {
+          return current.map((line) =>
+            line.id === existingLine.id
+              ? { ...line, quantity: Math.max(1, Math.floor(line.quantity) + 1) }
+              : line,
+          );
+        }
+
+        return [
+          ...current,
+          { id: `manual-${Date.now()}-${current.length}`, profileId, quantity: 1 },
+        ];
+      }),
     removeManualLine: (lineId: string) =>
       setManualLines((current) => current.filter((line) => line.id !== lineId)),
     setManualLineProfile: (lineId: string, profileId: string) =>

@@ -1,6 +1,47 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
+
+function ensureHoistedPrismaEngineLibrary() {
+  if (process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
+    return;
+  }
+
+  try {
+    const prismaEngineDirs = [
+      path.resolve(process.cwd(), 'node_modules/.prisma/client'),
+      path.resolve(process.cwd(), '../node_modules/.prisma/client'),
+      path.resolve(process.cwd(), '../../node_modules/.prisma/client'),
+      path.resolve(__dirname, '../../../node_modules/.prisma/client'),
+      path.resolve(__dirname, '../../../../node_modules/.prisma/client'),
+    ];
+
+    const prismaEngineDir = prismaEngineDirs.find((candidateDir) =>
+      fs.existsSync(candidateDir),
+    );
+
+    if (!prismaEngineDir) {
+      return;
+    }
+
+    const queryEngineLibrary = fs
+      .readdirSync(prismaEngineDir)
+      .find((entry) => entry.startsWith('libquery_engine') && entry.endsWith('.node'));
+
+    if (!queryEngineLibrary) {
+      return;
+    }
+
+    // Nest's webpack bundle runs from apps/api/dist, but Prisma generate is hoisted to the repo root.
+    process.env.PRISMA_QUERY_ENGINE_LIBRARY = path.join(prismaEngineDir, queryEngineLibrary);
+  } catch {
+    // Fall back to Prisma's default resolution when the workspace layout differs.
+  }
+}
+
+ensureHoistedPrismaEngineLibrary();
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {

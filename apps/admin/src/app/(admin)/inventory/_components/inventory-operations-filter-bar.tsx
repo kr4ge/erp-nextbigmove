@@ -1,7 +1,7 @@
 'use client';
 
 import { WmsActionBar } from '../../_components/wms-action-bar';
-import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
+import { WmsScopeFilterFields } from '../../_components/wms-scope-filter-fields';
 
 type InventoryOperationsFilterBarProps = {
   filters:
@@ -49,40 +49,25 @@ export function InventoryOperationsFilterBar({
       onSearchTextChange={onSearchTextChange}
       searchPlaceholder="Search by request, batch, unit, product, or barcode"
     >
-      <WmsSearchableSelect
-        label="Tenant"
-        value={selectedTenantId ?? ''}
-        onChange={(value) => onTenantChange(value || undefined)}
-        options={(filters?.tenants ?? []).map((tenant) => ({
+      <WmsScopeFilterFields
+        tenantOptions={(filters?.tenants ?? []).map((tenant) => ({
           value: tenant.id,
           label: tenant.label,
         }))}
-        placeholder="Search tenants…"
-        allLabel="All tenants"
-      />
-
-      <WmsSearchableSelect
-        label="Store"
-        value={selectedStoreId ?? ''}
-        onChange={(value) => onStoreChange(value || undefined)}
-        options={(filters?.stores ?? []).map((store) => ({
+        selectedTenantId={selectedTenantId}
+        onTenantChange={onTenantChange}
+        storeOptions={(filters?.stores ?? []).map((store) => ({
           value: store.id,
           label: store.label,
         }))}
-        placeholder="Search stores…"
-        allLabel="All stores"
-      />
-
-      <WmsSearchableSelect
-        label="Warehouse"
-        value={selectedWarehouseId ?? ''}
-        onChange={(value) => onWarehouseChange(value || undefined)}
-        options={(filters?.warehouses ?? []).map((warehouse) => ({
+        selectedStoreId={selectedStoreId}
+        onStoreChange={onStoreChange}
+        warehouseOptions={(filters?.warehouses ?? []).map((warehouse) => ({
           value: warehouse.id,
           label: warehouse.code ? `${warehouse.code} · ${warehouse.label}` : warehouse.label,
         }))}
-        placeholder="Search warehouses…"
-        allLabel="All warehouses"
+        selectedWarehouseId={selectedWarehouseId}
+        onWarehouseChange={onWarehouseChange}
       />
     </WmsActionBar>
   );

@@ -4,6 +4,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
+import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
 import {
   hasAnyAdminPermission,
   WMS_INVENTORY_PRINT_LABELS_PERMISSIONS,
@@ -54,9 +55,9 @@ export function useInventoryController() {
   const pageSize = 10;
   const user = useMemo(() => readStoredAdminUser(), []);
   const permissions = useMemo(() => readStoredPermissions(), []);
-  const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>();
-  const [selectedStoreId, setSelectedStoreId] = useState<string | undefined>();
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | undefined>();
+  const [selectedTenantId, setSelectedTenantIdState] = useState<string | undefined>();
+  const [selectedStoreId, setSelectedStoreIdState] = useState<string | undefined>();
+  const [selectedWarehouseId, setSelectedWarehouseIdState] = useState<string | undefined>();
   const [selectedStatus, setSelectedStatus] = useState<WmsInventoryUnitStatus | undefined>();
   const [currentPage, setCurrentPage] = useState(1);
   const [searchText, setSearchText] = useState('');
@@ -86,61 +87,16 @@ export function useInventoryController() {
       }),
   });
 
-  useEffect(() => {
-    const activeTenantId = overviewQuery.data?.filters.activeTenantId;
-
-    if (
-      activeTenantId
-      && (!selectedTenantId || !overviewQuery.data?.filters.tenants.some((tenant) => tenant.id === selectedTenantId))
-    ) {
-      setSelectedTenantId(activeTenantId);
-    }
-  }, [overviewQuery.data?.filters.activeTenantId, overviewQuery.data?.filters.tenants, selectedTenantId]);
-
-  useEffect(() => {
-    const activeStoreId = overviewQuery.data?.filters.activeStoreId;
-
-    if (
-      activeStoreId
-      && (!selectedStoreId || !overviewQuery.data?.filters.stores.some((store) => store.id === selectedStoreId))
-    ) {
-      setSelectedStoreId(activeStoreId);
-    }
-  }, [overviewQuery.data?.filters.activeStoreId, overviewQuery.data?.filters.stores, selectedStoreId]);
-
-  useEffect(() => {
-    if (!selectedStoreId) {
-      return;
-    }
-
-    const stores = overviewQuery.data?.filters.stores;
-    if (!stores) {
-      return;
-    }
-
-    const stillExists = stores.some((store) => store.id === selectedStoreId);
-
-    if (!stillExists) {
-      setSelectedStoreId(undefined);
-    }
-  }, [overviewQuery.data?.filters.stores, selectedStoreId]);
-
-  useEffect(() => {
-    if (!selectedWarehouseId) {
-      return;
-    }
-
-    const warehouses = overviewQuery.data?.filters.warehouses;
-    if (!warehouses) {
-      return;
-    }
-
-    const stillExists = warehouses.some((warehouse) => warehouse.id === selectedWarehouseId);
-
-    if (!stillExists) {
-      setSelectedWarehouseId(undefined);
-    }
-  }, [overviewQuery.data?.filters.warehouses, selectedWarehouseId]);
+  const { setSelectedTenantId, setSelectedStoreId, setSelectedWarehouseId } = useWmsScopeFilters({
+    filters: overviewQuery.data?.filters,
+    selectedTenantId,
+    setSelectedTenantIdState,
+    selectedStoreId,
+    setSelectedStoreIdState,
+    selectedWarehouseId,
+    setSelectedWarehouseIdState,
+    includeWarehouse: true,
+  });
 
   useEffect(() => {
     if (!selectedStatus) {
@@ -294,14 +250,9 @@ export function useInventoryController() {
     isTransferringUnit: createTransferMutation.isPending,
     setSelectedTenantId: (tenantId: string | undefined) => {
       setSelectedTenantId(tenantId);
-      setSelectedStoreId(undefined);
-      setSelectedWarehouseId(undefined);
       setSelectedStatus(undefined);
     },
-    setSelectedStoreId: (storeId: string | undefined) => {
-      setSelectedStoreId(storeId);
-      setSelectedWarehouseId(undefined);
-    },
+    setSelectedStoreId,
     setSelectedWarehouseId,
     setSelectedStatus,
     setCurrentPage,

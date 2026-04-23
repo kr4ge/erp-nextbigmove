@@ -23,6 +23,9 @@ type WmsSearchableSelectProps = {
   clearable?: boolean;
   /** Minimum pixel width of the popover */
   popoverMinWidth?: number;
+  triggerClassName?: string;
+  valueClassName?: string;
+  hideInlineLabel?: boolean;
 };
 
 export function WmsSearchableSelect({
@@ -34,6 +37,9 @@ export function WmsSearchableSelect({
   allLabel = 'All',
   clearable = true,
   popoverMinWidth = 260,
+  triggerClassName = '',
+  valueClassName = '',
+  hideInlineLabel = false,
 }: WmsSearchableSelectProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -167,10 +173,12 @@ export function WmsSearchableSelect({
         onClick={() => setOpen((prev) => !prev)}
         className={`wms-pill-control flex items-center gap-2 rounded-full border bg-white pl-3.5 pr-2.5 text-[#12384b] transition ${
           open ? 'border-[#96b4c3] shadow-[0_0_0_4px_rgba(18,56,75,0.08)]' : 'border-[#d7e0e7] hover:border-[#c6d4dd]'
-        }`}
+        } ${triggerClassName}`}
       >
-        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">{label}</span>
-        <span className="max-w-[180px] truncate text-[12.5px] font-semibold text-[#12384b]">
+        {!hideInlineLabel ? (
+          <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">{label}</span>
+        ) : null}
+        <span className={`max-w-[180px] truncate text-[12.5px] font-semibold text-[#12384b] ${valueClassName}`}>
           {selected?.label ?? allLabel}
         </span>
         <ChevronDown

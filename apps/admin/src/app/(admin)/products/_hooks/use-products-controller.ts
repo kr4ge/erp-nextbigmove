@@ -4,6 +4,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
+import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
 import {
   hasAnyAdminPermission,
   WMS_PRODUCTS_EDIT_PERMISSIONS,
@@ -57,8 +58,8 @@ export function useProductsController() {
   const queryClient = useQueryClient();
   const user = useMemo(() => readStoredAdminUser(), []);
   const permissions = useMemo(() => readStoredPermissions(), []);
-  const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>();
-  const [selectedStoreId, setSelectedStoreId] = useState<string | undefined>();
+  const [selectedTenantId, setSelectedTenantIdState] = useState<string | undefined>();
+  const [selectedStoreId, setSelectedStoreIdState] = useState<string | undefined>();
   const [selectedPosWarehouseId, setSelectedPosWarehouseId] = useState<string | undefined>();
   const [statusFilter, setStatusFilter] = useState<WmsProductProfileStatus | undefined>();
   const [currentPage, setCurrentPage] = useState(1);
@@ -90,45 +91,13 @@ export function useProductsController() {
       }),
   });
 
-  useEffect(() => {
-    const activeTenantId = overviewQuery.data?.filters.activeTenantId;
-
-    if (
-      activeTenantId
-      && (!selectedTenantId || !overviewQuery.data?.filters.tenants.some((tenant) => tenant.id === selectedTenantId))
-    ) {
-      setSelectedTenantId(activeTenantId);
-    }
-  }, [overviewQuery.data?.filters.activeTenantId, overviewQuery.data?.filters.tenants, selectedTenantId]);
-
-  useEffect(() => {
-    const activeStoreId = overviewQuery.data?.filters.activeStoreId;
-
-    if (
-      activeStoreId
-      && (!selectedStoreId || !overviewQuery.data?.filters.stores.some((store) => store.id === selectedStoreId))
-    ) {
-      setSelectedStoreId(activeStoreId);
-    }
-  }, [overviewQuery.data?.filters.activeStoreId, overviewQuery.data?.filters.stores, selectedStoreId]);
-
-  useEffect(() => {
-    if (!selectedStoreId) {
-      return;
-    }
-
-    const stores = overviewQuery.data?.filters.stores;
-
-    if (!stores) {
-      return;
-    }
-
-    const stillExists = stores.some((store) => store.id === selectedStoreId);
-
-    if (!stillExists) {
-      setSelectedStoreId(undefined);
-    }
-  }, [overviewQuery.data?.filters.stores, selectedStoreId]);
+  const { setSelectedTenantId, setSelectedStoreId } = useWmsScopeFilters({
+    filters: overviewQuery.data?.filters,
+    selectedTenantId,
+    setSelectedTenantIdState,
+    selectedStoreId,
+    setSelectedStoreIdState,
+  });
 
   useEffect(() => {
     if (!selectedPosWarehouseId) {
@@ -235,7 +204,6 @@ export function useProductsController() {
     profileModal,
     setSelectedTenantId: (tenantId: string | undefined) => {
       setSelectedTenantId(tenantId);
-      setSelectedStoreId(undefined);
       setSelectedPosWarehouseId(undefined);
     },
     setSelectedStoreId: (storeId: string | undefined) => {

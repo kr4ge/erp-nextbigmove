@@ -128,9 +128,8 @@ export function InventoryStockReceivingScreen() {
         onWarehouseChange={receiving.setManualWarehouseId}
         onStagingLocationChange={receiving.setManualStagingLocationId}
         onNotesChange={receiving.setManualNotes}
-        onAddLine={receiving.addManualLine}
+        onAddProduct={receiving.addManualProduct}
         onRemoveLine={receiving.removeManualLine}
-        onProfileChange={receiving.setManualLineProfile}
         onQuantityChange={receiving.setManualLineQuantity}
         onSubmit={receiving.submitManualReceive}
       />

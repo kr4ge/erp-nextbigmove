@@ -1,7 +1,7 @@
 'use client';
 
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
-import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
+import { WmsScopeFilterFields } from '../../_components/wms-scope-filter-fields';
 import { useReceivingController } from '../_hooks/use-receiving-controller';
 import { ReceivableBatchesTable } from './receivable-batches-table';
 import { ReceivingBatchModal } from './receiving-batch-modal';
@@ -23,25 +23,19 @@ export function ReceivingScreen() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <WmsSearchableSelect
-            label="Store"
-            value={controller.selectedStoreId ?? ''}
-            onChange={(value) => controller.setSelectedStoreId(value || undefined)}
-            options={(controller.overview?.filters.stores ?? []).map((store) => ({
+          <WmsScopeFilterFields
+            storeOptions={(controller.overview?.filters.stores ?? []).map((store) => ({
               value: store.id,
               label: store.label,
             }))}
-            allLabel="All stores"
-          />
-          <WmsSearchableSelect
-            label="Warehouse"
-            value={controller.selectedWarehouseId ?? ''}
-            onChange={(value) => controller.setSelectedWarehouseId(value || undefined)}
-            options={(controller.overview?.filters.warehouses ?? []).map((warehouse) => ({
+            selectedStoreId={controller.selectedStoreId}
+            onStoreChange={controller.setSelectedStoreId}
+            warehouseOptions={(controller.overview?.filters.warehouses ?? []).map((warehouse) => ({
               value: warehouse.id,
               label: `${warehouse.code} · ${warehouse.label}`,
             }))}
-            allLabel="All warehouses"
+            selectedWarehouseId={controller.selectedWarehouseId}
+            onWarehouseChange={controller.setSelectedWarehouseId}
           />
           <input
             value={controller.searchText}

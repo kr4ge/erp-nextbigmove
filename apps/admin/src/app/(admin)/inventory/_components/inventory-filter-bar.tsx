@@ -1,6 +1,7 @@
 'use client';
 
 import { Search, X } from 'lucide-react';
+import { WmsScopeFilterFields } from '../../_components/wms-scope-filter-fields';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import type { WmsInventoryOverviewResponse, WmsInventoryUnitStatus } from '../_types/inventory';
 
@@ -53,42 +54,27 @@ export function InventoryFilterBar({
         ) : null}
       </label>
 
-      <WmsSearchableSelect
-        label="Tenant"
-        value={selectedTenantId ?? ''}
-        onChange={(value) => onTenantChange(value || undefined)}
-        options={(filters?.tenants ?? []).map((tenant) => ({
+      <WmsScopeFilterFields
+        tenantOptions={(filters?.tenants ?? []).map((tenant) => ({
           value: tenant.id,
           label: tenant.label,
         }))}
-        placeholder="Search tenants…"
-        allLabel="All tenants"
-      />
-
-      <WmsSearchableSelect
-        label="Store"
-        value={selectedStoreId ?? ''}
-        onChange={(value) => onStoreChange(value || undefined)}
-        options={(filters?.stores ?? []).map((store) => ({
+        selectedTenantId={selectedTenantId}
+        onTenantChange={onTenantChange}
+        storeOptions={(filters?.stores ?? []).map((store) => ({
           value: store.id,
           label: store.label,
           hint: store.unitCount,
         }))}
-        placeholder="Search stores…"
-        allLabel="All stores"
-      />
-
-      <WmsSearchableSelect
-        label="Warehouse"
-        value={selectedWarehouseId ?? ''}
-        onChange={(value) => onWarehouseChange(value || undefined)}
-        options={(filters?.warehouses ?? []).map((warehouse) => ({
+        selectedStoreId={selectedStoreId}
+        onStoreChange={onStoreChange}
+        warehouseOptions={(filters?.warehouses ?? []).map((warehouse) => ({
           value: warehouse.id,
           label: warehouse.label,
           hint: warehouse.unitCount,
         }))}
-        placeholder="Search warehouses…"
-        allLabel="All warehouses"
+        selectedWarehouseId={selectedWarehouseId}
+        onWarehouseChange={onWarehouseChange}
       />
 
       <WmsSearchableSelect

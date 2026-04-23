@@ -4,6 +4,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
+import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
 import {
   hasAnyAdminPermission,
   WMS_PURCHASING_EDIT_PERMISSIONS,
@@ -54,8 +55,8 @@ export function usePurchasingController() {
   const queryClient = useQueryClient();
   const user = useMemo(() => readStoredAdminUser(), []);
   const permissions = useMemo(() => readStoredPermissions(), []);
-  const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>();
-  const [selectedStoreId, setSelectedStoreId] = useState<string | undefined>();
+  const [selectedTenantId, setSelectedTenantIdState] = useState<string | undefined>();
+  const [selectedStoreId, setSelectedStoreIdState] = useState<string | undefined>();
   const [selectedRequestType, setSelectedRequestType] = useState<WmsPurchasingRequestType | undefined>();
   const [selectedStatus, setSelectedStatus] = useState<WmsPurchasingBatchStatus | undefined>();
   const [searchText, setSearchText] = useState('');
@@ -86,36 +87,19 @@ export function usePurchasingController() {
       }),
   });
 
+  const { setSelectedTenantId, setSelectedStoreId } = useWmsScopeFilters({
+    filters: overviewQuery.data?.filters,
+    selectedTenantId,
+    setSelectedTenantIdState,
+    selectedStoreId,
+    setSelectedStoreIdState,
+  });
+
   const batchDetailQuery = useQuery({
     queryKey: ['wms-purchasing-batch', selectedBatchId, selectedTenantId ?? 'default-tenant'],
     queryFn: () => fetchWmsPurchasingBatch(selectedBatchId!, selectedTenantId),
     enabled: Boolean(selectedBatchId),
   });
-
-  useEffect(() => {
-    const activeTenantId = overviewQuery.data?.filters.activeTenantId;
-    if (
-      activeTenantId
-      && (!selectedTenantId || !overviewQuery.data?.filters.tenants.some((tenant) => tenant.id === selectedTenantId))
-    ) {
-      setSelectedTenantId(activeTenantId);
-    }
-  }, [overviewQuery.data?.filters.activeTenantId, overviewQuery.data?.filters.tenants, selectedTenantId]);
-
-  useEffect(() => {
-    if (!selectedStoreId) {
-      return;
-    }
-
-    const stores = overviewQuery.data?.filters.stores;
-    if (!stores) {
-      return;
-    }
-
-    if (!stores.some((store) => store.id === selectedStoreId)) {
-      setSelectedStoreId(undefined);
-    }
-  }, [overviewQuery.data?.filters.stores, selectedStoreId]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -222,7 +206,6 @@ export function usePurchasingController() {
     availableStatusActions,
     setSelectedTenantId: (tenantId: string | undefined) => {
       setSelectedTenantId(tenantId);
-      setSelectedStoreId(undefined);
       setSelectedBatchId(null);
     },
     setSelectedStoreId: (storeId: string | undefined) => {
