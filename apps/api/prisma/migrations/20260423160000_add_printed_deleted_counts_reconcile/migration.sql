@@ -1,0 +1,7 @@
+ALTER TABLE "reconcile_marketing"
+ADD COLUMN "printedCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "deletedCount" INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE "reconcile_sales"
+ADD COLUMN "printedCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "deletedCount" INTEGER NOT NULL DEFAULT 0;

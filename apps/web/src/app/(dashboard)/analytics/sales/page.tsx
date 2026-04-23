@@ -698,8 +698,8 @@ export default function SalesAnalyticsPage() {
               return item.row.restocking ?? 0;
             case 'confirmed':
               return item.row.confirmed ?? 0;
-            case 'canceled':
-              return item.row.canceled ?? 0;
+            case 'printed':
+              return item.row.printed ?? 0;
             case 'waiting_pickup':
               return item.row.waiting_pickup ?? 0;
             case 'shipped':
@@ -708,6 +708,10 @@ export default function SalesAnalyticsPage() {
               return item.row.delivered ?? 0;
             case 'rts':
               return item.row.rts ?? 0;
+            case 'canceled':
+              return item.row.canceled ?? 0;
+            case 'deleted':
+              return item.row.deleted ?? 0;
             default:
               return 0;
           }

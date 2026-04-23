@@ -100,11 +100,13 @@ type DeliveryStatusRow = {
   new_orders: number;
   restocking: number;
   confirmed: number;
-  canceled: number;
+  printed: number;
   waiting_pickup: number;
   shipped: number;
   delivered: number;
   rts: number;
+  canceled: number;
+  deleted: number;
 };
 
 @Injectable()
@@ -506,6 +508,8 @@ export class SalesAnalyticsService {
           abandonedCount: true,
           confirmedCount: true,
           unconfirmedCount: true,
+          printedCount: true,
+          deletedCount: true,
           confirmedCodPos: true,
           unconfirmedCodPos: true,
           cogsPos: true,
@@ -551,6 +555,8 @@ export class SalesAnalyticsService {
           abandonedCount: true,
           confirmedCount: true,
           unconfirmedCount: true,
+          printedCount: true,
+          deletedCount: true,
           confirmedCodPos: true,
           unconfirmedCodPos: true,
           cogsPos: true,
@@ -607,6 +613,8 @@ export class SalesAnalyticsService {
           abandonedCount: true,
           confirmedCount: true,
           unconfirmedCount: true,
+          printedCount: true,
+          deletedCount: true,
           confirmedCodPos: true,
           unconfirmedCodPos: true,
           cogsPos: true,
@@ -661,11 +669,13 @@ export class SalesAnalyticsService {
       new_orders: this.toNumber(g._sum?.unconfirmedCount),
       restocking: this.toNumber(g._sum?.restockingCount),
       confirmed: this.toNumber(g._sum?.confirmedCount),
-      canceled: this.toNumber(g._sum?.canceledCount),
+      printed: this.toNumber(g._sum?.printedCount),
       waiting_pickup: this.toNumber(g._sum?.waitingPickupCount),
       shipped: this.toNumber(g._sum?.shippedCount),
       delivered: this.toNumber(g._sum?.deliveredCount),
       rts: this.toNumber(g._sum?.rtsCount),
+      canceled: this.toNumber(g._sum?.canceledCount),
+      deleted: this.toNumber(g._sum?.deletedCount),
     }));
 
     const rtsForecastPct = 20;

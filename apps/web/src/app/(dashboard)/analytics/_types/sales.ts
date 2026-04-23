@@ -138,11 +138,13 @@ export type SalesOverviewResponse = {
     new_orders: number;
     restocking: number;
     confirmed: number;
-    canceled: number;
+    printed: number;
     waiting_pickup: number;
     shipped: number;
     delivered: number;
     rts: number;
+    canceled: number;
+    deleted: number;
   }>;
   filters: { mappings: string[]; mappingsDisplayMap: Record<string, string> };
   selected: { start_date: string; end_date: string; mappings: string[] };

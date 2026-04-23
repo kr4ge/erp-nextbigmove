@@ -12,6 +12,8 @@ type NumericFields = {
   processedPurchasesPos: number;
   confirmedCount: number;
   unconfirmedCount: number;
+  printedCount: number;
+  deletedCount: number;
   abandonedCount: number;
   waitingPickupCount: number;
   shippedCount: number;
@@ -99,6 +101,8 @@ export class ReconcileSalesService {
         processedPurchasesPos: true,
         confirmedCount: true,
         unconfirmedCount: true,
+        printedCount: true,
+        deletedCount: true,
         abandonedCount: true,
         waitingPickupCount: true,
         shippedCount: true,
@@ -163,6 +167,8 @@ export class ReconcileSalesService {
             processedPurchasesPos: 0,
             confirmedCount: 0,
             unconfirmedCount: 0,
+            printedCount: 0,
+            deletedCount: 0,
             abandonedCount: 0,
             waitingPickupCount: 0,
             shippedCount: 0,
@@ -208,6 +214,8 @@ export class ReconcileSalesService {
       t.processedPurchasesPos += this.toNumber(row.processedPurchasesPos);
       t.confirmedCount += this.toNumber(row.confirmedCount);
       t.unconfirmedCount += this.toNumber(row.unconfirmedCount);
+      t.printedCount += this.toNumber(row.printedCount);
+      t.deletedCount += this.toNumber(row.deletedCount);
       t.abandonedCount += this.toNumber(row.abandonedCount);
       t.waitingPickupCount += this.toNumber(row.waitingPickupCount);
       t.shippedCount += this.toNumber(row.shippedCount);

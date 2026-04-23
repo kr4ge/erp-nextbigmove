@@ -15,11 +15,13 @@ export type SalesDeliverySortKey =
   | 'new_orders'
   | 'restocking'
   | 'confirmed'
-  | 'canceled'
+  | 'printed'
   | 'waiting_pickup'
   | 'shipped'
   | 'delivered'
-  | 'rts';
+  | 'rts'
+  | 'canceled'
+  | 'deleted';
 
 export type SalesDeliveryRowItem = {
   row: {
@@ -27,11 +29,13 @@ export type SalesDeliveryRowItem = {
     new_orders: number;
     restocking: number;
     confirmed: number;
-    canceled: number;
+    printed: number;
     waiting_pickup: number;
     shipped: number;
     delivered: number;
     rts: number;
+    canceled: number;
+    deleted: number;
     mapping: string | null;
   };
   index: number;
@@ -101,7 +105,7 @@ export function AnalyticsSalesDeliveryTable({
                 {renderSortLabel('Confirmed', 'confirmed')}
               </th>
               <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
-                {renderSortLabel('Canceled', 'canceled')}
+                {renderSortLabel('Printed', 'printed')}
               </th>
               <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                 {renderSortLabel('Waiting for Pickup', 'waiting_pickup')}
@@ -115,11 +119,17 @@ export function AnalyticsSalesDeliveryTable({
               <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                 {renderSortLabel('RTS', 'rts')}
               </th>
+              <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                {renderSortLabel('Cancelled', 'canceled')}
+              </th>
+              <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+                {renderSortLabel('Deleted', 'deleted')}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {isLoading ? (
-              <AnalyticsTableLoadingRows colCount={11} />
+              <AnalyticsTableLoadingRows colCount={13} />
             ) : (
               rows.map((item, idx) => (
                 <tr key={`${item.row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
@@ -133,16 +143,18 @@ export function AnalyticsSalesDeliveryTable({
                   <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.new_orders ?? 0, 'number', 0)}</td>
                   <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.restocking ?? 0, 'number', 0)}</td>
                   <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.confirmed ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.canceled ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.printed ?? 0, 'number', 0)}</td>
                   <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.waiting_pickup ?? 0, 'number', 0)}</td>
                   <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.shipped ?? 0, 'number', 0)}</td>
                   <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.delivered ?? 0, 'number', 0)}</td>
                   <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.rts ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.canceled ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.deleted ?? 0, 'number', 0)}</td>
                 </tr>
               ))
             )}
             {!isLoading && sourceCount === 0 ? (
-              <AnalyticsTableEmptyRow colSpan={11} message="No delivery status found for this range." />
+              <AnalyticsTableEmptyRow colSpan={13} message="No delivery status found for this range." />
             ) : null}
           </tbody>
         </table>
