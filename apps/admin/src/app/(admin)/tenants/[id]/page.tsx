@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
@@ -81,6 +81,21 @@ export default function TenantDetailsPage() {
     resolver: zodResolver(updateTenantSchema),
   });
 
+  const getErrorMessage = (error: unknown, fallback: string) => {
+    if (
+      typeof error === 'object'
+      && error !== null
+      && 'response' in error
+      && typeof (error as { response?: unknown }).response === 'object'
+      && (error as { response?: { data?: unknown } }).response?.data
+      && typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === 'string'
+    ) {
+      return (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? fallback;
+    }
+
+    return fallback;
+  };
+
   useEffect(() => {
     const fetchTenant = async () => {
       try {
@@ -103,8 +118,8 @@ export default function TenantDetailsPage() {
         setValue('status', tenantData.status);
         setValue('maxUsers', tenantData.maxUsers);
         setValue('maxIntegrations', tenantData.maxIntegrations);
-      } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to load tenant');
+      } catch (error: unknown) {
+        setError(getErrorMessage(error, 'Failed to load tenant'));
       } finally {
         setIsLoading(false);
       }
@@ -138,8 +153,8 @@ export default function TenantDetailsPage() {
 
       setSuccessMessage('Tenant updated successfully');
       await refreshTenant();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update tenant');
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Failed to update tenant'));
     } finally {
       setIsSaving(false);
     }
@@ -160,8 +175,8 @@ export default function TenantDetailsPage() {
       setSuccessMessage(`Tenant status set to ${formatTenantStatus(status)}`);
       setValue('status', status);
       await refreshTenant();
-    } catch (err: any) {
-      setError(err.response?.data?.message || `Failed to set status to ${status}`);
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, `Failed to set status to ${status}`));
     }
   };
 
@@ -466,7 +481,7 @@ function UsageRow({
   max,
   percent,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   current: number;
   max: number;
@@ -500,7 +515,7 @@ function TimelineRow({
   label,
   value,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string;
 }) {
@@ -530,7 +545,7 @@ function QuickActionButton({
   onClick,
   tone = 'neutral',
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   href?: string;
   onClick?: () => void;

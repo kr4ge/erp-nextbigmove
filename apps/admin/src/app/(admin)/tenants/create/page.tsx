@@ -124,6 +124,21 @@ export default function CreateTenantPage() {
     },
   });
 
+  const getErrorMessage = (error: unknown, fallback: string) => {
+    if (
+      typeof error === 'object'
+      && error !== null
+      && 'response' in error
+      && typeof (error as { response?: unknown }).response === 'object'
+      && (error as { response?: { data?: unknown } }).response?.data
+      && typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === 'string'
+    ) {
+      return (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? fallback;
+    }
+
+    return fallback;
+  };
+
   const planType = watch('planType');
 
   const handleTenantNameChange = (name: string) => {
@@ -157,8 +172,8 @@ export default function CreateTenantPage() {
       });
 
       router.push('/tenants');
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create tenant. Please try again.');
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Failed to create tenant. Please try again.'));
     } finally {
       setIsLoading(false);
     }

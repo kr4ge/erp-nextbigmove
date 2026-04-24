@@ -33,6 +33,21 @@ export default function AdminLoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
+  const getErrorMessage = (error: unknown, fallback: string) => {
+    if (
+      typeof error === 'object'
+      && error !== null
+      && 'response' in error
+      && typeof (error as { response?: unknown }).response === 'object'
+      && (error as { response?: { data?: unknown } }).response?.data
+      && typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === 'string'
+    ) {
+      return (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? fallback;
+    }
+
+    return fallback;
+  };
+
   const onSubmit = async (data: LoginForm) => {
     setError('');
     setIsLoading(true);
@@ -62,8 +77,8 @@ export default function AdminLoginPage() {
 
       // Redirect to WMS workspace
       router.push('/wms');
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Login failed. Please check your credentials.'));
     } finally {
       setIsLoading(false);
     }

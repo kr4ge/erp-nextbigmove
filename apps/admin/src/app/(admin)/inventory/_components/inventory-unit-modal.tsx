@@ -81,7 +81,7 @@ export function InventoryUnitModal({
     setBinId('');
     setOperationalLocationId('');
     setTransferNotes('');
-  }, [open, unit?.id]);
+  }, [open, unit]);
 
   const barcodeMarkup = useMemo(() => {
     if (!unit) {

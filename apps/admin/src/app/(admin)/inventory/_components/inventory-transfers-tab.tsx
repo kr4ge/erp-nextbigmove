@@ -100,7 +100,10 @@ export function InventoryTransfersTab({
   const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
   const [lastSavedMessage, setLastSavedMessage] = useState<string | null>(null);
 
-  const sections = putawayOptions?.sections ?? [];
+  const sections = useMemo(
+    () => putawayOptions?.sections ?? [],
+    [putawayOptions?.sections],
+  );
   const sectionMap = useMemo(
     () => new Map(sections.map((section) => [section.id, section])),
     [sections],

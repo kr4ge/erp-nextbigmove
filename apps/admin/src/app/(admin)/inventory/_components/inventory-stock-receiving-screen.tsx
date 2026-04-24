@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
@@ -16,11 +16,15 @@ export function InventoryStockReceivingScreen() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const receiving = useReceivingController();
-  const receivingBatches = receiving.overview?.receivingBatches ?? [];
+  const { labelsModal, openLabelsModal } = receiving;
+  const receivingBatches = useMemo(
+    () => receiving.overview?.receivingBatches ?? [],
+    [receiving.overview?.receivingBatches],
+  );
   const printBatchId = searchParams.get('printBatch');
 
   useEffect(() => {
-    if (!printBatchId || receiving.labelsModal.open) {
+    if (!printBatchId || labelsModal.open) {
       return;
     }
 
@@ -30,15 +34,15 @@ export function InventoryStockReceivingScreen() {
       return;
     }
 
-    receiving.openLabelsModal(targetBatch);
+    openLabelsModal(targetBatch);
 
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.delete('printBatch');
     const nextUrl = nextParams.toString() ? `${pathname}?${nextParams.toString()}` : pathname;
     window.history.replaceState(window.history.state, '', nextUrl);
   }, [
-    receiving.labelsModal.open,
-    receiving.openLabelsModal,
+    labelsModal.open,
+    openLabelsModal,
     pathname,
     printBatchId,
     receivingBatches,

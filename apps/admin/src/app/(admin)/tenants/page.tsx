@@ -21,6 +21,21 @@ export default function TenantsPage() {
   const [statusFilter, setStatusFilter] = useState<TenantStatus | ''>('');
   const [planFilter, setPlanFilter] = useState<TenantPlan | ''>('');
 
+  const getErrorMessage = (error: unknown, fallback: string) => {
+    if (
+      typeof error === 'object'
+      && error !== null
+      && 'response' in error
+      && typeof (error as { response?: unknown }).response === 'object'
+      && (error as { response?: { data?: unknown } }).response?.data
+      && typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === 'string'
+    ) {
+      return (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? fallback;
+    }
+
+    return fallback;
+  };
+
   useEffect(() => {
     const fetchTenants = async () => {
       try {
@@ -35,8 +50,8 @@ export default function TenantsPage() {
         });
 
         setTenants(response.data);
-      } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to load tenants');
+      } catch (error: unknown) {
+        setError(getErrorMessage(error, 'Failed to load tenants'));
       } finally {
         setIsLoading(false);
       }

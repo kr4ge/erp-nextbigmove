@@ -48,7 +48,7 @@ export function useWmsScopeFilters({
     ) {
       setSelectedTenantIdState(activeTenantId);
     }
-  }, [filters?.activeTenantId, filters?.tenants, selectedTenantId]);
+  }, [filters?.activeTenantId, filters?.tenants, selectedTenantId, setSelectedTenantIdState]);
 
   useEffect(() => {
     const activeStoreId = filters?.activeStoreId;
@@ -60,7 +60,7 @@ export function useWmsScopeFilters({
     ) {
       setSelectedStoreIdState(activeStoreId);
     }
-  }, [filters?.activeStoreId, filters?.stores, selectedStoreId]);
+  }, [filters?.activeStoreId, filters?.stores, selectedStoreId, setSelectedStoreIdState]);
 
   useEffect(() => {
     if (!selectedStoreId) {
@@ -75,7 +75,7 @@ export function useWmsScopeFilters({
     if (!stores.some((store) => store.id === selectedStoreId)) {
       setSelectedStoreIdState(undefined);
     }
-  }, [filters?.stores, selectedStoreId]);
+  }, [filters?.stores, selectedStoreId, setSelectedStoreIdState]);
 
   useEffect(() => {
     if (!includeWarehouse) {
