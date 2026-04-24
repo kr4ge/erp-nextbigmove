@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import type { StoreCard } from '../_types/store-list';
@@ -47,11 +46,10 @@ export function StoreListGrid({
 
               <div className="mt-6 flex flex-col items-center text-center">
                 {store.shopAvatarUrl ? (
-                  <Image
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
                     src={store.shopAvatarUrl}
                     alt={displayName}
-                    width={64}
-                    height={64}
                     className="h-16 w-16 rounded-full border border-[#E2E8F0] object-cover shadow-sm"
                   />
                 ) : (
