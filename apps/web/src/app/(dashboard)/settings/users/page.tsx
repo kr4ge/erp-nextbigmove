@@ -40,7 +40,7 @@ type User = {
   userRoleAssignments?: {
     roleId: string;
     teamId: string | null;
-    role?: { id: string; name: string; key: string };
+    role?: { id: string; name: string; key: string; workspace?: 'erp' | 'wms' };
   }[];
 };
 
@@ -55,6 +55,7 @@ type Role = {
   key: string;
   tenantId: string | null;
   isSystem: boolean;
+  workspace?: 'erp' | 'wms';
   permissions?: string[];
 };
 
@@ -91,7 +92,9 @@ export default function UsersPage() {
     const checkPermissions = async () => {
       setIsCheckingPermissions(true);
       try {
-        const response = await apiClient.get('/auth/permissions');
+        const response = await apiClient.get('/auth/permissions', {
+          params: { workspace: 'erp' },
+        });
         const permissions = response.data.permissions || [];
         // Check if user has user.manage permission
         const hasPermission = permissions.includes('user.manage');
@@ -125,10 +128,24 @@ export default function UsersPage() {
     enabled: canManage && !isCheckingPermissions,
   });
 
-  const { data: roles } = useQuery<Role[]>({
-    queryKey: ['roles'],
+  const { data: erpRoles } = useQuery<Role[]>({
+    queryKey: ['roles', 'erp'],
     queryFn: async () => {
-      const res = await apiClient.get('/roles');
+      const res = await apiClient.get('/roles', {
+        params: { workspace: 'erp' },
+      });
+      return res.data;
+    },
+    staleTime: 60_000,
+    enabled: canManage && !isCheckingPermissions,
+  });
+
+  const { data: wmsRoles } = useQuery<Role[]>({
+    queryKey: ['roles', 'wms'],
+    queryFn: async () => {
+      const res = await apiClient.get('/roles', {
+        params: { workspace: 'wms' },
+      });
       return res.data;
     },
     staleTime: 60_000,
@@ -147,6 +164,7 @@ export default function UsersPage() {
     role: 'USER',
     teamId: '',
     roleId: '',
+    wmsRoleId: '',
   });
   const [editForm, setEditForm] = useState({
     firstName: '',
@@ -155,6 +173,7 @@ export default function UsersPage() {
     status: 'ACTIVE',
     teamId: '',
     roleId: '',
+    wmsRoleId: '',
   });
 
   const createMutation = useMutation({
@@ -166,7 +185,8 @@ export default function UsersPage() {
         password: createForm.password,
         role: createForm.role,
         teamId: createForm.teamId || undefined,
-        roleId: createForm.roleId || undefined,
+        roleId: createForm.roleId || null,
+        wmsRoleId: createForm.wmsRoleId || null,
       });
     },
     onSuccess: async () => {
@@ -179,13 +199,20 @@ export default function UsersPage() {
         role: 'USER',
         teamId: '',
         roleId: '',
+        wmsRoleId: '',
       });
       setCreateOpen(false);
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, payload }: { id: string; payload: Partial<User> & { roleId?: string } }) => {
+    mutationFn: async ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: Partial<User> & { roleId?: string | null; wmsRoleId?: string | null };
+    }) => {
       await apiClient.patch(`/users/${id}`, payload);
     },
     onSuccess: async () => {
@@ -210,7 +237,17 @@ export default function UsersPage() {
 
   const getTenantRole = useCallback(
     (userItem: User) =>
-      userItem.userRoleAssignments?.find((assignment) => !assignment.teamId)?.role,
+      userItem.userRoleAssignments?.find(
+        (assignment) => !assignment.teamId && assignment.role?.workspace !== 'wms',
+      )?.role,
+    [],
+  );
+
+  const getWmsRole = useCallback(
+    (userItem: User) =>
+      userItem.userRoleAssignments?.find(
+        (assignment) => !assignment.teamId && assignment.role?.workspace === 'wms',
+      )?.role,
     [],
   );
 
@@ -224,6 +261,11 @@ export default function UsersPage() {
     [getTenantRole],
   );
 
+  const getWmsRoleLabel = useCallback(
+    (userItem: User) => getWmsRole(userItem)?.name || '—',
+    [getWmsRole],
+  );
+
   const getTeamLabel = useCallback(
     (userItem: User) => {
       if (isTenantAdmin(userItem)) return 'All Teams';
@@ -235,7 +277,10 @@ export default function UsersPage() {
 
   const openEditModal = (userItem: User) => {
     const tenantAssignment = userItem.userRoleAssignments?.find(
-      (assignment) => !assignment.teamId,
+      (assignment) => !assignment.teamId && assignment.role?.workspace !== 'wms',
+    );
+    const wmsAssignment = userItem.userRoleAssignments?.find(
+      (assignment) => !assignment.teamId && assignment.role?.workspace === 'wms',
     );
     setEditingUser(userItem);
     setEditForm({
@@ -244,6 +289,7 @@ export default function UsersPage() {
       email: userItem.email || '',
       status: userItem.status || 'ACTIVE',
       roleId: tenantAssignment?.roleId || '',
+      wmsRoleId: wmsAssignment?.roleId || '',
       teamId: userItem.defaultTeamId || '',
     });
     setEditOpen(true);
@@ -296,11 +342,16 @@ export default function UsersPage() {
       },
       {
         id: 'role',
-        header: 'User Role',
+        header: 'Roles',
         cell: ({ row }) => (
-          <span className="inline-flex items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-semibold text-[#475569]">
-            {getRoleLabel(row.original)}
-          </span>
+          <div className="flex flex-col gap-1">
+            <span className="inline-flex w-fit items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-semibold text-[#475569]">
+              ERP: {getRoleLabel(row.original)}
+            </span>
+            <span className="inline-flex w-fit items-center rounded-full bg-[#FFF7ED] px-2.5 py-1 text-xs font-semibold text-[#C2410C]">
+              WMS: {getWmsRoleLabel(row.original)}
+            </span>
+          </div>
         ),
       },
       {
@@ -342,7 +393,7 @@ export default function UsersPage() {
         ),
       },
     ],
-    [deleteMutation, getRoleLabel, getTeamLabel],
+    [deleteMutation, getRoleLabel, getTeamLabel, getWmsRoleLabel],
   );
 
   const { table } = useDataTable({
@@ -452,7 +503,7 @@ export default function UsersPage() {
                 value={createForm.roleId}
                 onChange={(e) => {
                   const newRoleId = e.target.value;
-                  const selectedRole = roles?.find((r) => r.id === newRoleId);
+                  const selectedRole = erpRoles?.find((r) => r.id === newRoleId);
                   const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
                   setCreateForm((prev) => ({
                     ...prev,
@@ -460,7 +511,7 @@ export default function UsersPage() {
                     teamId: isAdmin ? '' : prev.teamId,
                   }));
                 }}
-                options={roles?.map((r) => ({
+                options={erpRoles?.map((r) => ({
                   value: r.id,
                   label: `${r.name}${r.tenantId ? '' : ' (default)'}`,
                 })) || []}
@@ -468,7 +519,7 @@ export default function UsersPage() {
               />
 
               {(() => {
-                const selectedRole = roles?.find((r) => r.id === createForm.roleId);
+                const selectedRole = erpRoles?.find((r) => r.id === createForm.roleId);
                 const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
                 return isAdmin ? (
                   <div className="space-y-1.5">
@@ -493,6 +544,19 @@ export default function UsersPage() {
                 );
               })()}
             </div>
+
+            <FormSelect
+              label="WMS role (optional)"
+              value={createForm.wmsRoleId}
+              onChange={(e) =>
+                setCreateForm((prev) => ({ ...prev, wmsRoleId: e.target.value }))
+              }
+              options={wmsRoles?.map((role) => ({
+                value: role.id,
+                label: `${role.name}${role.tenantId ? '' : ' (default)'}`,
+              })) || []}
+              placeholder="No WMS role"
+            />
 
             {createMutation.isError && (
               <AlertBanner
@@ -537,7 +601,7 @@ export default function UsersPage() {
             onSubmit={(e) => {
               e.preventDefault();
               if (!editingUser) return;
-              const selectedRole = roles?.find((r) => r.id === editForm.roleId);
+              const selectedRole = erpRoles?.find((r) => r.id === editForm.roleId);
               const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
               updateMutation.mutate({
                 id: editingUser.id,
@@ -545,7 +609,8 @@ export default function UsersPage() {
                   firstName: editForm.firstName,
                   lastName: editForm.lastName,
                   status: editForm.status,
-                  roleId: editForm.roleId || undefined,
+                  roleId: editForm.roleId || null,
+                  wmsRoleId: editForm.wmsRoleId || null,
                   defaultTeamId: isAdmin ? undefined : editForm.teamId || undefined,
                 },
               });
@@ -581,7 +646,7 @@ export default function UsersPage() {
                 value={editForm.roleId}
                 onChange={(e) => {
                   const newRoleId = e.target.value;
-                  const selectedRole = roles?.find((r) => r.id === newRoleId);
+                  const selectedRole = erpRoles?.find((r) => r.id === newRoleId);
                   const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
                   setEditForm((prev) => ({
                     ...prev,
@@ -589,7 +654,7 @@ export default function UsersPage() {
                     teamId: isAdmin ? '' : prev.teamId,
                   }));
                 }}
-                options={roles?.map((r) => ({
+                options={erpRoles?.map((r) => ({
                   value: r.id,
                   label: `${r.name}${r.tenantId ? '' : ' (default)'}`,
                 })) || []}
@@ -598,7 +663,7 @@ export default function UsersPage() {
             </div>
 
             {(() => {
-              const selectedRole = roles?.find((r) => r.id === editForm.roleId);
+              const selectedRole = erpRoles?.find((r) => r.id === editForm.roleId);
               const isAdmin = selectedRole?.key === 'TENANT_ADMIN';
               return isAdmin ? (
                 <div className="space-y-1.5">
@@ -622,6 +687,19 @@ export default function UsersPage() {
                 />
               );
             })()}
+
+            <FormSelect
+              label="WMS role (optional)"
+              value={editForm.wmsRoleId}
+              onChange={(e) =>
+                setEditForm((prev) => ({ ...prev, wmsRoleId: e.target.value }))
+              }
+              options={wmsRoles?.map((role) => ({
+                value: role.id,
+                label: `${role.name}${role.tenantId ? '' : ' (default)'}`,
+              })) || []}
+              placeholder="No WMS role"
+            />
 
             {updateMutation.isError && (
               <AlertBanner tone="error" message="Failed to update user. Try again." />

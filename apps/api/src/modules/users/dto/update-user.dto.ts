@@ -23,11 +23,15 @@ export class UpdateUserDto {
 
   @IsUUID()
   @IsOptional()
-  roleId?: string;
+  roleId?: string | null;
 
   @IsUUID()
   @IsOptional()
-  teamRoleId?: string;
+  wmsRoleId?: string | null;
+
+  @IsUUID()
+  @IsOptional()
+  teamRoleId?: string | null;
 
   @IsUUID()
   @IsOptional()

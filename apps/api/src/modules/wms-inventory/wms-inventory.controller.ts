@@ -3,8 +3,10 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { CreateWmsInventoryAdjustmentDto } from './dto/create-wms-inventory-adjustment.dto';
 import { CreateWmsInventoryTransferDto } from './dto/create-wms-inventory-transfer.dto';
 import { GetWmsInventoryOverviewDto } from './dto/get-wms-inventory-overview.dto';
+import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.dto';
 import { GetWmsInventoryUnitMovementsDto } from './dto/get-wms-inventory-unit-movements.dto';
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
 import { WmsInventoryService } from './wms-inventory.service';
@@ -18,6 +20,12 @@ export class WmsInventoryController {
   @Permissions('wms.inventory.read')
   async getOverview(@Query() query: GetWmsInventoryOverviewDto) {
     return this.wmsInventoryService.getOverview(query);
+  }
+
+  @Get('transfers')
+  @Permissions('wms.inventory.read')
+  async getTransfers(@Query() query: GetWmsInventoryTransfersDto) {
+    return this.wmsInventoryService.getTransfers(query);
   }
 
   @Get(':id/movements')
@@ -55,5 +63,14 @@ export class WmsInventoryController {
     @Query('tenantId') tenantId?: string,
   ) {
     return this.wmsInventoryService.createTransfer(body, tenantId);
+  }
+
+  @Post('adjustments')
+  @Permissions('wms.inventory.adjust', 'wms.inventory.edit', 'wms.inventory.write')
+  async createAdjustment(
+    @Body() body: CreateWmsInventoryAdjustmentDto,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.wmsInventoryService.createAdjustment(body, tenantId);
   }
 }

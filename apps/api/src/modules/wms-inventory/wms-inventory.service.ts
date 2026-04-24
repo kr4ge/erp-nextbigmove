@@ -10,12 +10,13 @@ import {
   WmsInventoryUnitStatus,
   WmsLocationKind,
   WmsTransferStatus,
-  WmsWarehouseStatus,
 } from '@prisma/client';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CreateWmsInventoryAdjustmentDto } from './dto/create-wms-inventory-adjustment.dto';
 import { CreateWmsInventoryTransferDto } from './dto/create-wms-inventory-transfer.dto';
 import { GetWmsInventoryOverviewDto } from './dto/get-wms-inventory-overview.dto';
+import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.dto';
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
 
 const UNIT_STATUS_ORDER: WmsInventoryUnitStatus[] = [
@@ -134,12 +135,60 @@ type TransferStructureMaps = {
   binsByRackId: Map<string, TransferLocationRecord[]>;
 };
 
+type InventoryTransferRecord = Prisma.WmsTransferGetPayload<{
+  include: {
+    warehouse: {
+      select: {
+        id: true;
+        code: true;
+        name: true;
+      };
+    };
+    fromLocation: {
+      select: {
+        id: true;
+        code: true;
+        name: true;
+        kind: true;
+      };
+    };
+    toLocation: {
+      select: {
+        id: true;
+        code: true;
+        name: true;
+        kind: true;
+      };
+    };
+    createdBy: {
+      select: {
+        firstName: true;
+        lastName: true;
+        email: true;
+      };
+    };
+    _count: {
+      select: {
+        items: true;
+      };
+    };
+  };
+}>;
+
 const TRANSFERABLE_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.RECEIVED,
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
+]);
+
+const ADJUSTABLE_UNIT_TARGET_STATUSES = new Set<WmsInventoryUnitStatus>([
+  WmsInventoryUnitStatus.STAGED,
+  WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.RTS,
+  WmsInventoryUnitStatus.DAMAGED,
+  WmsInventoryUnitStatus.ARCHIVED,
 ]);
 
 const STRUCTURAL_LOCATION_KINDS = [WmsLocationKind.SECTION, WmsLocationKind.RACK, WmsLocationKind.BIN] as const;
@@ -536,6 +585,157 @@ export class WmsInventoryService {
     };
   }
 
+  async getTransfers(query: GetWmsInventoryTransfersDto) {
+    const scope = await this.resolveTenantScope(query.tenantId);
+
+    if (!scope.activeTenantId) {
+      return {
+        tenantReady: false,
+        summary: {
+          transfers: 0,
+          movedUnits: 0,
+        },
+        filters: {
+          tenants: scope.tenants,
+          warehouses: [],
+          activeTenantId: null,
+          activeWarehouseId: null,
+        },
+        transfers: [],
+      };
+    }
+
+    const transferCountScope: Prisma.WmsTransferWhereInput = {
+      tenantId: scope.activeTenantId,
+    };
+
+    const [warehouses, warehouseCounts] = await Promise.all([
+      this.prisma.wmsWarehouse.findMany({
+        select: {
+          id: true,
+          code: true,
+          name: true,
+        },
+        orderBy: [{ code: 'asc' }],
+      }),
+      this.prisma.wmsTransfer.groupBy({
+        by: ['warehouseId'],
+        where: transferCountScope,
+        _count: {
+          _all: true,
+        },
+      }),
+    ]);
+
+    const activeWarehouseId =
+      query.warehouseId && warehouses.some((warehouse) => warehouse.id === query.warehouseId)
+        ? query.warehouseId
+        : null;
+
+    const where: Prisma.WmsTransferWhereInput = {
+      tenantId: scope.activeTenantId,
+      ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { code: { contains: query.search, mode: 'insensitive' } },
+              { notes: { contains: query.search, mode: 'insensitive' } },
+              { fromLocation: { code: { contains: query.search, mode: 'insensitive' } } },
+              { fromLocation: { name: { contains: query.search, mode: 'insensitive' } } },
+              { toLocation: { code: { contains: query.search, mode: 'insensitive' } } },
+              { toLocation: { name: { contains: query.search, mode: 'insensitive' } } },
+              {
+                items: {
+                  some: {
+                    inventoryUnit: {
+                      OR: [
+                        { code: { contains: query.search, mode: 'insensitive' } },
+                        { barcode: { contains: query.search, mode: 'insensitive' } },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [transfers, transferCount, movedUnits] = await Promise.all([
+      this.prisma.wmsTransfer.findMany({
+        where,
+        include: {
+          warehouse: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+          fromLocation: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              kind: true,
+            },
+          },
+          toLocation: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              kind: true,
+            },
+          },
+          createdBy: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          _count: {
+            select: {
+              items: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }],
+      }),
+      this.prisma.wmsTransfer.count({ where }),
+      this.prisma.wmsTransferItem.count({
+        where: {
+          transfer: where,
+        },
+      }),
+    ]);
+
+    const warehouseCountMap = new Map(
+      warehouseCounts.map((record) => [record.warehouseId, record._count._all]),
+    );
+
+    return {
+      tenantReady: true,
+      summary: {
+        transfers: transferCount,
+        movedUnits,
+      },
+      filters: {
+        tenants: scope.tenants,
+        warehouses: warehouses.map((warehouse) => ({
+          id: warehouse.id,
+          code: warehouse.code,
+          label: warehouse.name,
+          transferCount: warehouseCountMap.get(warehouse.id) ?? 0,
+        })),
+        activeTenantId: scope.activeTenantId,
+        activeWarehouseId,
+      },
+      transfers: transfers.map((transfer) => this.mapTransfer(transfer)),
+    };
+  }
+
   async createTransfer(body: CreateWmsInventoryTransferDto, requestedTenantId?: string) {
     const scope = await this.resolveTenantScope(requestedTenantId);
     if (!scope.activeTenantId) {
@@ -753,6 +953,247 @@ export class WmsInventoryService {
 
       return {
         transfer,
+        units: updatedUnits.map((unit) => this.mapUnit(unit)),
+      };
+    });
+
+    return result;
+  }
+
+  async createAdjustment(body: CreateWmsInventoryAdjustmentDto, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    if (!ADJUSTABLE_UNIT_TARGET_STATUSES.has(body.targetStatus)) {
+      throw new BadRequestException(`Status ${body.targetStatus} is not supported for inventory adjustment`);
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const notes = this.cleanOptionalText(body.notes);
+
+    const units = await this.prisma.wmsInventoryUnit.findMany({
+      where: {
+        id: {
+          in: body.unitIds,
+        },
+      },
+      include: {
+        store: {
+          select: {
+            id: true,
+            name: true,
+            shopName: true,
+          },
+        },
+        warehouse: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+        },
+        currentLocation: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            kind: true,
+            warehouseId: true,
+            parentId: true,
+            isActive: true,
+          },
+        },
+        posProduct: {
+          select: {
+            id: true,
+            name: true,
+            customId: true,
+            productSnapshot: true,
+          },
+        },
+      },
+    });
+
+    if (units.length !== body.unitIds.length) {
+      throw new BadRequestException('One or more selected units no longer exist');
+    }
+
+    units.forEach((unit) => {
+      if (unit.tenantId !== scope.activeTenantId) {
+        throw new ForbiddenException('One or more selected units are outside your WMS scope');
+      }
+    });
+
+    const warehouseId = units[0].warehouseId;
+    const teamId = units[0].teamId;
+
+    if (units.some((unit) => unit.warehouseId !== warehouseId)) {
+      throw new BadRequestException('Selected units must belong to the same warehouse');
+    }
+
+    const targetLocationKind = this.getRequiredAdjustmentLocationKind(body.targetStatus);
+    const targetLocationKinds = this.getAllowedAdjustmentLocationKinds(body.targetStatus);
+    let targetLocation:
+      | {
+          id: string;
+          code: string;
+          name: string;
+          kind: WmsLocationKind;
+          warehouseId: string;
+          capacity: number | null;
+        }
+      | null = null;
+
+    if (targetLocationKinds.length === 0) {
+      if (body.targetLocationId) {
+        throw new BadRequestException('Archived adjustments should not include a destination location');
+      }
+    } else {
+      if (!body.targetLocationId) {
+        throw new BadRequestException(`Status ${body.targetStatus} requires a destination location`);
+      }
+
+      targetLocation = await this.prisma.wmsLocation.findFirst({
+        where: {
+          id: body.targetLocationId,
+          warehouseId,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          kind: true,
+          warehouseId: true,
+          capacity: true,
+        },
+      });
+
+      if (!targetLocation) {
+        throw new BadRequestException('Adjustment destination is not valid for the warehouse');
+      }
+
+      const confirmedTargetLocation = targetLocation;
+
+      if (!targetLocationKinds.some((kind) => kind === confirmedTargetLocation.kind)) {
+        throw new BadRequestException(
+          `Status ${body.targetStatus} requires a ${targetLocationKind}, but ${confirmedTargetLocation.code} is ${confirmedTargetLocation.kind}`,
+        );
+      }
+
+      if (confirmedTargetLocation.kind === WmsLocationKind.BIN && confirmedTargetLocation.capacity === null) {
+        throw new BadRequestException(`Bin ${confirmedTargetLocation.code} is missing a capacity setting`);
+      }
+    }
+
+    const adjustmentCode = this.buildAdjustmentCode();
+    const now = new Date();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (targetLocation?.kind === WmsLocationKind.BIN) {
+        const occupiedUnits = await tx.wmsInventoryUnit.count({
+          where: {
+            currentLocationId: targetLocation.id,
+          },
+        });
+        const availableUnits = Math.max((targetLocation.capacity ?? 0) - occupiedUnits, 0);
+
+        if (units.length > availableUnits) {
+          throw new BadRequestException(
+            `Bin ${targetLocation.code} has space for ${availableUnits} more unit${availableUnits === 1 ? '' : 's'}, but ${units.length} were selected`,
+          );
+        }
+      }
+
+      for (const unit of units) {
+        await tx.wmsInventoryUnit.update({
+          where: { id: unit.id },
+          data: {
+            currentLocationId: targetLocation?.id ?? null,
+            status: body.targetStatus,
+            ...(actorId ? { updatedById: actorId } : {}),
+          },
+        });
+      }
+
+      await tx.wmsInventoryMovement.createMany({
+        data: units.map((unit) => ({
+          tenantId: scope.activeTenantId!,
+          teamId: unit.teamId,
+          inventoryUnitId: unit.id,
+          warehouseId: unit.warehouseId,
+          fromLocationId: unit.currentLocationId,
+          toLocationId: targetLocation?.id ?? null,
+          fromStatus: unit.status,
+          toStatus: body.targetStatus,
+          movementType: WmsInventoryMovementType.ADJUSTMENT,
+          referenceType: 'ADJUSTMENT',
+          referenceCode: adjustmentCode,
+          notes,
+          actorId,
+          createdAt: now,
+        })),
+      });
+
+      const updatedUnits = await tx.wmsInventoryUnit.findMany({
+        where: {
+          id: {
+            in: units.map((unit) => unit.id),
+          },
+        },
+        include: {
+          store: {
+            select: {
+              id: true,
+              name: true,
+              shopName: true,
+            },
+          },
+          warehouse: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+          currentLocation: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              kind: true,
+            },
+          },
+          posProduct: {
+            select: {
+              id: true,
+              name: true,
+              customId: true,
+              productSnapshot: true,
+            },
+          },
+        },
+        orderBy: [{ code: 'asc' }],
+      });
+
+      return {
+        adjustment: {
+          code: adjustmentCode,
+          unitCount: units.length,
+          targetStatus: body.targetStatus,
+          targetLocation: targetLocation
+            ? {
+                id: targetLocation.id,
+                code: targetLocation.code,
+                name: targetLocation.name,
+                kind: targetLocation.kind,
+                label: `${units[0].warehouse.code} · ${targetLocation.code}`,
+              }
+            : null,
+          createdAt: now,
+        },
         units: updatedUnits.map((unit) => this.mapUnit(unit)),
       };
     });
@@ -1033,6 +1474,46 @@ export class WmsInventoryService {
     };
   }
 
+  private mapTransfer(transfer: InventoryTransferRecord) {
+    return {
+      id: transfer.id,
+      code: transfer.code,
+      status: transfer.status,
+      itemCount: transfer._count.items,
+      warehouse: {
+        id: transfer.warehouse.id,
+        code: transfer.warehouse.code,
+        name: transfer.warehouse.name,
+      },
+      fromLocation: transfer.fromLocation
+        ? {
+            id: transfer.fromLocation.id,
+            code: transfer.fromLocation.code,
+            name: transfer.fromLocation.name,
+            kind: transfer.fromLocation.kind,
+            label: `${transfer.warehouse.code} · ${transfer.fromLocation.code}`,
+          }
+        : null,
+      toLocation: {
+        id: transfer.toLocation.id,
+        code: transfer.toLocation.code,
+        name: transfer.toLocation.name,
+        kind: transfer.toLocation.kind,
+        label: `${transfer.warehouse.code} · ${transfer.toLocation.code}`,
+      },
+      notes: transfer.notes,
+      actor: transfer.createdBy
+        ? {
+            name:
+              `${transfer.createdBy.firstName ?? ''} ${transfer.createdBy.lastName ?? ''}`.trim()
+              || transfer.createdBy.email,
+            email: transfer.createdBy.email,
+          }
+        : null,
+      createdAt: transfer.createdAt,
+    };
+  }
+
   private async getActiveStructuralLocationsByWarehouse(warehouseId: string) {
     return this.prisma.wmsLocation.findMany({
       where: {
@@ -1155,8 +1636,46 @@ export class WmsInventoryService {
     }
   }
 
+  private getAllowedAdjustmentLocationKinds(targetStatus: WmsInventoryUnitStatus) {
+    switch (targetStatus) {
+      case WmsInventoryUnitStatus.STAGED:
+        return [WmsLocationKind.RECEIVING_STAGING];
+      case WmsInventoryUnitStatus.PUTAWAY:
+        return [WmsLocationKind.BIN];
+      case WmsInventoryUnitStatus.RTS:
+        return [WmsLocationKind.RTS];
+      case WmsInventoryUnitStatus.DAMAGED:
+        return [WmsLocationKind.DAMAGE, WmsLocationKind.QUARANTINE];
+      case WmsInventoryUnitStatus.ARCHIVED:
+        return [];
+      default:
+        return [];
+    }
+  }
+
+  private getRequiredAdjustmentLocationKind(targetStatus: WmsInventoryUnitStatus) {
+    switch (targetStatus) {
+      case WmsInventoryUnitStatus.STAGED:
+        return 'receiving staging location';
+      case WmsInventoryUnitStatus.PUTAWAY:
+        return 'bin location';
+      case WmsInventoryUnitStatus.RTS:
+        return 'RTS location';
+      case WmsInventoryUnitStatus.DAMAGED:
+        return 'damage or quarantine location';
+      case WmsInventoryUnitStatus.ARCHIVED:
+        return 'no location';
+      default:
+        return 'valid location';
+    }
+  }
+
   private buildTransferCode() {
     return `TRF-${Date.now().toString(36).toUpperCase()}`;
+  }
+
+  private buildAdjustmentCode() {
+    return `ADJ-${Date.now().toString(36).toUpperCase()}`;
   }
 
   private cleanOptionalText(value?: string | null) {

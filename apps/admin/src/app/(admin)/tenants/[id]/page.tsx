@@ -1,12 +1,35 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CalendarClock,
+  CheckCircle2,
+  Copy,
+  Link2,
+  PauseCircle,
+  Plug,
+  Users,
+} from 'lucide-react';
 import apiClient from '@/lib/api-client';
-import Link from 'next/link';
+import { WmsPageShell } from '../../_components/wms-page-shell';
+import { WmsInlineNotice } from '../../_components/wms-inline-notice';
+import { WmsSectionCard } from '../../_components/wms-section-card';
+import { WmsFormField } from '../../_components/wms-form-field';
+import type { TenantPlan, TenantRecord, TenantStatus } from '../_types/tenant';
+import {
+  formatTenantDateTime,
+  formatTenantPlan,
+  formatTenantStatus,
+  getTenantPlanClassName,
+  getTenantStatusClassName,
+} from '../_utils/tenant-presenters';
 
 const updateTenantSchema = z.object({
   name: z.string().min(2, 'Organization name must be at least 2 characters').max(100),
@@ -23,75 +46,82 @@ const updateTenantSchema = z.object({
 
 type UpdateTenantForm = z.infer<typeof updateTenantSchema>;
 
-interface Tenant {
-  id: string;
-  name: string;
-  slug: string;
-  status: string;
-  planType: string;
-  maxUsers: number;
-  maxIntegrations: number;
-  createdAt: string;
-  updatedAt: string;
-  trialEndsAt: string | null;
-  _count?: {
-    users: number;
-    integrations: number;
-  };
-}
+const planOptions: Array<{ value: TenantPlan; label: string }> = [
+  { value: 'trial', label: 'Trial' },
+  { value: 'starter', label: 'Starter' },
+  { value: 'professional', label: 'Professional' },
+  { value: 'enterprise', label: 'Enterprise' },
+];
+
+const statusOptions: Array<{ value: TenantStatus; label: string }> = [
+  { value: 'TRIAL', label: 'Trial' },
+  { value: 'ACTIVE', label: 'Active' },
+  { value: 'SUSPENDED', label: 'Suspended' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+];
 
 export default function TenantDetailsPage() {
   const router = useRouter();
   const params = useParams();
   const tenantId = params.id as string;
 
-  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [tenant, setTenant] = useState<TenantRecord | null>(null);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [slugCopied, setSlugCopied] = useState(false);
 
   const {
     register,
     handleSubmit,
     setValue,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<UpdateTenantForm>({
     resolver: zodResolver(updateTenantSchema),
   });
 
   useEffect(() => {
-    fetchTenant();
-  }, [tenantId]);
+    const fetchTenant = async () => {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+          router.push('/login');
+          return;
+        }
 
-  const fetchTenant = async () => {
+        const response = await apiClient.get(`/tenants/${tenantId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const tenantData: TenantRecord = response.data;
+        setTenant(tenantData);
+
+        setValue('name', tenantData.name);
+        setValue('slug', tenantData.slug);
+        setValue('planType', tenantData.planType);
+        setValue('status', tenantData.status);
+        setValue('maxUsers', tenantData.maxUsers);
+        setValue('maxIntegrations', tenantData.maxIntegrations);
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'Failed to load tenant');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTenant();
+  }, [tenantId, router, setValue]);
+
+  const refreshTenant = async () => {
     try {
       const token = localStorage.getItem('access_token');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-
       const response = await apiClient.get(`/tenants/${tenantId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
-
-      const tenantData = response.data;
-      setTenant(tenantData);
-
-      // Populate form with tenant data
-      setValue('name', tenantData.name);
-      setValue('slug', tenantData.slug);
-      setValue('planType', tenantData.planType);
-      setValue('status', tenantData.status);
-      setValue('maxUsers', tenantData.maxUsers);
-      setValue('maxIntegrations', tenantData.maxIntegrations);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to load tenant');
-    } finally {
-      setIsLoading(false);
+      setTenant(response.data);
+    } catch {
+      /* no-op */
     }
   };
 
@@ -102,19 +132,12 @@ export default function TenantDetailsPage() {
 
     try {
       const token = localStorage.getItem('access_token');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-
       await apiClient.patch(`/tenants/${tenantId}`, data, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       setSuccessMessage('Tenant updated successfully');
-      fetchTenant(); // Refresh tenant data
+      await refreshTenant();
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to update tenant');
     } finally {
@@ -122,8 +145,8 @@ export default function TenantDetailsPage() {
     }
   };
 
-  const handleSuspend = async () => {
-    if (!confirm('Are you sure you want to suspend this tenant?')) {
+  const handleStatusAction = async (status: TenantStatus, confirmMessage?: string) => {
+    if (confirmMessage && !confirm(confirmMessage)) {
       return;
     }
 
@@ -131,273 +154,417 @@ export default function TenantDetailsPage() {
       const token = localStorage.getItem('access_token');
       await apiClient.patch(
         `/tenants/${tenantId}`,
-        { status: 'SUSPENDED' },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+        { status },
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-
-      setSuccessMessage('Tenant suspended successfully');
-      fetchTenant();
+      setSuccessMessage(`Tenant status set to ${formatTenantStatus(status)}`);
+      setValue('status', status);
+      await refreshTenant();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to suspend tenant');
+      setError(err.response?.data?.message || `Failed to set status to ${status}`);
     }
   };
 
-  const handleActivate = async () => {
+  const handleCopySlug = async () => {
+    if (!tenant?.slug) {
+      return;
+    }
     try {
-      const token = localStorage.getItem('access_token');
-      await apiClient.patch(
-        `/tenants/${tenantId}`,
-        { status: 'ACTIVE' },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      setSuccessMessage('Tenant activated successfully');
-      fetchTenant();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to activate tenant');
+      await navigator.clipboard.writeText(tenant.slug);
+      setSlugCopied(true);
+      setTimeout(() => setSlugCopied(false), 1500);
+    } catch {
+      /* ignore */
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const usageMetrics = useMemo(() => {
+    if (!tenant) {
+      return null;
+    }
+    const users = tenant._count?.users ?? 0;
+    const integrations = tenant._count?.integrations ?? 0;
+    return {
+      users,
+      integrations,
+      usersPercent: tenant.maxUsers > 0 ? Math.min(100, Math.round((users / tenant.maxUsers) * 100)) : 0,
+      integrationsPercent:
+        tenant.maxIntegrations > 0
+          ? Math.min(100, Math.round((integrations / tenant.maxIntegrations) * 100))
+          : 0,
+    };
+  }, [tenant]);
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-gray-400 text-lg">Loading tenant...</div>
-      </div>
+      <WmsPageShell title="Tenant" breadcrumb="Tenants">
+        <WmsInlineNotice tone="info">Loading tenant…</WmsInlineNotice>
+      </WmsPageShell>
     );
   }
 
   if (!tenant) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-red-400 text-lg">Tenant not found</div>
-      </div>
+      <WmsPageShell title="Tenant" breadcrumb="Tenants">
+        <WmsInlineNotice tone="error">Tenant not found</WmsInlineNotice>
+      </WmsPageShell>
     );
   }
 
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center space-x-4 mb-4">
-          <Link href="/tenants" className="text-gray-400 hover:text-gray-300">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
+    <WmsPageShell
+      breadcrumb="Tenants"
+      title={tenant.name}
+      description="Manage the tenant's identity, plan, and lifecycle status."
+      actions={
+        <>
+          <Link
+            href="/tenants"
+            className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 font-semibold text-[#1d4b61] transition hover:border-[#c6d4dd]"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back
           </Link>
-          <h1 className="text-3xl font-bold text-white">{tenant.name}</h1>
-        </div>
-        <p className="text-gray-400">Manage tenant settings, users, and features</p>
-      </div>
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getTenantStatusClassName(tenant.status)}`}
+          >
+            {formatTenantStatus(tenant.status)}
+          </span>
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getTenantPlanClassName(tenant.planType)}`}
+          >
+            {formatTenantPlan(tenant.planType)}
+          </span>
+        </>
+      }
+    >
+      {error ? <WmsInlineNotice tone="error">{error}</WmsInlineNotice> : null}
+      {successMessage ? <WmsInlineNotice tone="success">{successMessage}</WmsInlineNotice> : null}
 
-      {/* Error/Success Display */}
-      {error && (
-        <div className="mb-6 bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded">
-          {error}
-        </div>
-      )}
-      {successMessage && (
-        <div className="mb-6 bg-green-900/20 border border-green-500 text-green-400 px-4 py-3 rounded">
-          {successMessage}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-8">
-          {/* Tenant Information */}
-          <form onSubmit={handleSubmit(onSubmit)}>
-            <div className="bg-slate-800 shadow rounded-lg border border-slate-700 p-6">
-              <h2 className="text-xl font-semibold text-white mb-6">Tenant Information</h2>
-
-              <div className="space-y-6">
-                <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-gray-300">
-                    Organization Name
-                  </label>
-                  <input
-                    {...register('name')}
-                    type="text"
-                    className="mt-1 block w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  {errors.name && <p className="mt-1 text-sm text-red-400">{errors.name.message}</p>}
-                </div>
-
-                <div>
-                  <label htmlFor="slug" className="block text-sm font-medium text-gray-300">
-                    Tenant Slug
-                  </label>
-                  <input
-                    {...register('slug')}
-                    type="text"
-                    className="mt-1 block w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  {errors.slug && <p className="mt-1 text-sm text-red-400">{errors.slug.message}</p>}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="planType" className="block text-sm font-medium text-gray-300">
-                      Plan Type
-                    </label>
-                    <select
-                      {...register('planType')}
-                      className="mt-1 block w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="trial">Trial</option>
-                      <option value="starter">Starter</option>
-                      <option value="professional">Professional</option>
-                      <option value="enterprise">Enterprise</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="status" className="block text-sm font-medium text-gray-300">
-                      Status
-                    </label>
-                    <select
-                      {...register('status')}
-                      className="mt-1 block w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="TRIAL">Trial</option>
-                      <option value="ACTIVE">Active</option>
-                      <option value="SUSPENDED">Suspended</option>
-                      <option value="CANCELLED">Cancelled</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="maxUsers" className="block text-sm font-medium text-gray-300">
-                      Max Users
-                    </label>
-                    <input
-                      {...register('maxUsers', { valueAsNumber: true })}
-                      type="number"
-                      min="1"
-                      max="10000"
-                      className="mt-1 block w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="maxIntegrations" className="block text-sm font-medium text-gray-300">
-                      Max Integrations
-                    </label>
-                    <input
-                      {...register('maxIntegrations', { valueAsNumber: true })}
-                      type="number"
-                      min="1"
-                      max="100"
-                      className="mt-1 block w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,360px)]">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          <WmsSectionCard
+            eyebrow="Identity"
+            title="Organization"
+            description="Control how the tenant appears in the platform."
+          >
+            <div className="grid gap-4 p-5 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <WmsFormField label="Organization name">
+                  <input {...register('name')} type="text" className="wms-input w-full rounded-[14px]" />
+                </WmsFormField>
+                {errors.name ? (
+                  <p className="mt-1.5 text-[12px] text-rose-600">{errors.name.message}</p>
+                ) : null}
               </div>
 
-              <div className="mt-6 flex items-center justify-end space-x-4">
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSaving ? 'Saving...' : 'Save Changes'}
-                </button>
+              <div className="sm:col-span-2">
+                <WmsFormField label="Tenant slug" hint="Appears in URLs. Lowercase letters, numbers, and hyphens only.">
+                  <div className="flex items-center gap-2">
+                    <input
+                      {...register('slug')}
+                      type="text"
+                      className="wms-input w-full rounded-[14px] font-mono tracking-tight"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopySlug}
+                      className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-3.5 font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b]"
+                    >
+                      {slugCopied ? (
+                        <>
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </WmsFormField>
+                {errors.slug ? (
+                  <p className="mt-1.5 text-[12px] text-rose-600">{errors.slug.message}</p>
+                ) : null}
               </div>
             </div>
-          </form>
-        </div>
+          </WmsSectionCard>
 
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Quick Stats */}
-          <div className="bg-slate-800 shadow rounded-lg border border-slate-700 p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">Quick Stats</h3>
-            <dl className="space-y-3">
-              <div>
-                <dt className="text-sm text-gray-400">Users</dt>
-                <dd className="text-2xl font-semibold text-white">
-                  {tenant._count?.users || 0} / {tenant.maxUsers}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-gray-400">Integrations</dt>
-                <dd className="text-2xl font-semibold text-white">
-                  {tenant._count?.integrations || 0} / {tenant.maxIntegrations}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-gray-400">Created</dt>
-                <dd className="text-sm text-white">{formatDate(tenant.createdAt)}</dd>
-              </div>
-              {tenant.trialEndsAt && (
-                <div>
-                  <dt className="text-sm text-gray-400">Trial Ends</dt>
-                  <dd className="text-sm text-white">{formatDate(tenant.trialEndsAt)}</dd>
-                </div>
-              )}
-            </dl>
-          </div>
+          <WmsSectionCard
+            eyebrow="Plan"
+            title="Subscription & limits"
+            description="The plan, status, and usage caps applied to this tenant."
+          >
+            <div className="grid gap-4 p-5 sm:grid-cols-2">
+              <WmsFormField label="Plan type">
+                <select {...register('planType')} className="wms-select w-full rounded-[14px]">
+                  {planOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </WmsFormField>
 
-          {/* Quick Actions */}
-          <div className="bg-slate-800 shadow rounded-lg border border-slate-700 p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
-            <div className="space-y-3">
-              {tenant.status !== 'ACTIVE' && (
-                <button
-                  onClick={handleActivate}
-                  className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 text-sm font-medium"
-                >
-                  Activate Tenant
-                </button>
-              )}
-              {tenant.status === 'ACTIVE' && (
-                <button
-                  onClick={handleSuspend}
-                  className="w-full px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-500 text-sm font-medium"
-                >
-                  Suspend Tenant
-                </button>
-              )}
-              <button className="w-full px-4 py-2 bg-slate-700 text-white rounded-md hover:bg-slate-600 text-sm font-medium">
-                View Users
-              </button>
-              <button className="w-full px-4 py-2 bg-slate-700 text-white rounded-md hover:bg-slate-600 text-sm font-medium">
-                View Integrations
-              </button>
+              <WmsFormField label="Status">
+                <select {...register('status')} className="wms-select w-full rounded-[14px]">
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </WmsFormField>
+
+              <WmsFormField label="Max users">
+                <input
+                  {...register('maxUsers', { valueAsNumber: true })}
+                  type="number"
+                  min={1}
+                  max={10000}
+                  className="wms-input w-full rounded-[14px]"
+                />
+              </WmsFormField>
+
+              <WmsFormField label="Max integrations">
+                <input
+                  {...register('maxIntegrations', { valueAsNumber: true })}
+                  type="number"
+                  min={1}
+                  max={100}
+                  className="wms-input w-full rounded-[14px]"
+                />
+              </WmsFormField>
             </div>
-          </div>
+          </WmsSectionCard>
 
-          {/* Danger Zone */}
-          <div className="bg-red-900/20 shadow rounded-lg border border-red-500/50 p-6">
-            <h3 className="text-lg font-semibold text-red-400 mb-4">Danger Zone</h3>
-            <p className="text-sm text-gray-400 mb-4">
-              Deleting a tenant will permanently remove all data associated with it.
-            </p>
-            <button className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-500 text-sm font-medium">
-              Delete Tenant
+          <div className="sticky bottom-4 z-10 flex items-center justify-end gap-3 rounded-[20px] border border-[#dce4ea] bg-white/90 px-4 py-3 shadow-[0_18px_36px_-28px_rgba(18,56,75,0.35)] backdrop-blur">
+            <span className="mr-auto text-[12px] text-[#6f8290]">
+              {isDirty ? 'You have unsaved changes' : 'All changes saved'}
+            </span>
+            <button
+              type="submit"
+              disabled={isSaving || !isDirty}
+              className="wms-pill-control inline-flex items-center gap-2 rounded-full bg-[#12384b] px-4 font-semibold text-white shadow-[0_16px_36px_-24px_rgba(18,56,75,0.7)] transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              {isSaving ? 'Saving…' : 'Save changes'}
             </button>
           </div>
+        </form>
+
+        <aside className="space-y-5">
+          <WmsSectionCard eyebrow="Usage" title="Limits at a glance">
+            <div className="space-y-4 p-5">
+              <UsageRow
+                icon={<Users className="h-4 w-4" />}
+                label="Users"
+                current={usageMetrics?.users ?? 0}
+                max={tenant.maxUsers}
+                percent={usageMetrics?.usersPercent ?? 0}
+              />
+              <UsageRow
+                icon={<Plug className="h-4 w-4" />}
+                label="Integrations"
+                current={usageMetrics?.integrations ?? 0}
+                max={tenant.maxIntegrations}
+                percent={usageMetrics?.integrationsPercent ?? 0}
+              />
+            </div>
+          </WmsSectionCard>
+
+          <WmsSectionCard eyebrow="Timeline" title="Key dates">
+            <div className="space-y-2.5 p-5">
+              <TimelineRow
+                icon={<CalendarClock className="h-3.5 w-3.5" />}
+                label="Created"
+                value={formatTenantDateTime(tenant.createdAt)}
+              />
+              {tenant.updatedAt ? (
+                <TimelineRow
+                  icon={<CalendarClock className="h-3.5 w-3.5" />}
+                  label="Last updated"
+                  value={formatTenantDateTime(tenant.updatedAt)}
+                />
+              ) : null}
+              {tenant.trialEndsAt ? (
+                <TimelineRow
+                  icon={<CalendarClock className="h-3.5 w-3.5" />}
+                  label="Trial ends"
+                  value={formatTenantDateTime(tenant.trialEndsAt)}
+                />
+              ) : null}
+            </div>
+          </WmsSectionCard>
+
+          <WmsSectionCard eyebrow="Actions" title="Quick actions">
+            <div className="space-y-2 p-5">
+              {tenant.status !== 'ACTIVE' ? (
+                <QuickActionButton
+                  icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+                  label="Activate tenant"
+                  onClick={() => handleStatusAction('ACTIVE')}
+                  tone="primary"
+                />
+              ) : null}
+              {tenant.status === 'ACTIVE' ? (
+                <QuickActionButton
+                  icon={<PauseCircle className="h-3.5 w-3.5" />}
+                  label="Suspend tenant"
+                  onClick={() =>
+                    handleStatusAction('SUSPENDED', 'Are you sure you want to suspend this tenant?')
+                  }
+                  tone="warning"
+                />
+              ) : null}
+              <QuickActionButton
+                icon={<Users className="h-3.5 w-3.5" />}
+                label="View users"
+                href={`/tenants/${tenant.id}/users`}
+              />
+              <QuickActionButton
+                icon={<Link2 className="h-3.5 w-3.5" />}
+                label="View integrations"
+                href={`/tenants/${tenant.id}/integrations`}
+              />
+            </div>
+          </WmsSectionCard>
+
+          <WmsSectionCard
+            eyebrow="Danger zone"
+            title="Cancel tenant"
+            description="Cancellation disables the tenant. Data is retained for compliance."
+            className="border-rose-200/80"
+          >
+            <div className="p-5">
+              <button
+                type="button"
+                onClick={() =>
+                  handleStatusAction(
+                    'CANCELLED',
+                    'Cancel this tenant? The organization will lose access immediately.',
+                  )
+                }
+                className="wms-pill-control inline-flex w-full items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 font-semibold text-rose-700 transition hover:bg-rose-100"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Cancel tenant
+              </button>
+            </div>
+          </WmsSectionCard>
+        </aside>
+      </div>
+    </WmsPageShell>
+  );
+}
+
+function UsageRow({
+  icon,
+  label,
+  current,
+  max,
+  percent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  current: number;
+  max: number;
+  percent: number;
+}) {
+  const barColor =
+    percent >= 90 ? 'bg-rose-400' : percent >= 70 ? 'bg-amber-400' : 'bg-[#12384b]';
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#12384b] text-white">
+            {icon}
+          </span>
+          {label}
         </div>
+        <span className="text-[12px] font-semibold tabular-nums text-[#12384b]">
+          {current.toLocaleString()} / {max.toLocaleString()}
+        </span>
+      </div>
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#eef2f5]">
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${percent}%` }} />
       </div>
     </div>
+  );
+}
+
+function TimelineRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-[16px] border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-2.5">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#12384b] text-white">
+          {icon}
+        </span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">
+          {label}
+        </span>
+      </div>
+      <span className="truncate text-right text-[12.5px] font-semibold text-[#12384b]" title={value}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+type QuickActionTone = 'neutral' | 'primary' | 'warning';
+
+function QuickActionButton({
+  icon,
+  label,
+  href,
+  onClick,
+  tone = 'neutral',
+}: {
+  icon: React.ReactNode;
+  label: string;
+  href?: string;
+  onClick?: () => void;
+  tone?: QuickActionTone;
+}) {
+  const toneClasses: Record<QuickActionTone, string> = {
+    neutral:
+      'border border-[#d7e0e7] bg-white text-[#12384b] hover:border-[#c6d4dd] hover:bg-[#f8fafb]',
+    primary:
+      'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+    warning:
+      'border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
+  };
+
+  const base =
+    'wms-pill-control inline-flex w-full items-center justify-between gap-2 rounded-full px-4 font-semibold transition';
+
+  if (href) {
+    return (
+      <Link href={href} className={`${base} ${toneClasses[tone]}`}>
+        <span className="inline-flex items-center gap-2">
+          {icon}
+          {label}
+        </span>
+      </Link>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={`${base} ${toneClasses[tone]}`}>
+      <span className="inline-flex items-center gap-2">
+        {icon}
+        {label}
+      </span>
+    </button>
   );
 }

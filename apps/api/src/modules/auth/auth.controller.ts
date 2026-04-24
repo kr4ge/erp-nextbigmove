@@ -1,10 +1,12 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request, Patch, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request, Patch, BadRequestException, UnauthorizedException, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, RefreshTokenDto, UpdateProfileDto } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { PermissionWorkspaceQueryDto } from '../../common/dto/permission-workspace-query.dto';
+import { filterPermissionKeysByWorkspace, normalizePermissionWorkspace } from '../../common/rbac/permission-workspace';
 
 @Controller('auth')
 export class AuthController {
@@ -117,10 +119,11 @@ export class AuthController {
    */
   @Get('permissions')
   @UseGuards(JwtAuthGuard, TenantGuard)
-  async getPermissions(@Request() req) {
+  async getPermissions(@Request() req, @Query() query: PermissionWorkspaceQueryDto) {
     const user = req.user;
     const userId = user.userId || user.id;
     const tenantId = user.tenantId;
+    const workspace = normalizePermissionWorkspace(query.workspace);
     const headerTeamId = req.headers['x-team-id'] as string | undefined;
     const requestedTeamIds = headerTeamId
       ? headerTeamId
@@ -197,7 +200,7 @@ export class AuthController {
     });
 
     return {
-      permissions: Array.from(effectivePerms),
+      permissions: filterPermissionKeysByWorkspace(Array.from(effectivePerms), workspace),
     };
   }
 

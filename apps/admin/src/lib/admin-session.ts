@@ -65,8 +65,12 @@ export function clearAdminSession() {
   localStorage.removeItem(ADMIN_PERMISSIONS_STORAGE_KEY);
 }
 
-export async function fetchEffectivePermissions(): Promise<string[]> {
-  const response = await apiClient.get('/auth/permissions');
+export async function fetchEffectivePermissions(
+  workspace: 'erp' | 'wms' | 'all' = 'wms',
+): Promise<string[]> {
+  const response = await apiClient.get('/auth/permissions', {
+    params: { workspace },
+  });
   const permissions = response.data?.permissions;
   return Array.isArray(permissions)
     ? permissions.filter((value): value is string => typeof value === 'string')

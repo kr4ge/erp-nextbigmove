@@ -8,7 +8,7 @@ type WmsScopeFilterFieldsProps = {
   onTenantChange?: (value: string | undefined) => void;
   storeOptions?: WmsSearchableOption[];
   selectedStoreId?: string;
-  onStoreChange: (value: string | undefined) => void;
+  onStoreChange?: (value: string | undefined) => void;
   warehouseOptions?: WmsSearchableOption[];
   selectedWarehouseId?: string;
   onWarehouseChange?: (value: string | undefined) => void;
@@ -38,14 +38,16 @@ export function WmsScopeFilterFields({
         />
       ) : null}
 
-      <WmsSearchableSelect
-        label="Store"
-        value={selectedStoreId ?? ''}
-        onChange={(value) => onStoreChange(value || undefined)}
-        options={storeOptions}
-        placeholder="Search stores…"
-        allLabel="All stores"
-      />
+      {onStoreChange ? (
+        <WmsSearchableSelect
+          label="Store"
+          value={selectedStoreId ?? ''}
+          onChange={(value) => onStoreChange(value || undefined)}
+          options={storeOptions}
+          placeholder="Search stores…"
+          allLabel="All stores"
+        />
+      ) : null}
 
       {onWarehouseChange ? (
         <WmsSearchableSelect

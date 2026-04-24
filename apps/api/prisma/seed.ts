@@ -1,5 +1,44 @@
+import { existsSync, readFileSync } from 'fs';
+import { resolve } from 'path';
 import { PrismaClient, RoleScope } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+
+function loadEnvFile(filePath: string) {
+  if (!existsSync(filePath)) {
+    return;
+  }
+
+  const contents = readFileSync(filePath, 'utf8');
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    if (!key || process.env[key] !== undefined) {
+      continue;
+    }
+
+    let value = line.slice(separatorIndex + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    process.env[key] = value;
+  }
+}
+
+loadEnvFile(resolve(process.cwd(), '.env'));
+loadEnvFile(resolve(process.cwd(), '../../.env'));
 
 const prisma = new PrismaClient();
 
@@ -195,7 +234,6 @@ const ROLES: RoleDef[] = [
       'kpi.marketing.manage',
       'kpi.funnel.read',
       'kpi.sales.read',
-      ...WMS_PERMISSION_KEYS,
     ],
     isSystem: true,
   },
@@ -234,7 +272,6 @@ const ROLES: RoleDef[] = [
       'dashboard.marketing_leader',
       'kpi.marketing.read',
       'kpi.marketing.manage',
-      ...WMS_PERMISSION_KEYS,
     ],
     isSystem: true,
   },
@@ -275,6 +312,73 @@ const ROLES: RoleDef[] = [
     description: 'Sales-focused access',
     scope: RoleScope.TEAM,
     permissions: ['dashboard.sales'],
+    isSystem: true,
+  },
+  {
+    key: 'WMS_ADMIN',
+    name: 'WMS Admin',
+    description: 'Full access to warehouse management operations',
+    scope: RoleScope.TENANT,
+    permissions: [...WMS_PERMISSION_KEYS],
+    isSystem: true,
+  },
+  {
+    key: 'WMS_OPERATOR',
+    name: 'WMS Operator',
+    description: 'Operational WMS access for daily warehouse workflows',
+    scope: RoleScope.TENANT,
+    permissions: [
+      'wms.core.read',
+      'wms.purchasing.read',
+      'wms.purchasing.edit',
+      'wms.purchasing.post_receiving',
+      'wms.warehouses.read',
+      'wms.warehouses.edit',
+      'wms.products.read',
+      'wms.products.edit',
+      'wms.products.sync',
+      'wms.receiving.read',
+      'wms.receiving.write',
+      'wms.receiving.edit',
+      'wms.receiving.manual_input',
+      'wms.receiving.print_labels',
+      'wms.inventory.read',
+      'wms.inventory.write',
+      'wms.inventory.edit',
+      'wms.inventory.print_labels',
+      'wms.inventory.transfer',
+      'wms.inventory.adjust',
+      'wms.fulfillment.read',
+      'wms.fulfillment.write',
+      'wms.fulfillment.edit',
+      'wms.dispatch.read',
+      'wms.dispatch.write',
+      'wms.dispatch.edit',
+      'wms.rts.read',
+      'wms.rts.write',
+      'wms.rts.edit',
+      'wms.rts.disposition',
+      'wms.forecast.read',
+    ],
+    isSystem: true,
+  },
+  {
+    key: 'WMS_VIEWER',
+    name: 'WMS Viewer',
+    description: 'Read-only WMS access',
+    scope: RoleScope.TENANT,
+    permissions: [
+      'wms.core.read',
+      'wms.purchasing.read',
+      'wms.warehouses.read',
+      'wms.products.read',
+      'wms.receiving.read',
+      'wms.inventory.read',
+      'wms.fulfillment.read',
+      'wms.dispatch.read',
+      'wms.rts.read',
+      'wms.forecast.read',
+    ],
     isSystem: true,
   },
   {
@@ -405,9 +509,31 @@ async function seedRoles() {
 
     const existingRolePerms = await prisma.rolePermission.findMany({
       where: { roleId: createdRole.id },
-      select: { permissionId: true },
+      include: {
+        permission: {
+          select: {
+            id: true,
+            key: true,
+          },
+        },
+      },
     });
     const existing = new Set(existingRolePerms.map((rp) => rp.permissionId));
+    const desiredPermissionIds = new Set(permRecords.map((perm) => perm.id));
+
+    const stalePermissionIds = existingRolePerms
+      .filter((rolePermission) => !desiredPermissionIds.has(rolePermission.permissionId))
+      .map((rolePermission) => rolePermission.permissionId);
+
+    if (stalePermissionIds.length > 0) {
+      await prisma.rolePermission.deleteMany({
+        where: {
+          roleId: createdRole.id,
+          permissionId: { in: stalePermissionIds },
+        },
+      });
+    }
+
     for (const perm of permRecords) {
       if (!existing.has(perm.id)) {
         await prisma.rolePermission.create({

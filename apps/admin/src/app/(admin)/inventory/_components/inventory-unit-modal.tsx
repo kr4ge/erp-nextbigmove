@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Printer, RefreshCcw } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
+import { InventoryUnitAdjustmentPanel } from './inventory-unit-adjustment-panel';
 import type {
+  CreateWmsInventoryAdjustmentInput,
   CreateWmsInventoryTransferInput,
   WmsInventoryMovementRecord,
   WmsInventoryTransferOptionsResponse,
@@ -21,16 +23,19 @@ type InventoryUnitModalProps = {
   transferOptions: WmsInventoryTransferOptionsResponse | null;
   canPrintLabels: boolean;
   canTransferUnits: boolean;
+  canAdjustUnits: boolean;
   isRecordingPrint: boolean;
   isLoadingMovements: boolean;
   isLoadingTransferOptions: boolean;
   isTransferringUnit: boolean;
+  isAdjustingUnit: boolean;
   onRecordPrint: (unitId: string, action: 'PRINT' | 'REPRINT') => Promise<void>;
   onTransferUnit: (input: CreateWmsInventoryTransferInput) => Promise<void>;
+  onAdjustUnit: (input: CreateWmsInventoryAdjustmentInput) => Promise<void>;
   onClose: () => void;
 };
 
-type UnitModalTab = 'overview' | 'movements' | 'transfer';
+type UnitModalTab = 'overview' | 'movements' | 'transfer' | 'adjust';
 type TransferMode = 'bin' | 'operational';
 
 export function InventoryUnitModal({
@@ -40,12 +45,15 @@ export function InventoryUnitModal({
   transferOptions,
   canPrintLabels,
   canTransferUnits,
+  canAdjustUnits,
   isRecordingPrint,
   isLoadingMovements,
   isLoadingTransferOptions,
   isTransferringUnit,
+  isAdjustingUnit,
   onRecordPrint,
   onTransferUnit,
+  onAdjustUnit,
   onClose,
 }: InventoryUnitModalProps) {
   const [activeTab, setActiveTab] = useState<UnitModalTab>('overview');
@@ -233,6 +241,11 @@ export function InventoryUnitModal({
               active={activeTab === 'transfer'}
               label="Transfer"
               onClick={() => setActiveTab('transfer')}
+            />
+            <TabButton
+              active={activeTab === 'adjust'}
+              label="Adjust"
+              onClick={() => setActiveTab('adjust')}
             />
           </div>
 
@@ -457,6 +470,30 @@ export function InventoryUnitModal({
                 ) : (
                   <InlineMutedBox message="Destination options are not available for this unit." />
                 )}
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === 'adjust' ? (
+            <div className="rounded-[18px] border border-[#dce4ea] bg-white">
+              <div className="border-b border-[#e7edf2] px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#7b8e9c]">
+                  Inventory Adjustment
+                </p>
+              </div>
+
+              <div className="space-y-4 px-4 py-4">
+                <InventoryUnitAdjustmentPanel
+                  unit={unit}
+                  transferOptions={transferOptions}
+                  canAdjustUnits={canAdjustUnits}
+                  isLoadingTransferOptions={isLoadingTransferOptions}
+                  isAdjustingUnit={isAdjustingUnit}
+                  onAdjustUnit={onAdjustUnit}
+                  onSuccess={() => {
+                    setActiveTab('movements');
+                  }}
+                />
               </div>
             </div>
           ) : null}

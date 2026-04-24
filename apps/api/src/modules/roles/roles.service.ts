@@ -3,6 +3,14 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import {
+  AssignablePermissionWorkspace,
+  filterPermissionKeysByWorkspace,
+  permissionKeysMatchWorkspace,
+  roleBelongsToWorkspace,
+  rolePrimaryWorkspace,
+  type PermissionWorkspace,
+} from '../../common/rbac/permission-workspace';
 
 @Injectable()
 export class RolesService {
@@ -21,7 +29,22 @@ export class RolesService {
     return { tenantId, role, userId };
   }
 
-  async list() {
+  private assertPermissionKeysWorkspace(
+    permissionKeys: string[] | undefined,
+    workspace: AssignablePermissionWorkspace,
+  ) {
+    if (!permissionKeys?.length) {
+      return;
+    }
+
+    if (!permissionKeysMatchWorkspace(permissionKeys, workspace)) {
+      throw new ForbiddenException(
+        `Role permissions must stay inside the ${workspace.toUpperCase()} workspace`,
+      );
+    }
+  }
+
+  async list(workspace: PermissionWorkspace = 'erp') {
     const { tenantId, role } = this.getContext();
     // SUPER_ADMIN sees all, otherwise system + tenant-specific
     const where =
@@ -39,20 +62,31 @@ export class RolesService {
         },
       },
     });
-    return roles.map((r) => ({
-      ...r,
-      permissions: r.rolePermissions.map((rp) => rp.permission.key),
-      rolePermissions: undefined,
-    }));
+
+    return roles
+      .filter((roleRecord) => roleBelongsToWorkspace(roleRecord, workspace))
+      .map((roleRecord) => ({
+        ...roleRecord,
+        workspace: rolePrimaryWorkspace(roleRecord),
+        permissions: filterPermissionKeysByWorkspace(
+          roleRecord.rolePermissions.map((rolePermission) => rolePermission.permission.key),
+          workspace,
+        ),
+        rolePermissions: undefined,
+      }));
   }
 
-  async listPermissions() {
-    return this.prisma.permission.findMany({
+  async listPermissions(workspace: PermissionWorkspace = 'erp') {
+    const permissions = await this.prisma.permission.findMany({
       orderBy: { key: 'asc' },
     });
+
+    return permissions.filter((permission) =>
+      filterPermissionKeysByWorkspace([permission.key], workspace).length > 0,
+    );
   }
 
-  async create(dto: CreateRoleDto) {
+  async create(dto: CreateRoleDto, workspace: AssignablePermissionWorkspace) {
     const { tenantId, role } = this.getContext();
     const isSystem = dto.isSystem ?? false;
 
@@ -61,6 +95,7 @@ export class RolesService {
     }
 
     const targetTenantId = isSystem ? null : tenantId;
+    this.assertPermissionKeysWorkspace(dto.permissionKeys, workspace);
 
     const created = await this.prisma.role.create({
       data: {
@@ -89,12 +124,16 @@ export class RolesService {
 
     return {
       ...created,
-      permissions: created.rolePermissions.map((rp) => rp.permission.key),
+      workspace: rolePrimaryWorkspace(created),
+      permissions: filterPermissionKeysByWorkspace(
+        created.rolePermissions.map((rolePermission) => rolePermission.permission.key),
+        workspace,
+      ),
       rolePermissions: undefined,
     };
   }
 
-  async update(id: string, dto: UpdateRoleDto) {
+  async update(id: string, dto: UpdateRoleDto, workspace: AssignablePermissionWorkspace) {
     const { tenantId, role } = this.getContext();
 
     const existing = await this.prisma.role.findUnique({
@@ -107,6 +146,10 @@ export class RolesService {
     if (existing.tenantId && existing.tenantId !== tenantId && role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Cannot modify role from another tenant');
     }
+    if (!roleBelongsToWorkspace(existing, workspace)) {
+      throw new ForbiddenException('Cannot modify a role from another workspace');
+    }
+    this.assertPermissionKeysWorkspace(dto.permissionKeys, workspace);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.role.update({
@@ -140,19 +183,35 @@ export class RolesService {
 
     return {
       ...updated,
-      permissions: updated.rolePermissions.map((rp) => rp.permission.key),
+      workspace: rolePrimaryWorkspace(updated),
+      permissions: filterPermissionKeysByWorkspace(
+        updated.rolePermissions.map((rolePermission) => rolePermission.permission.key),
+        workspace,
+      ),
       rolePermissions: undefined,
     };
   }
 
-  async remove(id: string) {
+  async remove(id: string, workspace: AssignablePermissionWorkspace) {
     const { tenantId, role } = this.getContext();
-    const existing = await this.prisma.role.findUnique({ where: { id } });
+    const existing = await this.prisma.role.findUnique({
+      where: { id },
+      include: {
+        rolePermissions: {
+          include: {
+            permission: true,
+          },
+        },
+      },
+    });
     if (!existing) {
       throw new NotFoundException('Role not found');
     }
     if (existing.tenantId && existing.tenantId !== tenantId && role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Cannot delete role from another tenant');
+    }
+    if (!roleBelongsToWorkspace(existing, workspace)) {
+      throw new ForbiddenException('Cannot delete a role from another workspace');
     }
 
     await this.prisma.$transaction(async (tx) => {

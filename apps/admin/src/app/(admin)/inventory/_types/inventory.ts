@@ -108,6 +108,22 @@ export type WmsInventoryTransferOptionsResponse = {
   }>;
 };
 
+export type WmsInventoryTransferRecord = {
+  id: string;
+  code: string;
+  status: 'COMPLETED' | 'CANCELED';
+  itemCount: number;
+  warehouse: WmsInventoryUnitRecord['warehouse'];
+  fromLocation: WmsInventoryUnitRecord['currentLocation'] | null;
+  toLocation: NonNullable<WmsInventoryUnitRecord['currentLocation']>;
+  notes: string | null;
+  actor: {
+    name: string;
+    email: string;
+  } | null;
+  createdAt: string;
+};
+
 export type WmsInventoryOverviewResponse = {
   tenantReady: boolean;
   summary: {
@@ -146,6 +162,31 @@ export type WmsInventoryOverviewResponse = {
   units: WmsInventoryUnitRecord[];
 };
 
+export type WmsInventoryTransfersResponse = {
+  tenantReady: boolean;
+  summary: {
+    transfers: number;
+    movedUnits: number;
+  };
+  filters: {
+    tenants: Array<{
+      id: string;
+      label: string;
+      slug: string;
+      status: string;
+    }>;
+    warehouses: Array<{
+      id: string;
+      code: string;
+      label: string;
+      transferCount: number;
+    }>;
+    activeTenantId: string | null;
+    activeWarehouseId: string | null;
+  };
+  transfers: WmsInventoryTransferRecord[];
+};
+
 export type GetWmsInventoryOverviewParams = {
   tenantId?: string;
   storeId?: string;
@@ -157,5 +198,18 @@ export type GetWmsInventoryOverviewParams = {
 export type CreateWmsInventoryTransferInput = {
   unitIds: string[];
   targetLocationId: string;
+  notes?: string;
+};
+
+export type GetWmsInventoryTransfersParams = {
+  tenantId?: string;
+  warehouseId?: string;
+  search?: string;
+};
+
+export type CreateWmsInventoryAdjustmentInput = {
+  unitIds: string[];
+  targetStatus: Extract<WmsInventoryUnitStatus, 'STAGED' | 'PUTAWAY' | 'RTS' | 'DAMAGED' | 'ARCHIVED'>;
+  targetLocationId?: string;
   notes?: string;
 };

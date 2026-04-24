@@ -28,10 +28,14 @@ export class CreateUserDto {
   // Tenant-scoped role assignment
   @IsUUID()
   @IsOptional()
-  roleId?: string;
+  roleId?: string | null;
+
+  @IsUUID()
+  @IsOptional()
+  wmsRoleId?: string | null;
 
   // Optional team-scoped role assignment
   @IsUUID()
   @IsOptional()
-  teamRoleId?: string;
+  teamRoleId?: string | null;
 }

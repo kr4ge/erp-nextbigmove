@@ -4,6 +4,7 @@ import { ClsService } from 'nestjs-cls';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
+import { rolePrimaryWorkspace, type AssignablePermissionWorkspace } from '../../common/rbac/permission-workspace';
 
 @Injectable()
 export class UserService {
@@ -20,6 +21,96 @@ export class UserService {
     return tenantId;
   }
 
+  private async getValidatedRole(
+    roleId: string,
+    tenantId: string,
+    workspace: AssignablePermissionWorkspace,
+  ) {
+    const role = await this.prisma.role.findUnique({
+      where: { id: roleId },
+      include: {
+        rolePermissions: {
+          include: {
+            permission: {
+              select: {
+                key: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!role || (role.tenantId && role.tenantId !== tenantId)) {
+      throw new NotFoundException('Role not found');
+    }
+
+    if (rolePrimaryWorkspace(role) !== workspace) {
+      throw new ForbiddenException(
+        `Role does not belong to the ${workspace.toUpperCase()} workspace`,
+      );
+    }
+
+    return role;
+  }
+
+  private async replaceTenantScopedRoleAssignment(
+    userId: string,
+    tenantId: string,
+    roleId: string | undefined,
+    workspace: AssignablePermissionWorkspace,
+  ) {
+    const existingAssignments = await this.prisma.userRoleAssignment.findMany({
+      where: {
+        userId,
+        tenantId,
+        teamId: null,
+      },
+      include: {
+        role: {
+          include: {
+            rolePermissions: {
+              include: {
+                permission: {
+                  select: {
+                    key: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const assignmentIdsToDelete = existingAssignments
+      .filter((assignment) => rolePrimaryWorkspace(assignment.role) === workspace)
+      .map((assignment) => assignment.id);
+
+    if (assignmentIdsToDelete.length > 0) {
+      await this.prisma.userRoleAssignment.deleteMany({
+        where: {
+          id: {
+            in: assignmentIdsToDelete,
+          },
+        },
+      });
+    }
+
+    if (!roleId) {
+      return;
+    }
+
+    await this.prisma.userRoleAssignment.create({
+      data: {
+        userId,
+        roleId,
+        tenantId,
+        teamId: null,
+      },
+    });
+  }
+
   async create(dto: CreateUserDto) {
     const tenantId = this.getTenant();
 
@@ -30,15 +121,18 @@ export class UserService {
       throw new ConflictException('Email already exists in this tenant');
     }
 
-    // Check if roleId is TENANT_ADMIN
-    let isTenantAdmin = false;
-    if (dto.roleId) {
-      const role = await this.prisma.role.findUnique({
-        where: { id: dto.roleId },
-        select: { key: true },
-      });
-      isTenantAdmin = role?.key === 'TENANT_ADMIN';
-    }
+    const tenantRole = dto.roleId
+      ? await this.getValidatedRole(dto.roleId, tenantId, 'erp')
+      : null;
+    const wmsRole = dto.wmsRoleId
+      ? await this.getValidatedRole(dto.wmsRoleId, tenantId, 'wms')
+      : null;
+
+    const teamRole = dto.teamRoleId
+      ? await this.getValidatedRole(dto.teamRoleId, tenantId, 'erp')
+      : null;
+
+    const isTenantAdmin = tenantRole?.key === 'TENANT_ADMIN';
 
     const hashed = await bcrypt.hash(dto.password, 10);
 
@@ -79,24 +173,21 @@ export class UserService {
       });
     }
 
-    // Tenant-scoped role assignment (dynamic roles table)
-    if (dto.roleId) {
-      // Remove any existing tenant-level assignments and then add the selected one
-      await this.prisma.userRoleAssignment.deleteMany({
-        where: { userId: user.id, tenantId, teamId: null },
-      });
-      await this.prisma.userRoleAssignment.create({
-        data: {
-          userId: user.id,
-          roleId: dto.roleId,
-          tenantId,
-          teamId: null,
-        },
-      });
-    }
+    await this.replaceTenantScopedRoleAssignment(
+      user.id,
+      tenantId,
+      tenantRole?.id,
+      'erp',
+    );
+    await this.replaceTenantScopedRoleAssignment(
+      user.id,
+      tenantId,
+      wmsRole?.id,
+      'wms',
+    );
 
     // Team-scoped role assignment
-    if (dto.teamRoleId && dto.teamId) {
+    if (teamRole?.id && dto.teamId) {
       await this.prisma.userRoleAssignment.deleteMany({
         where: {
           userId: user.id,
@@ -107,7 +198,7 @@ export class UserService {
       await this.prisma.userRoleAssignment.create({
         data: {
           userId: user.id,
-          roleId: dto.teamRoleId,
+          roleId: teamRole.id,
           tenantId,
           teamId: dto.teamId,
         },
@@ -119,7 +210,7 @@ export class UserService {
 
   async findAll() {
     const tenantId = this.getTenant();
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: { tenantId },
       select: {
         id: true,
@@ -135,12 +226,42 @@ export class UserService {
           select: {
             roleId: true,
             teamId: true,
-            role: { select: { id: true, name: true, key: true } },
+            role: {
+              select: {
+                id: true,
+                name: true,
+                key: true,
+                rolePermissions: {
+                  select: {
+                    permission: {
+                      select: {
+                        key: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return users.map((user) => ({
+      ...user,
+      userRoleAssignments: user.userRoleAssignments.map((assignment) => ({
+        ...assignment,
+        role: assignment.role
+          ? {
+              id: assignment.role.id,
+              name: assignment.role.name,
+              key: assignment.role.key,
+              workspace: rolePrimaryWorkspace(assignment.role),
+            }
+          : undefined,
+      })),
+    }));
   }
 
   async update(id: string, dto: UpdateUserDto) {
@@ -152,15 +273,18 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    // Check if roleId is being set to TENANT_ADMIN
-    let isTenantAdmin = false;
-    if (dto.roleId) {
-      const role = await this.prisma.role.findUnique({
-        where: { id: dto.roleId },
-        select: { key: true },
-      });
-      isTenantAdmin = role?.key === 'TENANT_ADMIN';
-    }
+    const tenantRole = dto.roleId
+      ? await this.getValidatedRole(dto.roleId, tenantId, 'erp')
+      : null;
+    const wmsRole = dto.wmsRoleId
+      ? await this.getValidatedRole(dto.wmsRoleId, tenantId, 'wms')
+      : null;
+
+    const teamRole = dto.teamRoleId
+      ? await this.getValidatedRole(dto.teamRoleId, tenantId, 'erp')
+      : null;
+
+    const isTenantAdmin = tenantRole?.key === 'TENANT_ADMIN';
 
     // If assigning TENANT_ADMIN role, automatically clear defaultTeamId
     const finalDefaultTeamId = isTenantAdmin
@@ -230,24 +354,25 @@ export class UserService {
 
     // Update tenant-scoped role assignment if provided
     if (dto.roleId !== undefined) {
-      // Clear existing tenant-scoped assignments
-      await this.prisma.userRoleAssignment.deleteMany({
-        where: { userId: id, tenantId, teamId: null },
-      });
-      if (dto.roleId) {
-        await this.prisma.userRoleAssignment.create({
-          data: {
-            userId: id,
-            roleId: dto.roleId,
-            tenantId,
-            teamId: null,
-          },
-        });
-      }
+      await this.replaceTenantScopedRoleAssignment(
+        id,
+        tenantId,
+        tenantRole?.id,
+        'erp',
+      );
+    }
+
+    if (dto.wmsRoleId !== undefined) {
+      await this.replaceTenantScopedRoleAssignment(
+        id,
+        tenantId,
+        wmsRole?.id,
+        'wms',
+      );
     }
 
     // Update team-scoped role assignment if provided alongside teamId
-    if (dto.teamRoleId && dto.teamId) {
+    if (dto.teamRoleId && dto.teamId && teamRole?.id) {
       await this.prisma.userRoleAssignment.deleteMany({
         where: {
           userId: id,
@@ -258,7 +383,7 @@ export class UserService {
       await this.prisma.userRoleAssignment.create({
         data: {
           userId: id,
-          roleId: dto.teamRoleId,
+          roleId: teamRole.id,
           tenantId,
           teamId: dto.teamId,
         },

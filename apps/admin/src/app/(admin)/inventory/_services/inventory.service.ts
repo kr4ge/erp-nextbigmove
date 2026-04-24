@@ -1,9 +1,12 @@
 import apiClient from '@/lib/api-client';
 import type {
+  CreateWmsInventoryAdjustmentInput,
   CreateWmsInventoryTransferInput,
   GetWmsInventoryOverviewParams,
+  GetWmsInventoryTransfersParams,
   WmsInventoryMovementRecord,
   WmsInventoryOverviewResponse,
+  WmsInventoryTransfersResponse,
   WmsInventoryTransferOptionsResponse,
 } from '../_types/inventory';
 
@@ -70,6 +73,38 @@ export async function createWmsInventoryTransfer(
       id: string;
       code: string;
       status: 'COMPLETED' | 'CANCELED';
+      createdAt: string;
+    };
+    units: WmsInventoryOverviewResponse['units'];
+  };
+}
+
+export async function fetchWmsInventoryTransfers(params: GetWmsInventoryTransfersParams = {}) {
+  const response = await apiClient.get('/wms/inventory/transfers', {
+    params: {
+      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      ...(params.warehouseId ? { warehouseId: params.warehouseId } : {}),
+      ...(params.search ? { search: params.search } : {}),
+    },
+  });
+
+  return response.data as WmsInventoryTransfersResponse;
+}
+
+export async function createWmsInventoryAdjustment(
+  input: CreateWmsInventoryAdjustmentInput,
+  tenantId?: string,
+) {
+  const response = await apiClient.post('/wms/inventory/adjustments', input, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as {
+    adjustment: {
+      code: string;
+      unitCount: number;
+      targetStatus: CreateWmsInventoryAdjustmentInput['targetStatus'];
+      targetLocation: WmsInventoryTransferOptionsResponse['unit']['currentLocation'] | null;
       createdAt: string;
     };
     units: WmsInventoryOverviewResponse['units'];

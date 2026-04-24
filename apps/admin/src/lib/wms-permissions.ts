@@ -43,6 +43,12 @@ export const WMS_INVENTORY_TRANSFER_PERMISSIONS = [
   'wms.inventory.write',
 ] as const;
 
+export const WMS_INVENTORY_ADJUST_PERMISSIONS = [
+  'wms.inventory.adjust',
+  'wms.inventory.edit',
+  'wms.inventory.write',
+] as const;
+
 export const WMS_INVENTORY_PRINT_LABELS_PERMISSIONS = [
   'wms.inventory.print_labels',
   'wms.inventory.edit',

@@ -7,7 +7,9 @@ export function usePermissions() {
   return useQuery({
     queryKey: ['permissions'],
     queryFn: async () => {
-      const res = await apiClient.get('/auth/permissions');
+      const res = await apiClient.get('/auth/permissions', {
+        params: { workspace: 'erp' },
+      });
       return res.data?.permissions as string[] || [];
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
