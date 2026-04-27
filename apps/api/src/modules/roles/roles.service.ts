@@ -44,7 +44,16 @@ export class RolesService {
     }
   }
 
+  private assertWorkspaceAccess(workspace: PermissionWorkspace) {
+    const { role } = this.getContext();
+
+    if (workspace !== 'erp' && role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('WMS roles are managed outside the ERP workspace');
+    }
+  }
+
   async list(workspace: PermissionWorkspace = 'erp') {
+    this.assertWorkspaceAccess(workspace);
     const { tenantId, role } = this.getContext();
     // SUPER_ADMIN sees all, otherwise system + tenant-specific
     const where =
@@ -77,6 +86,7 @@ export class RolesService {
   }
 
   async listPermissions(workspace: PermissionWorkspace = 'erp') {
+    this.assertWorkspaceAccess(workspace);
     const permissions = await this.prisma.permission.findMany({
       orderBy: { key: 'asc' },
     });
@@ -87,6 +97,7 @@ export class RolesService {
   }
 
   async create(dto: CreateRoleDto, workspace: AssignablePermissionWorkspace) {
+    this.assertWorkspaceAccess(workspace);
     const { tenantId, role } = this.getContext();
     const isSystem = dto.isSystem ?? false;
 
@@ -134,6 +145,7 @@ export class RolesService {
   }
 
   async update(id: string, dto: UpdateRoleDto, workspace: AssignablePermissionWorkspace) {
+    this.assertWorkspaceAccess(workspace);
     const { tenantId, role } = this.getContext();
 
     const existing = await this.prisma.role.findUnique({
@@ -193,6 +205,7 @@ export class RolesService {
   }
 
   async remove(id: string, workspace: AssignablePermissionWorkspace) {
+    this.assertWorkspaceAccess(workspace);
     const { tenantId, role } = this.getContext();
     const existing = await this.prisma.role.findUnique({
       where: { id },

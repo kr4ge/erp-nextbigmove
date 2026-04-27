@@ -21,6 +21,20 @@ export class UserService {
     return tenantId;
   }
 
+  private getUserRole() {
+    return this.cls.get('userRole');
+  }
+
+  private assertWmsRoleAssignmentAccess(wmsRoleId: string | null | undefined) {
+    if (!wmsRoleId) {
+      return;
+    }
+
+    if (this.getUserRole() !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('WMS roles cannot be assigned from ERP user management');
+    }
+  }
+
   private async getValidatedRole(
     roleId: string,
     tenantId: string,
@@ -120,6 +134,8 @@ export class UserService {
     if (existing) {
       throw new ConflictException('Email already exists in this tenant');
     }
+
+    this.assertWmsRoleAssignmentAccess(dto.wmsRoleId);
 
     const tenantRole = dto.roleId
       ? await this.getValidatedRole(dto.roleId, tenantId, 'erp')
@@ -250,17 +266,19 @@ export class UserService {
 
     return users.map((user) => ({
       ...user,
-      userRoleAssignments: user.userRoleAssignments.map((assignment) => ({
-        ...assignment,
-        role: assignment.role
-          ? {
-              id: assignment.role.id,
-              name: assignment.role.name,
-              key: assignment.role.key,
-              workspace: rolePrimaryWorkspace(assignment.role),
-            }
-          : undefined,
-      })),
+      userRoleAssignments: user.userRoleAssignments
+        .map((assignment) => ({
+          ...assignment,
+          role: assignment.role
+            ? {
+                id: assignment.role.id,
+                name: assignment.role.name,
+                key: assignment.role.key,
+                workspace: rolePrimaryWorkspace(assignment.role),
+              }
+            : undefined,
+        }))
+        .filter((assignment) => assignment.role?.workspace !== 'wms'),
     }));
   }
 
@@ -272,6 +290,8 @@ export class UserService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+
+    this.assertWmsRoleAssignmentAccess(dto.wmsRoleId);
 
     const tenantRole = dto.roleId
       ? await this.getValidatedRole(dto.roleId, tenantId, 'erp')

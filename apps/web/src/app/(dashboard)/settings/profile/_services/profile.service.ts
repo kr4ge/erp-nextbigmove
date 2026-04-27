@@ -21,7 +21,9 @@ export const profileService = {
   },
 
   async fetchRoleNames() {
-    const response = await apiClient.get<MyRoleResponse>('/auth/my-role');
+    const response = await apiClient.get<MyRoleResponse>('/auth/my-role', {
+      params: { workspace: 'erp' },
+    });
     const roles = Array.isArray(response?.data?.roles) ? response.data.roles : [];
     return roles
       .map((role) => role.name || role.key)

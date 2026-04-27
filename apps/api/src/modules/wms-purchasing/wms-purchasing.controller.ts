@@ -27,25 +27,25 @@ export class WmsPurchasingController {
   constructor(private readonly wmsPurchasingService: WmsPurchasingService) {}
 
   @Get('overview')
-  @Permissions('wms.purchasing.read')
+  @Permissions('wms.purchasing.read', 'stock_request.read')
   async getOverview(@Query() query: GetWmsPurchasingOverviewDto) {
     return this.wmsPurchasingService.getOverview(query);
   }
 
   @Get('products')
-  @Permissions('wms.purchasing.read')
+  @Permissions('wms.purchasing.read', 'stock_request.read')
   async getProductOptions(@Query() query: GetWmsPurchasingProductOptionsDto) {
     return this.wmsPurchasingService.getProductOptions(query);
   }
 
   @Get(':id')
-  @Permissions('wms.purchasing.read')
+  @Permissions('wms.purchasing.read', 'stock_request.read')
   async getBatchById(@Param('id') id: string, @Query('tenantId') tenantId?: string) {
     return this.wmsPurchasingService.getBatchById(id, tenantId);
   }
 
   @Post('batches')
-  @Permissions('wms.purchasing.write')
+  @Permissions('wms.purchasing.write', 'stock_request.write')
   async createBatch(
     @Body() body: CreateWmsPurchasingBatchDto,
     @Query('tenantId') tenantId?: string,
@@ -54,7 +54,7 @@ export class WmsPurchasingController {
   }
 
   @Post(':id/payment-proof')
-  @Permissions('wms.purchasing.write', 'wms.purchasing.edit')
+  @Permissions('wms.purchasing.write', 'wms.purchasing.edit', 'stock_request.write')
   async submitPaymentProof(
     @Param('id') id: string,
     @Body() body: SubmitWmsPurchasingPaymentProofDto,
@@ -64,7 +64,7 @@ export class WmsPurchasingController {
   }
 
   @Post(':id/revision-response')
-  @Permissions('wms.purchasing.write', 'wms.purchasing.edit')
+  @Permissions('wms.purchasing.write', 'wms.purchasing.edit', 'stock_request.write')
   async respondToRevision(
     @Param('id') id: string,
     @Body() body: RespondWmsPurchasingRevisionDto,

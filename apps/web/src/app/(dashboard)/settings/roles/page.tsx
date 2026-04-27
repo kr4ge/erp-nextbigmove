@@ -28,8 +28,6 @@ type Permission = {
   description?: string | null;
 };
 
-type Workspace = 'erp' | 'wms';
-
 export default function RolesPage() {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<{ role?: string } | null>(null);
@@ -37,7 +35,6 @@ export default function RolesPage() {
   const [canManage, setCanManage] = useState(false);
   const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
   const [isReady, setIsReady] = useState(false);
-  const [workspace, setWorkspace] = useState<Workspace>('erp');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -76,10 +73,10 @@ export default function RolesPage() {
   }, [isReady, user]);
 
   const { data: roles, isLoading, isError } = useQuery<Role[]>({
-    queryKey: ['roles', workspace],
+    queryKey: ['roles', 'erp'],
     queryFn: async () => {
       const res = await apiClient.get('/roles', {
-        params: { workspace },
+        params: { workspace: 'erp' },
       });
       return res.data;
     },
@@ -100,10 +97,10 @@ export default function RolesPage() {
   }, [roles]);
 
   const { data: permissions } = useQuery<Permission[]>({
-    queryKey: ['permissions', workspace],
+    queryKey: ['permissions', 'erp'],
     queryFn: async () => {
       const res = await apiClient.get('/roles/permissions', {
-        params: { workspace },
+        params: { workspace: 'erp' },
       });
       return res.data;
     },
@@ -128,12 +125,12 @@ export default function RolesPage() {
           permissionKeys: createForm.permissionKeys,
         },
         {
-          params: { workspace },
+          params: { workspace: 'erp' },
         },
       );
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['roles', workspace] });
+      await queryClient.invalidateQueries({ queryKey: ['roles', 'erp'] });
       setCreateForm({ name: '', key: '', description: '', permissionKeys: [] });
     },
   });
@@ -142,12 +139,12 @@ export default function RolesPage() {
   const updateMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: Partial<Role> & { permissionKeys?: string[] } }) => {
       const response = await apiClient.patch(`/roles/${id}`, payload, {
-        params: { workspace },
+        params: { workspace: 'erp' },
       });
       return response;
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['roles', workspace] });
+      await queryClient.invalidateQueries({ queryKey: ['roles', 'erp'] });
       setEditing(null);
     },
   });
@@ -155,17 +152,12 @@ export default function RolesPage() {
   const deleteMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.delete(`/roles/${id}`, {
-        params: { workspace },
+        params: { workspace: 'erp' },
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['roles', workspace] });
+      await queryClient.invalidateQueries({ queryKey: ['roles', 'erp'] });
     },
   });
-
-  useEffect(() => {
-    setEditing(null);
-    setCreateForm({ name: '', key: '', description: '', permissionKeys: [] });
-  }, [workspace]);
 
   if (!isReady || isCheckingPermissions) {
     return <LoadingCard label="Loading roles..." />;
@@ -181,39 +173,12 @@ export default function RolesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        {([
-          ['erp', 'ERP Roles'],
-          ['wms', 'WMS Roles'],
-        ] as const).map(([value, label]) => {
-          const active = workspace === value;
-          return (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setWorkspace(value)}
-              className={`inline-flex items-center rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                active
-                  ? 'border-[#0F172A] bg-[#0F172A] text-white'
-                  : 'border-[#E2E8F0] bg-white text-[#475569] hover:border-[#CBD5E1]'
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Existing Roles */}
         <div className="lg:col-span-2">
           <SectionCard
-            title={workspace === 'wms' ? 'WMS Roles' : 'ERP Roles'}
-            description={
-              workspace === 'wms'
-                ? 'Warehouse roles stay isolated from ERP permissions.'
-                : 'ERP roles no longer include WMS permissions by default.'
-            }
+            title="ERP Roles"
+            description="ERP roles are managed here. WMS roles stay isolated from the ERP workspace."
             noPadding
           >
             {isLoading && (
@@ -382,7 +347,7 @@ export default function RolesPage() {
 
         {/* Create Role Form */}
         <div>
-          <SectionCard title={workspace === 'wms' ? 'Create WMS Role' : 'Create ERP Role'}>
+          <SectionCard title="Create ERP Role">
             <form
               className="space-y-4"
               onSubmit={(e) => {

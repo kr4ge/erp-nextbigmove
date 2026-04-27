@@ -18,7 +18,9 @@ type RelayUpdatePayload = {
 
 export const webhookService = {
   async fetchPermissions() {
-    const res = await apiClient.get('/auth/permissions');
+    const res = await apiClient.get('/auth/permissions', {
+      params: { workspace: 'erp' },
+    });
     return Array.isArray(res?.data?.permissions) ? (res.data.permissions as string[]) : [];
   },
 
@@ -72,4 +74,3 @@ export const webhookService = {
     return res.data;
   },
 };
-

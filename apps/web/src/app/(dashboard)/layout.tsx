@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
+import { filterErpPermissions } from '@/lib/permission-workspace';
 
 interface NavLink {
   href: string;
@@ -96,7 +97,7 @@ const baseNavigation: NavLink[] = [
   {
     href: '/requests',
     label: 'Stock Requests',
-    description: 'Partner request to WMS purchasing',
+    description: 'Inventory request coordination with WMS',
     icon: <Package className={iconClasses} />,
   },
   {
@@ -179,12 +180,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const hasStores = permissions.includes('pos.read');
     const hasMeta = permissions.includes('meta.read');
     const hasWorkflow = permissions.includes('workflow.read');
+    const hasStockRequests =
+      permissions.includes('stock_request.read')
+      || permissions.includes('stock_request.write');
     const hasOrderConfirmation = permissions.includes('pos.read');
     const hasReports = permissions.includes('reports.pos_orders.read');
-    const hasPurchasing =
-      permissions.includes('wms.purchasing.read')
-      || permissions.includes('wms.purchasing.write')
-      || permissions.includes('wms.purchasing.edit');
     const hasMarketingKpi = permissions.includes('kpi.marketing.read') || permissions.includes('kpi.marketing.manage');
     const hasFunnelKpi = permissions.includes('kpi.funnel.read');
     const hasSalesKpi = permissions.includes('kpi.sales.read');
@@ -195,7 +195,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           return hasWorkflow ? [link] : [];
         }
         if (link.href === '/requests') {
-          return hasPurchasing ? [link] : [];
+          return hasStockRequests ? [link] : [];
         }
         if (link.href === '/orders') {
           const children = (link.children || []).filter((child) => {
@@ -259,7 +259,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     if (userStr) {
       const parsedUser = JSON.parse(userStr) as DashboardLayoutUser;
       setUser(parsedUser);
-      const perms: string[] = Array.isArray(parsedUser.permissions) ? parsedUser.permissions : [];
+      const perms = filterErpPermissions(parsedUser.permissions);
       if (perms.includes('team.read_all') || perms.includes('permission.assign')) {
         setCanViewAllTeams(true);
       }
@@ -311,7 +311,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     if (!user || !uid || !user.tenantId) return;
     const checkPermissions = async () => {
       try {
-        const response = await apiClient.get('/auth/permissions');
+        const response = await apiClient.get('/auth/permissions', {
+          params: { workspace: 'erp' },
+        });
         const permissions = response.data.permissions || [];
         const hasAllTeams = permissions.includes('team.read_all') || permissions.includes('permission.assign');
         setCanViewAllTeams(hasAllTeams);

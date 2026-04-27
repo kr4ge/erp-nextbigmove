@@ -57,7 +57,9 @@ export function useAnalyticsShare(scope: ShareScope): UseAnalyticsShareResult {
 
     const fetchPermissions = async () => {
       try {
-        const response = await apiClient.get('/auth/permissions');
+        const response = await apiClient.get('/auth/permissions', {
+          params: { workspace: 'erp' },
+        });
         const permissions: string[] = response?.data?.permissions || [];
         if (permissions.includes('analytics.share')) {
           setCanShare(true);

@@ -20,7 +20,9 @@ export async function getIntegrationCount(token: string) {
 }
 
 export async function getPermissions() {
-  const res = await apiClient.get("/auth/permissions");
+  const res = await apiClient.get("/auth/permissions", {
+    params: { workspace: "erp" },
+  });
   return (res?.data?.permissions || []) as string[];
 }
 

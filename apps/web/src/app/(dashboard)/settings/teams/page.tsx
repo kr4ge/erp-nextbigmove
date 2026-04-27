@@ -56,7 +56,9 @@ export default function TeamsPage() {
     const checkPermissions = async () => {
       setIsCheckingPermissions(true);
       try {
-        const response = await apiClient.get('/auth/permissions');
+        const response = await apiClient.get('/auth/permissions', {
+          params: { workspace: 'erp' },
+        });
         const permissions = response.data.permissions || [];
         // Allow manage/delete if role includes team.manage or team.delete
         const hasPermission = permissions.includes('team.manage') || permissions.includes('team.delete');

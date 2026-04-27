@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import apiClient from '@/lib/api-client';
+import { filterErpPermissions } from '@/lib/permission-workspace';
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -16,9 +17,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
       const userStr = localStorage.getItem('user');
       if (userStr) {
         const parsed = JSON.parse(userStr);
-        if (Array.isArray(parsed?.permissions)) {
-          setPerms(parsed.permissions);
-        }
+        setPerms(filterErpPermissions(parsed?.permissions));
       }
     } catch {
       // ignore
@@ -27,9 +26,11 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     // refresh from API to ensure current permissions
     const fetchPerms = async () => {
       try {
-        const res = await apiClient.get('/auth/permissions');
+        const res = await apiClient.get('/auth/permissions', {
+          params: { workspace: 'erp' },
+        });
         const p: string[] = res?.data?.permissions || [];
-        if (p.length) setPerms(p);
+        setPerms(p);
       } catch {
         // keep whatever we have
       }

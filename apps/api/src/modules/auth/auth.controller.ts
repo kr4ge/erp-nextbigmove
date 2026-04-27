@@ -6,7 +6,12 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { PermissionWorkspaceQueryDto } from '../../common/dto/permission-workspace-query.dto';
-import { filterPermissionKeysByWorkspace, normalizePermissionWorkspace } from '../../common/rbac/permission-workspace';
+import {
+  filterPermissionKeysByWorkspace,
+  normalizePermissionWorkspace,
+  roleBelongsToWorkspace,
+  type PermissionWorkspace,
+} from '../../common/rbac/permission-workspace';
 
 @Controller('auth')
 export class AuthController {
@@ -210,21 +215,36 @@ export class AuthController {
    */
   @Get('my-role')
   @UseGuards(JwtAuthGuard, TenantGuard)
-  async getMyRole(@Request() req) {
+  async getMyRole(@Request() req, @Query() query: PermissionWorkspaceQueryDto) {
     const userId = req.user.userId || req.user.id;
     const tenantId = req.user.tenantId;
     if (!userId || !tenantId) {
       return { roles: [] };
     }
 
+    const workspace: PermissionWorkspace = query.workspace
+      ? normalizePermissionWorkspace(query.workspace)
+      : 'all';
+
     const assignments = await this.prisma.userRoleAssignment.findMany({
       where: { userId, tenantId },
-      include: { role: true },
+      include: {
+        role: {
+          include: {
+            rolePermissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     const roles = assignments
       .map((a) => a.role)
       .filter(Boolean)
+      .filter((role) => roleBelongsToWorkspace(role, workspace))
       .map((r) => ({ id: r.id, key: r.key, name: r.name, scope: r.scope }));
 
     return { roles };

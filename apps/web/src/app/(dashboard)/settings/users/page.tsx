@@ -140,18 +140,6 @@ export default function UsersPage() {
     enabled: canManage && !isCheckingPermissions,
   });
 
-  const { data: wmsRoles } = useQuery<Role[]>({
-    queryKey: ['roles', 'wms'],
-    queryFn: async () => {
-      const res = await apiClient.get('/roles', {
-        params: { workspace: 'wms' },
-      });
-      return res.data;
-    },
-    staleTime: 60_000,
-    enabled: canManage && !isCheckingPermissions,
-  });
-
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -164,7 +152,6 @@ export default function UsersPage() {
     role: 'USER',
     teamId: '',
     roleId: '',
-    wmsRoleId: '',
   });
   const [editForm, setEditForm] = useState({
     firstName: '',
@@ -173,7 +160,6 @@ export default function UsersPage() {
     status: 'ACTIVE',
     teamId: '',
     roleId: '',
-    wmsRoleId: '',
   });
 
   const createMutation = useMutation({
@@ -186,7 +172,6 @@ export default function UsersPage() {
         role: createForm.role,
         teamId: createForm.teamId || undefined,
         roleId: createForm.roleId || null,
-        wmsRoleId: createForm.wmsRoleId || null,
       });
     },
     onSuccess: async () => {
@@ -199,7 +184,6 @@ export default function UsersPage() {
         role: 'USER',
         teamId: '',
         roleId: '',
-        wmsRoleId: '',
       });
       setCreateOpen(false);
     },
@@ -211,7 +195,7 @@ export default function UsersPage() {
       payload,
     }: {
       id: string;
-      payload: Partial<User> & { roleId?: string | null; wmsRoleId?: string | null };
+      payload: Partial<User> & { roleId?: string | null };
     }) => {
       await apiClient.patch(`/users/${id}`, payload);
     },
@@ -243,14 +227,6 @@ export default function UsersPage() {
     [],
   );
 
-  const getWmsRole = useCallback(
-    (userItem: User) =>
-      userItem.userRoleAssignments?.find(
-        (assignment) => !assignment.teamId && assignment.role?.workspace === 'wms',
-      )?.role,
-    [],
-  );
-
   const isTenantAdmin = useCallback(
     (userItem: User) => getTenantRole(userItem)?.key === 'TENANT_ADMIN',
     [getTenantRole],
@@ -259,11 +235,6 @@ export default function UsersPage() {
   const getRoleLabel = useCallback(
     (userItem: User) => getTenantRole(userItem)?.name || userItem.role || '—',
     [getTenantRole],
-  );
-
-  const getWmsRoleLabel = useCallback(
-    (userItem: User) => getWmsRole(userItem)?.name || '—',
-    [getWmsRole],
   );
 
   const getTeamLabel = useCallback(
@@ -279,9 +250,6 @@ export default function UsersPage() {
     const tenantAssignment = userItem.userRoleAssignments?.find(
       (assignment) => !assignment.teamId && assignment.role?.workspace !== 'wms',
     );
-    const wmsAssignment = userItem.userRoleAssignments?.find(
-      (assignment) => !assignment.teamId && assignment.role?.workspace === 'wms',
-    );
     setEditingUser(userItem);
     setEditForm({
       firstName: userItem.firstName || '',
@@ -289,7 +257,6 @@ export default function UsersPage() {
       email: userItem.email || '',
       status: userItem.status || 'ACTIVE',
       roleId: tenantAssignment?.roleId || '',
-      wmsRoleId: wmsAssignment?.roleId || '',
       teamId: userItem.defaultTeamId || '',
     });
     setEditOpen(true);
@@ -342,16 +309,11 @@ export default function UsersPage() {
       },
       {
         id: 'role',
-        header: 'Roles',
+        header: 'Role',
         cell: ({ row }) => (
-          <div className="flex flex-col gap-1">
-            <span className="inline-flex w-fit items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-semibold text-[#475569]">
-              ERP: {getRoleLabel(row.original)}
-            </span>
-            <span className="inline-flex w-fit items-center rounded-full bg-[#FFF7ED] px-2.5 py-1 text-xs font-semibold text-[#C2410C]">
-              WMS: {getWmsRoleLabel(row.original)}
-            </span>
-          </div>
+          <span className="inline-flex w-fit items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-semibold text-[#475569]">
+            {getRoleLabel(row.original)}
+          </span>
         ),
       },
       {
@@ -393,7 +355,7 @@ export default function UsersPage() {
         ),
       },
     ],
-    [deleteMutation, getRoleLabel, getTeamLabel, getWmsRoleLabel],
+    [deleteMutation, getRoleLabel, getTeamLabel],
   );
 
   const { table } = useDataTable({
@@ -545,19 +507,6 @@ export default function UsersPage() {
               })()}
             </div>
 
-            <FormSelect
-              label="WMS role (optional)"
-              value={createForm.wmsRoleId}
-              onChange={(e) =>
-                setCreateForm((prev) => ({ ...prev, wmsRoleId: e.target.value }))
-              }
-              options={wmsRoles?.map((role) => ({
-                value: role.id,
-                label: `${role.name}${role.tenantId ? '' : ' (default)'}`,
-              })) || []}
-              placeholder="No WMS role"
-            />
-
             {createMutation.isError && (
               <AlertBanner
                 tone="error"
@@ -610,7 +559,6 @@ export default function UsersPage() {
                   lastName: editForm.lastName,
                   status: editForm.status,
                   roleId: editForm.roleId || null,
-                  wmsRoleId: editForm.wmsRoleId || null,
                   defaultTeamId: isAdmin ? undefined : editForm.teamId || undefined,
                 },
               });
@@ -687,19 +635,6 @@ export default function UsersPage() {
                 />
               );
             })()}
-
-            <FormSelect
-              label="WMS role (optional)"
-              value={editForm.wmsRoleId}
-              onChange={(e) =>
-                setEditForm((prev) => ({ ...prev, wmsRoleId: e.target.value }))
-              }
-              options={wmsRoles?.map((role) => ({
-                value: role.id,
-                label: `${role.name}${role.tenantId ? '' : ' (default)'}`,
-              })) || []}
-              placeholder="No WMS role"
-            />
 
             {updateMutation.isError && (
               <AlertBanner tone="error" message="Failed to update user. Try again." />

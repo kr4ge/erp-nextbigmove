@@ -159,7 +159,9 @@ export const useMarketingKpiManager = () => {
 
   const fetchPermissions = useCallback(async () => {
     try {
-      const response = await apiClient.get<{ permissions?: string[] }>('/auth/permissions');
+      const response = await apiClient.get<{ permissions?: string[] }>('/auth/permissions', {
+        params: { workspace: 'erp' },
+      });
       setPermissions(response.data?.permissions || []);
     } catch {
       setPermissions([]);
