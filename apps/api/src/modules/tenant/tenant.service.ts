@@ -8,6 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { toStoredPermissionWorkspace } from '../../common/rbac/permission-workspace';
 
 @Injectable()
 export class TenantService {
@@ -69,7 +70,7 @@ export class TenantService {
         },
       });
 
-      // Create tenant ADMIN user (not SUPER_ADMIN)
+      // Create tenant owner user. The legacy role stays USER; tenant access comes from dynamic RBAC.
       const user = await tx.user.create({
         data: {
           email,
@@ -77,7 +78,7 @@ export class TenantService {
           firstName,
           lastName,
           tenantId: tenant.id,
-          role: 'ADMIN', // Tenant admin, not platform SUPER_ADMIN
+          role: 'USER',
           status: 'ACTIVE',
         },
       });
@@ -87,16 +88,19 @@ export class TenantService {
         where: { key: 'TENANT_ADMIN', tenantId: null },
       });
 
-      if (tenantAdminRole) {
-        await tx.userRoleAssignment.create({
-          data: {
-            userId: user.id,
-            roleId: tenantAdminRole.id,
-            tenantId: tenant.id,
-            teamId: null,
-          },
-        });
+      if (!tenantAdminRole) {
+        throw new BadRequestException('TENANT_ADMIN system role is missing. Run the RBAC seed first.');
       }
+
+      await tx.userRoleAssignment.create({
+        data: {
+          userId: user.id,
+          roleId: tenantAdminRole.id,
+          workspace: toStoredPermissionWorkspace('erp'),
+          tenantId: tenant.id,
+          teamId: null,
+        },
+      });
 
       return { tenant, user };
     });

@@ -4,7 +4,11 @@ import { ClsService } from 'nestjs-cls';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
-import { rolePrimaryWorkspace, type AssignablePermissionWorkspace } from '../../common/rbac/permission-workspace';
+import {
+  rolePrimaryWorkspace,
+  toStoredPermissionWorkspace,
+  type AssignablePermissionWorkspace,
+} from '../../common/rbac/permission-workspace';
 
 @Injectable()
 export class UserService {
@@ -74,31 +78,21 @@ export class UserService {
     roleId: string | undefined,
     workspace: AssignablePermissionWorkspace,
   ) {
+    const storedWorkspace = toStoredPermissionWorkspace(workspace);
     const existingAssignments = await this.prisma.userRoleAssignment.findMany({
       where: {
         userId,
         tenantId,
         teamId: null,
       },
-      include: {
-        role: {
-          include: {
-            rolePermissions: {
-              include: {
-                permission: {
-                  select: {
-                    key: true,
-                  },
-                },
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        workspace: true,
       },
     });
 
     const assignmentIdsToDelete = existingAssignments
-      .filter((assignment) => rolePrimaryWorkspace(assignment.role) === workspace)
+      .filter((assignment) => assignment.workspace === storedWorkspace)
       .map((assignment) => assignment.id);
 
     if (assignmentIdsToDelete.length > 0) {
@@ -119,6 +113,7 @@ export class UserService {
       data: {
         userId,
         roleId,
+        workspace: storedWorkspace,
         tenantId,
         teamId: null,
       },
@@ -209,12 +204,14 @@ export class UserService {
           userId: user.id,
           tenantId,
           teamId: dto.teamId,
+          workspace: toStoredPermissionWorkspace('erp'),
         },
       });
       await this.prisma.userRoleAssignment.create({
         data: {
           userId: user.id,
           roleId: teamRole.id,
+          workspace: toStoredPermissionWorkspace('erp'),
           tenantId,
           teamId: dto.teamId,
         },
@@ -247,6 +244,7 @@ export class UserService {
                 id: true,
                 name: true,
                 key: true,
+                workspace: true,
                 rolePermissions: {
                   select: {
                     permission: {
@@ -316,7 +314,6 @@ export class UserService {
       data: {
         ...(dto.firstName !== undefined ? { firstName: dto.firstName } : {}),
         ...(dto.lastName !== undefined ? { lastName: dto.lastName } : {}),
-        ...(dto.role !== undefined ? { role: dto.role as any } : {}),
         ...(dto.status !== undefined ? { status: dto.status as any } : {}),
         ...(finalDefaultTeamId !== undefined ? { defaultTeamId: finalDefaultTeamId } : {}),
       },
@@ -398,12 +395,14 @@ export class UserService {
           userId: id,
           tenantId,
           teamId: dto.teamId,
+          workspace: toStoredPermissionWorkspace('erp'),
         },
       });
       await this.prisma.userRoleAssignment.create({
         data: {
           userId: id,
           roleId: teamRole.id,
+          workspace: toStoredPermissionWorkspace('erp'),
           tenantId,
           teamId: dto.teamId,
         },

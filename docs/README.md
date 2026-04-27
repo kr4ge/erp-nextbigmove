@@ -14,6 +14,14 @@ Complete documentation for the team-based data isolation feature.
 - [Architecture Overview](./team-isolation/TEAM_ISOLATION_SUMMARY.md) - How it works
 - [Technical Details](./team-isolation/TEAM_ISOLATION_IMPLEMENTATION.md) - Implementation details
 
+### 📦 [STOX Mobile WMS](./stox/)
+Planning and architecture context for the STOX mobile warehouse execution app.
+
+**Quick Links:**
+- [Mobile WMS Plan](./stox/STOX_MOBILE_WMS_PLAN.md) - End-to-end STOX architecture and rollout
+- [Picking Algorithm Plan](./stox/STOX_PICKING_ALGORITHM_PLAN.md) - Reservation-first picking design
+- [STOX README](./stox/README.md) - STOX documentation hub
+
 ## 🚀 Quick Start
 
 If you're looking for the team isolation feature:
@@ -26,6 +34,10 @@ If you're looking for the team isolation feature:
 ```
 docs/
 ├── README.md                          # This file
+├── stox/                              # STOX mobile WMS planning
+│   ├── README.md                      # STOX documentation hub
+│   ├── STOX_MOBILE_WMS_PLAN.md        # Mobile architecture and rollout
+│   └── STOX_PICKING_ALGORITHM_PLAN.md # Picking rules and task flow
 └── team-isolation/                    # Team isolation feature
     ├── README.md                      # Feature overview
     ├── QUICK_START.md                 # Quick start guide
@@ -43,6 +55,11 @@ docs/
 - ✅ API endpoint `/teams/my-teams` added
 - ✅ Comprehensive documentation created
 
+**April 2026**
+- ✅ STOX mobile WMS planning documents added
+- ✅ Picking algorithm documented
+- ✅ Staff activity tracking requirement documented
+
 ## 🔍 Finding Information
 
 **I want to...**
@@ -50,6 +67,8 @@ docs/
 - Understand the architecture → [team-isolation/TEAM_ISOLATION_SUMMARY.md](./team-isolation/TEAM_ISOLATION_SUMMARY.md)
 - See what was implemented → [team-isolation/IMPLEMENTATION_COMPLETE.md](./team-isolation/IMPLEMENTATION_COMPLETE.md)
 - Run comprehensive tests → [team-isolation/TESTING_GUIDE.md](./team-isolation/TESTING_GUIDE.md)
+- Review STOX mobile architecture → [stox/STOX_MOBILE_WMS_PLAN.md](./stox/STOX_MOBILE_WMS_PLAN.md)
+- Review STOX picking logic → [stox/STOX_PICKING_ALGORITHM_PLAN.md](./stox/STOX_PICKING_ALGORITHM_PLAN.md)
 
 ## 🆘 Getting Help
 

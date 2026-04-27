@@ -9,6 +9,7 @@ import {
   permissionKeysMatchWorkspace,
   roleBelongsToWorkspace,
   rolePrimaryWorkspace,
+  toStoredPermissionWorkspace,
   type PermissionWorkspace,
 } from '../../common/rbac/permission-workspace';
 
@@ -49,6 +50,12 @@ export class RolesService {
 
     if (workspace !== 'erp' && role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('WMS roles are managed outside the ERP workspace');
+    }
+  }
+
+  private assertSystemRoleMutable(isSystem: boolean) {
+    if (isSystem) {
+      throw new ForbiddenException('System roles are managed by code and cannot be edited here');
     }
   }
 
@@ -115,6 +122,7 @@ export class RolesService {
         description: dto.description || null,
         isSystem,
         scope: 'TENANT',
+        workspace: toStoredPermissionWorkspace(workspace),
         tenantId: targetTenantId,
         rolePermissions: dto.permissionKeys?.length
           ? {
@@ -158,6 +166,7 @@ export class RolesService {
     if (existing.tenantId && existing.tenantId !== tenantId && role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Cannot modify role from another tenant');
     }
+    this.assertSystemRoleMutable(existing.isSystem);
     if (!roleBelongsToWorkspace(existing, workspace)) {
       throw new ForbiddenException('Cannot modify a role from another workspace');
     }
@@ -223,6 +232,7 @@ export class RolesService {
     if (existing.tenantId && existing.tenantId !== tenantId && role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Cannot delete role from another tenant');
     }
+    this.assertSystemRoleMutable(existing.isSystem);
     if (!roleBelongsToWorkspace(existing, workspace)) {
       throw new ForbiddenException('Cannot delete a role from another workspace');
     }

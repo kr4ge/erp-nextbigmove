@@ -149,7 +149,6 @@ export default function UsersPage() {
     lastName: '',
     email: '',
     password: '',
-    role: 'USER',
     teamId: '',
     roleId: '',
   });
@@ -169,7 +168,6 @@ export default function UsersPage() {
         lastName: createForm.lastName,
         email: createForm.email,
         password: createForm.password,
-        role: createForm.role,
         teamId: createForm.teamId || undefined,
         roleId: createForm.roleId || null,
       });
@@ -181,7 +179,6 @@ export default function UsersPage() {
         lastName: '',
         email: '',
         password: '',
-        role: 'USER',
         teamId: '',
         roleId: '',
       });

@@ -28,8 +28,8 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
-    // Check legacy role field first (SUPER_ADMIN, ADMIN, USER, VIEWER)
-    const hasLegacyRole = requiredRoles.some((role) => user.role === role);
+    // Only SUPER_ADMIN remains a legacy platform-level bypass.
+    const hasLegacyRole = user.role === 'SUPER_ADMIN' && requiredRoles.includes('SUPER_ADMIN');
     if (hasLegacyRole) {
       return true;
     }

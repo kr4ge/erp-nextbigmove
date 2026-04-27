@@ -8,6 +8,10 @@ Complete index of all documentation in the ERP System.
 docs/
 ├── README.md                                      # Main documentation hub
 ├── DOCUMENTATION_INDEX.md                         # This file - complete index
+├── stox/                                          # STOX mobile WMS planning
+│   ├── README.md                                  # STOX documentation hub
+│   ├── STOX_MOBILE_WMS_PLAN.md                    # Mobile architecture and rollout
+│   └── STOX_PICKING_ALGORITHM_PLAN.md             # Picking rules and task flow
 └── team-isolation/                                # Team-based data isolation
     ├── README.md                                  # Feature overview & navigation
     ├── QUICK_START.md                             # ⭐ Quick start guide
@@ -30,6 +34,8 @@ docs/
 |----------|-------------|---------|
 | [Implementation Complete](./team-isolation/IMPLEMENTATION_COMPLETE.md) | What was built, status, next steps | Project managers, Developers |
 | [Team Isolation Summary](./team-isolation/TEAM_ISOLATION_SUMMARY.md) | Architecture and benefits | Tech leads, Architects |
+| [STOX Mobile WMS Plan](./stox/STOX_MOBILE_WMS_PLAN.md) | Mobile WMS architecture, modules, and rollout | Product, Engineering |
+| [STOX Picking Algorithm Plan](./stox/STOX_PICKING_ALGORITHM_PLAN.md) | Reservation-first picking and packing handoff | Product, WMS Engineering |
 
 ### 🔧 Technical Documentation
 | Document | Description | For Who |
@@ -54,11 +60,14 @@ docs/
 1. **What was delivered?** → [Implementation Complete](./team-isolation/IMPLEMENTATION_COMPLETE.md)
 2. **Architecture overview** → [Team Isolation Summary](./team-isolation/TEAM_ISOLATION_SUMMARY.md)
 3. **Quick overview** → [Team Isolation README](./team-isolation/README.md)
+4. **Mobile WMS roadmap** → [STOX Mobile WMS Plan](./stox/STOX_MOBILE_WMS_PLAN.md)
 
 ### For Tech Leads/Architects
 1. **Architecture** → [Team Isolation Summary](./team-isolation/TEAM_ISOLATION_SUMMARY.md)
 2. **Technical details** → [Technical Implementation](./team-isolation/TEAM_ISOLATION_IMPLEMENTATION.md)
 3. **Status & next steps** → [Implementation Complete](./team-isolation/IMPLEMENTATION_COMPLETE.md)
+4. **STOX mobile architecture** → [STOX Mobile WMS Plan](./stox/STOX_MOBILE_WMS_PLAN.md)
+5. **STOX picking logic** → [STOX Picking Algorithm Plan](./stox/STOX_PICKING_ALGORITHM_PLAN.md)
 
 ## 🔍 Documentation by Task
 
@@ -81,6 +90,10 @@ docs/
 ### "I need to troubleshoot an issue"
 1. [Quick Start](./team-isolation/QUICK_START.md) - Troubleshooting section
 2. [Testing Guide](./team-isolation/TESTING_GUIDE.md) - Common issues
+
+### "I need to understand the future mobile WMS architecture"
+1. [STOX Mobile WMS Plan](./stox/STOX_MOBILE_WMS_PLAN.md) - Mobile architecture and workflow ownership
+2. [STOX Picking Algorithm Plan](./stox/STOX_PICKING_ALGORITHM_PLAN.md) - Picking task design and exception rules
 
 ## 📊 Feature Coverage Matrix
 

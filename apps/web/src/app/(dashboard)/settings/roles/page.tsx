@@ -223,13 +223,15 @@ export default function RolesPage() {
                           <p className="break-all text-xs text-[#94A3B8]">{role.key}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setEditing(isEditing ? null : role.id)}
-                          >
-                            {isEditing ? 'Cancel' : 'Edit'}
-                          </Button>
+                          {!role.isSystem && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setEditing(isEditing ? null : role.id)}
+                            >
+                              {isEditing ? 'Cancel' : 'Edit'}
+                            </Button>
+                          )}
                           {!role.isSystem && (
                             <Button
                               variant="danger"
@@ -243,6 +245,13 @@ export default function RolesPage() {
                           )}
                         </div>
                       </div>
+
+                      {role.isSystem && (
+                        <AlertBanner
+                          tone="info"
+                          message="System roles are code-managed and cannot be edited here."
+                        />
+                      )}
 
                       {isEditing && (
                         <div className="space-y-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">

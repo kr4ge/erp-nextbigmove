@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
-import { PrismaClient, RoleScope } from '@prisma/client';
+import { PrismaClient, RbacWorkspace, RoleScope } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 function loadEnvFile(filePath: string) {
@@ -48,6 +48,7 @@ type RoleDef = {
   description?: string;
   scope: RoleScope;
   permissions: string[];
+  workspace?: RbacWorkspace;
   isSystem?: boolean;
 };
 
@@ -282,14 +283,6 @@ const ROLES: RoleDef[] = [
     isSystem: true,
   },
   {
-    key: 'TEAM_MEMBER',
-    name: 'Team Member',
-    description: 'Baseline access for team members',
-    scope: RoleScope.TEAM,
-    permissions: [''],
-    isSystem: true,
-  },
-  {
     key: 'MARKETING',
     name: 'Marketing',
     description: 'Marketing-focused access',
@@ -410,10 +403,24 @@ const ROLES: RoleDef[] = [
       'meta.read',
       'dashboard.marketing',
       'kpi.funnel.read',
+      'integration.share',
+      'team.manage',
     ],
     isSystem: true,
   },
 ];
+
+function getRoleWorkspace(role: RoleDef): RbacWorkspace {
+  if (role.workspace) {
+    return role.workspace;
+  }
+
+  if (role.key.startsWith('WMS_') || role.permissions.every((permissionKey) => permissionKey.startsWith('wms.'))) {
+    return RbacWorkspace.WMS;
+  }
+
+  return RbacWorkspace.ERP;
+}
 
 async function ensureSuperAdmin() {
   // Use environment variables for production, fallback to dev defaults
@@ -491,6 +498,7 @@ async function seedRoles() {
           name: role.name,
           description: role.description,
           scope: role.scope,
+          workspace: getRoleWorkspace(role),
           isSystem: role.isSystem ?? false,
         },
       });
@@ -502,6 +510,7 @@ async function seedRoles() {
           name: role.name,
           description: role.description,
           scope: role.scope,
+          workspace: getRoleWorkspace(role),
           isSystem: role.isSystem ?? false,
         },
       });
@@ -560,95 +569,12 @@ async function ensureDefaultTeamsAndBackfill() {
   console.log('✓ Skipped default team creation/backfill (per request)');
 }
 
-async function assignRolesToUsers() {
-  // Map enum roles to dynamic roles
-  const roleMap: Record<string, string> = {
-    SUPER_ADMIN: 'TENANT_OWNER', // Platform-level still uses enum; keep assignment for tenant context
-    ADMIN: 'TENANT_ADMIN',
-    USER: 'TEAM_MEMBER',
-    VIEWER: 'TEAM_MEMBER',
-  };
-
-  const roles = await prisma.role.findMany({
-    where: { tenantId: null, key: { in: Object.values(roleMap) } },
-    select: { id: true, key: true },
-  });
-  const roleIdByKey = roles.reduce<Record<string, string>>((acc, r) => {
-    acc[r.key] = r.id;
-    return acc;
-  }, {});
-
-  const tenants = await prisma.tenant.findMany({
-    select: { id: true },
-  });
-
-  for (const tenant of tenants) {
-    const users = await prisma.user.findMany({
-      where: { tenantId: tenant.id },
-      select: { id: true, role: true, defaultTeamId: true },
-    });
-
-    for (const user of users) {
-      const dynamicRoleKey = roleMap[user.role] || 'TEAM_MEMBER';
-      const roleId = roleIdByKey[dynamicRoleKey];
-      if (!roleId) {
-        continue;
-      }
-
-      // Assign tenant-scoped role
-      const existingTenantRole = await prisma.userRoleAssignment.findFirst({
-        where: {
-          userId: user.id,
-          roleId,
-          tenantId: tenant.id,
-          teamId: null,
-        },
-      });
-      if (!existingTenantRole) {
-        await prisma.userRoleAssignment.create({
-          data: {
-            userId: user.id,
-            roleId,
-            tenantId: tenant.id,
-            teamId: null,
-          },
-        });
-      }
-
-      // Assign team-scoped role for default team
-      if (user.defaultTeamId) {
-        const existingTeamRole = await prisma.userRoleAssignment.findFirst({
-          where: {
-            userId: user.id,
-            roleId,
-            tenantId: tenant.id,
-            teamId: user.defaultTeamId,
-          },
-        });
-        if (!existingTeamRole) {
-          await prisma.userRoleAssignment.create({
-            data: {
-              userId: user.id,
-              roleId,
-              tenantId: tenant.id,
-              teamId: user.defaultTeamId,
-            },
-          });
-        }
-      }
-    }
-  }
-
-  console.log('✓ Assigned dynamic roles to users based on existing enum roles');
-}
-
 async function main() {
   console.log('Starting database seed...');
   await ensureSuperAdmin();
   await seedPermissions();
   await seedRoles();
   await ensureDefaultTeamsAndBackfill();
-  await assignRolesToUsers();
   console.log('Seed completed successfully!');
 }
 

@@ -83,7 +83,7 @@ export class TeamService {
 
   async listTeams() {
     const { tenantId, userId, role } = this.getContext();
-    const isLegacyAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
+    const isLegacyAdmin = role === 'SUPER_ADMIN';
 
     // Check if user has tenant-wide admin access via dynamic roles
     let hasTenantWideAccess = false;

@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RegisterDto, LoginDto, RefreshTokenDto } from './dto';
+import { toStoredPermissionWorkspace } from '../../common/rbac/permission-workspace';
 
 @Injectable()
 export class AuthService {
@@ -63,7 +64,16 @@ export class AuthService {
         },
       });
 
-      // Create admin user
+      const tenantAdminRole = await tx.role.findFirst({
+        where: { key: 'TENANT_ADMIN', tenantId: null },
+        select: { id: true },
+      });
+
+      if (!tenantAdminRole) {
+        throw new BadRequestException('TENANT_ADMIN system role is missing. Run the RBAC seed first.');
+      }
+
+      // Create tenant owner user. The legacy role stays USER; tenant access comes from dynamic RBAC.
       const user = await tx.user.create({
         data: {
           email,
@@ -71,9 +81,19 @@ export class AuthService {
           firstName,
           lastName,
           tenantId: tenant.id,
-          role: 'ADMIN',
+          role: 'USER',
           status: 'ACTIVE',
           emailVerified: false,
+        },
+      });
+
+      await tx.userRoleAssignment.create({
+        data: {
+          userId: user.id,
+          roleId: tenantAdminRole.id,
+          workspace: toStoredPermissionWorkspace('erp'),
+          tenantId: tenant.id,
+          teamId: null,
         },
       });
 
