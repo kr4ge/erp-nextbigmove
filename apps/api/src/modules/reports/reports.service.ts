@@ -94,7 +94,7 @@ export class ReportsService {
     const rows = await this.prisma.$queryRaw<PosOrdersReportRow[]>(Prisma.sql`
       SELECT
         "shopId" AS "shopId",
-        COUNT(*)::int AS "totalOrders",
+        COUNT(*) FILTER (WHERE "status" IS DISTINCT FROM 7)::int AS "totalOrders",
         COUNT(*) FILTER (WHERE "status" = 2)::int AS "shippedOrders",
         COUNT(*) FILTER (WHERE "status" = 3)::int AS "deliveredOrders",
         COUNT(*) FILTER (WHERE "status" = 6)::int AS "cancelledOrders",
