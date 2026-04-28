@@ -171,7 +171,7 @@ function areRecordsEqual(
 }
 
 export default function SalesAnalyticsPage() {
-  const { range, startDate, endDate, handleDateRangeChange, syncDateRangeFromApi } =
+  const { today, range, startDate, endDate, handleDateRangeChange, syncDateRangeFromApi } =
     useAnalyticsDateRange();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -224,6 +224,16 @@ export default function SalesAnalyticsPage() {
   const [deliverySortDir, setDeliverySortDir] = useState<'asc' | 'desc'>('desc');
   const [isExportingCsv, setIsExportingCsv] = useState(false);
   const [isExportingXlsx, setIsExportingXlsx] = useState(false);
+  const salesDateRangeIsToday = startDate === today && endDate === today;
+  const formatDateRangeButtonDate = (dateStr: string) => {
+  const [year, month, day] = dateStr.split('-');
+  if (!year || !month || !day) return dateStr;
+    return `${month.padStart(2, '0')}/${day.padStart(2, '0')}/${year}`;
+  };
+ const salesDateRangeButtonLabel =
+    startDate === endDate
+      ? formatDateRangeButtonDate(startDate)
+      : `${formatDateRangeButtonDate(startDate)} - ${formatDateRangeButtonDate(endDate)}`;
 
   useEffect(() => {
     mappingOptionsRef.current = mappingOptions;
@@ -860,15 +870,15 @@ export default function SalesAnalyticsPage() {
           <span>Fulfillment (SF+FF+IF)</span>
           <span>{neg(fulfillment)}</span>
         </div>
-        <div className="flex justify-between text-slate-600 text-[11px]">
+        <div className="flex justify-between text-slate-600 text-xs">
           <span>SF Fees</span>
           <span>{neg(kpis.sf_fees ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-600 text-[11px]">
+        <div className="flex justify-between text-slate-600 text-xs">
           <span>FF Fees</span>
           <span>{neg(kpis.ff_fees ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-600 text-[11px]">
+        <div className="flex justify-between text-slate-600 text-xs">
           <span>IF Fees</span>
           <span>{neg(kpis.if_fees ?? 0)}</span>
         </div>
@@ -904,7 +914,7 @@ export default function SalesAnalyticsPage() {
           <span>Contribution Margin</span>
           <span>{nf(kpis.contribution_margin ?? 0)}</span>
         </div>
-        <p className="text-[11px] text-slate-500">{filtersLabel}</p>
+        <p className="text-xs text-slate-500">{filtersLabel}</p>
       </div>
     );
   };

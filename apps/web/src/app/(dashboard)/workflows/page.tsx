@@ -20,6 +20,8 @@ export default function WorkflowsPage() {
     selectedIntegrationId,
     selectedUploadFile,
     isUploadingMeta,
+    manualUploadJob,
+    manualUploadError,
     handleRunWorkflow,
     openUploadModal,
     closeUploadModal,
@@ -87,6 +89,8 @@ export default function WorkflowsPage() {
         selectedIntegrationId={selectedIntegrationId}
         selectedFile={selectedUploadFile}
         isUploading={isUploadingMeta}
+        uploadJob={manualUploadJob}
+        uploadError={manualUploadError}
         onClose={closeUploadModal}
         onIntegrationChange={setSelectedIntegrationId}
         onFileChange={setSelectedUploadFile}

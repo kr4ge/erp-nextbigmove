@@ -8,7 +8,7 @@ import { WorkflowSchedulerService } from './services/workflow-scheduler.service'
 import { DateRangeService } from './services/date-range.service';
 import { WorkflowExecutionGateway } from './gateways/workflow-execution.gateway';
 import { WorkflowQueueProcessor } from './processors/workflow.processor';
-import { WORKFLOW_QUEUE } from './workflow.constants';
+import { MANUAL_META_UPLOAD_QUEUE, WORKFLOW_QUEUE } from './workflow.constants';
 import { WorkflowLogService } from './services/workflow-log.service';
 import { WorkflowProgressCacheService } from './services/workflow-progress-cache.service';
 import { WorkflowExecutionReconcilerService } from './services/workflow-execution-reconciler.service';
@@ -18,6 +18,7 @@ import { ReconcileMarketingService } from './services/reconcile-marketing.servic
 import { ReconcileSalesService } from './services/reconcile-sales.service';
 import { PancakeWebhookReconcileProcessor } from './processors/pancake-webhook-reconcile.processor';
 import { PANCAKE_WEBHOOK_RECONCILE_QUEUE } from '../integrations/pancake-webhook.constants';
+import { ManualMetaUploadProcessor } from './processors/manual-meta-upload.processor';
 
 @Module({
   imports: [
@@ -29,6 +30,9 @@ import { PANCAKE_WEBHOOK_RECONCILE_QUEUE } from '../integrations/pancake-webhook
     }),
     BullModule.registerQueue({
       name: PANCAKE_WEBHOOK_RECONCILE_QUEUE,
+    }),
+    BullModule.registerQueue({
+      name: MANUAL_META_UPLOAD_QUEUE,
     }),
   ],
   controllers: [WorkflowController],
@@ -45,6 +49,7 @@ import { PANCAKE_WEBHOOK_RECONCILE_QUEUE } from '../integrations/pancake-webhook
     ReconcileMarketingService,
     ReconcileSalesService,
     PancakeWebhookReconcileProcessor,
+    ManualMetaUploadProcessor,
   ],
   exports: [WorkflowService],
 })

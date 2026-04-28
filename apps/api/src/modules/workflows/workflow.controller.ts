@@ -10,10 +10,18 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
+import { mkdirSync } from 'fs';
 import { WorkflowService } from './workflow.service';
 import {
   CreateWorkflowDto,
+  ManualMetaUploadFileDto,
   ManualMetaUploadDto,
   UpdateWorkflowDto,
   WorkflowResponseDto,
@@ -29,6 +37,21 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 @UseGuards(JwtAuthGuard, TenantGuard, TeamGuard, PermissionsGuard)
 export class WorkflowController {
   constructor(private readonly workflowService: WorkflowService) {}
+
+  private static buildUploadRoot() {
+    const uploadRoot = process.env.MANUAL_META_UPLOAD_TMP_DIR
+      || join(process.cwd(), 'tmp', 'manual-meta-uploads');
+    mkdirSync(uploadRoot, { recursive: true });
+    return uploadRoot;
+  }
+
+  private static buildMaxUploadBytes() {
+    const maxMb = Number(process.env.MANUAL_META_UPLOAD_MAX_FILE_MB || '10');
+    if (!Number.isFinite(maxMb) || maxMb <= 0) {
+      return 10 * 1024 * 1024;
+    }
+    return Math.floor(maxMb * 1024 * 1024);
+  }
 
   /**
    * Create a new workflow
@@ -68,6 +91,63 @@ export class WorkflowController {
     reconcileSalesCompleted: boolean;
   }> {
     return this.workflowService.uploadManualMeta(body);
+  }
+
+  /**
+   * Upload a Meta insights file and enqueue async processing.
+   */
+  @Post('meta-upload-file')
+  @Permissions('workflow.execute')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: WorkflowController.buildUploadRoot(),
+        filename: (_req, file, cb) => {
+          const safeExt = extname(file.originalname || '').toLowerCase();
+          const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+          cb(null, `${token}${safeExt || '.dat'}`);
+        },
+      }),
+      limits: {
+        fileSize: WorkflowController.buildMaxUploadBytes(),
+      },
+      fileFilter: (_req, file, cb) => {
+        const ext = extname(file.originalname || '').toLowerCase();
+        const allowed = new Set(['.csv', '.xlsx', '.xls']);
+        if (!allowed.has(ext)) {
+          cb(new BadRequestException('Unsupported file type. Use CSV, XLSX, or XLS.'), false);
+          return;
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async uploadManualMetaFile(
+    @Body() body: ManualMetaUploadFileDto,
+    @UploadedFile() file: any,
+  ): Promise<{ jobId: string }> {
+    if (!file?.path) {
+      throw new BadRequestException('File is required');
+    }
+
+    const jobId = await this.workflowService.enqueueManualMetaUploadFromFile({
+      filePath: file.path,
+      originalFileName: file.originalname || 'upload.csv',
+      integrationId: body?.integrationId || undefined,
+    });
+
+    return { jobId };
+  }
+
+  /**
+   * Poll manual meta upload progress by Bull job id.
+   */
+  @Get('meta-upload-jobs/:jobId')
+  @Permissions('workflow.execute')
+  async getManualMetaUploadJob(
+    @Param('jobId') jobId: string,
+  ): Promise<any> {
+    return this.workflowService.getManualMetaUploadJobStatus(jobId);
   }
 
   /**

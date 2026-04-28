@@ -1,6 +1,7 @@
 import apiClient from '@/lib/api-client';
 import type { WorkflowItem, WorkflowTeam } from '../_types/workflow';
 import type {
+  WorkflowManualMetaUploadJobStatus,
   WorkflowManualMetaUploadResult,
   WorkflowManualMetaUploadRow,
   WorkflowMetaIntegrationOption,
@@ -77,6 +78,35 @@ export const workflowsService = {
     const response = await apiClient.post<WorkflowManualMetaUploadResult>(
       '/workflows/meta-upload',
       payload,
+    );
+    return response.data;
+  },
+
+  async uploadManualMetaFile(payload: {
+    integrationId?: string;
+    file: File;
+  }) {
+    const form = new FormData();
+    form.append('file', payload.file);
+    if (payload.integrationId) {
+      form.append('integrationId', payload.integrationId);
+    }
+
+    const response = await apiClient.post<{ jobId: string }>(
+      '/workflows/meta-upload-file',
+      form,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      },
+    );
+    return response.data;
+  },
+
+  async fetchManualMetaUploadJobStatus(jobId: string) {
+    const response = await apiClient.get<WorkflowManualMetaUploadJobStatus>(
+      `/workflows/meta-upload-jobs/${jobId}`,
     );
     return response.data;
   },

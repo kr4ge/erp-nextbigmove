@@ -2,7 +2,10 @@
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import type { WorkflowMetaIntegrationOption } from '../_types/manual-meta-upload';
+import type {
+  WorkflowManualMetaUploadJobStatus,
+  WorkflowMetaIntegrationOption,
+} from '../_types/manual-meta-upload';
 
 interface ManualMetaUploadModalProps {
   isOpen: boolean;
@@ -10,6 +13,8 @@ interface ManualMetaUploadModalProps {
   selectedIntegrationId: string;
   selectedFile: File | null;
   isUploading: boolean;
+  uploadJob: WorkflowManualMetaUploadJobStatus | null;
+  uploadError: string | null;
   onClose: () => void;
   onIntegrationChange: (value: string) => void;
   onFileChange: (file: File | null) => void;
@@ -22,11 +27,17 @@ export function ManualMetaUploadModal({
   selectedIntegrationId,
   selectedFile,
   isUploading,
+  uploadJob,
+  uploadError,
   onClose,
   onIntegrationChange,
   onFileChange,
   onSubmit,
 }: ManualMetaUploadModalProps) {
+  const progress = uploadJob?.progress ?? null;
+  const percent = progress?.percent ?? null;
+  const progressBarWidth = percent == null ? '35%' : `${Math.max(0, Math.min(100, percent))}%`;
+
   return (
     <Dialog open={isOpen} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent className="max-w-xl rounded-2xl p-0">
@@ -43,6 +54,7 @@ export function ManualMetaUploadModal({
             <select
               value={selectedIntegrationId}
               onChange={(event) => onIntegrationChange(event.target.value)}
+              disabled={isUploading}
               className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">No integration (auto-match by Account ID)</option>
@@ -62,6 +74,7 @@ export function ManualMetaUploadModal({
             <input
               type="file"
               accept=".csv,.xlsx,.xls"
+              disabled={isUploading}
               onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
               className="block w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800"
             />
@@ -74,6 +87,41 @@ export function ManualMetaUploadModal({
               </div>
             )}
           </div>
+
+          {(isUploading || uploadJob || uploadError) && (
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <div className="flex items-center justify-between text-xs text-slate-600">
+                <span>
+                  Status: <span className="font-semibold text-slate-900">{progress?.stage || 'QUEUED'}</span>
+                </span>
+                {percent != null ? <span>{percent}%</span> : <span>Processing...</span>}
+              </div>
+
+              <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className={`h-full rounded-full bg-indigo-600 ${percent == null ? 'animate-pulse' : ''}`}
+                  style={{ width: progressBarWidth }}
+                />
+              </div>
+
+              <p className="text-xs text-slate-600">
+                {progress?.message || (isUploading ? 'Uploading file and preparing import...' : 'Waiting to start')}
+              </p>
+
+              {progress && (
+                <p className="text-xs text-slate-600">
+                  Processed rows: {progress.processedRows.toLocaleString()}
+                  {progress.totalRows != null ? ` / ${progress.totalRows.toLocaleString()}` : ''}
+                  {' | '}
+                  Insights upserted: {progress.insightsUpserted.toLocaleString()}
+                </p>
+              )}
+
+              {uploadError && (
+                <p className="text-xs font-medium text-red-600">{uploadError}</p>
+              )}
+            </div>
+          )}
         </div>
 
         <DialogFooter className="border-t border-slate-200 px-6 py-4 sm:justify-between sm:space-x-0">

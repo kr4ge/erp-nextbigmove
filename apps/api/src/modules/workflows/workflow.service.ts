@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import { Job, Queue } from 'bull';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
@@ -14,7 +14,13 @@ import {
 } from './dto';
 import { WorkflowTriggerType, WorkflowExecutionStatus } from '@prisma/client';
 import * as cronParser from 'cron-parser';
-import { WORKFLOW_QUEUE, WorkflowJobData } from './workflow.constants';
+import {
+  MANUAL_META_UPLOAD_JOB,
+  MANUAL_META_UPLOAD_QUEUE,
+  type ManualMetaUploadJobData,
+  WORKFLOW_QUEUE,
+  type WorkflowJobData,
+} from './workflow.constants';
 import { DateRangeService } from './services/date-range.service';
 import { WorkflowProcessorService } from './services/workflow-processor.service';
 import { WorkflowSchedulerService } from './services/workflow-scheduler.service';
@@ -23,6 +29,69 @@ import { WorkflowProgressCacheService } from './services/workflow-progress-cache
 import { MetaInsightService } from '../integrations/services/meta-insight.service';
 import { ReconcileMarketingService } from './services/reconcile-marketing.service';
 import { ReconcileSalesService } from './services/reconcile-sales.service';
+import { createReadStream } from 'fs';
+import { promises as fsp } from 'fs';
+import { extname } from 'path';
+import * as readline from 'readline';
+
+type ManualMetaUploadStage =
+  | 'QUEUED'
+  | 'PARSING'
+  | 'IMPORTING'
+  | 'RECONCILING'
+  | 'COMPLETED'
+  | 'FAILED';
+
+type ColumnKey =
+  | 'accountId'
+  | 'campaignId'
+  | 'campaignName'
+  | 'adsetId'
+  | 'adsetName'
+  | 'adId'
+  | 'adName'
+  | 'dateCreated'
+  | 'amountSpent'
+  | 'linkClicks'
+  | 'clicks'
+  | 'impressions'
+  | 'websitePurchases'
+  | 'reportingStarts'
+  | 'reportingEnds';
+
+const HEADER_ALIASES: Record<ColumnKey, string[]> = {
+  accountId: ['accountid'],
+  campaignId: ['campaignid'],
+  campaignName: ['campaignname'],
+  adsetId: ['adsetid'],
+  adsetName: ['adsetname'],
+  adId: ['adid'],
+  adName: ['adname'],
+  dateCreated: ['datecreated'],
+  amountSpent: ['amountspent', 'amountspentphp'],
+  linkClicks: ['linkclicks'],
+  clicks: ['clicksall', 'clicks'],
+  impressions: ['impressions'],
+  websitePurchases: ['websitepurchases'],
+  reportingStarts: ['reportingstarts'],
+  reportingEnds: ['reportingends'],
+};
+
+const REQUIRED_COLUMNS: ColumnKey[] = [
+  'accountId',
+  'campaignId',
+  'campaignName',
+  'adsetId',
+  'adId',
+  'adName',
+  'amountSpent',
+  'linkClicks',
+  'clicks',
+  'impressions',
+  'websitePurchases',
+  'reportingStarts',
+  'reportingEnds',
+];
 
 @Injectable()
 export class WorkflowService {
@@ -40,6 +109,8 @@ export class WorkflowService {
     private readonly reconcileMarketingService: ReconcileMarketingService,
     private readonly reconcileSalesService: ReconcileSalesService,
     @InjectQueue(WORKFLOW_QUEUE) private readonly workflowQueue: Queue<WorkflowJobData>,
+    @InjectQueue(MANUAL_META_UPLOAD_QUEUE)
+    private readonly manualMetaUploadQueue: Queue<ManualMetaUploadJobData>,
   ) {}
 
   private async buildAccessWhere(id?: string) {
@@ -179,6 +250,670 @@ export class WorkflowService {
         },
       ],
     };
+  }
+
+  private normalizeHeader(value: unknown): string {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  private toCellString(value: unknown): string {
+    return String(value ?? '').trim();
+  }
+
+  private parseDecimal(value: unknown, label: string, rowNumber: number): number {
+    const normalized = this.toCellString(value).replace(/,/g, '').replace(/[^\d.-]/g, '');
+    const parsed = Number.parseFloat(normalized);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new BadRequestException(`Row ${rowNumber}: ${label} must be a non-negative number`);
+    }
+    return parsed;
+  }
+
+  private parseWholeNumber(value: unknown, label: string, rowNumber: number): number {
+    const raw = this.toCellString(value);
+    if (raw === '') {
+      return 0;
+    }
+
+    const normalized = raw.replace(/,/g, '').replace(/[^\d.-]/g, '');
+    const parsed = Number.parseFloat(normalized);
+    if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+      throw new BadRequestException(`Row ${rowNumber}: ${label} must be a non-negative whole number`);
+    }
+    return parsed;
+  }
+
+  private pad(value: number): string {
+    return String(value).padStart(2, '0');
+  }
+
+  private normalizeDate(value: unknown, label: string, rowNumber: number, required = true): string {
+    const text = this.toCellString(value);
+    if (!text) {
+      if (required) {
+        throw new BadRequestException(`Row ${rowNumber}: ${label} is required`);
+      }
+      return '';
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+      return text;
+    }
+
+    const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slashMatch) {
+      const [, month, day, year] = slashMatch;
+      return `${year}-${this.pad(Number(month))}-${this.pad(Number(day))}`;
+    }
+
+    const slashShortYearMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+    if (slashShortYearMatch) {
+      const [, month, day, shortYear] = slashShortYearMatch;
+      const year = 2000 + Number(shortYear);
+      return `${year}-${this.pad(Number(month))}-${this.pad(Number(day))}`;
+    }
+
+    const dashMatch = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (dashMatch) {
+      const [, month, day, year] = dashMatch;
+      return `${year}-${this.pad(Number(month))}-${this.pad(Number(day))}`;
+    }
+
+    const dashShortYearMatch = text.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
+    if (dashShortYearMatch) {
+      const [, month, day, shortYear] = dashShortYearMatch;
+      const year = 2000 + Number(shortYear);
+      return `${year}-${this.pad(Number(month))}-${this.pad(Number(day))}`;
+    }
+
+    throw new BadRequestException(`Row ${rowNumber}: ${label} must be a valid date`);
+  }
+
+  private resolveColumnIndexes(headerRow: unknown[]): Record<ColumnKey, number> {
+    const normalizedHeaders = headerRow.map((value) => this.normalizeHeader(value));
+    const indexes = {} as Record<ColumnKey, number>;
+
+    (Object.keys(HEADER_ALIASES) as ColumnKey[]).forEach((key) => {
+      indexes[key] = normalizedHeaders.findIndex((header) =>
+        HEADER_ALIASES[key].includes(header),
+      );
+    });
+
+    const missing = REQUIRED_COLUMNS.filter((key) => indexes[key] < 0);
+    if (missing.length > 0) {
+      throw new BadRequestException(`Missing required header(s): ${missing.join(', ')}`);
+    }
+
+    return indexes;
+  }
+
+  private getCell(row: unknown[], index: number): unknown {
+    if (index < 0) return '';
+    return row[index] ?? '';
+  }
+
+  private isEmptyRow(row: unknown[]): boolean {
+    return row.every((cell) => this.toCellString(cell) === '');
+  }
+
+  private isSummaryRow(row: unknown[], indexes: Record<ColumnKey, number>): boolean {
+    const accountId = this.toCellString(this.getCell(row, indexes.accountId)).toLowerCase();
+    const campaignId = this.toCellString(this.getCell(row, indexes.campaignId));
+    const adsetId = this.toCellString(this.getCell(row, indexes.adsetId));
+    const adId = this.toCellString(this.getCell(row, indexes.adId));
+    const adName = this.toCellString(this.getCell(row, indexes.adName));
+
+    return (
+      accountId === 'multiple'
+      && campaignId === ''
+      && adsetId === ''
+      && adId === ''
+      && adName === ''
+    );
+  }
+
+  private hasRequiredIdentityValues(
+    row: unknown[],
+    indexes: Record<ColumnKey, number>,
+  ): boolean {
+    return [
+      indexes.accountId,
+      indexes.campaignId,
+      indexes.campaignName,
+      indexes.adsetId,
+      indexes.adId,
+      indexes.adName,
+    ].every((index) => this.toCellString(this.getCell(row, index)) !== '');
+  }
+
+  private parseUploadRow(
+    row: unknown[],
+    rowNumber: number,
+    indexes: Record<ColumnKey, number>,
+  ): ManualMetaUploadRowDto | null {
+    if (this.isEmptyRow(row)) return null;
+    if (this.isSummaryRow(row, indexes)) return null;
+    if (!this.hasRequiredIdentityValues(row, indexes)) return null;
+
+    const reportingStarts = this.normalizeDate(
+      this.getCell(row, indexes.reportingStarts),
+      'Reporting starts',
+      rowNumber,
+    );
+    const reportingEnds = this.normalizeDate(
+      this.getCell(row, indexes.reportingEnds),
+      'Reporting ends',
+      rowNumber,
+    );
+
+    return {
+      accountId: this.toCellString(this.getCell(row, indexes.accountId)),
+      campaignId: this.toCellString(this.getCell(row, indexes.campaignId)),
+      campaignName: this.toCellString(this.getCell(row, indexes.campaignName)),
+      adsetId: this.toCellString(this.getCell(row, indexes.adsetId)),
+      adsetName: this.toCellString(this.getCell(row, indexes.adsetName)) || undefined,
+      adId: this.toCellString(this.getCell(row, indexes.adId)),
+      adName: this.toCellString(this.getCell(row, indexes.adName)),
+      dateCreated: this.normalizeDate(
+        this.getCell(row, indexes.dateCreated),
+        'Date created',
+        rowNumber,
+        false,
+      ) || undefined,
+      amountSpent: this.parseDecimal(this.getCell(row, indexes.amountSpent), 'Amount spent', rowNumber),
+      linkClicks: this.parseWholeNumber(this.getCell(row, indexes.linkClicks), 'Link clicks', rowNumber),
+      clicks: this.parseWholeNumber(this.getCell(row, indexes.clicks), 'Clicks (all)', rowNumber),
+      impressions: this.parseWholeNumber(this.getCell(row, indexes.impressions), 'Impressions', rowNumber),
+      websitePurchases: this.parseWholeNumber(
+        this.getCell(row, indexes.websitePurchases),
+        'Website purchases',
+        rowNumber,
+      ),
+      reportingStarts,
+      reportingEnds,
+    };
+  }
+
+  private parseCsvLine(line: string): string[] {
+    const out: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+
+      if (ch === '"') {
+        const next = line[i + 1];
+        if (inQuotes && next === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+
+      if (ch === ',' && !inQuotes) {
+        out.push(current);
+        current = '';
+        continue;
+      }
+
+      current += ch;
+    }
+
+    out.push(current);
+    return out;
+  }
+
+  private async updateManualUploadJobProgress(
+    job: Job<ManualMetaUploadJobData>,
+    progress: {
+      stage: ManualMetaUploadStage;
+      message: string;
+      processedRows?: number;
+      totalRows?: number | null;
+      insightsUpserted?: number;
+      datesProcessed?: string[];
+      failedReason?: string | null;
+    },
+  ) {
+    const processedRows = progress.processedRows ?? 0;
+    const totalRows = progress.totalRows ?? null;
+    const insightsUpserted = progress.insightsUpserted ?? 0;
+    const datesProcessed = progress.datesProcessed ?? [];
+    const percent = totalRows && totalRows > 0
+      ? Math.min(100, Math.round((processedRows / totalRows) * 100))
+      : null;
+
+    await job.progress({
+      stage: progress.stage,
+      message: progress.message,
+      processedRows,
+      totalRows,
+      insightsUpserted,
+      datesProcessed,
+      percent,
+      failedReason: progress.failedReason ?? null,
+    });
+  }
+
+  async enqueueManualMetaUploadFromFile(input: {
+    filePath: string;
+    originalFileName: string;
+    integrationId?: string;
+  }): Promise<string> {
+    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
+
+    const job = await this.manualMetaUploadQueue.add(
+      MANUAL_META_UPLOAD_JOB,
+      {
+        tenantId,
+        integrationId: input.integrationId,
+        allowedTeams,
+        isAdmin,
+        filePath: input.filePath,
+        originalFileName: input.originalFileName,
+      },
+      {
+        removeOnComplete: 100,
+        removeOnFail: 200,
+        attempts: 2,
+        backoff: {
+          type: 'exponential',
+          delay: 2000,
+        },
+      },
+    );
+
+    await this.updateManualUploadJobProgress(job as unknown as Job<ManualMetaUploadJobData>, {
+      stage: 'QUEUED',
+      message: 'Upload queued',
+      processedRows: 0,
+      totalRows: null,
+      insightsUpserted: 0,
+      datesProcessed: [],
+    });
+
+    return String(job.id);
+  }
+
+  async getManualMetaUploadJobStatus(jobId: string) {
+    const job = await this.manualMetaUploadQueue.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException('Upload job not found');
+    }
+
+    const state = await job.getState();
+    const progress = await job.progress();
+
+    return {
+      jobId: String(job.id),
+      state,
+      progress: (typeof progress === 'object' && progress) ? progress : {
+        stage: state === 'completed' ? 'COMPLETED' : 'QUEUED',
+        message: state,
+        processedRows: 0,
+        totalRows: null,
+        insightsUpserted: 0,
+        datesProcessed: [],
+        percent: null,
+      },
+      failedReason: job.failedReason || null,
+      result: job.returnvalue || null,
+      createdAt: job.timestamp ? new Date(job.timestamp).toISOString() : null,
+      processedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
+      finishedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : null,
+    };
+  }
+
+  private async processManualMetaChunk(params: {
+    tenantId: string;
+    selectedIntegrationTeamId: string | null;
+    accountMap: Map<string, { accountId: string; teamId: string | null; integrationId: string }>;
+    rows: ManualMetaUploadRowDto[];
+    affectedDates: Set<string>;
+  }): Promise<number> {
+    const groupedInsights = new Map<string, { teamId: string | null; rawInsights: any[] }>();
+
+    for (const row of params.rows) {
+      const accountId = this.normalizeAccountId(row.accountId);
+      const account = params.accountMap.get(accountId);
+      const teamId = account?.teamId ?? params.selectedIntegrationTeamId ?? null;
+      const existingGroup = groupedInsights.get(accountId);
+      if (existingGroup) {
+        existingGroup.rawInsights.push(this.toUploadedRawInsight(row));
+      } else {
+        groupedInsights.set(accountId, {
+          teamId,
+          rawInsights: [this.toUploadedRawInsight(row)],
+        });
+      }
+      params.affectedDates.add(row.reportingStarts);
+    }
+
+    let upserted = 0;
+    for (const [accountId, group] of groupedInsights.entries()) {
+      upserted += await this.metaInsightService.upsertMetaInsights(
+        params.tenantId,
+        accountId,
+        group.rawInsights,
+        group.teamId,
+        1,
+      );
+    }
+
+    return upserted;
+  }
+
+  private async resolveManualUploadAccounts(params: {
+    tenantId: string;
+    allowedTeams: string[];
+    isAdmin: boolean;
+    integrationId?: string;
+  }): Promise<{
+    selectedIntegrationTeamId: string | null;
+    accountMap: Map<string, { accountId: string; teamId: string | null; integrationId: string }>;
+  }> {
+    let selectedIntegration: { id: string; teamId: string | null } | null = null;
+
+    if (params.integrationId) {
+      const integrationWhere = this.buildMetaUploadIntegrationWhere(
+        params.tenantId,
+        params.allowedTeams,
+        params.isAdmin,
+        params.integrationId,
+      );
+
+      if (!integrationWhere) {
+        throw new NotFoundException('Meta integration not found');
+      }
+
+      selectedIntegration = await this.prisma.integration.findFirst({
+        where: integrationWhere,
+        select: {
+          id: true,
+          teamId: true,
+        },
+      });
+
+      if (!selectedIntegration) {
+        throw new NotFoundException('Meta integration not found');
+      }
+    }
+
+    const accountWhere = this.buildMetaUploadAccountWhere(
+      params.tenantId,
+      params.allowedTeams,
+      params.isAdmin,
+      selectedIntegration?.id,
+    );
+
+    if (!accountWhere) {
+      throw new BadRequestException('No accessible Meta ad accounts found for this upload');
+    }
+
+    const accounts = await this.prisma.metaAdAccount.findMany({
+      where: accountWhere,
+      select: {
+        accountId: true,
+        teamId: true,
+        integrationId: true,
+      },
+    });
+
+    const accountMap = new Map(
+      accounts.map((account) => [
+        this.normalizeAccountId(account.accountId),
+        account,
+      ]),
+    );
+
+    return {
+      selectedIntegrationTeamId: selectedIntegration?.teamId ?? null,
+      accountMap,
+    };
+  }
+
+  async processManualMetaUploadJob(
+    job: Job<ManualMetaUploadJobData>,
+  ): Promise<{
+    rowsReceived: number;
+    insightsUpserted: number;
+    datesProcessed: string[];
+    reconcileMarketingCompleted: boolean;
+    reconcileSalesCompleted: boolean;
+  }> {
+    const chunkSize = Math.max(1, Number(process.env.MANUAL_META_UPLOAD_BATCH_SIZE || '500'));
+    let rowsReceived = 0;
+    let insightsUpserted = 0;
+    const affectedDates = new Set<string>();
+
+    await this.updateManualUploadJobProgress(job, {
+      stage: 'PARSING',
+      message: 'Preparing upload context',
+      processedRows: 0,
+      totalRows: null,
+      insightsUpserted: 0,
+      datesProcessed: [],
+    });
+
+    const { selectedIntegrationTeamId, accountMap } = await this.resolveManualUploadAccounts({
+      tenantId: job.data.tenantId,
+      allowedTeams: job.data.allowedTeams,
+      isAdmin: job.data.isAdmin,
+      integrationId: job.data.integrationId,
+    });
+
+    const fileExt = extname(job.data.originalFileName || job.data.filePath).toLowerCase();
+
+    const processChunk = async (
+      chunk: ManualMetaUploadRowDto[],
+      totalRows: number | null,
+      message: string,
+    ) => {
+      if (chunk.length === 0) return;
+      await this.updateManualUploadJobProgress(job, {
+        stage: 'IMPORTING',
+        message,
+        processedRows: rowsReceived,
+        totalRows,
+        insightsUpserted,
+        datesProcessed: Array.from(affectedDates).sort((a, b) => a.localeCompare(b)),
+      });
+
+      insightsUpserted += await this.processManualMetaChunk({
+        tenantId: job.data.tenantId,
+        selectedIntegrationTeamId,
+        accountMap,
+        rows: chunk,
+        affectedDates,
+      });
+    };
+
+    try {
+      if (fileExt === '.csv') {
+        const stream = createReadStream(job.data.filePath, { encoding: 'utf8' });
+        const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+        let headerParsed = false;
+        let indexes: Record<ColumnKey, number> | null = null;
+        let lineNumber = 0;
+        const buffer: ManualMetaUploadRowDto[] = [];
+
+        for await (const line of rl) {
+          lineNumber += 1;
+          const row = this.parseCsvLine(line);
+
+          if (!headerParsed) {
+            indexes = this.resolveColumnIndexes(row);
+            headerParsed = true;
+            continue;
+          }
+
+          if (!indexes) continue;
+          const parsedRow = this.parseUploadRow(row, lineNumber, indexes);
+          if (!parsedRow) {
+            continue;
+          }
+
+          rowsReceived += 1;
+          buffer.push(parsedRow);
+
+          if (buffer.length >= chunkSize) {
+            const chunk = buffer.splice(0, buffer.length);
+            await processChunk(chunk, null, 'Importing CSV rows');
+          }
+        }
+
+        if (!headerParsed) {
+          throw new BadRequestException('The selected file does not contain any header row');
+        }
+
+        if (buffer.length > 0) {
+          const chunk = buffer.splice(0, buffer.length);
+          await processChunk(chunk, null, 'Importing CSV rows');
+        }
+      } else if (fileExt === '.xlsx' || fileExt === '.xls') {
+        const XLSX = await import('xlsx');
+        const xlsx = (XLSX as any).default || XLSX;
+        const workbook = xlsx.readFile(job.data.filePath);
+        const firstSheetName = workbook.SheetNames[0];
+
+        if (!firstSheetName) {
+          throw new BadRequestException('The selected file does not contain any sheets');
+        }
+
+        const worksheet = workbook.Sheets[firstSheetName];
+        const sheetRef = worksheet?.['!ref'];
+        if (!sheetRef) {
+          throw new BadRequestException('The selected sheet does not contain any rows');
+        }
+
+        const range = xlsx.utils.decode_range(sheetRef);
+        const headerRowIdx = range.s.r;
+        const totalDataRows = Math.max(0, range.e.r - headerRowIdx);
+
+        const headerEncodedRange = xlsx.utils.encode_range({
+          s: { r: headerRowIdx, c: range.s.c },
+          e: { r: headerRowIdx, c: range.e.c },
+        });
+        const headerRows = xlsx.utils.sheet_to_json(worksheet, {
+          header: 1,
+          raw: false,
+          defval: '',
+          range: headerEncodedRange,
+        }) as unknown[][];
+
+        const indexes = this.resolveColumnIndexes(headerRows?.[0] || []);
+        const dataStart = headerRowIdx + 1;
+        const buffer: ManualMetaUploadRowDto[] = [];
+
+        for (let start = dataStart; start <= range.e.r; start += chunkSize) {
+          const end = Math.min(start + chunkSize - 1, range.e.r);
+          const encodedRange = xlsx.utils.encode_range({
+            s: { r: start, c: range.s.c },
+            e: { r: end, c: range.e.c },
+          });
+          const rows = xlsx.utils.sheet_to_json(worksheet, {
+            header: 1,
+            raw: false,
+            defval: '',
+            range: encodedRange,
+          }) as unknown[][];
+
+          rows.forEach((row, idx) => {
+            const rowNumber = start + idx + 1;
+            const parsedRow = this.parseUploadRow(Array.isArray(row) ? row : [], rowNumber, indexes);
+            if (!parsedRow) return;
+            rowsReceived += 1;
+            buffer.push(parsedRow);
+          });
+
+          if (buffer.length >= chunkSize) {
+            const chunk = buffer.splice(0, buffer.length);
+            await processChunk(chunk, totalDataRows, 'Importing spreadsheet rows');
+          } else {
+            await this.updateManualUploadJobProgress(job, {
+              stage: 'PARSING',
+              message: 'Parsing spreadsheet rows',
+              processedRows: rowsReceived,
+              totalRows: totalDataRows,
+              insightsUpserted,
+              datesProcessed: Array.from(affectedDates).sort((a, b) => a.localeCompare(b)),
+            });
+          }
+        }
+
+        if (buffer.length > 0) {
+          const chunk = buffer.splice(0, buffer.length);
+          await processChunk(chunk, totalDataRows, 'Importing spreadsheet rows');
+        }
+      } else {
+        throw new BadRequestException('Unsupported file type. Use CSV, XLSX, or XLS.');
+      }
+
+      if (rowsReceived === 0) {
+        throw new BadRequestException('The selected file does not contain any importable rows');
+      }
+
+      const datesProcessed = Array.from(affectedDates).sort((a, b) => a.localeCompare(b));
+      await this.updateManualUploadJobProgress(job, {
+        stage: 'RECONCILING',
+        message: 'Running reconcile jobs',
+        processedRows: rowsReceived,
+        totalRows: rowsReceived,
+        insightsUpserted,
+        datesProcessed,
+      });
+
+      for (const date of datesProcessed) {
+        await this.reconcileMarketingService.reconcileDay(job.data.tenantId, date, null);
+      }
+      for (const date of datesProcessed) {
+        await this.reconcileSalesService.aggregateDay(job.data.tenantId, date, null);
+      }
+
+      const result = {
+        rowsReceived,
+        insightsUpserted,
+        datesProcessed,
+        reconcileMarketingCompleted: true,
+        reconcileSalesCompleted: true,
+      };
+
+      await this.updateManualUploadJobProgress(job, {
+        stage: 'COMPLETED',
+        message: 'Upload completed',
+        processedRows: rowsReceived,
+        totalRows: rowsReceived,
+        insightsUpserted,
+        datesProcessed,
+      });
+
+      return result;
+    } catch (error: any) {
+      await this.updateManualUploadJobProgress(job, {
+        stage: 'FAILED',
+        message: error?.message || 'Upload failed',
+        processedRows: rowsReceived,
+        totalRows: rowsReceived || null,
+        insightsUpserted,
+        datesProcessed: Array.from(affectedDates).sort((a, b) => a.localeCompare(b)),
+        failedReason: error?.message || 'Upload failed',
+      });
+      throw error;
+    } finally {
+      try {
+        await fsp.unlink(job.data.filePath);
+      } catch {
+        // ignore cleanup failure
+      }
+    }
   }
 
   /**

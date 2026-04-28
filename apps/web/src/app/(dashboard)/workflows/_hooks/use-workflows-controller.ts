@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/toast';
 import { workflowsService } from '../_services/workflows.service';
 import type { WorkflowItem } from '../_types/workflow';
-import type { WorkflowMetaIntegrationOption } from '../_types/manual-meta-upload';
+import type {
+  WorkflowManualMetaUploadJobStatus,
+  WorkflowMetaIntegrationOption,
+} from '../_types/manual-meta-upload';
 import { parseWorkflowError } from '../_utils/workflow-errors';
-import { parseManualMetaUploadFile } from '../_utils/meta-upload-parser';
 
 export function useWorkflowsController() {
   const router = useRouter();
@@ -23,6 +25,10 @@ export function useWorkflowsController() {
   const [selectedIntegrationId, setSelectedIntegrationId] = useState('');
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
   const [isUploadingMeta, setIsUploadingMeta] = useState(false);
+  const [manualUploadJob, setManualUploadJob] = useState<WorkflowManualMetaUploadJobStatus | null>(
+    null,
+  );
+  const [manualUploadError, setManualUploadError] = useState<string | null>(null);
 
   const fetchWorkflows = useCallback(async () => {
     try {
@@ -118,6 +124,8 @@ export function useWorkflowsController() {
     if (isUploadingMeta) return;
     setShowUploadModal(false);
     setSelectedUploadFile(null);
+    setManualUploadJob(null);
+    setManualUploadError(null);
   }, [isUploadingMeta]);
 
   const handleUploadMeta = useCallback(async () => {
@@ -127,33 +135,71 @@ export function useWorkflowsController() {
     }
 
     setIsUploadingMeta(true);
+    setManualUploadError(null);
+    setManualUploadJob(null);
+
     try {
-      const rows = await parseManualMetaUploadFile(selectedUploadFile);
-      const response = await workflowsService.uploadManualMeta({
+      const { jobId } = await workflowsService.uploadManualMetaFile({
         integrationId: selectedIntegrationId || undefined,
-        rows,
+        file: selectedUploadFile,
       });
 
-      addToast('success', `Populated ${response.insightsUpserted} Meta ad insights`, 5000);
-      window.setTimeout(() => {
-        addToast(
-          'success',
-          `Reconcile marketing completed for ${response.datesProcessed.length} date(s)`,
-          5000,
-        );
-      }, 150);
-      window.setTimeout(() => {
-        addToast(
-          'success',
-          `Reconcile sales completed for ${response.datesProcessed.length} date(s)`,
-          5000,
-        );
-      }, 300);
+      const pollIntervalMs = 1500;
+      const maxPollMs = 1000 * 60 * 30;
+      const startedAt = Date.now();
 
-      setShowUploadModal(false);
-      setSelectedUploadFile(null);
+      while (Date.now() - startedAt < maxPollMs) {
+        const status = await workflowsService.fetchManualMetaUploadJobStatus(jobId);
+        setManualUploadJob(status);
+
+        if (status.state === 'completed') {
+          const result = status.result;
+          if (result) {
+            addToast('success', `Populated ${result.insightsUpserted} Meta ad insights`, 5000);
+            window.setTimeout(() => {
+              addToast(
+                'success',
+                `Reconcile marketing completed for ${result.datesProcessed.length} date(s)`,
+                5000,
+              );
+            }, 150);
+            window.setTimeout(() => {
+              addToast(
+                'success',
+                `Reconcile sales completed for ${result.datesProcessed.length} date(s)`,
+                5000,
+              );
+            }, 300);
+          } else {
+            addToast('success', 'Meta upload completed', 5000);
+          }
+
+          setShowUploadModal(false);
+          setSelectedUploadFile(null);
+          setManualUploadJob(null);
+          return;
+        }
+
+        if (status.state === 'failed') {
+          const failedMessage =
+            status.failedReason || status.progress?.failedReason || 'Failed to upload Meta ads manually';
+          setManualUploadError(failedMessage);
+          addToast('error', failedMessage, 6000);
+          return;
+        }
+
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, pollIntervalMs);
+        });
+      }
+
+      const timeoutMessage = 'Upload is taking too long. Please check again in a few minutes.';
+      setManualUploadError(timeoutMessage);
+      addToast('error', timeoutMessage, 6000);
     } catch (uploadError) {
-      addToast('error', parseWorkflowError(uploadError, 'Failed to upload Meta ads manually'), 6000);
+      const message = parseWorkflowError(uploadError, 'Failed to upload Meta ads manually');
+      setManualUploadError(message);
+      addToast('error', message, 6000);
     } finally {
       setIsUploadingMeta(false);
     }
@@ -184,6 +230,8 @@ export function useWorkflowsController() {
     selectedIntegrationId,
     selectedUploadFile,
     isUploadingMeta,
+    manualUploadJob,
+    manualUploadError,
     fetchWorkflows,
     handleRunWorkflow,
     openUploadModal,
