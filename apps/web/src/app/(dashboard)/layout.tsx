@@ -523,7 +523,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               isSidebarCollapsed ? 'justify-center' : 'flex-col items-center gap-3 text-center'
             }`}
           >
-            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[1.35rem] bg-orange-500 text-xl font-semibold text-white transition-all duration-300">
+            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[1.35rem] bg-primary text-xl font-semibold text-white transition-all duration-300">
               {organizationName
                 .split(' ')
                 .map((word: string) => word.charAt(0))
@@ -573,8 +573,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     >
                       <span
                         className={`flex-shrink-0 transition-colors duration-300 ${
-                          hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href) ? 'text-orange-500' : 'text-slate-400'
-                        } group-hover:text-orange-500`}
+                          hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href) ? 'text-primary' : 'text-slate-400'
+                        } group-hover:text-primary`}
                       >
                         {link.icon}
                       </span>
@@ -589,7 +589,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       </div>
                       <svg
                         className={`h-4 w-4 text-slate-400 transition-all duration-300 ${
-                          isExpanded ? 'rotate-90 text-orange-500' : ''
+                          isExpanded ? 'rotate-90 text-primary' : ''
                         } ${isSidebarCollapsed ? 'hidden' : 'opacity-100'}`}
                         viewBox="0 0 20 20"
                         fill="none"
@@ -608,8 +608,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     >
                       <span
                         className={`flex-shrink-0 transition-colors duration-300 ${
-                          isActive ? 'text-orange-500' : 'text-slate-400'
-                        } group-hover:text-orange-500`}
+                          isActive ? 'text-primary' : 'text-slate-400'
+                        } group-hover:text-primary`}
                       >
                         {link.icon}
                       </span>
@@ -670,7 +670,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               }`}
             >
                 <div className={`flex items-center transition-all duration-300 ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                  <div className="h-9 w-9 flex-shrink-0 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold">
+                  <div className="h-9 w-9 flex-shrink-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold">
                     {`${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.trim() || '??'}
                   </div>
                 <div
@@ -760,7 +760,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
 
             <div className="relative z-40 flex flex-col items-center gap-3 px-3 py-4 text-center">
-              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[1.35rem] bg-orange-500 text-xl font-semibold text-white">
+              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[1.35rem] bg-primary text-xl font-semibold text-white">
                 {organizationName
                   .split(' ')
                   .map((word: string) => word.charAt(0))
@@ -800,8 +800,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         <span
                           className={`flex-shrink-0 transition-colors duration-300 ${
                             hasActiveChild || isExpanded
-                              ? 'text-orange-500'
-                              : 'text-slate-400 group-hover:text-orange-500'
+                              ? 'text-primary'
+                              : 'text-slate-400 group-hover:text-primary'
                           }`}
                         >
                           {link.icon}
@@ -811,7 +811,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         </span>
                         <svg
                           className={`h-4 w-4 text-slate-400 transition-all duration-300 ${
-                            isExpanded ? 'rotate-90 text-orange-500' : ''
+                            isExpanded ? 'rotate-90 text-primary' : ''
                           }`}
                           viewBox="0 0 20 20"
                           fill="none"
@@ -831,7 +831,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       >
                         <span
                           className={`flex-shrink-0 transition-colors duration-300 ${
-                            isActive ? 'text-orange-500' : 'text-slate-400 group-hover:text-orange-500'
+                            isActive ? 'text-primary' : 'text-slate-400 group-hover:text-primary'
                           }`}
                         >
                           {link.icon}
@@ -1011,7 +1011,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     <button
                       type="button"
                       onClick={() => setIsTeamMenuOpen((prev) => !prev)}
-                      className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-800 shadow-sm hover:border-orange-400 focus:border-orange-500 focus:outline-none"
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-800 shadow-sm hover:border-orange-400 focus:border-primary focus:outline-none"
                     >
                       <span>Team scope:</span>
                       <span className="text-primary">
@@ -1032,7 +1032,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             <label className="flex cursor-pointer items-center gap-2">
                               <input
                                 type="checkbox"
-                                className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                                className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                                 checked={selectedTeamIds.length === 0}
                                 onChange={() => handleTeamSelection('__all__')}
                               />
@@ -1047,7 +1047,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                               <label className="flex cursor-pointer items-center gap-2">
                                 <input
                                   type="checkbox"
-                                  className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                                  className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                                   checked={selectedTeamIds.includes(team.id)}
                                   onChange={() => handleTeamSelection(team.id)}
                                 />

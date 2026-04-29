@@ -66,7 +66,7 @@ export function AnalyticsShareDialog({
                   >
                     <input
                       type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                      className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                       checked={selectedTeamIds.includes(team.id)}
                       onChange={() => onToggleTeam(team.id)}
                     />

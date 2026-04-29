@@ -42,7 +42,7 @@ export const KPI_STATUS_META: Record<
   MISSED: {
     label: "Recovery Mode",
     badgeClass: "border-orange-200 bg-orange-50 text-orange-700",
-    progressClass: "bg-orange-500",
+    progressClass: "bg-primary",
   },
   NO_TARGET: {
     label: "Set Goal",

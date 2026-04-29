@@ -1136,7 +1136,7 @@ export default function SalesAnalyticsPage() {
 
       <DashboardSection
         title="Sales Monitoring"
-        icon={<ShoppingBag className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<ShoppingBag className="h-3.5 w-3.5 text-primary" />}
         meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
         className="panel panel-content"
         contentClassName="space-y-5"
@@ -1182,7 +1182,7 @@ export default function SalesAnalyticsPage() {
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                        className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                         checked={excludeCanceled}
                         onChange={(e) => setExcludeCanceled(e.target.checked)}
                       />
@@ -1191,7 +1191,7 @@ export default function SalesAnalyticsPage() {
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                        className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                         checked={excludeRestocking}
                         onChange={(e) => setExcludeRestocking(e.target.checked)}
                       />
@@ -1200,7 +1200,7 @@ export default function SalesAnalyticsPage() {
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                        className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                         checked={excludeAbandoned}
                         onChange={(e) => setExcludeAbandoned(e.target.checked)}
                       />
@@ -1209,7 +1209,7 @@ export default function SalesAnalyticsPage() {
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                        className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                         checked={excludeRts}
                         onChange={(e) => setExcludeRts(e.target.checked)}
                       />
@@ -1241,7 +1241,7 @@ export default function SalesAnalyticsPage() {
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                        className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                         checked={includeTax12}
                         onChange={(e) => setIncludeTax12(e.target.checked)}
                       />
@@ -1250,7 +1250,7 @@ export default function SalesAnalyticsPage() {
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                        className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                         checked={includeTax1}
                         onChange={(e) => setIncludeTax1(e.target.checked)}
                       />
@@ -1400,7 +1400,7 @@ export default function SalesAnalyticsPage() {
       {/* Revenue per Product / Delivery Status */}
       <DashboardSection
         title="Sales Breakdown"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-between">

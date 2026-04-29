@@ -72,9 +72,9 @@ const panelThemeClass = [
   // '[&_section]:from-white',
   // '[&_section]:via-orange-50/35',
   // '[&_section]:to-amber-50/25',
-  // '[&_svg.text-indigo-500]:text-orange-500',
-  // '[&_svg.text-blue-500]:text-orange-500',
-  // '[&_svg.text-amber-500]:text-orange-500',
+  // '[&_svg.text-indigo-500]:text-primary',
+  // '[&_svg.text-blue-500]:text-primary',
+  // '[&_svg.text-amber-500]:text-primary',
 ].join(' ');
 
 const softOrangeButtonsClass = [
@@ -87,10 +87,10 @@ const softOrangeButtonsClass = [
 ].join(' ');
 
 const orangeTabsClass = [
-  '[&_button.border-indigo-500]:!border-orange-500',
+  '[&_button.border-indigo-500]:!border-primary',
   '[&_button.text-indigo-600]:!text-orange-600',
   '[&_button:hover]:!text-orange-700',
-  '[&_button_svg]:text-orange-500',
+  '[&_button_svg]:text-primary',
   '[&_span.bg-indigo-100]:!bg-orange-100',
   '[&_span.text-indigo-700]:!text-orange-700',
 ].join(' ');

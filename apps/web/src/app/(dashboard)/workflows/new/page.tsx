@@ -278,9 +278,9 @@ export default function CreateWorkflowPage() {
 
       {/* Progress Bar */}
       <div className="flex items-center gap-2">
-        <div className={`flex-1 h-2 rounded-full ${step >= 1 ? 'bg-orange-500' : 'bg-slate-200'}`}></div>
-        <div className={`flex-1 h-2 rounded-full ${step >= 2 ? 'bg-orange-500' : 'bg-slate-200'}`}></div>
-        <div className={`flex-1 h-2 rounded-full ${step >= 3 ? 'bg-orange-500' : 'bg-slate-200'}`}></div>
+        <div className={`flex-1 h-2 rounded-full ${step >= 1 ? 'bg-primary' : 'bg-slate-200'}`}></div>
+        <div className={`flex-1 h-2 rounded-full ${step >= 2 ? 'bg-primary' : 'bg-slate-200'}`}></div>
+        <div className={`flex-1 h-2 rounded-full ${step >= 3 ? 'bg-primary' : 'bg-slate-200'}`}></div>
       </div>
 
       {error && (
@@ -296,7 +296,7 @@ export default function CreateWorkflowPage() {
 
           <div>
             <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Workflow Name <span className="text-orange-500">*</span>
+              Workflow Name <span className="text-primary">*</span>
             </label>
             <input
               type="text"
@@ -360,7 +360,7 @@ export default function CreateWorkflowPage() {
                       <label key={t.id} className="flex items-center gap-2 text-sm text-slate-800">
                         <input
                           type="checkbox"
-                          className="h-4 w-4 rounded border-slate-300 accent-orange-500 focus:ring-orange-500"
+                          className="h-4 w-4 rounded border-slate-300 accent-primary focus:ring-primary"
                           checked={sharedTeamIds.includes(t.id)}
                           onChange={() => toggleSharedTeam(t.id)}
                         />
@@ -406,7 +406,7 @@ export default function CreateWorkflowPage() {
                     type="radio"
                     checked={formData.dateRangeType === 'rolling'}
                     onChange={() => updateField('dateRangeType', 'rolling')}
-                    className="h-4 w-4 border-slate-300 accent-orange-500 focus:ring-orange-500"
+                    className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
                   />
                   <span className="text-sm text-slate-700">Rolling (Offset from today)</span>
                 </label>
@@ -415,7 +415,7 @@ export default function CreateWorkflowPage() {
                     type="radio"
                     checked={formData.dateRangeType === 'relative'}
                     onChange={() => updateField('dateRangeType', 'relative')}
-                    className="h-4 w-4 border-slate-300 accent-orange-500 focus:ring-orange-500"
+                    className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
                   />
                   <span className="text-sm text-slate-700">Relative (Last N days)</span>
                 </label>
@@ -424,7 +424,7 @@ export default function CreateWorkflowPage() {
                     type="radio"
                     checked={formData.dateRangeType === 'absolute'}
                     onChange={() => updateField('dateRangeType', 'absolute')}
-                    className="h-4 w-4 border-slate-300 accent-orange-500 focus:ring-orange-500"
+                    className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
                   />
                   <span className="text-sm text-slate-700">Absolute (Specific dates)</span>
                 </label>
@@ -491,7 +491,7 @@ export default function CreateWorkflowPage() {
                   type="checkbox"
                   checked={formData.metaEnabled}
                   onChange={(e) => updateField('metaEnabled', e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 accent-orange-500 focus:ring-orange-500"
+                  className="h-4 w-4 rounded border-slate-300 accent-primary focus:ring-primary"
                 />
                 <span className="text-sm font-medium text-slate-700">Enable Meta Ads fetching</span>
               </label>
@@ -527,7 +527,7 @@ export default function CreateWorkflowPage() {
                   type="checkbox"
                   checked={formData.posEnabled}
                   onChange={(e) => updateField('posEnabled', e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 accent-orange-500 focus:ring-orange-500"
+                  className="h-4 w-4 rounded border-slate-300 accent-primary focus:ring-primary"
                 />
                 <span className="text-sm font-medium text-slate-700">Enable POS fetching</span>
               </label>
@@ -585,7 +585,7 @@ export default function CreateWorkflowPage() {
                 type="radio"
                 checked={formData.scheduleType === 'manual'}
                 onChange={() => updateField('scheduleType', 'manual')}
-                className="h-4 w-4 border-slate-300 accent-orange-500 focus:ring-orange-500"
+                className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
               />
               <span className="text-sm font-medium text-slate-700">Manual only (no automatic schedule)</span>
             </label>
@@ -594,7 +594,7 @@ export default function CreateWorkflowPage() {
                 type="radio"
                 checked={formData.scheduleType === 'scheduled'}
                 onChange={() => updateField('scheduleType', 'scheduled')}
-                className="h-4 w-4 border-slate-300 accent-orange-500 focus:ring-orange-500"
+                className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
               />
               <span className="text-sm font-medium text-slate-700">Scheduled (cron expression)</span>
             </label>
@@ -610,7 +610,7 @@ export default function CreateWorkflowPage() {
                       type="button"
                       onClick={() => updateField('scheduleUnit', unit)}
                       className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
-                        formData.scheduleUnit === unit ? 'bg-orange-500 text-white' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                        formData.scheduleUnit === unit ? 'bg-primary text-white' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
                       }`}
                     >
                       {unit === 'minutes' ? 'Minutes' : unit === 'hours' ? 'Hours' : 'Days'}
@@ -719,7 +719,7 @@ export default function CreateWorkflowPage() {
                 type="checkbox"
                 checked={formData.enabled}
                 onChange={(e) => updateField('enabled', e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 accent-orange-500 focus:ring-orange-500"
+                className="h-4 w-4 rounded border-slate-300 accent-primary focus:ring-primary"
               />
               <span className="text-sm font-medium text-slate-700">Enable workflow immediately</span>
             </label>

@@ -17,7 +17,7 @@ const sizes: Record<Size, string> = {
 };
 const variants: Record<Variant, string> = {
   primary:
-    "btn-primary",
+    "btn-primary-soft",
     // * NOTE: may change to btn-primary-soft
     // 'bg-[#2563EB] text-white hover:bg-[#1d4fd8] active:bg-[#1b46c3] focus:ring-[#2563EB] ring-offset-white',
   secondary:

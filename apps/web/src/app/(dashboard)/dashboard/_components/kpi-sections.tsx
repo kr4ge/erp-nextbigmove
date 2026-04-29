@@ -302,12 +302,12 @@ function CombinedProgressBar({ cards }: { cards: KpiDashboardCard[] }) {
           </p>
           {bestStreak > 0 && (
             <div className="flex max-w-[150px] items-center gap-1 rounded-full bg-orange-50 px-1.5 py-0.5 sm:max-w-none sm:px-2">
-              <Flame className="h-2.5 w-2.5 text-orange-500" />
+              <Flame className="h-2.5 w-2.5 text-primary" />
               <span className="whitespace-nowrap text-xs-tight font-semibold tabular-nums text-orange-700">
                 {bestStreak}d streak
               </span>
               {streakMsg && (
-                <span className="hidden text-[9px] text-orange-500 sm:inline">
+                <span className="hidden text-[9px] text-primary sm:inline">
                   {streakMsg}
                 </span>
               )}
@@ -342,12 +342,12 @@ function StreakBadge({ card }: { card: KpiDashboardCard }) {
 
   return (
     <div className="flex items-center gap-1 rounded-full bg-orange-50 px-2 py-1 sm:gap-1.5 sm:px-2.5">
-      <Flame className="h-3 w-3 text-orange-500" />
+      <Flame className="h-3 w-3 text-primary" />
       <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-orange-700">
         {streak}d streak
       </span>
       {message && (
-        <span className="hidden whitespace-nowrap text-xs-tight text-orange-500 sm:inline">
+        <span className="hidden whitespace-nowrap text-xs-tight text-primary sm:inline">
           {message}
         </span>
       )}
@@ -377,7 +377,7 @@ function KpiProgressCard({ card }: KpiProgressCardProps) {
         <div className="flex items-center gap-2">
           {streak > 0 && (
             <div className="flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5">
-              <Flame className="h-2.5 w-2.5 text-orange-500" />
+              <Flame className="h-2.5 w-2.5 text-primary" />
               <span className="text-xs-tight font-semibold tabular-nums text-orange-700">
                 {streak}d
               </span>
@@ -493,7 +493,7 @@ export function KpiProgressSection({
   return (
     <DashboardSection
       title={title}
-      icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
+      icon={<Target className="h-3.5 w-3.5 text-primary" />}
       contentClassName="space-y-3"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -550,7 +550,7 @@ export function PersonalKpiSection({
   return (
     <DashboardSection
       title={title}
-      icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
+      icon={<Target className="h-3.5 w-3.5 text-primary" />}
       className="panel panel-content"
       contentClassName="space-y-3"
       headerClassName=""
@@ -760,7 +760,7 @@ function TeamKpiRow({ row, rank }: TeamKpiRowProps) {
       : rank === 2
         ? "text-slate-400"
         : rank === 3
-          ? "text-orange-500"
+          ? "text-primary"
           : "text-slate-500";
 
   return (
@@ -845,7 +845,7 @@ export function ExecutiveKpiSection({
   return (
     <DashboardSection
       title="Marketing KPI Overview"
-      icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
+      icon={<Target className="h-3.5 w-3.5 text-primary" />}
       contentClassName="space-y-3"
       headerClassName="px-3 py-2.5"
       titleClassName="text-xs tracking-[0.18em]"
@@ -901,7 +901,7 @@ export function TeamKpiSection({ data, loading, error }: TeamKpiSectionProps) {
   return (
     <DashboardSection
       title="Marketing KPI Overview"
-      icon={<Target className="h-3.5 w-3.5 text-orange-500" />}
+      icon={<Target className="h-3.5 w-3.5 text-primary" />}
       contentClassName="space-y-3"
       headerClassName="px-3 py-2.5"
       titleClassName="text-xs tracking-[0.18em]"

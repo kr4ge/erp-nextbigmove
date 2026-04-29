@@ -60,7 +60,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
                 key={tab.href}
                 href={tab.href}
                 className={`pb-3 text-sm font-semibold whitespace-nowrap transition-colors ${
-                  active ? 'text-orange-600 border-b-2 border-orange-500' : 'text-slate-600 hover:text-slate-900'
+                  active ? 'text-orange-600 border-b-2 border-primary' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {tab.label}

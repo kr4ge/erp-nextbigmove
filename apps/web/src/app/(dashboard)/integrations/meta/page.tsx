@@ -43,7 +43,7 @@ export default function MetaPage() {
       {/* Integrations List */}
       {integrations.length === 0 ? (
         <Card className="flex flex-col items-center justify-center px-8 py-12 text-center bg-secondary/40 rounded-xl shadow-sm">
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center text-orange-500">
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center text-primary">
             <ShieldCheck className="h-8 w-8" />
           </div>
           <h3 className="text-lg font-semibold text-foreground">No APIs connected</h3>

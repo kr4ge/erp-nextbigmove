@@ -157,7 +157,7 @@ export function IntegrationsListCard({
   const emptyState =
     allCount === 0 ? (
       <div className="flex flex-col items-center justify-center py-10 text-center">
-        <div className="mb-3 text-orange-500">
+        <div className="mb-3 text-primary">
           <PlugZap className="h-6 w-6" />
         </div>
         <p className="text-base font-semibold text-slate-700">No integrations yet</p>
@@ -188,7 +188,7 @@ export function IntegrationsListCard({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <PlugZap className="h-3.5 w-3.5 text-orange-500" />
+        <PlugZap className="h-3.5 w-3.5 text-primary" />
         <h4 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
           All Integrations
         </h4>

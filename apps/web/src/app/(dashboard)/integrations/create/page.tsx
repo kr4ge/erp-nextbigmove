@@ -297,7 +297,7 @@ export default function CreateIntegrationPage() {
             className="panel panel-content text-left transition-all hover:border-orange-200 hover:bg-orange-50/30"
           >
             <div className="panel-header">
-              <ProviderGlyph provider="META_ADS" className="h-3.5 w-3.5 text-orange-500" />
+              <ProviderGlyph provider="META_ADS" className="h-3.5 w-3.5 text-primary" />
               <h3 className="panel-title">Meta Ads</h3>
             </div>
             <div className="space-y-3 px-5 py-5">
@@ -338,7 +338,7 @@ export default function CreateIntegrationPage() {
       {step === 'credentials' && provider && (
         <section className="panel panel-content">
           <div className="panel-header">
-            <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-orange-500" />
+            <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-primary" />
             <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Credentials</h2>
           </div>
 
@@ -415,7 +415,7 @@ export default function CreateIntegrationPage() {
       {step === 'configure' && provider && (
         <section className="panel panel-content">
           <div className="panel-header">
-            <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-orange-500" />
+            <ProviderGlyph provider={provider} className="h-3.5 w-3.5 text-primary" />
             <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h2>
           </div>
 

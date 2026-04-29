@@ -4,10 +4,10 @@ import { Card } from './card';
 type FeedbackTone = 'info' | 'success' | 'warning' | 'error';
 
 const toneStyles: Record<FeedbackTone, string> = {
-  info: 'border-blue-200 bg-blue-50 text-blue-700',
-  success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  warning: 'border-amber-200 bg-amber-50 text-amber-700',
-  error: 'border-red-200 bg-red-50 text-red-700',
+  info: 'border-info/40 bg-info-soft text-info',
+  success: 'border-success/40 bg-emerald-success-soft text-success',
+  warning: 'border-warning/40 bg-amber-warning-soft text-warning',
+  error: 'border-destructive/40 bg-destructive-soft text-destructive',
 };
 
 interface AlertBannerProps {

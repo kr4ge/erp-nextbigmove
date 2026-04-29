@@ -294,7 +294,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
           </Link>
           <Link
             href={`/workflows/${workflowId}/edit`}
-            className="inline-flex items-center gap-2 btn btn-md btn-primary"
+            className="inline-flex items-center gap-2 btn btn-md btn-primary-soft"
             // "inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-100"
           >
             <Settings className="h-4 w-4" />
@@ -306,7 +306,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="panel panel-content">
           <div className="panel-header">
-            <SlidersHorizontal className="h-3.5 w-3.5 text-orange-500" />
+            <SlidersHorizontal className="h-3.5 w-3.5 text-primary" />
             <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h3>
           </div>
           <div className="space-y-3 p-4 text-sm text-slate-700">
@@ -339,7 +339,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
 
         <div className="panel panel-content">
           <div className="panel-header">
-            <Activity className="h-3.5 w-3.5 text-orange-500" />
+            <Activity className="h-3.5 w-3.5 text-primary" />
             <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Rate Limits</h3>
           </div>
           <div className="space-y-3 p-4 text-sm text-slate-700">
@@ -371,7 +371,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="-mx-4 -mt-4 mb-3 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-              <CalendarClock className="h-3.5 w-3.5 text-orange-500" />
+              <CalendarClock className="h-3.5 w-3.5 text-primary" />
               Execution History
             </h3>
             <div className="mt-1 text-xs text-slate-500">
@@ -385,7 +385,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
           <button
             onClick={triggerWorkflow}
             disabled={triggering}
-            className="btn btn-md btn-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            className="btn btn-md btn-primary-soft disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
           >
             {triggering ? 'Starting…' : 'Trigger Execution'}
           </button>

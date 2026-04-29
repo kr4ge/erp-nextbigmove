@@ -39,6 +39,8 @@
     --secondary: 226 232 240;
     --muted: 100 116 139;
 
+    --info: 29 78 216;
+    --info-soft: 239 246 255;
     --success: 22 163 74;
     --success-soft: 167 243 208;
     --destructive: 245 32 32;
@@ -334,7 +336,7 @@
     .pill-info {
       @apply
         border-none
-        bg-warning/40 text-foreground/80
+        bg-info/20 text-foreground/80
     }
 }
 

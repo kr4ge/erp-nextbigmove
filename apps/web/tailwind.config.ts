@@ -38,6 +38,10 @@ const config: Config = {
           soft: 'rgb(var())',
           foreground: 'rgb(var(--secondary-foreground))',
         },
+        info: {
+          DEFAULT: 'rgb(var(--info))',
+          soft: 'rgb(var(--info-soft))'
+        },
         success: {
           DEFAULT: 'rgb(var(--success))',
           soft: 'rgb(var(--success-soft))'

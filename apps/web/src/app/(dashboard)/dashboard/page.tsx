@@ -1496,7 +1496,7 @@ export default function DashboardPage() {
 
           <DashboardSection
             title="Quick Actions"
-            icon={<Zap className="h-3.5 w-3.5 text-orange-500" />}
+            icon={<Zap className="h-3.5 w-3.5 text-primary" />}
             className="panel panel-content"
             contentClassName="space-y-3"
           >
@@ -1528,7 +1528,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <DashboardSection
               title="Recent Activity"
-              icon={<TrendingUp className="h-3.5 w-3.5 text-orange-500" />}
+              icon={<TrendingUp className="h-3.5 w-3.5 text-primary" />}
               className="panel panel-content"
               meta={
                 <Button
@@ -1637,7 +1637,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="Monitoring"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         meta={`Last updated: ${salesData?.lastUpdatedAt ? new Date(salesData.lastUpdatedAt).toLocaleString() : "—"}`}
         className="panel panel-content"
         contentClassName="space-y-4"
@@ -1675,7 +1675,7 @@ export default function DashboardPage() {
                       type="text"
                       value={shopSearch}
                       onChange={(e) => setShopSearch(e.target.value)}
-                      placeholder="Type to search"
+                      placeholder="Search"
                       className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
                     />
                   </div>
@@ -1808,7 +1808,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="Sales Performance"
-        icon={<TrendingUp className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<TrendingUp className="h-3.5 w-3.5 text-primary" />}
         meta={`${salesData?.rows?.length || 0} rows`}
         contentClassName="p-0"
       >
@@ -1924,7 +1924,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="Delivery Monitoring"
-        icon={<ClipboardList className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<ClipboardList className="h-3.5 w-3.5 text-primary" />}
         meta="Scoped to your matched sales assignee and selected shops"
         className="panel panel-content"
         contentClassName="space-y-3"
@@ -2254,7 +2254,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="KPI Monitoring"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         className="panel panel-content"
         contentClassName="space-y-3"
       >
@@ -2317,7 +2317,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <DashboardSection
           title="Winning Creatives"
-          icon={<Lightbulb className="h-3.5 w-3.5 text-orange-500" />}
+          icon={<Lightbulb className="h-3.5 w-3.5 text-primary" />}
           className="panel panel-content"
           meta={
             myStats?.winning_creatives_list &&
@@ -2364,7 +2364,7 @@ export default function DashboardPage() {
 
         <DashboardSection
           title="Quick Links"
-          icon={<LinkIcon className="h-3.5 w-3.5 text-orange-500" />}
+          icon={<LinkIcon className="h-3.5 w-3.5 text-primary" />}
           className="panel panel-content"
           meta={
             <Button
@@ -2614,7 +2614,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="KPI Monitoring"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         className="panel panel-content"
         contentClassName="space-y-3"
       >

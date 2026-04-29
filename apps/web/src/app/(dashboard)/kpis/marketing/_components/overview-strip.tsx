@@ -18,7 +18,7 @@ export function OverviewStrip({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <Sparkles className="h-3.5 w-3.5 text-orange-500" />
+        <Sparkles className="h-3.5 w-3.5 text-primary" />
         <h4 className="panel-title">
           Current Context
         </h4>
@@ -27,7 +27,7 @@ export function OverviewStrip({
         <div className="grid grid-cols-1 gap-2.5 md:grid-cols-6">
           <div className="rounded-lg border border-orange-100 bg-orange-50/40 px-3 py-2.5 md:col-span-2">
             <div className="flex items-center gap-1.5 text-xs-tight uppercase tracking-wide text-slate-500">
-              <Sparkles className="h-3 w-3 text-orange-500" />
+              <Sparkles className="h-3 w-3 text-primary" />
               <span>Team</span>
             </div>
             <p className="mt-0.5 text-sm font-semibold text-slate-900">

@@ -27,7 +27,7 @@ export function ProfileSummaryCard({
   return (
     <Card className="lg:col-span-1 panel panel-content">
       <div className="-mx-6 -mt-6 mb-4 panel-header">
-        <User className="h-3.5 w-3.5 text-orange-500" />
+        <User className="h-3.5 w-3.5 text-primary" />
         <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
           Profile Summary
         </h3>

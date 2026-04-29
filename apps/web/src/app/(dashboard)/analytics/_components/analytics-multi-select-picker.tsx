@@ -76,7 +76,7 @@ export function AnalyticsMultiSelectPicker({
                 onClear();
                 setOpen(true);
               }}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+              className="text-xs font-semibold text-primary"
             >
               Clear
             </button>
@@ -86,8 +86,8 @@ export function AnalyticsMultiSelectPicker({
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Type to search"
-              className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
+              placeholder="Search"
+              className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-primary"
             />
           </div>
           <div className="max-h-64 overflow-auto">
@@ -100,7 +100,7 @@ export function AnalyticsMultiSelectPicker({
                     onToggleAll(event.target.checked);
                     setOpen(true);
                   }}
-                  className="rounded border-slate-300"
+                  className="rounded border-slate-300 accent-primary"
                 />
                 <span>All</span>
               </label>
@@ -118,13 +118,13 @@ export function AnalyticsMultiSelectPicker({
                       onToggle(option.value);
                       setOpen(true);
                     }}
-                    className="rounded border-slate-300"
+                    className="rounded border-slate-300 accent-primary"
                   />
                   <span>{option.label}</span>
                 </label>
                 <button
                   type="button"
-                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                  className="text-xs font-semibold text-primary"
                   onClick={() => {
                     onOnly(option.value);
                     setOpen(true);

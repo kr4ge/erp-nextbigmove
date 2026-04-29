@@ -39,7 +39,7 @@ export function MetaIntegrationsGrid({
         >
           <div className="mb-4 flex items-start justify-between">
             <div className="flex items-start gap-3">
-              <div className="mt-1 flex shrink-0 items-center text-orange-500">
+              <div className="mt-1 flex shrink-0 items-center text-primary">
                 <svg
                   className="h-5 w-5"
                   fill="none"

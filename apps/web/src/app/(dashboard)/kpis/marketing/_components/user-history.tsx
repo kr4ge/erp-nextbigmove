@@ -19,7 +19,7 @@ export function UserHistory({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <Users className="h-3.5 w-3.5 text-orange-500" />
+        <Users className="h-3.5 w-3.5 text-primary" />
         <h4 className="panel-title">
           User Assignments + Overrides
         </h4>

@@ -48,7 +48,7 @@ export function IntegrationConnectionCards({
 
       <section className="panel panel-content">
         <div className="panel-header">
-          <span className="text-orange-500 [&>svg]:!h-3.5 [&>svg]:!w-3.5">
+          <span className="text-primary [&>svg]:!h-3.5 [&>svg]:!w-3.5">
             {getProviderIcon('PANCAKE_POS')}
           </span>
           <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">

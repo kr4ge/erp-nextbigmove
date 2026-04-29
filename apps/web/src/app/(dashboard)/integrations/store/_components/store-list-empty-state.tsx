@@ -33,7 +33,7 @@ export function StoreListEmptyState({
 
   return (
     <Card className="flex flex-col items-center justify-center px-8 py-12 text-center">
-      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center text-orange-500">
+      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center text-primary">
         <Store className="h-8 w-8" />
       </div>
       <h3 className="text-lg font-semibold text-foreground">No POS stores connected</h3>

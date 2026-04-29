@@ -398,7 +398,7 @@ export default function MarketingAnalyticsPage() {
 
       <DashboardSection
         title="Marketing Monitoring"
-        icon={<Gauge className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<Gauge className="h-3.5 w-3.5 text-primary" />}
         meta={`Last updated: ${lastUpdatedLabel}`}
         contentClassName="space-y-5"
       >
@@ -436,7 +436,7 @@ export default function MarketingAnalyticsPage() {
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                      className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                       checked={excludeCanceled}
                       onChange={(e) => setExcludeCanceled(e.target.checked)}
                     />
@@ -445,7 +445,7 @@ export default function MarketingAnalyticsPage() {
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                      className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                       checked={excludeRestocking}
                       onChange={(e) => setExcludeRestocking(e.target.checked)}
                     />
@@ -454,7 +454,7 @@ export default function MarketingAnalyticsPage() {
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 accent-orange-500 checked:border-orange-500 checked:bg-orange-500 focus:ring-2 focus:ring-orange-200"
+                      className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                       checked={excludeAbandoned}
                       onChange={(e) => setExcludeAbandoned(e.target.checked)}
                     />
@@ -539,7 +539,7 @@ export default function MarketingAnalyticsPage() {
       {/* Top Tables */}
       <DashboardSection
         title="Marketing Breakdown"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
+        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         meta={`${activeMarketingRowCount} rows`}
         className="panel panel-content"
         contentClassName="space-y-3"

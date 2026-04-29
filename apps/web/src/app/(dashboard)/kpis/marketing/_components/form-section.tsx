@@ -61,7 +61,7 @@ export function FormSection({
             </Button>
           ) : null}
           <Button
-            className="h-9 rounded-lg bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700 focus:ring-orange-200 focus:ring-offset-0"
+            className="h-9 rounded-lg bg-primary text-white hover:bg-orange-600 active:bg-orange-700 focus:ring-orange-200 focus:ring-offset-0"
             loading={loading}
             disabled={disabled}
             onClick={onAction}

@@ -12,7 +12,7 @@ export function TeamCategoryHistory({ teamName, rows }: TeamCategoryHistoryProps
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <Target className="h-3.5 w-3.5 text-orange-500" />
+        <Target className="h-3.5 w-3.5 text-primary" />
         <h4 className="panel-title">
           Team + Category Targets
         </h4>

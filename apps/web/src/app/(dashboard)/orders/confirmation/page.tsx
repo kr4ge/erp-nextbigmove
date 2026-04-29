@@ -2194,7 +2194,7 @@ export default function OrdersConfirmationPage() {
                       >
                         Printing
                         {effectivePrintingNote.trim() ? (
-                          <span className="absolute -right-0.5 -top-0.5 inline-flex h-1.5 w-1.5 rounded-full bg-orange-500" />
+                          <span className="absolute -right-0.5 -top-0.5 inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
                         ) : null}
                       </button>
                     </div>
@@ -2758,7 +2758,7 @@ export default function OrdersConfirmationPage() {
                               }}
                               readOnly={!isSelectedOrderEditable || !showGeoPicker}
                               disabled={!isSelectedOrderEditable}
-                              placeholder="Type to search"
+                              placeholder="Search"
                               className={`w-full rounded-md bg-transparent px-2.5 py-1.5 pr-14 text-xs outline-none ${
                                 isSelectedOrderEditable
                                   ? hasMissingGeoParts && !showGeoPicker

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Download, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { CalendarDays, Download, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
@@ -22,7 +22,7 @@ const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: 
 
 export default function ReportsPage() {
   const { addToast } = useToast();
-  const { range, startDate, endDate, handleDateRangeChange, syncDateRangeFromApi } =
+  const { today, range, startDate, endDate, handleDateRangeChange, syncDateRangeFromApi } =
     useAnalyticsDateRange();
   const [report, setReport] = useState<PosOrdersReportResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,6 +82,17 @@ export default function ReportsPage() {
     return new Date(report.generated_at).toLocaleString();
   }, [report?.generated_at]);
 
+  const reportsDateRangeIsToday = startDate === today && endDate === today;
+  const formatDateRangeButtonDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-');
+    if (!year || !month || !day) return dateStr;
+    return `${month.padStart(2, '0')}/${day.padStart(2, '0')}/${year}`;
+  };
+  const reportsDateRangeButtonLabel =
+    startDate === endDate
+      ? formatDateRangeButtonDate(startDate)
+      : `${formatDateRangeButtonDate(startDate)} - ${formatDateRangeButtonDate(endDate)}`;
+
   const handleExportCsv = async () => {
     if (!report || report.items.length === 0) return;
     setIsExportingCsv(true);
@@ -111,6 +122,11 @@ export default function ReportsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
+        breadcrumbs={
+          <span className='text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary'>
+            Reports
+          </span>
+        }
         title="Reports"
         description="Tenant-wide POS order exports grouped by store. Stores with zero orders in the selected range are excluded."
         actions={(
@@ -137,24 +153,42 @@ export default function ReportsPage() {
       />
 
       <Card className="border-slate-200 shadow-sm">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-slate-700">Date range</p>
-            <div className="relative">
-              <Datepicker
-                value={range}
-                onChange={handleDateRangeChange}
-                inputClassName="rounded-lg border border-slate-200 pl-3 pr-10 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-slate-300"
-                containerClassName=""
-                popupClassName={(defaultClass) => `${defaultClass} z-50`}
-                displayFormat="MM/DD/YYYY"
-                separator=" – "
-                toggleClassName="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                placeholder=""
-              />
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="relative">
+            <Datepicker
+              value={range}
+              onChange={handleDateRangeChange}
+              useRange={false}
+              asSingle={false}
+              showShortcuts={false}
+              showFooter={false}
+              primaryColor="orange"
+              readOnly
+              inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                reportsDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
+              }`}
+              containerClassName=""
+              popupClassName={(defaultClass) => `${defaultClass} z-50 kpi-datepicker-light`}
+              displayFormat="MM/DD/YYYY"
+              separator=" - "
+              toggleIcon={() => (
+                <span className="flex w-full items-center gap-2 overflow-hidden">
+                  <CalendarDays className="h-4 w-4 shrink-0" />
+                  <span
+                    className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                      reportsDateRangeIsToday
+                        ? 'max-w-0 -translate-x-1 opacity-0'
+                        : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
+                    }`}
+                  >
+                    {reportsDateRangeButtonLabel}
+                  </span>
+                </span>
+              )}
+              toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+              placeholder=" "
+            />
           </div>
-
           <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
             <div>
               Stores: <span className="font-semibold text-slate-900">{report?.row_count ?? 0}</span>
@@ -163,7 +197,7 @@ export default function ReportsPage() {
               Generated: <span className="font-semibold text-slate-900">{generatedAtLabel}</span>
             </div>
             <Button
-              variant="secondary"
+              variant="ghost"
               size="sm"
               iconLeft={<RefreshCw className="h-4 w-4" />}
               onClick={() => void fetchReport()}
@@ -177,7 +211,7 @@ export default function ReportsPage() {
         <div className="mt-4">
           <AlertBanner
             tone="info"
-            message="To get high-accuracy report data, fetch the POS data in /workflow first."
+            message="To get high-accuracy report data, fetch the POS data in /workflows first."
           />
         </div>
       </Card>

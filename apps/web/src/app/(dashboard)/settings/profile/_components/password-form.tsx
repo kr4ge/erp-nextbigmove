@@ -39,7 +39,7 @@ export function PasswordForm({
     <Card className="panel panel-content">
       <form className="space-y-4" onSubmit={onSubmit}>
         <div className="-mx-6 -mt-6 mb-4 panel-header">
-          <KeyRound className="h-3.5 w-3.5 text-orange-500" />
+          <KeyRound className="h-3.5 w-3.5 text-primary" />
           <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
             Password
           </h3>

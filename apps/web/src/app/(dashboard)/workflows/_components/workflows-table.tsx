@@ -143,7 +143,7 @@ export function WorkflowsTable({
         <DataTableState
           title="No workflows yet"
           description="Create your first workflow to automate data fetching."
-          icon={<Workflow className="h-6 w-6 text-orange-500" />}
+          icon={<Workflow className="h-6 w-6 text-primary" />}
           action={
             <Button
               variant="primary"

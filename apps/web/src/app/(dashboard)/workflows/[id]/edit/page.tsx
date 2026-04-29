@@ -492,7 +492,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
                       type="button"
                       onClick={() => updateField('scheduleUnit', unit)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                        formData.scheduleUnit === unit ? 'bg-primary text-white' : 'btn-outline border'
+                        formData.scheduleUnit === unit ? 'bg-primary-soft text-primary-soft-foreground border border-primary' : 'btn-outline border'
                       }`}
                     >
                       {unit === 'minutes' ? 'Minutes' : unit === 'hours' ? 'Hours' : 'Days'}
@@ -612,7 +612,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
                     onClick={() => updateField('dateRangeType', type)}
                     className={`btn px-3 py-2 text-xs capitalize leading-tight ${
                       active
-                        ? 'btn-primary'
+                        ? 'btn-primary-soft'
                         : 'btn-outline'
                     }`}
                   >
@@ -742,7 +742,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
           <button
             onClick={handleSubmit}
             disabled={isSaving}
-            className="btn btn-md btn-primary"
+            className="btn btn-md btn-primary-soft"
           >
             {isSaving ? 'Saving…' : 'Save Changes'}
           </button>

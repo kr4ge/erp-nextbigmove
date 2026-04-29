@@ -40,8 +40,11 @@ export function ManualMetaUploadModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="max-w-xl rounded-2xl p-0">
-        <DialogHeader className="border-b border-slate-200 px-6 py-5">
+      <DialogContent
+        className="max-w-xl rounded-2xl border-slate-200 p-0"
+        closeButtonClassName="!right-2 !top-5 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 opacity-100 shadow-sm hover:border-orange-200 hover:text-orange-600 focus:ring-orange-200 data-[state=open]:bg-white [&>svg]:h-5 [&>svg]:w-5"
+      >
+        <DialogHeader className="border-b border-slate-200 px-3 py-5">
           <DialogTitle>Upload Meta Ads</DialogTitle>
           <DialogDescription>
             Import raw Meta CSV or XLSX rows, populate <code>meta_ad_insights</code>, then run marketing and sales reconciliation.
@@ -50,7 +53,7 @@ export function ManualMetaUploadModal({
 
         <div className="space-y-5 px-6 py-5">
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-900">Meta integration</label>
+            <label className="form-label">Meta integration</label>
             <select
               value={selectedIntegrationId}
               onChange={(event) => onIntegrationChange(event.target.value)}
@@ -70,7 +73,7 @@ export function ManualMetaUploadModal({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-900">Upload file</label>
+            <label className="form-label">Upload file</label>
             <input
               type="file"
               accept=".csv,.xlsx,.xls"
