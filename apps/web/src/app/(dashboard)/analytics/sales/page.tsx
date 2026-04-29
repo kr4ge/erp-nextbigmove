@@ -1398,8 +1398,6 @@ export default function SalesAnalyticsPage() {
       </DashboardSection>
 
       {/* Revenue per Product / Delivery Status */}
-      <Card className="px-2 sm:px-2 py-2 border-slate-200 shadow-sm bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-2">
       <DashboardSection
         title="Sales Breakdown"
         icon={<BarChart3 className="h-3.5 w-3.5 text-orange-500" />}
