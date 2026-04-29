@@ -9,6 +9,7 @@ import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import { FormInput } from '@/components/ui/form-input';
 import { FormSelect } from '@/components/ui/form-select';
 import { EmptyState } from '@/components/ui/emptystate';
+import { useToast } from '@/components/ui/toast';
 import { DataTable } from '@/components/data-table/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { type ColumnDef } from '@tanstack/react-table';
@@ -68,10 +69,18 @@ const statusOptions = [
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [user, setUser] = useState<{ role?: string } | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
+  const [permissionToastShown, setPermissionToastShown] = useState(false);
+
+  const isPermissionDeniedError = (error: unknown) => {
+    if (!error || typeof error !== 'object') return false;
+    const maybeError = error as { response?: { status?: number } };
+    return maybeError.response?.status === 403;
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -108,6 +117,17 @@ export default function UsersPage() {
 
     checkPermissions();
   }, [isReady, user]);
+
+  useEffect(() => {
+    if (!isReady || isCheckingPermissions) return;
+    if (!canManage && !permissionToastShown) {
+      addToast('warning', "You don't have permission to manage users.");
+      setPermissionToastShown(true);
+    }
+    if (canManage && permissionToastShown) {
+      setPermissionToastShown(false);
+    }
+  }, [addToast, canManage, isCheckingPermissions, isReady, permissionToastShown]);
 
   const { data: users, isLoading, isError } = useQuery<User[]>({
     queryKey: ['users'],
@@ -184,6 +204,11 @@ export default function UsersPage() {
       });
       setCreateOpen(false);
     },
+    onError: (error: unknown) => {
+      if (isPermissionDeniedError(error)) {
+        addToast('error', "You don't have permission to create users.");
+      }
+    },
   });
 
   const updateMutation = useMutation({
@@ -201,6 +226,11 @@ export default function UsersPage() {
       setEditOpen(false);
       setEditingUser(null);
     },
+    onError: (error: unknown) => {
+      if (isPermissionDeniedError(error)) {
+        addToast('error', "You don't have permission to edit users.");
+      }
+    },
   });
 
   const deleteMutation = useMutation({
@@ -209,6 +239,11 @@ export default function UsersPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (error: unknown) => {
+      if (isPermissionDeniedError(error)) {
+        addToast('error', "You don't have permission to delete users.");
+      }
     },
   });
 

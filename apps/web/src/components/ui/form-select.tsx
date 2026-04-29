@@ -18,7 +18,7 @@ export const FormSelect = forwardRef<HTMLSelectElement, FormSelectProps>(
         {label && (
           <label
             htmlFor={selectId}
-            className="block text-sm font-semibold text-[#0F172A]"
+            className="form-label"
           >
             {label}
           </label>
@@ -27,11 +27,12 @@ export const FormSelect = forwardRef<HTMLSelectElement, FormSelectProps>(
           ref={ref}
           id={selectId}
           className={clsx(
-            'w-full rounded-xl border px-4 py-2 text-sm text-[#0F172A]',
-            'focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent',
-            'transition-colors appearance-none bg-no-repeat bg-right',
-            'bg-[url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%2394A3B8\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3E%3C/svg%3E")]',
-            'bg-[length:1.5rem_1.5rem] pr-10',
+            // 'w-full rounded-xl border px-4 py-2 text-sm text-[#0F172A]',
+            // 'focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent',
+            // 'transition-colors appearance-none bg-no-repeat bg-right',
+            // 'bg-[url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%2394A3B8\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3E%3C/svg%3E")]',
+            // 'bg-[length:1.5rem_1.5rem] pr-10',
+            'input',
             error
               ? 'border-[#EF4444] bg-[#FEF2F2]'
               : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1]',

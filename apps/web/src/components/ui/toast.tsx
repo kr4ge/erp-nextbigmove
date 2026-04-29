@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info' | 'warning';
 type ToastItem = { id: number; type: ToastType; message: string };
 
 type ToastContextType = {

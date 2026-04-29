@@ -2,6 +2,7 @@
 
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
+import { Receipt } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import type {
   RespondWmsPurchasingRevisionInput,
@@ -60,25 +61,43 @@ export function RequestDetailPanel({
 
   if (isLoading) {
     return (
-      <Card className="border-[#d9e2ec]">
-        <p className="text-sm text-[#5a7184]">Loading request details...</p>
-      </Card>
+      <section className="panel panel-content">
+        <div className="panel-header">
+          <Receipt className="h-3.5 w-3.5 text-orange-500" />
+          <h4 className="panel-title">Request Detail</h4>
+        </div>
+        <div className="p-3">
+          <p className="text-sm text-[#5a7184]">Loading request details...</p>
+        </div>
+      </section>
     );
   }
 
   if (error) {
     return (
-      <Card className="border-[#f1c7cc] bg-[#fff8f8]">
-        <p className="text-sm text-[#9f1d35]">{error}</p>
-      </Card>
+      <section className="panel panel-content">
+        <div className="panel-header">
+          <Receipt className="h-3.5 w-3.5 text-orange-500" />
+          <h4 className="panel-title">Request Detail</h4>
+        </div>
+        <div className="rounded-lg border border-[#f1c7cc] bg-[#fff8f8] p-3">
+          <p className="text-sm text-[#9f1d35]">{error}</p>
+        </div>
+      </section>
     );
   }
 
   if (!batch) {
     return (
-      <Card className="border-[#d9e2ec]">
-        <p className="text-sm text-[#5a7184]">Select a request from the queue to view status and invoice.</p>
-      </Card>
+      <section className="panel panel-content">
+        <div className="panel-header">
+          <Receipt className="h-3.5 w-3.5 text-orange-500" />
+          <h4 className="panel-title">Request Detail</h4>
+        </div>
+        <div className="p-3">
+          <p className="text-sm text-[#5a7184]">Select a request from the queue to view status and invoice.</p>
+        </div>
+      </section>
     );
   }
 
@@ -120,7 +139,13 @@ export function RequestDetailPanel({
     .filter((line): line is NonNullable<typeof line> => Boolean(line));
 
   return (
-    <div className="space-y-4">
+    <section className="panel panel-content">
+      <div className="panel-header">
+        <Receipt className="h-3.5 w-3.5 text-orange-500" />
+        <h4 className="panel-title">Request Detail</h4>
+      </div>
+
+      <div className="space-y-4 p-3">
       <Card className="border-[#d9e2ec]">
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -353,6 +378,7 @@ export function RequestDetailPanel({
           )}
         </div>
       </Card>
-    </div>
+      </div>
+    </section>
   );
 }

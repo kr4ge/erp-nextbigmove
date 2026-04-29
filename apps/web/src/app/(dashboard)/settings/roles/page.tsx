@@ -9,6 +9,8 @@ import { SectionCard } from '@/components/ui/section-card';
 import { FormInput } from '@/components/ui/form-input';
 import { FormTextarea } from '@/components/ui/form-textarea';
 import { EmptyState } from '@/components/ui/emptystate';
+import { useToast } from '@/components/ui/toast';
+import { ConfirmActionDialog } from '../_components/confirm-action-dialog';
 import { Shield } from 'lucide-react';
 
 type Role = {
@@ -30,11 +32,20 @@ type Permission = {
 
 export default function RolesPage() {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [user, setUser] = useState<{ role?: string } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { name: string; description: string; permissionKeys: string[] }>>({});
   const [canManage, setCanManage] = useState(false);
   const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
   const [isReady, setIsReady] = useState(false);
+  const [roleToDelete, setRoleToDelete] = useState<Role | null>(null);
+  const [permissionToastShown, setPermissionToastShown] = useState(false);
+
+  const isPermissionDeniedError = (error: unknown) => {
+    if (!error || typeof error !== 'object') return false;
+    const maybeError = error as { response?: { status?: number } };
+    return maybeError.response?.status === 403;
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -71,6 +82,17 @@ export default function RolesPage() {
 
     checkPermissions();
   }, [isReady, user]);
+
+  useEffect(() => {
+    if (!isReady || isCheckingPermissions) return;
+    if (!canManage && !permissionToastShown) {
+      addToast("warning", "You don't have permission to manage roles.");
+      setPermissionToastShown(true);
+    }
+    if (canManage && permissionToastShown) {
+      setPermissionToastShown(false);
+    }
+  }, [addToast, canManage, isCheckingPermissions, isReady, permissionToastShown]);
 
   const { data: roles, isLoading, isError } = useQuery<Role[]>({
     queryKey: ['roles', 'erp'],
@@ -132,6 +154,12 @@ export default function RolesPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['roles', 'erp'] });
       setCreateForm({ name: '', key: '', description: '', permissionKeys: [] });
+      addToast('success', 'Role created successfully.');
+    },
+    onError: (error: unknown) => {
+      if (isPermissionDeniedError(error)) {
+        addToast('error', "You don't have permission to create roles.");
+      }
     },
   });
 
@@ -146,6 +174,12 @@ export default function RolesPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['roles', 'erp'] });
       setEditing(null);
+      addToast('success', 'Role updated successfully.');
+    },
+    onError: (error: unknown) => {
+      if (isPermissionDeniedError(error)) {
+        addToast('error', "You don't have permission to edit roles.");
+      }
     },
   });
 
@@ -156,8 +190,19 @@ export default function RolesPage() {
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['roles', 'erp'] });
+      addToast('success', 'Role deleted successfully.');
+      setRoleToDelete(null);
+    },
+    onError: (error: unknown) => {
+      if (isPermissionDeniedError(error)) {
+        addToast('error', "You don't have permission to delete roles.");
+      }
     },
   });
+
+  const handleDeleteRole = (role: Role) => {
+    setRoleToDelete(role);
+  };
 
   if (!isReady || isCheckingPermissions) {
     return <LoadingCard label="Loading roles..." />;
@@ -236,11 +281,11 @@ export default function RolesPage() {
                             <Button
                               variant="danger"
                               size="sm"
-                              onClick={() => deleteMutation.mutate(role.id)}
+                              onClick={() => handleDeleteRole(role)}
                               disabled={deleteMutation.isPending}
-                              loading={deleteMutation.isPending}
+                              loading={deleteMutation.isPending && roleToDelete?.id === role.id}
                             >
-                              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+                              {deleteMutation.isPending && roleToDelete?.id === role.id ? 'Deleting...' : 'Delete'}
                             </Button>
                           )}
                         </div>
@@ -428,6 +473,28 @@ export default function RolesPage() {
           </SectionCard>
         </div>
       </div>
+
+      <ConfirmActionDialog
+        open={Boolean(roleToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) {
+            setRoleToDelete(null);
+          }
+        }}
+        title="Delete Role"
+        description={
+          roleToDelete
+            ? `Are you sure you want to delete "${roleToDelete.name}"? This action cannot be undone.`
+            : 'Are you sure you want to delete this role?'
+        }
+        confirmLabel="Delete role"
+        cancelLabel="Cancel"
+        isConfirming={deleteMutation.isPending}
+        onConfirm={() => {
+          if (!roleToDelete) return;
+          deleteMutation.mutate(roleToDelete.id);
+        }}
+      />
     </div>
   );
 }

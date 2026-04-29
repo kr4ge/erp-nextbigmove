@@ -18,7 +18,7 @@ export function Card({
   return (
     <div
       className={clsx(
-        "shadow-sm",
+        "",
         className,
       )}
       {...rest}

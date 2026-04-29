@@ -152,7 +152,7 @@ export default function ReportsPage() {
         )}
       />
 
-      <Card className="border-slate-200 shadow-sm">
+      
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="relative">
             <Datepicker
@@ -214,7 +214,7 @@ export default function ReportsPage() {
             message="To get high-accuracy report data, fetch the POS data in /workflows first."
           />
         </div>
-      </Card>
+      
 
       {error && <AlertBanner tone="error" message={error} />}
 

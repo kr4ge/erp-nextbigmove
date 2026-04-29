@@ -1,9 +1,8 @@
 'use client';
 
 import clsx from 'clsx';
-import { Search } from 'lucide-react';
+import { ListChecks, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import type {
   WmsPurchasingBatchRow,
   WmsPurchasingBatchStatus,
@@ -58,13 +57,14 @@ export function RequestsQueuePanel({
   onSelectBatch,
 }: RequestsQueuePanelProps) {
   return (
-    <Card className="border-[#d9e2ec]">
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-[#12344d]">Request Queue</h2>
-          <p className="text-sm text-[#5a7184]">{total} total</p>
-        </div>
+    <section className="panel panel-content">
+      <div className="panel-header">
+        <ListChecks className="h-3.5 w-3.5 text-orange-500" />
+        <h4 className="panel-title">Request Queue</h4>
+        <span className="ml-auto text-xs text-slate-500">{total} total</span>
+      </div>
 
+      <div className="space-y-4 p-3">
         <div className="grid gap-3 lg:grid-cols-4">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7b8ba1]" />
@@ -193,7 +193,7 @@ export function RequestsQueuePanel({
           </div>
         </div>
       </div>
-    </Card>
+    </section>
   );
 }
 

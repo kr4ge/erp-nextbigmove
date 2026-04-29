@@ -1,9 +1,8 @@
 'use client';
 
 import clsx from 'clsx';
-import { Search, Trash2, X } from 'lucide-react';
+import { ClipboardList, Search, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { FormSelect } from '@/components/ui/form-select';
 import { FormTextarea } from '@/components/ui/form-textarea';
 import { RequestsSearchableSelect } from './requests-searchable-select';
@@ -99,25 +98,17 @@ export function RequestCreatePanel({
     : 'All stores';
 
   return (
-    <Card className="border-slate-200 bg-white">
-      <div className="space-y-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">Stock Request Cart</h2>
-            <p className="text-xs text-slate-500">Select products and submit to WMS</p>
-          </div>
-          <Button
-            size="sm"
-            onClick={() => void onSubmit()}
-            loading={isSubmitting}
-            disabled={isSubmitting || cartLines.length === 0}
-          >
-            Submit request
-          </Button>
-        </div>
+    <section className="panel panel-content">
+      <div className="panel-header">
+        <ClipboardList className="h-3.5 w-3.5 text-orange-500" />
+        <h4 className="panel-title">Stock Request Cart</h4>
+      </div>
+
+      <div className="space-y-3.5 p-3">
+        <p className="text-xs text-slate-500">Select products and submit to WMS</p>
 
         <div className="grid gap-3 lg:grid-cols-2">
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 mt-2">
             <label className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Store</label>
             <RequestsSearchableSelect
               label="Store"
@@ -332,8 +323,19 @@ export function RequestCreatePanel({
             />
           </div>
         ) : null}
+
+        <div className="pt-1">
+          <Button
+            size="lg"
+            onClick={() => void onSubmit()}
+            loading={isSubmitting}
+            disabled={isSubmitting || cartLines.length === 0}
+          >
+            Submit request
+          </Button>
+        </div>
       </div>
-    </Card>
+    </section>
   );
 }
 
@@ -347,9 +349,9 @@ function SummaryCard({
   valueClassName?: string;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className={clsx('mt-0.5 text-lg font-semibold text-slate-800', valueClassName)}>{value}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
+      <p className={clsx('card-value', valueClassName)}>{value}</p>
     </div>
   );
 }

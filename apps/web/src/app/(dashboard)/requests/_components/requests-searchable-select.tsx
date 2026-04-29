@@ -147,7 +147,7 @@ export function RequestsSearchableSelect({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((previous) => !previous)}
-        className={`flex h-8 w-full items-center gap-2 rounded-full border bg-white pl-3 pr-2 text-slate-800 transition ${
+        className={`flex h-8 w-full items-center gap-2 rounded-lg border bg-white pl-3 pr-2 text-slate-800 transition ${
           open
             ? 'border-slate-300 shadow-[0_0_0_3px_rgba(148,163,184,0.18)]'
             : 'border-slate-200 hover:border-slate-300'

@@ -238,8 +238,7 @@
   }
   .panel-content {
     @apply
-      bg-gradient-to-br
-      from-surface via-orange-50/35 to-amber-50/25;
+      bg-surface
   }
 
   /* KPI Cards */
@@ -259,7 +258,7 @@
   .card-value {
     @apply
       text-lg-loose
-      font-semibold
+      font-normal
       tracking-tight
       text-slate-950 tabular-nums
   }

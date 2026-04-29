@@ -1,5 +1,6 @@
 'use client';
 
+import { LineChartIcon } from 'lucide-react';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import { PageHeader } from '@/components/ui/page-header';
 import { RequestCreatePanel } from './_components/request-create-panel';
@@ -68,13 +69,28 @@ export default function RequestsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        breadcrumbs={
+          <span className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
+            Requests
+          </span>
+        }
         title="Stock Requests"
         description="Create procurement or self-buy requests using a cart flow"
       />
 
       {overviewError && <AlertBanner tone="error" message={overviewError} />}
 
-      {overview?.summary ? <RequestsSummaryStrip summary={overview.summary} /> : null}
+      {overview?.summary ? (
+        <section className="panel panel-content">
+          <div className="panel-header">
+            <LineChartIcon className="h-3.5 w-3.5 text-orange-500" />
+            <h4 className="panel-title">Request Summary</h4>
+          </div>
+          <div className="p-3">
+            <RequestsSummaryStrip summary={overview.summary} />
+          </div>
+        </section>
+      ) : null}
 
       <RequestCreatePanel
         stores={stores}
