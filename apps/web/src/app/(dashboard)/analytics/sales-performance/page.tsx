@@ -19,6 +19,10 @@ import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
 import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
 import { AnalyticsRiskConfirmationTable } from '../_components/analytics-risk-confirmation-table';
+import {
+  AnalyticsSalesPerformanceRepurchaseTable,
+  type SalesPerformanceRepurchaseRow,
+} from '../_components/analytics-sales-performance-repurchase-table';
 import { AnalyticsSalesPerformanceStoreTable } from '../_components/analytics-sales-performance-store-table';
 import { AnalyticsSalesPerformanceSummaryTable } from '../_components/analytics-sales-performance-summary-table';
 import { AnalyticsSortToggleLabel } from '../_components/analytics-sort-toggle-label';
@@ -153,11 +157,12 @@ export default function SalesPerformancePage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [tableSelection, setTableSelection] = useState<'store' | 'summary'>('summary');
   const [deliveryViewSelection, setDeliveryViewSelection] =
-    useState<'delivery' | 'risk_confirmation'>('delivery');
+    useState<'delivery' | 'risk_confirmation' | 'repurchase'>('delivery');
   const [showDeliveryViewMenu, setShowDeliveryViewMenu] = useState(false);
   const [storePage, setStorePage] = useState(1);
   const [summaryPage, setSummaryPage] = useState(1);
   const [riskPage, setRiskPage] = useState(1);
+  const [repurchasePage, setRepurchasePage] = useState(1);
   const pageSize = 10;
   const [sortKey, setSortKey] = useState<SortKey>('smp');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -1050,6 +1055,10 @@ export default function SalesPerformancePage() {
   }, [problematicData?.riskConfirmationRows?.length, deliveryViewSelection]);
 
   useEffect(() => {
+    setRepurchasePage(1);
+  }, [deliveryViewSelection, resolvedChartShops, chartShopOptions]);
+
+  useEffect(() => {
     setStorePage(1);
     setSummaryPage(1);
   }, [sortKey, sortDir]);
@@ -1067,11 +1076,12 @@ export default function SalesPerformancePage() {
   ];
 
   const deliveryViewOptions: Array<{
-    key: 'delivery' | 'risk_confirmation';
+    key: 'delivery' | 'risk_confirmation' | 'repurchase';
     label: string;
   }> = [
     { key: 'delivery', label: 'Delivery Monitoring' },
     { key: 'risk_confirmation', label: 'Risk Confirmation' },
+    { key: 'repurchase', label: 'Repurchase Orders' },
   ];
 
   const sortedStoreRows = useMemo(() => {
@@ -1103,14 +1113,38 @@ export default function SalesPerformancePage() {
   const totalStoreRows = sortedStoreRows.length;
   const totalSummaryRows = sortedSummaryRows.length;
   const riskRows = problematicData?.riskConfirmationRows || [];
+  const repurchaseRows = useMemo<SalesPerformanceRepurchaseRow[]>(() => {
+    const shopIds = resolvedChartShops.length > 0
+      ? resolvedChartShops
+      : chartShopOptions;
+
+    return shopIds.map((shopId) => ({
+      shop: displayChartShop(shopId),
+      deliveredOrders: 0,
+      deliveredAmount: 0,
+      rtsOrders: 0,
+      rtsAmount: 0,
+      shippedOrders: 0,
+      shippedAmount: 0,
+      totalOrders: 0,
+      totalAmount: 0,
+    }));
+  }, [chartShopOptions, displayChartShop, resolvedChartShops]);
+
   const totalRiskRows = riskRows.length;
+  const totalRepurchaseRows = repurchaseRows.length;
   const totalStorePages = Math.max(1, Math.ceil(totalStoreRows / pageSize));
   const totalSummaryPages = Math.max(1, Math.ceil(totalSummaryRows / pageSize));
   const totalRiskPages = Math.max(1, Math.ceil(totalRiskRows / pageSize));
+  const totalRepurchasePages = Math.max(1, Math.ceil(totalRepurchaseRows / pageSize));
 
   const pagedStoreRows = sortedStoreRows.slice((storePage - 1) * pageSize, storePage * pageSize);
   const pagedSummaryRows = sortedSummaryRows.slice((summaryPage - 1) * pageSize, summaryPage * pageSize);
   const pagedRiskRows = riskRows.slice((riskPage - 1) * pageSize, riskPage * pageSize);
+  const pagedRepurchaseRows = repurchaseRows.slice(
+    (repurchasePage - 1) * pageSize,
+    repurchasePage * pageSize,
+  );
 
   const storeStart = totalStoreRows === 0 ? 0 : (storePage - 1) * pageSize + 1;
   const storeEnd = Math.min(storePage * pageSize, totalStoreRows);
@@ -1118,6 +1152,8 @@ export default function SalesPerformancePage() {
   const summaryEnd = Math.min(summaryPage * pageSize, totalSummaryRows);
   const riskStart = totalRiskRows === 0 ? 0 : (riskPage - 1) * pageSize + 1;
   const riskEnd = Math.min(riskPage * pageSize, totalRiskRows);
+  const repurchaseStart = totalRepurchaseRows === 0 ? 0 : (repurchasePage - 1) * pageSize + 1;
+  const repurchaseEnd = Math.min(repurchasePage * pageSize, totalRepurchaseRows);
 
   const storeCanPrev = storePage > 1;
   const storeCanNext = storePage < totalStorePages;
@@ -1125,6 +1161,8 @@ export default function SalesPerformancePage() {
   const summaryCanNext = summaryPage < totalSummaryPages;
   const riskCanPrev = riskPage > 1;
   const riskCanNext = riskPage < totalRiskPages;
+  const repurchaseCanPrev = repurchasePage > 1;
+  const repurchaseCanNext = repurchasePage < totalRepurchasePages;
 
   const activeRowCount = tableSelection === 'summary' ? totalSummaryRows : totalStoreRows;
   const selectedDeliveryViewLabel =
@@ -1434,6 +1472,20 @@ export default function SalesPerformancePage() {
               canNext={riskCanNext}
               onPrevious={() => setRiskPage((p) => Math.max(1, p - 1))}
               onNext={() => setRiskPage((p) => Math.min(totalRiskPages, p + 1))}
+            />
+          ) : deliveryViewSelection === 'repurchase' ? (
+            <AnalyticsSalesPerformanceRepurchaseTable
+              isLoading={isProblematicLoading}
+              rows={pagedRepurchaseRows}
+              repurchaseStart={repurchaseStart}
+              repurchaseEnd={repurchaseEnd}
+              totalRepurchaseRows={totalRepurchaseRows}
+              canPrevious={repurchaseCanPrev}
+              canNext={repurchaseCanNext}
+              onPrevious={() => setRepurchasePage((p) => Math.max(1, p - 1))}
+              onNext={() =>
+                setRepurchasePage((p) => Math.min(totalRepurchasePages, p + 1))
+              }
             />
           ) : (
             <>
