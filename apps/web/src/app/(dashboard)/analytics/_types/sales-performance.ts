@@ -139,6 +139,17 @@ export type ProblematicDeliveryResponse = {
     deliveredCount: number;
     rtsCount: number;
   }>;
+  repurchaseByShop?: Array<{
+    shopId: string;
+    deliveredOrders: number;
+    deliveredAmount: number;
+    rtsOrders: number;
+    rtsAmount: number;
+    shippedOrders: number;
+    shippedAmount: number;
+    totalOrders: number;
+    totalAmount: number;
+  }>;
   filters: {
     shops: string[];
     shopDisplayMap?: Record<string, string>;

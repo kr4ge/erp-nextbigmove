@@ -157,6 +157,17 @@ export class SalesPerformanceService {
         deliveredCount: 0,
         rtsCount: 0,
       })),
+      repurchaseByShop: [] as Array<{
+        shopId: string;
+        deliveredOrders: number;
+        deliveredAmount: number;
+        rtsOrders: number;
+        rtsAmount: number;
+        shippedOrders: number;
+        shippedAmount: number;
+        totalOrders: number;
+        totalAmount: number;
+      }>,
       filters: { shops: [] as string[], shopDisplayMap: {} as Record<string, string> },
       selected: {
         start_date: startStr,
@@ -924,6 +935,7 @@ export class SalesPerformanceService {
       returnedInRangeSummaryRows,
       returnedInRangeTrendRows,
       riskConfirmationRawRows,
+      repurchaseByShopRows,
     ] = await Promise.all([
       this.prisma.$queryRaw<any[]>(Prisma.sql`
         WITH reasons AS (
@@ -1161,6 +1173,51 @@ export class SalesPerformanceService {
         WHERE risk_tag IS NOT NULL
         GROUP BY risk_tag
       `),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          "shopId",
+          COUNT(*) FILTER (WHERE "status" = 3)::int AS delivered_orders,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN "status" = 3 THEN COALESCE("cod", 0)
+                ELSE 0
+              END
+            ),
+            0
+          )::numeric AS delivered_amount,
+          COUNT(*) FILTER (WHERE "status" IN (4, 5))::int AS rts_orders,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN "status" IN (4, 5) THEN COALESCE("cod", 0)
+                ELSE 0
+              END
+            ),
+            0
+          )::numeric AS rts_amount,
+          COUNT(*) FILTER (WHERE "status" = 2)::int AS shipped_orders,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN "status" = 2 THEN COALESCE("cod", 0)
+                ELSE 0
+              END
+            ),
+            0
+          )::numeric AS shipped_amount,
+          COUNT(*)::int AS total_orders,
+          COALESCE(SUM(COALESCE("cod", 0)), 0)::numeric AS total_amount
+        FROM "pos_orders"
+        ${whereClause}
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE("tags", '[]'::jsonb)) AS elem
+          WHERE LOWER(elem->>'name') = 'repurchase'
+        )
+        GROUP BY "shopId"
+        ORDER BY "shopId" ASC
+      `),
     ]);
 
     const l1Map = new Map<string, { name: string; value: number; children: Map<string, { name: string; value: number; children: Map<string, { name: string; value: number }> }> }>();
@@ -1333,6 +1390,17 @@ export class SalesPerformanceService {
         count: this.toNumber(row.count),
       })),
       riskConfirmationRows,
+      repurchaseByShop: (repurchaseByShopRows || []).map((row) => ({
+        shopId: (row.shopId || '').toString(),
+        deliveredOrders: this.toNumber(row.delivered_orders),
+        deliveredAmount: this.toNumber(row.delivered_amount),
+        rtsOrders: this.toNumber(row.rts_orders),
+        rtsAmount: this.toNumber(row.rts_amount),
+        shippedOrders: this.toNumber(row.shipped_orders),
+        shippedAmount: this.toNumber(row.shipped_amount),
+        totalOrders: this.toNumber(row.total_orders),
+        totalAmount: this.toNumber(row.total_amount),
+      })),
       filters: {
         shops: shopIdsList,
         shopDisplayMap,

@@ -1114,22 +1114,18 @@ export default function SalesPerformancePage() {
   const totalSummaryRows = sortedSummaryRows.length;
   const riskRows = problematicData?.riskConfirmationRows || [];
   const repurchaseRows = useMemo<SalesPerformanceRepurchaseRow[]>(() => {
-    const shopIds = resolvedChartShops.length > 0
-      ? resolvedChartShops
-      : chartShopOptions;
-
-    return shopIds.map((shopId) => ({
-      shop: displayChartShop(shopId),
-      deliveredOrders: 0,
-      deliveredAmount: 0,
-      rtsOrders: 0,
-      rtsAmount: 0,
-      shippedOrders: 0,
-      shippedAmount: 0,
-      totalOrders: 0,
-      totalAmount: 0,
+    return (problematicData?.repurchaseByShop || []).map((row) => ({
+      shop: displayChartShop(row.shopId),
+      deliveredOrders: row.deliveredOrders || 0,
+      deliveredAmount: row.deliveredAmount || 0,
+      rtsOrders: row.rtsOrders || 0,
+      rtsAmount: row.rtsAmount || 0,
+      shippedOrders: row.shippedOrders || 0,
+      shippedAmount: row.shippedAmount || 0,
+      totalOrders: row.totalOrders || 0,
+      totalAmount: row.totalAmount || 0,
     }));
-  }, [chartShopOptions, displayChartShop, resolvedChartShops]);
+  }, [displayChartShop, problematicData?.repurchaseByShop]);
 
   const totalRiskRows = riskRows.length;
   const totalRepurchaseRows = repurchaseRows.length;
