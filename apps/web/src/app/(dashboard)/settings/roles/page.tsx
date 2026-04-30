@@ -33,10 +33,10 @@ type Permission = {
 export default function RolesPage() {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
-  const [user, setUser] = useState<{ role?: string } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { name: string; description: string; permissionKeys: string[] }>>({});
   const [canManage, setCanManage] = useState(false);
   const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
+  const [permissionCheckResolved, setPermissionCheckResolved] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [roleToDelete, setRoleToDelete] = useState<Role | null>(null);
   const [permissionToastShown, setPermissionToastShown] = useState(false);
@@ -48,43 +48,47 @@ export default function RolesPage() {
   };
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      setUser(JSON.parse(userStr));
-    }
     setIsReady(true);
   }, []);
 
   useEffect(() => {
-    if (!isReady || !user) {
-      setIsCheckingPermissions(false);
-      return;
-    }
+    if (!isReady) return;
+    let cancelled = false;
 
-    // Check permissions by fetching user's effective permissions
     const checkPermissions = async () => {
       setIsCheckingPermissions(true);
+      setPermissionCheckResolved(false);
       try {
         const response = await apiClient.get('/auth/permissions', {
           params: { workspace: 'erp' },
         });
-        const permissions = response.data.permissions || [];
-        // Check if user has permission.assign permission
+        const permissions = Array.isArray(response.data?.permissions)
+          ? response.data.permissions
+          : [];
         const hasPermission = permissions.includes('permission.assign');
-        setCanManage(hasPermission);
-      } catch (error) {
-        setCanManage(false);
+        if (!cancelled) {
+          setCanManage(hasPermission);
+          setPermissionCheckResolved(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setCanManage(false);
+        }
       } finally {
-        setIsCheckingPermissions(false);
+        if (!cancelled) {
+          setIsCheckingPermissions(false);
+        }
       }
     };
 
-    checkPermissions();
-  }, [isReady, user]);
+    void checkPermissions();
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady]);
 
   useEffect(() => {
-    if (!isReady || isCheckingPermissions) return;
+    if (!isReady || isCheckingPermissions || !permissionCheckResolved) return;
     if (!canManage && !permissionToastShown) {
       addToast("warning", "You don't have permission to manage roles.");
       setPermissionToastShown(true);
@@ -92,7 +96,7 @@ export default function RolesPage() {
     if (canManage && permissionToastShown) {
       setPermissionToastShown(false);
     }
-  }, [addToast, canManage, isCheckingPermissions, isReady, permissionToastShown]);
+  }, [addToast, canManage, isCheckingPermissions, isReady, permissionCheckResolved, permissionToastShown]);
 
   const { data: roles, isLoading, isError } = useQuery<Role[]>({
     queryKey: ['roles', 'erp'],

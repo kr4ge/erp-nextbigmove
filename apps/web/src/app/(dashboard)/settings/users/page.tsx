@@ -70,10 +70,10 @@ const statusOptions = [
 export default function UsersPage() {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
-  const [user, setUser] = useState<{ role?: string } | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
+  const [permissionCheckResolved, setPermissionCheckResolved] = useState(false);
   const [permissionToastShown, setPermissionToastShown] = useState(false);
 
   const isPermissionDeniedError = (error: unknown) => {
@@ -83,43 +83,47 @@ export default function UsersPage() {
   };
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      setUser(JSON.parse(userStr));
-    }
     setIsReady(true);
   }, []);
 
   useEffect(() => {
-    if (!isReady || !user) {
-      setIsCheckingPermissions(false);
-      return;
-    }
+    if (!isReady) return;
+    let cancelled = false;
 
-    // Check permissions by fetching user's effective permissions
     const checkPermissions = async () => {
       setIsCheckingPermissions(true);
+      setPermissionCheckResolved(false);
       try {
         const response = await apiClient.get('/auth/permissions', {
           params: { workspace: 'erp' },
         });
-        const permissions = response.data.permissions || [];
-        // Check if user has user.manage permission
+        const permissions = Array.isArray(response.data?.permissions)
+          ? response.data.permissions
+          : [];
         const hasPermission = permissions.includes('user.manage');
-        setCanManage(hasPermission);
-      } catch (error) {
-        setCanManage(false);
+        if (!cancelled) {
+          setCanManage(hasPermission);
+          setPermissionCheckResolved(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setCanManage(false);
+        }
       } finally {
-        setIsCheckingPermissions(false);
+        if (!cancelled) {
+          setIsCheckingPermissions(false);
+        }
       }
     };
 
-    checkPermissions();
-  }, [isReady, user]);
+    void checkPermissions();
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady]);
 
   useEffect(() => {
-    if (!isReady || isCheckingPermissions) return;
+    if (!isReady || isCheckingPermissions || !permissionCheckResolved) return;
     if (!canManage && !permissionToastShown) {
       addToast('warning', "You don't have permission to manage users.");
       setPermissionToastShown(true);
@@ -127,7 +131,7 @@ export default function UsersPage() {
     if (canManage && permissionToastShown) {
       setPermissionToastShown(false);
     }
-  }, [addToast, canManage, isCheckingPermissions, isReady, permissionToastShown]);
+  }, [addToast, canManage, isCheckingPermissions, isReady, permissionCheckResolved, permissionToastShown]);
 
   const { data: users, isLoading, isError } = useQuery<User[]>({
     queryKey: ['users'],

@@ -73,7 +73,7 @@ interface UseDataTableProps<TData>
 export function useDataTable<TData>(props: UseDataTableProps<TData>) {
   const {
     columns,
-    pageCount = -1,
+    pageCount,
     initialState,
     queryKeys,
     history = "replace",
@@ -89,6 +89,7 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
     manualFiltering = false,
     ...tableProps
   } = props;
+  const resolvedPageCount = manualPagination ? (pageCount ?? -1) : undefined;
   const pageKey = queryKeys?.page ?? PAGE_KEY;
   const perPageKey = queryKeys?.perPage ?? PER_PAGE_KEY;
   const sortKey = queryKeys?.sort ?? SORT_KEY;
@@ -277,7 +278,7 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
     ...tableProps,
     columns,
     initialState,
-    pageCount,
+    pageCount: resolvedPageCount,
     state: {
       pagination,
       sorting,
@@ -316,6 +317,14 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
       },
     },
   });
+
+  React.useEffect(() => {
+    if (manualPagination) return;
+    const maxPage = Math.max(table.getPageCount(), 1);
+    if (page > maxPage) {
+      void setPage(maxPage);
+    }
+  }, [manualPagination, page, setPage, table]);
 
   return { table, shallow, debounceMs, throttleMs };
 }
