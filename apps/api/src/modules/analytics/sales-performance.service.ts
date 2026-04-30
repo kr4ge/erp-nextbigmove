@@ -1206,8 +1206,16 @@ export class SalesPerformanceService {
             ),
             0
           )::numeric AS shipped_amount,
-          COUNT(*)::int AS total_orders,
-          COALESCE(SUM(COALESCE("cod", 0)), 0)::numeric AS total_amount
+          COUNT(*) FILTER (WHERE "status" IN (2, 3, 4, 5))::int AS total_orders,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN "status" IN (2, 3, 4, 5) THEN COALESCE("cod", 0)
+                ELSE 0
+              END
+            ),
+            0
+          )::numeric AS total_amount
         FROM "pos_orders"
         ${whereClause}
         AND EXISTS (
