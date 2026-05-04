@@ -21,7 +21,7 @@ export function StoreListEmptyState({
     return (
       <Card className="flex flex-col items-center justify-center gap-3 px-8 py-12 text-center">
         <div className="text-lg font-semibold text-foreground">No results for "{searchLabel}"</div>
-        <p className="text-sm text-secondary">
+        <p className="text-sm text-foreground">
           Try a different keyword or clear the search to see all stores.
         </p>
         <Button variant="ghost" size="md" onClick={onClearSearch}>

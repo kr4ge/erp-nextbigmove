@@ -368,19 +368,18 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
       </div>
 
       <div className="panel panel-content p-4 shadow-sm space-y-4">
+        <div className="-mx-4 -mt-4 mb-1 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+          <CalendarClock className="h-3.5 w-3.5 text-primary" />
+          Execution History
+        </div>
+
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="-mx-4 -mt-4 mb-3 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-              <CalendarClock className="h-3.5 w-3.5 text-primary" />
-              Execution History
-            </h3>
-            <div className="mt-1 text-xs text-slate-500">
-              <span className="mr-3">Last run: {formatDateTime(workflow.lastRunAt)}</span>
-              <span className="mr-3">Next run: {formatDateTime(workflow.nextRunAt)}</span>
-              {workflow.schedule && (
-                <span className="text-slate-400">Schedule: {workflow.schedule}</span>
-              )}
-            </div>
+          <div className="mt-1 text-xs text-slate-500">
+            <span className="mr-3">Last run: {formatDateTime(workflow.lastRunAt)}</span>
+            <span className="mr-3">Next run: {formatDateTime(workflow.nextRunAt)}</span>
+            {workflow.schedule && (
+              <span className="text-slate-400">Schedule: {workflow.schedule}</span>
+            )}
           </div>
           <button
             onClick={triggerWorkflow}
