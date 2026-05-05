@@ -541,7 +541,7 @@ export default function MarketingAnalyticsPage() {
         title="Marketing Breakdown"
         icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         meta={`${activeMarketingRowCount} rows`}
-        className="panel panel-content"
+        className=""
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-between">
@@ -561,6 +561,7 @@ export default function MarketingAnalyticsPage() {
         {tableSelection === 'associates' && (
           <AnalyticsTableShell
             summaryLabel={`Showing ${topAssocStart}-${topAssocEnd} of ${totalTopAssociates}`}
+            pageIndicatorLabel={`Page ${topAssocPage} of ${totalTopPages}`}
             onPrevious={() => setTopAssocPage((p) => Math.max(1, p - 1))}
             onNext={() => setTopAssocPage((p) => (topAssocCanNext ? p + 1 : p))}
             canPrevious={topAssocCanPrev}
@@ -615,6 +616,7 @@ export default function MarketingAnalyticsPage() {
         {tableSelection === 'campaigns' && (
           <AnalyticsTableShell
             summaryLabel={`Showing ${topCampaignStart}-${topCampaignEnd} of ${totalTopCampaigns}`}
+            pageIndicatorLabel={`Page ${topCampaignPage} of ${totalCampaignPages}`}
             onPrevious={() => setTopCampaignPage((p) => Math.max(1, p - 1))}
             onNext={() => setTopCampaignPage((p) => (topCampaignCanNext ? p + 1 : p))}
             canPrevious={topCampaignCanPrev}
@@ -665,6 +667,7 @@ export default function MarketingAnalyticsPage() {
         {tableSelection === 'creatives' && (
           <AnalyticsTableShell
             summaryLabel={`Showing ${topCreativeStart}-${topCreativeEnd} of ${totalTopCreatives}`}
+            pageIndicatorLabel={`Page ${topCreativePage} of ${totalCreativePages}`}
             onPrevious={() => setTopCreativePage((p) => Math.max(1, p - 1))}
             onNext={() => setTopCreativePage((p) => (topCreativeCanNext ? p + 1 : p))}
             canPrevious={topCreativeCanPrev}

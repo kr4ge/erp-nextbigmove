@@ -1453,7 +1453,6 @@ export default function OrdersConfirmationPage() {
         </div>
       </header>
 
-      <Card padding="sm" className="border-slate-200 shadow-sm bg-white">
         <div className="flex flex-wrap items-center justify-end gap-2 mb-2">
           <div className="relative order-1" ref={shopPickerRef}>
             <button
@@ -1688,6 +1687,9 @@ export default function OrdersConfirmationPage() {
               >
                 Previous
               </button>
+              <span className="inline-flex min-w-[96px] items-center justify-center px-2.5 py-1 text-xs text-slate-700">
+                Page {pagination.page} of {Math.max(1, pagination.pageCount)}
+              </span>
               <button
                 className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => setPage((prev) => prev + 1)}
@@ -1698,7 +1700,6 @@ export default function OrdersConfirmationPage() {
             </div>
           </div>
         </div>
-      </Card>
 
       {isMounted && selectedOrderForModal
         ? createPortal(
@@ -3169,6 +3170,9 @@ export default function OrdersConfirmationPage() {
                         >
                           Previous
                         </button>
+                        <span className="inline-flex min-w-[96px] items-center justify-center px-3 py-2 text-sm text-slate-700">
+                          Page {phoneHistoryPagination.page} of {Math.max(1, phoneHistoryPagination.pageCount)}
+                        </span>
                         <button
                           type="button"
                           onClick={() => setPhoneHistoryPage((prev) => prev + 1)}

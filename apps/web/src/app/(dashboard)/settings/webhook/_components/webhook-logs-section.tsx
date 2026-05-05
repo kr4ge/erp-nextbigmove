@@ -191,7 +191,7 @@ export function WebhookLogsSection({
                 items.map((row) => (
                   <Fragment key={row.id}>
                     <tr
-                      className="cursor-pointer hover:bg-slate-50"
+                      className="cursor-pointer bg-surface hover:bg-slate-50"
                       onClick={() => onToggleExpanded(row.id)}
                     >
                       <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600">

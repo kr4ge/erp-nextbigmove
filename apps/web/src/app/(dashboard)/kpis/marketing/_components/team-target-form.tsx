@@ -154,16 +154,16 @@ export function TeamTargetForm({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-7 rounded-md px-2 text-xs"
+                      className=""
                       disabled={disabled || Boolean(submittingKey)}
                       onClick={() => onEditTarget(target)}
                     >
                       Edit
                     </Button>
                     <Button
-                      variant="outline"
+                      variant="danger"
                       size="sm"
-                      className="h-7 rounded-md border-rose-200 px-2 text-xs text-rose-700 hover:bg-rose-50 hover:text-rose-700"
+                      className=""
                       loading={submittingKey === `delete-team-target-${target.id}`}
                       disabled={disabled || Boolean(submittingKey && submittingKey !== `delete-team-target-${target.id}`)}
                       onClick={() => onDeleteTarget(target)}

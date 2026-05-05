@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 type AnalyticsTableShellProps = {
   children: ReactNode;
   summaryLabel: string;
+  pageIndicatorLabel?: string;
   onPrevious: () => void;
   onNext: () => void;
   canPrevious: boolean;
@@ -54,6 +55,7 @@ export function AnalyticsTableEmptyRow({ colSpan, message }: AnalyticsTableEmpty
 export function AnalyticsTableShell({
   children,
   summaryLabel,
+  pageIndicatorLabel,
   onPrevious,
   onNext,
   canPrevious,
@@ -73,6 +75,11 @@ export function AnalyticsTableShell({
           >
             Previous
           </button>
+          {pageIndicatorLabel ? (
+            <span className="inline-flex min-w-[96px] items-center justify-center px-2 py-2 text-xs text-slate-700 sm:text-sm">
+              {pageIndicatorLabel}
+            </span>
+          ) : null}
           <button
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={onNext}

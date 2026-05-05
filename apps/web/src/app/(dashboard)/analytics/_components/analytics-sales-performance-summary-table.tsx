@@ -22,6 +22,8 @@ type AnalyticsSalesPerformanceSummaryTableProps = {
   summaryStart: number;
   summaryEnd: number;
   totalSummaryRows: number;
+  currentPage: number;
+  totalPages: number;
   canPrevious: boolean;
   canNext: boolean;
   onPrevious: () => void;
@@ -36,6 +38,8 @@ export function AnalyticsSalesPerformanceSummaryTable({
   summaryStart,
   summaryEnd,
   totalSummaryRows,
+  currentPage,
+  totalPages,
   canPrevious,
   canNext,
   onPrevious,
@@ -51,6 +55,7 @@ export function AnalyticsSalesPerformanceSummaryTable({
       canPrevious={canPrevious}
       canNext={canNext}
       isLoading={isLoading}
+      pageIndicatorLabel={`Page ${currentPage} of ${totalPages}`}
     >
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-100">

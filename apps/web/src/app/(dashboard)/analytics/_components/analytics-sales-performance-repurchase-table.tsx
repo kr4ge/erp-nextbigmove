@@ -24,6 +24,8 @@ type AnalyticsSalesPerformanceRepurchaseTableProps = {
   repurchaseStart: number;
   repurchaseEnd: number;
   totalRepurchaseRows: number;
+  currentPage: number;
+  totalPages: number;
   canPrevious: boolean;
   canNext: boolean;
   onPrevious: () => void;
@@ -40,6 +42,8 @@ export function AnalyticsSalesPerformanceRepurchaseTable({
   repurchaseStart,
   repurchaseEnd,
   totalRepurchaseRows,
+  currentPage,
+  totalPages,
   canPrevious,
   canNext,
   onPrevious,
@@ -53,6 +57,7 @@ export function AnalyticsSalesPerformanceRepurchaseTable({
       canPrevious={canPrevious}
       canNext={canNext}
       isLoading={isLoading}
+      pageIndicatorLabel={`Page ${currentPage} of ${totalPages}`}
     >
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-100">
@@ -135,4 +140,3 @@ export function AnalyticsSalesPerformanceRepurchaseTable({
     </AnalyticsTableShell>
   );
 }
-

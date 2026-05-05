@@ -19,6 +19,8 @@ type AnalyticsSalesPerformanceStoreTableProps = {
   storeStart: number;
   storeEnd: number;
   totalStoreRows: number;
+  currentPage: number;
+  totalPages: number;
   canPrevious: boolean;
   canNext: boolean;
   onPrevious: () => void;
@@ -34,6 +36,8 @@ export function AnalyticsSalesPerformanceStoreTable({
   storeStart,
   storeEnd,
   totalStoreRows,
+  currentPage,
+  totalPages,
   canPrevious,
   canNext,
   onPrevious,
@@ -50,6 +54,7 @@ export function AnalyticsSalesPerformanceStoreTable({
       canPrevious={canPrevious}
       canNext={canNext}
       isLoading={isLoading}
+      pageIndicatorLabel={`Page ${currentPage} of ${totalPages}`}
     >
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-100">

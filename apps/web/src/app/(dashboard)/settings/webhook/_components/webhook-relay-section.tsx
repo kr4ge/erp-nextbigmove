@@ -118,7 +118,7 @@ export function WebhookRelaySection({
           </p>
         </div>
 
-        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-surface p-4">
           <FormInput
             label="Relay API Key"
             type="text"

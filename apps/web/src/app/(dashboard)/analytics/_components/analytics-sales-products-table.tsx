@@ -53,6 +53,7 @@ type AnalyticsSalesProductsTableProps = {
   canNext: boolean;
   pageSize: number;
   productPage: number;
+  totalProductPages: number;
   rtsForecastSafe: number;
   rows: SalesProductRowItem[];
   sourceCount: number;
@@ -70,6 +71,7 @@ export function AnalyticsSalesProductsTable({
   canNext,
   pageSize,
   productPage,
+  totalProductPages,
   rtsForecastSafe,
   rows,
   sourceCount,
@@ -83,6 +85,7 @@ export function AnalyticsSalesProductsTable({
       canPrevious={canPrevious}
       canNext={canNext}
       isLoading={isLoading}
+      pageIndicatorLabel={`Page ${productPage} of ${totalProductPages}`}
     >
       <div className="overflow-x-auto">
         <table className="min-w-full table-fixed divide-y divide-slate-100">

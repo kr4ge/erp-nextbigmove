@@ -1452,6 +1452,7 @@ export default function SalesAnalyticsPage() {
             canNext={productCanNext}
             pageSize={pageSize}
             productPage={productPage}
+            totalProductPages={totalProductPages}
             rtsForecastSafe={rtsForecastSafe}
             rows={pagedProducts}
             sourceCount={products.length}
@@ -1469,6 +1470,7 @@ export default function SalesAnalyticsPage() {
             canNext={deliveryCanNext}
             pageSize={pageSize}
             deliveryPage={deliveryPage}
+            totalDeliveryPages={totalDeliveryPages}
             rows={pagedDeliveryRows}
             sourceCount={deliveryStatuses.length}
             renderSortLabel={renderDeliverySortLabel}

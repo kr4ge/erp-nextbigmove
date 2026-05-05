@@ -1332,6 +1332,8 @@ export default function SalesPerformancePage() {
             storeStart={storeStart}
             storeEnd={storeEnd}
             totalStoreRows={totalStoreRows}
+            currentPage={storePage}
+            totalPages={totalStorePages}
             canPrevious={storeCanPrev}
             canNext={storeCanNext}
             onPrevious={() => setStorePage((p) => Math.max(1, p - 1))}
@@ -1349,6 +1351,8 @@ export default function SalesPerformancePage() {
             summaryStart={summaryStart}
             summaryEnd={summaryEnd}
             totalSummaryRows={totalSummaryRows}
+            currentPage={summaryPage}
+            totalPages={totalSummaryPages}
             canPrevious={summaryCanPrev}
             canNext={summaryCanNext}
             onPrevious={() => setSummaryPage((p) => Math.max(1, p - 1))}
@@ -1464,6 +1468,8 @@ export default function SalesPerformancePage() {
               riskStart={riskStart}
               riskEnd={riskEnd}
               totalRiskRows={totalRiskRows}
+              currentPage={riskPage}
+              totalPages={totalRiskPages}
               canPrevious={riskCanPrev}
               canNext={riskCanNext}
               onPrevious={() => setRiskPage((p) => Math.max(1, p - 1))}
@@ -1476,6 +1482,8 @@ export default function SalesPerformancePage() {
               repurchaseStart={repurchaseStart}
               repurchaseEnd={repurchaseEnd}
               totalRepurchaseRows={totalRepurchaseRows}
+              currentPage={repurchasePage}
+              totalPages={totalRepurchasePages}
               canPrevious={repurchaseCanPrev}
               canNext={repurchaseCanNext}
               onPrevious={() => setRepurchasePage((p) => Math.max(1, p - 1))}

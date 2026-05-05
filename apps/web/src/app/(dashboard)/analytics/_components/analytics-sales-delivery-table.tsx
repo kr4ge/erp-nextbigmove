@@ -53,6 +53,7 @@ type AnalyticsSalesDeliveryTableProps = {
   canNext: boolean;
   pageSize: number;
   deliveryPage: number;
+  totalDeliveryPages: number;
   rows: SalesDeliveryRowItem[];
   sourceCount: number;
   renderSortLabel: (label: ReactNode, key: SalesDeliverySortKey) => ReactNode;
@@ -69,6 +70,7 @@ export function AnalyticsSalesDeliveryTable({
   canNext,
   pageSize,
   deliveryPage,
+  totalDeliveryPages,
   rows,
   sourceCount,
   renderSortLabel,
@@ -81,6 +83,7 @@ export function AnalyticsSalesDeliveryTable({
       canPrevious={canPrevious}
       canNext={canNext}
       isLoading={isLoading}
+      pageIndicatorLabel={`Page ${deliveryPage} of ${totalDeliveryPages}`}
     >
       <div className="overflow-x-auto">
         <table className="min-w-full table-fixed divide-y divide-slate-100">
