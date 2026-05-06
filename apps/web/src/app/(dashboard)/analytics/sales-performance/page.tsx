@@ -1126,6 +1126,31 @@ export default function SalesPerformancePage() {
       totalAmount: row.totalAmount || 0,
     }));
   }, [displayChartShop, problematicData?.repurchaseByShop]);
+  const repurchaseGrandTotals = useMemo(() => {
+    return repurchaseRows.reduce(
+      (acc, row) => {
+        acc.deliveredOrders += row.deliveredOrders || 0;
+        acc.deliveredAmount += row.deliveredAmount || 0;
+        acc.rtsOrders += row.rtsOrders || 0;
+        acc.rtsAmount += row.rtsAmount || 0;
+        acc.shippedOrders += row.shippedOrders || 0;
+        acc.shippedAmount += row.shippedAmount || 0;
+        acc.totalOrders += row.totalOrders || 0;
+        acc.totalAmount += row.totalAmount || 0;
+        return acc;
+      },
+      {
+        deliveredOrders: 0,
+        deliveredAmount: 0,
+        rtsOrders: 0,
+        rtsAmount: 0,
+        shippedOrders: 0,
+        shippedAmount: 0,
+        totalOrders: 0,
+        totalAmount: 0,
+      },
+    );
+  }, [repurchaseRows]);
 
   const totalRiskRows = riskRows.length;
   const totalRepurchaseRows = repurchaseRows.length;
@@ -1479,6 +1504,7 @@ export default function SalesPerformancePage() {
             <AnalyticsSalesPerformanceRepurchaseTable
               isLoading={isProblematicLoading}
               rows={pagedRepurchaseRows}
+              grandTotals={repurchaseGrandTotals}
               repurchaseStart={repurchaseStart}
               repurchaseEnd={repurchaseEnd}
               totalRepurchaseRows={totalRepurchaseRows}

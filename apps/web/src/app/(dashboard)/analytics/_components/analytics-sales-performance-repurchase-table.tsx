@@ -18,9 +18,21 @@ export type SalesPerformanceRepurchaseRow = {
   totalAmount: number;
 };
 
+type SalesPerformanceRepurchaseGrandTotals = {
+  deliveredOrders: number;
+  deliveredAmount: number;
+  rtsOrders: number;
+  rtsAmount: number;
+  shippedOrders: number;
+  shippedAmount: number;
+  totalOrders: number;
+  totalAmount: number;
+};
+
 type AnalyticsSalesPerformanceRepurchaseTableProps = {
   isLoading: boolean;
   rows: SalesPerformanceRepurchaseRow[];
+  grandTotals: SalesPerformanceRepurchaseGrandTotals;
   repurchaseStart: number;
   repurchaseEnd: number;
   totalRepurchaseRows: number;
@@ -39,6 +51,7 @@ const formatCurrency = (value: number) =>
 export function AnalyticsSalesPerformanceRepurchaseTable({
   isLoading,
   rows,
+  grandTotals,
   repurchaseStart,
   repurchaseEnd,
   totalRepurchaseRows,
@@ -49,6 +62,9 @@ export function AnalyticsSalesPerformanceRepurchaseTable({
   onPrevious,
   onNext,
 }: AnalyticsSalesPerformanceRepurchaseTableProps) {
+  const rtsRateDenominator = grandTotals.deliveredOrders + grandTotals.rtsOrders;
+  const rtsRate = rtsRateDenominator > 0 ? (grandTotals.rtsOrders / rtsRateDenominator) * 100 : 0;
+
   return (
     <AnalyticsTableShell
       summaryLabel={`Showing ${repurchaseStart}-${repurchaseEnd} of ${totalRepurchaseRows}`}
@@ -135,6 +151,39 @@ export function AnalyticsSalesPerformanceRepurchaseTable({
               />
             ) : null}
           </tbody>
+          {!isLoading && totalRepurchaseRows > 0 ? (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50">
+              <tr>
+                <td className="whitespace-nowrap px-3 py-3 text-sm font-semibold text-slate-800 sm:px-4 lg:px-6">
+                  Overall Total
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  {formatCount(grandTotals.deliveredOrders)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-800 sm:px-4 lg:px-6">
+                  {formatCurrency(grandTotals.deliveredAmount)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  {formatCount(grandTotals.rtsOrders)} ({rtsRate.toFixed(2)}%)
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-800 sm:px-4 lg:px-6">
+                  {formatCurrency(grandTotals.rtsAmount)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  {formatCount(grandTotals.shippedOrders)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-800 sm:px-4 lg:px-6">
+                  {formatCurrency(grandTotals.shippedAmount)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  {formatCount(grandTotals.totalOrders)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-800 sm:px-4 lg:px-6">
+                  {formatCurrency(grandTotals.totalAmount)}
+                </td>
+              </tr>
+            </tfoot>
+          ) : null}
         </table>
       </div>
     </AnalyticsTableShell>
