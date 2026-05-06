@@ -6,6 +6,7 @@ import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import type { CreateWmsLocationInput, WmsLocationTreeNode, WmsWarehouseDetail } from '../_types/warehouse';
 
 const EMPTY_LOCATIONS: WmsLocationTreeNode[] = [];
+const MAX_SECTION_RACKS = 2;
 
 /**
  * Pastel palette per section — cycles through 4 tones.
@@ -18,18 +19,34 @@ const SECTION_PALETTES = [
   { filled: 'bg-[#c8e6e9] text-[#2f5b61] border-[#aed7db]', empty: 'border-[#cfe6e8] text-[#85b5ba]' },
 ];
 
-function formatBinIndexLabel(binIndex: number) {
-  return `B${String(binIndex + 1).padStart(2, '0')}`;
+function formatBinSlotLabel(binIndex: number) {
+  return `S${String(binIndex + 1).padStart(2, '0')}`;
 }
 
 function buildExpectedBinCode(rackCode: string, binIndex: number) {
-  return `${rackCode}-${formatBinIndexLabel(binIndex)}`;
+  return `${rackCode}-${formatBinSlotLabel(binIndex)}`;
 }
 
 function extractBinDisplayLabel(binCode: string, rackCode: string) {
-  const matcher = new RegExp(`^${rackCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-?(B\\d+)$`);
+  const matcher = new RegExp(`^${rackCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-?([BS])(\\d+)$`);
   const matched = binCode.match(matcher);
-  return matched?.[1] ?? binCode;
+  return matched ? `S${matched[2]}` : binCode;
+}
+
+function compareSectionCodes(left: WmsLocationTreeNode, right: WmsLocationTreeNode) {
+  const leftNumber = sectionCodeToNumber(left.code);
+  const rightNumber = sectionCodeToNumber(right.code);
+  if (leftNumber && rightNumber && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+  return left.code.localeCompare(right.code, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function sectionCodeToNumber(code: string) {
+  if (!/^[A-Z]+$/.test(code)) {
+    return null;
+  }
+  return code.split('').reduce((sum, letter) => (sum * 26) + (letter.charCodeAt(0) - 64), 0);
 }
 
 type LocationStructurePanelProps = {
@@ -55,7 +72,10 @@ export function LocationStructurePanel({
   onEditLocation,
   onOpenBin,
 }: LocationStructurePanelProps) {
-  const structuralLocations = warehouse?.structuralLocations ?? EMPTY_LOCATIONS;
+  const structuralLocations = useMemo(
+    () => [...(warehouse?.structuralLocations ?? EMPTY_LOCATIONS)].sort(compareSectionCodes),
+    [warehouse?.structuralLocations],
+  );
 
   const focusedSectionIdResolved = useMemo(() => {
     if (!structuralLocations.length) return null;
@@ -111,7 +131,7 @@ export function LocationStructurePanel({
             structuralLocations.map((section, sectionIndex) => {
               const palette = SECTION_PALETTES[sectionIndex % SECTION_PALETTES.length];
               const isFocused = focusedSectionIdResolved === section.id;
-              const maxRacks = section.capacity ?? 12;
+              const maxRacks = Math.min(section.capacity ?? MAX_SECTION_RACKS, MAX_SECTION_RACKS);
               const racks = section.children;
 
               return (
@@ -147,7 +167,7 @@ export function LocationStructurePanel({
             <div className="rounded-[24px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center xl:col-span-4">
               <p className="text-sm font-medium text-[#12384b]">No structural layout yet</p>
               <p className="mt-1 text-sm text-[#6b7f8c]">
-                Add sections first, then place racks inside sections and bins inside racks.
+                Add sections first, then place racks inside sections and slots inside racks.
               </p>
             </div>
           )}
@@ -182,12 +202,12 @@ export function LocationStructurePanel({
  *   ┌────────────────────────────────────┐
  *   │    A1       │    A2       │  --  │  --   ← rack columns (maxRacks wide)
  *   │  ┌──────┐   │  ┌──────┐   │      │
- *   │  │ B01  │   │  │ B01  │   │      │  ← bin rows (maxBins deep)
- *   │  │ B02  │   │  │ B02  │   │      │
- *   │  │ B03  │   │  │ B03  │   │      │
- *   │  │ B04  │   │  │ B04  │   │      │
- *   │  │ B05  │   │  │ B05  │   │      │
- *   │  │ B06  │   │  │ B06  │   │      │
+ *   │  │ S01  │   │  │ S01  │   │      │  ← bin/slot rows (maxBins deep)
+ *   │  │ S02  │   │  │ S02  │   │      │
+ *   │  │ S03  │   │  │ S03  │   │      │
+ *   │  │ S04  │   │  │ S04  │   │      │
+ *   │  │ S05  │   │  │ S05  │   │      │
+ *   │  │ S06  │   │  │ S06  │   │      │
  *   │  └──────┘   │  └──────┘   │      │
  *   └────────────────────────────────────┘
  *   [ + Add Rack ]  (if focused & under capacity)
@@ -195,8 +215,8 @@ export function LocationStructurePanel({
  * - Racks are vertical columns side by side
  * - Bins fill top-to-bottom within each rack
  * - Rack identity uses rack code (A1, A2, ...)
- * - Bin identity uses rack-scoped bin code (A1-B01, A1-B02, ...)
- *   and renders as B01/B02 in the slot for readability.
+ * - Bin identity uses rack-scoped storage slot code (A1-S01, A1-S02, ...)
+ *   and renders as S01/S02 in the slot for readability.
  * - Empty rack columns show dashed placeholders
  * - Racks with no bins show the rack code but empty bin slots
  */
@@ -296,7 +316,7 @@ function SectionCard({
               </div>
               {Array.from({ length: rackMaxBins }).map((_, binIdx) => {
                 const bin = bins[binIdx] ?? null;
-                const binLabel = formatBinIndexLabel(binIdx);
+                const binLabel = formatBinSlotLabel(binIdx);
 
                 if (bin) {
                   return (

@@ -37,6 +37,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       avatar: user.avatar,
       defaultTeamId: user.defaultTeamId,
       employeeId: user.employeeId,
+      sessionId:
+        typeof payload.sessionId === 'string' && payload.sessionId.trim().length > 0
+          ? payload.sessionId
+          : null,
     };
   }
 }

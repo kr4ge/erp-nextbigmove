@@ -1,5 +1,5 @@
 import { printHtmlDocument } from '@/lib/print-html';
-import { renderCode39SvgMarkup } from '../../warehouses/_utils/code39-barcode';
+import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../../warehouses/_utils/code39-barcode';
 
 type PrintReceivingBatchLabelsInput = {
   batchCode: string;
@@ -15,14 +15,14 @@ export function printReceivingBatchLabels(input: PrintReceivingBatchLabelsInput)
       const labels = pageUnits
         .map((unit, itemIndex) => {
           const sequence = (pageIndex * labelsPerPage) + itemIndex + 1;
-          const barcodeMarkup = renderCode39SvgMarkup(unit.barcode, {
+          const barcodeValue = normalizeBarcodeValue(unit.barcode);
+          const barcodeMarkup = renderCode128SvgMarkup(barcodeValue, {
             height: 44,
-            narrowWidth: 1.5,
-            wideWidth: 3.1,
-            quietZone: 10,
+            moduleWidth: 1.2,
+            quietZone: 12,
             showText: false,
           });
-          const labelCode = escapeHtml(unit.barcode);
+          const labelCode = escapeHtml(barcodeValue);
 
           return `
             <article class="label-card">

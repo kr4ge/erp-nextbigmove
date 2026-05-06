@@ -1,8 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
+import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { AssignWmsReceivingPutawayDto } from './dto/assign-wms-receiving-putaway.dto';
 import { CreateWmsReceivingBatchDto } from './dto/create-wms-receiving-batch.dto';
 import { GetWmsReceivingOverviewDto } from './dto/get-wms-receiving-overview.dto';
@@ -10,7 +9,7 @@ import { RecordWmsReceivingBatchLabelPrintDto } from './dto/record-wms-receiving
 import { WmsReceivingService } from './wms-receiving.service';
 
 @Controller('wms/receiving')
-@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, WmsAccessGuard)
 export class WmsReceivingController {
   constructor(private readonly wmsReceivingService: WmsReceivingService) {}
 

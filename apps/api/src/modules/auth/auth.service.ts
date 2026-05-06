@@ -3,9 +3,12 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import type { Request } from 'express';
+import { WmsStaffActivityOutcome } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RegisterDto, LoginDto, RefreshTokenDto } from './dto';
 import { toStoredPermissionWorkspace } from '../../common/rbac/permission-workspace';
+import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +16,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly wmsStaffActivityService: WmsStaffActivityService,
   ) {}
 
   /**
@@ -101,7 +105,12 @@ export class AuthService {
     });
 
     // Generate tokens
-    const tokens = await this.generateTokens(result.user.id, result.tenant.id, result.user.role);
+    const tokens = await this.generateTokens(
+      result.user.id,
+      result.tenant.id,
+      result.user.role,
+      crypto.randomUUID(),
+    );
 
     // Update last login
     await this.prisma.user.update({
@@ -119,7 +128,7 @@ export class AuthService {
   /**
    * Login user
    */
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, request?: Request) {
     const email = loginDto.email.trim().toLowerCase();
     const { password } = loginDto;
 
@@ -130,34 +139,101 @@ export class AuthService {
     });
 
     if (!user) {
+      await this.wmsStaffActivityService.recordFromRequest({
+        request,
+        actionType: 'LOGIN',
+        resourceType: 'AUTH_SESSION',
+        outcome: WmsStaffActivityOutcome.REJECTED,
+        reasonCode: 'INVALID_CREDENTIALS',
+        metadata: {
+          email,
+        },
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
+      await this.wmsStaffActivityService.recordFromRequest({
+        request,
+        tenantId: user.tenantId,
+        actorId: user.id,
+        actionType: 'LOGIN',
+        resourceType: 'AUTH_SESSION',
+        outcome: WmsStaffActivityOutcome.REJECTED,
+        reasonCode: 'INVALID_CREDENTIALS',
+        metadata: {
+          email,
+        },
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
     // Check user status
     if (user.status !== 'ACTIVE') {
+      await this.wmsStaffActivityService.recordFromRequest({
+        request,
+        tenantId: user.tenantId,
+        actorId: user.id,
+        actionType: 'LOGIN',
+        resourceType: 'AUTH_SESSION',
+        outcome: WmsStaffActivityOutcome.REJECTED,
+        reasonCode: 'ACCOUNT_INACTIVE',
+      });
       throw new UnauthorizedException('Account is not active');
     }
 
-    // Check tenant status (skip for SUPER_ADMIN platform administrators)
+    // ERP users are tenant-scoped. WMS staff are tenantless and authorized by WMS role assignments.
     if (user.role !== 'SUPER_ADMIN') {
-      if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
+      if (!user.tenantId) {
+        const hasWmsAccess = await this.hasWmsWorkspaceAccess(user.id);
+        if (!hasWmsAccess) {
+          await this.wmsStaffActivityService.recordFromRequest({
+            request,
+            actorId: user.id,
+            actionType: 'LOGIN',
+            resourceType: 'AUTH_SESSION',
+            outcome: WmsStaffActivityOutcome.REJECTED,
+            reasonCode: 'NO_WORKSPACE_ACCESS',
+          });
+          throw new UnauthorizedException('Account has no workspace access');
+        }
+      } else if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
+        await this.wmsStaffActivityService.recordFromRequest({
+          request,
+          tenantId: user.tenantId,
+          actorId: user.id,
+          actionType: 'LOGIN',
+          resourceType: 'AUTH_SESSION',
+          outcome: WmsStaffActivityOutcome.REJECTED,
+          reasonCode: 'TENANT_INACTIVE',
+        });
         throw new UnauthorizedException('Tenant account is not active');
       }
     }
 
     // Generate tokens
-    const tokens = await this.generateTokens(user.id, user.tenantId, user.role);
+    const sessionId = crypto.randomUUID();
+    const tokens = await this.generateTokens(user.id, user.tenantId, user.role, sessionId);
 
     // Update last login
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
+    });
+
+    await this.wmsStaffActivityService.recordFromRequest({
+      request,
+      tenantId: user.tenantId,
+      actorId: user.id,
+      sessionId,
+      actionType: 'LOGIN',
+      resourceType: 'AUTH_SESSION',
+      resourceId: sessionId,
+      metadata: {
+        email,
+      },
     });
 
     return {
@@ -188,15 +264,26 @@ export class AuthService {
         throw new UnauthorizedException('User not found or inactive');
       }
 
-      // Check tenant status (skip for SUPER_ADMIN platform administrators)
       if (user.role !== 'SUPER_ADMIN') {
-        if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
+        if (!user.tenantId) {
+          const hasWmsAccess = await this.hasWmsWorkspaceAccess(user.id);
+          if (!hasWmsAccess) {
+            throw new UnauthorizedException('Account has no workspace access');
+          }
+        } else if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
           throw new UnauthorizedException('Tenant account is not active');
         }
       }
 
       // Generate new tokens
-      const tokens = await this.generateTokens(user.id, user.tenantId, user.role);
+      const tokens = await this.generateTokens(
+        user.id,
+        user.tenantId,
+        user.role,
+        typeof payload.sessionId === 'string' && payload.sessionId.trim().length > 0
+          ? payload.sessionId
+          : crypto.randomUUID(),
+      );
 
       return {
         user: this.sanitizeUser(user),
@@ -225,9 +312,13 @@ export class AuthService {
       throw new UnauthorizedException('User account is not active');
     }
 
-    // Check tenant status (skip for SUPER_ADMIN platform administrators)
     if (user.role !== 'SUPER_ADMIN') {
-      if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
+      if (!user.tenantId) {
+        const hasWmsAccess = await this.hasWmsWorkspaceAccess(user.id);
+        if (!hasWmsAccess) {
+          throw new UnauthorizedException('Account has no workspace access');
+        }
+      } else if (!user.tenant || (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL')) {
         throw new UnauthorizedException('Tenant account is not active');
       }
     }
@@ -235,14 +326,44 @@ export class AuthService {
     return user;
   }
 
+  async logout(
+    user: {
+      userId?: string;
+      id?: string;
+      tenantId?: string | null;
+      sessionId?: string | null;
+    },
+    request?: Request,
+  ) {
+    await this.wmsStaffActivityService.recordFromRequest({
+      request,
+      tenantId: user.tenantId ?? null,
+      actorId: user.userId ?? user.id ?? null,
+      sessionId: user.sessionId ?? null,
+      actionType: 'LOGOUT',
+      resourceType: 'AUTH_SESSION',
+      resourceId: user.sessionId ?? null,
+    });
+
+    return {
+      success: true,
+    };
+  }
+
   /**
    * Generate access and refresh tokens
    */
-  private async generateTokens(userId: string, tenantId: string | null, role: string) {
+  private async generateTokens(
+    userId: string,
+    tenantId: string | null,
+    role: string,
+    sessionId: string,
+  ) {
     const payload = {
       userId,
       tenantId,
       role,
+      sessionId,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -259,6 +380,7 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
+      sessionId,
     };
   }
 
@@ -276,5 +398,17 @@ export class AuthService {
   private sanitizeTenant(tenant: any) {
     const { encryptionKey, ...sanitized } = tenant;
     return sanitized;
+  }
+
+  private async hasWmsWorkspaceAccess(userId: string) {
+    const assignment = await this.prisma.userRoleAssignment.findFirst({
+      where: {
+        userId,
+        workspace: 'WMS',
+      },
+      select: { id: true },
+    });
+
+    return Boolean(assignment);
   }
 }

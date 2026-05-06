@@ -1,11 +1,13 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Bell, CalendarDays, ChevronDown, LogOut, Moon, Search, SunMedium } from 'lucide-react';
+import { Bell, CalendarDays, ChevronDown, LogOut, Moon, Search, Settings, SunMedium } from 'lucide-react';
 import type { StoredAdminUser } from '@/lib/admin-session';
 
 type WmsTopbarProps = {
   user: StoredAdminUser;
+  permissions: string[];
   onLogout: () => void;
 };
 
@@ -108,6 +110,16 @@ export function WmsTopbar({ user, onLogout }: WmsTopbarProps) {
                     {user.role ?? 'Workspace'}
                   </p>
                 </div>
+
+                <Link
+                  href="/settings/profile"
+                  prefetch={false}
+                  onClick={() => setIsProfileOpen(false)}
+                  className="flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-sm font-medium text-[#12384b] transition hover:bg-[#f6f8fa]"
+                >
+                  <Settings className="h-4 w-4" />
+                  Settings
+                </Link>
 
                 <button
                   type="button"

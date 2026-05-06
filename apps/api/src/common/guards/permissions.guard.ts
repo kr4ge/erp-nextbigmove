@@ -1,15 +1,15 @@
 import { CanActivate, ExecutionContext, Injectable, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
-import { PrismaService } from '../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
+import { EffectiveAccessService } from '../services/effective-access.service';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
-    private prisma: PrismaService,
     private cls: ClsService,
+    private effectiveAccessService: EffectiveAccessService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -42,53 +42,15 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('Tenant context is required');
     }
 
-    const effective = new Set<string>();
-
-    // User.permissions array (legacy)
-    if (Array.isArray(user.permissions)) {
-      user.permissions.forEach((p: string) => effective.add(p));
-    }
-
-    // Role-based permissions via assignments
-    const roleAssignments = await this.prisma.userRoleAssignment.findMany({
-      where: {
-        userId: user.userId || user.id,
-        OR: [
-          { tenantId, teamId: teamId || undefined },
-          { tenantId, teamId: null },
-        ],
-      },
-      select: { roleId: true },
-    });
-    const roleIds = roleAssignments.map((ra) => ra.roleId);
-    if (roleIds.length > 0) {
-      const rolePerms = await this.prisma.rolePermission.findMany({
-        where: { roleId: { in: roleIds } },
-        include: { permission: true },
-      });
-      rolePerms.forEach((rp) => effective.add(rp.permission.key));
-    }
-
-    // User permission overrides
-    const userPerms = await this.prisma.userPermissionAssignment.findMany({
-      where: {
-        userId: user.userId || user.id,
-        OR: [
-          { tenantId, teamId: teamId || undefined },
-          { tenantId, teamId: null },
-        ],
-      },
-      include: { permission: true },
-    });
-    userPerms.forEach((up) => {
-      if (up.allow) {
-        effective.add(up.permission.key);
-      } else {
-        effective.delete(up.permission.key);
-      }
+    const access = await this.effectiveAccessService.resolveUserAccess({
+      userId: user.userId || user.id,
+      tenantId,
+      basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+      requestedTeamIds: teamId ? [teamId] : [],
     });
 
-    const hasAny = required.some((perm) => effective.has(perm));
+    const effectivePermissionSet = new Set(access.permissions);
+    const hasAny = required.some((perm) => effectivePermissionSet.has(perm));
     if (!hasAny) {
       throw new ForbiddenException('Insufficient permissions');
     }

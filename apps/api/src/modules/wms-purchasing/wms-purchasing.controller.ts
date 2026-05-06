@@ -10,8 +10,7 @@ import {
 } from '@nestjs/common';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
+import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { CreateWmsPurchasingBatchDto } from './dto/create-wms-purchasing-batch.dto';
 import { GetWmsPurchasingOverviewDto } from './dto/get-wms-purchasing-overview.dto';
 import { GetWmsPurchasingProductOptionsDto } from './dto/get-wms-purchasing-product-options.dto';
@@ -22,7 +21,7 @@ import { UpdateWmsPurchasingStatusDto } from './dto/update-wms-purchasing-status
 import { WmsPurchasingService } from './wms-purchasing.service';
 
 @Controller('wms/purchasing')
-@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, WmsAccessGuard)
 export class WmsPurchasingController {
   constructor(private readonly wmsPurchasingService: WmsPurchasingService) {}
 

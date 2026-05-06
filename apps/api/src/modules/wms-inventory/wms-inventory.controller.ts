@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
-import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CreateWmsInventoryAdjustmentDto } from './dto/create-wms-inventory-adjustment.dto';
 import { CreateWmsInventoryTransferDto } from './dto/create-wms-inventory-transfer.dto';
@@ -12,7 +11,7 @@ import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-
 import { WmsInventoryService } from './wms-inventory.service';
 
 @Controller('wms/inventory')
-@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, WmsAccessGuard)
 export class WmsInventoryController {
   constructor(private readonly wmsInventoryService: WmsInventoryService) {}
 

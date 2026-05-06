@@ -109,7 +109,7 @@ export default function WmsHomePage() {
             <div className="flex items-center justify-between rounded-[20px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3.5">
               <div>
                 <p className="text-[13px] font-semibold text-[#12384b]">
-                  {data?.tenantReady ? 'Tenant scoped' : 'Platform scoped'}
+                  {data?.tenantReady ? 'Partner context ready' : 'Partner context pending'}
                 </p>
                 <p className="mt-1 text-[12px] text-[#617685]">{data?.context?.userRole ?? 'Unknown role'}</p>
               </div>

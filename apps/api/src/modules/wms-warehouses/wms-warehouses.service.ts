@@ -41,7 +41,8 @@ const DEFAULT_OPERATIONAL_LOCATIONS: Array<{
   { code: 'DMG', name: 'Damage', kind: WmsLocationKind.DAMAGE, sortOrder: 50 },
   { code: 'QTN', name: 'Quarantine', kind: WmsLocationKind.QUARANTINE, sortOrder: 60 },
 ];
-const DEFAULT_SECTION_RACK_CAPACITY = 12;
+const DEFAULT_SECTION_RACK_CAPACITY = 2;
+const MAX_SECTION_RACK_CAPACITY = 2;
 const DEFAULT_RACK_BIN_CAPACITY = 6;
 
 function isStructuralKind(kind: WmsLocationKind) {
@@ -202,14 +203,14 @@ export class WmsWarehousesService {
     });
 
     if (!bin) {
-      throw new NotFoundException('Bin not found');
+      throw new NotFoundException('Slot not found');
     }
 
     const rack = bin.parent;
     const section = rack?.parent;
 
     if (!rack || rack.kind !== WmsLocationKind.RACK || !section || section.kind !== WmsLocationKind.SECTION) {
-      throw new BadRequestException('Bin hierarchy is incomplete');
+      throw new BadRequestException('Slot hierarchy is incomplete');
     }
 
     const [occupiedUnits, units] = await Promise.all([
@@ -581,7 +582,7 @@ export class WmsWarehousesService {
 
     if (kind === WmsLocationKind.BIN) {
       if (!parent) {
-        throw new BadRequestException('Bin creation requires a rack parent');
+        throw new BadRequestException('Slot creation requires a rack parent');
       }
       return this.generateNextBinCode(warehouseId, parent.id);
     }
@@ -605,6 +606,9 @@ export class WmsWarehousesService {
     }
 
     if (isStructuralKind(kind)) {
+      if (kind === WmsLocationKind.BIN) {
+        return this.formatBinName(resolvedCode);
+      }
       return resolvedCode;
     }
 
@@ -624,13 +628,16 @@ export class WmsWarehousesService {
       if (resolved < 1) {
         throw new BadRequestException('Section capacity must be at least 1 rack');
       }
+      if (resolved > MAX_SECTION_RACK_CAPACITY) {
+        throw new BadRequestException(`Section capacity cannot exceed ${MAX_SECTION_RACK_CAPACITY} racks`);
+      }
       return resolved;
     }
 
     if (kind === WmsLocationKind.RACK) {
       const resolved = hasInput ? inputCapacity! : (existingCapacity ?? DEFAULT_RACK_BIN_CAPACITY);
       if (resolved < 1) {
-        throw new BadRequestException('Rack capacity must be at least 1 bin');
+        throw new BadRequestException('Rack capacity must be at least 1 slot');
       }
       return resolved;
     }
@@ -638,7 +645,7 @@ export class WmsWarehousesService {
     if (kind === WmsLocationKind.BIN) {
       const resolved = hasInput ? inputCapacity! : existingCapacity;
       if (resolved === null || resolved === undefined || resolved < 1) {
-        throw new BadRequestException('Bin capacity is required and must be at least 1 serialized unit');
+        throw new BadRequestException('Slot capacity is required and must be at least 1 serialized unit');
       }
       return resolved;
     }
@@ -668,7 +675,7 @@ export class WmsWarehousesService {
         throw new BadRequestException('Section parent not found');
       }
 
-      const maxRacks = section.capacity ?? DEFAULT_SECTION_RACK_CAPACITY;
+      const maxRacks = Math.min(section.capacity ?? DEFAULT_SECTION_RACK_CAPACITY, MAX_SECTION_RACK_CAPACITY);
       const currentRacks = await this.prisma.wmsLocation.count({
         where: {
           parentId,
@@ -707,7 +714,7 @@ export class WmsWarehousesService {
       });
 
       if (currentBins >= maxBins) {
-        throw new ConflictException('Rack capacity reached; no bin slots available');
+        throw new ConflictException('Rack capacity reached; no storage slots available');
       }
     }
   }
@@ -741,7 +748,7 @@ export class WmsWarehousesService {
       });
 
       if (binCount > capacity) {
-        throw new BadRequestException('Rack capacity cannot be lower than existing bin count');
+        throw new BadRequestException('Rack capacity cannot be lower than existing slot count');
       }
     }
 
@@ -753,7 +760,7 @@ export class WmsWarehousesService {
       });
 
       if (occupiedUnits > capacity) {
-        throw new BadRequestException('Bin capacity cannot be lower than current occupied unit count');
+        throw new BadRequestException('Slot capacity cannot be lower than current occupied unit count');
       }
     }
   }
@@ -854,7 +861,7 @@ export class WmsWarehousesService {
     }, 0) + 1;
 
     const paddedNumber = String(nextBinNumber).padStart(2, '0');
-    return `${rack.code}-B${paddedNumber}`;
+    return `${rack.code}-S${paddedNumber}`;
   }
 
   private parseSectionCodeToNumber(code: string) {
@@ -890,12 +897,17 @@ export class WmsWarehousesService {
   }
 
   private parseBinCodeToNumber(rackCode: string, binCode: string) {
-    const matcher = new RegExp(`^${this.escapeRegExp(rackCode)}-B(\\d+)$`);
+    const matcher = new RegExp(`^${this.escapeRegExp(rackCode)}-[BS](\\d+)$`);
     const match = binCode.match(matcher);
     if (!match) {
       return null;
     }
     return Number(match[1]);
+  }
+
+  private formatBinName(code: string) {
+    const match = code.match(/-S(\d+)$/);
+    return match ? `Slot ${match[1]}` : code;
   }
 
   private escapeRegExp(value: string) {
@@ -1016,7 +1028,7 @@ export class WmsWarehousesService {
 
     if (kind === WmsLocationKind.BIN) {
       if (parentKind !== WmsLocationKind.RACK) {
-        throw new BadRequestException('Bins must be created inside a rack');
+        throw new BadRequestException('Slots must be created inside a rack');
       }
       return;
     }
@@ -1201,16 +1213,32 @@ export class WmsWarehousesService {
   private sortLocationNodes(nodes: LocationTreeNode[]) {
     return [...nodes]
       .sort((left, right) => {
+        if (isStructuralKind(left.kind) && isStructuralKind(right.kind)) {
+          if (left.kind === WmsLocationKind.SECTION && right.kind === WmsLocationKind.SECTION) {
+            const leftSectionNumber = this.parseSectionCodeToNumber(left.code);
+            const rightSectionNumber = this.parseSectionCodeToNumber(right.code);
+            if (leftSectionNumber && rightSectionNumber && leftSectionNumber !== rightSectionNumber) {
+              return leftSectionNumber - rightSectionNumber;
+            }
+          }
+
+          return this.compareLocationCodes(left.code, right.code);
+        }
+
         if (left.sortOrder !== right.sortOrder) {
           return left.sortOrder - right.sortOrder;
         }
 
-        return left.name.localeCompare(right.name);
+        return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' });
       })
       .map((node) => ({
         ...node,
         children: this.sortLocationNodes(node.children),
       }));
+  }
+
+  private compareLocationCodes(left: string, right: string) {
+    return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
   }
 
   private handlePrismaConstraintError(error: unknown, fallbackMessage: string): never {

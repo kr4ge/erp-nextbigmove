@@ -27,6 +27,8 @@ import { WmsWarehousesModule } from './modules/wms-warehouses/wms-warehouses.mod
 import { WmsProductsModule } from './modules/wms-products/wms-products.module';
 import { WmsInventoryModule } from './modules/wms-inventory/wms-inventory.module';
 import { WmsReceivingModule } from './modules/wms-receiving/wms-receiving.module';
+import { WmsMobileModule } from './modules/wms-mobile/wms-mobile.module';
+import { WmsSettingsModule } from './modules/wms-settings/wms-settings.module';
 
 @Module({
   imports: [
@@ -108,6 +110,8 @@ import { WmsReceivingModule } from './modules/wms-receiving/wms-receiving.module
     WmsProductsModule,
     WmsReceivingModule,
     WmsInventoryModule,
+    WmsMobileModule,
+    WmsSettingsModule,
   ],
   controllers: [],
   providers: [],

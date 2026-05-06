@@ -4,9 +4,14 @@ export const ADMIN_PERMISSIONS_STORAGE_KEY = 'admin_permissions';
 
 export type StoredAdminUser = {
   id?: string;
+  userId?: string;
   email?: string;
-  firstName?: string;
-  lastName?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  avatar?: string | null;
+  employeeId?: string | null;
+  tenantId?: string | null;
+  defaultTeamId?: string | null;
   role?: string;
 };
 
@@ -51,6 +56,14 @@ export function storePermissions(permissions: string[]) {
   }
 
   localStorage.setItem(ADMIN_PERMISSIONS_STORAGE_KEY, JSON.stringify(permissions));
+}
+
+export function storeAdminUser(user: StoredAdminUser) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.setItem('user', JSON.stringify(user));
 }
 
 export function clearAdminSession() {

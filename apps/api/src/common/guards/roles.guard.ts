@@ -1,15 +1,15 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-import { PrismaService } from '../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
+import { EffectiveAccessService } from '../services/effective-access.service';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
-    private prisma: PrismaService,
     private cls: ClsService,
+    private effectiveAccessService: EffectiveAccessService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -38,22 +38,16 @@ export class RolesGuard implements CanActivate {
     const tenantId = this.cls.get('tenantId') || user.tenantId;
     const userId = user.userId || user.id;
 
-    // Fetch user's assigned roles (both tenant and team scoped)
-    const roleAssignments = await this.prisma.userRoleAssignment.findMany({
-      where: {
-        userId,
-        ...(tenantId ? { tenantId } : {}),
-      },
-      include: {
-        role: {
-          select: { key: true, name: true },
-        },
-      },
+    const access = await this.effectiveAccessService.resolveUserAccess({
+      userId,
+      tenantId,
+      basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+      workspace: 'all',
     });
 
     // Check if any assigned role matches required roles (by key or name)
-    const hasDynamicRole = roleAssignments.some((assignment) =>
-      requiredRoles.includes(assignment.role.key) || requiredRoles.includes(assignment.role.name),
+    const hasDynamicRole = access.roles.some((role) =>
+      requiredRoles.includes(role.key) || requiredRoles.includes(role.name),
     );
 
     if (!hasDynamicRole) {

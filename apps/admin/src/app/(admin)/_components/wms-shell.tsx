@@ -341,7 +341,7 @@ export function WmsShell({ children }: { children: ReactNode }) {
 
         <div className="relative z-0 flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden lg:h-screen lg:min-h-0 lg:overflow-hidden">
           <div className="sticky top-0 z-30 shrink-0">
-            <WmsTopbar user={state.user} onLogout={handleLogout} />
+            <WmsTopbar user={state.user} permissions={state.permissions} onLogout={handleLogout} />
           </div>
 
           <main className="wms-shell-main min-h-0 min-w-0 flex-1 overflow-x-hidden lg:overflow-y-auto">{children}</main>

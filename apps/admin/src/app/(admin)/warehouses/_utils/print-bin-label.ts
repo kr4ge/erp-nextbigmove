@@ -1,4 +1,4 @@
-import { renderCode39SvgMarkup } from './code39-barcode';
+import { normalizeBarcodeValue, renderCode128SvgMarkup } from './code39-barcode';
 import { printHtmlDocument } from '@/lib/print-html';
 
 type PrintBinLabelInput = {
@@ -11,18 +11,18 @@ type PrintBinLabelInput = {
 };
 
 export function printBinLabel(input: PrintBinLabelInput) {
-  const barcodeMarkup = renderCode39SvgMarkup(input.barcodeValue, {
-    height: 96,
-    narrowWidth: 2,
-    wideWidth: 5,
-    quietZone: 16,
-    textSize: 14,
+  const barcodeValue = normalizeBarcodeValue(input.barcodeValue);
+  const barcodeMarkup = renderCode128SvgMarkup(barcodeValue, {
+    height: 112,
+    moduleWidth: 2,
+    quietZone: 24,
+    textSize: 16,
   });
 
   const path = `${input.sectionCode} / ${input.rackCode} / ${input.binCode}`;
 
   printHtmlDocument({
-    title: 'WMS Bin Label',
+    title: 'WMS Slot Label',
     styles: `
       @page { size: auto; margin: 12mm; }
       body {
@@ -37,7 +37,7 @@ export function printBinLabel(input: PrintBinLabelInput) {
         padding: 16px 0;
       }
       .label {
-        width: 560px;
+        width: 620px;
         border: 1px solid #cfdbe3;
         border-radius: 18px;
         padding: 18px 20px;
@@ -67,26 +67,31 @@ export function printBinLabel(input: PrintBinLabelInput) {
         border: 1px solid #d7e0e7;
         border-radius: 12px;
         background: #fff;
-        padding: 8px;
+        padding: 10px;
         display: grid;
         place-items: center;
       }
+      .barcode-wrap svg {
+        max-width: 100%;
+        height: auto;
+      }
       .value {
         margin-top: 10px;
-        font-size: 12px;
+        font-size: 14px;
         color: #5f7686;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.08em;
+        font-weight: 700;
       }
     `,
     bodyHtml: `
       <div class="sheet">
         <div class="label">
-          <div class="eyebrow">WMS BIN LABEL</div>
+          <div class="eyebrow">WMS SLOT LABEL</div>
           <div class="bin">${escapeHtml(input.binCode)}</div>
           <div class="meta">${escapeHtml(input.warehouseName)} (${escapeHtml(input.warehouseCode)})</div>
           <div class="path">${escapeHtml(path)}</div>
           <div class="barcode-wrap">${barcodeMarkup}</div>
-          <div class="value">${escapeHtml(input.barcodeValue)}</div>
+          <div class="value">${escapeHtml(barcodeValue)}</div>
         </div>
       </div>
     `,

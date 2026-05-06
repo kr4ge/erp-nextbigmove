@@ -1,14 +1,13 @@
 import { Controller, Get, Patch, Param, Query, Body, UseGuards, Post } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
-import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { WmsProductsService } from './wms-products.service';
 import { GetWmsProductsOverviewDto } from './dto/get-wms-products-overview.dto';
 import { UpdateWmsProductProfileDto } from './dto/update-wms-product-profile.dto';
 
 @Controller('wms/products')
-@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, WmsAccessGuard)
 export class WmsProductsController {
   constructor(private readonly wmsProductsService: WmsProductsService) {}
 

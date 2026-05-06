@@ -1,12 +1,11 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
-import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { WmsCoreService } from './wms-core.service';
 
 @Controller('wms/core')
-@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, WmsAccessGuard)
 export class WmsCoreController {
   constructor(private readonly wmsCoreService: WmsCoreService) {}
 

@@ -64,6 +64,7 @@ model Tenant {
   wmsTransfers                        WmsTransfer[]
   wmsInventoryMovements               WmsInventoryMovement[]
   wmsLabelPrintLogs                   WmsLabelPrintLog[]
+  wmsStaffActivities                  WmsStaffActivity[]
   reconcileMarketing                  ReconcileMarketing[]
   reconcileSales                      ReconcileSales[]
   analyticsShares                     AnalyticsShare[]
@@ -323,6 +324,7 @@ model User {
   wmsTransfersUpdated           WmsTransfer[]            @relation("WmsTransferUpdatedBy")
   wmsInventoryMovements         WmsInventoryMovement[]   @relation("WmsInventoryMovementActor")
   wmsLabelPrintLogs         WmsLabelPrintLog[] @relation("WmsLabelPrintLogActor")
+  wmsStaffActivities        WmsStaffActivity[] @relation("WmsStaffActivityActor")
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -644,6 +646,17 @@ enum WmsLocationKind {
   QUARANTINE
 }
 
+enum WmsStaffActivityPlatform {
+  WEB
+  STOX
+}
+
+enum WmsStaffActivityOutcome {
+  SUCCESS
+  REJECTED
+  EXCEPTION
+}
+
 enum AnalyticsShareScope {
   SALES
   MARKETING
@@ -770,6 +783,43 @@ model AuditLog {
   @@index([action])
   @@index([resource])
   @@map("audit_logs")
+}
+
+model WmsStaffActivity {
+  id          String                   @id @default(uuid()) @db.Uuid
+  tenantId    String?                  @db.Uuid
+  tenant      Tenant?                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorId     String?                  @db.Uuid
+  actor       User?                    @relation("WmsStaffActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+  teamId      String?                  @db.Uuid
+  platform    WmsStaffActivityPlatform @default(WEB)
+  sessionId   String?
+  deviceId    String?
+  deviceName  String?
+  actionType  String
+  resourceType String?
+  resourceId  String?
+  taskType    String?
+  taskId      String?
+  storeId     String?                  @db.Uuid
+  warehouseId String?                  @db.Uuid
+  fromStatus  String?
+  toStatus    String?
+  outcome     WmsStaffActivityOutcome  @default(SUCCESS)
+  reasonCode  String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime                 @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([sessionId])
+  @@index([platform, createdAt])
+  @@index([actionType, createdAt])
+  @@index([storeId, createdAt])
+  @@index([warehouseId, createdAt])
+  @@map("wms_staff_activities")
 }
 
 // ============================================================================

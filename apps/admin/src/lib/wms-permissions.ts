@@ -55,6 +55,27 @@ export const WMS_INVENTORY_PRINT_LABELS_PERMISSIONS = [
   'wms.inventory.write',
 ] as const;
 
+export const WMS_USERS_READ_PERMISSIONS = [
+  'wms.users.read',
+] as const;
+
+export const WMS_USERS_WRITE_PERMISSIONS = [
+  'wms.users.write',
+] as const;
+
+export const WMS_ROLES_READ_PERMISSIONS = [
+  'wms.roles.read',
+] as const;
+
+export const WMS_ROLES_WRITE_PERMISSIONS = [
+  'wms.roles.write',
+] as const;
+
+export const WMS_SETTINGS_READ_PERMISSIONS = [
+  ...WMS_USERS_READ_PERMISSIONS,
+  ...WMS_ROLES_READ_PERMISSIONS,
+] as const;
+
 export function isPlatformAdminRole(role: string | null | undefined) {
   return role === 'SUPER_ADMIN';
 }

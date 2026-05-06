@@ -1310,8 +1310,9 @@ export class WmsInventoryService {
     const clsTenantId = this.cls.get('tenantId') as string | undefined;
     const userRole = this.cls.get('userRole') as string | undefined;
     const isPlatformUser = userRole === 'SUPER_ADMIN';
+    const hasGlobalWmsAccess = this.cls.get('wmsGlobalAccess') === true;
 
-    if (isPlatformUser) {
+    if (isPlatformUser || hasGlobalWmsAccess) {
       const tenants = await this.prisma.tenant.findMany({
         select: {
           id: true,
@@ -1325,6 +1326,8 @@ export class WmsInventoryService {
       const activeTenantId =
         requestedTenantId && tenants.some((tenant) => tenant.id === requestedTenantId)
           ? requestedTenantId
+          : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
+            ? clsTenantId
           : tenants[0]?.id ?? null;
 
       return {

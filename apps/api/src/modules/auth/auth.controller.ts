@@ -2,22 +2,22 @@ import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request, 
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, RefreshTokenDto, UpdateProfileDto } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { PermissionWorkspaceQueryDto } from '../../common/dto/permission-workspace-query.dto';
 import {
-  filterPermissionKeysByWorkspace,
   normalizePermissionWorkspace,
   roleBelongsToWorkspace,
   type PermissionWorkspace,
 } from '../../common/rbac/permission-workspace';
+import { EffectiveAccessService } from '../../common/services/effective-access.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly prisma: PrismaService,
+    private readonly effectiveAccessService: EffectiveAccessService,
   ) {}
 
   /**
@@ -36,8 +36,8 @@ export class AuthController {
    */
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(@Body() loginDto: LoginDto, @Request() req) {
+    return this.authService.login(loginDto, req);
   }
 
   /**
@@ -48,6 +48,17 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
     return this.authService.refreshToken(refreshTokenDto);
+  }
+
+  /**
+   * Logout current user session
+   * POST /api/v1/auth/logout
+   */
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async logout(@Request() req) {
+    return this.authService.logout(req.user, req);
   }
 
   /**
@@ -67,7 +78,7 @@ export class AuthController {
    * PATCH /api/v1/auth/profile
    */
   @Patch('profile')
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard)
   async updateProfile(@Request() req, @Body() body: UpdateProfileDto) {
     const userId = req.user.userId || req.user.id;
     const tenantId = req.user.tenantId;
@@ -123,7 +134,7 @@ export class AuthController {
    * GET /api/v1/auth/permissions
    */
   @Get('permissions')
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard)
   async getPermissions(@Request() req, @Query() query: PermissionWorkspaceQueryDto) {
     const user = req.user;
     const userId = user.userId || user.id;
@@ -137,75 +148,20 @@ export class AuthController {
           .filter(Boolean)
       : [];
 
-    if (!userId || !tenantId) {
+    if (!userId || (!tenantId && workspace !== 'wms')) {
       return { permissions: [] };
     }
 
-    const effectivePerms = new Set<string>();
-
-    // Legacy permissions from user.permissions array
-    if (Array.isArray(user.permissions)) {
-      user.permissions.forEach((p: string) => effectivePerms.add(p));
-    }
-
-    // Role-based permissions via UserRoleAssignment
-    const roleAssignments = await this.prisma.userRoleAssignment.findMany({
-      where: {
-        userId,
-        tenantId,
-        ...(requestedTeamIds.length > 0
-          ? {
-              OR: [
-                { teamId: null },
-                { teamId: { in: requestedTeamIds } },
-              ],
-            }
-          : {}),
-      },
-      include: {
-        role: {
-          include: {
-            rolePermissions: {
-              include: { permission: true },
-            },
-          },
-        },
-      },
-    });
-
-    roleAssignments.forEach((assignment) => {
-      assignment.role.rolePermissions.forEach((rp) => {
-        effectivePerms.add(rp.permission.key);
-      });
-    });
-
-    // User permission overrides
-    const userPerms = await this.prisma.userPermissionAssignment.findMany({
-      where: {
-        userId,
-        tenantId,
-        ...(requestedTeamIds.length > 0
-          ? {
-              OR: [
-                { teamId: null },
-                { teamId: { in: requestedTeamIds } },
-              ],
-            }
-          : {}),
-      },
-      include: { permission: true },
-    });
-
-    userPerms.forEach((up) => {
-      if (up.allow) {
-        effectivePerms.add(up.permission.key);
-      } else {
-        effectivePerms.delete(up.permission.key);
-      }
+    const access = await this.effectiveAccessService.resolveUserAccess({
+      userId,
+      ...(tenantId ? { tenantId } : {}),
+      basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+      requestedTeamIds,
+      workspace,
     });
 
     return {
-      permissions: filterPermissionKeysByWorkspace(Array.from(effectivePerms), workspace),
+      permissions: access.permissions,
     };
   }
 
@@ -214,38 +170,29 @@ export class AuthController {
    * GET /api/v1/auth/my-role
    */
   @Get('my-role')
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard)
   async getMyRole(@Request() req, @Query() query: PermissionWorkspaceQueryDto) {
     const userId = req.user.userId || req.user.id;
     const tenantId = req.user.tenantId;
-    if (!userId || !tenantId) {
-      return { roles: [] };
-    }
 
     const workspace: PermissionWorkspace = query.workspace
       ? normalizePermissionWorkspace(query.workspace)
       : 'all';
 
-    const assignments = await this.prisma.userRoleAssignment.findMany({
-      where: { userId, tenantId },
-      include: {
-        role: {
-          include: {
-            rolePermissions: {
-              include: {
-                permission: true,
-              },
-            },
-          },
-        },
-      },
+    if (!userId || (!tenantId && workspace !== 'wms')) {
+      return { roles: [] };
+    }
+
+    const access = await this.effectiveAccessService.resolveUserAccess({
+      userId,
+      ...(tenantId ? { tenantId } : {}),
+      basePermissions: Array.isArray(req.user.permissions) ? req.user.permissions : [],
+      workspace,
     });
 
-    const roles = assignments
-      .map((a) => a.role)
-      .filter(Boolean)
+    const roles = access.roles
       .filter((role) => roleBelongsToWorkspace(role, workspace))
-      .map((r) => ({ id: r.id, key: r.key, name: r.name, scope: r.scope }));
+      .map((role) => ({ id: role.id, key: role.key, name: role.name, scope: role.scope }));
 
     return { roles };
   }

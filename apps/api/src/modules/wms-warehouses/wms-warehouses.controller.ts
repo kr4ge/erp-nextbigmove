@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
-import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { WmsWarehousesService } from './wms-warehouses.service';
 import { GetWmsWarehousesOverviewDto } from './dto/get-wms-warehouses-overview.dto';
@@ -11,7 +10,7 @@ import { CreateWmsLocationDto } from './dto/create-wms-location.dto';
 import { UpdateWmsLocationDto } from './dto/update-wms-location.dto';
 
 @Controller('wms/warehouses')
-@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, WmsAccessGuard)
 export class WmsWarehousesController {
   constructor(private readonly wmsWarehousesService: WmsWarehousesService) {}
 

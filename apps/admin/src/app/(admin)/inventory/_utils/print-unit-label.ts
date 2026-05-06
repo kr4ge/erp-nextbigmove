@@ -1,4 +1,4 @@
-import { renderCode39SvgMarkup } from '../../warehouses/_utils/code39-barcode';
+import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../../warehouses/_utils/code39-barcode';
 import { printHtmlDocument } from '@/lib/print-html';
 
 type PrintUnitLabelInput = {
@@ -14,12 +14,12 @@ type PrintUnitLabelInput = {
 };
 
 export function printUnitLabel(input: PrintUnitLabelInput) {
-  const barcodeMarkup = renderCode39SvgMarkup(input.barcodeValue, {
-    height: 96,
-    narrowWidth: 2,
-    wideWidth: 5,
-    quietZone: 16,
-    textSize: 14,
+  const barcodeValue = normalizeBarcodeValue(input.barcodeValue);
+  const barcodeMarkup = renderCode128SvgMarkup(barcodeValue, {
+    height: 112,
+    moduleWidth: 2,
+    quietZone: 24,
+    textSize: 16,
   });
 
   printHtmlDocument({
@@ -38,7 +38,7 @@ export function printUnitLabel(input: PrintUnitLabelInput) {
         padding: 16px 0;
       }
       .label {
-        width: 580px;
+        width: 620px;
         border: 1px solid #cfdbe3;
         border-radius: 18px;
         padding: 18px 20px;
@@ -70,15 +70,20 @@ export function printUnitLabel(input: PrintUnitLabelInput) {
         border: 1px solid #d7e0e7;
         border-radius: 12px;
         background: #fff;
-        padding: 8px;
+        padding: 10px;
         display: grid;
         place-items: center;
       }
+      .barcode-wrap svg {
+        max-width: 100%;
+        height: auto;
+      }
       .value {
         margin-top: 10px;
-        font-size: 12px;
+        font-size: 14px;
         color: #5f7686;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.08em;
+        font-weight: 700;
       }
     `,
     bodyHtml: `
@@ -95,7 +100,7 @@ export function printUnitLabel(input: PrintUnitLabelInput) {
             <div>${escapeHtml(input.statusLabel)}</div>
           </div>
           <div class="barcode-wrap">${barcodeMarkup}</div>
-          <div class="value">${escapeHtml(input.barcodeValue)}</div>
+          <div class="value">${escapeHtml(barcodeValue)}</div>
         </div>
       </div>
     `,

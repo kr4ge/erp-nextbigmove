@@ -31,6 +31,9 @@ type LocationFormState = {
   capacity: string;
 };
 
+const MAX_SECTION_RACKS = 2;
+const DEFAULT_RACK_BINS = 6;
+
 const DEFAULT_STATE: LocationFormState = {
   parentId: '',
   kind: 'SECTION',
@@ -47,6 +50,10 @@ function isStructuralKind(kind: WmsLocationKind) {
 }
 
 function formatKindLabel(kind: WmsLocationKind) {
+  if (kind === 'BIN') {
+    return 'Slot';
+  }
+
   return kind
     .toLowerCase()
     .split('_')
@@ -135,7 +142,13 @@ export function LocationFormModal({
       parentId: draft?.parentId ?? DEFAULT_STATE.parentId,
       code: draft?.code ?? DEFAULT_STATE.code,
       name: draft?.name ?? DEFAULT_STATE.name,
-      capacity: draft?.kind === 'SECTION' ? '12' : draft?.kind === 'RACK' ? '6' : draft?.kind === 'BIN' ? '1' : '',
+      capacity: draft?.kind === 'SECTION'
+        ? String(MAX_SECTION_RACKS)
+        : draft?.kind === 'RACK'
+          ? String(DEFAULT_RACK_BINS)
+          : draft?.kind === 'BIN'
+            ? '1'
+            : '',
     });
   }, [draft, open, location]);
 
@@ -163,6 +176,13 @@ export function LocationFormModal({
   const hasValidBinCapacity =
     state.kind !== 'BIN'
     || (Number.isFinite(Number(state.capacity)) && Number(state.capacity) >= 1);
+  const hasValidSectionCapacity =
+    state.kind !== 'SECTION'
+    || (
+      Number.isFinite(Number(state.capacity))
+      && Number(state.capacity) >= 1
+      && Number(state.capacity) <= MAX_SECTION_RACKS
+    );
 
   const autoCodePreview = useMemo(() => {
     if (!isStructuralCreate || !warehouse) {
@@ -199,17 +219,18 @@ export function LocationFormModal({
     }
 
     const binNumbers = parentNode.children.map((bin) => {
-      const match = bin.code.match(new RegExp(`^${parentNode.code}-B(\\d+)$`));
+      const match = bin.code.match(new RegExp(`^${parentNode.code}-[BS](\\d+)$`));
       return match ? Number(match[1]) : 0;
     });
     const nextBinNumber = Math.max(0, ...binNumbers) + 1;
-    return `${parentNode.code}-B${String(nextBinNumber).padStart(2, '0')}`;
+    return `${parentNode.code}-S${String(nextBinNumber).padStart(2, '0')}`;
   }, [isStructuralCreate, state.kind, state.parentId, warehouse]);
 
   const saveDisabled =
     isSubmitting ||
     !warehouse ||
     !parentSelected ||
+    !hasValidSectionCapacity ||
     !hasValidBinCapacity ||
     (!location && !isStructuralCreate && (!state.code.trim() || !state.name.trim())) ||
     (!!location && (!state.code.trim() || !state.name.trim()));
@@ -277,7 +298,7 @@ export function LocationFormModal({
               <optgroup label="Structural">
                 <option value="SECTION">Section</option>
                 <option value="RACK">Rack</option>
-                <option value="BIN">Bin</option>
+                <option value="BIN">Slot</option>
               </optgroup>
               <optgroup label="Operational">
                 <option value="RECEIVING_STAGING">Receiving staging</option>
@@ -367,20 +388,20 @@ export function LocationFormModal({
           </>
         )}
 
-        {state.kind === 'SECTION' && !location ? (
+        {state.kind === 'SECTION' ? (
           <WmsFormField label="Maximum Racks">
             <input
               type="number"
               min={1}
-              max={50}
+              max={MAX_SECTION_RACKS}
               value={state.capacity}
               onChange={(event) => setState((current) => ({ ...current, capacity: event.target.value }))}
               className="wms-input w-full"
-              placeholder="2"
+              placeholder={String(MAX_SECTION_RACKS)}
             />
           </WmsFormField>
-        ) : state.kind === 'RACK' && !location ? (
-          <WmsFormField label="Maximum Bins">
+        ) : state.kind === 'RACK' ? (
+          <WmsFormField label="Maximum Slots">
             <input
               type="number"
               min={1}
@@ -392,7 +413,7 @@ export function LocationFormModal({
             />
           </WmsFormField>
         ) : state.kind === 'BIN' ? (
-          <WmsFormField label="Bin Capacity (Units)">
+          <WmsFormField label="Slot Capacity (Units)">
             <input
               type="number"
               min={1}

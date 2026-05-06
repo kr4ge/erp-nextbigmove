@@ -23,6 +23,7 @@ export class TenantGuard implements CanActivate {
       this.cls.set('userId', user.userId);
       this.cls.set('userRole', user.role);
       this.cls.set('userPermissions', user.permissions || []);
+      this.cls.set('sessionId', user.sessionId || null);
       return true;
     }
 
@@ -36,6 +37,7 @@ export class TenantGuard implements CanActivate {
     this.cls.set('userId', user.userId);
     this.cls.set('userRole', user.role);
     this.cls.set('userPermissions', user.permissions || []);
+    this.cls.set('sessionId', user.sessionId || null);
 
     // Verify tenant is active
     const tenant = await this.prisma.tenant.findUnique({

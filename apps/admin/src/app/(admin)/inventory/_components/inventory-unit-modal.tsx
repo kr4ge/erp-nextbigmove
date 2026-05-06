@@ -14,7 +14,7 @@ import type {
 } from '../_types/inventory';
 import { formatInventoryStatusLabel } from '../_utils/inventory-status-presenters';
 import { printUnitLabel } from '../_utils/print-unit-label';
-import { renderCode39SvgMarkup } from '../../warehouses/_utils/code39-barcode';
+import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../../warehouses/_utils/code39-barcode';
 
 type InventoryUnitModalProps = {
   open: boolean;
@@ -83,19 +83,20 @@ export function InventoryUnitModal({
     setTransferNotes('');
   }, [open, unit]);
 
+  const barcodeValue = unit ? normalizeBarcodeValue(unit.barcode) : '';
+
   const barcodeMarkup = useMemo(() => {
-    if (!unit) {
+    if (!barcodeValue) {
       return '';
     }
 
-    return renderCode39SvgMarkup(unit.barcode, {
-      height: 96,
-      narrowWidth: 2,
-      wideWidth: 5,
-      quietZone: 16,
-      textSize: 14,
+    return renderCode128SvgMarkup(barcodeValue, {
+      height: 112,
+      moduleWidth: 2,
+      quietZone: 24,
+      textSize: 16,
     });
-  }, [unit]);
+  }, [barcodeValue]);
 
   const selectedSection = useMemo(
     () => transferOptions?.sections.find((section) => section.id === sectionId) ?? null,
@@ -137,7 +138,7 @@ export function InventoryUnitModal({
       setPrintError(null);
       printUnitLabel({
         code: unit.code,
-        barcodeValue: unit.barcode,
+        barcodeValue,
         productName: unit.name,
         variationLabel: unit.variationDisplayId ? `Variation ${unit.variationDisplayId}` : `Variation ${unit.variationId}`,
         storeName: unit.store.name,
@@ -261,7 +262,7 @@ export function InventoryUnitModal({
 
                 <div className="mt-3 rounded-[14px] border border-[#e1e8ee] bg-white px-3 py-2.5">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#7a8f9d]">Barcode Value</p>
-                  <p className="mt-1 break-all text-[12px] font-medium text-[#12384b]">{unit.barcode}</p>
+                  <p className="mt-1 break-all text-[12px] font-medium text-[#12384b]">{barcodeValue}</p>
                 </div>
               </div>
 

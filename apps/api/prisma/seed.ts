@@ -54,6 +54,10 @@ type RoleDef = {
 
 const WMS_PERMISSION_KEYS = [
   'wms.core.read',
+  'wms.users.read',
+  'wms.users.write',
+  'wms.roles.read',
+  'wms.roles.write',
   'wms.purchasing.read',
   'wms.purchasing.write',
   'wms.purchasing.edit',
@@ -146,6 +150,10 @@ const PERMISSIONS: { key: string; description: string }[] = [
   { key: 'kpi.funnel.read', description: 'Read funnel KPI placeholder pages' },
   { key: 'kpi.sales.read', description: 'Read sales KPI placeholder pages' },
   { key: 'wms.core.read', description: 'Access the WMS workspace shell and stock-truth foundation' },
+  { key: 'wms.users.read', description: 'Read WMS staff users and access assignments' },
+  { key: 'wms.users.write', description: 'Manage WMS staff users and access assignments' },
+  { key: 'wms.roles.read', description: 'Read WMS roles and permissions' },
+  { key: 'wms.roles.write', description: 'Manage WMS roles and permissions' },
   { key: 'wms.purchasing.read', description: 'Read WMS purchasing batches and requests' },
   { key: 'wms.purchasing.write', description: 'Create WMS purchasing batches and requests' },
   { key: 'wms.purchasing.edit', description: 'Edit WMS purchasing batches and requests' },
@@ -317,7 +325,7 @@ const ROLES: RoleDef[] = [
     key: 'WMS_ADMIN',
     name: 'WMS Admin',
     description: 'Full access to warehouse management operations',
-    scope: RoleScope.TENANT,
+    scope: RoleScope.GLOBAL,
     permissions: [...WMS_PERMISSION_KEYS],
     isSystem: true,
   },
@@ -325,7 +333,7 @@ const ROLES: RoleDef[] = [
     key: 'WMS_OPERATOR',
     name: 'WMS Operator',
     description: 'Operational WMS access for daily warehouse workflows',
-    scope: RoleScope.TENANT,
+    scope: RoleScope.GLOBAL,
     permissions: [
       'wms.core.read',
       'wms.purchasing.read',
@@ -365,7 +373,7 @@ const ROLES: RoleDef[] = [
     key: 'WMS_VIEWER',
     name: 'WMS Viewer',
     description: 'Read-only WMS access',
-    scope: RoleScope.TENANT,
+    scope: RoleScope.GLOBAL,
     permissions: [
       'wms.core.read',
       'wms.purchasing.read',

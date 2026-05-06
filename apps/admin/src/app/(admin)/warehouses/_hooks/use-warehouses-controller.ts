@@ -55,7 +55,9 @@ function resolveLatestBinId(
         return null;
       }
 
-      const sortedBins = [...bins].sort((left, right) => left.code.localeCompare(right.code));
+      const sortedBins = [...bins].sort((left, right) =>
+        left.code.localeCompare(right.code, undefined, { numeric: true, sensitivity: 'base' }),
+      );
       return sortedBins[sortedBins.length - 1]?.id ?? null;
     }
   }

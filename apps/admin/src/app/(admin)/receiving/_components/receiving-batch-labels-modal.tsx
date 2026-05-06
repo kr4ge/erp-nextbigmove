@@ -5,7 +5,7 @@ import { Loader2, Printer } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
 import type { WmsReceivingBatchDetail } from '../_types/receiving';
 import { printReceivingBatchLabels } from '../_utils/print-receiving-batch-labels';
-import { renderCode39SvgMarkup } from '../../warehouses/_utils/code39-barcode';
+import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../../warehouses/_utils/code39-barcode';
 
 type ReceivingBatchLabelsModalProps = {
   open: boolean;
@@ -39,12 +39,12 @@ export function ReceivingBatchLabelsModal({
     () =>
       (batch?.units ?? []).map((unit, index) => ({
         ...unit,
+        barcodeValue: normalizeBarcodeValue(unit.barcode),
         sequence: index + 1,
-        barcodeMarkup: renderCode39SvgMarkup(unit.barcode, {
-          height: 24,
-          narrowWidth: 1.45,
-          wideWidth: 3.15,
-          quietZone: 3,
+        barcodeMarkup: renderCode128SvgMarkup(unit.barcode, {
+          height: 30,
+          moduleWidth: 1,
+          quietZone: 10,
           textSize: 8,
         }),
       })),
@@ -72,7 +72,7 @@ export function ReceivingBatchLabelsModal({
       printReceivingBatchLabels({
         batchCode: batch.code,
         units: batch.units.map((unit) => ({
-          barcode: unit.barcode,
+          barcode: normalizeBarcodeValue(unit.barcode),
         })),
       });
       await onRecordPrint(batch.id, action);
@@ -187,7 +187,7 @@ export function ReceivingBatchLabelsModal({
 
                     <div className="mt-2 space-y-1 text-[11px] leading-4 text-[#3f5f72]">
                       <p className="font-semibold text-[#12384b]">{unit.code}</p>
-                      <p className="break-all">{unit.barcode}</p>
+                      <p className="break-all">{unit.barcodeValue}</p>
                       <p>
                         {batch.warehouse.code} · {batch.warehouse.name}
                         {batch.stagingLocation ? ` · ${batch.stagingLocation.code} · ${batch.stagingLocation.name}` : ''}

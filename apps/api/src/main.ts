@@ -30,7 +30,16 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Team-ID', 'X-API-KEY'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Tenant-ID',
+      'X-Team-ID',
+      'X-API-KEY',
+      'X-Client-Platform',
+      'X-Device-ID',
+      'X-Device-Name',
+    ],
   });
 
   // Global validation pipe
@@ -49,9 +58,10 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
 
   const port = process.env.PORT || 3001;
-  await app.listen(port);
+  const host = process.env.HOST || '0.0.0.0';
+  await app.listen(port, host);
 
-  console.log(`🚀 API running on http://localhost:${port}/api/v1`);
+  console.log(`🚀 API running on http://${host}:${port}/api/v1`);
 }
 
 bootstrap();

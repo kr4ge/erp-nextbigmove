@@ -6,7 +6,7 @@ import { Loader2, Printer, RefreshCcw } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
 import { fetchWmsBinDetail } from '../_services/warehouses.service';
 import type { WmsLocationTreeNode, WmsWarehouseBinDetailResponse } from '../_types/warehouse';
-import { renderCode39SvgMarkup } from '../_utils/code39-barcode';
+import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../_utils/code39-barcode';
 import { printBinLabel } from '../_utils/print-bin-label';
 
 export type BinSerializationTarget = {
@@ -53,18 +53,17 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
   });
 
   const detail = detailQuery.data ?? null;
-  const barcodeValue = detail?.bin.barcode ?? target?.bin.barcode ?? '';
+  const barcodeValue = normalizeBarcodeValue(detail?.bin.barcode ?? target?.bin.barcode ?? '');
   const barcodeMarkup = useMemo(() => {
     if (!barcodeValue) {
       return '';
     }
 
-    return renderCode39SvgMarkup(barcodeValue, {
-      height: 96,
-      narrowWidth: 2,
-      wideWidth: 5,
-      quietZone: 16,
-      textSize: 14,
+    return renderCode128SvgMarkup(barcodeValue, {
+      height: 112,
+      moduleWidth: 2,
+      quietZone: 24,
+      textSize: 16,
     });
   }, [barcodeValue]);
 
@@ -86,7 +85,7 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
         sectionCode: target.section.code,
         rackCode: target.rack.code,
         binCode: target.bin.code,
-        barcodeValue: target.bin.barcode,
+        barcodeValue,
       });
       setLastPrintAction(action);
     } catch (error) {
@@ -100,7 +99,7 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
       <div className="text-xs text-[#637786]">
         {lastPrintAction
           ? `${lastPrintAction === 'print' ? 'Printed' : 'Reprinted'} label for ${target?.bin.code}`
-          : 'Print or reprint the bin label when needed.'}
+          : 'Print or reprint the slot label when needed.'}
       </div>
 
       <div className="flex items-center gap-2.5">
@@ -130,7 +129,7 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
     <WmsModal
       open={open && !!target}
       onClose={onClose}
-      title={detail?.bin.code ? `Bin ${detail.bin.code}` : target ? `Bin ${target.bin.code}` : 'Bin'}
+      title={detail?.bin.code ? `Slot ${detail.bin.code}` : target ? `Slot ${target.bin.code}` : 'Slot'}
       footer={footer}
     >
       {target ? (
@@ -174,24 +173,24 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
                 <MetaItem label="Warehouse" value={`${target.warehouseName} (${target.warehouseCode})`} />
                 <MetaItem label="Section" value={target.section.code} />
                 <MetaItem label="Rack" value={target.rack.code} />
-                <MetaItem label="Bin" value={target.bin.code} />
+                <MetaItem label="Slot" value={target.bin.code} />
                 <MetaItem label="Capacity" value={capacity === null ? 'Not set' : `${capacity} units`} />
               </div>
             </div>
           ) : detailQuery.isLoading ? (
             <div className="flex h-[260px] items-center justify-center text-sm text-[#718797]">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading bin details…
+              Loading slot details…
             </div>
           ) : detailQuery.isError ? (
             <div className="rounded-[14px] border border-rose-200 bg-rose-50 px-3 py-2.5 text-[12px] text-rose-700">
-              Unable to load this bin right now.
+              Unable to load this slot right now.
             </div>
           ) : detail ? (
             activeTab === 'overview' ? (
               <div className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <SummaryTile label="Occupied" value={`${occupiedUnits}`} hint="Serialized units in this bin" />
+                  <SummaryTile label="Occupied" value={`${occupiedUnits}`} hint="Serialized units in this slot" />
                   <SummaryTile
                     label="Available"
                     value={availableUnits === null ? 'N/A' : `${availableUnits}`}
@@ -213,7 +212,7 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
                   <MetaItem label="Warehouse" value={`${detail.bin.warehouse.code} · ${detail.bin.warehouse.name}`} />
                   <MetaItem label="Section" value={`${detail.bin.section.code} · ${detail.bin.section.name}`} />
                   <MetaItem label="Rack" value={`${detail.bin.rack.code} · ${detail.bin.rack.name}`} />
-                  <MetaItem label="Bin" value={`${detail.bin.code} · ${detail.bin.name}`} />
+                  <MetaItem label="Slot" value={`${detail.bin.code} · ${detail.bin.name}`} />
                 </div>
               </div>
             ) : (
@@ -267,7 +266,7 @@ function BinUnitsTable({
   if (!units.length) {
     return (
       <div className="rounded-[16px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center text-sm text-[#637786]">
-        No serialized units are currently stored in this bin.
+        No serialized units are currently stored in this slot.
       </div>
     );
   }

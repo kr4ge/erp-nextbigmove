@@ -25,18 +25,12 @@ export class UserService {
     return tenantId;
   }
 
-  private getUserRole() {
-    return this.cls.get('userRole');
-  }
-
   private assertWmsRoleAssignmentAccess(wmsRoleId: string | null | undefined) {
     if (!wmsRoleId) {
       return;
     }
 
-    if (this.getUserRole() !== 'SUPER_ADMIN') {
-      throw new ForbiddenException('WMS roles cannot be assigned from ERP user management');
-    }
+    throw new ForbiddenException('WMS staff access must be managed from WMS settings');
   }
 
   private async getValidatedRole(
@@ -224,7 +218,16 @@ export class UserService {
   async findAll() {
     const tenantId = this.getTenant();
     const users = await this.prisma.user.findMany({
-      where: { tenantId },
+      where: {
+        tenantId,
+        NOT: {
+          userRoleAssignments: {
+            some: {
+              workspace: toStoredPermissionWorkspace('wms'),
+            },
+          },
+        },
+      },
       select: {
         id: true,
         email: true,
@@ -283,7 +286,17 @@ export class UserService {
   async update(id: string, dto: UpdateUserDto) {
     const tenantId = this.getTenant();
     const user = await this.prisma.user.findFirst({
-      where: { id, tenantId },
+      where: {
+        id,
+        tenantId,
+        NOT: {
+          userRoleAssignments: {
+            some: {
+              workspace: toStoredPermissionWorkspace('wms'),
+            },
+          },
+        },
+      },
     });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -415,7 +428,17 @@ export class UserService {
   async remove(id: string) {
     const tenantId = this.getTenant();
     const user = await this.prisma.user.findFirst({
-      where: { id, tenantId },
+      where: {
+        id,
+        tenantId,
+        NOT: {
+          userRoleAssignments: {
+            some: {
+              workspace: toStoredPermissionWorkspace('wms'),
+            },
+          },
+        },
+      },
     });
     if (!user) {
       throw new NotFoundException('User not found');
