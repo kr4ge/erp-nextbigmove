@@ -155,7 +155,7 @@ export function AnalyticsSalesPerformanceRepurchaseTable({
             <tfoot className="border-t-2 border-slate-200 bg-slate-50">
               <tr>
                 <td className="whitespace-nowrap px-3 py-3 text-sm font-semibold text-slate-800 sm:px-4 lg:px-6">
-                  Overall Total
+                  Total
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
                   {formatCount(grandTotals.deliveredOrders)}
