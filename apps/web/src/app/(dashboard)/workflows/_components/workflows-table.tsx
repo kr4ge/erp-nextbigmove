@@ -60,7 +60,7 @@ export function WorkflowsTable({
         id: 'team',
         header: 'Team',
         cell: ({ row }) => (
-          <span className="inline-flex items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-medium text-[#475569]">
+          <span className="pill pill-neutral inline-flex">
             {row.original.teamId ? `Team: ${teamNames[row.original.teamId] || row.original.teamId}` : 'All teams'}
           </span>
         ),
@@ -80,13 +80,13 @@ export function WorkflowsTable({
             <div className="flex flex-col gap-1 text-sm">
               <div className="text-[#475569]">
                 <span className="font-medium">Meta:</span>{' '}
-                <span className={metaEnabled ? 'text-emerald-600' : 'text-slate-400'}>
+                <span className={metaEnabled ? 'text-success' : 'text-slate-400'}>
                   {metaEnabled ? 'Enabled' : 'Disabled'}
                 </span>
               </div>
               <div className="text-[#475569]">
                 <span className="font-medium">POS:</span>{' '}
-                <span className={posEnabled ? 'text-emerald-600' : 'text-slate-400'}>
+                <span className={posEnabled ? 'text-success' : 'text-slate-400'}>
                   {posEnabled ? 'Enabled' : 'Disabled'}
                 </span>
               </div>

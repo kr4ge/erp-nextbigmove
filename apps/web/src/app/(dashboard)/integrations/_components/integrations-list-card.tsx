@@ -27,6 +27,7 @@ import {
   getProviderName,
 } from '../utils';
 import { IntegrationsSearchInput } from './integrations-search-input';
+import { ConfirmActionDialog } from '../../settings/_components/confirm-action-dialog';
 
 interface IntegrationsListCardProps {
   allCount: number;
@@ -44,33 +45,35 @@ function IntegrationActionsMenu({
   integration,
   onView,
   onEdit,
-  onDelete,
+  onDeleteClick,
 }: {
   integration: Integration;
   onView: (integration: Integration) => void;
   onEdit: (integration: Integration) => void;
-  onDelete: (integration: Integration) => void;
+  onDeleteClick: () => void;
 }) {
   return (
     <DataTableActionCell>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-[#0F172A] transition hover:bg-[#F8FAFC] active:bg-[#E2E8F0] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
-          aria-label="Integration actions"
-        >
-          <MoreVertical className="h-4 w-4" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40 rounded-2xl">
-          <DropdownMenuItem onSelect={() => onView(integration)}>View</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onEdit(integration)}>Edit</DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => onDelete(integration)}
-            className="text-rose-600 focus:text-rose-700"
+      <div>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-[#0F172A] transition hover:bg-[#F8FAFC] active:bg-[#E2E8F0] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+            aria-label="Integration actions"
           >
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <MoreVertical className="h-4 w-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40 rounded-2xl">
+            <DropdownMenuItem onSelect={() => onView(integration)}>View</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onEdit(integration)}>Edit</DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={onDeleteClick}
+              className="text-rose-600 focus:text-rose-700"
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </DataTableActionCell>
   );
 }
@@ -87,6 +90,8 @@ export function IntegrationsListCard({
   onAddIntegration,
 }: IntegrationsListCardProps) {
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [integrationToDelete, setIntegrationToDelete] = useState<Integration | null>(null);
 
   useEffect(() => {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
@@ -103,8 +108,8 @@ export function IntegrationsListCard({
             <div className="flex items-center gap-3">
               <div className="text-slate-400">{getProviderIcon(integration.provider)}</div>
               <div>
-                <div className="text-sm font-semibold text-[#0F172A]">{integration.name}</div>
-                <div className="text-sm text-[#475569]">{getProviderName(integration.provider)}</div>
+                <div className="text-sm font-semibold text-foreground">{integration.name}</div>
+                <div className="text-sm text-muted">{getProviderName(integration.provider)}</div>
               </div>
             </div>
           );
@@ -116,7 +121,7 @@ export function IntegrationsListCard({
         cell: ({ row }) => {
           const value = row.original.lastSyncAt;
           return (
-            <span className="text-sm text-[#475569]">
+            <span className="text-sm text-muted">
               {value ? formatIntegrationDate(value) : 'Never'}
             </span>
           );
@@ -133,7 +138,10 @@ export function IntegrationsListCard({
             integration={row.original}
             onView={onView}
             onEdit={onEdit}
-            onDelete={onDelete}
+            onDeleteClick={() => {
+              setIntegrationToDelete(row.original);
+              setDeleteDialogOpen(true);
+            }}
           />
         ),
       },
@@ -207,8 +215,27 @@ export function IntegrationsListCard({
           emptyState={emptyState}
           showPagination={filteredIntegrations.length > pagination.pageSize}
           totalRows={filteredIntegrations.length}
+          showPageSizeSelector={false}
+          showFirstLastButtons={false}
         />
       </div>
+      <ConfirmActionDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) setIntegrationToDelete(null);
+        }}
+        title="Delete integration"
+        description={`Are you sure you want to delete "${integrationToDelete?.name}"? This action cannot be undone.`}
+        confirmLabel="Delete integration"
+        onConfirm={() => {
+          if (integrationToDelete) {
+            onDelete(integrationToDelete);
+            setDeleteDialogOpen(false);
+            setIntegrationToDelete(null);
+          }
+        }}
+      />
     </section>
   );
 }

@@ -35,7 +35,7 @@ export function FormSection({
   const content = (
     <div
       className={clsx(
-        'space-y-3 rounded-lg border border-slate-200 bg-gradient-to-b from-white to-orange-50/20 p-3',
+        'space-y-3 rounded-lg border border-slate-200 p-3',
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-2.5">

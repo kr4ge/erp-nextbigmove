@@ -5,13 +5,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
-import { SectionCard } from '@/components/ui/section-card';
 import { FormInput } from '@/components/ui/form-input';
 import { FormTextarea } from '@/components/ui/form-textarea';
 import { EmptyState } from '@/components/ui/emptystate';
 import { useToast } from '@/components/ui/toast';
 import { ConfirmActionDialog } from '../_components/confirm-action-dialog';
-import { Shield } from 'lucide-react';
+import { PlusCircle, Shield } from 'lucide-react';
 
 type Role = {
   id: string;
@@ -225,11 +224,11 @@ export default function RolesPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Existing Roles */}
         <div className="lg:col-span-2">
-          <SectionCard
-            title="ERP Roles"
-            description="ERP roles are managed here. WMS roles stay isolated from the ERP workspace."
-            noPadding
-          >
+          <section className="panel panel-content overflow-hidden">
+            <div className="panel-header">
+              <Shield className="h-3.5 w-3.5 text-primary" />
+              <h2 className="panel-title">Roles</h2>
+            </div>
             {isLoading && (
               <div className="p-6">
                 <LoadingCard label="Loading roles..." />
@@ -400,12 +399,17 @@ export default function RolesPage() {
                 })}
               </div>
             )}
-          </SectionCard>
+          </section>
         </div>
 
         {/* Create Role Form */}
         <div>
-          <SectionCard title="Create ERP Role">
+          <section className="panel panel-content">
+            <div className="panel-header">
+              <PlusCircle className="h-3.5 w-3.5 text-primary" />
+              <h2 className="panel-title">Create ERP Role</h2>
+            </div>
+            <div className="p-4">
             <form
               className="space-y-4"
               onSubmit={(e) => {
@@ -474,7 +478,8 @@ export default function RolesPage() {
                 <AlertBanner tone="error" message="Failed to create role. Check details and try again." />
               )}
             </form>
-          </SectionCard>
+            </div>
+          </section>
         </div>
       </div>
 

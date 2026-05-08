@@ -80,13 +80,13 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4">
+    <div className="min-h-screen flex items-center justify-center px-4">
       <div className="max-w-md w-full space-y-4 bg-white p-8 rounded-xl shadow-lg">
         <div>
-          <h2 className="text-center text-3xl font-bold text-gray-900">
+          <h2 className="text-center text-3xl font-bold text-foreground">
             Create your account
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <p className="mt-2 text-center text-sm text-foreground">
             Start your 14-day free trial
           </p>
         </div>
@@ -162,7 +162,7 @@ export default function RegisterPage() {
 
             {/* Organization Info */}
             <div className="pt-4 border-t border-gray-200">
-              <h3 className="text-md font-medium text-gray-900 mb-3">Organization Details</h3>
+              <h3 className="text-md font-medium text-foreground mb-3">Organization Details</h3>
 
               <div>
                 <label htmlFor="tenantName" className="form-label">
@@ -212,8 +212,8 @@ export default function RegisterPage() {
           </div>
 
           <div className="text-center text-sm">
-            <span className="text-gray-600">Already have an account? </span>
-            <Link href="/login" className="font-medium text-gray-900 hover:text-gray-700">
+            <span className="text-foreground">Already have an account? </span>
+            <Link href="/login" className="font-medium text-foreground hover:text-gray-700">
               Sign in
             </Link>
           </div>

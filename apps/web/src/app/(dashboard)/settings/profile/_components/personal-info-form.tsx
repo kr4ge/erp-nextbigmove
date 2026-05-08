@@ -4,7 +4,7 @@ import type { FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FormInput } from '@/components/ui/form-input';
-import { User } from 'lucide-react';
+import { BookUser } from 'lucide-react';
 
 interface PersonalInfoFormProps {
   isLoading: boolean;
@@ -48,7 +48,7 @@ export function PersonalInfoForm({
     <Card className="lg:col-span-2 panel panel-content">
       <form className="space-y-4" onSubmit={onSubmit}>
         <div className="-mx-6 -mt-6 mb-4 panel-header">
-          <User className="h-3.5 w-3.5 text-primary" />
+          <BookUser className="h-3.5 w-3.5 text-primary" />
           <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
             Personal Information
           </h3>

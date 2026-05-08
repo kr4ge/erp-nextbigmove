@@ -30,6 +30,8 @@ interface DataTableProps<TData> extends React.ComponentProps<"div"> {
   showPagination?: boolean;
   pageSizeOptions?: number[];
   totalRows?: number;
+  showPageSizeSelector?: boolean;
+  showFirstLastButtons?: boolean;
   stickyHeader?: boolean;
   bodyMaxHeight?: number | string;
   getRowClassName?: (row: Row<TData>) => string | undefined;
@@ -51,6 +53,8 @@ export function DataTable<TData>({
   showPagination = true,
   pageSizeOptions,
   totalRows,
+  showPageSizeSelector = true,
+  showFirstLastButtons = true,
   stickyHeader = false,
   bodyMaxHeight,
   getRowClassName,
@@ -225,6 +229,8 @@ export function DataTable<TData>({
               table={table}
               pageSizeOptions={pageSizeOptions}
               totalRows={totalRows}
+              showPageSizeSelector={showPageSizeSelector}
+              showFirstLastButtons={showFirstLastButtons}
             />
           </div>
         ) : null}

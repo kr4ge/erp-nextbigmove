@@ -60,7 +60,7 @@ export function Button({
       {loading ? (
         <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
       ) : (
-        iconLeft && <span className="mr-2">{iconLeft}</span>
+        iconLeft && <span className="">{iconLeft}</span>
       )}
       <span>{children}</span>
       {iconRight && !loading && <span className="ml-2">{iconRight}</span>}

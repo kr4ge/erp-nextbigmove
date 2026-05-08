@@ -44,7 +44,7 @@ export function IntegrationEditTeamModal({
             <p className="text-xs font-semibold uppercase text-[#94A3B8]">Update Integration</p>
             <h2 className="text-xl font-semibold text-[#0F172A]">Assign Team</h2>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose} iconLeft={<X className="h-4 w-4" />} />
+          <Button variant="ghost" size="sm" onClick={onClose} iconLeft={<X className="h-5 w-5" />} className='h-10 w-10 px-0' />
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4 px-6 py-4">

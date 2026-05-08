@@ -1111,7 +1111,7 @@ export default function SalesAnalyticsPage() {
         }
         tooltip={tooltip}
         tooltipMode={m.key === 'contribution_margin' ? 'popover' : 'hover'}
-        className="w-full panel panel-content xl:min-w-[190px] xl:w-auto"
+        className="w-full xl:min-w-[190px] xl:w-auto"
       />
     );
   };
@@ -1138,7 +1138,7 @@ export default function SalesAnalyticsPage() {
         title="Sales Monitoring"
         icon={<ShoppingBag className="h-3.5 w-3.5 text-primary" />}
         meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
-        className="panel panel-content"
+        className=""
         contentClassName="space-y-5"
       >
         <div className="flex flex-wrap items-center gap-3">

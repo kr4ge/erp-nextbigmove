@@ -5,12 +5,13 @@ import apiClient from '@/lib/api-client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
-import { SectionCard } from '@/components/ui/section-card';
 import { FormInput } from '@/components/ui/form-input';
 import { FormTextarea } from '@/components/ui/form-textarea';
 import { DataList, DataListItem, DataListContent, DataListActions } from '@/components/ui/data-list';
 import { EmptyState } from '@/components/ui/emptystate';
-import { Users } from 'lucide-react';
+import { useToast } from '@/components/ui/toast';
+import { ConfirmActionDialog } from '../_components/confirm-action-dialog';
+import { PlusCircle, Users } from 'lucide-react';
 
 type Team = {
   id: string;
@@ -31,6 +32,7 @@ const parseTeamError = (error: unknown, fallback: string) => {
 
 export default function TeamsPage() {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [canManage, setCanManage] = useState(false);
   const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
@@ -91,6 +93,10 @@ export default function TeamsPage() {
       setName('');
       setDescription('');
       setEditingTeam(null);
+      addToast('success', 'Team created successfully.');
+    },
+    onError: (error: unknown) => {
+      addToast('error', parseTeamError(error, 'Failed to create team'));
     },
   });
 
@@ -103,6 +109,10 @@ export default function TeamsPage() {
       setName('');
       setDescription('');
       setEditingTeam(null);
+      addToast('success', 'Team updated successfully.');
+    },
+    onError: (error: unknown) => {
+      addToast('error', parseTeamError(error, 'Failed to update team'));
     },
   });
 
@@ -113,15 +123,19 @@ export default function TeamsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['teams'] });
       setDeleteError(null);
+      setTeamToDelete(null);
+      addToast('success', 'Team deleted successfully.');
     },
     onError: (error: unknown) => {
-      setDeleteError(parseTeamError(error, 'Failed to delete team'));
+      const message = parseTeamError(error, 'Failed to delete team');
+      setDeleteError(message);
+      addToast('error', message);
     },
   });
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [teamToDelete, setTeamToDelete] = useState<string | null>(null);
+  const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
 
   if (!isReady || isCheckingPermissions) {
@@ -141,7 +155,11 @@ export default function TeamsPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Existing Teams */}
         <div className="lg:col-span-2">
-          <SectionCard title="Existing Teams" noPadding>
+          <section className="panel panel-content overflow-hidden">
+            <div className="panel-header">
+              <Users className="h-3.5 w-3.5 text-primary" />
+              <h2 className="panel-title">Existing Teams</h2>
+            </div>
             {deleteError && (
               <div className="px-6 py-3">
                 <AlertBanner tone="error" message={deleteError} />
@@ -195,26 +213,28 @@ export default function TeamsPage() {
                       <Button
                         variant="danger"
                         size="sm"
-                        onClick={() => {
-                          setTeamToDelete(team.id);
-                          deleteMutation.mutate(team.id);
-                        }}
-                        disabled={deleteMutation.isPending && teamToDelete === team.id}
-                        loading={deleteMutation.isPending && teamToDelete === team.id}
+                        onClick={() => setTeamToDelete(team)}
+                        disabled={deleteMutation.isPending}
+                        loading={deleteMutation.isPending && teamToDelete?.id === team.id}
                       >
-                        {deleteMutation.isPending && teamToDelete === team.id ? 'Deleting...' : 'Delete'}
+                        {deleteMutation.isPending && teamToDelete?.id === team.id ? 'Deleting...' : 'Delete'}
                       </Button>
                     </DataListActions>
                   </DataListItem>
                 ))}
               </DataList>
             )}
-          </SectionCard>
+          </section>
         </div>
 
         {/* Create Team Form */}
         <div>
-          <SectionCard title={editingTeam ? 'Edit Team' : 'Create Team'}>
+          <section className="panel panel-content">
+            <div className="panel-header">
+              <PlusCircle className="h-3.5 w-3.5 text-primary" />
+              <h2 className="panel-title">{editingTeam ? 'Edit Team' : 'Create Team'}</h2>
+            </div>
+            <div className="p-4">
             <form
               className="space-y-4"
               onSubmit={(e) => {
@@ -272,9 +292,32 @@ export default function TeamsPage() {
                 </Button>
               )}
             </form>
-          </SectionCard>
+            </div>
+          </section>
         </div>
       </div>
+
+      <ConfirmActionDialog
+        open={Boolean(teamToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) {
+            setTeamToDelete(null);
+          }
+        }}
+        title="Delete Team"
+        description={
+          teamToDelete
+            ? `Are you sure you want to delete "${teamToDelete.name}"? This action cannot be undone.`
+            : 'Are you sure you want to delete this team?'
+        }
+        confirmLabel="Delete team"
+        cancelLabel="Cancel"
+        isConfirming={deleteMutation.isPending}
+        onConfirm={() => {
+          if (!teamToDelete) return;
+          deleteMutation.mutate(teamToDelete.id);
+        }}
+      />
     </div>
   );
 }

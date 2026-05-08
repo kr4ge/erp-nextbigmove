@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/toast';
 import { DataTable } from '@/components/data-table/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { type ColumnDef } from '@tanstack/react-table';
+import { ConfirmActionDialog } from '../_components/confirm-action-dialog';
 import {
   Dialog,
   DialogContent,
@@ -75,6 +76,7 @@ export default function UsersPage() {
   const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
   const [permissionCheckResolved, setPermissionCheckResolved] = useState(false);
   const [permissionToastShown, setPermissionToastShown] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
   const isPermissionDeniedError = (error: unknown) => {
     if (!error || typeof error !== 'object') return false;
@@ -207,11 +209,14 @@ export default function UsersPage() {
         roleId: '',
       });
       setCreateOpen(false);
+      addToast('success', 'User created successfully.');
     },
     onError: (error: unknown) => {
       if (isPermissionDeniedError(error)) {
         addToast('error', "You don't have permission to create users.");
+        return;
       }
+      addToast('error', 'Failed to create user.');
     },
   });
 
@@ -229,11 +234,14 @@ export default function UsersPage() {
       await queryClient.invalidateQueries({ queryKey: ['users'] });
       setEditOpen(false);
       setEditingUser(null);
+      addToast('success', 'User updated successfully.');
     },
     onError: (error: unknown) => {
       if (isPermissionDeniedError(error)) {
         addToast('error', "You don't have permission to edit users.");
+        return;
       }
+      addToast('error', 'Failed to update user.');
     },
   });
 
@@ -243,11 +251,15 @@ export default function UsersPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['users'] });
+      setUserToDelete(null);
+      addToast('success', 'User deleted successfully.');
     },
     onError: (error: unknown) => {
       if (isPermissionDeniedError(error)) {
         addToast('error', "You don't have permission to delete users.");
+        return;
       }
+      addToast('error', 'Failed to delete user.');
     },
   });
 
@@ -375,12 +387,7 @@ export default function UsersPage() {
                   Edit
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => {
-                    const confirmed = window.confirm(
-                      `Delete ${row.original.firstName} ${row.original.lastName}?`,
-                    );
-                    if (confirmed) deleteMutation.mutate(row.original.id);
-                  }}
+                  onClick={() => setUserToDelete(row.original)}
                   className="text-rose-600 focus:text-rose-600"
                 >
                   Delete
@@ -391,7 +398,7 @@ export default function UsersPage() {
         ),
       },
     ],
-    [deleteMutation, getRoleLabel, getTeamLabel],
+    [getRoleLabel, getTeamLabel],
   );
 
   const { table } = useDataTable({
@@ -417,7 +424,7 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <Card className="p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4">
           <div className="text-sm text-slate-600">
             All Users: <span className="font-semibold text-slate-900">{users?.length ?? 0}</span>
           </div>
@@ -429,7 +436,7 @@ export default function UsersPage() {
           </Button>
         </div>
 
-        <div className="mt-4">
+        <div className="p-4">
           {isLoading && (
             <LoadingCard label="Loading users..." />
           )}
@@ -695,6 +702,28 @@ export default function UsersPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={Boolean(userToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) {
+            setUserToDelete(null);
+          }
+        }}
+        title="Delete User"
+        description={
+          userToDelete
+            ? `Are you sure you want to delete "${userToDelete.firstName} ${userToDelete.lastName}"? This action cannot be undone.`
+            : 'Are you sure you want to delete this user?'
+        }
+        confirmLabel="Delete user"
+        cancelLabel="Cancel"
+        isConfirming={deleteMutation.isPending}
+        onConfirm={() => {
+          if (!userToDelete) return;
+          deleteMutation.mutate(userToDelete.id);
+        }}
+      />
     </div>
   );
 }

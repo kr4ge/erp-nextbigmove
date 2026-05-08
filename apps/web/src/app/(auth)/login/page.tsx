@@ -80,13 +80,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4">
+    <div className="min-h-screen flex items-center justify-center px-4">
       <div className="max-w-md w-full space-y-4 bg-white p-8 rounded-xl shadow-lg">
         <div>
-          <h2 className="text-center text-3xl font-bold text-gray-900">
+          <h2 className="text-center text-3xl font-bold text-foreground">
             Sign in to your account
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <p className="mt-2 text-center text-sm text-foreground">
             Welcome back! Please enter your details.
           </p>
         </div>
@@ -134,9 +134,9 @@ export default function LoginPage() {
                 id="remember-me"
                 name="remember-me"
                 type="checkbox"
-                className="h-4 w-4 text-gray-900 focus:ring-gray-900 border-gray-300 rounded"
+                className="h-4 w-4 text-foreground focus:ring-gray-900 border-gray-300 rounded"
               />
-              <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
+              <label htmlFor="remember-me" className="ml-2 block text-sm text-foreground">
                 Remember me
               </label>
             </div>
@@ -159,8 +159,8 @@ export default function LoginPage() {
           </div>
 
           <div className="text-center text-sm">
-            <span className="text-gray-600">Don't have an account? </span>
-            <Link href="/register" className="font-medium text-gray-900 hover:text-gray-700">
+            <span className="text-foreground">Don't have an account? </span>
+            <Link href="/register" className="font-medium text-foreground hover:text-gray-700">
               Sign up
             </Link>
           </div>

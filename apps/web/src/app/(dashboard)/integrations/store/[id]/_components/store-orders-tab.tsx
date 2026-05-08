@@ -85,11 +85,11 @@ export function StoreOrdersTab({
       <div className="panel-header">
         <ClipboardList className="h-3.5 w-3.5 text-primary" />
         <h4 className="panel-title">Orders</h4>
-        {orders.length > 0 && (
+        {/* {orders.length > 0 && (
           <span className="panel-title">
             {orders.length} order{orders.length !== 1 ? 's' : ''}
           </span>
-        )}
+        )} */}
       </div>
       <div className="space-y-3 p-3">
         <div className="flex flex-wrap items-center justify-end gap-2">

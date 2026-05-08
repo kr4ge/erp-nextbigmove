@@ -81,14 +81,17 @@ export function StoreListGrid({
       </div>
 
       {pageCount > 1 ? (
-        <div className="flex items-center justify-between rounded-xl border border-surface bg-surface px-4 py-3 text-sm text-foreground shadow-sm">
-          <div>
+        <div className="flex flex-col items-center justify-between gap-3 rounded-xl border border-surface bg-surface px-4 py-3 text-sm text-foreground shadow-sm sm:flex-row">
+          <div className="text-center sm:text-left">
             Showing page {page} of {pageCount}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" disabled={page <= 1} onClick={onPrevPage}>
               Previous
             </Button>
+            <span className="px-2 py-1 text-xs text-foreground sm:px-3 sm:text-sm">
+              Page {page} of {pageCount}
+            </span>
             <Button variant="ghost" size="sm" disabled={page >= pageCount} onClick={onNextPage}>
               Next
             </Button>

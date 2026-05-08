@@ -7,7 +7,7 @@ const toneStyles: Record<FeedbackTone, string> = {
   info: 'border-info/40 bg-info-soft text-info',
   success: 'border-success/40 bg-emerald-success-soft text-success',
   warning: 'border-warning/40 bg-amber-warning-soft text-warning',
-  error: 'border-destructive/40 bg-destructive-soft text-destructive',
+  error: 'border-destructive/40 bg-destructive-soft/30 text-destructive',
 };
 
 interface AlertBannerProps {

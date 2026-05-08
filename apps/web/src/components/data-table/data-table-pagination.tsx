@@ -9,6 +9,7 @@ interface DataTablePaginationProps<TData> extends React.ComponentProps<"div"> {
   pageSizeOptions?: number[];
   totalRows?: number;
   showPageSizeSelector?: boolean;
+  showFirstLastButtons?: boolean;
 }
 
 export function DataTablePagination<TData>({
@@ -16,6 +17,7 @@ export function DataTablePagination<TData>({
   pageSizeOptions = [10, 20, 30, 40, 50],
   totalRows,
   showPageSizeSelector = true,
+  showFirstLastButtons = true,
   className,
   ...props
 }: DataTablePaginationProps<TData>) {
@@ -33,22 +35,22 @@ export function DataTablePagination<TData>({
   return (
     <div
       className={cn(
-        "flex items-center justify-between text-sm text-[#475569]",
+        "flex flex-col items-center justify-between gap-3 text-sm text-[#475569] sm:flex-row sm:items-center sm:gap-4",
         className,
       )}
       {...props}
     >
-      <div>
+      <div className="text-center sm:text-left">
         Showing {from}-{to} of {resolvedTotalRows}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex w-full flex-col items-center gap-2 sm:w-auto sm:flex-row">
         {showPageSizeSelector ? (
           <select
             value={pageSize}
             onChange={(e) => {
               table.setPageSize(Number(e.target.value));
             }}
-            className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="hidden rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 lg:block lg:w-auto"
           >
             {pageSizeOptions.map((pageSizeOption) => (
               <option key={pageSizeOption} value={pageSizeOption}>
@@ -58,24 +60,27 @@ export function DataTablePagination<TData>({
           </select>
         ) : null}
 
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.setPageIndex(0)}
-            disabled={!table.getCanPreviousPage()}
-          >
-            First
-          </Button>
+        <div className="flex items-center gap-2">
+          {showFirstLastButtons ? (
+            <Button
+              className="hidden lg:inline-flex"
+              variant="outline"
+              size="sm"
+              onClick={() => table.setPageIndex(0)}
+              disabled={!table.getCanPreviousPage()}
+            >
+              First
+            </Button>
+          ) : null}
           <Button
             variant="outline"
             size="sm"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
           >
-            Prev
+            Previous
           </Button>
-          <span className="px-3 py-1.5 text-sm text-[#0F172A]">
+          <span className="px-2 py-1 text-xs text-[#0F172A] sm:px-3 sm:py-1.5 sm:text-sm">
             Page {pageIndex + 1} of {pageCount}
           </span>
           <Button
@@ -86,14 +91,17 @@ export function DataTablePagination<TData>({
           >
             Next
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-            disabled={!table.getCanNextPage()}
-          >
-            Last
-          </Button>
+          {showFirstLastButtons ? (
+            <Button
+              className="hidden lg:inline-flex"
+              variant="outline"
+              size="sm"
+              onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+              disabled={!table.getCanNextPage()}
+            >
+              Last
+            </Button>
+          ) : null}
         </div>
       </div>
     </div>

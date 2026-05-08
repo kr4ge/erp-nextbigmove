@@ -49,10 +49,10 @@ export function AnalyticsTableSelector<T extends string>({
     <div className={className} ref={containerRef}>
       <button
         type="button"
-        className="inline-flex items-center gap-1 text-lg font-semibold text-slate-900"
+        className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900 sm:text-lg"
         onClick={() => setOpen((prev) => !prev)}
       >
-        {selectedLabel}
+        <span className="whitespace-nowrap">{selectedLabel}</span>
         <ChevronDown className="h-4 w-4 text-slate-500" />
       </button>
       {open && (
@@ -61,7 +61,7 @@ export function AnalyticsTableSelector<T extends string>({
             <button
               key={opt.key}
               type="button"
-              className={`block w-full text-left px-3 py-2 text-sm ${
+              className={`block w-full text-left px-3 py-2 text-sm sm:text-base ${
                 selectedKey === opt.key ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50'
               }`}
               onClick={() => {
@@ -69,7 +69,7 @@ export function AnalyticsTableSelector<T extends string>({
                 setOpen(false);
               }}
             >
-              {opt.label}
+              <span className="whitespace-nowrap">{opt.label}</span>
             </button>
           ))}
         </div>

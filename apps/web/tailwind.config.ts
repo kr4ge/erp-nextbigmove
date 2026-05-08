@@ -52,7 +52,7 @@ const config: Config = {
         },
         destructive: {
           DEFAULT: 'rgb(var(--destructive))',
-          soft: 'rgb(var())',
+          soft: 'rgb(var(--destructive-soft))',
           foreground: 'rgb(var(--destructive-foreground))',
         },
         muted: {

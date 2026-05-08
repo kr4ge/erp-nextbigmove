@@ -32,10 +32,10 @@ export const formatReportCount = (value: number) =>
   }).format(Number.isFinite(value) ? value : 0);
 
 export const formatReportRevenue = (value: number) =>
-  new Intl.NumberFormat('en-US', {
+  `₱${new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(Number.isFinite(value) ? value : 0);
+  }).format(Number.isFinite(value) ? value : 0)}`;
 
 export const formatReportRate = (value: number) =>
   new Intl.NumberFormat('en-US', {
