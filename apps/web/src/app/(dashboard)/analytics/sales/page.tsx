@@ -804,18 +804,54 @@ export default function SalesAnalyticsPage() {
       m.key !== 'cm_rts_forecast' &&
       m.key !== 'net_margin',
   );
-  const kpiVisibilityOptions = [
-    ...metricDefinitions.map((metric) => ({
-      key: String(metric.key),
-      label: metric.label,
-      section: 'Primary' as const,
-    })),
-    ...secondaryMetricDefinitions.map((metric) => ({
-      key: String(metric.key),
-      label: metric.label,
-      section: 'Secondary' as const,
-    })),
+  const allVisibilityDefinitions = [
+    ...metricDefinitions,
+    ...secondaryMetricDefinitions,
   ];
+  const visibilityDefinitionMap = new Map(
+    allVisibilityDefinitions.map((metric) => [String(metric.key), metric]),
+  );
+  const buildVisibilityOption = (
+    key: string,
+    section: 'Primary' | 'Secondary',
+  ) => {
+    const metric = visibilityDefinitionMap.get(key);
+    return metric
+      ? {
+          key,
+          label: metric.label,
+          section,
+        }
+      : null;
+  };
+  const kpiVisibilityOptions = [
+    'revenue',
+    'unconfirmed',
+    'confirmed',
+    'canceled',
+    'restocking_cod',
+    'waiting_pickup',
+    'shipped',
+    'delivered',
+  ]
+    .map((key) => buildVisibilityOption(key, 'Primary'))
+    .concat(
+      [
+        'cm_rts_forecast',
+        'ar_pct',
+        'aov',
+        'cpp',
+        'processed_cpp',
+        'rts_pct',
+        'ad_spend',
+        'rts',
+        'conversion_rate',
+        'profit_efficiency',
+        'contribution_margin',
+        'net_margin',
+      ].map((key) => buildVisibilityOption(key, 'Secondary')),
+    )
+    .filter((option): option is NonNullable<typeof option> => option !== null);
 
   const buildCmTooltip = (kpis: OverviewResponse['kpis'] | undefined): ReactNode | null => {
     if (!kpis) return null;

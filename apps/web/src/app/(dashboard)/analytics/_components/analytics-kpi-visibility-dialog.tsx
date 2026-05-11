@@ -81,8 +81,8 @@ export function AnalyticsKpiVisibilityDialog({
         </div>
 
         <div className="max-h-[68vh] space-y-5 overflow-y-auto px-4 py-3">
-          {renderSection('Primary KPIs', primaryOptions)}
-          {renderSection('Secondary KPIs', secondaryOptions)}
+          {renderSection('Sales KPIs', primaryOptions)}
+          {renderSection('Marketing KPIs', secondaryOptions)}
         </div>
 
         <DialogFooter className="!flex-row !items-center !justify-between gap-2 border-t border-slate-200 px-4 py-3 sm:space-x-0">

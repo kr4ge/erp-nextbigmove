@@ -220,11 +220,16 @@ const EXECUTIVE_CARD_TONE_MAP: Record<ExecutiveOverviewCardTone, string> = {
 function ExecutiveOverviewCard({
   label,
   value,
+  count,
   icon,
   tone = "default",
 }: {
   label: string;
   value: string | number;
+  count?: {
+    label?: string;
+    value: string | number;
+  };
   icon: ReactNode;
   tone?: ExecutiveOverviewCardTone;
 }) {
@@ -244,6 +249,12 @@ function ExecutiveOverviewCard({
           >
             {value}
           </p>
+          {count ? (
+            <p className="text-sm text-slate-700">
+              <span className="text-foreground/80">{count.label ?? "ord"}:</span>{" "}
+              <span className="font-semibold text-foreground">{count.value}</span>
+            </p>
+          ) : null}
         </div>
         <div
           className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ring-1 ${EXECUTIVE_CARD_TONE_MAP[tone]}`}
@@ -2475,18 +2486,13 @@ export default function DashboardPage() {
         <ExecutiveOverviewCard
           label="Total Revenue"
           value={formatCurrency(execStats?.revenue)}
+          count={{ value: formatNumber(execStats?.purchases) }}
           icon={<DollarSignIcon className="h-4 w-4" />}
           tone="success"
         />
         <ExecutiveOverviewCard
-          label="Total Sales"
-          value={formatNumber(execStats?.purchases)}
-          icon={<TrendingUp className="h-4 w-4" />}
-          tone="default"
-        />
-        <ExecutiveOverviewCard
-          label="Confirmed Sales"
-          value={formatCurrency(execStats?.confirmed ?? 0)}
+          label="Processed Sales"
+          value={formatCurrency(execStats?.processed ?? execStats?.confirmed ?? 0)}
           icon={<CheckCircle2 className="h-4 w-4" />}
           tone="success"
         />
@@ -2497,16 +2503,22 @@ export default function DashboardPage() {
           tone="warning"
         />
         <ExecutiveOverviewCard
-          label="AR %"
-          value={formatPercent(execStats?.ar_pct)}
-          icon={<PieChart className="h-4 w-4" />}
-          tone="default"
-        />
-        <ExecutiveOverviewCard
           label="CM (RTS 20%)"
           value={formatCurrency(execStats?.cm_rts_forecast)}
           icon={<Zap className="h-4 w-4" />}
           tone="warning"
+        />
+        <ExecutiveOverviewCard
+          label="Cancellation Rate"
+          value={formatPercent(execStats?.cancellation_rate_pct)}
+          icon={<TrendingUp className="h-4 w-4" />}
+          tone="default"
+        />
+        <ExecutiveOverviewCard
+          label="AR %"
+          value={formatPercent(execStats?.ar_pct)}
+          icon={<PieChart className="h-4 w-4" />}
+          tone="default"
         />
       </div>
 

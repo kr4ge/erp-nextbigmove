@@ -239,6 +239,7 @@ export class SalesPerformanceService {
         Prisma.sql`"tenantId" = ${tenantId}::uuid`,
         Prisma.sql`"dateLocal" >= ${start}`,
         Prisma.sql`"dateLocal" <= ${end}`,
+        Prisma.sql`"status" IS DISTINCT FROM 7`,
       ];
       if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0) {
         const teamIdParams = effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`);
@@ -858,6 +859,7 @@ export class SalesPerformanceService {
         Prisma.sql`"tenantId" = ${tenantId}::uuid`,
         Prisma.sql`"dateLocal" >= ${start}`,
         Prisma.sql`"dateLocal" <= ${end}`,
+        Prisma.sql`"status" IS DISTINCT FROM 7`,
       ];
       if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0) {
         const teamIdParams = effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`);
@@ -896,6 +898,7 @@ export class SalesPerformanceService {
       .toDate();
     const deliveredRangeBaseWhere = [
       Prisma.sql`"tenantId" = ${tenantId}::uuid`,
+      Prisma.sql`"status" IS DISTINCT FROM 7`,
       ...(Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0
         ? [Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`]
         : []),
@@ -916,6 +919,7 @@ export class SalesPerformanceService {
     const returnedRangeWhereClause = Prisma.sql`WHERE ${Prisma.join(returnedRangeWhere, ' AND ')}`;
     const allTimeBaseWhere = [
       Prisma.sql`"tenantId" = ${tenantId}::uuid`,
+      Prisma.sql`"status" IS DISTINCT FROM 7`,
       ...(Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0
         ? [Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`]
         : []),
@@ -1273,6 +1277,7 @@ export class SalesPerformanceService {
 
     const shopScopeWhere = applySalesAssigneeFilters([
       Prisma.sql`"tenantId" = ${tenantId}::uuid`,
+      Prisma.sql`"status" IS DISTINCT FROM 7`,
       ...(Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0
         ? [Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`]
         : []),

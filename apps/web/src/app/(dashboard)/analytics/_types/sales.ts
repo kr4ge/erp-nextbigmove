@@ -6,6 +6,8 @@ export type SalesOverviewResponse = {
     waiting_pickup: number;
     rts: number;
     ad_spend: number;
+    processed: number;
+    cancellation_rate_pct: number;
     ar_pct: number;
     profit_efficiency: number;
     conversion_rate: number;
@@ -45,6 +47,8 @@ export type SalesOverviewResponse = {
     waiting_pickup: number;
     rts: number;
     ad_spend: number;
+    processed: number;
+    cancellation_rate_pct: number;
     ar_pct: number;
     profit_efficiency: number;
     conversion_rate: number;

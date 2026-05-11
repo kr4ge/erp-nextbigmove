@@ -112,6 +112,7 @@ export class ReportsService {
       WHERE "tenantId" = ${tenantId}::uuid
         AND "dateLocal" >= ${startDate}
         AND "dateLocal" <= ${endDate}
+        AND "status" IS DISTINCT FROM 7
       GROUP BY "shopId"
       ORDER BY COUNT(*) DESC, "shopId" ASC
     `);

@@ -14,6 +14,7 @@ dayjs.extend(timezone);
 dayjs.extend(customParseFormat);
 
 const TIMEZONE = 'Asia/Manila';
+const PROCESSED_SALES_STATUSES = [1, 2, 3, 9, 12, 13] as const;
 
 type SalesKpis = {
   revenue: number;
@@ -22,6 +23,8 @@ type SalesKpis = {
   waiting_pickup: number;
   rts: number;
   ad_spend: number;
+  processed: number;   // amount (COD) of processed orders
+  cancellation_rate_pct: number;
   confirmed: number;   // amount (COD) of confirmed orders
   unconfirmed: number; // amount (COD) of unconfirmed/pending orders
   canceled: number;    // amount (COD) of canceled orders
@@ -149,7 +152,7 @@ export class SalesAnalyticsService {
     return e.diff(s, 'day');
   }
 
-  private computeKpis(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean; rtsForecastPct?: number }): SalesKpis {
+  private computeKpis(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean; rtsForecastPct?: number; processedSalesValue?: number }): SalesKpis {
     const spendBase = this.toNumber(sum?._sum?.spend);
     const spendMultiplier = 1 + (opts.includeTax12 ? 0.12 : 0) + (opts.includeTax1 ? 0.01 : 0);
     const spend = spendBase * spendMultiplier;
@@ -251,6 +254,8 @@ export class SalesAnalyticsService {
       waiting_pickup: this.toNumber(sum?._sum?.waitingPickupCodPos),
       rts: this.toNumber(sum?._sum?.rtsCodPos),
       ad_spend: spend,
+      processed: this.toNumber(opts.processedSalesValue),
+      cancellation_rate_pct: 0,
       aov: purchasesAdj > 0 ? revenue / purchasesAdj : 0,
       ar_pct: arPct,
       cpp,
@@ -463,6 +468,36 @@ export class SalesAnalyticsService {
       ...baseWhere,
       ...mappingFilter,
     };
+    const processedSalesWhere = await this.teamContext.buildTeamWhereClause(
+      {
+        dateLocal: { gte: startStr, lte: endStr },
+        status: { in: [...PROCESSED_SALES_STATUSES] },
+        ...mappingFilter,
+      },
+      effectiveTeamIds || undefined,
+    );
+    const prevProcessedSalesWhere = await this.teamContext.buildTeamWhereClause(
+      {
+        dateLocal: { gte: prevStartStr, lte: prevEndStr },
+        status: { in: [...PROCESSED_SALES_STATUSES] },
+        ...mappingFilter,
+      },
+      effectiveTeamIds || undefined,
+    );
+    const cancellationRateWhere = await this.teamContext.buildTeamWhereClause(
+      {
+        dateLocal: { gte: startStr, lte: endStr },
+        ...mappingFilter,
+      },
+      effectiveTeamIds || undefined,
+    );
+    const prevCancellationRateWhere = await this.teamContext.buildTeamWhereClause(
+      {
+        dateLocal: { gte: prevStartStr, lte: prevEndStr },
+        ...mappingFilter,
+      },
+      effectiveTeamIds || undefined,
+    );
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
     const cacheTeamIds = effectiveTeamIds ? [...effectiveTeamIds].sort() : teamId ? [teamId] : [];
@@ -473,6 +508,8 @@ export class SalesAnalyticsService {
       end: endStr,
       mappings: normalizedMappings.sort(),
       includeNull,
+      processedSalesStatuses: PROCESSED_SALES_STATUSES,
+      cancellationRateFormula: 'status_6_over_status_not_7',
       flags: { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1 },
     };
     const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
@@ -483,7 +520,20 @@ export class SalesAnalyticsService {
     }
     this.logger.log(`CACHE MISS ${cacheKey}`);
 
-    const [agg, prevAgg, mappingRows, nullCount, productGroups, lastUpdatedAgg] = await Promise.all([
+    const [
+      agg,
+      prevAgg,
+      processedSalesAgg,
+      prevProcessedSalesAgg,
+      totalOrdersCount,
+      cancelledOrdersCount,
+      prevTotalOrdersCount,
+      prevCancelledOrdersCount,
+      mappingRows,
+      nullCount,
+      productGroups,
+      lastUpdatedAgg,
+    ] = await Promise.all([
       this.prisma.reconcileSales.aggregate({
         where,
         _sum: {
@@ -572,6 +622,42 @@ export class SalesAnalyticsService {
           sfSdrPos: true,
           ffSdrPos: true,
           ifSdrPos: true,
+        },
+      }),
+      this.prisma.posOrder.aggregate({
+        where: processedSalesWhere,
+        _sum: {
+          cod: true,
+        },
+      }),
+      this.prisma.posOrder.aggregate({
+        where: prevProcessedSalesWhere,
+        _sum: {
+          cod: true,
+        },
+      }),
+      this.prisma.posOrder.count({
+        where: {
+          ...cancellationRateWhere,
+          OR: [{ status: { not: 7 } }, { status: null }],
+        },
+      }),
+      this.prisma.posOrder.count({
+        where: {
+          ...cancellationRateWhere,
+          status: 6,
+        },
+      }),
+      this.prisma.posOrder.count({
+        where: {
+          ...prevCancellationRateWhere,
+          OR: [{ status: { not: 7 } }, { status: null }],
+        },
+      }),
+      this.prisma.posOrder.count({
+        where: {
+          ...prevCancellationRateWhere,
+          status: 6,
         },
       }),
       this.prisma.reconcileSales.findMany({
@@ -679,8 +765,36 @@ export class SalesAnalyticsService {
     }));
 
     const rtsForecastPct = 20;
-    const kpis = this.computeKpis(agg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1, rtsForecastPct });
-    const prevKpis = this.computeKpis(prevAgg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1, rtsForecastPct });
+    const kpis = {
+      ...this.computeKpis(agg, {
+        excludeCancel,
+        excludeRestocking,
+        excludeAbandoned,
+        excludeRts,
+        includeTax12,
+        includeTax1,
+        rtsForecastPct,
+        processedSalesValue: this.toNumber(processedSalesAgg?._sum?.cod),
+      }),
+      cancellation_rate_pct:
+        totalOrdersCount > 0 ? (cancelledOrdersCount / totalOrdersCount) * 100 : 0,
+    };
+    const prevKpis = {
+      ...this.computeKpis(prevAgg, {
+        excludeCancel,
+        excludeRestocking,
+        excludeAbandoned,
+        excludeRts,
+        includeTax12,
+        includeTax1,
+        rtsForecastPct,
+        processedSalesValue: this.toNumber(prevProcessedSalesAgg?._sum?.cod),
+      }),
+      cancellation_rate_pct:
+        prevTotalOrdersCount > 0
+          ? (prevCancelledOrdersCount / prevTotalOrdersCount) * 100
+          : 0,
+    };
     const counts = this.computeCounts(agg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts });
     const prevCounts = this.computeCounts(prevAgg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts });
 

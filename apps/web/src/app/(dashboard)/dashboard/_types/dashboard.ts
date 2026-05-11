@@ -252,8 +252,10 @@ export type SunburstHoverInfo = {
 export interface ExecutiveOverviewStats {
   revenue?: number;
   purchases?: number;
+  processed?: number;
   confirmed?: number;
   ad_spend?: number;
+  cancellation_rate_pct?: number;
   ar_pct?: number;
   cm_rts_forecast?: number;
 }

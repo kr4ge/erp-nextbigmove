@@ -65,9 +65,17 @@ export class ReconcileMarketingService {
         tenantId,
         ...(teamId ? { teamId } : {}),
         dateLocal: date,
+        AND: [
+          {
+            OR: [
+              { status: { not: 7 } },
+              { status: null },
+            ],
+          },
+        ],
         OR: [
           { isVoid: false },
-          { status: { in: [7, 13] } },
+          { status: 13 },
         ],
       },
       select: {
