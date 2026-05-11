@@ -101,7 +101,7 @@ export class ReportsService {
         COUNT(*) FILTER (WHERE "status" = 4)::int AS "returningOrders",
         COUNT(*) FILTER (WHERE "status" = 5)::int AS "returnedOrders",
         COUNT(*) FILTER (WHERE "status" IN (${Prisma.join(this.inProcessStatuses)}))::int AS "inProcessOrders",
-        COALESCE(SUM(COALESCE("cod", 0)::double precision), 0)::double precision AS "totalRevenue",
+        COALESCE(SUM(COALESCE("cod", 0)::double precision) FILTER (WHERE "status" IS DISTINCT FROM 7), 0)::double precision AS "totalRevenue",
         COALESCE(SUM(CASE WHEN "status" = 2 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "shippedRevenue",
         COALESCE(SUM(CASE WHEN "status" = 3 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "deliveredRevenue",
         COALESCE(SUM(CASE WHEN "status" = 6 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "cancelledRevenue",
