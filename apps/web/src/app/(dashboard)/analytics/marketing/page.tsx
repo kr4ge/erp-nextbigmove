@@ -546,7 +546,7 @@ export default function MarketingAnalyticsPage() {
       >
         <div className="flex items-center justify-between">
           <AnalyticsTableSelector
-            className="relative"
+            className="relative z-40"
             options={tableOptions}
             selectedKey={tableSelection}
             fallbackLabel="Top Associates"
@@ -572,8 +572,8 @@ export default function MarketingAnalyticsPage() {
               <table className="min-w-full divide-y divide-slate-100">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">#</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Marketing Associate</th>
+                    <th className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 md:sticky md:left-0 md:z-20 sm:px-4 lg:px-6">#</th>
+                    <th className="min-w-[12rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 md:sticky md:left-[4rem] md:z-20 sm:px-4 lg:px-6">Marketing Associate</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Revenue (₱)</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">CPC (₱)</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Ad Spend (₱)</th>
@@ -589,9 +589,9 @@ export default function MarketingAnalyticsPage() {
                     <AnalyticsTableLoadingRows colCount={10} />
                   ) : (
                     pagedTopAssociates.map((row, idx) => (
-                      <tr key={`${row.associate}-${idx}`} className="hover:bg-slate-50">
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{(topAssocPage - 1) * pageSize + idx + 1}.</td>
-                        <td className="px-3 py-3 text-sm font-medium whitespace-nowrap text-slate-900 sm:px-4 lg:px-6">
+                      <tr key={`${row.associate}-${idx}`} className="group hover:bg-slate-50">
+                        <td className="w-16 min-w-[4rem] max-w-[4rem] bg-white px-3 py-3 text-sm whitespace-nowrap text-slate-700 md:sticky md:left-0 md:z-10 group-hover:bg-slate-50 sm:px-4 lg:px-6">{(topAssocPage - 1) * pageSize + idx + 1}.</td>
+                        <td className="min-w-[12rem] bg-white px-3 py-3 text-sm font-medium whitespace-nowrap text-slate-900 md:sticky md:left-[4rem] md:z-10 group-hover:bg-slate-50 sm:px-4 lg:px-6">
                           {toTitleCase(row.associateDisplay || row.associate)}
                         </td>
                         <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.revenue)}</td>
@@ -678,8 +678,8 @@ export default function MarketingAnalyticsPage() {
               <table className="min-w-full divide-y divide-slate-100">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">#</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Marketing Associate</th>
+                    <th className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 md:sticky md:left-0 md:z-20 sm:px-4 lg:px-6">#</th>
+                    <th className="min-w-[12rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 md:sticky md:left-[4rem] md:z-20 sm:px-4 lg:px-6">Marketing Associate</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Ad</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Revenue (₱)</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">CPC (₱)</th>
@@ -692,11 +692,11 @@ export default function MarketingAnalyticsPage() {
                     <AnalyticsTableLoadingRows colCount={7} />
                   ) : (
                     pagedTopCreatives.map((row, idx) => (
-                      <tr key={`${row.associate}-${row.ad_name}-${idx}`} className="hover:bg-slate-50">
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">
+                      <tr key={`${row.associate}-${row.ad_name}-${idx}`} className="group hover:bg-slate-50">
+                        <td className="w-16 min-w-[4rem] max-w-[4rem] bg-white px-3 py-3 text-sm whitespace-nowrap text-slate-700 md:sticky md:left-0 md:z-10 group-hover:bg-slate-50 sm:px-4 lg:px-6">
                           {(topCreativePage - 1) * pageSize + idx + 1}.
                         </td>
-                        <td className="px-3 py-3 text-sm font-medium whitespace-nowrap text-slate-900 sm:px-4 lg:px-6">
+                        <td className="min-w-[12rem] bg-white px-3 py-3 text-sm font-medium whitespace-nowrap text-slate-900 md:sticky md:left-[4rem] md:z-10 group-hover:bg-slate-50 sm:px-4 lg:px-6">
                           {toTitleCase(row.associateDisplay || row.associate)}
                         </td>
                         <td className="px-3 py-3 text-sm text-slate-900 sm:px-4 lg:px-6">

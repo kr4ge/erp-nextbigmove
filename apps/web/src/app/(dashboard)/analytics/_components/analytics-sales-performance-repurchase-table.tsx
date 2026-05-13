@@ -79,7 +79,7 @@ export function AnalyticsSalesPerformanceRepurchaseTable({
         <table className="min-w-full divide-y divide-slate-100">
           <thead className="bg-slate-50">
             <tr>
-              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
+              <th className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
                 Shop
               </th>
               <th className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
@@ -114,7 +114,7 @@ export function AnalyticsSalesPerformanceRepurchaseTable({
             ) : (
               rows.map((row) => (
                 <tr key={row.shop} className="bg-white">
-                  <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
+                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
                     {row.shop}
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-right text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
@@ -154,7 +154,7 @@ export function AnalyticsSalesPerformanceRepurchaseTable({
           {!isLoading && totalRepurchaseRows > 0 ? (
             <tfoot className="border-t-2 border-slate-200 bg-slate-50">
               <tr>
-                <td className="whitespace-nowrap px-3 py-3 text-sm font-semibold text-slate-800 sm:px-4 lg:px-6">
+                <td className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-800 sm:px-4 lg:px-6">
                   Total
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">

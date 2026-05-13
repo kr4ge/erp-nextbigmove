@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { BarChart3, CalendarDays, ChevronDown, Trash2 } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronDown, Gauge, LineChart, Trash2 } from 'lucide-react';
 import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
 import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
@@ -205,6 +205,7 @@ export default function SalesPerformancePage() {
 
   const selectedChartShopLabel =
     isAllChartShopsMode ? 'All shops' : `${selectedChartShops.length} selected`;
+  const hasChartShopOptions = chartShopOptions.length > 0;
 
   const salesPerformanceDateRangeIsToday = startDate === today && endDate === today;
   const formatDateRangeButtonDate = (dateStr: string) => {
@@ -320,7 +321,10 @@ export default function SalesPerformancePage() {
         setProblematicData(res.data);
         const nextShops = res.data.filters.shops || [];
         setChartShopOptions((prev) => (areArraysEqual(prev, nextShops) ? prev : nextShops));
-        if (!hasInitializedChartShops || isAllChartShopsMode) {
+        if (nextShops.length === 0) {
+          setIsAllChartShopsMode(true);
+          setSelectedChartShops((prev) => (prev.length === 0 ? prev : []));
+        } else if (!hasInitializedChartShops || isAllChartShopsMode) {
           setSelectedChartShops((prev) => (prev.length === 0 ? prev : []));
         } else {
           const allowed = new Set(res.data.filters.shops || []);
@@ -1114,17 +1118,29 @@ export default function SalesPerformancePage() {
   const totalSummaryRows = sortedSummaryRows.length;
   const riskRows = problematicData?.riskConfirmationRows || [];
   const repurchaseRows = useMemo<SalesPerformanceRepurchaseRow[]>(() => {
-    return (problematicData?.repurchaseByShop || []).map((row) => ({
-      shop: displayChartShop(row.shopId),
-      deliveredOrders: row.deliveredOrders || 0,
-      deliveredAmount: row.deliveredAmount || 0,
-      rtsOrders: row.rtsOrders || 0,
-      rtsAmount: row.rtsAmount || 0,
-      shippedOrders: row.shippedOrders || 0,
-      shippedAmount: row.shippedAmount || 0,
-      totalOrders: row.totalOrders || 0,
-      totalAmount: row.totalAmount || 0,
-    }));
+    return (problematicData?.repurchaseByShop || [])
+      .map((row) => ({
+        shop: displayChartShop(row.shopId),
+        deliveredOrders: row.deliveredOrders || 0,
+        deliveredAmount: row.deliveredAmount || 0,
+        rtsOrders: row.rtsOrders || 0,
+        rtsAmount: row.rtsAmount || 0,
+        shippedOrders: row.shippedOrders || 0,
+        shippedAmount: row.shippedAmount || 0,
+        totalOrders: row.totalOrders || 0,
+        totalAmount: row.totalAmount || 0,
+      }))
+      .filter(
+        (row) =>
+          row.deliveredOrders > 0 ||
+          row.deliveredAmount > 0 ||
+          row.rtsOrders > 0 ||
+          row.rtsAmount > 0 ||
+          row.shippedOrders > 0 ||
+          row.shippedAmount > 0 ||
+          row.totalOrders > 0 ||
+          row.totalAmount > 0,
+      );
   }, [displayChartShop, problematicData?.repurchaseByShop]);
   const repurchaseGrandTotals = useMemo(() => {
     return repurchaseRows.reduce(
@@ -1204,9 +1220,9 @@ export default function SalesPerformancePage() {
 
       <DashboardSection
         title="Sales Performance Monitoring"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
+        icon={<Gauge className="h-3.5 w-3.5 text-primary" />}
         meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
-        className="panel panel-content"
+        className=""
         contentClassName="space-y-5"
       >
         <div className="flex flex-wrap items-center gap-3">
@@ -1329,7 +1345,7 @@ export default function SalesPerformancePage() {
         title="Performance Breakdown"
         icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
         meta={`${activeRowCount || 0} rows`}
-        className="panel panel-content"
+        className=""
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-between">
@@ -1390,21 +1406,24 @@ export default function SalesPerformancePage() {
 
       <DashboardSection
         title="Delivery Monitoring"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
-        className="panel panel-content"
+        icon={<LineChart className="h-3.5 w-3.5 text-primary" />}
+        className=""
         contentClassName="space-y-3"
-        meta={
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="relative" data-delivery-menu="true">
             <button
               type="button"
               onClick={() => setShowDeliveryViewMenu((p) => !p)}
-              className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-orange-600"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900 sm:text-lg"
             >
-              {selectedDeliveryViewLabel}
-              <ChevronDown className="h-3.5 w-3.5" />
+              <span className='whitespace-nowrap'>
+                {selectedDeliveryViewLabel}
+              </span>
+              <ChevronDown className="h-4 w-4 text-slate-500" />
             </button>
             {showDeliveryViewMenu && (
-              <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              <div className="absolute left-0 z-20 mt-2 w-64 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
                 {deliveryViewOptions.map((opt) => (
                   <button
                     key={opt.key}
@@ -1413,9 +1432,9 @@ export default function SalesPerformancePage() {
                       setDeliveryViewSelection(opt.key);
                       setShowDeliveryViewMenu(false);
                     }}
-                    className={`block w-full px-3 py-2 text-left text-sm ${
+                    className={`block w-full px-3 py-2 text-left text-sm sm:text-base ${
                       deliveryViewSelection === opt.key
-                        ? 'bg-slate-100 font-semibold text-slate-900'
+                        ? 'bg-slate-100 font-semibold text-foreground'
                         : 'text-slate-700 hover:bg-slate-50'
                     }`}
                   >
@@ -1425,30 +1444,34 @@ export default function SalesPerformancePage() {
               </div>
             )}
           </div>
-        }
-      >
-        <div className="flex flex-wrap items-center justify-end gap-3">
-            <AnalyticsMultiSelectPicker
-              className="relative"
-              selectedLabel={selectedChartShopLabel}
-              selectTitle="Select shops"
-              options={chartShopPickerOptions}
-              allChecked={isAllChartShopsMode}
-              isChecked={(value) => resolvedChartShops.includes(value)}
-              onToggleAll={(checked) => {
-                setIsAllChartShopsMode(checked);
-                setSelectedChartShops([]);
-              }}
-              onToggle={toggleChartShop}
-              onOnly={(value) => {
-                setIsAllChartShopsMode(false);
-                setSelectedChartShops([value]);
-              }}
-              onClear={() => {
-                setIsAllChartShopsMode(true);
-                setSelectedChartShops([]);
-              }}
-            />
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {deliveryViewSelection === 'repurchase' && !isProblematicLoading && !hasChartShopOptions ? (
+              <p className="flex h-10 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-sm text-slate-500">
+                No shops to filter.
+              </p>
+            ) : (
+              <AnalyticsMultiSelectPicker
+                className="relative"
+                selectedLabel={selectedChartShopLabel}
+                selectTitle="Select shops"
+                options={chartShopPickerOptions}
+                allChecked={isAllChartShopsMode}
+                isChecked={(value) => resolvedChartShops.includes(value)}
+                onToggleAll={(checked) => {
+                  setIsAllChartShopsMode(checked);
+                  setSelectedChartShops([]);
+                }}
+                onToggle={toggleChartShop}
+                onOnly={(value) => {
+                  setIsAllChartShopsMode(false);
+                  setSelectedChartShops([value]);
+                }}
+                onClear={() => {
+                  setIsAllChartShopsMode(true);
+                  setSelectedChartShops([]);
+                }}
+              />
+            )}
             <div className="relative">
               <Datepicker
                 value={range}
@@ -1485,6 +1508,7 @@ export default function SalesPerformancePage() {
               />
             </div>
           </div>
+        </div>
         <div className="p-1 sm:p-2">
           {deliveryViewSelection === 'risk_confirmation' ? (
             <AnalyticsRiskConfirmationTable

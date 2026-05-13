@@ -61,7 +61,7 @@ export function AnalyticsSalesPerformanceSummaryTable({
         <table className="min-w-full divide-y divide-slate-100">
           <thead className="bg-slate-50">
             <tr>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
+              <th className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-3 text-left sm:px-4 lg:px-6">
                 {renderSortLabel('Sales Assignee', 'assignee')}
               </th>
               <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
@@ -99,7 +99,7 @@ export function AnalyticsSalesPerformanceSummaryTable({
             ) : (
               rows.map((row) => (
                 <tr key={row.salesAssignee ?? 'unassigned'} className="bg-white">
-                  <td className="px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
+                  <td className="sticky left-0 z-10 bg-white px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
                     {displayAssignee(row.salesAssignee)}
                   </td>
                   <td className="px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
