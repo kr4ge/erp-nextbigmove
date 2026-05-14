@@ -114,6 +114,7 @@ export default function MarketingKpiPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        breadcrumbs="KPI"
         title="Marketing KPI"
         description="Set targets and manage assignments."
         actions={

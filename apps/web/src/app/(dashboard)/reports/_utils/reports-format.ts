@@ -10,6 +10,7 @@ export const REPORT_QTY_COLUMNS = [
   { key: 'cancelled', label: 'Cancelled', type: 'number' as const },
   { key: 'returning', label: 'Returning', type: 'number' as const },
   { key: 'returned', label: 'Returned', type: 'number' as const },
+  { key: 'restocking', label: 'Restocking', type: 'number' as const },
   { key: 'in_process', label: 'In Process', type: 'number' as const },
   { key: 'rts_rate', label: 'RTS Rate', type: 'rate' as const },
   { key: 'pending_rate', label: 'Pending Rate', type: 'rate' as const },
@@ -23,6 +24,7 @@ export const REPORT_REVENUE_COLUMNS = [
   { key: 'cancelled', label: 'Cancelled' },
   { key: 'returning', label: 'Returning' },
   { key: 'returned', label: 'Returned' },
+  { key: 'restocking', label: 'Restocking' },
   { key: 'in_process', label: 'In Process' },
 ] as const;
 
@@ -71,6 +73,7 @@ export const buildPosOrdersReportTotals = (
       acc.qty.cancelled += item.qty.cancelled;
       acc.qty.returning += item.qty.returning;
       acc.qty.returned += item.qty.returned;
+      acc.qty.restocking += item.qty.restocking;
       acc.qty.in_process += item.qty.in_process;
 
       acc.revenue.all_orders += item.revenue.all_orders;
@@ -79,6 +82,7 @@ export const buildPosOrdersReportTotals = (
       acc.revenue.cancelled += item.revenue.cancelled;
       acc.revenue.returning += item.revenue.returning;
       acc.revenue.returned += item.revenue.returned;
+      acc.revenue.restocking += item.revenue.restocking;
       acc.revenue.in_process += item.revenue.in_process;
 
       return acc;
@@ -91,6 +95,7 @@ export const buildPosOrdersReportTotals = (
         cancelled: 0,
         returning: 0,
         returned: 0,
+        restocking: 0,
         in_process: 0,
         rts_rate: 0,
         pending_rate: 0,
@@ -103,6 +108,7 @@ export const buildPosOrdersReportTotals = (
         cancelled: 0,
         returning: 0,
         returned: 0,
+        restocking: 0,
         in_process: 0,
       },
     },

@@ -5,6 +5,7 @@ export type PosOrdersReportQtyBlock = {
   cancelled: number;
   returning: number;
   returned: number;
+  restocking: number;
   in_process: number;
   rts_rate: number;
   pending_rate: number;
@@ -18,6 +19,7 @@ export type PosOrdersReportRevenueBlock = {
   cancelled: number;
   returning: number;
   returned: number;
+  restocking: number;
   in_process: number;
 };
 

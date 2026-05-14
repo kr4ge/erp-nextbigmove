@@ -16,7 +16,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-col gap-3 border-b border-slate-200 pb-3">
       {breadcrumbs && (
-        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        <div className="text-xs font-medium uppercase tracking-wide text-primary">
           {breadcrumbs}
         </div>
       )}

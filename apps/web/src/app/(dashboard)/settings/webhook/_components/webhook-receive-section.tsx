@@ -103,6 +103,7 @@ export function WebhookReceiveSection({
               type="button"
               variant="outline"
               size="sm"
+              className="flex gap-2"
               onClick={() => onCopy(config?.webhookUrl || '', 'Webhook URL')}
               disabled={!config?.webhookUrl}
               iconLeft={<Copy className="h-4 w-4" />}
@@ -122,6 +123,7 @@ export function WebhookReceiveSection({
               type="button"
               variant="outline"
               size="sm"
+              className="flex gap-2"
               onClick={() => onCopy(config?.headerKey || 'x-api-key', 'Header key')}
               iconLeft={<Copy className="h-4 w-4" />}
             >

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { CalendarDays, Download, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -211,7 +212,15 @@ export default function ReportsPage() {
         <div className="mt-4">
           <AlertBanner
             tone="info"
-            message="To get high-accuracy report data, fetch the POS data in /workflows first."
+            message={
+              <>
+                To get high-accuracy report data, fetch the POS data in{' '}
+                <Link href="/workflows" className="font-semibold underline underline-offset-2">
+                  workflows
+                </Link>{' '}
+                first.
+              </>
+            }
           />
         </div>
       

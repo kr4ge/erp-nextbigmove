@@ -28,6 +28,7 @@ type PosOrdersReportRow = {
   cancelledOrders: number;
   returningOrders: number;
   returnedOrders: number;
+  restockingOrders: number;
   inProcessOrders: number;
   totalRevenue: number;
   shippedRevenue: number;
@@ -35,12 +36,13 @@ type PosOrdersReportRow = {
   cancelledRevenue: number;
   returningRevenue: number;
   returnedRevenue: number;
+  restockingRevenue: number;
   inProcessRevenue: number;
 };
 
 @Injectable()
 export class ReportsService {
-  private readonly inProcessStatuses = [0, 1, 9, 11, 12, 13];
+  private readonly inProcessStatuses = [0, 1, 9, 12, 13];
 
   constructor(
     private readonly prisma: PrismaService,
@@ -100,6 +102,7 @@ export class ReportsService {
         COUNT(*) FILTER (WHERE "status" = 6)::int AS "cancelledOrders",
         COUNT(*) FILTER (WHERE "status" = 4)::int AS "returningOrders",
         COUNT(*) FILTER (WHERE "status" = 5)::int AS "returnedOrders",
+        COUNT(*) FILTER (WHERE "status" = 11)::int AS "restockingOrders",
         COUNT(*) FILTER (WHERE "status" IN (${Prisma.join(this.inProcessStatuses)}))::int AS "inProcessOrders",
         COALESCE(SUM(COALESCE("cod", 0)::double precision) FILTER (WHERE "status" IS DISTINCT FROM 7), 0)::double precision AS "totalRevenue",
         COALESCE(SUM(CASE WHEN "status" = 2 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "shippedRevenue",
@@ -107,6 +110,7 @@ export class ReportsService {
         COALESCE(SUM(CASE WHEN "status" = 6 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "cancelledRevenue",
         COALESCE(SUM(CASE WHEN "status" = 4 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "returningRevenue",
         COALESCE(SUM(CASE WHEN "status" = 5 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "returnedRevenue",
+        COALESCE(SUM(CASE WHEN "status" = 11 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "restockingRevenue",
         COALESCE(SUM(CASE WHEN "status" IN (${Prisma.join(this.inProcessStatuses)}) THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "inProcessRevenue"
       FROM "pos_orders"
       WHERE "tenantId" = ${tenantId}::uuid
@@ -148,6 +152,7 @@ export class ReportsService {
       const cancelledOrders = this.toNumber(row.cancelledOrders);
       const returningOrders = this.toNumber(row.returningOrders);
       const returnedOrders = this.toNumber(row.returnedOrders);
+      const restockingOrders = this.toNumber(row.restockingOrders);
       const inProcessOrders = this.toNumber(row.inProcessOrders);
       const rtsOrders = returningOrders + returnedOrders;
 
@@ -161,6 +166,7 @@ export class ReportsService {
           cancelled: cancelledOrders,
           returning: returningOrders,
           returned: returnedOrders,
+          restocking: restockingOrders,
           in_process: inProcessOrders,
           rts_rate: this.toRate(rtsOrders, deliveredOrders + rtsOrders),
           pending_rate: this.toRate(inProcessOrders, totalOrders),
@@ -173,6 +179,7 @@ export class ReportsService {
           cancelled: this.toNumber(row.cancelledRevenue),
           returning: this.toNumber(row.returningRevenue),
           returned: this.toNumber(row.returnedRevenue),
+          restocking: this.toNumber(row.restockingRevenue),
           in_process: this.toNumber(row.inProcessRevenue),
         },
       };

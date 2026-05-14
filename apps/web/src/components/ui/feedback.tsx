@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import clsx from 'clsx';
 import { Card } from './card';
 
@@ -11,7 +12,7 @@ const toneStyles: Record<FeedbackTone, string> = {
 };
 
 interface AlertBannerProps {
-  message: string;
+  message: ReactNode;
   tone?: FeedbackTone;
   className?: string;
 }
