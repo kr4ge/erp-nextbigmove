@@ -115,10 +115,11 @@ export const buildPosOrdersReportTotals = (
   );
 
   const totalRts = totals.qty.returning + totals.qty.returned;
+  const totalPending = totals.qty.restocking + totals.qty.in_process;
   totals.qty.rts_rate =
     totals.qty.delivered + totalRts > 0 ? totalRts / (totals.qty.delivered + totalRts) : 0;
   totals.qty.pending_rate =
-    totals.qty.all_orders > 0 ? totals.qty.in_process / totals.qty.all_orders : 0;
+    totals.qty.all_orders > 0 ? totalPending / totals.qty.all_orders : 0;
   totals.qty.cancellation_rate =
     totals.qty.all_orders > 0 ? totals.qty.cancelled / totals.qty.all_orders : 0;
 

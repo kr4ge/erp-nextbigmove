@@ -154,6 +154,7 @@ export class ReportsService {
       const returnedOrders = this.toNumber(row.returnedOrders);
       const restockingOrders = this.toNumber(row.restockingOrders);
       const inProcessOrders = this.toNumber(row.inProcessOrders);
+      const pendingOrders = restockingOrders + inProcessOrders;
       const rtsOrders = returningOrders + returnedOrders;
 
       return {
@@ -169,7 +170,7 @@ export class ReportsService {
           restocking: restockingOrders,
           in_process: inProcessOrders,
           rts_rate: this.toRate(rtsOrders, deliveredOrders + rtsOrders),
-          pending_rate: this.toRate(inProcessOrders, totalOrders),
+          pending_rate: this.toRate(pendingOrders, totalOrders),
           cancellation_rate: this.toRate(cancelledOrders, totalOrders),
         },
         revenue: {
