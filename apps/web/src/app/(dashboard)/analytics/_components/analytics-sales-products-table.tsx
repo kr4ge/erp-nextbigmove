@@ -91,10 +91,10 @@ export function AnalyticsSalesProductsTable({
         <table className="min-w-full table-fixed divide-y divide-slate-100">
           <thead className="bg-slate-50">
             <tr>
-              <th className="sticky left-0 z-10 w-16 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+              <th className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap md:sticky md:left-0 md:z-10 sm:px-4 lg:px-6">
                 {renderSortLabel('#', 'index')}
               </th>
-              <th className="sticky left-16 z-10 bg-slate-50 px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+              <th className="bg-slate-50 px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap md:sticky md:left-16 md:z-10 sm:px-4 lg:px-6">
                 {renderSortLabel('Product', 'product')}
               </th>
               <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
@@ -158,10 +158,10 @@ export function AnalyticsSalesProductsTable({
 
                 return (
                   <tr key={`${row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
-                    <td className="sticky left-0 z-10 w-16 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-700 whitespace-nowrap">
+                    <td className="w-16 min-w-[4rem] max-w-[4rem] bg-white px-3 py-3 text-sm text-slate-700 whitespace-nowrap md:sticky md:left-0 md:z-10 sm:px-4 lg:px-6">
                       {(productPage - 1) * pageSize + idx + 1}.
                     </td>
-                    <td className="sticky left-16 z-10 bg-white px-3 sm:px-4 lg:px-6 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">
+                    <td className="bg-white px-3 py-3 text-sm text-slate-900 font-medium whitespace-nowrap md:sticky md:left-16 md:z-10 sm:px-4 lg:px-6">
                       {toTitleCase(display)}
                     </td>
                     <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(row.revenue, 'currency')}</td>

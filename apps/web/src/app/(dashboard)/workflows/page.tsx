@@ -70,12 +70,14 @@ export default function WorkflowsPage() {
               variant="outline"
               iconLeft={<Upload className="h-4 w-4" />}
               onClick={openUploadModal}
+              className='flex gap-1.5'
             >
               Upload Meta
             </Button>
             <Button
               iconLeft={<Plus className="h-4 w-4" />}
               onClick={navigateToNew}
+              className='flex gap-1.5'
             >
               Create Workflow
             </Button>

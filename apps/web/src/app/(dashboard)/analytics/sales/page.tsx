@@ -1180,7 +1180,7 @@ export default function SalesAnalyticsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-stretch">
               <AnalyticsMultiSelectPicker
-                className="relative [&>button]:h-10 [&>button]:rounded-r-none [&>button]:rounded-l-xl [&>button]:border-r-0 [&>button]:border-slate-200"
+                className="relative z-30 [&>button]:h-10 [&>button]:rounded-r-none [&>button]:rounded-l-xl [&>button]:border-r-0 [&>button]:border-slate-200"
                 selectedLabel={selectedMappingLabel}
                 selectTitle="Select mappings"
                 options={mappingPickerOptions}
@@ -1441,7 +1441,7 @@ export default function SalesAnalyticsPage() {
       >
         <div className="flex items-center justify-between">
           <AnalyticsTableSelector
-            className="relative"
+            className="relative z-20"
             options={tableOptions}
             selectedKey={tableSelection}
             fallbackLabel="Revenue per Product"
@@ -1460,6 +1460,7 @@ export default function SalesAnalyticsPage() {
                 onClick={() => void handleExportProductsCsv()}
                 disabled={isLoading || exportableProducts.length === 0}
                 loading={isExportingCsv}
+                className='flex gap-1.5'
               >
                 Export CSV
               </Button>
@@ -1469,6 +1470,7 @@ export default function SalesAnalyticsPage() {
                 onClick={() => void handleExportProductsXlsx()}
                 disabled={isLoading || exportableProducts.length === 0}
                 loading={isExportingXlsx}
+                className='flex gap-1.5'
               >
                 Export XLSX
               </Button>

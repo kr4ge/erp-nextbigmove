@@ -82,8 +82,10 @@ export default function StorePage() {
           page={page}
           pageCount={pageCount}
           onOpenStore={openStore}
+          onFirstPage={() => setPage(1)}
           onPrevPage={() => setPage((prev) => Math.max(1, prev - 1))}
           onNextPage={() => setPage((prev) => Math.min(pageCount, prev + 1))}
+          onLastPage={() => setPage(pageCount)}
         />
       )}
     </div>

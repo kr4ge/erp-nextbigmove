@@ -3,6 +3,7 @@
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Copy, Eye, EyeOff, Key, Store } from 'lucide-react';
 import type { PosStore } from '../../../_types/store-detail';
+import Image from 'next/image';
 
 interface StoreDetailOverviewProps {
   store: PosStore;
@@ -59,12 +60,13 @@ export function StoreDetailOverview({
         </div>
           <div className="flex items-start gap-3 p-3">
           {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image 
               src={avatarUrl}
-              alt={storeName}
-              className="h-12 w-12 rounded-full border border-slate-200 object-cover shadow-sm"
-            />
+              alt={`Logo of ${storeName}`}
+              width={48}
+              height={48}
+              unoptimized
+              className="h-12 w-12 rounded-full border border-slate-200 object-cover shadow-sm" />
           ) : (
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">
               {getStoreInitials(storeName)}

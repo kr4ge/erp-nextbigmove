@@ -74,7 +74,7 @@ export function StoreProductsTab({
             value={searchInput}
             onChange={(e) => onSearchInputChange(e.target.value)}
             placeholder="Search products..."
-            className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-3 pr-9 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            className='input py-2'
           />
           <Search className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         </div>

@@ -68,6 +68,7 @@ export function WebhookLogsSection({
             onClick={onRefresh}
             disabled={isLoading || !canRead}
             iconLeft={<RefreshCcw className="h-4 w-4" />}
+            className='flex gap-1.5'
           >
             Refresh
           </Button>
@@ -148,7 +149,7 @@ export function WebhookLogsSection({
             onChange={(event) => onFiltersChange({ endDate: event.target.value })}
           />
           <div className="flex items-center justify-end lg:col-span-2">
-            <Button type="button" variant="ghost" size="sm" onClick={onClearFilters}>
+            <Button type="button" variant="outline" size="sm" onClick={onClearFilters}>
               Clear filters
             </Button>
           </div>

@@ -429,8 +429,10 @@ export default function UsersPage() {
             All Users: <span className="font-semibold text-slate-900">{users?.length ?? 0}</span>
           </div>
           <Button
+            variant="primary"
             iconLeft={<Plus className="h-4 w-4" />}
             onClick={() => setCreateOpen(true)}
+            className='flex gap-1.5'
           >
             Add new user
           </Button>

@@ -216,7 +216,6 @@ export function IntegrationsListCard({
           showPagination={filteredIntegrations.length > pagination.pageSize}
           totalRows={filteredIntegrations.length}
           showPageSizeSelector={false}
-          showFirstLastButtons={false}
         />
       </div>
       <ConfirmActionDialog

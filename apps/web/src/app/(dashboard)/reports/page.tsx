@@ -138,14 +138,17 @@ export default function ReportsPage() {
               onClick={handleExportCsv}
               disabled={!hasRows || isLoading}
               loading={isExportingCsv}
+              className='flex gap-1.5'
             >
               Export CSV
             </Button>
             <Button
+              variant='primary'
               iconLeft={<FileSpreadsheet className="h-4 w-4" />}
               onClick={handleExportXlsx}
               disabled={!hasRows || isLoading}
               loading={isExportingXlsx}
+              className='flex gap-1.5'
             >
               Export XLSX
             </Button>
@@ -198,11 +201,12 @@ export default function ReportsPage() {
               Generated: <span className="font-semibold text-slate-900">{generatedAtLabel}</span>
             </div>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               iconLeft={<RefreshCw className="h-4 w-4" />}
               onClick={() => void fetchReport()}
               disabled={isLoading}
+              className='flex gap-1.5'
             >
               Refresh
             </Button>

@@ -273,7 +273,7 @@ export default function RolesPage() {
                         <div className="flex items-center gap-2">
                           {!role.isSystem && (
                             <Button
-                              variant="secondary"
+                              variant="outline"
                               size="sm"
                               onClick={() => setEditing(isEditing ? null : role.id)}
                             >

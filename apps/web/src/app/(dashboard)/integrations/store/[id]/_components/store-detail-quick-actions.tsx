@@ -34,6 +34,7 @@ export function StoreDetailQuickActions({
           size="sm"
           iconLeft={<DollarSign className="h-3.5 w-3.5" />}
           onClick={onSetInitialOffer}
+          className='flex gap-1.5'
         >
           Set Initial Offer
         </Button>
@@ -44,6 +45,7 @@ export function StoreDetailQuickActions({
           onClick={onSyncProducts}
           disabled={isSyncingProducts}
           loading={isSyncingProducts}
+          className='flex gap-1.5'
         >
           {isSyncingProducts ? 'Syncing...' : 'Sync Products'}
         </Button>
@@ -54,6 +56,7 @@ export function StoreDetailQuickActions({
           onClick={onSyncTags}
           disabled={isSyncingTags}
           loading={isSyncingTags}
+          className='flex gap-1.5'
         >
           {isSyncingTags ? 'Syncing...' : 'Sync Tags'}
         </Button>
@@ -64,6 +67,7 @@ export function StoreDetailQuickActions({
           onClick={onSyncWarehouses}
           disabled={isSyncingWarehouses}
           loading={isSyncingWarehouses}
+          className='flex gap-1.5'
         >
           {isSyncingWarehouses ? 'Syncing...' : 'Sync Warehouses'}
         </Button>

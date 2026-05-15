@@ -90,14 +90,14 @@ export function AnalyticsKpiVisibilityDialog({
             <button
               type="button"
               onClick={onSelectAll}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="btn btn-md btn-outline"
             >
               Select all
             </button>
             <button
               type="button"
               onClick={onResetDefaults}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="btn btn-md btn-outline"
             >
               Reset
             </button>
@@ -105,7 +105,7 @@ export function AnalyticsKpiVisibilityDialog({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700 hover:bg-orange-100"
+              className="btn btn-md btn-primary-soft"
           >
             Done
           </button>

@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import type { StoreCard } from '../_types/store-list';
@@ -12,8 +13,10 @@ interface StoreListGridProps {
   page: number;
   pageCount: number;
   onOpenStore: (storeId: string) => void;
+  onFirstPage: () => void;
   onPrevPage: () => void;
   onNextPage: () => void;
+  onLastPage: () => void;
 }
 
 export function StoreListGrid({
@@ -23,8 +26,10 @@ export function StoreListGrid({
   page,
   pageCount,
   onOpenStore,
+  onFirstPage,
   onPrevPage,
   onNextPage,
+  onLastPage,
 }: StoreListGridProps) {
   return (
     <>
@@ -46,10 +51,12 @@ export function StoreListGrid({
 
               <div className="mt-6 flex flex-col items-center text-center">
                 {store.shopAvatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image
                     src={store.shopAvatarUrl}
-                    alt={displayName}
+                    alt={`Logo of ${displayName}`}
+                    width={64}
+                    height={64}
+                    unoptimized
                     className="h-16 w-16 rounded-full border border-[#E2E8F0] object-cover shadow-sm"
                   />
                 ) : (
@@ -86,6 +93,9 @@ export function StoreListGrid({
             Showing page {page} of {pageCount}
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" disabled={page <= 1} onClick={onFirstPage}>
+              First
+            </Button>
             <Button variant="ghost" size="sm" disabled={page <= 1} onClick={onPrevPage}>
               Previous
             </Button>
@@ -94,6 +104,9 @@ export function StoreListGrid({
             </span>
             <Button variant="ghost" size="sm" disabled={page >= pageCount} onClick={onNextPage}>
               Next
+            </Button>
+            <Button variant="ghost" size="sm" disabled={page >= pageCount} onClick={onLastPage}>
+              Last
             </Button>
           </div>
         </div>

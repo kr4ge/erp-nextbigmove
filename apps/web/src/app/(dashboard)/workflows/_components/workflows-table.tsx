@@ -41,6 +41,10 @@ export function WorkflowsTable({
       {
         id: 'workflow',
         header: 'Workflow',
+        meta: {
+          cellClassName: 'min-w-[320px]',
+          headerClassName: 'min-w-[320px]',
+        },
         cell: ({ row }) => {
           const workflow = row.original;
           return (
@@ -106,8 +110,8 @@ export function WorkflowsTable({
         header: 'Actions',
         meta: {
           align: 'right',
-          cellClassName: 'w-[72px]',
-          headerClassName: 'w-[72px]',
+          cellClassName: 'w-[56px]',
+          headerClassName: 'w-[56px]',
         },
         cell: ({ row }) => (
           <WorkflowActionsMenu
