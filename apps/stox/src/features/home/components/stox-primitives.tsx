@@ -1,6 +1,6 @@
-import type { ComponentProps } from 'react';
+import type { ReactNode, ComponentProps } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
 
@@ -18,6 +18,52 @@ export function SectionLabel({
       <Text style={styles.sectionTitle}>{title}</Text>
       {trailing ? <Text style={styles.sectionTrailing}>{trailing}</Text> : null}
     </View>
+  );
+}
+
+export function TaskHeader({
+  title,
+  action,
+}: {
+  title: string;
+  action?: ReactNode;
+}) {
+  return (
+    <View style={styles.taskHeader}>
+      <Text style={styles.taskHeaderTitle}>{title}</Text>
+      {action ? <View style={styles.taskHeaderAction}>{action}</View> : null}
+    </View>
+  );
+}
+
+export function TaskHeaderIconButton({
+  disabled,
+  icon,
+  loading = false,
+  onPress,
+}: {
+  disabled?: boolean;
+  icon: IconName;
+  loading?: boolean;
+  onPress: () => void | Promise<void>;
+}) {
+  return (
+    <Pressable
+      disabled={disabled || loading}
+      onPress={() => {
+        void onPress();
+      }}
+      style={({ pressed }) => [
+        styles.taskHeaderIconButton,
+        pressed && !disabled && !loading ? styles.taskHeaderIconButtonPressed : null,
+        disabled || loading ? styles.taskHeaderIconButtonDisabled : null,
+      ]}>
+      {loading ? (
+        <ActivityIndicator color={tokens.colors.panel} size="small" />
+      ) : (
+        <Feather name={icon} size={18} color={tokens.colors.panel} />
+      )}
+    </Pressable>
   );
 }
 
@@ -123,6 +169,38 @@ export function ActionTile({
 }
 
 const styles = StyleSheet.create({
+  taskHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  taskHeaderTitle: {
+    color: tokens.colors.ink,
+    flex: 1,
+    fontSize: 29,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+  taskHeaderAction: {
+    marginLeft: tokens.spacing.md,
+  },
+  taskHeaderIconButton: {
+    alignItems: 'center',
+    backgroundColor: tokens.colors.surface,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  taskHeaderIconButtonPressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.98 }],
+  },
+  taskHeaderIconButtonDisabled: {
+    opacity: 0.58,
+  },
   sectionLabel: {
     alignItems: 'center',
     flexDirection: 'row',

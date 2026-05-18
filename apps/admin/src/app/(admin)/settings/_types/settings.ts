@@ -67,6 +67,12 @@ export type WmsSettingsUser = {
     allow: boolean;
     tenantId: string | null;
   }>;
+  taskAssignment: {
+    id: string;
+    taskType: 'PICK' | 'PACK';
+    createdAt: string;
+    updatedAt: string;
+  } | null;
 };
 
 export type WmsSettingsUserOptions = {
@@ -80,6 +86,7 @@ export type WmsSettingsUserOptions = {
     isSystem: boolean;
   }>;
   statuses: string[];
+  taskAssignmentTypes: Array<'PICK' | 'PACK'>;
 };
 
 export type CreateWmsSettingsUserInput = {
@@ -89,6 +96,7 @@ export type CreateWmsSettingsUserInput = {
   lastName: string;
   employeeId?: string | null;
   roleId: string;
+  taskAssignmentType?: 'PICK' | 'PACK' | null;
   status?: string;
 };
 
@@ -98,6 +106,7 @@ export type UpdateWmsSettingsUserInput = {
   employeeId?: string | null;
   password?: string;
   roleId?: string;
+  taskAssignmentType?: 'PICK' | 'PACK' | null;
   status?: string;
 };
 

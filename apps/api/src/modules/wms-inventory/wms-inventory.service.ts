@@ -215,8 +215,16 @@ export class WmsInventoryService {
         tenantReady: false,
         summary: {
           units: 0,
-          locatedUnits: 0,
-          unlocatedUnits: 0,
+        locatedUnits: 0,
+        unlocatedUnits: 0,
+        unitsOnHand: 0,
+        skuOnHand: 0,
+        dispatchedUnits: 0,
+          warehouseCapacity: {
+            usedUnits: 0,
+            totalUnits: 0,
+            utilizationPercent: 0,
+          },
         },
         filters: {
           tenants: scope.tenants,
@@ -307,8 +315,26 @@ export class WmsInventoryService {
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
     };
+    const stockControlScope: Prisma.WmsInventoryUnitWhereInput = {
+      ...statusCountScope,
+      status: {
+        notIn: [
+          WmsInventoryUnitStatus.DISPATCHED,
+          WmsInventoryUnitStatus.ARCHIVED,
+        ],
+      },
+    };
 
-    const [units, totalUnits, locatedUnits, unlocatedUnits, statusCounts] = await Promise.all([
+    const [
+      units,
+      totalUnits,
+      locatedUnits,
+      unlocatedUnits,
+      statusCounts,
+      unitsOnHand,
+      skuOnHandRecords,
+      warehouseCapacity,
+    ] = await Promise.all([
       this.prisma.wmsInventoryUnit.findMany({
         where,
         include: {
@@ -365,6 +391,21 @@ export class WmsInventoryService {
           _all: true,
         },
       }),
+      this.prisma.wmsInventoryUnit.count({
+        where: stockControlScope,
+      }),
+      this.prisma.wmsInventoryUnit.findMany({
+        where: stockControlScope,
+        distinct: ['variationId'],
+        select: {
+          variationId: true,
+        },
+      }),
+      this.getWarehouseCapacitySummary({
+        tenantId: scope.activeTenantId,
+        storeId: activeStoreId,
+        warehouseId: activeWarehouseId,
+      }),
     ]);
 
     const warehouseCountMap = new Map(
@@ -373,6 +414,7 @@ export class WmsInventoryService {
     const statusCountMap = new Map(
       statusCounts.map((record) => [record.status, record._count._all]),
     );
+    const dispatchedUnits = statusCountMap.get(WmsInventoryUnitStatus.DISPATCHED) ?? 0;
 
     return {
       tenantReady: true,
@@ -380,6 +422,10 @@ export class WmsInventoryService {
         units: totalUnits,
         locatedUnits,
         unlocatedUnits,
+        unitsOnHand,
+        skuOnHand: skuOnHandRecords.length,
+        dispatchedUnits,
+        warehouseCapacity,
       },
       filters: {
         tenants: scope.tenants,
@@ -1561,6 +1607,57 @@ export class WmsInventoryService {
         record.currentLocationId ? [[record.currentLocationId, record._count._all] as const] : [],
       ),
     );
+  }
+
+  private async getWarehouseCapacitySummary(params: {
+    tenantId: string;
+    storeId: string | null;
+    warehouseId: string | null;
+  }) {
+    const bins = await this.prisma.wmsLocation.findMany({
+      where: {
+        isActive: true,
+        kind: WmsLocationKind.BIN,
+        ...(params.warehouseId ? { warehouseId: params.warehouseId } : {}),
+      },
+      select: {
+        id: true,
+        capacity: true,
+      },
+    });
+    const binIds = bins.map((bin) => bin.id);
+    const totalUnits = bins.reduce((total, bin) => total + (bin.capacity ?? 0), 0);
+
+    if (!binIds.length || totalUnits === 0) {
+      return {
+        usedUnits: 0,
+        totalUnits,
+        utilizationPercent: 0,
+      };
+    }
+
+    const usedUnits = await this.prisma.wmsInventoryUnit.count({
+      where: {
+        tenantId: params.tenantId,
+        ...(params.storeId ? { storeId: params.storeId } : {}),
+        ...(params.warehouseId ? { warehouseId: params.warehouseId } : {}),
+        currentLocationId: {
+          in: binIds,
+        },
+        status: {
+          notIn: [
+            WmsInventoryUnitStatus.DISPATCHED,
+            WmsInventoryUnitStatus.ARCHIVED,
+          ],
+        },
+      },
+    });
+
+    return {
+      usedUnits,
+      totalUnits,
+      utilizationPercent: Math.round((usedUnits / totalUnits) * 100),
+    };
   }
 
   private buildTransferStructureMaps(locations: TransferLocationRecord[]): TransferStructureMaps {

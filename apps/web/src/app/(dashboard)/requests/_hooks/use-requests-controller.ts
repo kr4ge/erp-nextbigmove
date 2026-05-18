@@ -153,11 +153,8 @@ export function useRequestsController() {
     if (createStoreScopeId) {
       return createStoreScopeId;
     }
-    if (cartLines.length > 0) {
-      return cartLines[0].product.store.id;
-    }
     return undefined;
-  }, [cartLines, createStoreScopeId]);
+  }, [createStoreScopeId]);
 
   const refreshProductOptions = useCallback(async () => {
     if (!isProductPickerOpen) {
@@ -210,11 +207,6 @@ export function useRequestsController() {
 
   const addProductToCart = useCallback(
     (product: WmsPurchasingProductOption) => {
-      if (effectiveStoreId && product.store.id !== effectiveStoreId) {
-        addToast('error', 'Only products from one store can be requested in a single batch');
-        return;
-      }
-
       setCartLines((current) => {
         const existing = current.find((line) => line.product.profileId === product.profileId);
         if (existing) {
@@ -237,7 +229,7 @@ export function useRequestsController() {
 
       setIsProductPickerOpen(false);
     },
-    [addToast, effectiveStoreId],
+    [],
   );
 
   const removeCartLine = useCallback((lineId: string) => {
@@ -269,9 +261,9 @@ export function useRequestsController() {
       return;
     }
 
-    const requestStoreId = effectiveStoreId;
+    const requestStoreId = createStoreScopeId || cartLines[0]?.product.store.id;
     if (!requestStoreId) {
-      addToast('error', 'Select a store scope or add a product first');
+      addToast('error', 'Add a product before submitting the request');
       return;
     }
 
@@ -297,6 +289,7 @@ export function useRequestsController() {
           },
           productId: line.product.productId,
           variationId: line.product.variationId,
+          storeId: line.product.store.id,
           requestedProductName: line.product.name,
           requestedQuantity: line.quantity,
           uom: 'unit',
@@ -327,7 +320,7 @@ export function useRequestsController() {
     cartLines,
     createPartnerNotes,
     createRequestType,
-    effectiveStoreId,
+    createStoreScopeId,
     refreshOverview,
   ]);
 

@@ -1,4 +1,13 @@
 export type WmsWarehouseStatus = 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+export type WmsBasketStatus =
+  | 'AVAILABLE'
+  | 'EMPTY'
+  | 'ASSIGNED'
+  | 'IN_PICKING'
+  | 'FULL_HELD'
+  | 'PACKING'
+  | 'DAMAGED'
+  | 'RETIRED';
 
 export type WmsLocationKind =
   | 'SECTION'
@@ -65,16 +74,40 @@ export type WmsWarehouseDetail = {
     racks: number;
     bins: number;
     operational: number;
+    baskets: number;
+    availableBaskets: number;
   };
   operationalLocations: WmsLocationTreeNode[];
   structuralLocations: WmsLocationTreeNode[];
   rootLocations: WmsLocationTreeNode[];
+  baskets: WmsWarehouseBasket[];
   inventorySummary: {
     serializedUnits: number;
     putAwayUnits: number;
     stagedUnits: number;
     attentionUnits: number;
   };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WmsWarehouseBasket = {
+  id: string;
+  barcode: string;
+  status: WmsBasketStatus;
+  warehouseId: string | null;
+  assignedPicker: {
+    name: string;
+    email: string;
+  } | null;
+  fulfillmentOrder: {
+    id: string;
+    posOrderId: string;
+    customerName: string | null;
+    status: string;
+  } | null;
+  claimedAt: string | null;
+  fullAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -165,3 +198,12 @@ export type CreateWmsLocationInput = {
 };
 
 export type UpdateWmsLocationInput = Partial<CreateWmsLocationInput>;
+
+export type CreateWmsBasketInput = {
+  barcode?: string;
+};
+
+export type UpdateWmsBasketInput = {
+  barcode?: string;
+  status?: WmsBasketStatus;
+};

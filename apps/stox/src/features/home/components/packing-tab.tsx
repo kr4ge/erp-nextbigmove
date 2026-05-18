@@ -3,7 +3,7 @@ import { Feather } from '@expo/vector-icons';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
-import { SectionLabel, UtilityPill } from './stox-primitives';
+import { SectionLabel, TaskHeader } from './stox-primitives';
 
 export function PackingTab() {
   const handlePlaceholder = (title: string) => {
@@ -12,22 +12,7 @@ export function PackingTab() {
 
   return (
     <>
-      <SurfaceCard tone="panel" style={styles.heroCard}>
-        <View style={styles.heroHeader}>
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroTitle}>Pack</Text>
-            <View style={styles.pillRow}>
-              <UtilityPill icon="tag" label="Station" tone="panel" />
-              <UtilityPill icon="package" label="Tote" tone="panel" />
-              <UtilityPill icon="check-square" label="Check" tone="panel" />
-            </View>
-          </View>
-
-          <View style={styles.heroIcon}>
-            <Feather name="package" size={22} color={tokens.colors.panel} />
-          </View>
-        </View>
-      </SurfaceCard>
+      <TaskHeader title="Pack" />
 
       <SectionLabel title="Ready" />
 
@@ -78,38 +63,6 @@ function MiniTile({
 }
 
 const styles = StyleSheet.create({
-  heroCard: {
-    gap: tokens.spacing.lg,
-  },
-  heroHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  heroCopy: {
-    flex: 1,
-    gap: tokens.spacing.sm,
-    paddingRight: tokens.spacing.md,
-  },
-  heroTitle: {
-    color: tokens.colors.surface,
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: -1,
-  },
-  pillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: tokens.spacing.sm,
-  },
-  heroIcon: {
-    alignItems: 'center',
-    backgroundColor: tokens.colors.accentSoft,
-    borderRadius: 28,
-    height: 56,
-    justifyContent: 'center',
-    width: 56,
-  },
   grid: {
     flexDirection: 'row',
     gap: tokens.spacing.md,

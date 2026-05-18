@@ -223,6 +223,7 @@ export type CreateWmsPurchasingBatchLineInput = {
   sourceSnapshot?: Record<string, unknown>;
   productId?: string;
   variationId?: string;
+  storeId?: string;
   requestedProductName?: string;
   uom?: string;
   requestedQuantity: number;

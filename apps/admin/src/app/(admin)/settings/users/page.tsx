@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MoreHorizontal } from 'lucide-react';
 import { readStoredAdminUser, readStoredPermissions, type StoredAdminUser } from '@/lib/admin-session';
 import {
   hasAnyAdminPermission,
@@ -112,6 +113,8 @@ export default function SettingsUsersPage() {
   }, [canReadUsers, hasHydrated, loadUsers, user]);
 
   const assignedRoles = data?.users.reduce((total, item) => total + item.wmsRoles.length, 0) ?? 0;
+  const pickAssigned = data?.users.filter((item) => item.taskAssignment?.taskType === 'PICK').length ?? 0;
+  const packAssigned = data?.users.filter((item) => item.taskAssignment?.taskType === 'PACK').length ?? 0;
 
   const refreshOptions = useCallback(async () => {
     try {
@@ -212,26 +215,25 @@ export default function SettingsUsersPage() {
         <SettingsNotice title="Loading users" message="Fetching WMS staff accounts and role assignments." />
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-4">
             <SettingsStatCard label="WMS Staff" value={data?.users.length ?? 0} tone="blue" />
             <SettingsStatCard label="Role Assignments" value={assignedRoles} tone="gold" />
-            <SettingsStatCard
-              label="Scope"
-              value="WMS"
-              tone="neutral"
-            />
+            <SettingsStatCard label="Pick Assigned" value={pickAssigned} tone="neutral" />
+            <SettingsStatCard label="Pack Assigned" value={packAssigned} tone="neutral" />
           </div>
 
           {data?.users.length ? (
             <div className="overflow-hidden rounded-[26px] border border-[#dce4ea] bg-white shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)]">
               <div className="overflow-x-auto">
-                <table className="min-w-[760px] w-full border-separate border-spacing-0">
+                <table className="min-w-[880px] w-full border-separate border-spacing-0">
                   <thead>
                     <tr className="bg-[#fbfcfc] text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-[#7b8e9c]">
                       <th className="px-5 py-4">Staff</th>
                       <th className="px-5 py-4">WMS Roles</th>
+                      <th className="px-5 py-4">Task</th>
                       <th className="px-5 py-4">Last Login</th>
                       <th className="px-5 py-4">Status</th>
+                      <th className="w-[72px] px-5 py-4" aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#edf2f6]">
@@ -302,31 +304,109 @@ function UserRow({
           ) : null}
         </div>
       </td>
+      <td className="px-5 py-4 align-top">
+        {user.taskAssignment ? (
+          <SettingsBadge tone={user.taskAssignment.taskType === 'PICK' ? 'warning' : 'success'}>
+            {user.taskAssignment.taskType}
+          </SettingsBadge>
+        ) : (
+          <SettingsBadge>Unassigned</SettingsBadge>
+        )}
+      </td>
       <td className="px-5 py-4 align-top text-[#4f6777]">{formatDateTime(user.lastLoginAt)}</td>
       <td className="px-5 py-4 align-top">
         <SettingsBadge tone={user.status === 'ACTIVE' ? 'success' : 'neutral'}>{user.status}</SettingsBadge>
-        {canWrite ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onEdit(user)}
-              className="rounded-full border border-[#d7e0e7] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#12384b] transition hover:bg-[#f8fafb]"
-            >
-              Edit
-            </button>
-            {user.status !== 'INACTIVE' ? (
-              <button
-                type="button"
-                onClick={() => onDeactivate(user)}
-                className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100"
-              >
-                Deactivate
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+      </td>
+      <td className="px-5 py-4 align-top">
+        {canWrite ? <UserRowActions user={user} onEdit={onEdit} onDeactivate={onDeactivate} /> : null}
       </td>
     </tr>
+  );
+}
+
+function UserRowActions({
+  user,
+  onEdit,
+  onDeactivate,
+}: {
+  user: WmsSettingsUser;
+  onEdit: (user: WmsSettingsUser) => void;
+  onDeactivate: (user: WmsSettingsUser) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative flex justify-end">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Open actions for ${user.displayName}`}
+        onClick={() => setOpen((current) => !current)}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d7e0e7] bg-white text-[#5f7483] transition hover:border-[#c9d5de] hover:bg-[#f7fafc] hover:text-[#12384b]"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-11 z-20 min-w-[168px] rounded-[18px] border border-[#dce4ea] bg-white p-1.5 shadow-[0_24px_60px_-36px_rgba(18,56,75,0.45)]"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onEdit(user);
+            }}
+            className="flex w-full items-center rounded-[14px] px-3 py-2.5 text-left text-[13px] font-medium text-[#12384b] transition hover:bg-[#f5f8fa]"
+          >
+            Edit user
+          </button>
+          {user.status !== 'INACTIVE' ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onDeactivate(user);
+              }}
+              className="flex w-full items-center rounded-[14px] px-3 py-2.5 text-left text-[13px] font-medium text-rose-700 transition hover:bg-rose-50"
+            >
+              Deactivate user
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

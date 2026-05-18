@@ -10,10 +10,11 @@ import type {
   WmsPurchasingOverviewResponse,
 } from '../_types/request';
 
+const STOCK_REQUESTS_API_PATH = '/stock-requests';
+
 export async function fetchWmsPurchasingOverview(params: GetWmsPurchasingOverviewParams = {}) {
-  const response = await apiClient.get('/wms/purchasing/overview', {
+  const response = await apiClient.get(`${STOCK_REQUESTS_API_PATH}/overview`, {
     params: {
-      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
       ...(params.storeId ? { storeId: params.storeId } : {}),
       ...(params.requestType ? { requestType: params.requestType } : {}),
       ...(params.status ? { status: params.status } : {}),
@@ -26,19 +27,16 @@ export async function fetchWmsPurchasingOverview(params: GetWmsPurchasingOvervie
   return response.data as WmsPurchasingOverviewResponse;
 }
 
-export async function fetchWmsPurchasingBatch(id: string, tenantId?: string) {
-  const response = await apiClient.get(`/wms/purchasing/${id}`, {
-    params: tenantId ? { tenantId } : undefined,
-  });
+export async function fetchWmsPurchasingBatch(id: string) {
+  const response = await apiClient.get(`${STOCK_REQUESTS_API_PATH}/${id}`);
   return response.data as { batch: WmsPurchasingBatchDetail };
 }
 
 export async function fetchWmsPurchasingProductOptions(
   params: GetWmsPurchasingProductOptionsParams = {},
 ) {
-  const response = await apiClient.get('/wms/purchasing/products', {
+  const response = await apiClient.get(`${STOCK_REQUESTS_API_PATH}/products`, {
     params: {
-      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
       ...(params.storeId ? { storeId: params.storeId } : {}),
       ...(params.search ? { search: params.search } : {}),
       ...(params.page ? { page: params.page } : {}),
@@ -49,27 +47,18 @@ export async function fetchWmsPurchasingProductOptions(
   return response.data as WmsPurchasingProductOptionsResponse;
 }
 
-export async function createWmsPurchasingBatch(
-  input: CreateWmsPurchasingBatchInput,
-  tenantId?: string,
-) {
-  const response = await apiClient.post('/wms/purchasing/batches', input, {
-    params: tenantId ? { tenantId } : undefined,
-  });
+export async function createWmsPurchasingBatch(input: CreateWmsPurchasingBatchInput) {
+  const response = await apiClient.post(`${STOCK_REQUESTS_API_PATH}/batches`, input);
   return response.data as { batch: WmsPurchasingBatchDetail };
 }
 
 export async function submitWmsPurchasingPaymentProof(
   id: string,
   input: SubmitWmsPurchasingPaymentProofInput,
-  tenantId?: string,
 ) {
   const response = await apiClient.post(
-    `/wms/purchasing/${id}/payment-proof`,
+    `${STOCK_REQUESTS_API_PATH}/${id}/payment-proof`,
     input,
-    {
-      params: tenantId ? { tenantId } : undefined,
-    },
   );
 
   return response.data as { batch: WmsPurchasingBatchDetail };
@@ -78,14 +67,10 @@ export async function submitWmsPurchasingPaymentProof(
 export async function respondWmsPurchasingRevision(
   id: string,
   input: RespondWmsPurchasingRevisionInput,
-  tenantId?: string,
 ) {
   const response = await apiClient.post(
-    `/wms/purchasing/${id}/revision-response`,
+    `${STOCK_REQUESTS_API_PATH}/${id}/revision-response`,
     input,
-    {
-      params: tenantId ? { tenantId } : undefined,
-    },
   );
 
   return response.data as { batch: WmsPurchasingBatchDetail };

@@ -29,6 +29,7 @@ type FormState = {
   lastName: string;
   employeeId: string;
   roleId: string;
+  taskAssignmentType: '' | 'PICK' | 'PACK';
   status: string;
 };
 
@@ -39,6 +40,7 @@ const EMPTY_FORM: FormState = {
   lastName: '',
   employeeId: '',
   roleId: '',
+  taskAssignmentType: '',
   status: 'ACTIVE',
 };
 
@@ -69,6 +71,7 @@ export function WmsUserFormModal({
         lastName: user.lastName ?? '',
         employeeId: user.employeeId ?? '',
         roleId: user.wmsRoles[0]?.role.id ?? '',
+        taskAssignmentType: user.taskAssignment?.taskType ?? '',
         status: user.status,
       });
       return;
@@ -113,6 +116,7 @@ export function WmsUserFormModal({
         employeeId: form.employeeId.trim() || null,
         password: form.password.trim() || undefined,
         roleId: form.roleId,
+        taskAssignmentType: form.taskAssignmentType || null,
         status: form.status,
       });
       return;
@@ -125,6 +129,7 @@ export function WmsUserFormModal({
       lastName: form.lastName.trim(),
       employeeId: form.employeeId.trim() || null,
       roleId: form.roleId,
+      taskAssignmentType: form.taskAssignmentType || null,
       status: form.status,
     });
   };
@@ -221,6 +226,24 @@ export function WmsUserFormModal({
             </select>
           </WmsFormField>
 
+          <WmsFormField
+            label="STOX task"
+            hint="Use this to focus the staff member on PICK or PACK. Role permissions still control what they are allowed to do."
+          >
+            <select
+              value={form.taskAssignmentType}
+              onChange={(event) => setField('taskAssignmentType', event.target.value as FormState['taskAssignmentType'])}
+              className="wms-input w-full rounded-[14px]"
+            >
+              <option value="">Unassigned</option>
+              {(options?.taskAssignmentTypes ?? ['PICK', 'PACK']).map((taskType) => (
+                <option key={taskType} value={taskType}>
+                  {taskType}
+                </option>
+              ))}
+            </select>
+          </WmsFormField>
+
           <WmsFormField label="Status">
             <select
               value={form.status}
@@ -235,15 +258,13 @@ export function WmsUserFormModal({
             </select>
           </WmsFormField>
 
-          <div className="sm:col-span-2">
-            <WmsFormField label="Employee ID">
-              <input
-                value={form.employeeId}
-                onChange={(event) => setField('employeeId', event.target.value)}
-                className="wms-input w-full rounded-[14px]"
-              />
-            </WmsFormField>
-          </div>
+          <WmsFormField label="Employee ID">
+            <input
+              value={form.employeeId}
+              onChange={(event) => setField('employeeId', event.target.value)}
+              className="wms-input w-full rounded-[14px]"
+            />
+          </WmsFormField>
         </div>
       </form>
     </WmsModal>

@@ -61,6 +61,10 @@ model Tenant {
   wmsReceivingBatches                 WmsReceivingBatch[]
   wmsReceivingLines                   WmsReceivingLine[]
   wmsInventoryUnits                   WmsInventoryUnit[]
+  wmsFulfillmentOrders                WmsFulfillmentOrder[]
+  wmsFulfillmentLines                 WmsFulfillmentLine[]
+  wmsBaskets                          WmsBasket[]
+  wmsPickReservations                 WmsPickReservation[]
   wmsTransfers                        WmsTransfer[]
   wmsInventoryMovements               WmsInventoryMovement[]
   wmsLabelPrintLogs                   WmsLabelPrintLog[]
@@ -118,6 +122,7 @@ model Team {
   workflowExecutionLogs     WorkflowExecutionLog[]     @relation("TeamWorkflowExecutionLog")
   wmsPurchasingBatches      WmsPurchasingBatch[]
   wmsReceivingBatches       WmsReceivingBatch[]
+  wmsFulfillmentOrders      WmsFulfillmentOrder[]
   wmsTransfers              WmsTransfer[]
   wmsInventoryMovements     WmsInventoryMovement[]
 
@@ -227,17 +232,17 @@ model RolePermission {
 }
 
 model UserRoleAssignment {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  roleId    String   @db.Uuid
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  id        String        @id @default(uuid()) @db.Uuid
+  userId    String        @db.Uuid
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId    String        @db.Uuid
+  role      Role          @relation(fields: [roleId], references: [id], onDelete: Cascade)
   workspace RbacWorkspace
-  tenantId  String?  @db.Uuid
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId    String?  @db.Uuid
-  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  tenantId  String?       @db.Uuid
+  tenant    Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId    String?       @db.Uuid
+  team      Team?         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
 
   @@unique([userId, roleId, tenantId, teamId])
   @@index([tenantId])
@@ -280,6 +285,7 @@ model User {
   lastName   String?
   avatar     String?
   employeeId String?
+  wmsBasketCapacity Int @default(4)
 
   // Tenant (Row-level isolation) - Optional for SUPER_ADMIN
   tenantId String? @db.Uuid
@@ -301,30 +307,37 @@ model User {
   updatedAt   DateTime  @updatedAt
 
   // Relations
-  auditLogs                 AuditLog[]
-  teamMemberships           TeamMembership[]
-  userRoleAssignments       UserRoleAssignment[]
-  userPermissionAssignments UserPermissionAssignment[]
-  wmsPurchasingBatchesCreated   WmsPurchasingBatch[]     @relation("WmsPurchasingBatchCreatedBy")
-  wmsPurchasingBatchesSubmitted WmsPurchasingBatch[]     @relation("WmsPurchasingBatchSubmittedBy")
-  wmsPurchasingBatchesReviewed  WmsPurchasingBatch[]     @relation("WmsPurchasingBatchReviewedBy")
-  wmsPurchasingBatchesApproved  WmsPurchasingBatch[]     @relation("WmsPurchasingBatchApprovedBy")
-  wmsPurchasingBatchesPaymentProofSubmitted WmsPurchasingBatch[] @relation("WmsPurchasingBatchPaymentProofSubmittedBy")
-  wmsPurchasingBatchesUpdated   WmsPurchasingBatch[]     @relation("WmsPurchasingBatchUpdatedBy")
-  wmsPurchasingBatchLinesCreated WmsPurchasingBatchLine[] @relation("WmsPurchasingBatchLineCreatedBy")
-  wmsPurchasingBatchLinesUpdated WmsPurchasingBatchLine[] @relation("WmsPurchasingBatchLineUpdatedBy")
-  wmsPurchasingEvents            WmsPurchasingEvent[]     @relation("WmsPurchasingEventActor")
-  wmsReceivingBatchesCreated     WmsReceivingBatch[]      @relation("WmsReceivingBatchCreatedBy")
-  wmsReceivingBatchesUpdated     WmsReceivingBatch[]      @relation("WmsReceivingBatchUpdatedBy")
-  wmsReceivingLinesCreated       WmsReceivingLine[]       @relation("WmsReceivingLineCreatedBy")
-  wmsReceivingLinesUpdated       WmsReceivingLine[]       @relation("WmsReceivingLineUpdatedBy")
-  wmsInventoryUnitsCreated  WmsInventoryUnit[] @relation("WmsInventoryUnitCreatedBy")
-  wmsInventoryUnitsUpdated  WmsInventoryUnit[] @relation("WmsInventoryUnitUpdatedBy")
-  wmsTransfersCreated           WmsTransfer[]            @relation("WmsTransferCreatedBy")
-  wmsTransfersUpdated           WmsTransfer[]            @relation("WmsTransferUpdatedBy")
-  wmsInventoryMovements         WmsInventoryMovement[]   @relation("WmsInventoryMovementActor")
-  wmsLabelPrintLogs         WmsLabelPrintLog[] @relation("WmsLabelPrintLogActor")
-  wmsStaffActivities        WmsStaffActivity[] @relation("WmsStaffActivityActor")
+  auditLogs                                 AuditLog[]
+  teamMemberships                           TeamMembership[]
+  userRoleAssignments                       UserRoleAssignment[]
+  userPermissionAssignments                 UserPermissionAssignment[]
+  wmsStaffAssignment                        WmsStaffAssignment?       @relation("WmsStaffAssignmentUser")
+  wmsPurchasingBatchesCreated               WmsPurchasingBatch[]       @relation("WmsPurchasingBatchCreatedBy")
+  wmsPurchasingBatchesSubmitted             WmsPurchasingBatch[]       @relation("WmsPurchasingBatchSubmittedBy")
+  wmsPurchasingBatchesReviewed              WmsPurchasingBatch[]       @relation("WmsPurchasingBatchReviewedBy")
+  wmsPurchasingBatchesApproved              WmsPurchasingBatch[]       @relation("WmsPurchasingBatchApprovedBy")
+  wmsPurchasingBatchesPaymentProofSubmitted WmsPurchasingBatch[]       @relation("WmsPurchasingBatchPaymentProofSubmittedBy")
+  wmsPurchasingBatchesUpdated               WmsPurchasingBatch[]       @relation("WmsPurchasingBatchUpdatedBy")
+  wmsPurchasingBatchLinesCreated            WmsPurchasingBatchLine[]   @relation("WmsPurchasingBatchLineCreatedBy")
+  wmsPurchasingBatchLinesUpdated            WmsPurchasingBatchLine[]   @relation("WmsPurchasingBatchLineUpdatedBy")
+  wmsPurchasingEvents                       WmsPurchasingEvent[]       @relation("WmsPurchasingEventActor")
+  wmsReceivingBatchesCreated                WmsReceivingBatch[]        @relation("WmsReceivingBatchCreatedBy")
+  wmsReceivingBatchesUpdated                WmsReceivingBatch[]        @relation("WmsReceivingBatchUpdatedBy")
+  wmsReceivingLinesCreated                  WmsReceivingLine[]         @relation("WmsReceivingLineCreatedBy")
+  wmsReceivingLinesUpdated                  WmsReceivingLine[]         @relation("WmsReceivingLineUpdatedBy")
+  wmsInventoryUnitsCreated                  WmsInventoryUnit[]         @relation("WmsInventoryUnitCreatedBy")
+  wmsInventoryUnitsUpdated                  WmsInventoryUnit[]         @relation("WmsInventoryUnitUpdatedBy")
+  wmsTransfersCreated                       WmsTransfer[]              @relation("WmsTransferCreatedBy")
+  wmsTransfersUpdated                       WmsTransfer[]              @relation("WmsTransferUpdatedBy")
+  wmsInventoryMovements                     WmsInventoryMovement[]     @relation("WmsInventoryMovementActor")
+  wmsLabelPrintLogs                         WmsLabelPrintLog[]         @relation("WmsLabelPrintLogActor")
+  wmsStaffActivities                        WmsStaffActivity[]         @relation("WmsStaffActivityActor")
+  wmsFulfillmentOrdersClaimed               WmsFulfillmentOrder[]      @relation("WmsFulfillmentOrderClaimedBy")
+  wmsBasketsAssigned                        WmsBasket[]                @relation("WmsBasketAssignedPicker")
+  wmsBasketsAssignedForPacking              WmsBasket[]                @relation("WmsBasketAssignedPacker")
+  wmsPickReservationsReserved               WmsPickReservation[]       @relation("WmsPickReservationReservedBy")
+  wmsPickReservationsPicked                 WmsPickReservation[]       @relation("WmsPickReservationPickedBy")
+  wmsStaffAssignmentsManaged                WmsStaffAssignment[]       @relation("WmsStaffAssignmentAssignedBy")
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -429,35 +442,36 @@ model AnalyticsShare {
 }
 
 model PosStore {
-  id                 String              @id @default(uuid()) @db.Uuid
-  tenantId           String              @db.Uuid
-  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId             String?             @db.Uuid
-  team               Team?               @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  integrationId      String?             @db.Uuid
-  integration        Integration?        @relation(fields: [integrationId], references: [id], onDelete: SetNull)
-  name               String
-  shopId             String
-  shopName           String
-  shopAvatarUrl      String?
-  apiKey             String
-  description        String?
-  status             IntegrationStatus   @default(ACTIVE)
-  enabled            Boolean?
-  lastSyncAt         DateTime?
-  initialValueOffer  Decimal?            @db.Decimal(12, 2)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  products           PosProduct[]
-  productCogs        PosProductCogs[]
-  tags               PosTag[]
-  warehouses         PosWarehouse[]
-  wmsPurchasingBatches WmsPurchasingBatch[]
+  id                      String                   @id @default(uuid()) @db.Uuid
+  tenantId                String                   @db.Uuid
+  tenant                  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId                  String?                  @db.Uuid
+  team                    Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  integrationId           String?                  @db.Uuid
+  integration             Integration?             @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  name                    String
+  shopId                  String
+  shopName                String
+  shopAvatarUrl           String?
+  apiKey                  String
+  description             String?
+  status                  IntegrationStatus        @default(ACTIVE)
+  enabled                 Boolean?
+  lastSyncAt              DateTime?
+  initialValueOffer       Decimal?                 @db.Decimal(12, 2)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  products                PosProduct[]
+  productCogs             PosProductCogs[]
+  tags                    PosTag[]
+  warehouses              PosWarehouse[]
+  wmsPurchasingBatches    WmsPurchasingBatch[]
   wmsPurchasingBatchLines WmsPurchasingBatchLine[]
-  wmsReceivingBatches WmsReceivingBatch[]
-  wmsReceivingLines   WmsReceivingLine[]
-  wmsProductProfiles WmsProductProfile[]
-  wmsInventoryUnits  WmsInventoryUnit[]
+  wmsReceivingBatches     WmsReceivingBatch[]
+  wmsReceivingLines       WmsReceivingLine[]
+  wmsProductProfiles      WmsProductProfile[]
+  wmsInventoryUnits       WmsInventoryUnit[]
+  wmsFulfillmentOrders    WmsFulfillmentOrder[]
 
   @@index([tenantId])
   @@index([tenantId, teamId])
@@ -466,24 +480,24 @@ model PosStore {
 }
 
 model PosProduct {
-  id                String             @id @default(uuid()) @db.Uuid
-  storeId           String             @db.Uuid
-  store             PosStore           @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  productId         String
-  variationId       String?
-  warehouseId       String?
-  productSnapshot   Json?
-  customId          String?
-  name              String
-  retailPrice       Decimal?           @db.Decimal(12, 2)
-  mapping           String?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  cogsHistory       PosProductCogs[]
-  wmsProductProfile WmsProductProfile?
+  id                              String                   @id @default(uuid()) @db.Uuid
+  storeId                         String                   @db.Uuid
+  store                           PosStore                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId                       String
+  variationId                     String?
+  warehouseId                     String?
+  productSnapshot                 Json?
+  customId                        String?
+  name                            String
+  retailPrice                     Decimal?                 @db.Decimal(12, 2)
+  mapping                         String?
+  createdAt                       DateTime                 @default(now())
+  updatedAt                       DateTime                 @updatedAt
+  cogsHistory                     PosProductCogs[]
+  wmsProductProfile               WmsProductProfile?
   wmsPurchasingBatchLinesResolved WmsPurchasingBatchLine[] @relation("WmsPurchasingLineResolvedPosProduct")
-  wmsReceivingLinesResolved WmsReceivingLine[] @relation("WmsReceivingLineResolvedPosProduct")
-  wmsInventoryUnits WmsInventoryUnit[]
+  wmsReceivingLinesResolved       WmsReceivingLine[]       @relation("WmsReceivingLineResolvedPosProduct")
+  wmsInventoryUnits               WmsInventoryUnit[]
 
   @@unique([storeId, variationId])
   @@index([storeId])
@@ -613,12 +627,52 @@ enum WmsInventoryUnitStatus {
   ARCHIVED
 }
 
+enum WmsBasketStatus {
+  AVAILABLE
+  EMPTY
+  ASSIGNED
+  IN_PICKING
+  FULL_HELD
+  PACKING
+  DAMAGED
+  RETIRED
+}
+
 enum WmsInventoryMovementType {
   RECEIPT
   MANUAL_RECEIPT
   PUTAWAY
   TRANSFER
   ADJUSTMENT
+  RESERVATION
+  PICK
+}
+
+enum WmsFulfillmentOrderStatus {
+  READY
+  PARTIAL
+  RESTOCKING
+  ISSUE
+  IN_PICKING
+  READY_FOR_PACK
+  PICKED
+  CANCELED
+}
+
+enum WmsFulfillmentLineStatus {
+  READY
+  PARTIAL
+  RESTOCKING
+  ISSUE
+  PICKED
+  CANCELED
+}
+
+enum WmsPickReservationStatus {
+  RESERVED
+  PICKED
+  RELEASED
+  CANCELED
 }
 
 enum WmsTransferStatus {
@@ -655,6 +709,11 @@ enum WmsStaffActivityOutcome {
   SUCCESS
   REJECTED
   EXCEPTION
+}
+
+enum WmsStaffAssignmentTaskType {
+  PICK
+  PACK
 }
 
 enum AnalyticsShareScope {
@@ -786,31 +845,31 @@ model AuditLog {
 }
 
 model WmsStaffActivity {
-  id          String                   @id @default(uuid()) @db.Uuid
-  tenantId    String?                  @db.Uuid
-  tenant      Tenant?                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  actorId     String?                  @db.Uuid
-  actor       User?                    @relation("WmsStaffActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
-  teamId      String?                  @db.Uuid
-  platform    WmsStaffActivityPlatform @default(WEB)
-  sessionId   String?
-  deviceId    String?
-  deviceName  String?
-  actionType  String
+  id           String                   @id @default(uuid()) @db.Uuid
+  tenantId     String?                  @db.Uuid
+  tenant       Tenant?                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorId      String?                  @db.Uuid
+  actor        User?                    @relation("WmsStaffActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+  teamId       String?                  @db.Uuid
+  platform     WmsStaffActivityPlatform @default(WEB)
+  sessionId    String?
+  deviceId     String?
+  deviceName   String?
+  actionType   String
   resourceType String?
-  resourceId  String?
-  taskType    String?
-  taskId      String?
-  storeId     String?                  @db.Uuid
-  warehouseId String?                  @db.Uuid
-  fromStatus  String?
-  toStatus    String?
-  outcome     WmsStaffActivityOutcome  @default(SUCCESS)
-  reasonCode  String?
-  metadata    Json?
-  ipAddress   String?
-  userAgent   String?
-  createdAt   DateTime                 @default(now())
+  resourceId   String?
+  taskType     String?
+  taskId       String?
+  storeId      String?                  @db.Uuid
+  warehouseId  String?                  @db.Uuid
+  fromStatus   String?
+  toStatus     String?
+  outcome      WmsStaffActivityOutcome  @default(SUCCESS)
+  reasonCode   String?
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime                 @default(now())
 
   @@index([tenantId, createdAt])
   @@index([actorId, createdAt])
@@ -1060,20 +1119,21 @@ model PosOrder {
   mapping String?
 
   // Assignment info
-  customerCare    String?
-  marketer        String?
-  salesAssignee   String?
-  assigningCare   String?
-  customerName    String?
-  customerPhone   String?
-  customerAddress String?
-  statusHistory   Json?
-  rtsReason       Json?
-  upsellBreakdown Json?
-  orderSnapshot   Json?
+  customerCare         String?
+  marketer             String?
+  salesAssignee        String?
+  assigningCare        String?
+  customerName         String?
+  customerPhone        String?
+  customerAddress      String?
+  statusHistory        Json?
+  rtsReason            Json?
+  upsellBreakdown      Json?
+  orderSnapshot        Json?
   // Order items snapshot (subset of fields)
-  itemData        Json    @default("[]")
-  tags            Json    @default("[]")
+  itemData             Json                  @default("[]")
+  tags                 Json                  @default("[]")
+  wmsFulfillmentOrders WmsFulfillmentOrder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1160,39 +1220,56 @@ model WmsWarehouse {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
-  locations        WmsLocation[]
-  inventoryUnits   WmsInventoryUnit[]
-  receivingBatches WmsReceivingBatch[]
-  transfers        WmsTransfer[]
+  locations          WmsLocation[]
+  inventoryUnits     WmsInventoryUnit[]
+  receivingBatches   WmsReceivingBatch[]
+  fulfillmentOrders  WmsFulfillmentOrder[]
+  baskets            WmsBasket[]
+  transfers          WmsTransfer[]
   inventoryMovements WmsInventoryMovement[]
 
   @@index([status])
   @@map("wms_warehouses")
 }
 
+model WmsStaffAssignment {
+  id           String                      @id @default(uuid()) @db.Uuid
+  userId       String                      @unique @db.Uuid
+  user         User                        @relation("WmsStaffAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  taskType     WmsStaffAssignmentTaskType
+  assignedById String?                     @db.Uuid
+  assignedBy   User?                       @relation("WmsStaffAssignmentAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+
+  @@index([taskType])
+  @@index([assignedById])
+  @@map("wms_staff_assignments")
+}
+
 model WmsLocation {
-  id          String          @id @default(uuid()) @db.Uuid
-  warehouseId String          @db.Uuid
-  warehouse   WmsWarehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  parentId    String?         @db.Uuid
-  parent      WmsLocation?    @relation("WmsLocationTree", fields: [parentId], references: [id], onDelete: Cascade)
-  children    WmsLocation[]   @relation("WmsLocationTree")
-  kind        WmsLocationKind
-  code        String
-  name        String
-  barcode     String
-  description String?
-  isActive    Boolean         @default(true)
-  sortOrder   Int             @default(0)
-  capacity    Int?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  inventoryUnits WmsInventoryUnit[]
-  receivingBatchesStaged WmsReceivingBatch[] @relation("WmsReceivingBatchStagingLocation")
-  transferSources WmsTransfer[] @relation("WmsTransferFromLocation")
-  transferDestinations WmsTransfer[] @relation("WmsTransferToLocation")
-  movementSources WmsInventoryMovement[] @relation("WmsInventoryMovementFromLocation")
-  movementDestinations WmsInventoryMovement[] @relation("WmsInventoryMovementToLocation")
+  id                     String                 @id @default(uuid()) @db.Uuid
+  warehouseId            String                 @db.Uuid
+  warehouse              WmsWarehouse           @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  parentId               String?                @db.Uuid
+  parent                 WmsLocation?           @relation("WmsLocationTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children               WmsLocation[]          @relation("WmsLocationTree")
+  kind                   WmsLocationKind
+  code                   String
+  name                   String
+  barcode                String
+  description            String?
+  isActive               Boolean                @default(true)
+  sortOrder              Int                    @default(0)
+  capacity               Int?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  inventoryUnits         WmsInventoryUnit[]
+  receivingBatchesStaged WmsReceivingBatch[]    @relation("WmsReceivingBatchStagingLocation")
+  transferSources        WmsTransfer[]          @relation("WmsTransferFromLocation")
+  transferDestinations   WmsTransfer[]          @relation("WmsTransferToLocation")
+  movementSources        WmsInventoryMovement[] @relation("WmsInventoryMovementFromLocation")
+  movementDestinations   WmsInventoryMovement[] @relation("WmsInventoryMovementToLocation")
 
   @@unique([barcode])
   @@unique([warehouseId, code])
@@ -1202,30 +1279,30 @@ model WmsLocation {
 }
 
 model WmsProductProfile {
-  id                  String                  @id @default(uuid()) @db.Uuid
-  tenantId            String                  @db.Uuid
-  tenant              Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeId             String                  @db.Uuid
-  store               PosStore                @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  posProductId        String                  @unique @db.Uuid
-  posProduct          PosProduct              @relation(fields: [posProductId], references: [id], onDelete: Cascade)
+  id                  String                   @id @default(uuid()) @db.Uuid
+  tenantId            String                   @db.Uuid
+  tenant              Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId             String                   @db.Uuid
+  store               PosStore                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  posProductId        String                   @unique @db.Uuid
+  posProduct          PosProduct               @relation(fields: [posProductId], references: [id], onDelete: Cascade)
   productId           String
   variationId         String
   posWarehouseRef     String?
-  status              WmsProductProfileStatus @default(DEFAULT)
-  isSerialized        Boolean                 @default(true)
-  preferredLocationId String?                 @db.Uuid
-  pickLocationId      String?                 @db.Uuid
-  isFragile           Boolean                 @default(false)
-  isStackable         Boolean                 @default(true)
-  keepDry             Boolean                 @default(false)
-  inhouseUnitCost     Decimal?                @db.Decimal(14, 2)
-  supplierUnitCost    Decimal?                @db.Decimal(14, 2)
+  status              WmsProductProfileStatus  @default(DEFAULT)
+  isSerialized        Boolean                  @default(true)
+  preferredLocationId String?                  @db.Uuid
+  pickLocationId      String?                  @db.Uuid
+  isFragile           Boolean                  @default(false)
+  isStackable         Boolean                  @default(true)
+  keepDry             Boolean                  @default(false)
+  inhouseUnitCost     Decimal?                 @db.Decimal(14, 2)
+  supplierUnitCost    Decimal?                 @db.Decimal(14, 2)
   notes               String?
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
   purchasingLines     WmsPurchasingBatchLine[] @relation("WmsPurchasingLineResolvedProfile")
-  receivingLines      WmsReceivingLine[]      @relation("WmsReceivingLineResolvedProfile")
+  receivingLines      WmsReceivingLine[]       @relation("WmsReceivingLineResolvedProfile")
   inventoryUnits      WmsInventoryUnit[]
 
   @@unique([storeId, variationId])
@@ -1236,47 +1313,47 @@ model WmsProductProfile {
 }
 
 model WmsPurchasingBatch {
-  id                  String                  @id @default(uuid()) @db.Uuid
-  tenantId            String                  @db.Uuid
-  tenant              Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId              String?                 @db.Uuid
-  team                Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  storeId             String                  @db.Uuid
-  store               PosStore                @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  requestType         WmsPurchasingRequestType
-  status              WmsPurchasingBatchStatus @default(UNDER_REVIEW)
-  sourceType          WmsPurchasingSourceType  @default(ERP_REQUEST)
-  sourceRequestId     String?
-  sourceRequestType   Int?
-  sourceStatus        String?
-  sourceSnapshot      Json?
-  requestTitle        String?
-  partnerNotes        String?
-  wmsNotes            String?
-  invoiceNumber       String?
-  invoiceAmount       Decimal?                @db.Decimal(14, 2)
-  paymentProofImageUrl String?
-  paymentSubmittedAt  DateTime?
-  paymentProofSubmittedAt DateTime?
-  paymentProofSubmittedById String?           @db.Uuid
-  paymentProofSubmittedBy User?               @relation("WmsPurchasingBatchPaymentProofSubmittedBy", fields: [paymentProofSubmittedById], references: [id], onDelete: SetNull)
-  paymentVerifiedAt   DateTime?
-  readyForReceivingAt DateTime?
-  submittedById       String?                 @db.Uuid
-  submittedBy         User?                   @relation("WmsPurchasingBatchSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  reviewedById        String?                 @db.Uuid
-  reviewedBy          User?                   @relation("WmsPurchasingBatchReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
-  approvedById        String?                 @db.Uuid
-  approvedBy          User?                   @relation("WmsPurchasingBatchApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  createdById         String?                 @db.Uuid
-  createdBy           User?                   @relation("WmsPurchasingBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById         String?                 @db.Uuid
-  updatedBy           User?                   @relation("WmsPurchasingBatchUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
-  lines               WmsPurchasingBatchLine[]
-  events              WmsPurchasingEvent[]
-  receivingBatches    WmsReceivingBatch[]
+  id                        String                   @id @default(uuid()) @db.Uuid
+  tenantId                  String                   @db.Uuid
+  tenant                    Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId                    String?                  @db.Uuid
+  team                      Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  storeId                   String                   @db.Uuid
+  store                     PosStore                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  requestType               WmsPurchasingRequestType
+  status                    WmsPurchasingBatchStatus @default(UNDER_REVIEW)
+  sourceType                WmsPurchasingSourceType  @default(ERP_REQUEST)
+  sourceRequestId           String?
+  sourceRequestType         Int?
+  sourceStatus              String?
+  sourceSnapshot            Json?
+  requestTitle              String?
+  partnerNotes              String?
+  wmsNotes                  String?
+  invoiceNumber             String?
+  invoiceAmount             Decimal?                 @db.Decimal(14, 2)
+  paymentProofImageUrl      String?
+  paymentSubmittedAt        DateTime?
+  paymentProofSubmittedAt   DateTime?
+  paymentProofSubmittedById String?                  @db.Uuid
+  paymentProofSubmittedBy   User?                    @relation("WmsPurchasingBatchPaymentProofSubmittedBy", fields: [paymentProofSubmittedById], references: [id], onDelete: SetNull)
+  paymentVerifiedAt         DateTime?
+  readyForReceivingAt       DateTime?
+  submittedById             String?                  @db.Uuid
+  submittedBy               User?                    @relation("WmsPurchasingBatchSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedById              String?                  @db.Uuid
+  reviewedBy                User?                    @relation("WmsPurchasingBatchReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  approvedById              String?                  @db.Uuid
+  approvedBy                User?                    @relation("WmsPurchasingBatchApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  createdById               String?                  @db.Uuid
+  createdBy                 User?                    @relation("WmsPurchasingBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById               String?                  @db.Uuid
+  updatedBy                 User?                    @relation("WmsPurchasingBatchUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+  lines                     WmsPurchasingBatchLine[]
+  events                    WmsPurchasingEvent[]
+  receivingBatches          WmsReceivingBatch[]
 
   @@unique([tenantId, sourceType, sourceRequestId])
   @@index([tenantId, storeId, status])
@@ -1287,38 +1364,38 @@ model WmsPurchasingBatch {
 }
 
 model WmsPurchasingBatchLine {
-  id                    String                @id @default(uuid()) @db.Uuid
-  batchId               String                @db.Uuid
-  batch                 WmsPurchasingBatch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  tenantId              String                @db.Uuid
-  tenant                Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeId               String                @db.Uuid
-  store                 PosStore              @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  lineNo                Int
-  sourceItemId          String?
-  sourceSnapshot        Json?
-  productId             String?
-  variationId           String?
-  requestedProductName  String?
-  uom                   String?
-  requestedQuantity     Int
-  approvedQuantity      Int?
-  receivedQuantity      Int                   @default(0)
-  partnerUnitCost       Decimal?              @db.Decimal(14, 2)
-  supplierUnitCost      Decimal?              @db.Decimal(14, 2)
-  needsProfiling        Boolean               @default(false)
-  resolvedPosProductId  String?               @db.Uuid
-  resolvedPosProduct    PosProduct?           @relation("WmsPurchasingLineResolvedPosProduct", fields: [resolvedPosProductId], references: [id], onDelete: SetNull)
-  resolvedProfileId     String?               @db.Uuid
-  resolvedProfile       WmsProductProfile?    @relation("WmsPurchasingLineResolvedProfile", fields: [resolvedProfileId], references: [id], onDelete: SetNull)
-  notes                 String?
-  createdById           String?               @db.Uuid
-  createdBy             User?                 @relation("WmsPurchasingBatchLineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById           String?               @db.Uuid
-  updatedBy             User?                 @relation("WmsPurchasingBatchLineUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  receivingLines        WmsReceivingLine[]
+  id                   String             @id @default(uuid()) @db.Uuid
+  batchId              String             @db.Uuid
+  batch                WmsPurchasingBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  tenantId             String             @db.Uuid
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId              String             @db.Uuid
+  store                PosStore           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  lineNo               Int
+  sourceItemId         String?
+  sourceSnapshot       Json?
+  productId            String?
+  variationId          String?
+  requestedProductName String?
+  uom                  String?
+  requestedQuantity    Int
+  approvedQuantity     Int?
+  receivedQuantity     Int                @default(0)
+  partnerUnitCost      Decimal?           @db.Decimal(14, 2)
+  supplierUnitCost     Decimal?           @db.Decimal(14, 2)
+  needsProfiling       Boolean            @default(false)
+  resolvedPosProductId String?            @db.Uuid
+  resolvedPosProduct   PosProduct?        @relation("WmsPurchasingLineResolvedPosProduct", fields: [resolvedPosProductId], references: [id], onDelete: SetNull)
+  resolvedProfileId    String?            @db.Uuid
+  resolvedProfile      WmsProductProfile? @relation("WmsPurchasingLineResolvedProfile", fields: [resolvedProfileId], references: [id], onDelete: SetNull)
+  notes                String?
+  createdById          String?            @db.Uuid
+  createdBy            User?              @relation("WmsPurchasingBatchLineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById          String?            @db.Uuid
+  updatedBy            User?              @relation("WmsPurchasingBatchLineUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  receivingLines       WmsReceivingLine[]
 
   @@unique([batchId, lineNo])
   @@index([tenantId, storeId])
@@ -1329,55 +1406,55 @@ model WmsPurchasingBatchLine {
 }
 
 model WmsPurchasingEvent {
-  id         String                  @id @default(uuid()) @db.Uuid
-  batchId    String                  @db.Uuid
-  batch      WmsPurchasingBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  tenantId   String                  @db.Uuid
-  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id         String                    @id @default(uuid()) @db.Uuid
+  batchId    String                    @db.Uuid
+  batch      WmsPurchasingBatch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  tenantId   String                    @db.Uuid
+  tenant     Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   eventType  String
   fromStatus WmsPurchasingBatchStatus?
   toStatus   WmsPurchasingBatchStatus?
   message    String?
   payload    Json?
-  actorId    String?                 @db.Uuid
-  actor      User?                   @relation("WmsPurchasingEventActor", fields: [actorId], references: [id], onDelete: SetNull)
-  createdAt  DateTime                @default(now())
+  actorId    String?                   @db.Uuid
+  actor      User?                     @relation("WmsPurchasingEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime                  @default(now())
 
   @@index([tenantId, batchId, createdAt])
   @@map("wms_purchasing_events")
 }
 
 model WmsReceivingBatch {
-  id                String                  @id @default(uuid()) @db.Uuid
-  code              String                  @unique
-  tenantId          String                  @db.Uuid
-  tenant            Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId            String?                 @db.Uuid
-  team              Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  storeId           String                  @db.Uuid
-  store             PosStore                @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  purchasingBatchId String?                 @db.Uuid
-  purchasingBatch   WmsPurchasingBatch?     @relation(fields: [purchasingBatchId], references: [id], onDelete: SetNull)
-  warehouseId       String                  @db.Uuid
-  warehouse         WmsWarehouse            @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  stagingLocationId String?                 @db.Uuid
-  stagingLocation   WmsLocation?            @relation("WmsReceivingBatchStagingLocation", fields: [stagingLocationId], references: [id], onDelete: SetNull)
-  status            WmsReceivingBatchStatus @default(STAGED)
-  notes             String?
-  labelPrintCount   Int                     @default(0)
+  id                  String                  @id @default(uuid()) @db.Uuid
+  code                String                  @unique
+  tenantId            String                  @db.Uuid
+  tenant              Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId              String?                 @db.Uuid
+  team                Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  storeId             String                  @db.Uuid
+  store               PosStore                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  purchasingBatchId   String?                 @db.Uuid
+  purchasingBatch     WmsPurchasingBatch?     @relation(fields: [purchasingBatchId], references: [id], onDelete: SetNull)
+  warehouseId         String                  @db.Uuid
+  warehouse           WmsWarehouse            @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  stagingLocationId   String?                 @db.Uuid
+  stagingLocation     WmsLocation?            @relation("WmsReceivingBatchStagingLocation", fields: [stagingLocationId], references: [id], onDelete: SetNull)
+  status              WmsReceivingBatchStatus @default(STAGED)
+  notes               String?
+  labelPrintCount     Int                     @default(0)
   firstLabelPrintedAt DateTime?
   lastLabelPrintedAt  DateTime?
-  receivedAt        DateTime?
-  completedAt       DateTime?
-  createdById       String?                 @db.Uuid
-  createdBy         User?                   @relation("WmsReceivingBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById       String?                 @db.Uuid
-  updatedBy         User?                   @relation("WmsReceivingBatchUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-  lines             WmsReceivingLine[]
-  inventoryUnits    WmsInventoryUnit[]
-  labelPrintLogs    WmsLabelPrintLog[]      @relation("WmsLabelPrintLogBatch")
+  receivedAt          DateTime?
+  completedAt         DateTime?
+  createdById         String?                 @db.Uuid
+  createdBy           User?                   @relation("WmsReceivingBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById         String?                 @db.Uuid
+  updatedBy           User?                   @relation("WmsReceivingBatchUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  lines               WmsReceivingLine[]
+  inventoryUnits      WmsInventoryUnit[]
+  labelPrintLogs      WmsLabelPrintLog[]      @relation("WmsLabelPrintLogBatch")
 
   @@index([tenantId, storeId, status])
   @@index([tenantId, purchasingBatchId])
@@ -1386,33 +1463,33 @@ model WmsReceivingBatch {
 }
 
 model WmsReceivingLine {
-  id                   String             @id @default(uuid()) @db.Uuid
-  batchId              String             @db.Uuid
-  batch                WmsReceivingBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  tenantId             String             @db.Uuid
-  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeId              String             @db.Uuid
-  store                PosStore           @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  lineNo               Int
-  purchasingBatchLineId String?           @db.Uuid
-  purchasingBatchLine  WmsPurchasingBatchLine? @relation(fields: [purchasingBatchLineId], references: [id], onDelete: SetNull)
-  resolvedPosProductId String?            @db.Uuid
-  resolvedPosProduct   PosProduct?        @relation("WmsReceivingLineResolvedPosProduct", fields: [resolvedPosProductId], references: [id], onDelete: SetNull)
-  resolvedProfileId    String?            @db.Uuid
-  resolvedProfile      WmsProductProfile? @relation("WmsReceivingLineResolvedProfile", fields: [resolvedProfileId], references: [id], onDelete: SetNull)
-  productId            String?
-  variationId          String?
-  requestedProductName String?
-  expectedQuantity     Int
-  receivedQuantity     Int
-  unitCost             Decimal?           @db.Decimal(14, 2)
-  notes                String?
-  createdById          String?            @db.Uuid
-  createdBy            User?              @relation("WmsReceivingLineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById          String?            @db.Uuid
-  updatedBy            User?              @relation("WmsReceivingLineUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  id                    String                  @id @default(uuid()) @db.Uuid
+  batchId               String                  @db.Uuid
+  batch                 WmsReceivingBatch       @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  tenantId              String                  @db.Uuid
+  tenant                Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId               String                  @db.Uuid
+  store                 PosStore                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  lineNo                Int
+  purchasingBatchLineId String?                 @db.Uuid
+  purchasingBatchLine   WmsPurchasingBatchLine? @relation(fields: [purchasingBatchLineId], references: [id], onDelete: SetNull)
+  resolvedPosProductId  String?                 @db.Uuid
+  resolvedPosProduct    PosProduct?             @relation("WmsReceivingLineResolvedPosProduct", fields: [resolvedPosProductId], references: [id], onDelete: SetNull)
+  resolvedProfileId     String?                 @db.Uuid
+  resolvedProfile       WmsProductProfile?      @relation("WmsReceivingLineResolvedProfile", fields: [resolvedProfileId], references: [id], onDelete: SetNull)
+  productId             String?
+  variationId           String?
+  requestedProductName  String?
+  expectedQuantity      Int
+  receivedQuantity      Int
+  unitCost              Decimal?                @db.Decimal(14, 2)
+  notes                 String?
+  createdById           String?                 @db.Uuid
+  createdBy             User?                   @relation("WmsReceivingLineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById           String?                 @db.Uuid
+  updatedBy             User?                   @relation("WmsReceivingLineUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
 
   @@unique([batchId, lineNo])
   @@index([tenantId, storeId])
@@ -1423,45 +1500,46 @@ model WmsReceivingLine {
 }
 
 model WmsInventoryUnit {
-  id                String                     @id @default(uuid()) @db.Uuid
-  tenantId          String                     @db.Uuid
-  tenant            Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId            String?                    @db.Uuid
-  team              Team?                      @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  storeId           String                     @db.Uuid
-  store             PosStore                   @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  posProductId      String                     @db.Uuid
-  posProduct        PosProduct                 @relation(fields: [posProductId], references: [id], onDelete: Restrict)
-  productProfileId  String                     @db.Uuid
-  productProfile    WmsProductProfile          @relation(fields: [productProfileId], references: [id], onDelete: Restrict)
-  warehouseId       String                     @db.Uuid
-  warehouse         WmsWarehouse               @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  receivingBatchId  String?                    @db.Uuid
-  receivingBatch    WmsReceivingBatch?         @relation(fields: [receivingBatchId], references: [id], onDelete: SetNull)
-  currentLocationId String?                    @db.Uuid
-  currentLocation   WmsLocation?               @relation(fields: [currentLocationId], references: [id], onDelete: SetNull)
-  productId         String
-  variationId       String
-  posWarehouseRef   String?
-  code              String                     @unique
-  barcode           String                     @unique
-  status            WmsInventoryUnitStatus     @default(STAGED)
-  labelPrintCount   Int                        @default(0)
+  id                  String                      @id @default(uuid()) @db.Uuid
+  tenantId            String                      @db.Uuid
+  tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId              String?                     @db.Uuid
+  team                Team?                       @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  storeId             String                      @db.Uuid
+  store               PosStore                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  posProductId        String                      @db.Uuid
+  posProduct          PosProduct                  @relation(fields: [posProductId], references: [id], onDelete: Restrict)
+  productProfileId    String                      @db.Uuid
+  productProfile      WmsProductProfile           @relation(fields: [productProfileId], references: [id], onDelete: Restrict)
+  warehouseId         String                      @db.Uuid
+  warehouse           WmsWarehouse                @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  receivingBatchId    String?                     @db.Uuid
+  receivingBatch      WmsReceivingBatch?          @relation(fields: [receivingBatchId], references: [id], onDelete: SetNull)
+  currentLocationId   String?                     @db.Uuid
+  currentLocation     WmsLocation?                @relation(fields: [currentLocationId], references: [id], onDelete: SetNull)
+  productId           String
+  variationId         String
+  posWarehouseRef     String?
+  code                String                      @unique
+  barcode             String                      @unique
+  status              WmsInventoryUnitStatus      @default(STAGED)
+  labelPrintCount     Int                         @default(0)
   firstLabelPrintedAt DateTime?
   lastLabelPrintedAt  DateTime?
-  sourceType        WmsInventoryUnitSourceType?
-  sourceRefId       String?
-  sourceRefLabel    String?
-  notes             String?
-  createdById       String?                    @db.Uuid
-  createdBy         User?                      @relation("WmsInventoryUnitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById       String?                    @db.Uuid
-  updatedBy         User?                      @relation("WmsInventoryUnitUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt         DateTime                   @default(now())
-  updatedAt         DateTime                   @updatedAt
-  labelPrintLogs    WmsLabelPrintLog[]         @relation("WmsLabelPrintLogUnit")
-  movements         WmsInventoryMovement[]
-  transferItems     WmsTransferItem[]
+  sourceType          WmsInventoryUnitSourceType?
+  sourceRefId         String?
+  sourceRefLabel      String?
+  notes               String?
+  createdById         String?                     @db.Uuid
+  createdBy           User?                       @relation("WmsInventoryUnitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById         String?                     @db.Uuid
+  updatedBy           User?                       @relation("WmsInventoryUnitUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  labelPrintLogs      WmsLabelPrintLog[]          @relation("WmsLabelPrintLogUnit")
+  movements           WmsInventoryMovement[]
+  transferItems       WmsTransferItem[]
+  pickReservations    WmsPickReservation[]
 
   @@index([tenantId, storeId])
   @@index([tenantId, status])
@@ -1471,6 +1549,132 @@ model WmsInventoryUnit {
   @@index([productProfileId])
   @@index([sourceType, sourceRefId])
   @@map("wms_inventory_units")
+}
+
+model WmsFulfillmentOrder {
+  id                String                    @id @default(uuid()) @db.Uuid
+  tenantId          String                    @db.Uuid
+  tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId            String?                   @db.Uuid
+  team              Team?                     @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  storeId           String                    @db.Uuid
+  store             PosStore                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  posOrderDbId      String                    @db.Uuid
+  posOrder          PosOrder                  @relation(fields: [posOrderDbId], references: [id], onDelete: Cascade)
+  shopId            String
+  posOrderId        String
+  posWarehouseRef   String?
+  warehouseId       String?                   @db.Uuid
+  warehouse         WmsWarehouse?             @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  customerName      String?
+  customerPhone     String?
+  status            WmsFulfillmentOrderStatus @default(RESTOCKING)
+  issueReason       String?
+  totalQuantity     Int                       @default(0)
+  allocatedQuantity Int                       @default(0)
+  pickedQuantity    Int                       @default(0)
+  claimedById       String?                   @db.Uuid
+  claimedBy         User?                     @relation("WmsFulfillmentOrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
+  claimedAt         DateTime?
+  completedAt       DateTime?
+  lastSyncedAt      DateTime                  @default(now())
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  basket       WmsBasket?
+  lines        WmsFulfillmentLine[]
+  reservations WmsPickReservation[]
+
+  @@unique([tenantId, shopId, posOrderId])
+  @@unique([posOrderDbId])
+  @@index([tenantId, status, createdAt])
+  @@index([storeId, status])
+  @@index([claimedById, status])
+  @@index([posWarehouseRef])
+  @@map("wms_fulfillment_orders")
+}
+
+model WmsBasket {
+  id                 String               @id @default(uuid()) @db.Uuid
+  tenantId           String?              @db.Uuid
+  tenant             Tenant?              @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  warehouseId        String?              @db.Uuid
+  warehouse          WmsWarehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  barcode            String               @unique
+  status             WmsBasketStatus      @default(AVAILABLE)
+  assignedPickerId   String?              @db.Uuid
+  assignedPicker     User?                @relation("WmsBasketAssignedPicker", fields: [assignedPickerId], references: [id], onDelete: SetNull)
+  assignedPackerId   String?              @db.Uuid
+  assignedPacker     User?                @relation("WmsBasketAssignedPacker", fields: [assignedPackerId], references: [id], onDelete: SetNull)
+  fulfillmentOrderId String?              @unique @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder? @relation(fields: [fulfillmentOrderId], references: [id], onDelete: SetNull)
+  claimedAt          DateTime?
+  fullAt             DateTime?
+  readyForPackAt     DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@index([tenantId, status])
+  @@index([warehouseId, status])
+  @@index([assignedPickerId, status])
+  @@index([assignedPackerId, status])
+  @@map("wms_baskets")
+}
+
+model WmsFulfillmentLine {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  fulfillmentOrderId String                   @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder      @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  tenantId           String                   @db.Uuid
+  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId          String?
+  variationId        String
+  productName        String
+  productDisplayId   String?
+  quantityRequired   Int
+  quantityAllocated  Int                      @default(0)
+  quantityPicked     Int                      @default(0)
+  status             WmsFulfillmentLineStatus @default(RESTOCKING)
+  issueReason        String?
+  lineSnapshot       Json?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  reservations WmsPickReservation[]
+
+  @@unique([fulfillmentOrderId, variationId])
+  @@index([tenantId, variationId, status])
+  @@index([fulfillmentOrderId, status])
+  @@map("wms_fulfillment_lines")
+}
+
+model WmsPickReservation {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  fulfillmentOrderId String                   @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder      @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  fulfillmentLineId  String                   @db.Uuid
+  fulfillmentLine    WmsFulfillmentLine       @relation(fields: [fulfillmentLineId], references: [id], onDelete: Cascade)
+  tenantId           String                   @db.Uuid
+  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inventoryUnitId    String                   @db.Uuid
+  inventoryUnit      WmsInventoryUnit         @relation(fields: [inventoryUnitId], references: [id], onDelete: Cascade)
+  status             WmsPickReservationStatus @default(RESERVED)
+  sequence           Int                      @default(0)
+  reservedById       String?                  @db.Uuid
+  reservedBy         User?                    @relation("WmsPickReservationReservedBy", fields: [reservedById], references: [id], onDelete: SetNull)
+  reservedAt         DateTime                 @default(now())
+  pickedById         String?                  @db.Uuid
+  pickedBy           User?                    @relation("WmsPickReservationPickedBy", fields: [pickedById], references: [id], onDelete: SetNull)
+  pickedAt           DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@unique([fulfillmentLineId, inventoryUnitId])
+  @@index([tenantId, status])
+  @@index([inventoryUnitId, status])
+  @@index([fulfillmentOrderId, status])
+  @@index([fulfillmentLineId, status])
+  @@map("wms_pick_reservations")
 }
 
 model WmsTransfer {

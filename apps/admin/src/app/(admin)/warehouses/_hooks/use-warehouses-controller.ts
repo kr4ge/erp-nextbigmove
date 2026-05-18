@@ -4,15 +4,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import {
+  createWmsBasket,
   createWmsLocation,
   createWmsWarehouse,
   fetchWmsWarehousesOverview,
+  updateWmsBasket,
   updateWmsLocation,
   updateWmsWarehouse,
 } from '../_services/warehouses.service';
 import type {
+  CreateWmsBasketInput,
   CreateWmsLocationInput,
   CreateWmsWarehouseInput,
+  UpdateWmsBasketInput,
   UpdateWmsLocationInput,
   UpdateWmsWarehouseInput,
   WmsLocationTreeNode,
@@ -181,6 +185,28 @@ export function useWarehousesController() {
     },
   });
 
+  const createBasketMutation = useMutation({
+    mutationFn: ({ warehouseId, input }: { warehouseId: string; input: CreateWmsBasketInput }) =>
+      createWmsBasket(warehouseId, input),
+    onSuccess: async (response) => {
+      await handleMutationSuccess(response, 'Basket registered');
+    },
+    onError: (error) => {
+      setBanner({ tone: 'error', message: getErrorMessage(error) });
+    },
+  });
+
+  const updateBasketMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateWmsBasketInput }) =>
+      updateWmsBasket(id, input),
+    onSuccess: async (response) => {
+      await handleMutationSuccess(response, 'Basket updated');
+    },
+    onError: (error) => {
+      setBanner({ tone: 'error', message: getErrorMessage(error) });
+    },
+  });
+
   const errorMessage = useMemo(() => {
     if (!overviewQuery.error) {
       return null;
@@ -240,8 +266,23 @@ export function useWarehousesController() {
         input: input as CreateWmsLocationInput,
       });
     },
+    submitBasket: async (input: CreateWmsBasketInput) => {
+      if (!activeWarehouse) {
+        setBanner({ tone: 'error', message: 'Select a warehouse before adding baskets' });
+        return;
+      }
+
+      await createBasketMutation.mutateAsync({
+        warehouseId: activeWarehouse.id,
+        input,
+      });
+    },
+    updateBasket: async (id: string, input: UpdateWmsBasketInput) => {
+      await updateBasketMutation.mutateAsync({ id, input });
+    },
     isSavingWarehouse: createWarehouseMutation.isPending || updateWarehouseMutation.isPending,
     isSavingLocation: createLocationMutation.isPending || updateLocationMutation.isPending,
+    isSavingBasket: createBasketMutation.isPending || updateBasketMutation.isPending,
     clearBanner: () => setBanner(null),
     clearNewlyCreatedBinId: () => setNewlyCreatedBinId(null),
   };

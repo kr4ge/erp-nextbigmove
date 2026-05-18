@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, RbacWorkspace, RoleScope, UserStatus } from '@prisma/client';
+import { Prisma, RbacWorkspace, RoleScope, UserStatus, WmsStaffAssignmentTaskType } from '@prisma/client';
 import type { Request } from 'express';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -39,6 +39,18 @@ type WmsSettingsRoleRecord = Prisma.RoleGetPayload<{
     };
   };
 }>;
+
+const WMS_PICK_ASSIGNMENT_PERMISSIONS = [
+  'wms.fulfillment.write',
+  'wms.fulfillment.edit',
+  'wms.fulfillment.override',
+] as const;
+
+const WMS_PACK_ASSIGNMENT_PERMISSIONS = [
+  'wms.dispatch.write',
+  'wms.dispatch.edit',
+  'wms.dispatch.override',
+] as const;
 
 @Injectable()
 export class WmsSettingsService {
@@ -131,6 +143,14 @@ export class WmsSettingsService {
             },
           },
         },
+        wmsStaffAssignment: {
+          select: {
+            id: true,
+            taskType: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
       },
       orderBy: [
         { firstName: 'asc' },
@@ -173,6 +193,14 @@ export class WmsSettingsService {
             tenantId: assignment.tenantId,
           }))
           .sort((left, right) => left.key.localeCompare(right.key)),
+        taskAssignment: record.wmsStaffAssignment
+          ? {
+              id: record.wmsStaffAssignment.id,
+              taskType: record.wmsStaffAssignment.taskType,
+              createdAt: record.wmsStaffAssignment.createdAt.toISOString(),
+              updatedAt: record.wmsStaffAssignment.updatedAt.toISOString(),
+            }
+          : null,
       })),
     };
   }
@@ -423,6 +451,7 @@ export class WmsSettingsService {
       scope,
       roles,
       statuses: Object.values(UserStatus),
+      taskAssignmentTypes: Object.values(WmsStaffAssignmentTaskType),
     };
   }
 
@@ -435,6 +464,7 @@ export class WmsSettingsService {
   async createUser(user: WmsSettingsUser, dto: CreateWmsSettingsUserDto, request?: Request) {
     const scope = this.resolveScope(user, request);
     const email = dto.email.trim().toLowerCase();
+    const taskAssignmentType = this.normalizeTaskAssignmentType(dto.taskAssignmentType);
     const [existing, role] = await Promise.all([
       this.prisma.user.findFirst({
         where: { email, tenantId: null },
@@ -447,7 +477,14 @@ export class WmsSettingsService {
       throw new ConflictException('Email already exists in WMS staff accounts');
     }
 
+    this.assertTaskAssignmentSupported(
+      taskAssignmentType,
+      this.getRolePermissionKeys(role),
+      [],
+    );
+
     const password = await bcrypt.hash(dto.password, 10);
+    const actorId = user.userId ?? user.id ?? null;
     const created = await this.prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
@@ -471,6 +508,16 @@ export class WmsSettingsService {
         },
       });
 
+      if (taskAssignmentType) {
+        await tx.wmsStaffAssignment.create({
+          data: {
+            userId: newUser.id,
+            taskType: taskAssignmentType,
+            assignedById: actorId,
+          },
+        });
+      }
+
       return newUser;
     });
 
@@ -485,10 +532,35 @@ export class WmsSettingsService {
     request?: Request,
   ) {
     const scope = this.resolveScope(user, request);
-    await this.findWmsUserForScope(id, scope);
+    const existing = await this.findWmsUserForScope(id, scope);
 
     const role = dto.roleId ? await this.findWmsRole(dto.roleId) : null;
     const password = dto.password ? await bcrypt.hash(dto.password, 10) : null;
+    const nextRole = role ?? this.findAssignedWmsRole(existing);
+    const directPermissionAssignments = existing.userPermissionAssignments.map((assignment) => ({
+      key: assignment.permission.key,
+      allow: assignment.allow,
+    }));
+    const requestedTaskAssignmentType = Object.prototype.hasOwnProperty.call(dto, 'taskAssignmentType')
+      ? this.normalizeTaskAssignmentType(dto.taskAssignmentType)
+      : undefined;
+    let nextTaskAssignmentType = requestedTaskAssignmentType ?? existing.wmsStaffAssignment?.taskType ?? null;
+
+    if (nextTaskAssignmentType && !this.canUseTaskAssignment(
+      nextTaskAssignmentType,
+      this.getRolePermissionKeys(nextRole),
+      directPermissionAssignments,
+    )) {
+      if (requestedTaskAssignmentType !== undefined) {
+        throw new ForbiddenException(
+          `Selected WMS role does not allow ${nextTaskAssignmentType.toLowerCase()} assignment`,
+        );
+      }
+
+      nextTaskAssignmentType = null;
+    }
+
+    const actorId = user.userId ?? user.id ?? null;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
@@ -517,6 +589,25 @@ export class WmsSettingsService {
             workspace: RbacWorkspace.WMS,
             tenantId: null,
           },
+        });
+      }
+
+      if (nextTaskAssignmentType) {
+        await tx.wmsStaffAssignment.upsert({
+          where: { userId: id },
+          create: {
+            userId: id,
+            taskType: nextTaskAssignmentType,
+            assignedById: actorId,
+          },
+          update: {
+            taskType: nextTaskAssignmentType,
+            assignedById: actorId,
+          },
+        });
+      } else {
+        await tx.wmsStaffAssignment.deleteMany({
+          where: { userId: id },
         });
       }
 
@@ -672,6 +763,15 @@ export class WmsSettingsService {
       },
       select: {
         id: true,
+        rolePermissions: {
+          select: {
+            permission: {
+              select: {
+                key: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -770,6 +870,14 @@ export class WmsSettingsService {
             },
           },
         },
+        wmsStaffAssignment: {
+          select: {
+            id: true,
+            taskType: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
       },
     });
 
@@ -813,6 +921,79 @@ export class WmsSettingsService {
           tenantId: assignment.tenantId,
         }))
         .sort((left, right) => left.key.localeCompare(right.key)),
+      taskAssignment: record.wmsStaffAssignment
+        ? {
+            id: record.wmsStaffAssignment.id,
+            taskType: record.wmsStaffAssignment.taskType,
+            createdAt: record.wmsStaffAssignment.createdAt.toISOString(),
+            updatedAt: record.wmsStaffAssignment.updatedAt.toISOString(),
+          }
+        : null,
     };
+  }
+
+  private findAssignedWmsRole(record: Awaited<ReturnType<WmsSettingsService['findWmsUserForScope']>>) {
+    const assignedRole = record.userRoleAssignments[0]?.role;
+    if (!assignedRole) {
+      throw new NotFoundException('WMS role assignment was not found');
+    }
+
+    return assignedRole;
+  }
+
+  private getRolePermissionKeys(role: {
+    rolePermissions: Array<{
+      permission: {
+        key: string;
+      };
+    }>;
+  }) {
+    return role.rolePermissions.map((rolePermission) => rolePermission.permission.key);
+  }
+
+  private canUseTaskAssignment(
+    taskType: WmsStaffAssignmentTaskType,
+    rolePermissionKeys: string[],
+    directAssignments: Array<{ key: string; allow: boolean }>,
+  ) {
+    const effectivePermissions = new Set(rolePermissionKeys.filter((key) => key.startsWith('wms.')));
+
+    directAssignments.forEach((assignment) => {
+      if (assignment.allow) {
+        effectivePermissions.add(assignment.key);
+      } else {
+        effectivePermissions.delete(assignment.key);
+      }
+    });
+
+    const requiredPermissions = taskType === WmsStaffAssignmentTaskType.PICK
+      ? WMS_PICK_ASSIGNMENT_PERMISSIONS
+      : WMS_PACK_ASSIGNMENT_PERMISSIONS;
+
+    return requiredPermissions.some((permission) => effectivePermissions.has(permission));
+  }
+
+  private assertTaskAssignmentSupported(
+    taskType: WmsStaffAssignmentTaskType | string | null,
+    rolePermissionKeys: string[],
+    directAssignments: Array<{ key: string; allow: boolean }>,
+  ) {
+    if (!taskType) {
+      return;
+    }
+
+    if (!this.canUseTaskAssignment(taskType as WmsStaffAssignmentTaskType, rolePermissionKeys, directAssignments)) {
+      throw new ForbiddenException(`Selected WMS role does not allow ${String(taskType).toLowerCase()} assignment`);
+    }
+  }
+
+  private normalizeTaskAssignmentType(
+    taskType: string | WmsStaffAssignmentTaskType | null | undefined,
+  ): WmsStaffAssignmentTaskType | null {
+    if (taskType === WmsStaffAssignmentTaskType.PICK || taskType === WmsStaffAssignmentTaskType.PACK) {
+      return taskType;
+    }
+
+    return null;
   }
 }

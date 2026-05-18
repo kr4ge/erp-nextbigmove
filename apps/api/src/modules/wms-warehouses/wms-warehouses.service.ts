@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  WmsBasketStatus,
   WmsLocationKind,
   WmsInventoryUnitStatus,
   WmsWarehouseStatus,
@@ -17,6 +18,8 @@ import { CreateWmsWarehouseDto } from './dto/create-wms-warehouse.dto';
 import { UpdateWmsWarehouseDto } from './dto/update-wms-warehouse.dto';
 import { CreateWmsLocationDto } from './dto/create-wms-location.dto';
 import { UpdateWmsLocationDto } from './dto/update-wms-location.dto';
+import { CreateWmsBasketDto } from './dto/create-wms-basket.dto';
+import { UpdateWmsBasketDto } from './dto/update-wms-basket.dto';
 
 const STRUCTURAL_KINDS = [WmsLocationKind.SECTION, WmsLocationKind.RACK, WmsLocationKind.BIN] as const;
 const OPERATIONAL_KINDS = [
@@ -44,6 +47,11 @@ const DEFAULT_OPERATIONAL_LOCATIONS: Array<{
 const DEFAULT_SECTION_RACK_CAPACITY = 2;
 const MAX_SECTION_RACK_CAPACITY = 2;
 const DEFAULT_RACK_BIN_CAPACITY = 6;
+const RESETTABLE_BASKET_STATUSES: readonly WmsBasketStatus[] = [
+  WmsBasketStatus.AVAILABLE,
+  WmsBasketStatus.DAMAGED,
+  WmsBasketStatus.RETIRED,
+];
 
 function isStructuralKind(kind: WmsLocationKind) {
   return STRUCTURAL_KINDS.includes(kind as (typeof STRUCTURAL_KINDS)[number]);
@@ -73,6 +81,36 @@ type WarehouseOverviewRecord = Prisma.WmsWarehouseGetPayload<{
       orderBy: [
         { sortOrder: 'asc' },
         { name: 'asc' },
+      ];
+    };
+    baskets: {
+      include: {
+        assignedPicker: {
+          select: {
+            firstName: true;
+            lastName: true;
+            email: true;
+          };
+        };
+        assignedPacker: {
+          select: {
+            firstName: true;
+            lastName: true;
+            email: true;
+          };
+        };
+        fulfillmentOrder: {
+          select: {
+            id: true;
+            posOrderId: true;
+            customerName: true;
+            status: true;
+          };
+        };
+      };
+      orderBy: [
+        { status: 'asc' },
+        { barcode: 'asc' },
       ];
     };
   };
@@ -124,6 +162,33 @@ export class WmsWarehousesService {
             updatedAt: true,
           },
           orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        },
+        baskets: {
+          include: {
+            assignedPicker: {
+              select: {
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+            assignedPacker: {
+              select: {
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+            fulfillmentOrder: {
+              select: {
+                id: true,
+                posOrderId: true,
+                customerName: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: [{ status: 'asc' }, { barcode: 'asc' }],
         },
       },
       orderBy: [{ name: 'asc' }],
@@ -543,6 +608,90 @@ export class WmsWarehousesService {
     return this.getOverview({ warehouseId: existing.warehouseId });
   }
 
+  async createBasket(warehouseId: string, body: CreateWmsBasketDto) {
+    const warehouse = await this.requireWarehouseRecord(warehouseId);
+    const barcode = body.barcode?.trim()
+      ? this.normalizeBasketBarcode(body.barcode)
+      : await this.generateNextBasketBarcode(warehouse.id, warehouse.code);
+
+    await this.ensureBasketBarcodeAvailable(barcode);
+
+    try {
+      await this.prisma.wmsBasket.create({
+        data: {
+          warehouseId: warehouse.id,
+          barcode,
+          status: WmsBasketStatus.AVAILABLE,
+        },
+      });
+    } catch (error) {
+      this.handlePrismaConstraintError(error, 'Unable to create basket');
+    }
+
+    return this.getOverview({ warehouseId: warehouse.id });
+  }
+
+  async updateBasket(id: string, body: UpdateWmsBasketDto) {
+    const basket = await this.prisma.wmsBasket.findFirst({
+      where: { id },
+      include: {
+        fulfillmentOrder: {
+          select: {
+            id: true,
+            posOrderId: true,
+          },
+        },
+      },
+    });
+
+    if (!basket) {
+      throw new NotFoundException('Basket not found');
+    }
+
+    const nextBarcode = body.barcode?.trim()
+      ? this.normalizeBasketBarcode(body.barcode)
+      : basket.barcode;
+    const nextStatus = body.status ?? basket.status;
+
+    if (nextBarcode !== basket.barcode) {
+      await this.ensureBasketBarcodeAvailable(nextBarcode, basket.id);
+    }
+
+    if (
+      basket.fulfillmentOrderId
+      && RESETTABLE_BASKET_STATUSES.includes(nextStatus)
+    ) {
+      throw new ConflictException(
+        `Basket is assigned to order ${basket.fulfillmentOrder?.posOrderId ?? basket.fulfillmentOrderId}`,
+      );
+    }
+
+    try {
+      await this.prisma.wmsBasket.update({
+        where: { id: basket.id },
+        data: {
+          barcode: nextBarcode,
+          status: nextStatus,
+          ...(nextStatus === WmsBasketStatus.AVAILABLE
+            ? {
+                tenantId: null,
+                assignedPickerId: null,
+                assignedPackerId: null,
+                fulfillmentOrderId: null,
+                claimedAt: null,
+                fullAt: null,
+                readyForPackAt: null,
+              }
+            : {}),
+        },
+      });
+    } catch (error) {
+      this.handlePrismaConstraintError(error, 'Unable to update basket');
+    }
+
+    return this.getOverview({ warehouseId: basket.warehouseId ?? undefined });
+  }
+
   private cleanOptionalText(value: string | null | undefined) {
     const cleaned = value?.trim();
     return cleaned ? cleaned : null;
@@ -558,6 +707,27 @@ export class WmsWarehousesService {
 
   private buildLocationBarcode(warehouseCode: string, locationCode: string) {
     return `WMS-${this.normalizeCode(warehouseCode)}-${this.normalizeCode(locationCode)}`;
+  }
+
+  private normalizeBasketBarcode(value: string) {
+    return value.trim().toUpperCase().replace(/\s+/g, '-');
+  }
+
+  private async generateNextBasketBarcode(warehouseId: string, warehouseCode: string) {
+    const baskets = await this.prisma.wmsBasket.findMany({
+      where: { warehouseId },
+      select: { barcode: true },
+    });
+    const prefix = `BASKET-${this.normalizeCode(warehouseCode)}-`;
+    const nextNumber = baskets.reduce((highest, basket) => {
+      if (!basket.barcode.startsWith(prefix)) {
+        return highest;
+      }
+      const numericPart = Number(basket.barcode.slice(prefix.length));
+      return Number.isFinite(numericPart) ? Math.max(highest, numericPart) : highest;
+    }, 0) + 1;
+
+    return `${prefix}${String(nextNumber).padStart(3, '0')}`;
   }
 
   private async resolveCreateLocationCode(params: {
@@ -1011,6 +1181,20 @@ export class WmsWarehousesService {
     }
   }
 
+  private async ensureBasketBarcodeAvailable(barcode: string, ignoreBasketId?: string) {
+    const existing = await this.prisma.wmsBasket.findFirst({
+      where: {
+        barcode,
+        ...(ignoreBasketId ? { NOT: { id: ignoreBasketId } } : {}),
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      throw new ConflictException('Basket barcode already exists');
+    }
+  }
+
   private validateLocationPlacement(kind: WmsLocationKind, parentKind: WmsLocationKind | null) {
     if (kind === WmsLocationKind.SECTION) {
       if (parentKind) {
@@ -1087,10 +1271,13 @@ export class WmsWarehousesService {
         racks: locationCounts.racks,
         bins: locationCounts.bins,
         operational: locationCounts.operational,
+        baskets: warehouse.baskets.length,
+        availableBaskets: warehouse.baskets.filter((basket) => basket.status === WmsBasketStatus.AVAILABLE).length,
       },
       operationalLocations: roots.filter((node) => isOperationalKind(node.kind)),
       structuralLocations: roots.filter((node) => node.kind === WmsLocationKind.SECTION),
       rootLocations: roots,
+      baskets: warehouse.baskets.map((basket) => this.mapBasket(basket)),
       inventorySummary: inventorySummary ?? {
         serializedUnits: 0,
         putAwayUnits: 0,
@@ -1100,6 +1287,44 @@ export class WmsWarehousesService {
       createdAt: warehouse.createdAt,
       updatedAt: warehouse.updatedAt,
     };
+  }
+
+  private mapBasket(basket: WarehouseOverviewRecord['baskets'][number]) {
+    return {
+      id: basket.id,
+      barcode: basket.barcode,
+      status: basket.status,
+      warehouseId: basket.warehouseId,
+      assignedPicker: basket.assignedPicker
+        ? {
+            name: this.getActorName(basket.assignedPicker),
+            email: basket.assignedPicker.email,
+          }
+        : null,
+      assignedPacker: basket.assignedPacker
+        ? {
+            name: this.getActorName(basket.assignedPacker),
+            email: basket.assignedPacker.email,
+          }
+        : null,
+      fulfillmentOrder: basket.fulfillmentOrder
+        ? {
+            id: basket.fulfillmentOrder.id,
+            posOrderId: basket.fulfillmentOrder.posOrderId,
+            customerName: basket.fulfillmentOrder.customerName,
+            status: basket.fulfillmentOrder.status,
+          }
+        : null,
+      claimedAt: basket.claimedAt,
+      fullAt: basket.fullAt,
+      readyForPackAt: basket.readyForPackAt,
+      createdAt: basket.createdAt,
+      updatedAt: basket.updatedAt,
+    };
+  }
+
+  private getActorName(actor: { firstName: string | null; lastName: string | null; email: string }) {
+    return [actor.firstName, actor.lastName].filter(Boolean).join(' ') || actor.email;
   }
 
   private async buildWarehouseInventorySummary(warehouseId: string): Promise<WarehouseInventorySummary> {

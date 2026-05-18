@@ -6,7 +6,6 @@ import { tokens } from '@/src/shared/theme/tokens';
 import { StoxBottomNav } from './stox-bottom-nav';
 
 type StoxShellProps = {
-  title: string;
   contextLabel?: string;
   profileInitials: string;
   activeTab: StoxTabKey;
@@ -16,7 +15,6 @@ type StoxShellProps = {
 };
 
 export function StoxShell({
-  title,
   contextLabel,
   profileInitials,
   activeTab,
@@ -37,7 +35,6 @@ export function StoxShell({
           <View style={styles.header}>
             <View style={styles.copy}>
               <Text style={styles.brand}>STOX</Text>
-              <Text numberOfLines={1} style={styles.title}>{title}</Text>
               {contextLabel ? <Text numberOfLines={1} style={styles.context}>{contextLabel}</Text> : null}
             </View>
 
@@ -110,12 +107,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 2.4,
-  },
-  title: {
-    color: tokens.colors.ink,
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -1.2,
   },
   context: {
     color: tokens.colors.inkMuted,

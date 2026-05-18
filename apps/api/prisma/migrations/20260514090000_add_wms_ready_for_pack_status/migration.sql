@@ -1,0 +1,1 @@
+ALTER TYPE "WmsFulfillmentOrderStatus" ADD VALUE IF NOT EXISTS 'READY_FOR_PACK';

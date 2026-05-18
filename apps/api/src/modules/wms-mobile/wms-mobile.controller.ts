@@ -8,6 +8,13 @@ import {
   GetWmsMobileStockScopedDto,
   WmsMobileStockMoveDto,
 } from './dto/wms-mobile-stock-execution.dto';
+import {
+  GetWmsMobilePickBasketLookupDto,
+  WmsMobilePickHandoffDto,
+  GetWmsMobilePickingTasksDto,
+  WmsMobilePickScanDto,
+  WmsMobilePickScopedDto,
+} from './dto/wms-mobile-picking.dto';
 import { WmsMobileService } from './wms-mobile.service';
 
 @Controller('wms/mobile')
@@ -79,5 +86,77 @@ export class WmsMobileController {
   @Permissions('wms.inventory.transfer', 'wms.inventory.edit', 'wms.inventory.write')
   async moveStockUnit(@Request() req, @Body() body: WmsMobileStockMoveDto) {
     return this.wmsMobileService.moveStockUnit(req.user, body, req);
+  }
+
+  @Get('picking/tasks')
+  @Permissions('wms.fulfillment.read')
+  async getPickingTasks(@Request() req, @Query() query: GetWmsMobilePickingTasksDto) {
+    return this.wmsMobileService.getPickingTasks(req.user, query, req);
+  }
+
+  @Post('picking/tasks/:id/claim')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  async claimPickingTask(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickScopedDto,
+  ) {
+    return this.wmsMobileService.claimPickingTask(req.user, id, body, req);
+  }
+
+  @Post('picking/tasks/:id/scan-bin')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  async scanPickingBin(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickScanDto,
+  ) {
+    return this.wmsMobileService.scanPickingBin(req.user, id, body, req);
+  }
+
+  @Post('picking/tasks/:id/scan-basket')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  async scanPickingBasket(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickScanDto,
+  ) {
+    return this.wmsMobileService.scanPickingBasket(req.user, id, body, req);
+  }
+
+  @Post('picking/tasks/:id/scan-unit')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  async scanPickingUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickScanDto,
+  ) {
+    return this.wmsMobileService.scanPickingUnit(req.user, id, body, req);
+  }
+
+  @Post('picking/tasks/:id/complete')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  async completePickingTask(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickScopedDto,
+  ) {
+    return this.wmsMobileService.completePickingTask(req.user, id, body, req);
+  }
+
+  @Post('picking/tasks/:id/handoff')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  async handoffPickingTask(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickHandoffDto,
+  ) {
+    return this.wmsMobileService.handoffPickingTask(req.user, id, body, req);
+  }
+
+  @Get('picking/baskets/lookup')
+  @Permissions('wms.fulfillment.read')
+  async lookupPickingBasket(@Request() req, @Query() query: GetWmsMobilePickBasketLookupDto) {
+    return this.wmsMobileService.lookupPickingBasket(req.user, query, req);
   }
 }

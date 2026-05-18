@@ -61,6 +61,9 @@ export type BootstrapResponse = {
       teamId: string | null;
     }>;
   };
+  operations?: {
+    taskAssignment: 'PICK' | 'PACK' | null;
+  };
   context: {
     tenantOptions?: TenantOption[];
     defaultTeamId: string | null;

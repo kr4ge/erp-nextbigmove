@@ -6,6 +6,7 @@ import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
 import { useInventoryController } from '../_hooks/use-inventory-controller';
 import { InventoryFilterBar } from './inventory-filter-bar';
+import { InventoryStockDashboard } from './inventory-stock-dashboard';
 import { InventoryUnitModal } from './inventory-unit-modal';
 import { InventoryUnitsTable } from './inventory-units-table';
 
@@ -14,15 +15,19 @@ export function InventoryStockScreen() {
 
   return (
     <div className="space-y-5">
-      <WmsPageShell title="Stock">
+      <WmsPageShell
+        title="Stock Control"
+        description="Monitor serialized inventory, putaway workload, location coverage, and exception stock from one WMS control view."
+      >
         {inventory.errorMessage ? (
           <WmsInlineNotice tone="error">
             {inventory.errorMessage}
           </WmsInlineNotice>
         ) : null}
 
-        <WmsWorkspaceCard
-          title="Units"
+        <InventoryStockDashboard
+          overview={inventory.overview}
+          isFetching={inventory.isFetching}
           filters={(
             <InventoryFilterBar
               filters={inventory.overview?.filters}
@@ -38,10 +43,14 @@ export function InventoryStockScreen() {
               onStatusChange={inventory.setSelectedStatus}
             />
           )}
+        />
+
+        <WmsWorkspaceCard
+          title="Stock Records"
           footer={(
             <div className="flex items-center justify-between gap-3">
               <p className="text-[12px] text-[#6f8290]">
-                {inventory.overview?.summary.units ?? 0} unit{(inventory.overview?.summary.units ?? 0) === 1 ? '' : 's'} in scope
+                {inventory.overview?.summary.units ?? 0} record{(inventory.overview?.summary.units ?? 0) === 1 ? '' : 's'} in view
               </p>
 
               <div className="flex items-center gap-2">

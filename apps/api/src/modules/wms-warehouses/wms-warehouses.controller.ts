@@ -8,6 +8,8 @@ import { CreateWmsWarehouseDto } from './dto/create-wms-warehouse.dto';
 import { UpdateWmsWarehouseDto } from './dto/update-wms-warehouse.dto';
 import { CreateWmsLocationDto } from './dto/create-wms-location.dto';
 import { UpdateWmsLocationDto } from './dto/update-wms-location.dto';
+import { CreateWmsBasketDto } from './dto/create-wms-basket.dto';
+import { UpdateWmsBasketDto } from './dto/update-wms-basket.dto';
 
 @Controller('wms/warehouses')
 @UseGuards(JwtAuthGuard, WmsAccessGuard)
@@ -39,6 +41,21 @@ export class WmsWarehousesController {
     @Body() body: CreateWmsLocationDto,
   ) {
     return this.wmsWarehousesService.createLocation(warehouseId, body);
+  }
+
+  @Post(':warehouseId/baskets')
+  @Permissions('wms.warehouses.write')
+  async createBasket(
+    @Param('warehouseId') warehouseId: string,
+    @Body() body: CreateWmsBasketDto,
+  ) {
+    return this.wmsWarehousesService.createBasket(warehouseId, body);
+  }
+
+  @Patch('baskets/:id')
+  @Permissions('wms.warehouses.edit')
+  async updateBasket(@Param('id') id: string, @Body() body: UpdateWmsBasketDto) {
+    return this.wmsWarehousesService.updateBasket(id, body);
   }
 
   @Patch('locations/:id')

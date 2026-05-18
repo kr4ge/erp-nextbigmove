@@ -19,6 +19,7 @@ import { BinSerializationModal, type BinSerializationTarget } from './bin-serial
 import { WarehouseFormModal } from './warehouse-form-modal';
 import { LocationFormModal } from './location-form-modal';
 import { LocationStructurePanel } from './location-structure-panel';
+import { BasketRegistryPanel } from './basket-registry-panel';
 
 export function WarehousesScreen() {
   const controller = useWarehousesController();
@@ -341,6 +342,13 @@ export function WarehousesScreen() {
               />
             </div>
           </WmsCompactPanel>
+
+          <BasketRegistryPanel
+            warehouse={activeWarehouse}
+            isSaving={controller.isSavingBasket}
+            onCreate={controller.submitBasket}
+            onUpdate={controller.updateBasket}
+          />
         </div>
       </section>
 

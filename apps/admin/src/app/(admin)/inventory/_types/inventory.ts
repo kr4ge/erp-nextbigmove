@@ -130,6 +130,14 @@ export type WmsInventoryOverviewResponse = {
     units: number;
     locatedUnits: number;
     unlocatedUnits: number;
+    unitsOnHand: number;
+    skuOnHand: number;
+    dispatchedUnits: number;
+    warehouseCapacity: {
+      usedUnits: number;
+      totalUnits: number;
+      utilizationPercent: number;
+    };
   };
   filters: {
     tenants: Array<{

@@ -39,13 +39,14 @@ export function InventoryStockReceivingScreen() {
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.delete('printBatch');
     const nextUrl = nextParams.toString() ? `${pathname}?${nextParams.toString()}` : pathname;
-    window.history.replaceState(window.history.state, '', nextUrl);
+    router.replace(nextUrl, { scroll: false });
   }, [
     labelsModal.open,
     openLabelsModal,
     pathname,
     printBatchId,
     receivingBatches,
+    router,
     searchParams,
   ]);
 

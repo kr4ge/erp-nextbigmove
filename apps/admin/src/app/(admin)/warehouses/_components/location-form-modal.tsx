@@ -350,19 +350,18 @@ export function LocationFormModal({
               </WmsFormField>
             ) : null}
 
-            <div className={`rounded-[24px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3 ${state.kind === 'SECTION' ? '' : 'md:col-span-2'}`}>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">
-                Auto code
-              </p>
-              <p className="mt-2 text-sm text-[#12384b]">
-                {parentSelected && autoCodePreview
-                  ? state.kind === 'SECTION' && state.name.trim()
-                    ? `${autoCodePreview} – ${state.name.trim()}`
-                    : `${autoCodePreview}`
-                  : needsParent
-                    ? `Choose a parent ${state.kind === 'RACK' ? 'section' : 'rack'} to generate the next code.`
-                    : 'Code will be generated automatically.'}
-              </p>
+            <div className={state.kind === 'SECTION' ? '' : 'md:col-span-2'}>
+              <WmsFormField label="Auto code">
+                <div className="wms-input flex min-h-[46px] w-full items-center bg-[#fbfcfc] text-[#12384b]">
+                  {parentSelected && autoCodePreview
+                    ? state.kind === 'SECTION' && state.name.trim()
+                      ? `${autoCodePreview} – ${state.name.trim()}`
+                      : `${autoCodePreview}`
+                    : needsParent
+                      ? `Choose a parent ${state.kind === 'RACK' ? 'section' : 'rack'} to generate the next code.`
+                      : 'Code will be generated automatically.'}
+                </div>
+              </WmsFormField>
             </div>
           </>
         ) : (

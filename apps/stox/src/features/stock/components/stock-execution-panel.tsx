@@ -12,6 +12,8 @@ import type { StockFilters, WmsMobileStockMovement } from '../types';
 import { formatStockDate, joinStockMeta } from '../utils/stock-formatters';
 
 type StockExecutionPanelProps = {
+  canMove?: boolean;
+  canPutaway?: boolean;
   device: DeviceIdentity | null;
   filters: StockFilters;
   session: StoredSession;
@@ -20,6 +22,8 @@ type StockExecutionPanelProps = {
 };
 
 export function StockExecutionPanel({
+  canMove = true,
+  canPutaway = true,
   device,
   filters,
   session,
@@ -121,6 +125,8 @@ export function StockExecutionPanel({
       {execution.result?.found && execution.result.type === 'unit' ? (
         <UnitExecutionCard
           isSubmitting={execution.isSubmitting}
+          canMove={canMove}
+          canPutaway={canPutaway}
           targetCode={execution.targetCode}
           unit={execution.result.unit}
           onChangeTargetCode={execution.setTargetCode}
@@ -149,6 +155,8 @@ export function StockExecutionPanel({
 }
 
 function UnitExecutionCard({
+  canMove,
+  canPutaway,
   isSubmitting,
   targetCode,
   unit,
@@ -158,6 +166,8 @@ function UnitExecutionCard({
   onPutaway,
   targetInputRef,
 }: {
+  canMove: boolean;
+  canPutaway: boolean;
   isSubmitting: boolean;
   targetCode: string;
   unit: import('../types').WmsMobileStockUnitDetail;
@@ -167,6 +177,11 @@ function UnitExecutionCard({
   onPutaway: () => Promise<void>;
   targetInputRef: RefObject<TextInput | null>;
 }) {
+  const canShowPutaway = unit.allowedActions.putaway && canPutaway;
+  const canShowMove = unit.allowedActions.move && canMove;
+  const hasStateAction = unit.allowedActions.putaway || unit.allowedActions.move;
+  const hasVisibleAction = canShowPutaway || canShowMove;
+
   return (
     <View style={styles.resultBlock}>
       <View style={styles.resultHeader}>
@@ -183,44 +198,51 @@ function UnitExecutionCard({
 
       <Text numberOfLines={2} style={styles.productName}>{unit.name}</Text>
 
-      <TextInput
-        ref={targetInputRef}
-        autoCapitalize="characters"
-        autoCorrect={false}
-        blurOnSubmit={false}
-        placeholder="Target bin/location"
-        placeholderTextColor={tokens.colors.inkSoft}
-        selectTextOnFocus
-        showSoftInputOnFocus={false}
-        value={targetCode}
-        onChangeText={onChangeTargetCode}
-        style={styles.targetInput}
-      />
-
-      <View style={styles.actionRow}>
-        {unit.allowedActions.putaway ? (
-          <PrimaryButton
-            disabled={isSubmitting}
-            label="Putaway"
-            loading={isSubmitting}
-            onPress={onPutaway}
-            style={styles.actionButton}
+      {hasVisibleAction ? (
+        <>
+          <TextInput
+            ref={targetInputRef}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            blurOnSubmit={false}
+            placeholder="Target bin/location"
+            placeholderTextColor={tokens.colors.inkSoft}
+            selectTextOnFocus
+            showSoftInputOnFocus={false}
+            value={targetCode}
+            onChangeText={onChangeTargetCode}
+            style={styles.targetInput}
           />
-        ) : null}
-        {unit.allowedActions.move ? (
-          <PrimaryButton
-            disabled={isSubmitting}
-            label="Move"
-            loading={isSubmitting}
-            variant={unit.allowedActions.putaway ? 'secondary' : 'primary'}
-            onPress={onMove}
-            style={styles.actionButton}
-          />
-        ) : null}
-      </View>
 
-      {!unit.allowedActions.putaway && !unit.allowedActions.move ? (
+          <View style={styles.actionRow}>
+            {canShowPutaway ? (
+              <PrimaryButton
+                disabled={isSubmitting}
+                label="Putaway"
+                loading={isSubmitting}
+                onPress={onPutaway}
+                style={styles.actionButton}
+              />
+            ) : null}
+            {canShowMove ? (
+              <PrimaryButton
+                disabled={isSubmitting}
+                label="Move"
+                loading={isSubmitting}
+                variant={canShowPutaway ? 'secondary' : 'primary'}
+                onPress={onMove}
+                style={styles.actionButton}
+              />
+            ) : null}
+          </View>
+        </>
+      ) : null}
+
+      {!hasStateAction ? (
         <Text style={styles.blockedActionText}>No mobile stock action is available for this unit.</Text>
+      ) : null}
+      {hasStateAction && !hasVisibleAction ? (
+        <Text style={styles.blockedActionText}>Your WMS role can scan this unit but cannot execute this stock action.</Text>
       ) : null}
 
       <Pressable

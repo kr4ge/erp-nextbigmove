@@ -1,7 +1,9 @@
 import apiClient from '@/lib/api-client';
 import type {
+  CreateWmsBasketInput,
   CreateWmsLocationInput,
   CreateWmsWarehouseInput,
+  UpdateWmsBasketInput,
   UpdateWmsLocationInput,
   UpdateWmsWarehouseInput,
   WmsWarehouseBinDetailResponse,
@@ -33,6 +35,16 @@ export async function createWmsLocation(warehouseId: string, input: CreateWmsLoc
 
 export async function updateWmsLocation(id: string, input: UpdateWmsLocationInput) {
   const response = await apiClient.patch(`/wms/warehouses/locations/${id}`, input);
+  return response.data as WmsWarehousesOverviewResponse;
+}
+
+export async function createWmsBasket(warehouseId: string, input: CreateWmsBasketInput) {
+  const response = await apiClient.post(`/wms/warehouses/${warehouseId}/baskets`, input);
+  return response.data as WmsWarehousesOverviewResponse;
+}
+
+export async function updateWmsBasket(id: string, input: UpdateWmsBasketInput) {
+  const response = await apiClient.patch(`/wms/warehouses/baskets/${id}`, input);
   return response.data as WmsWarehousesOverviewResponse;
 }
 

@@ -43,7 +43,6 @@ export default function HomeScreen() {
 
   return (
     <StoxShell
-      title={tabCopy[activeTab].title}
       contextLabel={activeTab === 'me' ? displayName : resolveHomeContext(bootstrap)}
       profileInitials={profileInitials}
       activeTab={activeTab}
@@ -58,9 +57,22 @@ export default function HomeScreen() {
         />
       ) : null}
 
-      {activeTab === 'scan' ? <ScanTab /> : null}
+      {activeTab === 'scan' ? (
+        <ScanTab
+          bootstrap={bootstrap}
+          device={device}
+          session={session}
+          onRefresh={refreshBootstrap}
+        />
+      ) : null}
 
-      {activeTab === 'pick' ? <PickingTab bootstrap={bootstrap} /> : null}
+      {activeTab === 'pick' ? (
+        <PickingTab
+          bootstrap={bootstrap}
+          device={device}
+          session={session}
+        />
+      ) : null}
 
       {activeTab === 'pack' ? <PackingTab /> : null}
 
@@ -77,11 +89,3 @@ export default function HomeScreen() {
     </StoxShell>
   );
 }
-
-const tabCopy: Record<StoxTabKey, { title: string }> = {
-  stock: { title: 'Stock' },
-  scan: { title: 'Scan' },
-  pick: { title: 'Pick' },
-  pack: { title: 'Pack' },
-  me: { title: 'Me' },
-};

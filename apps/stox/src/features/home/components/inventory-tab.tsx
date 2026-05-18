@@ -1,18 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
+import { useCallback, useMemo, useState } from 'react';
 import {
-  FlatList,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
+import {
+  canUseStoxStockMove,
+  canUseStoxStockPutaway,
+} from '@/src/features/home/rbac';
 import { StockActionTile } from '@/src/features/stock/components/stock-action-tile';
 import { StockExecutionPanel } from '@/src/features/stock/components/stock-execution-panel';
 import { StockRecordCard } from '@/src/features/stock/components/stock-record-card';
+import {
+  StockScopeFilterChip,
+  StockScopeFilterModal,
+} from '@/src/features/stock/components/stock-scope-filter';
+import { StockStateCard } from '@/src/features/stock/components/stock-state-card';
 import { useStockWorkspace } from '@/src/features/stock/hooks/use-stock-workspace';
 import type { StockMode, WmsMobileStockResponse } from '@/src/features/stock/types';
 import {
@@ -20,12 +25,17 @@ import {
   formatStockDate,
   joinStockMeta,
 } from '@/src/features/stock/utils/stock-formatters';
-import { SurfaceCard } from '@/src/shared/components/surface-card';
+import {
+  buildStockFilterOptions,
+  canFilterStockPartners,
+  resolveActivePartnerName,
+  resolveActiveStoreName,
+  resolveActiveWarehouseName,
+  stockFilterTitle,
+  type StockFilterKey,
+} from '@/src/features/stock/utils/stock-scope';
 import { tokens } from '@/src/shared/theme/tokens';
-import { resolveEntityName } from '../utils';
-import { SectionLabel, UtilityPill } from './stox-primitives';
-
-type FilterKey = 'tenant' | 'store' | 'warehouse';
+import { SectionLabel, TaskHeader, TaskHeaderIconButton } from './stox-primitives';
 
 export function InventoryTab({
   bootstrap,
@@ -70,10 +80,12 @@ export function InventoryTab({
   const warehouseName = resolveActiveWarehouseName(stock, bootstrap);
   const partnerName = resolveActivePartnerName(stock, bootstrap, filters.tenantId);
   const summary = stock?.summary;
-  const canFilterPartners = bootstrap.user.role === 'SUPER_ADMIN';
-  const [activeFilter, setActiveFilter] = useState<FilterKey | null>(null);
+  const canFilterPartners = canFilterStockPartners(bootstrap);
+  const canPutaway = canUseStoxStockPutaway(bootstrap);
+  const canMove = canUseStoxStockMove(bootstrap);
+  const [activeFilter, setActiveFilter] = useState<StockFilterKey | null>(null);
   const filterOptions = useMemo(
-    () => buildFilterOptions(activeFilter, stock, bootstrap, canFilterPartners),
+    () => buildStockFilterOptions(activeFilter, stock, bootstrap, canFilterPartners),
     [activeFilter, bootstrap, canFilterPartners, stock],
   );
 
@@ -84,44 +96,33 @@ export function InventoryTab({
 
   return (
     <>
-      <SurfaceCard tone="panel" style={styles.heroCard}>
-        <View style={styles.heroHeader}>
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroTitle}>Stock</Text>
-            <View style={styles.heroPills}>
-              <UtilityPill icon="map-pin" label={warehouseName} tone="panel" />
-              <UtilityPill icon="shopping-bag" label={storeName} tone="panel" />
-            </View>
-          </View>
-
-          <View style={styles.heroIcon}>
-            <Feather name="box" size={22} color={tokens.colors.panel} />
-          </View>
-        </View>
-
-        <View style={styles.heroMetrics}>
-          <HeroMetric label="Units" value={formatStockCount(summary?.totalUnits ?? 0)} />
-          <HeroMetric label="Staged" value={formatStockCount(summary?.stagedUnits ?? 0)} />
-          <HeroMetric label="Ready" value={formatStockCount(summary?.movableUnits ?? 0)} />
-        </View>
-      </SurfaceCard>
+      <TaskHeader
+        title="Stock"
+        action={(
+          <TaskHeaderIconButton
+            icon="refresh-cw"
+            loading={isRefreshing || isSyncingQueue}
+            onPress={handleSync}
+          />
+        )}
+      />
 
       <SectionLabel title="Scope" />
 
       <View style={styles.filterRow}>
         {canFilterPartners ? (
-          <StockFilterChip
+          <StockScopeFilterChip
             label="Partner"
             value={partnerName}
             onPress={() => setActiveFilter('tenant')}
           />
         ) : null}
-        <StockFilterChip
+        <StockScopeFilterChip
           label="Store"
           value={storeName}
           onPress={() => setActiveFilter('store')}
         />
-        <StockFilterChip
+        <StockScopeFilterChip
           label="Warehouse"
           value={warehouseName}
           onPress={() => setActiveFilter('warehouse')}
@@ -129,6 +130,8 @@ export function InventoryTab({
       </View>
 
       <StockExecutionPanel
+        canMove={canMove}
+        canPutaway={canPutaway}
         device={device}
         filters={filters}
         session={session}
@@ -157,7 +160,7 @@ export function InventoryTab({
       ) : null}
 
       <SectionLabel
-        title="Actions"
+        title="Views"
         trailing={isRefreshing || isSyncingQueue ? 'Syncing' : undefined}
       />
 
@@ -175,15 +178,6 @@ export function InventoryTab({
           label="Move"
           value={formatStockCount(summary?.movableUnits ?? 0)}
           onPress={() => setMode('move')}
-        />
-        <StockActionTile
-          disabled={isRefreshing || isSyncingQueue}
-          icon="refresh-cw"
-          label="Sync"
-          value={isRefreshing || isSyncingQueue ? '...' : pendingActionCount > 0 ? `${pendingActionCount}` : 'Now'}
-          onPress={() => {
-            void handleSync();
-          }}
         />
       </View>
 
@@ -243,8 +237,8 @@ export function InventoryTab({
           })
         : null}
 
-      <StockFilterModal
-        title={filterTitle[activeFilter ?? 'store']}
+      <StockScopeFilterModal
+        title={stockFilterTitle[activeFilter ?? 'store']}
         visible={activeFilter !== null}
         options={filterOptions}
         onClose={() => setActiveFilter(null)}
@@ -404,72 +398,6 @@ function renderStockMode({
   );
 }
 
-function HeroMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={styles.heroMetric}>
-      <Text numberOfLines={1} style={styles.heroMetricValue}>{value}</Text>
-      <Text numberOfLines={1} style={styles.heroMetricLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function StockStateCard({
-  actionLabel,
-  icon,
-  onPress,
-  title,
-  value,
-}: {
-  actionLabel?: string;
-  icon: keyof typeof Feather.glyphMap;
-  onPress?: () => void;
-  title: string;
-  value: string;
-}) {
-  return (
-    <SurfaceCard style={styles.stateCard}>
-      <View style={styles.stateIcon}>
-        <Feather name={icon} size={18} color={tokens.colors.panel} />
-      </View>
-      <View style={styles.stateCopy}>
-        <Text numberOfLines={1} style={styles.stateTitle}>{title}</Text>
-        <Text numberOfLines={2} style={styles.stateValue}>{value}</Text>
-      </View>
-      {actionLabel && onPress ? (
-        <Text onPress={onPress} style={styles.stateAction}>{actionLabel}</Text>
-      ) : null}
-    </SurfaceCard>
-  );
-}
-
-function StockFilterChip({
-  label,
-  value,
-  onPress,
-}: {
-  label: string;
-  value: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.filterChip, pressed ? styles.filterChipPressed : null]}>
-      <Text numberOfLines={1} style={styles.filterLabel}>{label}</Text>
-      <View style={styles.filterValueRow}>
-        <Text numberOfLines={1} style={styles.filterValue}>{value}</Text>
-        <Feather name="chevron-down" size={14} color={tokens.colors.inkMuted} />
-      </View>
-    </Pressable>
-  );
-}
-
 function StockListFooter({
   hasMore,
   isLoadingMore,
@@ -496,196 +424,6 @@ function StockListFooter({
       ]}>
       <Text style={styles.loadMoreText}>{isLoadingMore ? 'Loading' : 'Load more'}</Text>
     </Pressable>
-  );
-}
-
-function StockFilterModal({
-  options,
-  title,
-  visible,
-  onClose,
-  onSelect,
-}: {
-  options: Array<{ label: string; value: string | null; meta?: string }>;
-  title: string;
-  visible: boolean;
-  onClose: () => void;
-  onSelect: (value: string | null) => void;
-}) {
-  const [query, setQuery] = useState('');
-
-  useEffect(() => {
-    if (!visible) {
-      setQuery('');
-    }
-  }, [visible]);
-
-  const filteredOptions = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return options;
-    }
-
-    return options.filter((option) => {
-      if (option.value === null) {
-        return true;
-      }
-
-      return [option.label, option.meta]
-        .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(normalizedQuery));
-    });
-  }, [options, query]);
-
-  return (
-    <Modal
-      animationType="fade"
-      transparent
-      visible={visible}
-      onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{title}</Text>
-            <Pressable onPress={onClose} style={styles.modalClose}>
-              <Feather name="x" size={18} color={tokens.colors.ink} />
-            </Pressable>
-          </View>
-
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="Search"
-            placeholderTextColor={tokens.colors.inkSoft}
-            value={query}
-            onChangeText={setQuery}
-            style={styles.modalSearch}
-          />
-
-          <FlatList
-            data={filteredOptions}
-            keyboardShouldPersistTaps="handled"
-            keyExtractor={(option) => option.value ?? 'all'}
-            renderItem={({ item }) => (
-              <Pressable
-                onPress={() => onSelect(item.value)}
-                style={({ pressed }) => [
-                  styles.modalOption,
-                  pressed ? styles.modalOptionPressed : null,
-                ]}>
-                <Text numberOfLines={1} style={styles.modalOptionLabel}>{item.label}</Text>
-                {item.meta ? (
-                  <Text numberOfLines={1} style={styles.modalOptionMeta}>{item.meta}</Text>
-                ) : null}
-              </Pressable>
-            )}
-            ListEmptyComponent={<Text style={styles.modalEmpty}>No match</Text>}
-            ItemSeparatorComponent={() => <View style={styles.modalSeparator} />}
-            initialNumToRender={14}
-            maxToRenderPerBatch={16}
-            windowSize={8}
-            style={styles.modalOptions}
-          />
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-function buildFilterOptions(
-  activeFilter: FilterKey | null,
-  stock: WmsMobileStockResponse | null,
-  bootstrap: BootstrapResponse,
-  canFilterPartners: boolean,
-) {
-  if (activeFilter === 'tenant' && canFilterPartners) {
-    const stockPartners = stock?.context.tenantOptions ?? [];
-    const bootstrapPartners = bootstrap.context.tenantOptions ?? [];
-    const partners = stockPartners.length > 0 ? stockPartners : bootstrapPartners;
-
-    return [
-      { label: 'All partners', value: null },
-      ...partners.map((partner) => ({
-        label: partner.name,
-        value: partner.id,
-        meta: partner.slug,
-      })),
-    ];
-  }
-
-  if (activeFilter === 'warehouse') {
-    const stockWarehouses = stock?.context.warehouses ?? [];
-    const warehouses = stockWarehouses.length > 0 ? stockWarehouses : bootstrap.context.warehouses;
-
-    return [
-      { label: 'All warehouses', value: null },
-      ...warehouses.map((warehouse) => ({
-        label: warehouse.name,
-        value: warehouse.id,
-        meta: warehouse.code,
-      })),
-    ];
-  }
-
-  const stockStores = stock?.context.stores ?? [];
-  const stores = stockStores.length > 0 ? stockStores : bootstrap.context.stores;
-
-  return [
-    { label: 'All stores', value: null },
-    ...stores.map((store) => ({
-      label: store.name,
-      value: store.id,
-      meta: 'tenantName' in store && typeof store.tenantName === 'string'
-        ? store.tenantName
-        : undefined,
-    })),
-  ];
-}
-
-function resolveActivePartnerName(
-  stock: WmsMobileStockResponse | null,
-  bootstrap: BootstrapResponse,
-  activeTenantId: string | null,
-) {
-  if (!activeTenantId) {
-    return 'All partners';
-  }
-
-  const stockPartners = stock?.context.tenantOptions ?? [];
-  const bootstrapPartners = bootstrap.context.tenantOptions ?? [];
-  const partners = stockPartners.length > 0 ? stockPartners : bootstrapPartners;
-  const activePartner = partners.find((partner) => partner.id === activeTenantId);
-
-  return activePartner?.name ?? 'Partner';
-}
-
-function resolveActiveStoreName(stock: WmsMobileStockResponse | null, bootstrap: BootstrapResponse) {
-  if (stock && !stock.context.activeStoreId) {
-    return 'All stores';
-  }
-
-  const stockStores = stock?.context.stores ?? [];
-  const stores = stockStores.length > 0 ? stockStores : bootstrap.context.stores;
-  const activeStoreId = stock?.context.activeStoreId ?? bootstrap.context.defaultStoreId;
-  const activeStore = stores.find((store) => store.id === activeStoreId);
-
-  return activeStore?.name ?? resolveEntityName(bootstrap.context.stores, bootstrap.context.defaultStoreId);
-}
-
-function resolveActiveWarehouseName(stock: WmsMobileStockResponse | null, bootstrap: BootstrapResponse) {
-  if (stock && !stock.context.activeWarehouseId) {
-    return 'All warehouses';
-  }
-
-  const stockWarehouses = stock?.context.warehouses ?? [];
-  const warehouses = stockWarehouses.length > 0 ? stockWarehouses : bootstrap.context.warehouses;
-  const activeWarehouseId = stock?.context.activeWarehouseId ?? bootstrap.context.defaultWarehouseId;
-  const activeWarehouse = warehouses.find((warehouse) => warehouse.id === activeWarehouseId);
-
-  return (
-    activeWarehouse?.name
-    ?? resolveEntityName(bootstrap.context.warehouses, bootstrap.context.defaultWarehouseId, 'name')
   );
 }
 
@@ -728,69 +466,7 @@ const modeCopy: Record<StockMode, { title: string }> = {
   recent: { title: 'Recent' },
 };
 
-const filterTitle: Record<FilterKey, string> = {
-  tenant: 'Partner',
-  store: 'Store',
-  warehouse: 'Warehouse',
-};
-
 const styles = StyleSheet.create({
-  heroCard: {
-    gap: tokens.spacing.lg,
-  },
-  heroHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  heroCopy: {
-    flex: 1,
-    gap: tokens.spacing.sm,
-    paddingRight: tokens.spacing.md,
-  },
-  heroTitle: {
-    color: tokens.colors.surface,
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: -1,
-  },
-  heroPills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: tokens.spacing.sm,
-  },
-  heroIcon: {
-    alignItems: 'center',
-    backgroundColor: tokens.colors.accentSoft,
-    borderRadius: 28,
-    height: 56,
-    justifyContent: 'center',
-    width: 56,
-  },
-  heroMetrics: {
-    flexDirection: 'row',
-    gap: tokens.spacing.sm,
-  },
-  heroMetric: {
-    backgroundColor: 'rgba(255,255,255,0.11)',
-    borderRadius: tokens.radius.md,
-    flex: 1,
-    minWidth: 0,
-    paddingHorizontal: tokens.spacing.sm,
-    paddingVertical: tokens.spacing.sm,
-  },
-  heroMetricValue: {
-    color: tokens.colors.surface,
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: -0.4,
-  },
-  heroMetricLabel: {
-    color: tokens.colors.accentSoft,
-    fontSize: 11,
-    fontWeight: '800',
-    marginTop: 2,
-  },
   actionRow: {
     flexDirection: 'row',
     gap: tokens.spacing.sm,
@@ -799,40 +475,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: tokens.spacing.sm,
-  },
-  filterChip: {
-    backgroundColor: tokens.colors.surface,
-    borderColor: tokens.colors.border,
-    borderRadius: tokens.radius.lg,
-    borderWidth: 1,
-    flexGrow: 1,
-    minWidth: 104,
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.sm,
-  },
-  filterChipPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.99 }],
-  },
-  filterLabel: {
-    color: tokens.colors.inkSoft,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.7,
-    textTransform: 'uppercase',
-  },
-  filterValueRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: tokens.spacing.xs,
-    marginTop: 3,
-  },
-  filterValue: {
-    color: tokens.colors.ink,
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '800',
-    minWidth: 0,
   },
   list: {
     gap: tokens.spacing.sm,
@@ -857,115 +499,5 @@ const styles = StyleSheet.create({
     color: tokens.colors.panel,
     fontSize: 13,
     fontWeight: '900',
-  },
-  stateCard: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: tokens.spacing.md,
-    minHeight: 82,
-  },
-  stateIcon: {
-    alignItems: 'center',
-    backgroundColor: tokens.colors.surfaceMuted,
-    borderRadius: tokens.radius.pill,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  stateCopy: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
-  },
-  stateTitle: {
-    color: tokens.colors.ink,
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  stateValue: {
-    color: tokens.colors.inkMuted,
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-  },
-  stateAction: {
-    color: tokens.colors.accentStrong,
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  modalBackdrop: {
-    backgroundColor: 'rgba(18, 54, 79, 0.42)',
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: tokens.colors.surface,
-    borderTopLeftRadius: tokens.radius.xl,
-    borderTopRightRadius: tokens.radius.xl,
-    gap: tokens.spacing.md,
-    maxHeight: '72%',
-    padding: tokens.spacing.lg,
-  },
-  modalHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  modalTitle: {
-    color: tokens.colors.ink,
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  modalClose: {
-    alignItems: 'center',
-    backgroundColor: tokens.colors.surfaceMuted,
-    borderRadius: tokens.radius.pill,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
-  },
-  modalSearch: {
-    backgroundColor: tokens.colors.surfaceMuted,
-    borderColor: tokens.colors.border,
-    borderRadius: tokens.radius.md,
-    borderWidth: 1,
-    color: tokens.colors.ink,
-    fontSize: 15,
-    fontWeight: '700',
-    minHeight: 48,
-    paddingHorizontal: tokens.spacing.md,
-  },
-  modalOptions: {},
-  modalOption: {
-    backgroundColor: tokens.colors.surfaceMuted,
-    borderRadius: tokens.radius.md,
-    minHeight: 58,
-    justifyContent: 'center',
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.sm,
-  },
-  modalOptionPressed: {
-    opacity: 0.82,
-  },
-  modalSeparator: {
-    height: tokens.spacing.sm,
-  },
-  modalEmpty: {
-    color: tokens.colors.inkMuted,
-    fontSize: 14,
-    fontWeight: '700',
-    paddingVertical: tokens.spacing.lg,
-    textAlign: 'center',
-  },
-  modalOptionLabel: {
-    color: tokens.colors.ink,
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  modalOptionMeta: {
-    color: tokens.colors.inkMuted,
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 2,
   },
 });

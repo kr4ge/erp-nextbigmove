@@ -284,6 +284,71 @@ export class WmsReceivingService {
         ? query.warehouseId
         : null;
 
+    const purchasableStoreFilter: Prisma.WmsPurchasingBatchWhereInput = activeStoreId
+      ? {
+          OR: [
+            { storeId: activeStoreId },
+            {
+              lines: {
+                some: {
+                  storeId: activeStoreId,
+                },
+              },
+            },
+          ],
+        }
+      : {};
+    const receivingStoreFilter: Prisma.WmsReceivingBatchWhereInput = activeStoreId
+      ? {
+          OR: [
+            { storeId: activeStoreId },
+            {
+              lines: {
+                some: {
+                  storeId: activeStoreId,
+                },
+              },
+            },
+          ],
+        }
+      : {};
+    const receivableAnd: Prisma.WmsPurchasingBatchWhereInput[] = [];
+    if (activeStoreId) {
+      receivableAnd.push(purchasableStoreFilter);
+    }
+    if (search) {
+      receivableAnd.push({
+        OR: [
+          { sourceRequestId: { contains: search, mode: 'insensitive' } },
+          { requestTitle: { contains: search, mode: 'insensitive' } },
+          {
+            lines: {
+              some: {
+                OR: [
+                  { requestedProductName: { contains: search, mode: 'insensitive' } },
+                  { productId: { contains: search, mode: 'insensitive' } },
+                  { variationId: { contains: search, mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+        ],
+      });
+    }
+    const receivingAnd: Prisma.WmsReceivingBatchWhereInput[] = [];
+    if (activeStoreId) {
+      receivingAnd.push(receivingStoreFilter);
+    }
+    if (search) {
+      receivingAnd.push({
+        OR: [
+          { code: { contains: search, mode: 'insensitive' } },
+          { purchasingBatch: { sourceRequestId: { contains: search, mode: 'insensitive' } } },
+          { purchasingBatch: { requestTitle: { contains: search, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
     const receivableWhere: Prisma.WmsPurchasingBatchWhereInput = {
       tenantId: scope.activeTenantId,
       status: {
@@ -292,41 +357,13 @@ export class WmsReceivingService {
           WmsPurchasingBatchStatus.RECEIVING,
         ],
       },
-      ...(activeStoreId ? { storeId: activeStoreId } : {}),
-      ...(search
-        ? {
-            OR: [
-              { sourceRequestId: { contains: search, mode: 'insensitive' } },
-              { requestTitle: { contains: search, mode: 'insensitive' } },
-              {
-                lines: {
-                  some: {
-                    OR: [
-                      { requestedProductName: { contains: search, mode: 'insensitive' } },
-                      { productId: { contains: search, mode: 'insensitive' } },
-                      { variationId: { contains: search, mode: 'insensitive' } },
-                    ],
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
+      ...(receivableAnd.length ? { AND: receivableAnd } : {}),
     };
 
     const receivingWhere: Prisma.WmsReceivingBatchWhereInput = {
       tenantId: scope.activeTenantId,
-      ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
-      ...(search
-        ? {
-            OR: [
-              { code: { contains: search, mode: 'insensitive' } },
-              { purchasingBatch: { sourceRequestId: { contains: search, mode: 'insensitive' } } },
-              { purchasingBatch: { requestTitle: { contains: search, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
+      ...(receivingAnd.length ? { AND: receivingAnd } : {}),
     };
 
     const [receivableBatches, receivingBatches, receivableCount, receivingCount, stagedBatchCount, stagedUnitCount] =
@@ -428,7 +465,7 @@ export class WmsReceivingService {
                 WmsReceivingBatchStatus.PUTAWAY_PENDING,
               ],
             },
-            ...(activeStoreId ? { storeId: activeStoreId } : {}),
+            ...(activeStoreId ? receivingStoreFilter : {}),
             ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
           },
         }),
@@ -1152,7 +1189,7 @@ export class WmsReceivingService {
             createMany: {
               data: selectedLines.map((entry, index) => ({
                 tenantId: scope.activeTenantId!,
-                storeId: purchasingBatch.storeId,
+                storeId: entry.purchasingLine.storeId,
                 lineNo: index + 1,
                 purchasingBatchLineId: entry.purchasingLine.id,
                 resolvedPosProductId: entry.purchasingLine.resolvedPosProductId,
@@ -1184,7 +1221,7 @@ export class WmsReceivingService {
           return {
             tenantId: scope.activeTenantId!,
             teamId: purchasingBatch.teamId,
-            storeId: purchasingBatch.storeId,
+            storeId: entry.purchasingLine.storeId,
             posProductId: entry.purchasingLine.resolvedPosProductId!,
             productProfileId: entry.purchasingLine.resolvedProfileId!,
             warehouseId: warehouse.id,

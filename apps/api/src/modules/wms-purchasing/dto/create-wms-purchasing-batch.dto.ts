@@ -47,6 +47,10 @@ class CreateWmsPurchasingBatchLineDto {
   variationId?: string;
 
   @IsOptional()
+  @IsUUID()
+  storeId?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(220)
   requestedProductName?: string;

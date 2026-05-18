@@ -37,6 +37,10 @@ export class CreateWmsSettingsUserDto {
   @IsUUID()
   roleId: string;
 
+  @IsOptional()
+  @IsEnum(['PICK', 'PACK'])
+  taskAssignmentType?: string | null;
+
   @IsEnum(['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED'])
   @IsOptional()
   status?: string;
@@ -67,6 +71,10 @@ export class UpdateWmsSettingsUserDto {
   @IsUUID()
   @IsOptional()
   roleId?: string;
+
+  @IsOptional()
+  @IsEnum(['PICK', 'PACK'])
+  taskAssignmentType?: string | null;
 
   @IsEnum(['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED'])
   @IsOptional()

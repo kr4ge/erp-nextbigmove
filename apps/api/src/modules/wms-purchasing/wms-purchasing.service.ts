@@ -230,33 +230,52 @@ export class WmsPurchasingService {
         : null;
 
     const normalizedSearch = this.cleanOptionalText(query.search);
+    const storeBatchFilter: Prisma.WmsPurchasingBatchWhereInput = activeStoreId
+      ? {
+          OR: [
+            { storeId: activeStoreId },
+            {
+              lines: {
+                some: {
+                  storeId: activeStoreId,
+                },
+              },
+            },
+          ],
+        }
+      : {};
+
+    const summaryAnd: Prisma.WmsPurchasingBatchWhereInput[] = [];
+    if (activeStoreId) {
+      summaryAnd.push(storeBatchFilter);
+    }
+    if (normalizedSearch) {
+      summaryAnd.push({
+        OR: [
+          { sourceRequestId: { contains: normalizedSearch, mode: 'insensitive' } },
+          { requestTitle: { contains: normalizedSearch, mode: 'insensitive' } },
+          { invoiceNumber: { contains: normalizedSearch, mode: 'insensitive' } },
+          { store: { name: { contains: normalizedSearch, mode: 'insensitive' } } },
+          { store: { shopName: { contains: normalizedSearch, mode: 'insensitive' } } },
+          {
+            lines: {
+              some: {
+                OR: [
+                  { requestedProductName: { contains: normalizedSearch, mode: 'insensitive' } },
+                  { productId: { contains: normalizedSearch, mode: 'insensitive' } },
+                  { variationId: { contains: normalizedSearch, mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+        ],
+      });
+    }
 
     const summaryWhere: Prisma.WmsPurchasingBatchWhereInput = {
       tenantId: scope.activeTenantId,
-      ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(query.requestType ? { requestType: query.requestType } : {}),
-      ...(normalizedSearch
-        ? {
-            OR: [
-              { sourceRequestId: { contains: normalizedSearch, mode: 'insensitive' } },
-              { requestTitle: { contains: normalizedSearch, mode: 'insensitive' } },
-              { invoiceNumber: { contains: normalizedSearch, mode: 'insensitive' } },
-              { store: { name: { contains: normalizedSearch, mode: 'insensitive' } } },
-              { store: { shopName: { contains: normalizedSearch, mode: 'insensitive' } } },
-              {
-                lines: {
-                  some: {
-                    OR: [
-                      { requestedProductName: { contains: normalizedSearch, mode: 'insensitive' } },
-                      { productId: { contains: normalizedSearch, mode: 'insensitive' } },
-                      { variationId: { contains: normalizedSearch, mode: 'insensitive' } },
-                    ],
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
+      ...(summaryAnd.length ? { AND: summaryAnd } : {}),
     };
 
     const listWhere: Prisma.WmsPurchasingBatchWhereInput = {
@@ -293,7 +312,7 @@ export class WmsPurchasingService {
         by: ['requestType'],
         where: {
           tenantId: scope.activeTenantId,
-          ...(activeStoreId ? { storeId: activeStoreId } : {}),
+          ...storeBatchFilter,
         },
         _count: {
           _all: true,
@@ -303,7 +322,7 @@ export class WmsPurchasingService {
         by: ['status'],
         where: {
           tenantId: scope.activeTenantId,
-          ...(activeStoreId ? { storeId: activeStoreId } : {}),
+          ...storeBatchFilter,
         },
         _count: {
           _all: true,
@@ -1503,6 +1522,7 @@ export class WmsPurchasingService {
     for (let index = 0; index < input.lines.length; index += 1) {
       const line = input.lines[index];
       const lineNo = line.lineNo ?? index + 1;
+      const lineStoreId = line.storeId ?? input.storeId;
 
       if (usedLineNos.has(lineNo)) {
         throw new BadRequestException(`Duplicate line number detected: ${lineNo}`);
@@ -1517,18 +1537,23 @@ export class WmsPurchasingService {
 
       await this.validateResolutionTargets(
         input.tenantId,
-        input.storeId,
+        lineStoreId,
         line.resolvedPosProductId,
         line.resolvedProfileId,
       );
 
+      if (lineStoreId !== input.storeId) {
+        await this.validateStore(input.tenantId, lineStoreId);
+      }
+
       normalized.push({
         tenantId: input.tenantId,
-        storeId: input.storeId,
+        storeId: lineStoreId,
         lineNo,
         sourceItemId: this.cleanOptionalText(line.sourceItemId),
         sourceSnapshot: this.toJsonValue({
           ...(line.sourceSnapshot ?? {}),
+          storeId: lineStoreId,
           originalPartnerUnitCost:
             line.partnerUnitCost === undefined ? null : this.numberOrNull(line.partnerUnitCost),
           originalSupplierUnitCost:
