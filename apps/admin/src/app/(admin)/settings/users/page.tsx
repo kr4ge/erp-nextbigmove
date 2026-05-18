@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MoreHorizontal } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { readStoredAdminUser, readStoredPermissions, type StoredAdminUser } from '@/lib/admin-session';
 import {
   hasAnyAdminPermission,
@@ -334,15 +335,38 @@ function UserRowActions({
   onDeactivate: (user: WmsSettingsUser) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<{ top: number; left: number } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) {
+      setMenuStyle(null);
       return;
     }
 
+    const updatePosition = () => {
+      if (!triggerRef.current) {
+        return;
+      }
+
+      const rect = triggerRef.current.getBoundingClientRect();
+      const menuWidth = 188;
+      const viewportPadding = 12;
+
+      setMenuStyle({
+        top: rect.bottom + 8,
+        left: Math.min(
+          window.innerWidth - menuWidth - viewportPadding,
+          Math.max(viewportPadding, rect.right - menuWidth),
+        ),
+      });
+    };
+
     const handlePointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!containerRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         setOpen(false);
       }
     };
@@ -353,18 +377,24 @@ function UserRowActions({
       }
     };
 
+    updatePosition();
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('keydown', handleEscape);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
 
     return () => {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
     };
   }, [open]);
 
   return (
     <div ref={containerRef} className="relative flex justify-end">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -375,37 +405,47 @@ function UserRowActions({
         <MoreHorizontal className="h-4 w-4" />
       </button>
 
-      {open ? (
-        <div
-          role="menu"
-          className="absolute right-0 top-11 z-20 min-w-[168px] rounded-[18px] border border-[#dce4ea] bg-white p-1.5 shadow-[0_24px_60px_-36px_rgba(18,56,75,0.45)]"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onEdit(user);
-            }}
-            className="flex w-full items-center rounded-[14px] px-3 py-2.5 text-left text-[13px] font-medium text-[#12384b] transition hover:bg-[#f5f8fa]"
-          >
-            Edit user
-          </button>
-          {user.status !== 'INACTIVE' ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onDeactivate(user);
+      {open && menuStyle
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              style={{
+                position: 'fixed',
+                top: menuStyle.top,
+                left: menuStyle.left,
+                width: 188,
               }}
-              className="flex w-full items-center rounded-[14px] px-3 py-2.5 text-left text-[13px] font-medium text-rose-700 transition hover:bg-rose-50"
+              className="z-[120] rounded-[18px] border border-[#dce4ea] bg-white p-1.5 shadow-[0_24px_60px_-36px_rgba(18,56,75,0.45)]"
             >
-              Deactivate user
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onEdit(user);
+                }}
+                className="flex w-full items-center rounded-[14px] px-3 py-2.5 text-left text-[13px] font-medium text-[#12384b] transition hover:bg-[#f5f8fa]"
+              >
+                Edit user
+              </button>
+              {user.status !== 'INACTIVE' ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    onDeactivate(user);
+                  }}
+                  className="flex w-full items-center rounded-[14px] px-3 py-2.5 text-left text-[13px] font-medium text-rose-700 transition hover:bg-rose-50"
+                >
+                  Deactivate user
+                </button>
+              ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
