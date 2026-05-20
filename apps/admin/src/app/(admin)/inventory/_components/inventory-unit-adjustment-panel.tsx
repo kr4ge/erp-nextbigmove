@@ -171,16 +171,24 @@ export function InventoryUnitAdjustmentPanel({
         <InlineMutedBox message="Adjustment destinations are not available for this unit." />
       ) : (
         <>
-          <div className="rounded-[14px] border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8193a0]">Current State</p>
-            <p className="mt-1 text-[13px] font-semibold text-[#12384b]">
+          <div className="flex flex-wrap gap-3">
+            <div className="card flex-1 min-w-[240px]">
+            <p className="card-label">Current State</p>
+            <p className="card-value text-[13px]">
               {formatInventoryStatusLabel(unit.status)}
               {' · '}
               {unit.currentLocation?.label ?? 'No location assigned'}
             </p>
+            </div>
+
+            <div className="card flex-1 min-w-[240px]">
+              <p className="card-label">Rule</p>
+              <p className="mt-1 text-[13px] font-semibold text-[#12384b]">{targetStatusMeta?.label}</p>
+              <p className="mt-1 text-[12px] text-[#637786]">{targetStatusMeta?.hint}</p>
+            </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div>
             <WmsSearchableSelect
               label="Target Status"
               value={targetStatus}
@@ -194,12 +202,6 @@ export function InventoryUnitAdjustmentPanel({
               allLabel="Select status"
               clearable={false}
             />
-
-            <div className="rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8193a0]">Rule</p>
-              <p className="mt-1 text-[13px] font-semibold text-[#12384b]">{targetStatusMeta?.label}</p>
-              <p className="mt-1 text-[12px] text-[#637786]">{targetStatusMeta?.hint}</p>
-            </div>
           </div>
 
           {targetStatus === 'PUTAWAY' ? (

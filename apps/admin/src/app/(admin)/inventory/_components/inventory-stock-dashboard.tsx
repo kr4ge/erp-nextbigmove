@@ -1,7 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { TrendingDown, TrendingUp } from 'lucide-react';
+import {LineChart, ScatterChart, TrendingDown, TrendingUp, Truck } from 'lucide-react';
+import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import type { WmsInventoryOverviewResponse } from '../_types/inventory';
 import {
   buildInventoryStockDashboard,
@@ -25,7 +26,11 @@ export function InventoryStockDashboard({
 
   return (
     <div className="space-y-5">
-      <section className="rounded-[20px] border border-[#dce4ea] bg-white p-4">
+      <WmsCompactPanel
+        title="Warehouse and Shipment Management"
+        icon={<Truck className='panel-icon' />}
+      >
+
         {filters ? (
           <div className="mb-4 border-b border-[#e7edf2] pb-4">
             {filters}
@@ -34,11 +39,7 @@ export function InventoryStockDashboard({
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
           <div className="min-w-0">
-            <h2 className="text-[1.1rem] font-semibold tracking-tight text-[#12384b]">
-              Warehouse and Shipment Management
-            </h2>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3">
               {dashboard.headline.map((metric) => (
                 <HeadlineMetricCard key={metric.id} metric={metric} />
               ))}
@@ -46,8 +47,7 @@ export function InventoryStockDashboard({
           </div>
 
           <div className="min-w-0 xl:border-l xl:border-slate-200 xl:pl-5">
-            <h2 className="text-[1.1rem] font-semibold tracking-tight text-[#12384b]">Milestones</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2">
               {dashboard.milestones.map((milestone) => (
                 <MilestoneCard key={milestone.id} milestone={milestone} />
               ))}
@@ -58,13 +58,13 @@ export function InventoryStockDashboard({
         <div className="sr-only" aria-live="polite">
           {isFetching ? 'Refreshing stock dashboard' : 'Stock dashboard ready'}
         </div>
-      </section>
+      </WmsCompactPanel>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
         <InventoryLogisticsReportsPanel units={overview?.units ?? []} />
 
         <div className="space-y-5">
-          <PlaceholderPanel title="Shipping Statistics">
+          <PlaceholderPanel title="Shipping Statistics" icon={<LineChart className='panel-icon' />}>
             <div className="grid min-h-[104px] gap-3 md:grid-cols-3">
               <BlankColumn />
               <BlankColumn />
@@ -72,7 +72,7 @@ export function InventoryStockDashboard({
             </div>
           </PlaceholderPanel>
 
-          <PlaceholderPanel title="Shipment Distribution">
+          <PlaceholderPanel title="Shipment Distribution" icon={<ScatterChart className='panel-icon' />}>
             <div className="grid min-h-[180px] gap-3 md:grid-cols-[minmax(0,1fr)_160px]">
               <BlankColumn />
               <BlankColumn />
@@ -87,15 +87,16 @@ export function InventoryStockDashboard({
 function PlaceholderPanel({
   title,
   children,
+  icon,
 }: {
   title: string;
   children: ReactNode;
+  icon: ReactNode;
 }) {
   return (
-    <section className="rounded-[20px] border border-[#dce4ea] bg-white p-4">
-      <h2 className="text-[1.1rem] font-semibold tracking-tight text-[#12384b]">{title}</h2>
-      <div className="mt-4">{children}</div>
-    </section>
+    <WmsCompactPanel title={title} icon={icon}>
+      {children}
+    </WmsCompactPanel>
   );
 }
 
@@ -110,11 +111,11 @@ function BlankColumn() {
 
 function HeadlineMetricCard({ metric }: { metric: StockHeadlineMetric }) {
   return (
-    <div className="min-h-[104px] rounded-[16px] border border-[#dce4ea] bg-white px-3.5 py-3">
-      <p className="truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8193a0]">
+    <div className="card">
+      <p className="card-label">
         {metric.label}
       </p>
-      <p className="mt-2 text-[24px] font-bold leading-none tracking-tight text-[#12384b] tabular-nums">
+      <p className="card-value">
         {metric.value}
       </p>
     </div>
@@ -125,16 +126,20 @@ function MilestoneCard({ milestone }: { milestone: StaticMilestone }) {
   const TrendIcon = milestone.direction === 'up' ? TrendingUp : TrendingDown;
 
   return (
-    <div className="min-h-[104px] rounded-[16px] border border-[#dce4ea] bg-white px-3.5 py-3">
+    <div className="card">
+      <p className="card-label">
+        {milestone.label}
+      </p>
       <div className="grid h-full grid-cols-[minmax(0,0.92fr)_auto] gap-2">
         <div className="min-w-0">
-          <p className="truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8193a0]">
-            {milestone.label}
-          </p>
-          <p className="mt-2 text-[24px] font-bold leading-none tracking-tight text-[#12384b] tabular-nums">
+          <p className="card-value">
             {milestone.value}
           </p>
-          <span className="mt-1 inline-flex items-center gap-1 text-[12px] font-bold text-emerald-500">
+          <span
+            className={`mt-1 inline-flex items-center gap-1 text-[12px] font-bold ${
+              milestone.direction === 'down' ? 'text-destructive' : 'text-success'
+            }`}
+          >
             <TrendIcon className="h-3.5 w-3.5" />
             {milestone.trend}
           </span>

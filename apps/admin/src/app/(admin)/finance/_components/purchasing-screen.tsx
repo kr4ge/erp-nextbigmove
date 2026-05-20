@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import {
+  Clipboard,
   ScanSearch,
 } from 'lucide-react';
 import { WmsPageShell } from '../../_components/wms-page-shell';
@@ -45,6 +46,7 @@ export function PurchasingScreen() {
 
         <WmsWorkspaceCard
           title="Requests"
+          icon={<Clipboard className='panel-icon' />}
           filters={(
             <PurchasingFilterBar
               filters={controller.overview?.filters}

@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../../warehouses/_utils/code39-barcode';
 import type { WmsInventoryUnitRecord } from '../_types/inventory';
 import {
@@ -98,65 +99,63 @@ export function InventoryLogisticsReportsPanel({
   };
 
   return (
-    <section className="rounded-[20px] border border-[#dce4ea] bg-white p-4">
+    <WmsCompactPanel
+      title="Logistics Reports"
+      icon={<BarChart3 className='panel-icon' />}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[1.1rem] font-semibold tracking-tight text-[#12384b]">Logistics Reports</h2>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            {LOGISTICS_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                onClick={() => setActiveTab(tab.value)}
-                className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
-                  activeTab === tab.value
-                    ? 'bg-[#12384b] text-white'
-                    : 'bg-[#f4f7f9] text-[#6f8290] hover:bg-[#eaf0f4] hover:text-[#12384b]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {LOGISTICS_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setActiveTab(tab.value)}
+              className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${
+                activeTab === tab.value
+                  ? 'bg-[#12384b] text-white'
+                  : 'bg-[#f4f7f9] text-[#6f8290] hover:bg-[#eaf0f4] hover:text-[#12384b]'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="relative shrink-0">
-            <Datepicker
-              value={datePickerValue}
-              onChange={handleDateRangeChange}
-              useRange={false}
-              asSingle={false}
-              showShortcuts={false}
-              showFooter={false}
-              primaryColor="orange"
-              readOnly
-              inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm transition-[width] duration-300 ease-out focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent ${
-                isTodayRange ? 'w-10' : 'w-[200px] sm:w-[236px]'
-              }`}
-              containerClassName=""
-              popupClassName={(defaultClass) => `${defaultClass} z-50 kpi-datepicker-light`}
-              displayFormat="MM/DD/YYYY"
-              separator=" – "
-              popoverDirection="down"
-              toggleIcon={() => (
-                <span className="flex w-full items-center gap-2 overflow-hidden">
-                  <CalendarDays className="h-4 w-4 shrink-0" />
-                  <span
-                    className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
-                      isTodayRange
-                        ? 'max-w-0 -translate-x-1 opacity-0'
-                        : 'max-w-[148px] translate-x-0 opacity-100 sm:max-w-[184px]'
-                    }`}
-                  >
-                    {dateRangeButtonLabel}
-                  </span>
+        <div className="relative shrink-0">
+          <Datepicker
+            value={datePickerValue}
+            onChange={handleDateRangeChange}
+            useRange={false}
+            asSingle={false}
+            showShortcuts={false}
+            showFooter={false}
+            primaryColor="yellow"
+            readOnly
+            inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm transition-[width] duration-300 ease-out focus:border-[#214c63] focus:outline-none focus:ring-2 focus:ring-[#dce4ea] dark:!border-slate-200 dark:!bg-white dark:!text-transparent ${
+              isTodayRange ? 'w-10' : 'w-[200px] sm:w-[236px]'
+            }`}
+            containerClassName=""
+            popupClassName={(defaultClass) => `${defaultClass} z-50 kpi-datepicker-light`}
+            displayFormat="MM/DD/YYYY"
+            separator=" – "
+            popoverDirection="down"
+            toggleIcon={() => (
+              <span className="flex w-full items-center gap-2 overflow-hidden">
+                <CalendarDays className="h-4 w-4 shrink-0" />
+                <span
+                  className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                    isTodayRange
+                      ? 'max-w-0 -translate-x-1 opacity-0'
+                      : 'max-w-[148px] translate-x-0 opacity-100 sm:max-w-[184px]'
+                  }`}
+                >
+                  {dateRangeButtonLabel}
                 </span>
-              )}
-              toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-orange-700"
-              placeholder=" "
-            />
-          </div>
+              </span>
+            )}
+            toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-primary"
+            placeholder=" "
+          />
         </div>
       </div>
 
@@ -216,7 +215,7 @@ export function InventoryLogisticsReportsPanel({
           ))}
         </div>
       ) : null}
-    </section>
+    </WmsCompactPanel>
   );
 }
 
@@ -244,10 +243,10 @@ function LogisticsUnitCard({
   const reportTone = getLogisticsReportTone(unit, tab);
 
   return (
-    <article className="rounded-[16px] border border-[#dce4ea] bg-white px-3.5 py-3">
+    <article className="card">
       <div className="flex items-start justify-between gap-3">
         <span
-          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${getInventoryStatusClassName(unit.status)}`}
+          className={`pill ${getInventoryStatusClassName(unit.status)}`}
         >
           {formatInventoryStatusLabel(unit.status)}
         </span>

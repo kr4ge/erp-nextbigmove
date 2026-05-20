@@ -171,14 +171,14 @@ export function WmsSearchableSelect({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`wms-pill-control flex items-center gap-2 rounded-full border bg-white pl-3.5 pr-2.5 text-[#12384b] transition ${
+        className={`wms-pill-control flex items-center gap-2 rounded-2xl border bg-white pl-3.5 pr-2.5 text-primary transition ${
           open ? 'border-[#96b4c3] shadow-[0_0_0_4px_rgba(18,56,75,0.08)]' : 'border-[#d7e0e7] hover:border-[#c6d4dd]'
         } ${triggerClassName}`}
       >
         {!hideInlineLabel ? (
           <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">{label}</span>
         ) : null}
-        <span className={`max-w-[180px] truncate text-[12.5px] font-semibold text-[#12384b] ${valueClassName}`}>
+        <span className={`max-w-[180px] truncate text-[12.5px] font-semibold text-primary ${valueClassName}`}>
           {selected?.label ?? allLabel}
         </span>
         <ChevronDown
@@ -205,13 +205,13 @@ export function WmsSearchableSelect({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder={placeholder}
-                  className="h-7 w-full border-none bg-transparent text-[13px] text-[#12384b] outline-none placeholder:text-[#94a3b8]"
+                  className="h-7 w-full border-none bg-transparent text-[13px] text-primary outline-none placeholder:text-[#94a3b8]"
                 />
                 {query ? (
                   <button
                     type="button"
                     onClick={() => setQuery('')}
-                    className="flex h-5 w-5 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-[#12384b]"
+                    className="flex h-5 w-5 items-center justify-center rounded-2xl text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-primary"
                     aria-label="Clear search"
                   >
                     <X className="h-3 w-3" />
@@ -272,14 +272,14 @@ function OptionRow({
       onClick={onClick}
       className={`flex w-full items-center justify-between gap-3 px-3.5 py-2 text-left text-[13px] transition ${
         active
-          ? 'bg-[#12384b] text-white'
-          : 'text-[#12384b] hover:bg-[#f1f5f7]'
+          ? 'bg-primary text-white'
+          : 'text-primary hover:bg-[#f1f5f7]'
       }`}
     >
       <span className="truncate font-semibold">{label}</span>
       {hint !== undefined ? (
         <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${
+          className={`shrink-0 rounded-2xl px-2 py-0.5 text-[10.5px] font-semibold ${
             active ? 'bg-white/15 text-white' : 'bg-[#f1f5f7] text-[#4d6677]'
           }`}
         >

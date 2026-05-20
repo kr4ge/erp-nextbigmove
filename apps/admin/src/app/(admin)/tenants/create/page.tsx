@@ -6,11 +6,11 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { ArrowLeft, Building2, Crown, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
+import { ArrowLeft, Building2, ClipboardCheck, Crown, ShieldCheck, Sparkles, UserCog, User as UserIcon } from 'lucide-react';
 import apiClient from '@/lib/api-client';
+import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
-import { WmsSectionCard } from '../../_components/wms-section-card';
 import { WmsFormField } from '../../_components/wms-form-field';
 import type { TenantPlan, TenantStatus } from '../_types/tenant';
 
@@ -20,7 +20,7 @@ const createTenantSchema = z.object({
     .string()
     .min(2, 'Tenant slug must be at least 2 characters')
     .max(50)
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase alphanumeric with hyphens'),
+    .regex(/^[a-z0-9-]+$/, 'Slug must contain only lowercase letters, numbers, and hyphens'),
   email: z.string().email('Invalid email address'),
   password: z
     .string()
@@ -36,7 +36,7 @@ const createTenantSchema = z.object({
   status: z.enum(['TRIAL', 'ACTIVE', 'SUSPENDED', 'CANCELLED']),
   maxUsers: z.number().min(1).max(10000),
   maxIntegrations: z.number().min(1).max(100),
-  trialDays: z.number().min(0).max(365).optional(),
+  trialDays: z.number().min(1).max(14).optional(),
 });
 
 type CreateTenantForm = z.infer<typeof createTenantSchema>;
@@ -102,6 +102,46 @@ const statusOptions: Array<{ value: TenantStatus; label: string }> = [
   { value: 'CANCELLED', label: 'Cancelled' },
 ];
 
+const createTenantSlugFromName = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+
+const sanitizeTenantSlugInput = (value: string) => value.toLowerCase().replace(/[^a-z0-9-]+/g, '');
+
+const normalizeTrialDaysInput = (value: string) => {
+  if (value === '') {
+    return '';
+  }
+
+  const parsedValue = Number(value);
+
+  if (!Number.isFinite(parsedValue)) {
+    return '';
+  }
+
+  if (parsedValue > 14) {
+    return 14;
+  }
+
+  return parsedValue;
+};
+
+const clampTrialDaysInput = (value: string) => {
+  const parsedValue = Number(value);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+    return 1;
+  }
+
+  if (parsedValue > 14) {
+    return 14;
+  }
+
+  return parsedValue;
+};
+
 export default function CreateTenantPage() {
   const router = useRouter();
   const [error, setError] = useState('');
@@ -140,13 +180,10 @@ export default function CreateTenantPage() {
   };
 
   const planType = watch('planType');
+  const trialDaysField = register('trialDays', { valueAsNumber: true });
 
   const handleTenantNameChange = (name: string) => {
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-    setValue('tenantSlug', slug);
+    setValue('tenantSlug', createTenantSlugFromName(name));
   };
 
   const handlePlanSelect = (preset: PlanPreset) => {
@@ -181,13 +218,11 @@ export default function CreateTenantPage() {
 
   return (
     <WmsPageShell
-      breadcrumb="Tenants"
       title="Create tenant"
-      description="Set up a new tenant organization together with its admin account and subscription limits."
       actions={
         <Link
           href="/tenants"
-          className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 font-semibold text-[#1d4b61] transition hover:border-[#c6d4dd]"
+          className="btn btn-lg btn-outline btn-icon"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to tenants
@@ -197,11 +232,7 @@ export default function CreateTenantPage() {
       {error ? <WmsInlineNotice tone="error">{error}</WmsInlineNotice> : null}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-        <WmsSectionCard
-          eyebrow="Step 1"
-          title="Organization"
-          description="How the tenant will appear across the platform and in URLs."
-        >
+        <WmsCompactPanel title="Organization" icon={<Building2 className='panel-icon' />}>
           <div className="grid gap-4 p-5 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <WmsFormField label="Organization name">
@@ -212,7 +243,7 @@ export default function CreateTenantPage() {
                     register('tenantName').onChange(event);
                     handleTenantNameChange(event.target.value);
                   }}
-                  className="wms-input w-full rounded-[14px]"
+                  className="input"
                   placeholder="Acme Corporation"
                 />
               </WmsFormField>
@@ -229,7 +260,12 @@ export default function CreateTenantPage() {
                 <input
                   {...register('tenantSlug')}
                   type="text"
-                  className="wms-input w-full rounded-[14px] font-mono tracking-tight"
+                  onChange={(event) => {
+                    const sanitizedSlug = sanitizeTenantSlugInput(event.target.value);
+                    event.target.value = sanitizedSlug;
+                    register('tenantSlug').onChange(event);
+                  }}
+                  className="input font-mono tracking-tight"
                   placeholder="acme-corp"
                 />
               </WmsFormField>
@@ -238,17 +274,13 @@ export default function CreateTenantPage() {
               ) : null}
             </div>
           </div>
-        </WmsSectionCard>
+        </WmsCompactPanel>
 
-        <WmsSectionCard
-          eyebrow="Step 2"
-          title="Admin account"
-          description="First user created for the tenant. They will own the workspace and can invite others."
-        >
+        <WmsCompactPanel title="Admin account" icon={<UserCog className='panel-icon' />}>
           <div className="grid gap-4 p-5 sm:grid-cols-2">
             <div>
               <WmsFormField label="First name">
-                <input {...register('firstName')} type="text" className="wms-input w-full rounded-[14px]" placeholder="Juan" />
+                <input {...register('firstName')} type="text" className="input" placeholder="Juan" />
               </WmsFormField>
               {errors.firstName ? (
                 <p className="mt-1.5 text-[12px] text-rose-600">{errors.firstName.message}</p>
@@ -257,7 +289,7 @@ export default function CreateTenantPage() {
 
             <div>
               <WmsFormField label="Last name">
-                <input {...register('lastName')} type="text" className="wms-input w-full rounded-[14px]" placeholder="Dela Cruz" />
+                <input {...register('lastName')} type="text" className="input" placeholder="Dela Cruz" />
               </WmsFormField>
               {errors.lastName ? (
                 <p className="mt-1.5 text-[12px] text-rose-600">{errors.lastName.message}</p>
@@ -273,7 +305,7 @@ export default function CreateTenantPage() {
                   <input
                     {...register('email')}
                     type="email"
-                    className="wms-input w-full rounded-[14px]"
+                    className="input"
                     placeholder="admin@acme.com"
                   />
                 </div>
@@ -291,7 +323,7 @@ export default function CreateTenantPage() {
                 <input
                   {...register('password')}
                   type="password"
-                  className="wms-input w-full rounded-[14px]"
+                  className="input"
                   placeholder="••••••••"
                 />
               </WmsFormField>
@@ -300,13 +332,9 @@ export default function CreateTenantPage() {
               ) : null}
             </div>
           </div>
-        </WmsSectionCard>
+        </WmsCompactPanel>
 
-        <WmsSectionCard
-          eyebrow="Step 3"
-          title="Plan & limits"
-          description="Pick a preset, then fine-tune the limits to match the contract."
-        >
+        <WmsCompactPanel title="Plan & limits" icon={<ClipboardCheck className='panel-icon' />}>
           <div className="space-y-5 p-5">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {planPresets.map((preset) => {
@@ -323,7 +351,7 @@ export default function CreateTenantPage() {
                         : 'border-[#dce4ea] hover:border-[#c6d4dd]'
                     }`}
                   >
-                    <div className={`absolute inset-0 bg-gradient-to-br opacity-60 ${preset.accent}`} />
+                    <div className={`card absolute inset-0 bg-gradient-to-br opacity-60 ${preset.accent}`} />
                     <div className="relative z-10 flex h-full flex-col gap-3">
                       <div className="flex items-center justify-between">
                         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-[#12384b] shadow-sm">
@@ -361,13 +389,24 @@ export default function CreateTenantPage() {
               </WmsFormField>
 
               {planType === 'trial' ? (
-                <WmsFormField label="Trial duration (days)" hint="0–365 days">
+                <WmsFormField label="Trial duration (days)">
                   <input
-                    {...register('trialDays', { valueAsNumber: true })}
+                    {...trialDaysField}
                     type="number"
-                    min={0}
-                    max={365}
-                    className="wms-input w-full rounded-[14px]"
+                    min={1}
+                    max={14}
+                    onChange={(event) => {
+                      const normalizedTrialDays = normalizeTrialDaysInput(event.target.value);
+                      event.target.value = normalizedTrialDays === '' ? '' : String(normalizedTrialDays);
+                      trialDaysField.onChange(event);
+                    }}
+                    onBlur={(event) => {
+                      const clampedTrialDays = clampTrialDaysInput(event.target.value);
+                      event.target.value = String(clampedTrialDays);
+                      trialDaysField.onBlur(event);
+                      setValue('trialDays', clampedTrialDays, { shouldDirty: true, shouldValidate: true });
+                    }}
+                    className="input"
                   />
                 </WmsFormField>
               ) : null}
@@ -378,7 +417,7 @@ export default function CreateTenantPage() {
                   type="number"
                   min={1}
                   max={10000}
-                  className="wms-input w-full rounded-[14px]"
+                  className="input"
                 />
               </WmsFormField>
 
@@ -388,14 +427,14 @@ export default function CreateTenantPage() {
                   type="number"
                   min={1}
                   max={100}
-                  className="wms-input w-full rounded-[14px]"
+                  className="input"
                 />
               </WmsFormField>
             </div>
           </div>
-        </WmsSectionCard>
+        </WmsCompactPanel>
 
-        <div className="sticky bottom-4 z-10 flex items-center justify-end gap-3 rounded-[20px] border border-[#dce4ea] bg-white/90 px-4 py-3 shadow-[0_18px_36px_-28px_rgba(18,56,75,0.35)] backdrop-blur">
+        <div className="flex items-center justify-end gap-3 rounded-[20px] border border-[#dce4ea] bg-white/90 px-4 py-3 shadow-[0_18px_36px_-28px_rgba(18,56,75,0.35)] backdrop-blur">
           <Link
             href="/tenants"
             className="wms-pill-control inline-flex items-center rounded-full border border-[#d7e0e7] bg-white px-4 font-semibold text-[#325368] transition hover:border-[#c6d4dd]"

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, Plus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { readStoredAdminUser, readStoredPermissions, type StoredAdminUser } from '@/lib/admin-session';
 import {
@@ -195,9 +195,10 @@ export default function SettingsUsersPage() {
           <button
             type="button"
             onClick={openCreateModal}
-            className="inline-flex h-10 items-center rounded-full bg-[#12384b] px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3040]"
+            className="btn btn-md btn-primary btn-icon"
           >
-            Create staff
+            <Plus className='h-3.5 w-3.5' />
+            Create Staff
           </button>
         ) : null
       }
@@ -224,11 +225,11 @@ export default function SettingsUsersPage() {
           </div>
 
           {data?.users.length ? (
-            <div className="overflow-hidden rounded-[26px] border border-[#dce4ea] bg-white shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)]">
+            <div className="overflow-hidden rounded-2xl border border-[#dce4ea] bg-white shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)]">
               <div className="overflow-x-auto">
                 <table className="min-w-[880px] w-full border-separate border-spacing-0">
                   <thead>
-                    <tr className="bg-[#fbfcfc] text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-[#7b8e9c]">
+                    <tr className="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
                       <th className="px-5 py-4">Staff</th>
                       <th className="px-5 py-4">WMS Roles</th>
                       <th className="px-5 py-4">Task</th>
@@ -288,12 +289,12 @@ function UserRow({
 }) {
   return (
     <tr className="text-sm text-[#12384b]">
-      <td className="px-5 py-4 align-top">
+      <td className="px-5 py-4 align-middle">
         <p className="font-semibold">{user.displayName}</p>
         <p className="mt-1 text-xs text-[#6f8290]">{user.email}</p>
         {user.employeeId ? <p className="mt-1 text-xs text-[#8a9aa6]">{user.employeeId}</p> : null}
       </td>
-      <td className="px-5 py-4 align-top">
+      <td className="px-5 py-4 align-middle">
         <div className="flex flex-wrap gap-1.5">
           {user.wmsRoles.map((assignment) => (
             <SettingsBadge key={assignment.assignmentId} tone="success">
@@ -305,7 +306,7 @@ function UserRow({
           ) : null}
         </div>
       </td>
-      <td className="px-5 py-4 align-top">
+      <td className="px-5 py-4 align-middle">
         {user.taskAssignment ? (
           <SettingsBadge tone={user.taskAssignment.taskType === 'PICK' ? 'warning' : 'success'}>
             {user.taskAssignment.taskType}
@@ -314,11 +315,11 @@ function UserRow({
           <SettingsBadge>Unassigned</SettingsBadge>
         )}
       </td>
-      <td className="px-5 py-4 align-top text-[#4f6777]">{formatDateTime(user.lastLoginAt)}</td>
-      <td className="px-5 py-4 align-top">
+      <td className="px-5 py-4 align-middle text-[#4f6777]">{formatDateTime(user.lastLoginAt)}</td>
+      <td className="px-5 py-4 align-middle">
         <SettingsBadge tone={user.status === 'ACTIVE' ? 'success' : 'neutral'}>{user.status}</SettingsBadge>
       </td>
-      <td className="px-5 py-4 align-top">
+      <td className="px-5 py-4 align-middle">
         {canWrite ? <UserRowActions user={user} onEdit={onEdit} onDeactivate={onDeactivate} /> : null}
       </td>
     </tr>

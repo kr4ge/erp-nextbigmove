@@ -3,6 +3,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   RefreshCw,
 } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
@@ -23,18 +24,14 @@ export function ProductsScreen() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="wms-page-title font-medium tracking-tight text-[#12384b]">
-          Products
-        </h1>
-
+      <div className="flex items-center justify-end gap-4">
         <div className="flex items-center gap-2.5">
           {controller.canSyncStore ? (
             <button
               type="button"
               onClick={() => void controller.syncSelectedStore()}
               disabled={!controller.selectedStoreId || controller.isSyncingStore}
-              className="wms-pill-control inline-flex items-center gap-2 rounded-full bg-[#12384b] px-4 font-semibold text-white shadow-[0_16px_36px_-24px_rgba(18,56,75,0.7)] transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-55"
+              className="btn btn-md btn-primary btn-icon"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${controller.isSyncingStore ? 'animate-spin' : ''}`} />
               {controller.isSyncingStore ? 'Syncing' : 'Sync products'}
@@ -70,6 +67,7 @@ export function ProductsScreen() {
 
       <WmsCompactPanel
         title="Product Profiles"
+        icon={<ClipboardList className='panel-icon'/>}
         headerActions={
           <div className="flex items-center gap-2">
             <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3 py-1 text-[11px] font-semibold text-[#4d6677]">
@@ -109,12 +107,12 @@ export function ProductsScreen() {
                   type="button"
                   onClick={() => controller.setCurrentPage(controller.currentPage - 1)}
                   disabled={controller.currentPage === 1}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
 
-                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-[#12384b]">
+                <span className="rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-primary">
                   {controller.currentPage} / {controller.totalPages}
                 </span>
 
@@ -122,7 +120,7 @@ export function ProductsScreen() {
                   type="button"
                   onClick={() => controller.setCurrentPage(controller.currentPage + 1)}
                   disabled={controller.currentPage === controller.totalPages}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -147,9 +145,9 @@ export function ProductsScreen() {
 
 function InsightCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[18px] border border-[#dce4ea] bg-white px-4 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">{label}</p>
-      <p className="mt-2 text-[1.4rem] font-semibold tracking-tight text-[#12384b]">{value}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
+      <p className="card-value">{value}</p>
     </div>
   );
 }

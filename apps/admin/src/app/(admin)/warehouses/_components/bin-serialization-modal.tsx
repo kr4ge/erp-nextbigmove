@@ -107,7 +107,7 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
           type="button"
           onClick={() => handlePrint('print')}
           disabled={!target}
-          className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 font-medium text-[#1d4b61] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn btn-md btn-outline btn-icon"
         >
           <Printer className="h-4 w-4" />
           Print
@@ -116,7 +116,7 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
           type="button"
           onClick={() => handlePrint('reprint')}
           disabled={!target}
-          className="wms-pill-control inline-flex items-center gap-2 rounded-full bg-[#12384b] px-4 font-medium text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn btn-md btn-primary btn-icon"
         >
           <RefreshCcw className="h-4 w-4" />
           Reprint
@@ -153,7 +153,7 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
 
           {activeTab === 'label' ? (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
-              <div className="rounded-[18px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-4">
+              <div className="card">
                 <div className="rounded-[14px] border border-[#d9e3ea] bg-white p-3">
                   <div
                     className="flex justify-center"
@@ -161,11 +161,11 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
                   />
                 </div>
 
-                <div className="mt-3 rounded-[14px] border border-[#e1e8ee] bg-white px-3 py-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#7a8f9d]">
+                <div className="card mt-3">
+                  <p className="card-label">
                     Barcode Value
                   </p>
-                  <p className="mt-1 break-all text-[12px] font-medium text-[#12384b]">{barcodeValue}</p>
+                  <p className="card-value text-base">{barcodeValue}</p>
                 </div>
               </div>
 
@@ -241,9 +241,9 @@ function SummaryTile({
   hint: string;
 }) {
   return (
-    <div className="rounded-[14px] border border-[#dce4ea] bg-[#fbfcfc] px-3 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7a8f9d]">{label}</p>
-      <p className="mt-1.5 text-[1.1rem] font-semibold text-[#12384b]">{value}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
+      <p className="card-value text-base">{value}</p>
       <p className="mt-1 text-[12px] text-[#637786]">{hint}</p>
     </div>
   );
@@ -251,9 +251,9 @@ function SummaryTile({
 
 function MetaItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[14px] border border-[#dce4ea] bg-white px-3 py-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7a8f9d]">{label}</p>
-      <p className="mt-1 text-[13px] font-medium text-[#12384b]">{value}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
+      <p className="card-value text-base">{value}</p>
     </div>
   );
 }

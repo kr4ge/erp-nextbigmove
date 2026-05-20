@@ -93,7 +93,7 @@ export function WarehouseFormModal({
       <button
         type="button"
         onClick={onClose}
-        className="wms-pill-control rounded-full border border-[#d7e0e7] bg-white px-4 font-medium text-[#1d4b61]"
+        className="btn btn-md btn-outline"
       >
         Cancel
       </button>
@@ -118,7 +118,7 @@ export function WarehouseFormModal({
             autoSeedOperationalLocations: warehouse ? undefined : state.autoSeedOperationalLocations,
           });
         }}
-        className="wms-pill-control rounded-full bg-[#12384b] px-4 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+        className="btn btn-md btn-primary"
       >
         {isSubmitting ? 'Saving...' : warehouse ? 'Save warehouse' : 'Create warehouse'}
       </button>
@@ -130,7 +130,6 @@ export function WarehouseFormModal({
       open={open}
       onClose={onClose}
       title={warehouse ? 'Edit warehouse' : 'New warehouse'}
-      description="Create the physical warehouse record and seed its default operational zones."
       footer={footer}
     >
       <div className="grid gap-4 md:grid-cols-2">
@@ -138,7 +137,7 @@ export function WarehouseFormModal({
           <input
             value={state.code}
             onChange={(event) => setState((current) => ({ ...current, code: event.target.value }))}
-            className="wms-input w-full"
+            className="input"
             placeholder="MNL-01"
           />
         </WmsFormField>
@@ -147,7 +146,7 @@ export function WarehouseFormModal({
           <input
             value={state.name}
             onChange={(event) => setState((current) => ({ ...current, name: event.target.value }))}
-            className="wms-input w-full"
+            className="input"
             placeholder="Main Warehouse"
           />
         </WmsFormField>
@@ -161,7 +160,7 @@ export function WarehouseFormModal({
                 status: event.target.value as WmsWarehouseStatus,
               }))
             }
-            className="wms-select w-full"
+            className="input"
           >
             <option value="ACTIVE">Active</option>
             <option value="INACTIVE">Inactive</option>
@@ -170,7 +169,7 @@ export function WarehouseFormModal({
         </WmsFormField>
 
         {!warehouse ? (
-          <div className="rounded-[24px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3 md:col-span-2">
+          <div className="rounded-2xl border border-border bg-[#fbfcfc] px-4 py-3 md:col-span-2">
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">Default zones</p>
             <label className="mt-2 flex items-center gap-3 text-sm text-[#12384b]">
               <input
@@ -194,7 +193,7 @@ export function WarehouseFormModal({
             <textarea
               value={state.description}
               onChange={(event) => setState((current) => ({ ...current, description: event.target.value }))}
-              className="wms-textarea w-full"
+              className="input"
               rows={3}
               placeholder="Operational scope, servicing notes, or area tags"
             />
@@ -206,7 +205,7 @@ export function WarehouseFormModal({
             <textarea
               value={state.address}
               onChange={(event) => setState((current) => ({ ...current, address: event.target.value }))}
-              className="wms-textarea w-full"
+              className="input"
               rows={2}
               placeholder="Physical warehouse address"
             />
@@ -220,7 +219,7 @@ export function WarehouseFormModal({
               onChange={(event) =>
                 setState((current) => ({ ...current, billingCompanyName: event.target.value }))
               }
-              className="wms-input w-full"
+              className="input"
               placeholder="Company name for invoice receipt"
             />
           </WmsFormField>
@@ -233,7 +232,7 @@ export function WarehouseFormModal({
               onChange={(event) =>
                 setState((current) => ({ ...current, billingAddress: event.target.value }))
               }
-              className="wms-textarea w-full"
+              className="input"
               rows={2}
               placeholder="Invoice billing address"
             />
@@ -244,7 +243,7 @@ export function WarehouseFormModal({
           <input
             value={state.bankName}
             onChange={(event) => setState((current) => ({ ...current, bankName: event.target.value }))}
-            className="wms-input w-full"
+            className="input"
             placeholder="UnionBank"
           />
         </WmsFormField>
@@ -255,7 +254,7 @@ export function WarehouseFormModal({
             onChange={(event) =>
               setState((current) => ({ ...current, bankAccountName: event.target.value }))
             }
-            className="wms-input w-full"
+            className="input"
             placeholder="WETRADE DIGITAL VENTURES INC."
           />
         </WmsFormField>
@@ -266,7 +265,7 @@ export function WarehouseFormModal({
             onChange={(event) =>
               setState((current) => ({ ...current, bankAccountNumber: event.target.value }))
             }
-            className="wms-input w-full"
+            className="input"
             placeholder="0021-8002-6773"
           />
         </WmsFormField>
@@ -277,7 +276,7 @@ export function WarehouseFormModal({
             onChange={(event) =>
               setState((current) => ({ ...current, bankAccountType: event.target.value }))
             }
-            className="wms-input w-full"
+            className="input"
             placeholder="Checking Account"
           />
         </WmsFormField>
@@ -289,7 +288,7 @@ export function WarehouseFormModal({
               onChange={(event) =>
                 setState((current) => ({ ...current, bankBranch: event.target.value }))
               }
-              className="wms-textarea w-full"
+              className="input"
               rows={2}
               placeholder="Branch details (optional)"
             />
@@ -303,7 +302,7 @@ export function WarehouseFormModal({
               onChange={(event) =>
                 setState((current) => ({ ...current, paymentInstructions: event.target.value }))
               }
-              className="wms-textarea w-full"
+              className="input"
               rows={2}
               placeholder="Additional instructions for partner payment"
             />

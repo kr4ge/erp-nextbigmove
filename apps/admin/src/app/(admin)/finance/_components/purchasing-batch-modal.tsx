@@ -1,7 +1,8 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
+import { ClipboardCheck, Clock, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsModal } from '../../_components/wms-modal';
 import type {
   UpdateWmsPurchasingLineInput,
@@ -146,18 +147,7 @@ export function PurchasingBatchModal({
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
           <div className="space-y-4">
-            <div className="rounded-[20px] border border-[#dce4ea] bg-[#fbfcfc]">
-              <div className="border-b border-[#e7edf2] px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">
-                  Request Lines
-                </p>
-                {editableLines ? (
-                  <p className="mt-1 text-[12px] text-[#5f7483]">
-                    Saving quantity or cost changes will send the request back to the partner as a revision.
-                  </p>
-                ) : null}
-              </div>
-
+            <WmsCompactPanel title="Request Lines" icon={<ClipboardCheck className='panel-icon' />}>
               <div className="max-h-[420px] overflow-y-auto">
                 <table className="min-w-full divide-y divide-[#eef2f5]">
                   <thead className="bg-white">
@@ -300,18 +290,13 @@ export function PurchasingBatchModal({
                           ) : null}
                         </tr>
                       );
-                    })}
+                  })}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </WmsCompactPanel>
 
-            <div className="rounded-[20px] border border-[#dce4ea] bg-[#fbfcfc]">
-              <div className="border-b border-[#e7edf2] px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">
-                  Timeline
-                </p>
-              </div>
+            <WmsCompactPanel title="Timeline" icon={<Clock className='panel-icon' />}>
               <div className="max-h-[220px] space-y-2 overflow-y-auto px-4 py-3">
                 {batch.events.length === 0 ? (
                   <p className="text-sm text-[#7b8e9c]">No events yet.</p>
@@ -332,14 +317,14 @@ export function PurchasingBatchModal({
                   ))
                 )}
               </div>
-            </div>
+            </WmsCompactPanel>
           </div>
 
           <div className="space-y-3">
             <MetricCard label="Status">
               <div className="space-y-2">
                 <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${getStatusClasses(batch.status)}`}
+                  className={`pill ${getStatusClasses(batch.status)}`}
                 >
                   {formatStatusLabel(batch.status)}
                 </span>
@@ -348,8 +333,8 @@ export function PurchasingBatchModal({
             </MetricCard>
 
             {canEdit && statusActions.length > 0 ? (
-              <div className="rounded-[16px] border border-[#dce4ea] bg-white px-3.5 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Actions</p>
+              <div className="card">
+                <p className="card-label">Actions</p>
                 <div className="mt-2 space-y-2">
                   {statusActions.map((action) => (
                     <button
@@ -368,8 +353,8 @@ export function PurchasingBatchModal({
             ) : null}
 
             {canCreateReceiving ? (
-              <div className="rounded-[16px] border border-[#f5d0ae] bg-[#fff7ed] px-3.5 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#c2410c]">
+              <div className="card">
+                <p className="card-label">
                   Stock Receiving
                 </p>
                 <p className="mt-1.5 text-[12px] leading-5 text-[#9a3412]">
@@ -444,8 +429,8 @@ function HeaderCell({ children, className = '' }: { children: string; className?
 
 function MetricCard({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-[16px] border border-[#dce4ea] bg-white px-3.5 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">{label}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
       <div className="mt-1.5 text-sm font-semibold text-[#12384b]">{children}</div>
     </div>
   );

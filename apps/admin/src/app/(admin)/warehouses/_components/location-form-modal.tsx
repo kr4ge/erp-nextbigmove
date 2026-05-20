@@ -176,6 +176,13 @@ export function LocationFormModal({
   const hasValidBinCapacity =
     state.kind !== 'BIN'
     || (Number.isFinite(Number(state.capacity)) && Number(state.capacity) >= 1);
+  const hasValidRackCapacity =
+    state.kind !== 'RACK'
+    || (
+      Number.isFinite(Number(state.capacity))
+      && Number(state.capacity) >= 1
+      && Number(state.capacity) <= DEFAULT_RACK_BINS
+    );
   const hasValidSectionCapacity =
     state.kind !== 'SECTION'
     || (
@@ -183,6 +190,14 @@ export function LocationFormModal({
       && Number(state.capacity) >= 1
       && Number(state.capacity) <= MAX_SECTION_RACKS
     );
+  const rackCapacityError =
+    state.kind === 'RACK' && !hasValidRackCapacity
+      ? `Slots must be between 1 and ${DEFAULT_RACK_BINS}.`
+      : '';
+  const sectionCapacityError =
+    state.kind === 'SECTION' && !hasValidSectionCapacity
+      ? 'Maximum of 2 racks'
+      : '';
 
   const autoCodePreview = useMemo(() => {
     if (!isStructuralCreate || !warehouse) {
@@ -230,6 +245,7 @@ export function LocationFormModal({
     isSubmitting ||
     !warehouse ||
     !parentSelected ||
+    !hasValidRackCapacity ||
     !hasValidSectionCapacity ||
     !hasValidBinCapacity ||
     (!location && !isStructuralCreate && (!state.code.trim() || !state.name.trim())) ||
@@ -240,7 +256,7 @@ export function LocationFormModal({
       <button
         type="button"
         onClick={onClose}
-        className="wms-pill-control rounded-full border border-[#d7e0e7] bg-white px-4 font-medium text-[#1d4b61]"
+        className="btn btn-md btn-outline"
       >
         Cancel
       </button>
@@ -248,6 +264,10 @@ export function LocationFormModal({
         type="button"
         disabled={saveDisabled}
         onClick={async () => {
+          if (!hasValidRackCapacity) {
+            return;
+          }
+
           const normalizedCapacity = state.capacity.trim() ? Number(state.capacity) : undefined;
           await onSubmit({
             parentId: !location && parentOptions.length > 0 && state.parentId ? state.parentId : undefined,
@@ -264,7 +284,7 @@ export function LocationFormModal({
             capacity: normalizedCapacity,
           });
         }}
-        className="wms-pill-control rounded-full bg-[#12384b] px-4 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+        className="btn btn-md btn-primary"
       >
         {isSubmitting ? 'Saving...' : location ? 'Save location' : 'Create location'}
       </button>
@@ -276,13 +296,12 @@ export function LocationFormModal({
       open={open}
       onClose={onClose}
       title={location ? 'Edit location' : 'New location'}
-      description="Build structural slots for storage or create the operational zones the warehouse team works from."
       footer={footer}
     >
       <div className="grid gap-4 md:grid-cols-2">
         <WmsFormField label="Kind">
           {location ? (
-            <input value={formatKindLabel(state.kind)} className="wms-input w-full" readOnly />
+            <input value={formatKindLabel(state.kind)} className="input" readOnly />
           ) : (
             <select
               value={state.kind}
@@ -293,7 +312,7 @@ export function LocationFormModal({
                   parentId: '',
                 }))
               }
-              className="wms-select w-full"
+              className="input"
             >
               <optgroup label="Structural">
                 <option value="SECTION">Section</option>
@@ -317,7 +336,7 @@ export function LocationFormModal({
             <select
               value={state.parentId}
               onChange={(event) => setState((current) => ({ ...current, parentId: event.target.value }))}
-              className="wms-select w-full"
+              className="input"
               disabled={parentOptions.length === 0}
             >
               <option value="">{parentOptions.length === 0 ? 'Root location' : 'Select parent'}</option>
@@ -329,7 +348,7 @@ export function LocationFormModal({
             </select>
           </WmsFormField>
         ) : (
-          <div className="rounded-[24px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3">
+          <div className="rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3">
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">Hierarchy</p>
             <p className="mt-2 text-sm text-[#12384b]">
               Structural hierarchy is locked after creation to preserve serialized location traceability.
@@ -344,15 +363,16 @@ export function LocationFormModal({
                 <input
                   value={state.name}
                   onChange={(event) => setState((current) => ({ ...current, name: event.target.value }))}
-                  className="wms-input w-full"
+                  className="input"
                   placeholder="e.g. Electronics, Appliances"
+                  required
                 />
               </WmsFormField>
             ) : null}
 
             <div className={state.kind === 'SECTION' ? '' : 'md:col-span-2'}>
               <WmsFormField label="Auto code">
-                <div className="wms-input flex min-h-[46px] w-full items-center bg-[#fbfcfc] text-[#12384b]">
+                <div className="input">
                   {parentSelected && autoCodePreview
                     ? state.kind === 'SECTION' && state.name.trim()
                       ? `${autoCodePreview} – ${state.name.trim()}`
@@ -370,7 +390,7 @@ export function LocationFormModal({
               <input
                 value={state.code}
                 onChange={(event) => setState((current) => ({ ...current, code: event.target.value }))}
-                className="wms-input w-full"
+                className="input"
                 placeholder="PACK-01, RTS-A"
                 readOnly={!!location && isStructuralKind(location.kind)}
               />
@@ -380,7 +400,7 @@ export function LocationFormModal({
               <input
                 value={state.name}
                 onChange={(event) => setState((current) => ({ ...current, name: event.target.value }))}
-                className="wms-input w-full"
+                className="input"
                 placeholder="Packing Bay"
               />
             </WmsFormField>
@@ -389,27 +409,37 @@ export function LocationFormModal({
 
         {state.kind === 'SECTION' ? (
           <WmsFormField label="Maximum Racks">
-            <input
-              type="number"
-              min={1}
-              max={MAX_SECTION_RACKS}
-              value={state.capacity}
-              onChange={(event) => setState((current) => ({ ...current, capacity: event.target.value }))}
-              className="wms-input w-full"
-              placeholder={String(MAX_SECTION_RACKS)}
-            />
+            <div className="space-y-2">
+              <input
+                type="number"
+                min={1}
+                max={MAX_SECTION_RACKS}
+                value={state.capacity}
+                onChange={(event) => setState((current) => ({ ...current, capacity: event.target.value }))}
+                aria-invalid={sectionCapacityError ? 'true' : 'false'}
+                className="input"
+                placeholder={String(MAX_SECTION_RACKS)}
+              />
+              {sectionCapacityError ? <p className="text-sm text-red-600">{sectionCapacityError}</p> : null}
+            </div>
           </WmsFormField>
         ) : state.kind === 'RACK' ? (
-          <WmsFormField label="Maximum Slots">
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={state.capacity}
-              onChange={(event) => setState((current) => ({ ...current, capacity: event.target.value }))}
-              className="wms-input w-full"
-              placeholder="6"
-            />
+          <WmsFormField
+            label="Maximum Slots"
+          >
+            <div className="space-y-2">
+              <input
+                type="number"
+                min={1}
+                max={DEFAULT_RACK_BINS}
+                value={state.capacity}
+                onChange={(event) => setState((current) => ({ ...current, capacity: event.target.value }))}
+                aria-invalid={rackCapacityError ? 'true' : 'false'}
+                className="input"
+                placeholder={String(DEFAULT_RACK_BINS)}
+              />
+              {rackCapacityError ? <p className="text-sm text-red-600">{rackCapacityError}</p> : null}
+            </div>
           </WmsFormField>
         ) : state.kind === 'BIN' ? (
           <WmsFormField label="Slot Capacity (Units)">
@@ -418,7 +448,7 @@ export function LocationFormModal({
               min={1}
               value={state.capacity}
               onChange={(event) => setState((current) => ({ ...current, capacity: event.target.value }))}
-              className="wms-input w-full"
+              className="input"
               placeholder="Required"
             />
           </WmsFormField>
@@ -428,7 +458,7 @@ export function LocationFormModal({
               type="number"
               value={state.capacity}
               onChange={(event) => setState((current) => ({ ...current, capacity: event.target.value }))}
-              className="wms-input w-full"
+              className="input"
               placeholder="Optional"
             />
           </WmsFormField>
@@ -441,11 +471,11 @@ export function LocationFormModal({
             onChange={(event) =>
               setState((current) => ({ ...current, sortOrder: Number(event.target.value) || 0 }))
             }
-            className="wms-input w-full"
+            className="input"
           />
         </WmsFormField>
 
-        <div className="rounded-[24px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3 md:col-span-2">
+        <div className="rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3 md:col-span-2">
           <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">Active</p>
           <label className="mt-2 flex items-center gap-3 text-sm text-[#12384b]">
             <input
@@ -468,7 +498,7 @@ export function LocationFormModal({
             <textarea
               value={state.description}
               onChange={(event) => setState((current) => ({ ...current, description: event.target.value }))}
-              className="wms-textarea w-full"
+              className="input"
               rows={3}
               placeholder="Optional warehouse note or routing hint"
             />

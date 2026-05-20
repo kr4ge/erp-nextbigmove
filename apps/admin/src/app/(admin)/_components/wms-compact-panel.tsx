@@ -1,8 +1,11 @@
+import clsx from 'clsx';
 import type { ReactNode } from 'react';
 
 type WmsCompactPanelProps = {
   title: string;
   eyebrow?: string;
+  meta?: string,
+  icon?: ReactNode;
   children: ReactNode;
   className?: string;
   headerActions?: ReactNode;
@@ -12,7 +15,8 @@ type WmsCompactPanelProps = {
 
 export function WmsCompactPanel({
   title,
-  eyebrow,
+  meta,
+  icon,
   children,
   className = '',
   headerActions,
@@ -24,22 +28,21 @@ export function WmsCompactPanel({
     <section
       className={
         isCard
-          ? `min-w-0 wms-surface border border-[#dce4ea] bg-white shadow-[0_24px_60px_-42px_rgba(18,56,75,0.36)] ${className}`.trim()
+          ? clsx(`panel panel-content`, className)
           : className || undefined
       }
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          {eyebrow ? (
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[#8193a0]">{eyebrow}</p>
-          ) : null}
-          <h2 className={`${eyebrow ? 'mt-2.5' : ''} wms-section-title font-medium tracking-tight text-[#12384b]`}>
-            {title}
-          </h2>
+      <div className={isCard ? 'panel-header' : 'flex items-start justify-between gap-4'}>
+        <div className="flex min-w-0 items-center gap-2">
+          {icon ? icon : null}
+          <h4 className="panel-title">{title}</h4>
         </div>
-        {headerActions ? <div className="shrink-0">{headerActions}</div> : null}
+          {meta ?
+           <span className="ml-auto hidden min-w-0 text-xs-tight text-slate-500 sm:inline">{meta}</span>
+          : null}
+        {headerActions ? <div className="ml-auto shrink-0">{headerActions}</div> : null}
       </div>
-      <div className="mt-3">{children}</div>
+      <div className={isCard ? 'p-3' : 'mt-3'}>{children}</div>
     </section>
   );
 }

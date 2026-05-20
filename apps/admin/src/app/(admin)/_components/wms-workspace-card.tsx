@@ -1,7 +1,9 @@
+import clsx from 'clsx';
 import type { ReactNode } from 'react';
 
 type WmsWorkspaceCardProps = {
   title: string;
+  icon?: ReactNode,
   actions?: ReactNode;
   filters?: ReactNode;
   children: ReactNode;
@@ -12,6 +14,7 @@ type WmsWorkspaceCardProps = {
 
 export function WmsWorkspaceCard({
   title,
+  icon,
   actions,
   filters,
   children,
@@ -20,22 +23,27 @@ export function WmsWorkspaceCard({
   contentClassName = '',
 }: WmsWorkspaceCardProps) {
   return (
-    <section className={`min-w-0 overflow-hidden rounded-[20px] border border-[#dce4ea] bg-white ${className}`.trim()}>
-      <div className="flex flex-col gap-3 border-b border-[#e7edf2] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <h2 className="min-w-0 text-[1.1rem] font-semibold tracking-tight text-[#12384b]">{title}</h2>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+    <section
+      className={clsx(
+        'panel panel-content',
+        className,
+      )}
+    >
+      <div className="panel-header">
+        {icon}
+        <h2 className="panel-title text-[#12384b]">{title}</h2>
       </div>
 
       {filters ? (
-        <div className="border-b border-[#e7edf2] bg-[#fcfdfd] px-4 py-3">
+        <div className="w-full min-w-0 border-b border-border/10 bg-secondary/20 px-4 py-3">
           {filters}
         </div>
       ) : null}
 
-      <div className={contentClassName}>{children}</div>
+      <div className={clsx('panel-content', contentClassName)}>{children}</div>
 
       {footer ? (
-        <div className="border-t border-[#e7edf2] bg-white px-4 py-3">
+        <div className="border-t border-border/10 bg-surface px-4 py-3">
           {footer}
         </div>
       ) : null}

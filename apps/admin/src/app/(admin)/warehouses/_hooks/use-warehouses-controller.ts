@@ -24,6 +24,8 @@ import type {
   WmsWarehousesOverviewResponse,
 } from '../_types/warehouse';
 
+const BANNER_AUTO_DISMISS_MS = 5000;
+
 type BannerState = {
   tone: 'success' | 'error';
   message: string;
@@ -117,6 +119,18 @@ export function useWarehousesController() {
       setSelectedWarehouseId(activeWarehouseId);
     }
   }, [overviewQuery.data?.activeWarehouseId, selectedWarehouseId]);
+
+  useEffect(() => {
+    if (!banner) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setBanner(null);
+    }, BANNER_AUTO_DISMISS_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [banner]);
 
   const activeWarehouse = overviewQuery.data?.activeWarehouse ?? null;
 

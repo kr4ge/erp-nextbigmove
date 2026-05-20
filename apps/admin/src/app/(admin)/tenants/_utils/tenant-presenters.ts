@@ -18,15 +18,15 @@ export function formatTenantStatus(status: TenantStatus) {
 export function getTenantStatusClassName(status: TenantStatus) {
   switch (status) {
     case 'ACTIVE':
-      return 'border border-emerald-200 bg-emerald-50 text-emerald-700';
+      return 'pill pill-success';
     case 'TRIAL':
-      return 'border border-[#c7dbe7] bg-[#eff5f9] text-[#1d4b61]';
+      return 'pill pill-info';
     case 'SUSPENDED':
-      return 'border border-amber-200 bg-amber-50 text-amber-700';
+      return 'pill pill-warning';
     case 'CANCELLED':
-      return 'border border-rose-200 bg-rose-50 text-rose-700';
+      return 'pill pill-destructive';
     default:
-      return 'border border-[#dce4ea] bg-[#fbfcfc] text-[#4d6677]';
+      return 'pill pill-white';
   }
 }
 
@@ -50,12 +50,12 @@ export function getTenantPlanClassName(plan: TenantPlan) {
     case 'enterprise':
       return 'border border-[#d9d2f1] bg-[#f3f0fb] text-[#5b4caa]';
     case 'professional':
-      return 'border border-[#c7dbe7] bg-[#eff5f9] text-[#1d4b61]';
+      return 'pill pill-info';
     case 'starter':
-      return 'border border-[#dbe7cf] bg-[#f3f7ec] text-[#4f6b33]';
+      return 'pill pill-success';
     case 'trial':
     default:
-      return 'border border-[#dce4ea] bg-[#fbfcfc] text-[#4d6677]';
+      return 'pill pill-destructive';
   }
 }
 

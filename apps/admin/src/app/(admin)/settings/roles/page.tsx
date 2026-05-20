@@ -28,6 +28,7 @@ import type {
   WmsSettingsRoleOptions,
   WmsSettingsRolesResponse,
 } from '../_types/settings';
+import { Plus } from 'lucide-react';
 
 type RoleModalState = {
   open: boolean;
@@ -178,9 +179,10 @@ export default function SettingsRolesPage() {
           <button
             type="button"
             onClick={openCreateModal}
-            className="inline-flex h-10 items-center rounded-full bg-[#12384b] px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3040]"
+            className="btn btn-md btn-primary btn-icon"
           >
-            Create role
+            <Plus className='h-3.5 w-3.5' />
+            Create Role
           </button>
         ) : null
       }
@@ -256,7 +258,7 @@ function RoleCard({
   const canMutate = canWrite && !role.isSystem;
 
   return (
-    <article className="rounded-[26px] border border-[#dce4ea] bg-white px-5 py-5 shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)]">
+    <article className="rounded-2xl border border-[#dce4ea] bg-white px-5 py-5 shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)]">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -275,7 +277,7 @@ function RoleCard({
             type="button"
             disabled={!canMutate}
             onClick={() => onEdit(role)}
-            className="rounded-full border border-[#d7e0e7] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#12384b] transition hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-45"
+            className="btn btn-sm btn-outline"
           >
             Edit
           </button>
@@ -283,7 +285,7 @@ function RoleCard({
             type="button"
             disabled={!canMutate || role.assignedUserCount > 0}
             onClick={() => onDelete(role)}
-            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-45"
+            className="btn btn-sm btn-destructive"
           >
             Delete
           </button>
@@ -324,9 +326,9 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function MiniStat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-[16px] border border-[#dce4ea] bg-[#fbfcfc] px-3 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8293a0]">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-[#12384b]">{value}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
+      <p className="card-value">{value}</p>
     </div>
   );
 }

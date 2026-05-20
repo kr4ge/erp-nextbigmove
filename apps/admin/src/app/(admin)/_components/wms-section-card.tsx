@@ -28,7 +28,7 @@ export function WmsSectionCard({
               {eyebrow}
             </p>
           ) : null}
-          <h2 className={`${eyebrow ? 'mt-1.5' : ''} text-[1.1rem] font-semibold tracking-tight text-[#12384b]`}>
+          <h2 className={`${eyebrow ? 'mt-1.5' : ''} text-[1.1rem] font-semibold tracking-tight text-primary`}>
             {title}
           </h2>
           {description ? (

@@ -116,7 +116,7 @@ function HeaderCell({
 }) {
   return (
     <th
-      className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-[#8193a0] ${
+      className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-muted bg-slate-50 ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >

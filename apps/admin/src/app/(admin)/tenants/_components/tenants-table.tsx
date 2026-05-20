@@ -51,7 +51,7 @@ export function TenantsTable({ tenants, isLoading }: TenantsTableProps) {
                   <span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#dce4ea] bg-[#fbfcfc] text-[#5e8196]">
                     <Building2 className="h-5 w-5" />
                   </span>
-                  <p className="text-sm font-semibold text-[#12384b]">No tenants yet</p>
+                  <p className="text-sm font-semibold text-primary">No tenants yet</p>
                   <p className="text-[12.5px] text-[#7b8e9c]">
                     Create your first tenant organization to get started.
                   </p>
@@ -66,11 +66,11 @@ export function TenantsTable({ tenants, isLoading }: TenantsTableProps) {
               return (
                 <tr
                   key={tenant.id}
-                  className="border-b border-[#edf2f6] text-[13px] text-[#12384b] transition hover:bg-[#fbfcfc]"
+                  className="border-b border-[#edf2f6] text-[13px] text-primary transition hover:bg-[#fbfcfc]"
                 >
                   <BodyCell className="font-semibold">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#12384b] text-white">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-white">
                         <Building2 className="h-4 w-4" />
                       </span>
                       <div className="min-w-0">
@@ -84,7 +84,7 @@ export function TenantsTable({ tenants, isLoading }: TenantsTableProps) {
 
                   <BodyCell>
                     <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getTenantStatusClassName(tenant.status)}`}
+                      className={`pill ${getTenantStatusClassName(tenant.status)}`}
                     >
                       {formatTenantStatus(tenant.status)}
                     </span>
@@ -92,7 +92,7 @@ export function TenantsTable({ tenants, isLoading }: TenantsTableProps) {
 
                   <BodyCell>
                     <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getTenantPlanClassName(tenant.planType)}`}
+                      className={`pill ${getTenantPlanClassName(tenant.planType)}`}
                     >
                       {formatTenantPlan(tenant.planType)}
                     </span>
@@ -113,7 +113,7 @@ export function TenantsTable({ tenants, isLoading }: TenantsTableProps) {
                   <BodyCell align="right">
                     <Link
                       href={`/tenants/${tenant.id}`}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-[#d7e0e7] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#12384b] transition hover:border-[#12384b] hover:bg-[#12384b] hover:text-white"
+                      className="btn btn-sm btn-outline btn-icon"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                       Manage
@@ -133,12 +133,12 @@ function UsageCell({ current, max }: { current: number; max: number }) {
   const ratio = max > 0 ? Math.min(1, current / max) : 0;
   const percent = Math.round(ratio * 100);
   const barColor =
-    percent >= 90 ? 'bg-rose-400' : percent >= 70 ? 'bg-amber-400' : 'bg-[#12384b]';
+    percent >= 90 ? 'bg-destructive/60' : percent >= 70 ? 'bg-warning/60' : 'bg-primary';
 
   return (
     <div className="min-w-[120px]">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[12.5px] font-semibold tabular-nums text-[#12384b]">
+        <span className="text-[12.5px] font-semibold tabular-nums text-primary">
           {current.toLocaleString()}
         </span>
         <span className="text-[11px] text-[#7c8f9b]">/ {max.toLocaleString()}</span>
@@ -162,7 +162,7 @@ function HeaderCell({
 }) {
   return (
     <th
-      className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-[#8193a0] ${
+      className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.24em] bg-slate-50 text-muted ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >

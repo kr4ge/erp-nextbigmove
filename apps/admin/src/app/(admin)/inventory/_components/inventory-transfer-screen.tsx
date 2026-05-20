@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, History, Truck } from 'lucide-react';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
@@ -81,6 +81,7 @@ export function InventoryTransferScreen() {
 
             <WmsWorkspaceCard
               title="Transfer History"
+              icon={<History className='panel-icon' />}
               filters={(
                 <InventoryTransferHistoryFilterBar
                   filters={history.history?.filters}
@@ -105,12 +106,12 @@ export function InventoryTransferScreen() {
                       type="button"
                       onClick={() => history.setCurrentPage(history.currentPage - 1)}
                       disabled={history.currentPage === 1}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </button>
 
-                    <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-[#12384b]">
+                    <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-primary">
                       {history.currentPage} / {history.totalPages}
                     </span>
 
@@ -118,7 +119,7 @@ export function InventoryTransferScreen() {
                       type="button"
                       onClick={() => history.setCurrentPage(history.currentPage + 1)}
                       disabled={history.currentPage === history.totalPages}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       <ChevronRight className="h-4 w-4" />
                     </button>
@@ -152,10 +153,10 @@ function ViewButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] font-semibold transition ${
+      className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition ${
         active
-          ? 'border-[#12384b] bg-[#12384b] text-white'
-          : 'border-[#d7e0e7] bg-white text-[#4f6776] hover:border-[#c6d4dd] hover:text-[#12384b]'
+          ? 'border-primary bg-primary text-white'
+          : 'border-[#d7e0e7] bg-white text-[#4f6776] hover:border-[#c6d4dd] hover:text-primary'
       }`}
     >
       {label}

@@ -140,8 +140,8 @@ export function ReceivingBatchLabelsModal({
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="rounded-[16px] border border-[#dce4ea] bg-white px-3.5 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Batch Context</p>
+          <div className="card">
+            <p className="card-label">Batch Context</p>
             <p className="mt-1 text-sm font-semibold text-[#12384b]">
               {batch.sourceRequestId || batch.requestTitle || 'Manual request'}
             </p>
@@ -151,7 +151,7 @@ export function ReceivingBatchLabelsModal({
             </p>
           </div>
 
-          <div className="max-h-[560px] space-y-3 overflow-y-auto rounded-[20px] border border-[#dce4ea] bg-[#fbfcfc] p-3">
+          <div className="max-h-[560px] space-y-3 overflow-y-auto rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] p-3">
             {unitsWithMarkup.length === 0 ? (
               <div className="px-4 py-10 text-center text-sm text-[#7b8e9c]">
                 No units in this batch yet.

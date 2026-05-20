@@ -35,6 +35,7 @@ export function WmsScopeFilterFields({
           options={tenantOptions}
           placeholder="Search tenants…"
           allLabel="All tenants"
+          hideInlineLabel={true}
         />
       ) : null}
 
@@ -46,6 +47,7 @@ export function WmsScopeFilterFields({
           options={storeOptions}
           placeholder="Search stores…"
           allLabel="All stores"
+          hideInlineLabel={true}
         />
       ) : null}
 
@@ -57,6 +59,7 @@ export function WmsScopeFilterFields({
           options={warehouseOptions}
           placeholder="Search warehouses…"
           allLabel="All warehouses"
+          hideInlineLabel={true}
         />
       ) : null}
     </>

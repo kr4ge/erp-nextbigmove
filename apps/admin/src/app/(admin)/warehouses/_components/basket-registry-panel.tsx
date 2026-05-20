@@ -43,7 +43,7 @@ export function BasketRegistryPanel({
   const baskets = warehouse?.baskets ?? [];
 
   return (
-    <WmsCompactPanel title="Basket Registry">
+    <WmsCompactPanel title="Basket Registry" icon={<ShoppingBasket className='panel-icon' />}>
       <div className="space-y-3">
         <div className="grid grid-cols-3 gap-2 text-center">
           <BasketMetric label="Available" value={baskets.filter((basket) => basket.status === 'AVAILABLE').length} />
@@ -56,12 +56,12 @@ export function BasketRegistryPanel({
             value={barcode}
             onChange={(event) => setBarcode(event.target.value)}
             placeholder="Auto or scan barcode"
-            className="wms-input min-w-0 flex-1 rounded-[14px] text-[13px]"
+            className="input"
           />
           <button
             type="submit"
             disabled={isSaving || !warehouse}
-            className="inline-flex h-10 items-center justify-center rounded-[14px] bg-[#12384b] px-3 text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-12 items-center justify-center rounded-[14px] bg-primary px-4 text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Register basket"
           >
             <Plus className="h-4 w-4" />
@@ -82,7 +82,7 @@ export function BasketRegistryPanel({
           </div>
         ) : (
           <div className="rounded-[18px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-4 py-5 text-center">
-            <ShoppingBasket className="mx-auto h-5 w-5 text-[#8a9aa6]" />
+            <ShoppingBasket className="mx-auto h-5 w-5 text-primary" />
             <p className="mt-2 text-[12px] font-semibold text-[#12384b]">No baskets registered</p>
             <p className="mt-1 text-[11px] text-[#7b8e9c]">Add baskets here before pickers can scan them in STOX.</p>
           </div>
@@ -101,9 +101,9 @@ export function BasketRegistryPanel({
 
 function BasketMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-[14px] border border-[#dce4ea] bg-[#fbfcfc] px-2 py-2">
-      <p className="text-[18px] font-bold tabular-nums text-[#12384b]">{value}</p>
-      <p className="text-[10.5px] font-semibold text-[#7b8e9c]">{label}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
+      <p className="card-value">{value}</p>
     </div>
   );
 }

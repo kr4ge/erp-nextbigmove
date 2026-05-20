@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowRightLeft, Info, Loader2, Tags } from 'lucide-react';
+import { ArrowRightLeft, Info, Loader2, Tags, Truck } from 'lucide-react';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
 import type {
   WmsReceivingBatchDetail,
@@ -211,8 +211,7 @@ export function InventoryTransfersTab({
   const allActionableSelected =
     actionableUnitIds.length > 0 && actionableUnitIds.every((unitId) => selectedUnitIds.includes(unitId));
   const selectedActionableCount = selectedUnitIds.length;
-  const assignmentGridClassName =
-    'grid items-start gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_180px]';
+  const assignmentGridClassName = 'grid items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3';
 
   const updateActiveGroupDraft = (update: Partial<PutawayDraft>) => {
     if (!activeGroup) {
@@ -322,7 +321,7 @@ export function InventoryTransfersTab({
                   key={batch.id}
                   type="button"
                   onClick={() => onSelectBatch(batch)}
-                  className={`w-[216px] shrink-0 rounded-[12px] border px-3 py-2.5 text-left transition sm:w-[228px] ${
+                  className={`w-[216px] shrink-0 rounded-2xl border px-3 py-2.5 text-left transition sm:w-[228px] ${
                     active
                       ? 'border-[#f4c57c] bg-[#fff7ed]'
                       : 'border-transparent bg-transparent hover:border-[#dce4ea] hover:bg-[#f8fbfc]'
@@ -332,7 +331,7 @@ export function InventoryTransfersTab({
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-[#12384b]">{batch.code}</p>
                     </div>
-                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${getReceivingStatusClassName(batch.status)}`}>
+                    <span className={`pill ${getReceivingStatusClassName(batch.status)}`}>
                       {formatReceivingStatusLabel(batch.status)}
                     </span>
                   </div>
@@ -352,6 +351,7 @@ export function InventoryTransfersTab({
 
       <WmsWorkspaceCard
         title={selectedBatch ? selectedBatch.code : 'Transfer'}
+        icon={<Truck className="panel-icon" />}
         actions={
           selectedBatch ? (
             <button
@@ -368,7 +368,7 @@ export function InventoryTransfersTab({
       >
           {!selectedBatch ? (
             <div className="rounded-[20px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-6 py-14 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#12384b]">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-primary">
                 <ArrowRightLeft className="h-6 w-6" />
               </div>
               <p className="mt-4 text-sm font-semibold text-[#12384b]">Select a batch to start put-away</p>
@@ -410,7 +410,7 @@ export function InventoryTransfersTab({
                       key={value}
                       type="button"
                       onClick={() => setUnitFilter(value as 'all' | 'pending' | 'done')}
-                      className={`inline-flex items-center rounded-full border px-3 py-1.5 text-[10.5px] font-semibold transition ${
+                      className={`pill transition ${
                         unitFilter === value
                           ? 'border-[#f97316] bg-[#fff7ed] text-[#c2410c]'
                           : 'border-[#d7e0e7] bg-white text-[#4d6677] hover:border-[#c6d4dd]'
@@ -462,7 +462,7 @@ export function InventoryTransfersTab({
                       <div className="flex flex-wrap items-start gap-3">
                         <div>
                           <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-[#12384b]">{activeGroup.label}</p>
+                            <p className="form-label">{activeGroup.label}</p>
                             {activeGroup.isUnassigned ? (
                               <span
                                 title="Assign a default section in Products > Section Assignment to remove these units from the Unassigned workflow."
@@ -478,7 +478,8 @@ export function InventoryTransfersTab({
                         </div>
                       </div>
 
-                      <div className={`mt-3 ${assignmentGridClassName}`}>
+                      <div className="mt-3 space-y-3">
+                        <div className={assignmentGridClassName}>
                         {activeGroup.sectionId ? (
                           <TransferInfoCard
                             title="Section"
@@ -486,7 +487,7 @@ export function InventoryTransfersTab({
                             hint="Locked by product section assignment"
                           />
                         ) : (
-                          <label className="min-w-0 self-start space-y-2 rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
+                          <label className="flex h-full min-w-0 flex-col space-y-2 rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
                             <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8193a0]">
                               Section
                             </span>
@@ -500,7 +501,7 @@ export function InventoryTransfersTab({
                                 })
                               }
                               disabled={!canPutAway || isLoadingPutawayOptions}
-                              className="h-10 w-full rounded-[11px] border border-[#d7e0e7] bg-white px-3 text-[12px] text-[#12384b] outline-none transition focus:border-[#a9c1ce] disabled:cursor-not-allowed disabled:bg-[#f8fafb] disabled:text-[#7c8f9b]"
+                              className="input"
                             >
                               <option value="">Select section</option>
                               {sections.map((section) => (
@@ -512,7 +513,7 @@ export function InventoryTransfersTab({
                           </label>
                         )}
 
-                        <label className="min-w-0 self-start space-y-2 rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
+                        <label className="flex h-full min-w-0 flex-col space-y-2 rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
                           <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8193a0]">
                             Rack
                           </span>
@@ -525,7 +526,7 @@ export function InventoryTransfersTab({
                               })
                             }
                             disabled={!canPutAway || isLoadingPutawayOptions || !activeDraft.sectionId}
-                            className="h-10 w-full rounded-[11px] border border-[#d7e0e7] bg-white px-3 text-[12px] text-[#12384b] outline-none transition focus:border-[#a9c1ce] disabled:cursor-not-allowed disabled:bg-[#f8fafb] disabled:text-[#7c8f9b]"
+                            className="input"
                           >
                             <option value="">Select rack</option>
                             {rackOptions.map((rack) => (
@@ -536,7 +537,7 @@ export function InventoryTransfersTab({
                           </select>
                         </label>
 
-                        <label className="min-w-0 self-start space-y-2 rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
+                        <label className="flex h-full min-w-0 flex-col space-y-2 rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
                           <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8193a0]">
                             Bin
                           </span>
@@ -548,7 +549,7 @@ export function InventoryTransfersTab({
                               })
                             }
                             disabled={!canPutAway || isLoadingPutawayOptions || !activeDraft.rackId}
-                            className="h-10 w-full rounded-[11px] border border-[#d7e0e7] bg-white px-3 text-[12px] text-[#12384b] outline-none transition focus:border-[#a9c1ce] disabled:cursor-not-allowed disabled:bg-[#f8fafb] disabled:text-[#7c8f9b]"
+                            className="input"
                           >
                             <option value="">Select bin</option>
                             {binOptions.map((bin) => (
@@ -572,7 +573,9 @@ export function InventoryTransfersTab({
                           </p>
                         </label>
 
-                        <div className="flex items-stretch self-start sm:col-span-2 xl:col-span-1">
+                        </div>
+
+                        <div className="flex items-stretch">
                           <button
                             type="button"
                             onClick={() => void handleAssignSelected()}
@@ -587,7 +590,7 @@ export function InventoryTransfersTab({
                               || !!selectedBin?.isFull
                               || selectedBin?.capacity === null
                             }
-                            className="inline-flex h-11 w-full items-center justify-center rounded-[14px] bg-[#12384b] px-4 text-[12px] font-semibold text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
+                            className="btn btn-md btn-primary w-full"
                           >
                             {isAssigningPutaway
                               ? 'Saving…'
@@ -603,7 +606,7 @@ export function InventoryTransfersTab({
                   <div className="overflow-hidden rounded-[18px] border border-[#dce4ea] bg-white">
                     <div className="overflow-x-auto">
                       <table className="min-w-[760px] w-full border-separate border-spacing-0">
-                        <thead className="bg-[#eff4f7]">
+                        <thead className="bg-slate-50">
                           <tr>
                             <HeaderCell className="w-[52px]">
                               <input
@@ -693,7 +696,7 @@ export function InventoryTransfersTab({
 
                                 <BodyCell>
                                   <div className="min-w-[112px] space-y-1">
-                                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${getTransferUnitStatusClassName(unit.status)}`}>
+                                    <span className={`pill ${getTransferUnitStatusClassName(unit.status)}`}>
                                       {formatTransferUnitStatus(unit.status)}
                                     </span>
                                     <p className="text-[11px] text-[#7c8f9b]">
@@ -739,7 +742,7 @@ function TransferInfoCard({
   hint: string;
 }) {
   return (
-    <div className="self-start rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
+    <div className="flex h-full min-w-0 flex-col rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
       <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8193a0]">{title}</p>
       <p className="mt-1.5 text-sm font-semibold text-[#12384b]">{value}</p>
       <p className="mt-1 text-[12px] text-[#6f8290]">{hint}</p>

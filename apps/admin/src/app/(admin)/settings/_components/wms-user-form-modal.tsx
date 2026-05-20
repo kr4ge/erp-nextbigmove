@@ -138,7 +138,6 @@ export function WmsUserFormModal({
     <WmsModal
       open={open}
       title={isEdit ? 'Edit WMS staff' : 'Create WMS staff'}
-      description="WMS access is separate from ERP tenant user access."
       onClose={onClose}
       panelClassName="max-w-[720px]"
       footer={
@@ -146,7 +145,7 @@ export function WmsUserFormModal({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 items-center rounded-[12px] border border-[#d7e0e7] bg-white px-4 text-[13px] font-semibold text-[#12384b] transition hover:bg-[#f8fafb]"
+            className="btn btn-md btn-outline"
           >
             Cancel
           </button>
@@ -154,7 +153,7 @@ export function WmsUserFormModal({
             type="submit"
             form="wms-user-form"
             disabled={isSubmitting || !form.roleId}
-            className="inline-flex h-10 items-center rounded-[12px] bg-[#12384b] px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3040] disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn btn-md btn-primary"
           >
             {isSubmitting ? 'Saving...' : isEdit ? 'Save changes' : 'Create staff'}
           </button>
@@ -174,7 +173,7 @@ export function WmsUserFormModal({
               required
               value={form.firstName}
               onChange={(event) => setField('firstName', event.target.value)}
-              className="wms-input w-full rounded-[14px]"
+              className="input"
             />
           </WmsFormField>
 
@@ -183,18 +182,18 @@ export function WmsUserFormModal({
               required
               value={form.lastName}
               onChange={(event) => setField('lastName', event.target.value)}
-              className="wms-input w-full rounded-[14px]"
+              className="input"
             />
           </WmsFormField>
 
-          <WmsFormField label="Email">
+          <WmsFormField label="Email" hint={isEdit ? 'Cannot be changed.' : undefined}>
             <input
               required
               disabled={isEdit}
               type="email"
               value={form.email}
               onChange={(event) => setField('email', event.target.value)}
-              className="wms-input w-full rounded-[14px] disabled:bg-[#f4f7f8] disabled:text-[#7b8e9c]"
+              className="input disabled:bg-[#f4f7f8] disabled:text-[#7b8e9c]"
             />
           </WmsFormField>
 
@@ -205,7 +204,7 @@ export function WmsUserFormModal({
               minLength={8}
               value={form.password}
               onChange={(event) => setField('password', event.target.value)}
-              className="wms-input w-full rounded-[14px]"
+              className="input"
             />
           </WmsFormField>
 
@@ -215,7 +214,7 @@ export function WmsUserFormModal({
               disabled={wmsRoles.length === 0}
               value={form.roleId}
               onChange={(event) => setField('roleId', event.target.value)}
-              className="wms-input w-full rounded-[14px] disabled:bg-[#f4f7f8] disabled:text-[#7b8e9c]"
+              className="input disabled:bg-[#f4f7f8] disabled:text-[#7b8e9c]"
             >
               <option value="">Select role</option>
               {wmsRoles.map((role) => (
@@ -228,12 +227,12 @@ export function WmsUserFormModal({
 
           <WmsFormField
             label="STOX task"
-            hint="Use this to focus the staff member on PICK or PACK. Role permissions still control what they are allowed to do."
+            hint="This does not alter role permissions."
           >
             <select
               value={form.taskAssignmentType}
               onChange={(event) => setField('taskAssignmentType', event.target.value as FormState['taskAssignmentType'])}
-              className="wms-input w-full rounded-[14px]"
+              className="input"
             >
               <option value="">Unassigned</option>
               {(options?.taskAssignmentTypes ?? ['PICK', 'PACK']).map((taskType) => (
@@ -248,7 +247,7 @@ export function WmsUserFormModal({
             <select
               value={form.status}
               onChange={(event) => setField('status', event.target.value)}
-              className="wms-input w-full rounded-[14px]"
+              className="input"
             >
               {(options?.statuses ?? ['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED']).map((status) => (
                 <option key={status} value={status}>
@@ -262,7 +261,7 @@ export function WmsUserFormModal({
             <input
               value={form.employeeId}
               onChange={(event) => setField('employeeId', event.target.value)}
-              className="wms-input w-full rounded-[14px]"
+              className="input"
             />
           </WmsFormField>
         </div>

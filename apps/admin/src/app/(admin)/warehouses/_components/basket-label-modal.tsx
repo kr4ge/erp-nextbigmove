@@ -74,7 +74,7 @@ export function BasketLabelModal({ open, warehouse, basket, onClose }: BasketLab
           type="button"
           onClick={() => handlePrint('print')}
           disabled={!warehouse || !basket}
-          className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 font-medium text-[#1d4b61] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn btn-md btn-outline btn-icon"
         >
           <Printer className="h-4 w-4" />
           Print
@@ -83,7 +83,7 @@ export function BasketLabelModal({ open, warehouse, basket, onClose }: BasketLab
           type="button"
           onClick={() => handlePrint('reprint')}
           disabled={!warehouse || !basket}
-          className="wms-pill-control inline-flex items-center gap-2 rounded-full bg-[#12384b] px-4 font-medium text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn btn-md btn-primary btn-icon"
         >
           <RefreshCcw className="h-4 w-4" />
           Reprint
@@ -96,27 +96,26 @@ export function BasketLabelModal({ open, warehouse, basket, onClose }: BasketLab
     <WmsModal
       open={open && Boolean(warehouse && basket)}
       onClose={onClose}
-      title={basket ? `Basket ${basket.barcode}` : 'Basket'}
-      description={warehouse ? `${warehouse.name} (${warehouse.code})` : undefined}
+      title={basket ? `${basket.barcode}` : 'Basket'}
       footer={footer}
       panelClassName="w-[min(96vw,760px)]"
     >
       {warehouse && basket ? (
         <div className="space-y-4">
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_230px]">
-            <div className="rounded-[18px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-4">
-              <div className="rounded-[14px] border border-[#d9e3ea] bg-white p-3">
+            <div className="card bg-[#fbfcfc]">
+              <div className="card">
                 <div
                   className="flex justify-center"
                   dangerouslySetInnerHTML={{ __html: barcodeMarkup }}
                 />
               </div>
 
-              <div className="mt-3 rounded-[14px] border border-[#e1e8ee] bg-white px-3 py-2.5">
+              <div className="card mt-3">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#7a8f9d]">
                   Barcode Value
                 </p>
-                <p className="mt-1 break-all text-[12px] font-medium text-[#12384b]">{barcodeValue}</p>
+                <p className="mt-1 break-all text-[12px] font-medium text-primary">{barcodeValue}</p>
               </div>
             </div>
 
@@ -136,11 +135,11 @@ export function BasketLabelModal({ open, warehouse, basket, onClose }: BasketLab
 
           <div className="rounded-[16px] border border-[#dce4ea] bg-white px-3 py-3">
             <div className="flex items-start gap-2">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f2f7f4] text-[#0c8f61]">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f2f7f4] text-success">
                 <ShoppingBasket className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-[12px] font-bold text-[#12384b]">Registered warehouse basket</p>
+                <p className="text-[12px] font-bold text-primary">Registered warehouse basket</p>
                 <p className="mt-1 text-[11px] leading-5 text-[#637786]">
                   STOX can only use baskets registered here. Print this label and attach it to the physical basket before pickers scan it.
                 </p>
@@ -161,9 +160,9 @@ export function BasketLabelModal({ open, warehouse, basket, onClose }: BasketLab
 
 function MetaItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[14px] border border-[#dce4ea] bg-[#fbfcfc] px-3 py-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7a8f9d]">{label}</p>
-      <p className="mt-1 text-[12px] font-semibold text-[#12384b]">{value}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
+      <p className="card-value text-base">{value}</p>
     </div>
   );
 }

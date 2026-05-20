@@ -5,8 +5,10 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+  X,
   Package,
   PackageCheck,
+  PackageOpen,
   PackageX,
   Plus,
   SlidersHorizontal,
@@ -20,6 +22,7 @@ import { WarehouseFormModal } from './warehouse-form-modal';
 import { LocationFormModal } from './location-form-modal';
 import { LocationStructurePanel } from './location-structure-panel';
 import { BasketRegistryPanel } from './basket-registry-panel';
+import { Gauge } from 'lucide-react';
 
 export function WarehousesScreen() {
   const controller = useWarehousesController();
@@ -126,19 +129,15 @@ export function WarehousesScreen() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 px-1 sm:px-0">
       {/* Page header */}
-      <div className="flex items-center justify-between">
-        <h1 className="wms-page-title font-medium tracking-tight text-[#12384b]">
-          Warehouses ({totalWarehouses})
-        </h1>
-
-        <div className="flex items-center gap-2.5">
-          <button type="button" className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 font-medium text-[#1d4b61]">
+      <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-2.5">
+          <button type="button" className="btn btn-md btn-outline btn-icon">
             <ArrowUpDown className="h-3.5 w-3.5" />
             Sort by
           </button>
-          <button type="button" className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 font-medium text-[#1d4b61]">
+          <button type="button" className="btn btn-md btn-outline btn-icon">
             <SlidersHorizontal className="h-3.5 w-3.5" />
             Filter by ({controller.overview?.warehouses.length ?? 0})
           </button>
@@ -148,13 +147,23 @@ export function WarehousesScreen() {
       {/* Banners */}
       {controller.banner ? (
         <div
-          className={`rounded-[24px] border px-4 py-3 text-sm ${
+          className={`rounded-2xl border px-4 py-3 text-sm ${
             controller.banner.tone === 'success'
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
               : 'border-rose-200 bg-rose-50 text-rose-700'
           }`}
         >
-          {controller.banner.message}
+          <div className="flex items-start justify-between gap-3">
+            <span>{controller.banner.message}</span>
+            <button
+              type="button"
+              onClick={controller.clearBanner}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition hover:bg-black/5"
+              aria-label="Close banner"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -166,10 +175,10 @@ export function WarehousesScreen() {
 
       {/* Warehouse tab pills with chevron navigation */}
       {controller.overview?.warehouses.length ? (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div
             ref={tabScrollRef}
-            className="flex flex-1 items-center gap-2 overflow-x-auto scrollbar-hide"
+            className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scrollbar-hide"
           >
             {controller.overview.warehouses.map((warehouse) => {
               const isActive = controller.selectedWarehouseId === warehouse.id;
@@ -178,10 +187,10 @@ export function WarehousesScreen() {
                   key={warehouse.id}
                   type="button"
                   onClick={() => controller.setSelectedWarehouseId(warehouse.id)}
-                  className={`shrink-0 min-w-[150px] rounded-full px-5 py-2.5 text-center text-[13px] font-semibold transition ${
+                  className={`btn btn-md ${
                     isActive
-                      ? 'bg-[#12384b] text-white shadow-[0_16px_36px_-24px_rgba(18,56,75,0.7)]'
-                      : 'border border-[#dce4ea] bg-white text-[#12384b] hover:border-[#c6d4dd] hover:bg-[#f8fafb]'
+                      ? 'btn-primary'
+                      : 'btn-outline'
                   }`}
                 >
                   {warehouse.name}
@@ -190,7 +199,7 @@ export function WarehousesScreen() {
             })}
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex shrink-0 items-center justify-end gap-1.5">
             <button
               type="button"
               onClick={() => scrollTabs('left')}
@@ -210,7 +219,7 @@ export function WarehousesScreen() {
             <button
               type="button"
               onClick={controller.openCreateWarehouse}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#12384b] text-white shadow-[0_16px_36px_-24px_rgba(18,56,75,0.7)] transition hover:bg-[#0f3242]"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow-[0_16px_36px_-24px_rgba(18,56,75,0.7)] transition hover:bg-[#0f3242]"
               aria-label="Add warehouse"
               title="Add warehouse"
             >
@@ -234,7 +243,7 @@ export function WarehousesScreen() {
 
       {/* Main content: Section grid + right sidebar */}
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,340px)]">
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <LocationStructurePanel
             warehouse={activeWarehouse}
             selectedSectionId={selectedSectionId}
@@ -257,11 +266,11 @@ export function WarehousesScreen() {
           />
         </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* B-Section Usage panel — reference: donut + 2×2 stat grid */}
-          <WmsCompactPanel title={usageMetrics?.title ?? 'Section Usage'}>
+          <WmsCompactPanel title={usageMetrics?.title ?? 'Section Usage'} icon={<Gauge className='panel-icon' />}>
             {usageMetrics ? (
-              <div className="flex items-center gap-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
                 {/* Donut ring */}
                 <div className="relative shrink-0">
                   <svg width="100" height="100" viewBox="0 0 100 100" className="block">
@@ -289,22 +298,22 @@ export function WarehousesScreen() {
                 </div>
 
                 {/* 2×2 stat grid */}
-                <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-[12.5px]">
+                <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-4 gap-y-3 text-[12.5px] sm:gap-x-5">
                   <div>
                     <p className="text-[20px] font-bold tabular-nums text-[#12384b]">{usageMetrics.totalCapacity}</p>
-                    <p className="text-[#7b8e9c]">Total Shelves</p>
+                    <p className="form-label">Total Shelves</p>
                   </div>
                   <div>
                     <p className="text-[20px] font-bold tabular-nums text-[#12384b]">{usageMetrics.emptySlots}</p>
-                    <p className="text-[#7b8e9c]">Empty Shelves</p>
+                    <p className="form-label">Empty Shelves</p>
                   </div>
                   <div>
                     <p className="text-[20px] font-bold tabular-nums text-[#12384b]">{usageMetrics.usedSlots}</p>
-                    <p className="text-[#7b8e9c]">Full Shelves</p>
+                    <p className="form-label">Full Shelves</p>
                   </div>
                   <div>
                     <p className="text-[20px] font-bold tabular-nums text-[#12384b]">{usageMetrics.scopeCount}</p>
-                    <p className="text-[#7b8e9c]">{usageMetrics.scopeLabel}</p>
+                    <p className="form-label">{usageMetrics.scopeLabel}</p>
                   </div>
                 </div>
               </div>
@@ -314,8 +323,8 @@ export function WarehousesScreen() {
           </WmsCompactPanel>
 
           {/* Inventory Overview */}
-          <WmsCompactPanel title="Inventory Overview">
-            <div className="grid grid-cols-2 gap-2.5">
+          <WmsCompactPanel title="Inventory Overview" icon={<PackageOpen className='panel-icon' />}>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <InventoryStatCard
                 icon={<Package className="h-5 w-5 text-[#5e8e7a]" />}
                 value={inventoryOverview.serializedUnits}
@@ -331,7 +340,7 @@ export function WarehousesScreen() {
               <InventoryStatCard
                 icon={<Undo2 className="h-5 w-5 text-[#b07a5e]" />}
                 value={inventoryOverview.stagedUnits}
-                label="In Staging"
+                label="Units In Staging"
                 bgClass="bg-[#fdf5ef]"
               />
               <InventoryStatCard
@@ -457,16 +466,16 @@ function InventoryStatCard({
   bgClass: string;
 }) {
   return (
-    <div className="rounded-[16px] border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-3">
-      <div className="flex items-center">
-        <div className={`flex h-9 w-9 items-center justify-center rounded-[10px] ${bgClass}`}>
+    <div className="card">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5">
+          <p className="card-label">{label}</p>
+          <p className="card-value">{value.toLocaleString()}</p>
+        </div>
+        <div className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${bgClass}`}>
           {icon}
         </div>
       </div>
-      <p className="mt-2 text-[22px] font-bold tabular-nums text-[#12384b]">
-        {value.toLocaleString()}
-      </p>
-      <p className="text-[11.5px] text-[#7b8e9c]">{label}</p>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { ClipboardList, Search, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -92,6 +93,23 @@ export function RequestCreatePanel({
   onQuantityChange,
   onSubmit,
 }: RequestCreatePanelProps) {
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setQuantityDrafts((current) => {
+      const next: Record<string, string> = {};
+
+      for (const line of cartLines) {
+        const draft = current[line.id];
+        if (draft !== undefined && draft !== String(line.quantity)) {
+          next[line.id] = draft;
+        }
+      }
+
+      return next;
+    });
+  }, [cartLines]);
+
   const totalPages = productOptions?.pagination.totalPages ?? 1;
   const effectiveStoreName = effectiveStoreId
     ? stores.find((store) => store.id === effectiveStoreId)?.label ?? 'Selected store'
@@ -166,12 +184,42 @@ export function RequestCreatePanel({
                       </td>
                       <td className="px-2.5 py-2">
                         <input
-                          type="number"
-                          min={1}
-                          value={line.quantity}
-                          onChange={(event) =>
-                            onQuantityChange(line.id, Number.parseInt(event.target.value, 10))
-                          }
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={quantityDrafts[line.id] ?? String(line.quantity)}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+
+                            if (nextValue === '') {
+                              setQuantityDrafts((current) => ({
+                                ...current,
+                                [line.id]: '',
+                              }));
+                              return;
+                            }
+
+                            if (!/^\d+$/.test(nextValue)) {
+                              return;
+                            }
+
+                            setQuantityDrafts((current) => ({
+                              ...current,
+                              [line.id]: nextValue,
+                            }));
+                            onQuantityChange(line.id, Number.parseInt(nextValue, 10));
+                          }}
+                          onBlur={() => {
+                            setQuantityDrafts((current) => {
+                              if (current[line.id] === undefined) {
+                                return current;
+                              }
+
+                              const next = { ...current };
+                              delete next[line.id];
+                              return next;
+                            });
+                          }}
                           className="h-8 w-16 rounded-md border border-slate-200 px-2 text-sm text-slate-800 outline-none focus:border-slate-300"
                         />
                       </td>

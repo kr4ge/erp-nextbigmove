@@ -36,29 +36,29 @@ export function TenantsFilterBar({
   planFilter,
   onPlanChange,
 }: TenantsFilterBarProps) {
-  const hasActiveFilters = Boolean(searchText || statusFilter || planFilter);
 
   return (
-    <div className="flex flex-wrap items-center gap-2.5">
-      <label className="wms-pill-control flex min-w-[240px] flex-1 items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 text-[#12384b]">
-        <Search className="h-4 w-4 text-[#8193a0]" />
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-2.5">
+      <div className="relative min-w-[240px] flex-[1_1_20rem]">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
         <input
+          type="text"
           value={searchText}
           onChange={(event) => onSearchTextChange(event.target.value)}
           placeholder="Search by organization name or slug"
-          className="h-full w-full border-none bg-transparent text-[13px] outline-none placeholder:text-[#94a3b8]"
+          className="input pr-10 pl-10 text-sm-custom grow"
         />
         {searchText ? (
           <button
             type="button"
             onClick={() => onSearchTextChange('')}
-            className="flex h-5 w-5 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-[#12384b]"
+            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-[#12384b]"
             aria-label="Clear search"
           >
             <X className="h-3 w-3" />
           </button>
         ) : null}
-      </label>
+      </div>
 
       <WmsSearchableSelect
         label="Plan"
@@ -67,9 +67,10 @@ export function TenantsFilterBar({
         options={planOptions.map((option) => ({ value: option.value, label: option.label }))}
         placeholder="Filter by plan…"
         allLabel="All plans"
+        hideInlineLabel={true}
       />
 
-      <div className="flex items-center gap-1 rounded-full border border-[#d7e0e7] bg-[#fbfcfc] p-1">
+      <div className="flex items-center flex-none rounded-2xl border border-[#d7e0e7] bg-[#fbfcfc] p-1 sm:gap-1">
         {statusChips.map((chip) => {
           const isActive = statusFilter === chip.value;
           return (
@@ -77,10 +78,10 @@ export function TenantsFilterBar({
               key={chip.label}
               type="button"
               onClick={() => onStatusChange(chip.value)}
-              className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition ${
+              className={`rounded-xl px-3.5 py-1.5 text-[12px] font-semibold transition ${
                 isActive
-                  ? 'bg-[#12384b] text-white shadow-[0_10px_24px_-18px_rgba(18,56,75,0.7)]'
-                  : 'text-[#4d6677] hover:text-[#12384b]'
+                  ? 'bg-primary text-white'
+                  : 'text-muted hover:text-primary'
               }`}
             >
               {chip.label}
@@ -88,21 +89,6 @@ export function TenantsFilterBar({
           );
         })}
       </div>
-
-      {hasActiveFilters ? (
-        <button
-          type="button"
-          onClick={() => {
-            onSearchTextChange('');
-            onStatusChange('');
-            onPlanChange('');
-          }}
-          className="wms-pill-control inline-flex items-center gap-1.5 rounded-full border border-[#d7e0e7] bg-white px-3.5 text-[12px] font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b]"
-        >
-          <X className="h-3.5 w-3.5" />
-          Clear
-        </button>
-      ) : null}
     </div>
   );
 }

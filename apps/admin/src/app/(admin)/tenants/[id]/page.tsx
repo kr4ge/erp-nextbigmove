@@ -9,18 +9,23 @@ import * as z from 'zod';
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowLeftRight,
+  Building2,
   CalendarClock,
   CheckCircle2,
+  ClipboardList,
+  Clock,
   Copy,
+  GaugeCircle,
   Link2,
   PauseCircle,
   Plug,
   Users,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
+import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
-import { WmsSectionCard } from '../../_components/wms-section-card';
 import { WmsFormField } from '../../_components/wms-form-field';
 import type { TenantPlan, TenantRecord, TenantStatus } from '../_types/tenant';
 import {
@@ -228,14 +233,12 @@ export default function TenantDetailsPage() {
 
   return (
     <WmsPageShell
-      breadcrumb="Tenants"
       title={tenant.name}
-      description="Manage the tenant's identity, plan, and lifecycle status."
       actions={
         <>
           <Link
             href="/tenants"
-            className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 font-semibold text-[#1d4b61] transition hover:border-[#c6d4dd]"
+            className="btn btn-md btn-outline btn-icon"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back
@@ -258,15 +261,11 @@ export default function TenantDetailsPage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,360px)]">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          <WmsSectionCard
-            eyebrow="Identity"
-            title="Organization"
-            description="Control how the tenant appears in the platform."
-          >
+          <WmsCompactPanel title="Identity" icon={<Building2 className='panel-icon' />}>
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <WmsFormField label="Organization name">
-                  <input {...register('name')} type="text" className="wms-input w-full rounded-[14px]" />
+                  <input {...register('name')} type="text" className="input" />
                 </WmsFormField>
                 {errors.name ? (
                   <p className="mt-1.5 text-[12px] text-rose-600">{errors.name.message}</p>
@@ -279,12 +278,12 @@ export default function TenantDetailsPage() {
                     <input
                       {...register('slug')}
                       type="text"
-                      className="wms-input w-full rounded-[14px] font-mono tracking-tight"
+                      className="input font-mono tracking-tight"
                     />
                     <button
                       type="button"
                       onClick={handleCopySlug}
-                      className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-3.5 font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b]"
+                      className="btn btn-md btn-outline btn-icon"
                     >
                       {slugCopied ? (
                         <>
@@ -305,16 +304,12 @@ export default function TenantDetailsPage() {
                 ) : null}
               </div>
             </div>
-          </WmsSectionCard>
+          </WmsCompactPanel>
 
-          <WmsSectionCard
-            eyebrow="Plan"
-            title="Subscription & limits"
-            description="The plan, status, and usage caps applied to this tenant."
-          >
+          <WmsCompactPanel title="Plan" icon={<ClipboardList className='panel-icon' />}>
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <WmsFormField label="Plan type">
-                <select {...register('planType')} className="wms-select w-full rounded-[14px]">
+                <select {...register('planType')} className="input">
                   {planOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -324,7 +319,7 @@ export default function TenantDetailsPage() {
               </WmsFormField>
 
               <WmsFormField label="Status">
-                <select {...register('status')} className="wms-select w-full rounded-[14px]">
+                <select {...register('status')} className="input">
                   {statusOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -339,7 +334,7 @@ export default function TenantDetailsPage() {
                   type="number"
                   min={1}
                   max={10000}
-                  className="wms-input w-full rounded-[14px]"
+                  className="input"
                 />
               </WmsFormField>
 
@@ -349,20 +344,20 @@ export default function TenantDetailsPage() {
                   type="number"
                   min={1}
                   max={100}
-                  className="wms-input w-full rounded-[14px]"
+                  className="input"
                 />
               </WmsFormField>
             </div>
-          </WmsSectionCard>
+          </WmsCompactPanel>
 
-          <div className="sticky bottom-4 z-10 flex items-center justify-end gap-3 rounded-[20px] border border-[#dce4ea] bg-white/90 px-4 py-3 shadow-[0_18px_36px_-28px_rgba(18,56,75,0.35)] backdrop-blur">
+          <div className="flex items-center justify-end gap-3 rounded-2xl border border-[#dce4ea] bg-white/90 px-4 py-3 shadow-[0_18px_36px_-28px_rgba(18,56,75,0.35)] backdrop-blur">
             <span className="mr-auto text-[12px] text-[#6f8290]">
               {isDirty ? 'You have unsaved changes' : 'All changes saved'}
             </span>
             <button
               type="submit"
               disabled={isSaving || !isDirty}
-              className="wms-pill-control inline-flex items-center gap-2 rounded-full bg-[#12384b] px-4 font-semibold text-white shadow-[0_16px_36px_-24px_rgba(18,56,75,0.7)] transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-55"
+              className="btn btn-md btn-primary"
             >
               {isSaving ? 'Saving…' : 'Save changes'}
             </button>
@@ -370,7 +365,7 @@ export default function TenantDetailsPage() {
         </form>
 
         <aside className="space-y-5">
-          <WmsSectionCard eyebrow="Usage" title="Limits at a glance">
+          <WmsCompactPanel title="Usage" icon={<GaugeCircle className='panel-icon' />}>
             <div className="space-y-4 p-5">
               <UsageRow
                 icon={<Users className="h-4 w-4" />}
@@ -387,9 +382,9 @@ export default function TenantDetailsPage() {
                 percent={usageMetrics?.integrationsPercent ?? 0}
               />
             </div>
-          </WmsSectionCard>
+          </WmsCompactPanel>
 
-          <WmsSectionCard eyebrow="Timeline" title="Key dates">
+          <WmsCompactPanel title="Timeline" icon={<Clock className='panel-icon' />}>
             <div className="space-y-2.5 p-5">
               <TimelineRow
                 icon={<CalendarClock className="h-3.5 w-3.5" />}
@@ -411,9 +406,9 @@ export default function TenantDetailsPage() {
                 />
               ) : null}
             </div>
-          </WmsSectionCard>
+          </WmsCompactPanel>
 
-          <WmsSectionCard eyebrow="Actions" title="Quick actions">
+          <WmsCompactPanel title="Actions" icon={<ArrowLeftRight className='panel-icon' />}>
             <div className="space-y-2 p-5">
               {tenant.status !== 'ACTIVE' ? (
                 <QuickActionButton
@@ -444,15 +439,14 @@ export default function TenantDetailsPage() {
                 href={`/tenants/${tenant.id}/integrations`}
               />
             </div>
-          </WmsSectionCard>
+          </WmsCompactPanel>
 
-          <WmsSectionCard
-            eyebrow="Danger zone"
-            title="Cancel tenant"
-            description="Cancellation disables the tenant. Data is retained for compliance."
-            className="border-rose-200/80"
-          >
+          <WmsCompactPanel title="Danger zone" icon={<AlertTriangle className='panel-icon' />}>
             <div className="p-5">
+              <h3 className="text-[1.1rem] font-semibold tracking-tight text-primary">Cancel tenant</h3>
+              <p className="mt-1.5 text-[13px] leading-5 text-[#6f8290]">
+                Cancellation disables the tenant. Data is retained for compliance.
+              </p>
               <button
                 type="button"
                 onClick={() =>
@@ -461,13 +455,13 @@ export default function TenantDetailsPage() {
                     'Cancel this tenant? The organization will lose access immediately.',
                   )
                 }
-                className="wms-pill-control inline-flex w-full items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 font-semibold text-rose-700 transition hover:bg-rose-100"
+                className="wms-pill-control inline-flex w-full items-center justify-center gap-2 mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 font-semibold text-rose-700 transition hover:bg-rose-100"
               >
                 <AlertTriangle className="h-3.5 w-3.5" />
                 Cancel tenant
               </button>
             </div>
-          </WmsSectionCard>
+          </WmsCompactPanel>
         </aside>
       </div>
     </WmsPageShell>
@@ -561,7 +555,7 @@ function QuickActionButton({
   };
 
   const base =
-    'wms-pill-control inline-flex w-full items-center justify-between gap-2 rounded-full px-4 font-semibold transition';
+    'wms-pill-control inline-flex w-full items-center justify-between gap-2 rounded-2xl px-4 font-semibold transition';
 
   if (href) {
     return (

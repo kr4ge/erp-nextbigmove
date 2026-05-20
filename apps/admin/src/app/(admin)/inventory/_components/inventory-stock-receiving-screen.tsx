@@ -10,6 +10,7 @@ import { ReceivingBatchLabelsModal } from '../../receiving/_components/receiving
 import { ReceivingBatchesTable } from '../../receiving/_components/receiving-batches-table';
 import { useReceivingController } from '../../receiving/_hooks/use-receiving-controller';
 import { InventoryOperationsFilterBar } from './inventory-operations-filter-bar';
+import { Package } from 'lucide-react';
 
 export function InventoryStockReceivingScreen() {
   const router = useRouter();
@@ -71,6 +72,7 @@ export function InventoryStockReceivingScreen() {
 
         <WmsWorkspaceCard
           title="Batches"
+          icon={<Package className='panel-icon' />}
           actions={receiving.canManualInput ? (
             <button
               type="button"

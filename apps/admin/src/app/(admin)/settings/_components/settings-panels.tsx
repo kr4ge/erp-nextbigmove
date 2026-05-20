@@ -10,6 +10,7 @@ import {
   WMS_ROLES_READ_PERMISSIONS,
   WMS_USERS_READ_PERMISSIONS,
 } from '@/lib/wms-permissions';
+import { User } from 'lucide-react';
 
 type SettingsPageFrameProps = {
   eyebrow: string;
@@ -69,7 +70,7 @@ function SettingsTabs() {
   }, [permissions, user?.role]);
 
   return (
-    <nav className="flex gap-2 overflow-x-auto rounded-[26px] border border-[#dce4ea] bg-white p-2 shadow-[0_18px_55px_-44px_rgba(18,56,75,0.36)]">
+    <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-[#dce4ea] bg-white p-2 shadow-[0_18px_55px_-44px_rgba(18,56,75,0.36)]">
       {tabs.map((tab) => {
         const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
 
@@ -78,10 +79,10 @@ function SettingsTabs() {
             key={tab.href}
             href={tab.href}
             prefetch={false}
-            className={`inline-flex h-10 shrink-0 items-center rounded-full px-4 text-[13px] font-semibold transition ${
+            className={`btn btn-md ${
               isActive
-                ? 'bg-[#12384b] text-white shadow-[0_12px_28px_-20px_rgba(18,56,75,0.72)]'
-                : 'text-[#4d6677] hover:bg-[#f6f8fa] hover:text-[#12384b]'
+                ? 'bg-primary text-white'
+                : 'btn-outline'
             }`}
           >
             {tab.label}
@@ -109,9 +110,9 @@ export function SettingsStatCard({
         : 'border-[#dce4ea] bg-white text-[#12384b]';
 
   return (
-    <div className={`rounded-[22px] border px-4 py-4 ${toneClass}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] opacity-70">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{value}</p>
+    <div className={`card ${toneClass}`}>
+      <p className="card-label">{label}</p>
+      <p className="card-value">{value}</p>
     </div>
   );
 }
@@ -131,9 +132,16 @@ export function SettingsNotice({
       : 'border-[#dce4ea] bg-[#fbfcfc] text-[#637786]';
 
   return (
-    <div className={`rounded-[24px] border px-5 py-5 ${className}`}>
-      <p className="text-sm font-semibold">{title}</p>
-      <p className="mt-1 text-sm leading-6">{message}</p>
+    <div className={`rounded-2xl border px-5 py-5 ${className}`}>
+      <div className="flex flex-col items-center justify-center text-center">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center" aria-hidden="true">
+          <User className='h-8 w-8 text-primary' />
+        </div>
+        <div className="space-y-2">
+          <p className="text-lg font-semibold text-primary">{title}</p>
+          <p className="text-sm leading-6">{message}</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -180,7 +188,7 @@ export function SettingsBadge({
         : 'border-[#dce4ea] bg-[#fbfcfc] text-[#637786]';
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${toneClass}`}>
+    <span className={`pill ${toneClass}`}>
       {children}
     </span>
   );

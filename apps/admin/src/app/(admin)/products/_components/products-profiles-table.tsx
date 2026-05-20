@@ -72,7 +72,7 @@ export function ProductsProfilesTable({
             ) : (
               profiles.map((profile) => (
                 <tr key={profile.id} className="group transition hover:bg-[#fbfcfc]">
-                  <td className="px-4 py-3 text-sm text-[#12384b]">
+                  <td className="px-4 py-3 text-sm text-primary">
                     <div className="max-w-[280px]">
                       <p className="truncate font-semibold">{profile.name}</p>
                     </div>
@@ -95,21 +95,21 @@ export function ProductsProfilesTable({
                       <span className="italic text-[#8193a0]">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[#12384b]">
+                  <td className="px-4 py-3 text-sm text-primary">
                     <span className="block max-w-[180px] truncate">{profile.store.name}</span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm">
                     <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${getProductProfileStatusClasses(profile.status)}`}
+                      className={`pill ${getProductProfileStatusClasses(profile.status)}`}
                     >
                       {formatProductProfileStatus(profile.status)}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm">
                     <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${
+                      className={`pill ${
                         profile.isSerialized
-                          ? 'border border-[#12384b] bg-[#12384b] text-white'
+                          ? 'border border-primary bg-primary text-white'
                           : 'border border-[#dce4ea] bg-[#fbfcfc] text-[#4d6677]'
                       }`}
                     >
@@ -121,9 +121,9 @@ export function ProductsProfilesTable({
                       <button
                         type="button"
                         onClick={() => onEditProfile(profile)}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-[#d7e0e7] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#12384b] transition hover:border-[#12384b] hover:bg-[#12384b] hover:text-white"
+                        className="btn btn-sm btn-outline btn-icon"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Pencil className="h-3 w-3" />
                         Edit
                       </button>
                     ) : (
@@ -149,7 +149,7 @@ function TableHeader({
 }) {
   return (
     <th
-      className={`whitespace-nowrap px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.22em] text-[#7b8e9c] ${className}`}
+      className={`whitespace-nowrap px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.22em] text-muted bg-slate-50 ${className}`}
     >
       {children}
     </th>
@@ -164,7 +164,7 @@ function StateRow({ title, message }: { title: string; message: string }) {
           <span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#dce4ea] bg-[#fbfcfc] text-[#5e8196]">
             <PackageSearch className="h-5 w-5" />
           </span>
-          <p className="text-sm font-semibold text-[#12384b]">{title}</p>
+          <p className="text-sm font-semibold text-primary">{title}</p>
           <p className="text-[12.5px] text-[#7b8e9c]">{message}</p>
         </div>
       </td>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Printer, RefreshCcw } from 'lucide-react';
+import { History, MoveHorizontal, Printer, RefreshCcw, Settings2 } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import { InventoryUnitAdjustmentPanel } from './inventory-unit-adjustment-panel';
@@ -193,7 +193,7 @@ export function InventoryUnitModal({
               type="button"
               onClick={() => handlePrint('print')}
               disabled={!unit || isRecordingPrint}
-              className="wms-pill-control inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 font-medium text-[#1d4b61] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-md btn-outline btn-icon"
             >
               <Printer className="h-4 w-4" />
               Print
@@ -202,7 +202,7 @@ export function InventoryUnitModal({
               type="button"
               onClick={() => handlePrint('reprint')}
               disabled={!unit || isRecordingPrint}
-              className="wms-pill-control inline-flex items-center gap-2 rounded-full bg-[#12384b] px-4 font-medium text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-md btn-primary btn-icon"
             >
               <RefreshCcw className="h-4 w-4" />
               Reprint
@@ -222,7 +222,6 @@ export function InventoryUnitModal({
       open={open && !!unit}
       onClose={onClose}
       title={unit ? unit.code : 'Unit details'}
-      description="Serialized unit identity, movement history, and location control."
       footer={footer}
     >
       {unit ? (
@@ -252,17 +251,17 @@ export function InventoryUnitModal({
 
           {activeTab === 'overview' ? (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
-              <div className="rounded-[22px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-4">
-                <div className="rounded-[16px] border border-[#d9e3ea] bg-white p-3">
+              <div className="card">
+                <div className="card">
                   <div
                     className="flex justify-center"
                     dangerouslySetInnerHTML={{ __html: barcodeMarkup }}
                   />
                 </div>
 
-                <div className="mt-3 rounded-[14px] border border-[#e1e8ee] bg-white px-3 py-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#7a8f9d]">Barcode Value</p>
-                  <p className="mt-1 break-all text-[12px] font-medium text-[#12384b]">{barcodeValue}</p>
+                <div className="card mt-3">
+                  <p className="card-label">Barcode Value</p>
+                  <p className="card-value text-base">{barcodeValue}</p>
                 </div>
               </div>
 
@@ -284,9 +283,10 @@ export function InventoryUnitModal({
           ) : null}
 
           {activeTab === 'movements' ? (
-            <div className="rounded-[18px] border border-[#dce4ea] bg-white">
-              <div className="border-b border-[#e7edf2] px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#7b8e9c]">
+            <div className="panel panel-content">
+              <div className="panel-header">
+                <History className='panel-icon' />
+                <p className="panel-title">
                   Unit Movement History
                 </p>
               </div>
@@ -299,10 +299,10 @@ export function InventoryUnitModal({
                 ) : (
                   <div className="space-y-3">
                     {movements.map((movement) => (
-                      <div key={movement.id} className="rounded-[14px] border border-[#e2e9ee] bg-[#fbfcfc] px-3.5 py-3">
+                      <div key={movement.id} className="rounded-2xl border border-[#e2e9ee] bg-[#fbfcfc] px-3.5 py-3">
                         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                           <div>
-                            <p className="text-[13px] font-semibold text-[#12384b]">
+                            <p className="text-[13px] font-semibold text-primary">
                               {formatMovementType(movement.movementType)}
                             </p>
                             <p className="mt-1 text-[12px] text-[#637786]">
@@ -314,17 +314,17 @@ export function InventoryUnitModal({
 
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#708492]">
                           {movement.fromStatusLabel || movement.toStatusLabel ? (
-                            <span className="rounded-full border border-[#dce4ea] bg-white px-2.5 py-1">
+                            <span className="pill pill-ghost">
                               {movement.fromStatusLabel ?? '—'} → {movement.toStatusLabel ?? '—'}
                             </span>
                           ) : null}
                           {movement.referenceCode ? (
-                            <span className="rounded-full border border-[#dce4ea] bg-white px-2.5 py-1">
+                            <span className="pill pill-ghost">
                               {movement.referenceCode}
                             </span>
                           ) : null}
                           {movement.actor?.name ? (
-                            <span className="rounded-full border border-[#dce4ea] bg-white px-2.5 py-1">
+                            <span className="pill pill-ghost">
                               {movement.actor.name}
                             </span>
                           ) : null}
@@ -342,9 +342,10 @@ export function InventoryUnitModal({
           ) : null}
 
           {activeTab === 'transfer' ? (
-            <div className="rounded-[18px] border border-[#dce4ea] bg-white">
-              <div className="border-b border-[#e7edf2] px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#7b8e9c]">
+            <div className="panel panel-content">
+              <div className="panel-header">
+                <MoveHorizontal className='panel-icon' />
+                <p className="panel-title">
                   Internal Transfer
                 </p>
               </div>
@@ -448,7 +449,7 @@ export function InventoryUnitModal({
                       onChange={(event) => setTransferNotes(event.target.value)}
                       rows={3}
                       placeholder="Optional transfer notes"
-                      className="w-full rounded-[14px] border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-2.5 text-[13px] text-[#12384b] outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
+                      className="w-full rounded-[14px] border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-2.5 text-[13px] text-primary outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
                     />
 
                     {transferError ? (
@@ -462,7 +463,7 @@ export function InventoryUnitModal({
                         type="button"
                         onClick={() => void handleTransfer()}
                         disabled={!targetLocationId || isTransferringUnit}
-                        className="inline-flex h-10 items-center rounded-[12px] bg-[#12384b] px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex h-10 items-center rounded-[12px] bg-primary px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Transfer unit
                       </button>
@@ -476,9 +477,10 @@ export function InventoryUnitModal({
           ) : null}
 
           {activeTab === 'adjust' ? (
-            <div className="rounded-[18px] border border-[#dce4ea] bg-white">
-              <div className="border-b border-[#e7edf2] px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#7b8e9c]">
+            <div className="panel panel-content">
+              <div className="panel-header">
+                <Settings2 className='panel-icon' />
+                <p className="panel-title">
                   Inventory Adjustment
                 </p>
               </div>
@@ -512,9 +514,9 @@ export function InventoryUnitModal({
 
 function MetaItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[14px] border border-[#dce4ea] bg-[#fbfcfc] px-3 py-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7a8f9d]">{label}</p>
-      <p className="mt-1 text-[13px] font-medium text-[#12384b]">{value}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
+      <p className="mt-1 text-[13px] font-medium text-primary">{value}</p>
     </div>
   );
 }
@@ -532,10 +534,10 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] font-semibold transition ${
+      className={`pill transition ${
         active
-          ? 'border-[#12384b] bg-[#12384b] text-white'
-          : 'border-[#d7e0e7] bg-white text-[#4f6776] hover:border-[#c6d4dd] hover:text-[#12384b]'
+          ? 'border-primary bg-primary text-white'
+          : 'border-[#d7e0e7] bg-white text-[#4f6776] hover:border-[#c6d4dd] hover:text-primary'
       }`}
     >
       {label}

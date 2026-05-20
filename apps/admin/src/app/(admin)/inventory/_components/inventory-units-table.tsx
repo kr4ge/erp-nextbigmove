@@ -114,7 +114,7 @@ export function InventoryUnitsTable({
                   <button
                     type="button"
                     onClick={() => onViewUnit(unit)}
-                    className="inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#12384b] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
+                    className="btn btn-sm btn-outline btn-icon"
                   >
                     <Eye className="h-3.5 w-3.5" />
                     View
@@ -138,7 +138,7 @@ function HeaderCell({
 }) {
   return (
     <th
-      className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-[#8193a0] ${
+      className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-muted bg-slate-50 ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >

@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Archive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
@@ -17,7 +17,6 @@ export function InventoryStockScreen() {
     <div className="space-y-5">
       <WmsPageShell
         title="Stock Control"
-        description="Monitor serialized inventory, putaway workload, location coverage, and exception stock from one WMS control view."
       >
         {inventory.errorMessage ? (
           <WmsInlineNotice tone="error">
@@ -47,6 +46,7 @@ export function InventoryStockScreen() {
 
         <WmsWorkspaceCard
           title="Stock Records"
+          icon={<Archive className='panel-icon' />}
           footer={(
             <div className="flex items-center justify-between gap-3">
               <p className="text-[12px] text-[#6f8290]">

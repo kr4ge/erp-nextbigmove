@@ -73,7 +73,7 @@ export function PurchasingBatchesTable({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm">
-                    <span className="inline-flex items-center rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-2 py-0.5 text-[10.5px] font-semibold text-[#4d6677]">
+                    <span className="pill pill-ghost">
                       {formatRequestTypeLabel(batch.requestType)}
                     </span>
                   </td>
@@ -85,7 +85,7 @@ export function PurchasingBatchesTable({
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${getStatusClasses(batch.status)}`}
+                      className={`pill ${getStatusClasses(batch.status)}`}
                     >
                       {formatStatusLabel(batch.status)}
                     </span>
@@ -122,7 +122,7 @@ function TableHeader({
 }) {
   return (
     <th
-      className={`whitespace-nowrap px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.22em] text-[#7b8e9c] ${className}`}
+      className={`whitespace-nowrap px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.22em] text-muted bg-slate-50 ${className}`}
     >
       {children}
     </th>
@@ -134,7 +134,7 @@ function StateRow({ title, message }: { title: string; message: string }) {
     <tr>
       <td colSpan={7} className="px-4 py-16">
         <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#dce4ea] bg-[#fbfcfc] text-[#5e8196]">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#dce4ea] bg-[#fbfcfc] text-primary">
             <FileSearch className="h-5 w-5" />
           </span>
           <p className="text-sm font-semibold text-[#12384b]">{title}</p>

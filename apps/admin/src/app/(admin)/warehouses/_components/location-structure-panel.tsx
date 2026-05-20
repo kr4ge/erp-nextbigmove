@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, type MouseEvent } from 'react';
-import { Edit3, Plus, ScanLine } from 'lucide-react';
+import { Container, Edit3, Plus, ScanLine } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import type { CreateWmsLocationInput, WmsLocationTreeNode, WmsWarehouseDetail } from '../_types/warehouse';
 
@@ -103,7 +103,7 @@ export function LocationStructurePanel({
       <button
         type="button"
         onClick={() => onEditWarehouse(warehouse)}
-        className="inline-flex items-center gap-1.5 rounded-full border border-[#d7e0e7] bg-white px-3.5 py-2 text-[12px] font-medium text-[#1d4b61] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
+        className="btn btn-sm btn-outline flex gap-2"
       >
         <Edit3 className="h-3.5 w-3.5" />
         Edit
@@ -111,7 +111,7 @@ export function LocationStructurePanel({
       <button
         type="button"
         onClick={() => onCreateLocation({ kind: 'SECTION' })}
-        className="inline-flex items-center gap-1.5 rounded-full border border-[#d7e0e7] bg-white px-3.5 py-2 text-[12px] font-medium text-[#1d4b61] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
+        className='btn btn-sm btn-outline flex gap-2'
       >
         <Plus className="h-3.5 w-3.5" />
         Add section
@@ -122,6 +122,7 @@ export function LocationStructurePanel({
   return (
     <WmsCompactPanel
       title={`Section Overview (${warehouse.stats.sections})`}
+      icon={<Container className='panel-icon' />}
       headerActions={headerActions}
     >
       <div className="flex flex-col gap-4">
@@ -355,7 +356,7 @@ function SectionCard({
         <button
           type="button"
           onClick={onAddRack}
-          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border border-dashed border-[#c6d4dd] bg-[#f8fafb] py-2 text-[11px] font-medium text-[#5e7887] transition hover:border-[#12384b] hover:text-[#12384b]"
+          className="btn btn-sm btn-primary w-full mt-3"
         >
           <Plus className="h-3 w-3" />
           Add Rack

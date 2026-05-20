@@ -79,7 +79,7 @@ export function ReceivingBatchesTable({
               </td>
               <td className="px-4 py-3">
                 <span
-                  className={`inline-flex rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${getReceivingStatusClassName(batch.status)}`}
+                  className={`pill ${getReceivingStatusClassName(batch.status)}`}
                 >
                   {formatReceivingStatusLabel(batch.status)}
                 </span>
@@ -94,7 +94,7 @@ export function ReceivingBatchesTable({
                         event.stopPropagation();
                         onTransferBatch(batch);
                       }}
-                      className="inline-flex items-center rounded-full bg-[#12384b] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#0f3242]"
+                      className="btn btn-sm btn-primary"
                     >
                       Transfer
                     </button>
@@ -105,7 +105,7 @@ export function ReceivingBatchesTable({
                       event.stopPropagation();
                       onViewBatch(batch);
                     }}
-                    className="inline-flex items-center rounded-full border border-[#d7e0e7] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#12384b] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
+                    className="btn btn-sm btn-outline"
                   >
                     Labels
                   </button>

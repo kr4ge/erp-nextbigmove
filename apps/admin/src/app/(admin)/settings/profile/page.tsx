@@ -120,10 +120,10 @@ export default function SettingsProfilePage() {
       ) : !user ? (
         <SettingsNotice tone="danger" title="Profile unavailable" message="Sign in again to manage your profile." />
       ) : (
-        <div className="grid items-start gap-4 xl:grid-cols-12">
+        <div className="grid gap-4 xl:grid-cols-12 xl:items-stretch">
           <form
             onSubmit={handleSubmit}
-            className="rounded-[28px] border border-[#dce4ea] bg-white px-5 py-5 shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)] xl:col-span-9"
+            className="flex h-full flex-col justify-between rounded-2xl border border-[#dce4ea] bg-white px-5 py-5 shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)] xl:col-span-9"
           >
             {message ? (
               <div
@@ -144,7 +144,7 @@ export default function SettingsProfilePage() {
                   minLength={2}
                   value={form.firstName}
                   onChange={(event) => setField('firstName', event.target.value)}
-                  className="wms-input w-full rounded-[14px]"
+                  className="input"
                 />
               </WmsFormField>
 
@@ -154,7 +154,7 @@ export default function SettingsProfilePage() {
                   minLength={2}
                   value={form.lastName}
                   onChange={(event) => setField('lastName', event.target.value)}
-                  className="wms-input w-full rounded-[14px]"
+                  className="input"
                 />
               </WmsFormField>
 
@@ -162,7 +162,7 @@ export default function SettingsProfilePage() {
                 <input
                   value={form.employeeId}
                   onChange={(event) => setField('employeeId', event.target.value)}
-                  className="wms-input w-full rounded-[14px]"
+                  className="input"
                 />
               </WmsFormField>
 
@@ -170,13 +170,13 @@ export default function SettingsProfilePage() {
                 <input
                   value={user.email ?? ''}
                   readOnly
-                  className="wms-input w-full rounded-[14px] bg-[#f4f7f8] text-[#607586]"
+                  className="input bg-[#f4f7f8] text-[#607586]"
                 />
               </WmsFormField>
 
               <div className="md:col-span-2">
                 <div className="rounded-[20px] border border-[#dce4ea] bg-[#fbfcfc] p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8293a0]">
+                  <p className="panel-title">
                     Password
                   </p>
                   <div className="mt-3 grid gap-4 md:grid-cols-2">
@@ -185,7 +185,7 @@ export default function SettingsProfilePage() {
                         type="password"
                         value={form.currentPassword}
                         onChange={(event) => setField('currentPassword', event.target.value)}
-                        className="wms-input w-full rounded-[14px]"
+                        className="input"
                         autoComplete="current-password"
                       />
                     </WmsFormField>
@@ -196,7 +196,7 @@ export default function SettingsProfilePage() {
                         minLength={8}
                         value={form.newPassword}
                         onChange={(event) => setField('newPassword', event.target.value)}
-                        className="wms-input w-full rounded-[14px]"
+                        className="input"
                         autoComplete="new-password"
                       />
                     </WmsFormField>
@@ -209,7 +209,7 @@ export default function SettingsProfilePage() {
               <button
                 type="submit"
                 disabled={isSaving}
-                className="inline-flex h-10 items-center rounded-full bg-[#12384b] px-5 text-[13px] font-semibold text-white transition hover:bg-[#0f3040] disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn btn-md btn-primary"
               >
                 {isSaving ? 'Saving...' : 'Save profile'}
               </button>
@@ -217,7 +217,7 @@ export default function SettingsProfilePage() {
           </form>
 
           <aside className="space-y-4 xl:col-span-3">
-            <div className="rounded-[28px] border border-[#dce4ea] bg-white px-5 py-5 shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)]">
+            <div className="rounded-2xl border border-[#dce4ea] bg-white px-5 py-5 shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)]">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#f7cf5f] text-xl font-semibold text-[#12384b]">
                 {getInitials(user)}
               </div>

@@ -132,7 +132,6 @@ export function WmsRoleFormModal({
     <WmsModal
       open={open}
       title={isEdit ? 'Edit WMS role' : 'Create WMS role'}
-      description="Only WMS permissions can be assigned to WMS roles."
       onClose={onClose}
       panelClassName="max-w-[860px]"
       footer={
@@ -168,7 +167,7 @@ export function WmsRoleFormModal({
               required
               value={form.name}
               onChange={(event) => setField('name', event.target.value)}
-              className="wms-input w-full rounded-[14px]"
+              className="input"
               placeholder="Picker Lead"
             />
           </WmsFormField>
@@ -181,7 +180,7 @@ export function WmsRoleFormModal({
                 setKeyTouched(true);
                 setField('key', event.target.value);
               }}
-              className="wms-input w-full rounded-[14px] font-mono"
+              className="input font-mono"
               placeholder="WMS_PICKER_LEAD"
             />
           </WmsFormField>
@@ -203,10 +202,10 @@ export function WmsRoleFormModal({
           </div>
         </div>
 
-        <section className="rounded-[18px] border border-[#dce4ea] bg-[#fbfcfc] p-3">
+        <section className="rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] p-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">
+              <p className="form-label">
                 Permissions
               </p>
               <p className="mt-1 text-[12px] text-[#8397a4]">
@@ -218,7 +217,7 @@ export function WmsRoleFormModal({
           <div className="mt-3 max-h-[360px] space-y-3 overflow-y-auto pr-1">
             {groupedPermissions.map(([module, permissions]) => (
               <div key={module} className="rounded-[14px] border border-[#dce4ea] bg-white p-3">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8293a0]">
+                <p className="form-label mb-3">
                   {module}
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
