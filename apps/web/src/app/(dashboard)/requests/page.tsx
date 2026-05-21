@@ -83,7 +83,7 @@ export default function RequestsPage() {
       {overview?.summary ? (
         <section className="panel panel-content">
           <div className="panel-header">
-            <LineChartIcon className="h-3.5 w-3.5 text-orange-500" />
+            <LineChartIcon className="panel-icon" />
             <h4 className="panel-title">Request Summary</h4>
           </div>
           <div className="p-3">

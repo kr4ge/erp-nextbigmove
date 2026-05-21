@@ -226,27 +226,29 @@ export function InventoryUnitModal({
     >
       {unit ? (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <TabButton
-              active={activeTab === 'overview'}
-              label="Overview"
-              onClick={() => setActiveTab('overview')}
-            />
-            <TabButton
-              active={activeTab === 'movements'}
-              label="Movements"
-              onClick={() => setActiveTab('movements')}
-            />
-            <TabButton
-              active={activeTab === 'transfer'}
-              label="Transfer"
-              onClick={() => setActiveTab('transfer')}
-            />
-            <TabButton
-              active={activeTab === 'adjust'}
-              label="Adjust"
-              onClick={() => setActiveTab('adjust')}
-            />
+          <div className="overflow-x-auto">
+            <div className="flex min-w-max gap-6 border-b border-slate-200">
+              <TabButton
+                active={activeTab === 'overview'}
+                label="Overview"
+                onClick={() => setActiveTab('overview')}
+              />
+              <TabButton
+                active={activeTab === 'movements'}
+                label="Movements"
+                onClick={() => setActiveTab('movements')}
+              />
+              <TabButton
+                active={activeTab === 'transfer'}
+                label="Transfer"
+                onClick={() => setActiveTab('transfer')}
+              />
+              <TabButton
+                active={activeTab === 'adjust'}
+                label="Adjust"
+                onClick={() => setActiveTab('adjust')}
+              />
+            </div>
           </div>
 
           {activeTab === 'overview' ? (
@@ -359,17 +361,19 @@ export function InventoryUnitModal({
                   <InlineMutedBox message="Loading destination options…" />
                 ) : transferOptions ? (
                   <>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <TabButton
-                        active={transferMode === 'bin'}
-                        label="Bin"
-                        onClick={() => setTransferMode('bin')}
-                      />
-                      <TabButton
-                        active={transferMode === 'operational'}
-                        label="Operational"
-                        onClick={() => setTransferMode('operational')}
-                      />
+                    <div className="overflow-x-auto">
+                      <div className="flex min-w-max gap-6 border-b border-slate-200">
+                        <TabButton
+                          active={transferMode === 'bin'}
+                          label="Bin"
+                          onClick={() => setTransferMode('bin')}
+                        />
+                        <TabButton
+                          active={transferMode === 'operational'}
+                          label="Operational"
+                          onClick={() => setTransferMode('operational')}
+                        />
+                      </div>
                     </div>
 
                     {transferMode === 'bin' ? (
@@ -534,10 +538,10 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`pill transition ${
+      className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
         active
-          ? 'border-primary bg-primary text-white'
-          : 'border-[#d7e0e7] bg-white text-[#4f6776] hover:border-[#c6d4dd] hover:text-primary'
+          ? 'border-primary text-primary'
+          : 'border-transparent text-slate-600 hover:text-slate-900'
       }`}
     >
       {label}

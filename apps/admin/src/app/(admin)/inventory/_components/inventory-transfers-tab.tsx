@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowRightLeft, Info, Loader2, Tags, Truck } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ArrowRightLeft, ChevronLeft, ChevronRight, Info, Loader2, Tags, Truck } from 'lucide-react';
+import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
 import type {
   WmsReceivingBatchDetail,
@@ -32,6 +33,7 @@ type TransferGroup = {
 };
 
 const EMPTY_TRANSFER_UNITS: TransferUnit[] = [];
+const NOTICE_AUTO_DISMISS_MS = 5000;
 
 const INVENTORY_STATUSES: WmsInventoryUnitStatus[] = [
   'RECEIVED',
@@ -99,6 +101,7 @@ export function InventoryTransfersTab({
   const [activeGroupKey, setActiveGroupKey] = useState('');
   const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
   const [lastSavedMessage, setLastSavedMessage] = useState<string | null>(null);
+  const batchScrollRef = useRef<HTMLDivElement>(null);
 
   const sections = useMemo(
     () => putawayOptions?.sections ?? [],
@@ -122,6 +125,13 @@ export function InventoryTransfersTab({
 
     return allUnits;
   }, [putawayOptions?.units, unitFilter]);
+
+  const scrollBatches = (direction: 'left' | 'right') => {
+    batchScrollRef.current?.scrollBy({
+      left: direction === 'left' ? -240 : 240,
+      behavior: 'smooth',
+    });
+  };
 
   const groups = useMemo(() => buildTransferGroups(filteredUnits), [filteredUnits]);
   const completedUnits = useMemo(
@@ -304,7 +314,27 @@ export function InventoryTransfersTab({
   return (
     <div className="space-y-3">
       <section className="space-y-2">
-        <h2 className="text-[1.1rem] font-semibold tracking-tight text-[#12384b]">Batches</h2>
+        <div className="flex justify-between items-center w-full">
+          <h2 className="text-[1.1rem] font-semibold tracking-tight text-primary">Batches</h2>
+          <div className="flex shrink-0 items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => scrollBatches('left')}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary"
+                aria-label="Scroll batches left"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollBatches('right')}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary"
+                aria-label="Scroll batches right"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+        </div>
         {isLoadingBatches ? (
           <div className="px-4 py-10 text-center text-sm text-[#7b8e9c]">Loading transfer queue…</div>
         ) : batches.length === 0 ? (
@@ -312,39 +342,63 @@ export function InventoryTransfersTab({
             No printed receiving batches are waiting for put-away.
           </div>
         ) : (
-          <div className="scrollbar-hide flex gap-2 overflow-x-auto">
-            {batches.map((batch) => {
-              const active = batch.id === selectedBatchId;
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div
+              ref={batchScrollRef}
+              className="scrollbar-hide flex min-w-0 flex-1 gap-2 overflow-x-auto"
+            >
+              {batches.map((batch) => {
+                const active = batch.id === selectedBatchId;
 
-              return (
-                <button
-                  key={batch.id}
-                  type="button"
-                  onClick={() => onSelectBatch(batch)}
-                  className={`w-[216px] shrink-0 rounded-2xl border px-3 py-2.5 text-left transition sm:w-[228px] ${
-                    active
-                      ? 'border-[#f4c57c] bg-[#fff7ed]'
-                      : 'border-transparent bg-transparent hover:border-[#dce4ea] hover:bg-[#f8fbfc]'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#12384b]">{batch.code}</p>
+                return (
+                  <button
+                    key={batch.id}
+                    type="button"
+                    onClick={() => onSelectBatch(batch)}
+                    className={`w-[216px] shrink-0 rounded-2xl border px-3 py-2.5 text-left transition sm:w-[228px] ${
+                      active
+                        ? 'border-primary bg-white'
+                        : 'border-border bg-transparent hover:border-[#dce4ea] hover:bg-[#f8fbfc]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-primary">{batch.code}</p>
+                      </div>
+                      <span className={`pill ${getReceivingStatusClassName(batch.status)}`}>
+                        {formatReceivingStatusLabel(batch.status)}
+                      </span>
                     </div>
-                    <span className={`pill ${getReceivingStatusClassName(batch.status)}`}>
-                      {formatReceivingStatusLabel(batch.status)}
-                    </span>
-                  </div>
 
-                  <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[#6f8290]">
-                    <span className="truncate">
-                      {batch.sourceRequestId || batch.warehouse.code || 'Manual'}
-                    </span>
-                    <span className="shrink-0 font-semibold tabular-nums text-[#12384b]">{batch.unitCount} units</span>
-                  </div>
-                </button>
-              );
-            })}
+                    <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[#6f8290]">
+                      <span className="truncate">
+                        {batch.sourceRequestId || batch.warehouse.code || 'Manual'}
+                      </span>
+                      <span className="shrink-0 font-semibold tabular-nums text-primary">{batch.unitCount} units</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* <div className="flex shrink-0 items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => scrollBatches('left')}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary"
+                aria-label="Scroll batches left"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollBatches('right')}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary"
+                aria-label="Scroll batches right"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div> */}
           </div>
         )}
       </section>
@@ -357,7 +411,7 @@ export function InventoryTransfersTab({
             <button
               type="button"
               onClick={() => onOpenLabels(selectedBatch)}
-              className="inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#12384b] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
+              className="inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-3 py-1.5 text-[11px] font-semibold text-primary transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
             >
               <Tags className="h-3.5 w-3.5" />
               Labels
@@ -371,7 +425,7 @@ export function InventoryTransfersTab({
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-primary">
                 <ArrowRightLeft className="h-6 w-6" />
               </div>
-              <p className="mt-4 text-sm font-semibold text-[#12384b]">Select a batch to start put-away</p>
+              <p className="mt-4 text-sm font-semibold text-primary">Select a batch to start put-away</p>
             </div>
           ) : isLoadingPutawayOptions ? (
             <div className="flex h-[420px] items-center justify-center text-sm text-[#718797]">
@@ -384,8 +438,8 @@ export function InventoryTransfersTab({
             </div>
           ) : (
             <div className="space-y-3.5">
-              <div className="grid gap-2 rounded-[16px] border border-[#dce4ea] bg-[#fbfcfc] px-3 py-2.5 text-[11px] text-[#4d6677] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
-                <span className="truncate font-semibold text-[#12384b]">
+              <div className="grid gap-2 rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-3 py-2.5 text-[11px] text-[#4d6677] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
+                <span className="truncate font-semibold text-primary">
                   {selectedBatch.sourceRequestId || selectedBatch.requestTitle || 'Manual request'}
                 </span>
                 <span className="truncate">
@@ -394,58 +448,62 @@ export function InventoryTransfersTab({
                     ? ` · ${batchDetail.stagingLocation.code} · ${batchDetail.stagingLocation.name}`
                     : ''}
                 </span>
-                <span className="font-semibold text-[#12384b] lg:text-right">
+                <span className="font-semibold text-primary lg:text-right">
                   {completedUnits}/{putawayOptions.batch.unitCount} assigned
                 </span>
               </div>
 
               <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  {[
-                    ['pending', 'Needs Transfer'],
-                    ['done', 'Transferred'],
-                    ['all', 'All Units'],
-                  ].map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setUnitFilter(value as 'all' | 'pending' | 'done')}
-                      className={`pill transition ${
-                        unitFilter === value
-                          ? 'border-[#f97316] bg-[#fff7ed] text-[#c2410c]'
-                          : 'border-[#d7e0e7] bg-white text-[#4d6677] hover:border-[#c6d4dd]'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                <div className="overflow-x-auto">
+                  <div className="flex min-w-max gap-6 border-b border-slate-200">
+                    {[
+                      ['pending', 'Needs Transfer'],
+                      ['done', 'Transferred'],
+                      ['all', 'All Units'],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setUnitFilter(value as 'all' | 'pending' | 'done')}
+                        className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
+                          unitFilter === value
+                            ? 'border-primary text-primary'
+                            : 'border-transparent text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {groups.length > 0 ? (
-                  <div className="scrollbar-hide flex gap-2 overflow-x-auto pb-1">
-                    {groups.map((group) => (
-                      <button
-                        key={group.key}
-                        type="button"
-                        onClick={() => setActiveGroupKey(group.key)}
-                        className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
-                          activeGroup?.key === group.key
-                            ? 'border-[#12384b] bg-[#12384b] text-white'
-                            : 'border-[#d7e0e7] bg-white text-[#12384b] hover:border-[#c6d4dd] hover:bg-[#f8fafb]'
-                        }`}
-                      >
-                        <span>{group.label}</span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  <div className="scrollbar-hide overflow-x-auto">
+                    <div className="flex min-w-max gap-6 border-b border-slate-200 pb-px">
+                      {groups.map((group) => (
+                        <button
+                          key={group.key}
+                          type="button"
+                          onClick={() => setActiveGroupKey(group.key)}
+                          className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
                             activeGroup?.key === group.key
-                              ? 'bg-white/15 text-white'
-                              : 'bg-[#eef3f6] text-[#4d6677]'
+                              ? 'border-primary text-primary'
+                              : 'border-transparent text-slate-600 hover:text-slate-900'
                           }`}
                         >
-                          {group.units.length}
-                        </span>
-                      </button>
-                    ))}
+                          <span>{group.label}</span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              activeGroup?.key === group.key
+                                ? 'bg-primary/10 text-primary'
+                                : 'bg-[#eef3f6] text-[#4d6677]'
+                            }`}
+                          >
+                            {group.units.length}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -472,7 +530,7 @@ export function InventoryTransfersTab({
                               </span>
                             ) : null}
                           </div>
-                          <p className="mt-1.5 text-[11px] font-medium text-[#12384b]">
+                          <p className="mt-1.5 text-[11px] font-medium text-primary">
                             {selectedActionableCount} selected / {actionableUnits.length} transferable
                           </p>
                         </div>
@@ -614,7 +672,7 @@ export function InventoryTransfersTab({
                                 checked={allActionableSelected && actionableUnitIds.length > 0}
                                 onChange={toggleSelectAll}
                                 disabled={!actionableUnitIds.length || !canPutAway}
-                                className="h-4 w-4 rounded border-[#c5d1d9] text-[#12384b] focus:ring-[#12384b]"
+                                className="h-4 w-4 rounded border-[#c5d1d9] text-primary focus:ring-primary"
                               />
                             </HeaderCell>
                             <HeaderCell>Unit</HeaderCell>
@@ -632,7 +690,7 @@ export function InventoryTransfersTab({
                             return (
                               <tr
                                 key={unit.id}
-                                className={`text-[13px] text-[#12384b] transition ${
+                                className={`text-[13px] text-primary transition ${
                                   isSelected ? 'bg-[#fff7ed]' : ''
                                 }`}
                               >
@@ -642,27 +700,27 @@ export function InventoryTransfersTab({
                                     checked={isSelected}
                                     onChange={() => toggleUnitSelection(unit.id)}
                                     disabled={!canPutAway || isCompleted}
-                                    className="h-4 w-4 rounded border-[#c5d1d9] text-[#12384b] focus:ring-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                                    className="h-4 w-4 rounded border-[#c5d1d9] text-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-45"
                                   />
                                 </BodyCell>
 
                                 <BodyCell>
                                   <div className="min-w-[136px]">
-                                    <p className="font-semibold text-[#12384b]">{unit.code}</p>
+                                    <p className="font-semibold text-primary">{unit.code}</p>
                                     <p className="mt-1 text-[11px] text-[#7c8f9b]">{unit.barcode}</p>
                                   </div>
                                 </BodyCell>
 
                                 <BodyCell>
                                   <div className="min-w-[164px]">
-                                    <p className="font-semibold text-[#12384b]">{unit.productName}</p>
+                                    <p className="font-semibold text-primary">{unit.productName}</p>
                                     <p className="mt-1 text-[11px] text-[#7c8f9b]">{unit.productCustomId ?? 'No SKU'}</p>
                                   </div>
                                 </BodyCell>
 
                                 <BodyCell>
                                   <div className="min-w-[140px]">
-                                    <p className="font-medium text-[#12384b]">
+                                    <p className="font-medium text-primary">
                                       {unit.currentLocation?.code ?? batchDetail?.stagingLocation?.code ?? 'Staging'}
                                     </p>
                                     <p className="mt-1 text-[11px] text-[#7c8f9b]">
@@ -715,15 +773,27 @@ export function InventoryTransfersTab({
               )}
 
               {lastSavedMessage ? (
-                <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-[12px] text-emerald-700">
+                <WmsInlineNotice
+                  tone="success"
+                  className="px-3 py-2.5 text-[12px]"
+                  dismissible
+                  autoDismissMs={NOTICE_AUTO_DISMISS_MS}
+                  onDismiss={() => setLastSavedMessage(null)}
+                >
                   {lastSavedMessage}
-                </div>
+                </WmsInlineNotice>
               ) : null}
 
               {putawayError ? (
-                <div className="rounded-[14px] border border-rose-200 bg-rose-50 px-3 py-2.5 text-[12px] text-rose-700">
+                <WmsInlineNotice
+                  tone="error"
+                  className="rounded-[14px] px-3 py-2.5 text-[12px]"
+                  dismissible
+                  autoDismissMs={NOTICE_AUTO_DISMISS_MS}
+                  onDismiss={() => setPutawayError(null)}
+                >
                   {putawayError}
-                </div>
+                </WmsInlineNotice>
               ) : null}
             </div>
         )}
@@ -744,7 +814,7 @@ function TransferInfoCard({
   return (
     <div className="flex h-full min-w-0 flex-col rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
       <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8193a0]">{title}</p>
-      <p className="mt-1.5 text-sm font-semibold text-[#12384b]">{value}</p>
+      <p className="mt-1.5 text-sm font-semibold text-primary">{value}</p>
       <p className="mt-1 text-[12px] text-[#6f8290]">{hint}</p>
     </div>
   );

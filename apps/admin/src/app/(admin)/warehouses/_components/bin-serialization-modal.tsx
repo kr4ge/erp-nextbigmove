@@ -142,7 +142,7 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
                 onClick={() => setActiveTab(tab.value)}
                 className={`inline-flex rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
                   activeTab === tab.value
-                    ? 'border-[#12384b] bg-[#12384b] text-white'
+                    ? 'border-primary bg-primary text-white'
                     : 'border-[#d7e0e7] bg-white text-[#4d6677] hover:border-[#c6d4dd] hover:bg-[#f8fafb]'
                 }`}
               >
@@ -265,7 +265,7 @@ function BinUnitsTable({
 }) {
   if (!units.length) {
     return (
-      <div className="rounded-[16px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center text-sm text-[#637786]">
+      <div className="rounded-2xl border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center text-sm text-[#637786]">
         No serialized units are currently stored in this slot.
       </div>
     );
@@ -286,27 +286,27 @@ function BinUnitsTable({
           </thead>
           <tbody className="divide-y divide-[#eef2f5] bg-white">
             {units.map((unit) => (
-              <tr key={unit.id} className="text-[13px] text-[#12384b]">
+              <tr key={unit.id} className="text-[13px] text-primary">
                 <BodyCell>
                   <div className="min-w-[160px]">
-                    <p className="font-semibold text-[#12384b]">{unit.code}</p>
+                    <p className="font-semibold text-primary">{unit.code}</p>
                     <p className="mt-1 text-[11px] text-[#7c8f9b]">{unit.barcode}</p>
                   </div>
                 </BodyCell>
                 <BodyCell>
                   <div className="min-w-[180px]">
-                    <p className="font-semibold text-[#12384b]">{unit.productName}</p>
+                    <p className="font-semibold text-primary">{unit.productName}</p>
                     <p className="mt-1 text-[11px] text-[#7c8f9b]">{unit.productCustomId ?? 'No SKU'}</p>
                   </div>
                 </BodyCell>
                 <BodyCell>
                   <div className="min-w-[150px]">
-                    <p className="font-medium text-[#12384b]">{unit.receivingBatch?.code ?? unit.sourceRefLabel ?? 'Manual'}</p>
+                    <p className="font-medium text-primary">{unit.receivingBatch?.code ?? unit.sourceRefLabel ?? 'Manual'}</p>
                     <p className="mt-1 text-[11px] text-[#7c8f9b]">{unit.sourceRefLabel ?? 'No source label'}</p>
                   </div>
                 </BodyCell>
                 <BodyCell>
-                  <span className="inline-flex rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-2 py-0.5 text-[10.5px] font-semibold text-[#12384b]">
+                  <span className="inline-flex rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-2 py-0.5 text-[10.5px] font-semibold text-primary">
                     {formatStatusLabel(unit.status)}
                   </span>
                 </BodyCell>

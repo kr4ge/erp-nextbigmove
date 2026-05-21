@@ -20,7 +20,7 @@ export function WmsStatPill({
 }: WmsStatPillProps) {
   return (
     <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold ${TONE_CLASS_NAMES[tone]}`}>
-      <span className="tabular-nums text-[#12384b]">{value}</span>
+      <span className="tabular-nums text-primary">{value}</span>
       <span>{label}</span>
     </span>
   );

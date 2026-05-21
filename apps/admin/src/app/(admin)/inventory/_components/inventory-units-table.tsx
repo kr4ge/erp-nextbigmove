@@ -58,8 +58,8 @@ export function InventoryUnitsTable({
             </tr>
           ) : (
             units.map((unit) => (
-              <tr key={unit.id} className="border-b border-[#edf2f6] text-[13px] text-[#12384b]">
-                <BodyCell className="font-semibold text-[#12384b]">
+              <tr key={unit.id} className="border-b border-[#edf2f6] text-[13px] text-primary">
+                <BodyCell className="font-semibold text-primary">
                   <div className="min-w-0">
                     <div className="truncate">{unit.code}</div>
                     <div className="mt-1 truncate text-[11px] font-medium text-[#7c8f9b]">{unit.barcode}</div>
@@ -68,7 +68,7 @@ export function InventoryUnitsTable({
 
                 <BodyCell>
                   <div className="min-w-0">
-                    <div className="truncate font-medium text-[#12384b]">
+                    <div className="truncate font-medium text-primary">
                       {unit.variationDisplayId ?? '—'}
                     </div>
                     <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">
@@ -79,7 +79,7 @@ export function InventoryUnitsTable({
 
                 <BodyCell>
                   <div className="min-w-0">
-                    <div className="truncate font-medium text-[#12384b]">{unit.name}</div>
+                    <div className="truncate font-medium text-primary">{unit.name}</div>
                     <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">{unit.productId}</div>
                   </div>
                 </BodyCell>
@@ -88,7 +88,7 @@ export function InventoryUnitsTable({
 
                 <BodyCell>
                   <div className="min-w-0">
-                    <div className="truncate font-medium text-[#12384b]">{unit.warehouse.name}</div>
+                    <div className="truncate font-medium text-primary">{unit.warehouse.name}</div>
                     <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">{unit.warehouse.code}</div>
                   </div>
                 </BodyCell>
@@ -96,7 +96,7 @@ export function InventoryUnitsTable({
                 <BodyCell>
                   {unit.currentLocation ? (
                     <div className="min-w-0">
-                      <div className="truncate font-medium text-[#12384b]">{unit.currentLocation.code}</div>
+                      <div className="truncate font-medium text-primary">{unit.currentLocation.code}</div>
                       <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">{unit.currentLocation.name}</div>
                     </div>
                   ) : (
@@ -114,7 +114,7 @@ export function InventoryUnitsTable({
                   <button
                     type="button"
                     onClick={() => onViewUnit(unit)}
-                    className="btn btn-sm btn-outline btn-icon"
+                    className="btn btn-sm btn-outline btn-icon ml-auto"
                   >
                     <Eye className="h-3.5 w-3.5" />
                     View

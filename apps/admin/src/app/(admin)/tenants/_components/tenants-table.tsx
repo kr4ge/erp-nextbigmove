@@ -113,7 +113,7 @@ export function TenantsTable({ tenants, isLoading }: TenantsTableProps) {
                   <BodyCell align="right">
                     <Link
                       href={`/tenants/${tenant.id}`}
-                      className="btn btn-sm btn-outline btn-icon"
+                      className="btn btn-sm btn-outline btn-icon max-w-[85px] ml-auto"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                       Manage

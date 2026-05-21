@@ -306,7 +306,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="panel panel-content">
           <div className="panel-header">
-            <SlidersHorizontal className="h-3.5 w-3.5 text-primary" />
+            <SlidersHorizontal className="panel-icon" />
             <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h3>
           </div>
           <div className="space-y-3 p-4 text-sm text-slate-700">
@@ -339,7 +339,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
 
         <div className="panel panel-content">
           <div className="panel-header">
-            <Activity className="h-3.5 w-3.5 text-primary" />
+            <Activity className="panel-icon" />
             <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Rate Limits</h3>
           </div>
           <div className="space-y-3 p-4 text-sm text-slate-700">
@@ -369,7 +369,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
 
       <div className="panel panel-content p-4 shadow-sm space-y-4">
         <div className="-mx-4 -mt-4 mb-1 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-          <CalendarClock className="h-3.5 w-3.5 text-primary" />
+          <CalendarClock className="panel-icon" />
           Execution History
         </div>
 

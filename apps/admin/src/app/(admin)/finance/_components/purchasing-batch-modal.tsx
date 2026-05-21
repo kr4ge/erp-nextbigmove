@@ -33,7 +33,7 @@ type PurchasingBatchModalProps = {
 };
 
 type LineDraft = {
-  approvedQuantity: number;
+  approvedQuantity: string;
   supplierUnitCost: string;
   partnerUnitCost: string;
 };
@@ -65,7 +65,7 @@ export function PurchasingBatchModal({
         batch.lines.map((line) => [
           line.id,
           {
-            approvedQuantity: line.approvedQuantity ?? line.requestedQuantity,
+            approvedQuantity: String(line.approvedQuantity ?? line.requestedQuantity),
             supplierUnitCost: line.supplierUnitCost?.toString() ?? '',
             partnerUnitCost: line.partnerUnitCost?.toString() ?? '',
           },
@@ -163,24 +163,29 @@ export function PurchasingBatchModal({
                   </thead>
                   <tbody className="divide-y divide-[#eef2f5]">
                     {batch.lines.map((line) => {
+                      const initialApprovedQuantity = line.approvedQuantity ?? line.requestedQuantity;
                       const draft = lineDrafts[line.id] ?? {
-                        approvedQuantity: line.approvedQuantity ?? line.requestedQuantity,
+                        approvedQuantity: String(initialApprovedQuantity),
                         supplierUnitCost: line.supplierUnitCost?.toString() ?? '',
                         partnerUnitCost: line.partnerUnitCost?.toString() ?? '',
                       };
+                      const normalizedApprovedQuantity =
+                        draft.approvedQuantity.trim() === ''
+                          ? 0
+                          : Number.parseInt(draft.approvedQuantity, 10);
                       const isDirty =
-                        draft.approvedQuantity !== (line.approvedQuantity ?? line.requestedQuantity)
+                        normalizedApprovedQuantity !== initialApprovedQuantity
                         || draft.supplierUnitCost !== (line.supplierUnitCost?.toString() ?? '')
                         || draft.partnerUnitCost !== (line.partnerUnitCost?.toString() ?? '');
 
                       return (
                         <tr key={line.id}>
-                          <td className="px-4 py-3 text-sm font-semibold tabular-nums text-[#12384b]">
+                          <td className="px-4 py-3 text-sm font-semibold tabular-nums text-primary">
                             #{line.lineNo}
                           </td>
                           <td className="px-4 py-3">
                             <div className="max-w-[280px] space-y-0.5">
-                              <p className="truncate text-sm font-semibold text-[#12384b]">
+                              <p className="truncate text-sm font-semibold text-primary">
                                 {line.requestedProductName || line.variationId || line.productId || 'Item'}
                               </p>
                               <p className="truncate text-[12px] text-[#7b8e9c]">
@@ -195,23 +200,38 @@ export function PurchasingBatchModal({
                           <td className="px-4 py-3 text-right text-sm tabular-nums text-[#4d6677]">
                             {line.requestedQuantity}
                           </td>
-                          <td className="px-4 py-3 text-right text-sm tabular-nums text-[#12384b]">
+                          <td className="px-4 py-3 text-right text-sm tabular-nums text-primary">
                             {editableLines ? (
                               <input
-                                type="number"
-                                min={0}
-                                max={line.requestedQuantity}
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
                                 value={draft.approvedQuantity}
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                  const nextValue = event.target.value;
+
+                                  if (nextValue !== '' && !/^\d+$/.test(nextValue)) {
+                                    return;
+                                  }
+
                                   setLineDrafts((current) => ({
                                     ...current,
                                     [line.id]: {
                                       ...draft,
-                                      approvedQuantity: Number(event.target.value),
+                                      approvedQuantity: nextValue,
+                                    },
+                                  }));
+                                }}
+                                onBlur={() =>
+                                  setLineDrafts((current) => ({
+                                    ...current,
+                                    [line.id]: {
+                                      ...draft,
+                                      approvedQuantity: draft.approvedQuantity.trim() === '' ? '0' : draft.approvedQuantity,
                                     },
                                   }))
                                 }
-                                className="h-9 w-20 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-[#12384b] outline-none transition focus:border-[#96b4c3]"
+                                className="h-9 w-20 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-primary outline-none transition focus:border-[#96b4c3]"
                               />
                             ) : (
                               line.approvedQuantity ?? line.requestedQuantity
@@ -233,7 +253,7 @@ export function PurchasingBatchModal({
                                     },
                                   }))
                                 }
-                                className="h-9 w-28 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-[#12384b] outline-none transition focus:border-[#96b4c3]"
+                                className="h-9 w-28 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-primary outline-none transition focus:border-[#96b4c3]"
                               />
                             ) : (
                               formatMoney(line.supplierUnitCost)
@@ -255,7 +275,7 @@ export function PurchasingBatchModal({
                                     },
                                   }))
                                 }
-                                className="h-9 w-28 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-[#12384b] outline-none transition focus:border-[#96b4c3]"
+                                className="h-9 w-28 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-primary outline-none transition focus:border-[#96b4c3]"
                               />
                             ) : (
                               formatMoney(line.partnerUnitCost)
@@ -269,7 +289,7 @@ export function PurchasingBatchModal({
                                   void onUpdateLine(line.id, {
                                     approvedQuantity: Math.max(
                                       0,
-                                      Math.min(line.requestedQuantity, Math.floor(draft.approvedQuantity)),
+                                      Math.min(line.requestedQuantity, Math.floor(normalizedApprovedQuantity)),
                                     ),
                                     supplierUnitCost:
                                       draft.supplierUnitCost.trim() === ''
@@ -282,7 +302,7 @@ export function PurchasingBatchModal({
                                   })
                                 }
                                 disabled={!isDirty || isUpdatingLine}
-                                className="inline-flex h-8 items-center rounded-[10px] border border-[#d7e0e7] bg-white px-3 text-[11px] font-semibold text-[#12384b] transition hover:border-[#12384b] hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-50"
+                                className="inline-flex h-8 items-center rounded-[10px] border border-[#d7e0e7] bg-white px-3 text-[11px] font-semibold text-primary transition hover:border-primary hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 {isUpdatingLine ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save'}
                               </button>
@@ -307,7 +327,7 @@ export function PurchasingBatchModal({
                       className="rounded-[14px] border border-[#e3e9ee] bg-white px-3 py-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-[12px] font-semibold text-[#12384b]">{event.eventType}</p>
+                        <p className="text-[12px] font-semibold text-primary">{event.eventType}</p>
                         <p className="text-[11px] text-[#7b8e9c]">{formatShortDate(event.createdAt)}</p>
                       </div>
                       <p className="mt-1 text-[12px] text-[#4d6677]">
@@ -364,7 +384,7 @@ export function PurchasingBatchModal({
                   type="button"
                   onClick={onCreateReceiving}
                   disabled={isCreatingReceiving}
-                  className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-[12px] bg-[#f97316] px-3 text-[12px] font-semibold text-white transition hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-3 w-full btn btn-md btn-primary"
                 >
                   {isCreatingReceiving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Post to Stock Receiving'}
                 </button>
@@ -379,9 +399,9 @@ export function PurchasingBatchModal({
             <MetricCard label="Payment Verified">{formatShortDate(batch.paymentVerifiedAt)}</MetricCard>
             <MetricCard label="Receiving Ready">{formatShortDate(batch.readyForReceivingAt)}</MetricCard>
 
-            <div className="rounded-[16px] border border-[#dce4ea] bg-white px-3.5 py-3">
+            <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Bank Details</p>
-              <div className="mt-1.5 space-y-1 text-sm text-[#12384b]">
+              <div className="mt-1.5 space-y-1 text-sm text-primary">
                 <p>Bank: {batch.invoice.bankDetails?.bankName || '—'}</p>
                 <p>Account Name: {batch.invoice.bankDetails?.bankAccountName || '—'}</p>
                 <p>Account Number: {batch.invoice.bankDetails?.bankAccountNumber || '—'}</p>
@@ -389,7 +409,7 @@ export function PurchasingBatchModal({
               </div>
             </div>
 
-            <div className="rounded-[16px] border border-[#dce4ea] bg-white px-3.5 py-3">
+            <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Payment Proof</p>
               {batch.paymentProofImageUrl ? (
                 <div className="mt-1.5 space-y-2">
@@ -397,7 +417,7 @@ export function PurchasingBatchModal({
                     href={batch.paymentProofImageUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex rounded-full border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-1 text-[11px] font-semibold text-[#12384b] transition hover:border-[#12384b]"
+                    className="inline-flex rounded-full border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-1 text-[11px] font-semibold text-primary transition hover:border-primary"
                   >
                     Open proof image
                   </a>
@@ -431,7 +451,7 @@ function MetricCard({ label, children }: { label: string; children: ReactNode })
   return (
     <div className="card">
       <p className="card-label">{label}</p>
-      <div className="mt-1.5 text-sm font-semibold text-[#12384b]">{children}</div>
+      <div className="mt-1.5 text-sm font-semibold text-primary">{children}</div>
     </div>
   );
 }
@@ -463,12 +483,12 @@ function getStatusHelper(status: WmsPurchasingBatchStatus) {
 
 function getActionClassName(tone: 'primary' | 'secondary' | 'danger') {
   if (tone === 'primary') {
-    return 'inline-flex h-10 w-full items-center rounded-[12px] bg-[#12384b] px-3 text-[12px] font-semibold text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50';
+    return 'btn btn-md btn-primary w-full';
   }
 
   if (tone === 'danger') {
-    return 'inline-flex h-10 w-full items-center rounded-[12px] border border-rose-200 bg-white px-3 text-[12px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50';
+    return 'btn btn-md border border-rose-200 bg-white text-rose-700 w-full';
   }
 
-  return 'inline-flex h-10 w-full items-center rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-[12px] font-semibold text-[#12384b] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-50';
+  return 'btn btn-md btn-outline w-full';
 }

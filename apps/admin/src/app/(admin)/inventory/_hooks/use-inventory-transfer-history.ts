@@ -1,9 +1,11 @@
 'use client';
 
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { fetchWmsInventoryTransfers } from '../_services/inventory.service';
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
@@ -32,21 +34,31 @@ export function useInventoryTransferHistory(enabled = true) {
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>();
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | undefined>();
   const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const deferredSearch = useDeferredValue(searchText.trim());
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchText(searchText.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchText]);
 
   const historyQuery = useQuery({
     queryKey: [
       'wms-inventory-transfers',
       selectedTenantId ?? 'default-tenant',
       selectedWarehouseId ?? 'all-warehouses',
-      deferredSearch,
+      debouncedSearchText,
     ],
     queryFn: () =>
       fetchWmsInventoryTransfers({
         tenantId: selectedTenantId,
         warehouseId: selectedWarehouseId,
-        search: deferredSearch || undefined,
+        search: debouncedSearchText || undefined,
       }),
     enabled,
   });
@@ -80,7 +92,7 @@ export function useInventoryTransferHistory(enabled = true) {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedTenantId, selectedWarehouseId, deferredSearch]);
+  }, [selectedTenantId, selectedWarehouseId, debouncedSearchText]);
 
   const totalPages = useMemo(() => {
     const totalTransfers = historyQuery.data?.transfers.length ?? 0;

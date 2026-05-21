@@ -398,7 +398,7 @@ export default function MarketingAnalyticsPage() {
 
       <DashboardSection
         title="Marketing Monitoring"
-        icon={<Gauge className="h-3.5 w-3.5 text-primary" />}
+        icon={<Gauge className="panel-icon" />}
         meta={`Last updated: ${lastUpdatedLabel}`}
         contentClassName="space-y-5"
       >
@@ -539,7 +539,7 @@ export default function MarketingAnalyticsPage() {
       {/* Top Tables */}
       <DashboardSection
         title="Marketing Breakdown"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
+        icon={<BarChart3 className="panel-icon" />}
         meta={`${activeMarketingRowCount} rows`}
         className=""
         contentClassName="space-y-3"

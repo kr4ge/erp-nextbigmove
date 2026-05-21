@@ -226,7 +226,7 @@ export default function RolesPage() {
         <div className="lg:col-span-2">
           <section className="panel panel-content overflow-hidden">
             <div className="panel-header">
-              <Shield className="h-3.5 w-3.5 text-primary" />
+              <Shield className="panel-icon" />
               <h2 className="panel-title">Roles</h2>
             </div>
             {isLoading && (
@@ -406,7 +406,7 @@ export default function RolesPage() {
         <div>
           <section className="panel panel-content">
             <div className="panel-header">
-              <PlusCircle className="h-3.5 w-3.5 text-primary" />
+              <PlusCircle className="panel-icon" />
               <h2 className="panel-title">Create ERP Role</h2>
             </div>
             <div className="p-4">

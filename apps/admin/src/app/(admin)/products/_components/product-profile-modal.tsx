@@ -107,7 +107,7 @@ export function ProductProfileModal({
       <button
         type="button"
         onClick={onClose}
-        className="wms-pill-control inline-flex items-center rounded-full border border-[#d7e0e7] bg-white px-4 font-medium text-[#325368]"
+        className="btn btn-md btn-outline"
       >
         Cancel
       </button>
@@ -122,7 +122,7 @@ export function ProductProfileModal({
             notes: formState.notes?.trim() ? formState.notes.trim() : null,
           });
         }}
-        className="wms-pill-control inline-flex items-center rounded-full bg-[#12384b] px-4 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+        className="btn btn-md btn-primary"
       >
         {!canEditProfile ? 'Edit permission required' : isSaving ? 'Saving' : 'Save profile'}
       </button>
@@ -141,7 +141,7 @@ export function ProductProfileModal({
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Status</span>
+              <span className="form-label">Status</span>
               <select
                 value={formState.status}
                 disabled={inputsDisabled}
@@ -151,7 +151,7 @@ export function ProductProfileModal({
                     status: event.target.value as WmsProductProfileStatus,
                   }))
                 }
-                className="h-11 w-full rounded-[18px] border border-[#d7e0e7] bg-white px-4 text-sm text-[#12384b] outline-none transition focus:border-[#a9c1ce]"
+                className="input"
               >
                 {statusOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -162,7 +162,7 @@ export function ProductProfileModal({
             </label>
 
             <label className="space-y-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Serialized</span>
+              <span className="form-label">Serialized</span>
               <select
                 value={formState.isSerialized ? 'true' : 'false'}
                 disabled={inputsDisabled}
@@ -172,7 +172,7 @@ export function ProductProfileModal({
                     isSerialized: event.target.value === 'true',
                   }))
                 }
-                className="h-11 w-full rounded-[18px] border border-[#d7e0e7] bg-white px-4 text-sm text-[#12384b] outline-none transition focus:border-[#a9c1ce]"
+                className="input"
               >
                 <option value="true">Serialized</option>
                 <option value="false">Non-serialized</option>
@@ -182,7 +182,7 @@ export function ProductProfileModal({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Inhouse COGS</span>
+              <span className="form-label">Inhouse COGS</span>
               <input
                 type="number"
                 min={0}
@@ -195,13 +195,13 @@ export function ProductProfileModal({
                     inhouseUnitCost: event.target.value,
                   }))
                 }
-                className="h-11 w-full rounded-[18px] border border-[#d7e0e7] bg-white px-4 text-sm text-[#12384b] outline-none transition focus:border-[#a9c1ce]"
+                className="input"
                 placeholder="0.00"
               />
             </label>
 
             <label className="space-y-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Supplier COGS</span>
+              <span className="form-label">Supplier COGS</span>
               <input
                 type="number"
                 min={0}
@@ -214,7 +214,7 @@ export function ProductProfileModal({
                     supplierUnitCost: event.target.value,
                   }))
                 }
-                className="h-11 w-full rounded-[18px] border border-[#d7e0e7] bg-white px-4 text-sm text-[#12384b] outline-none transition focus:border-[#a9c1ce]"
+                className="input"
                 placeholder="0.00"
               />
             </label>
@@ -222,7 +222,7 @@ export function ProductProfileModal({
 
           <div className="grid gap-4 sm:grid-cols-1">
             <label className="space-y-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Section Assignment</span>
+              <span className="form-label">Section Assignment</span>
               <select
                 value={formState.preferredLocationId ?? ''}
                 disabled={inputsDisabled}
@@ -232,7 +232,7 @@ export function ProductProfileModal({
                     preferredLocationId: event.target.value || null,
                   }))
                 }
-                className="h-11 w-full rounded-[18px] border border-[#d7e0e7] bg-white px-4 text-sm text-[#12384b] outline-none transition focus:border-[#a9c1ce]"
+                className="input"
               >
                 <option value="">Not assigned</option>
                 {sectionLocationOptions.map((option) => (
@@ -245,7 +245,7 @@ export function ProductProfileModal({
           </div>
 
           <div className="space-y-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Handling</span>
+            <span className="form-label">Handling</span>
             <div className="grid gap-3 sm:grid-cols-3">
               {[
                 ['isFragile', 'Fragile'],
@@ -254,7 +254,7 @@ export function ProductProfileModal({
               ].map(([key, label]) => (
                 <label
                   key={key}
-                  className="flex items-center gap-3 rounded-[18px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3 text-sm font-medium text-[#12384b]"
+                  className="flex items-center gap-3 rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3 text-sm font-medium text-primary"
                 >
                   <input
                     type="checkbox"
@@ -266,7 +266,7 @@ export function ProductProfileModal({
                         [key]: event.target.checked,
                       }))
                     }
-                    className="h-4 w-4 rounded border-[#c5d5df] text-[#12384b]"
+                    className="h-4 w-4 rounded border-[#c5d5df] text-primary"
                   />
                   {label}
                 </label>
@@ -275,7 +275,7 @@ export function ProductProfileModal({
           </div>
 
           <label className="space-y-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Notes</span>
+            <span className="form-label">Notes</span>
             <textarea
               value={formState.notes ?? ''}
               disabled={inputsDisabled}
@@ -286,48 +286,48 @@ export function ProductProfileModal({
                 }))
               }
               rows={5}
-              className="w-full rounded-[22px] border border-[#d7e0e7] bg-white px-4 py-3 text-sm leading-6 text-[#12384b] outline-none transition focus:border-[#a9c1ce]"
+              className="input"
               placeholder="Storage rule notes, handling exceptions, or receiving guidance"
             />
           </label>
         </div>
 
         <div className="space-y-4">
-          <div className="wms-card border border-[#dce4ea] bg-[#fbfcfc]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Source</p>
+          <div className="card">
+            <p className="card-label">Source</p>
             <div className="mt-3 space-y-3 text-sm text-[#4f6777]">
               <div>
-                <p className="font-semibold text-[#12384b]">Variation ID</p>
+                <p className="font-semibold text-primary">Variation ID</p>
                 <p>{profile.variationDisplayId ?? '—'}</p>
               </div>
               <div>
-                <p className="font-semibold text-[#12384b]">Product ID</p>
+                <p className="font-semibold text-primary">Product ID</p>
                 <p>{profile.productCustomId ?? '—'}</p>
               </div>
               <div>
-                <p className="font-semibold text-[#12384b]">POS warehouse</p>
+                <p className="font-semibold text-primary">POS warehouse</p>
                 <p>{profile.posWarehouse?.name ?? 'Store-level only'}</p>
               </div>
               <div>
-                <p className="font-semibold text-[#12384b]">Inhouse COGS</p>
+                <p className="font-semibold text-primary">Inhouse COGS</p>
                 <p>{profile.inhouseUnitCost ?? 'Not set'}</p>
               </div>
               <div>
-                <p className="font-semibold text-[#12384b]">Supplier COGS</p>
+                <p className="font-semibold text-primary">Supplier COGS</p>
                 <p>{profile.supplierUnitCost ?? 'Not set'}</p>
               </div>
             </div>
           </div>
 
-          <div className="wms-card border border-[#dce4ea] bg-[#fbfcfc]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Current rules</p>
+          <div className="card">
+            <p className="card-label">Current rules</p>
             <div className="mt-3 space-y-3 text-sm text-[#4f6777]">
               <div>
-                <p className="font-semibold text-[#12384b]">Section assignment</p>
+                <p className="font-semibold text-primary">Section assignment</p>
                 <p>{profile.preferredLocation?.label ?? 'Not assigned'}</p>
               </div>
               <div>
-                <p className="font-semibold text-[#12384b]">Updated</p>
+                <p className="font-semibold text-primary">Updated</p>
                 <p>{new Date(profile.updatedAt).toLocaleString()}</p>
               </div>
             </div>

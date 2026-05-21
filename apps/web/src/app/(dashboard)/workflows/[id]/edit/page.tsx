@@ -394,7 +394,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
         <div className="grid gap-6 md:grid-cols-2">
           <div className="panel panel-content p-5 shadow-sm">
             <div className="-mx-5 -mt-5 mb-4 panel-header">
-              <Info className="h-3.5 w-3.5 text-primary" />
+              <Info className="panel-icon" />
               <h3 className="panel-title">Basic Information</h3>
             </div>
             <div className="space-y-3">
@@ -462,7 +462,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
 
           <div className="panel panel-content p-5 shadow-sm">
             <div className="-mx-5 -mt-5 mb-4 panel-header">
-              <Activity className="h-3.5 w-3.5 text-primary" />
+              <Activity className="panel-icon" />
               <h3 className="panel-title">Schedule & Status</h3>
             </div>
             <div className="flex items-center justify-between mb-4">
@@ -598,7 +598,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
         <div className="grid gap-6 md:grid-cols-2">
           <div className="panel panel-content p-5 shadow-sm space-y-4">
             <div className="-mx-5 -mt-5 mb-4 panel-header">
-              <CalendarClock className="h-3.5 w-3.5 text-primary" />
+              <CalendarClock className="panel-icon" />
               <h3 className="panel-title">Date Range</h3>
               <span className="ml-auto text-xs-tight text-slate-500">Applies to Meta & POS</span>
             </div>
@@ -675,7 +675,7 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
 
           <div className="panel panel-content p-5 shadow-sm space-y-4">
             <div className="-mx-5 -mt-5 mb-4 panel-header">
-              <SlidersHorizontal className="h-3.5 w-3.5 text-primary" />
+              <SlidersHorizontal className="panel-icon" />
               <h3 className="panel-title">Sources & Rate Limits</h3>
               <span className="ml-auto text-xs-tight text-slate-500">Control API pacing</span>
             </div>

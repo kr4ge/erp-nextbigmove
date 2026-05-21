@@ -1,6 +1,6 @@
 'use client';
 
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
@@ -30,6 +30,8 @@ type ProfileModalState = {
   open: boolean;
   profile: WmsProductProfileRecord | null;
 };
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
@@ -64,13 +66,22 @@ export function useProductsController() {
   const [statusFilter, setStatusFilter] = useState<WmsProductProfileStatus | undefined>();
   const [currentPage, setCurrentPage] = useState(1);
   const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [banner, setBanner] = useState<BannerState>(null);
   const [profileModal, setProfileModal] = useState<ProfileModalState>({
     open: false,
     profile: null,
   });
 
-  const deferredSearch = useDeferredValue(searchText.trim());
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchText(searchText.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchText]);
 
   const overviewQuery = useQuery({
     queryKey: [
@@ -78,7 +89,7 @@ export function useProductsController() {
       selectedTenantId ?? 'default-tenant',
       selectedStoreId ?? 'default',
       selectedPosWarehouseId ?? 'all',
-      deferredSearch,
+      debouncedSearchText,
       statusFilter ?? 'all',
     ],
     queryFn: () =>
@@ -86,7 +97,7 @@ export function useProductsController() {
         tenantId: selectedTenantId,
         storeId: selectedStoreId,
         posWarehouseId: selectedPosWarehouseId,
-        search: deferredSearch || undefined,
+        search: debouncedSearchText || undefined,
         status: statusFilter,
       }),
   });
@@ -160,7 +171,7 @@ export function useProductsController() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedTenantId, selectedStoreId, selectedPosWarehouseId, deferredSearch, statusFilter]);
+  }, [selectedTenantId, selectedStoreId, selectedPosWarehouseId, debouncedSearchText, statusFilter]);
 
   useEffect(() => {
     if (currentPage > totalPages) {

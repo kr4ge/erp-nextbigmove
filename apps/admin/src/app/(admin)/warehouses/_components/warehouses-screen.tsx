@@ -173,37 +173,39 @@ export function WarehousesScreen() {
         </div>
       ) : null}
 
-      {/* Warehouse tab pills with chevron navigation */}
+      {/* Warehouse tabs with chevron navigation */}
       {controller.overview?.warehouses.length ? (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div
             ref={tabScrollRef}
-            className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scrollbar-hide"
+            className="min-w-0 flex-1 overflow-x-auto scrollbar-hide"
           >
-            {controller.overview.warehouses.map((warehouse) => {
-              const isActive = controller.selectedWarehouseId === warehouse.id;
-              return (
-                <button
-                  key={warehouse.id}
-                  type="button"
-                  onClick={() => controller.setSelectedWarehouseId(warehouse.id)}
-                  className={`btn btn-md ${
-                    isActive
-                      ? 'btn-primary'
-                      : 'btn-outline'
-                  }`}
-                >
-                  {warehouse.name}
-                </button>
-              );
-            })}
+            <div className="flex min-w-max items-center gap-6 border-b border-slate-200">
+              {controller.overview.warehouses.map((warehouse) => {
+                const isActive = controller.selectedWarehouseId === warehouse.id;
+                return (
+                  <button
+                    key={warehouse.id}
+                    type="button"
+                    onClick={() => controller.setSelectedWarehouseId(warehouse.id)}
+                    className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
+                      isActive
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {warehouse.name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex shrink-0 items-center justify-end gap-1.5">
             <button
               type="button"
               onClick={() => scrollTabs('left')}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b]"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary"
               aria-label="Scroll left"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -211,7 +213,7 @@ export function WarehousesScreen() {
             <button
               type="button"
               onClick={() => scrollTabs('right')}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b]"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary"
               aria-label="Scroll right"
             >
               <ChevronRight className="h-4 w-4" />
@@ -229,11 +231,11 @@ export function WarehousesScreen() {
         </div>
       ) : (
         <div className="rounded-[24px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center">
-          <p className="text-sm font-medium text-[#12384b]">No warehouse records yet</p>
+          <p className="text-sm font-medium text-primary">No warehouse records yet</p>
           <button
             type="button"
             onClick={controller.openCreateWarehouse}
-            className="mt-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#12384b] text-white"
+            className="mt-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white"
             aria-label="Create warehouse"
           >
             <Plus className="h-4 w-4" />
@@ -292,7 +294,7 @@ export function WarehousesScreen() {
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-[18px] font-bold text-[#12384b]">{usageMetrics.utilization}%</span>
+                    <span className="text-[18px] font-bold text-primary">{usageMetrics.utilization}%</span>
                     <span className="text-[9px] text-[#7b8e9c]">Location Used</span>
                   </div>
                 </div>
@@ -300,19 +302,19 @@ export function WarehousesScreen() {
                 {/* 2×2 stat grid */}
                 <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-4 gap-y-3 text-[12.5px] sm:gap-x-5">
                   <div>
-                    <p className="text-[20px] font-bold tabular-nums text-[#12384b]">{usageMetrics.totalCapacity}</p>
+                    <p className="text-[20px] font-bold tabular-nums text-primary">{usageMetrics.totalCapacity}</p>
                     <p className="form-label">Total Shelves</p>
                   </div>
                   <div>
-                    <p className="text-[20px] font-bold tabular-nums text-[#12384b]">{usageMetrics.emptySlots}</p>
+                    <p className="text-[20px] font-bold tabular-nums text-primary">{usageMetrics.emptySlots}</p>
                     <p className="form-label">Empty Shelves</p>
                   </div>
                   <div>
-                    <p className="text-[20px] font-bold tabular-nums text-[#12384b]">{usageMetrics.usedSlots}</p>
+                    <p className="text-[20px] font-bold tabular-nums text-primary">{usageMetrics.usedSlots}</p>
                     <p className="form-label">Full Shelves</p>
                   </div>
                   <div>
-                    <p className="text-[20px] font-bold tabular-nums text-[#12384b]">{usageMetrics.scopeCount}</p>
+                    <p className="text-[20px] font-bold tabular-nums text-primary">{usageMetrics.scopeCount}</p>
                     <p className="form-label">{usageMetrics.scopeLabel}</p>
                   </div>
                 </div>

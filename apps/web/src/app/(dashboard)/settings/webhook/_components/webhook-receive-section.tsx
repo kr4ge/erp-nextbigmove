@@ -62,7 +62,7 @@ export function WebhookReceiveSection({
               loading={isRotating}
               disabled={!canRotate || loading || !config}
               iconLeft={<RefreshCcw className="h-4 w-4" />}
-              className='flex gap-1.5'
+              className='btn-icon'
             >
               Rotate API Key
             </Button>
@@ -104,7 +104,7 @@ export function WebhookReceiveSection({
               type="button"
               variant="outline"
               size="sm"
-              className="flex gap-1.5"
+              className="btn-icon"
               onClick={() => onCopy(config?.webhookUrl || '', 'Webhook URL')}
               disabled={!config?.webhookUrl}
               iconLeft={<Copy className="h-4 w-4" />}
@@ -124,7 +124,7 @@ export function WebhookReceiveSection({
               type="button"
               variant="outline"
               size="sm"
-              className="flex gap-1.5"
+              className="btn-icon"
               onClick={() => onCopy(config?.headerKey || 'x-api-key', 'Header key')}
               iconLeft={<Copy className="h-4 w-4" />}
             >
@@ -144,7 +144,7 @@ export function WebhookReceiveSection({
                 onClick={onToggleShowApiKey}
                 disabled={!generatedApiKey}
                 iconLeft={showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                className='flex gap-1.5'
+                className='btn-icon'
               >
                 {showApiKey ? 'Hide' : 'Show'}
               </Button>
@@ -155,7 +155,7 @@ export function WebhookReceiveSection({
                 onClick={() => onCopy(generatedApiKey, 'API key')}
                 disabled={!generatedApiKey}
                 iconLeft={<Copy className="h-4 w-4" />}
-                className='flex gap-1.5'
+                className='btn-icon'
               >
                 Copy API Key
               </Button>

@@ -432,7 +432,7 @@ export default function UsersPage() {
             variant="primary"
             iconLeft={<Plus className="h-4 w-4" />}
             onClick={() => setCreateOpen(true)}
-            className='flex gap-1.5'
+            className='btn-icon'
           >
             Add new user
           </Button>

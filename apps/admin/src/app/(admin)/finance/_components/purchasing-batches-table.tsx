@@ -64,7 +64,7 @@ export function PurchasingBatchesTable({
                 <tr key={batch.id} className="group transition hover:bg-[#fbfcfc]">
                   <td className="px-4 py-3">
                     <div className="max-w-[260px] space-y-0.5">
-                      <p className="truncate text-sm font-semibold text-[#12384b]">
+                      <p className="truncate text-sm font-semibold text-primary">
                         {batch.sourceRequestId || batch.requestTitle || batch.id.slice(0, 8)}
                       </p>
                       <p className="truncate text-[12px] text-[#7b8e9c]">
@@ -77,10 +77,10 @@ export function PurchasingBatchesTable({
                       {formatRequestTypeLabel(batch.requestType)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-[#12384b]">
+                  <td className="px-4 py-3 text-sm text-primary">
                     <span className="block max-w-[180px] truncate">{batch.store.name}</span>
                   </td>
-                  <td className="px-4 py-3 text-right text-sm tabular-nums text-[#12384b]">
+                  <td className="px-4 py-3 text-right text-sm tabular-nums text-primary">
                     {batch.approvedQuantity.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-sm">
@@ -97,7 +97,7 @@ export function PurchasingBatchesTable({
                     <button
                       type="button"
                       onClick={() => onOpenBatch(batch.id)}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-[#d7e0e7] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#12384b] transition hover:border-[#12384b] hover:bg-[#12384b] hover:text-white"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-[#d7e0e7] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-primary transition hover:border-primary hover:bg-primary hover:text-white"
                     >
                       <Eye className="h-3.5 w-3.5" />
                       View
@@ -137,7 +137,7 @@ function StateRow({ title, message }: { title: string; message: string }) {
           <span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#dce4ea] bg-[#fbfcfc] text-primary">
             <FileSearch className="h-5 w-5" />
           </span>
-          <p className="text-sm font-semibold text-[#12384b]">{title}</p>
+          <p className="text-sm font-semibold text-primary">{title}</p>
           <p className="text-[12.5px] text-[#7b8e9c]">{message}</p>
         </div>
       </td>

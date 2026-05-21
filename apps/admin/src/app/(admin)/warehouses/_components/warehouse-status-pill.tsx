@@ -8,7 +8,7 @@ const statusClassMap: Record<WmsWarehouseStatus, string> = {
 
 export function WarehouseStatusPill({ status }: { status: WmsWarehouseStatus }) {
   return (
-    <span className={`wms-chip rounded-full border font-medium ${statusClassMap[status]}`}>
+    <span className={`pill font-medium ${statusClassMap[status]}`}>
       {status.toLowerCase()}
     </span>
   );

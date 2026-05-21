@@ -137,6 +137,11 @@
       text-base
   }
 
+  .btn-icon {
+    @apply
+      flex gap-1.5
+  }
+
   .btn-primary {
     @apply
       bg-primary
@@ -220,6 +225,11 @@
   .panel-content {
     @apply
       bg-surface
+  }
+
+  .panel-icon {
+    @apply
+      h-3.5 w-3.5 text-primary
   }
 
   /* KPI Cards */

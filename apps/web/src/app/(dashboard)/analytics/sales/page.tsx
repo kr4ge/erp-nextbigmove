@@ -1172,7 +1172,7 @@ export default function SalesAnalyticsPage() {
 
       <DashboardSection
         title="Sales Monitoring"
-        icon={<ShoppingBag className="h-3.5 w-3.5 text-primary" />}
+        icon={<ShoppingBag className="panel-icon" />}
         meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
         className=""
         contentClassName="space-y-5"
@@ -1436,7 +1436,7 @@ export default function SalesAnalyticsPage() {
       {/* Revenue per Product / Delivery Status */}
       <DashboardSection
         title="Sales Breakdown"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
+        icon={<BarChart3 className="panel-icon" />}
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-between">
@@ -1460,7 +1460,7 @@ export default function SalesAnalyticsPage() {
                 onClick={() => void handleExportProductsCsv()}
                 disabled={isLoading || exportableProducts.length === 0}
                 loading={isExportingCsv}
-                className='flex gap-1.5'
+                className='btn-icon'
               >
                 Export CSV
               </Button>
@@ -1470,7 +1470,7 @@ export default function SalesAnalyticsPage() {
                 onClick={() => void handleExportProductsXlsx()}
                 disabled={isLoading || exportableProducts.length === 0}
                 loading={isExportingXlsx}
-                className='flex gap-1.5'
+                className='btn-icon'
               >
                 Export XLSX
               </Button>

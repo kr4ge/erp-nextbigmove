@@ -57,13 +57,13 @@ export function ReceivingBatchesTable({
             >
               <td className="px-4 py-3">
                 <div className="max-w-[220px]">
-                  <p className="truncate text-sm font-semibold text-[#12384b]">{batch.code}</p>
+                  <p className="truncate text-sm font-semibold text-primary">{batch.code}</p>
                   <p className="mt-1 text-[12px] text-[#7b8e9c]">{batch.store.name}</p>
                 </div>
               </td>
               <td className="px-4 py-3">
                 <div className="max-w-[220px]">
-                  <p className="truncate text-sm text-[#12384b]">
+                  <p className="truncate text-sm text-primary">
                     {batch.sourceRequestId || batch.requestTitle || 'Manual'}
                   </p>
                   <p className="mt-1 text-[12px] text-[#7b8e9c]">
@@ -71,10 +71,10 @@ export function ReceivingBatchesTable({
                   </p>
                 </div>
               </td>
-              <td className="px-4 py-3 text-sm text-[#12384b]">
+              <td className="px-4 py-3 text-sm text-primary">
                 {batch.warehouse.code} · {batch.warehouse.name}
               </td>
-              <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-[#12384b]">
+              <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-primary">
                 {batch.unitCount}
               </td>
               <td className="px-4 py-3">

@@ -50,8 +50,8 @@ export function InventoryTransferHistoryTable({
             </tr>
           ) : (
             transfers.map((transfer) => (
-              <tr key={transfer.id} className="border-b border-[#edf2f6] text-[13px] text-[#12384b]">
-                <BodyCell className="font-semibold text-[#12384b]">
+              <tr key={transfer.id} className="border-b border-[#edf2f6] text-[13px] text-primary">
+                <BodyCell className="font-semibold text-primary">
                   <div className="min-w-0">
                     <div className="truncate">{transfer.code}</div>
                     <div className="mt-1 truncate text-[11px] font-medium text-[#7c8f9b]">
@@ -62,14 +62,14 @@ export function InventoryTransferHistoryTable({
 
                 <BodyCell>
                   <div className="min-w-0">
-                    <div className="truncate font-medium text-[#12384b]">{transfer.warehouse.name}</div>
+                    <div className="truncate font-medium text-primary">{transfer.warehouse.name}</div>
                     <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">{transfer.warehouse.code}</div>
                   </div>
                 </BodyCell>
 
                 <BodyCell>
                   <div className="min-w-[200px]">
-                    <div className="truncate font-medium text-[#12384b]">
+                    <div className="truncate font-medium text-primary">
                       {transfer.fromLocation?.code ?? 'No source'} → {transfer.toLocation.code}
                     </div>
                     <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">
@@ -82,7 +82,7 @@ export function InventoryTransferHistoryTable({
 
                 <BodyCell>
                   <div className="min-w-0">
-                    <div className="truncate font-medium text-[#12384b]">{transfer.actor?.name ?? 'System'}</div>
+                    <div className="truncate font-medium text-primary">{transfer.actor?.name ?? 'System'}</div>
                     <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">{transfer.actor?.email ?? '—'}</div>
                   </div>
                 </BodyCell>

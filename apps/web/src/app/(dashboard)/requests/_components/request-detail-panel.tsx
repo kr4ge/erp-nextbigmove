@@ -63,7 +63,7 @@ export function RequestDetailPanel({
     return (
       <section className="panel panel-content">
         <div className="panel-header">
-          <Receipt className="h-3.5 w-3.5 text-orange-500" />
+          <Receipt className="panel-icon" />
           <h4 className="panel-title">Request Detail</h4>
         </div>
         <div className="p-3">
@@ -77,7 +77,7 @@ export function RequestDetailPanel({
     return (
       <section className="panel panel-content">
         <div className="panel-header">
-          <Receipt className="h-3.5 w-3.5 text-orange-500" />
+          <Receipt className="panel-icon" />
           <h4 className="panel-title">Request Detail</h4>
         </div>
         <div className="rounded-lg border border-[#f1c7cc] bg-[#fff8f8] p-3">
@@ -91,7 +91,7 @@ export function RequestDetailPanel({
     return (
       <section className="panel panel-content">
         <div className="panel-header">
-          <Receipt className="h-3.5 w-3.5 text-orange-500" />
+          <Receipt className="panel-icon" />
           <h4 className="panel-title">Request Detail</h4>
         </div>
         <div className="p-3">
@@ -141,7 +141,7 @@ export function RequestDetailPanel({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <Receipt className="h-3.5 w-3.5 text-orange-500" />
+        <Receipt className="panel-icon" />
         <h4 className="panel-title">Request Detail</h4>
       </div>
 
@@ -293,7 +293,7 @@ export function RequestDetailPanel({
                   type="button"
                   disabled={isRespondingToRevision}
                   onClick={() => void onRespondToRevision({ decision: 'ACCEPT' })}
-                  className="inline-flex h-9 items-center rounded-lg bg-[#12384b] px-3 text-sm font-semibold text-white transition hover:bg-[#0f3040] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-9 items-center rounded-lg bg-primary px-3 text-sm font-semibold text-white transition hover:bg-[#0f3040] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isRespondingToRevision ? 'Submitting...' : 'Accept Changes'}
                 </button>
@@ -315,7 +315,7 @@ export function RequestDetailPanel({
                 href={batch.paymentProofImageUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex rounded-lg border border-[#d7e0e7] bg-white px-3 py-1.5 text-xs font-semibold text-[#12384b] transition hover:border-[#12384b]"
+                className="btn btn-sm btn-primary-soft"
               >
                 Open uploaded proof
               </a>
@@ -334,14 +334,14 @@ export function RequestDetailPanel({
                 value={proofImageUrl}
                 onChange={(event) => setProofImageUrl(event.target.value)}
                 placeholder="Paste payment proof image URL"
-                className="h-9 w-full rounded-lg border border-[#d7e0e7] bg-white px-3 text-sm text-[#12384b] outline-none focus:border-[#9ab3c0]"
+                className="input"
               />
               <textarea
                 value={proofMessage}
                 onChange={(event) => setProofMessage(event.target.value)}
                 placeholder="Optional message to WMS"
                 rows={2}
-                className="w-full rounded-lg border border-[#d7e0e7] bg-white px-3 py-2 text-sm text-[#12384b] outline-none focus:border-[#9ab3c0]"
+                className="input"
               />
               <div className="flex justify-end">
                 <button
@@ -353,7 +353,7 @@ export function RequestDetailPanel({
                       ...(proofMessage.trim() ? { message: proofMessage.trim() } : {}),
                     })
                   }
-                  className="inline-flex h-9 items-center rounded-lg bg-[#12384b] px-3 text-sm font-semibold text-white transition hover:bg-[#0f3040] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="btn btn-md btn-primary-soft"
                 >
                   {isSubmittingPaymentProof ? 'Submitting...' : 'Submit Payment Proof'}
                 </button>

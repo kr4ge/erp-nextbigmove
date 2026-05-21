@@ -89,7 +89,7 @@ export function LocationStructurePanel({
     return (
       <WmsCompactPanel title="Structure" eyebrow="Phase 2">
         <div className="rounded-[24px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center">
-          <p className="text-sm font-medium text-[#12384b]">No WMS warehouse yet</p>
+          <p className="text-sm font-medium text-primary">No WMS warehouse yet</p>
           <p className="mt-1 text-sm text-[#6b7f8c]">
             Create the first warehouse to start mapping sections, racks, bins, and operational zones.
           </p>
@@ -103,7 +103,7 @@ export function LocationStructurePanel({
       <button
         type="button"
         onClick={() => onEditWarehouse(warehouse)}
-        className="btn btn-sm btn-outline flex gap-2"
+        className="pill pill-ghost flex gap-2 rounded-lg"
       >
         <Edit3 className="h-3.5 w-3.5" />
         Edit
@@ -111,7 +111,7 @@ export function LocationStructurePanel({
       <button
         type="button"
         onClick={() => onCreateLocation({ kind: 'SECTION' })}
-        className='btn btn-sm btn-outline flex gap-2'
+        className='pill pill-ghost flex gap-2 rounded-lg'
       >
         <Plus className="h-3.5 w-3.5" />
         Add section
@@ -166,7 +166,7 @@ export function LocationStructurePanel({
             })
           ) : (
             <div className="rounded-[24px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center xl:col-span-4">
-              <p className="text-sm font-medium text-[#12384b]">No structural layout yet</p>
+              <p className="text-sm font-medium text-primary">No structural layout yet</p>
               <p className="mt-1 text-sm text-[#6b7f8c]">
                 Add sections first, then place racks inside sections and slots inside racks.
               </p>
@@ -177,13 +177,13 @@ export function LocationStructurePanel({
         {/* Operational zone pills */}
         {warehouse.operationalLocations.length > 0 ? (
           <div className="flex items-center gap-2 overflow-x-auto pt-1">
-            <ScanLine className="h-3.5 w-3.5 shrink-0 text-[#78909f]" />
+            <ScanLine className="panel-icon shrink-0" />
             {warehouse.operationalLocations.map((location) => (
               <button
                 key={location.id}
                 type="button"
                 onClick={() => onEditLocation(location)}
-                className="shrink-0 rounded-full border border-[#dce4ea] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#12384b] transition hover:border-[#c6d4dd]"
+                className="shrink-0 rounded-full border border-[#dce4ea] bg-white px-3 py-1.5 text-[11px] font-semibold text-primary transition hover:border-[#c6d4dd]"
               >
                 {location.code}
               </button>
@@ -260,7 +260,7 @@ function SectionCard({
 
   return (
     <section
-      className={`rounded-[20px] border bg-white p-4 transition cursor-pointer ${
+      className={`rounded-2xl border bg-white p-4 transition cursor-pointer ${
         isFocused
           ? 'border-[#b8cad5] shadow-[0_12px_32px_-22px_rgba(18,56,75,0.35)]'
           : 'border-[#e3e9ee] hover:border-[#d0dae2]'
@@ -270,7 +270,7 @@ function SectionCard({
       {/* Section header */}
       <div className="mb-3 flex items-baseline justify-between">
         <button type="button" onClick={onEditSection} className="text-left">
-          <span className="text-[13px] font-medium text-[#12384b] hover:text-[#0d2f40]">
+          <span className="text-[13px] font-medium text-primary hover:text-[#0d2f40]">
             {section.name && section.name !== section.code
               ? `${sectionCode} – ${section.name}`
               : sectionCode}

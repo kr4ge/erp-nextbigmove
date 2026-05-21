@@ -83,7 +83,7 @@ export function BasketRegistryPanel({
         ) : (
           <div className="rounded-[18px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-4 py-5 text-center">
             <ShoppingBasket className="mx-auto h-5 w-5 text-primary" />
-            <p className="mt-2 text-[12px] font-semibold text-[#12384b]">No baskets registered</p>
+            <p className="mt-2 text-[12px] font-semibold text-primary">No baskets registered</p>
             <p className="mt-1 text-[11px] text-[#7b8e9c]">Add baskets here before pickers can scan them in STOX.</p>
           </div>
         )}
@@ -132,11 +132,11 @@ function BasketRow({
           onOpen(basket);
         }
       }}
-      className="block w-full rounded-[16px] border border-[#dce4ea] bg-white px-3 py-2.5 text-left transition hover:border-[#c7d5de] hover:bg-[#fbfcfc] focus:outline-none focus:ring-2 focus:ring-[#12384b]/15"
+      className="block w-full rounded-2xl border border-[#dce4ea] bg-white px-3 py-2.5 text-left transition hover:border-[#c7d5de] hover:bg-[#fbfcfc] focus:outline-none focus:ring-2 focus:ring-primary/15"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-bold text-[#12384b]">{basket.barcode}</p>
+          <p className="truncate text-[13px] font-bold text-primary">{basket.barcode}</p>
           <p className="mt-0.5 text-[11px] text-[#7b8e9c]">
             {basket.fulfillmentOrder
               ? `Order #${basket.fulfillmentOrder.posOrderId}`
@@ -153,7 +153,7 @@ function BasketRow({
           onChange={(event) => {
             void onUpdate(basket.id, { status: event.target.value as WmsBasketStatus });
           }}
-          className="h-9 rounded-[12px] border border-[#d7e0e7] bg-white px-2 text-[11px] font-bold text-[#12384b] disabled:cursor-not-allowed disabled:bg-[#f3f6f8] disabled:text-[#8a9aa6]"
+          className="h-9 rounded-[12px] border border-[#d7e0e7] bg-white px-2 text-[11px] font-bold text-primary disabled:cursor-not-allowed disabled:bg-[#f3f6f8] disabled:text-[#8a9aa6]"
         >
           {isLocked ? (
             <option value={basket.status}>{formatBasketStatus(basket.status)}</option>

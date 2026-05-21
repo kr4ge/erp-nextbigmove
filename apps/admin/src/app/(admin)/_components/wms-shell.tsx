@@ -417,7 +417,7 @@ function WmsSidebarNav({
                           onClick={onNavigate}
                           className={`mb-1 flex items-center gap-2 rounded-xl px-3 py-2 text-sm-custom font-medium transition hover:bg-white/10 ${
                             childActive
-                              ? 'bg-[#f7cf5f] text-primary shadow-[0_18px_32px_-28px_rgba(247,207,95,0.9)]'
+                              ? 'bg-[#f7cf5f] text-primary hover:text-white active:text-white shadow-[0_18px_32px_-28px_rgba(247,207,95,0.9)]'
                               : 'text-white/78 hover:bg-white/8 hover:text-white'
                           }`}
                         >
@@ -447,7 +447,7 @@ function WmsSidebarNav({
             title={isSidebarCollapsed ? item.label : undefined}
             className={`flex items-center rounded-xl py-3 text-sm-custom font-medium transition hover:bg-white/10 ${
               isActive
-                ? 'bg-[#f7cf5f] text-primary shadow-[0_20px_40px_-30px_rgba(247,207,95,0.85)]'
+                ? 'bg-[#f7cf5f] text-primary hover:text-white active:text-white shadow-[0_20px_40px_-30px_rgba(247,207,95,0.85)]'
                 : 'text-white/88 hover:bg-white/8 hover:text-white'
             } ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3.5 px-4'}`}
           >

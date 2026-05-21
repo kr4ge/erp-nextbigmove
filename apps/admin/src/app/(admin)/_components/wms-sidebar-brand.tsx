@@ -2,7 +2,7 @@ export function WmsSidebarBrand({ collapsed = false }: { collapsed?: boolean }) 
   return (
     <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
       <div className="relative h-8 w-8 overflow-hidden rounded-xl bg-[#f7cf5f]">
-        <div className="absolute inset-y-0 right-0 w-6 rounded-l-full bg-[#12384b]" />
+        <div className="absolute inset-y-0 right-0 w-6 rounded-l-full bg-primary" />
         <div className="absolute inset-y-0 left-0 w-4 bg-[#f7cf5f]" />
       </div>
       {!collapsed ? (

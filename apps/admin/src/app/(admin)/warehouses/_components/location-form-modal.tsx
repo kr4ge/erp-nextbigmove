@@ -350,7 +350,7 @@ export function LocationFormModal({
         ) : (
           <div className="rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3">
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">Hierarchy</p>
-            <p className="mt-2 text-sm text-[#12384b]">
+            <p className="mt-2 text-sm text-primary">
               Structural hierarchy is locked after creation to preserve serialized location traceability.
             </p>
           </div>
@@ -477,7 +477,7 @@ export function LocationFormModal({
 
         <div className="rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3 md:col-span-2">
           <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">Active</p>
-          <label className="mt-2 flex items-center gap-3 text-sm text-[#12384b]">
+          <label className="mt-2 flex items-center gap-3 text-sm text-primary">
             <input
               type="checkbox"
               checked={state.isActive}
@@ -487,7 +487,7 @@ export function LocationFormModal({
                   isActive: event.target.checked,
                 }))
               }
-              className="h-4 w-4 rounded border-[#c8d5de] text-[#12384b]"
+              className="h-4 w-4 rounded border-[#c8d5de] text-primary"
             />
             Keep this location available for warehouse operations
           </label>

@@ -18,7 +18,7 @@ export function OverviewStrip({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <Sparkles className="h-3.5 w-3.5 text-primary" />
+        <Sparkles className="panel-icon" />
         <h4 className="panel-title">
           Current Context
         </h4>

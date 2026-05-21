@@ -196,7 +196,7 @@ export function IntegrationsListCard({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <PlugZap className="h-3.5 w-3.5 text-primary" />
+        <PlugZap className="panel-icon" />
         <h4 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
           All Integrations
         </h4>

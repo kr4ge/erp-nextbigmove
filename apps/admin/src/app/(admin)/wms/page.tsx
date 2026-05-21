@@ -99,7 +99,7 @@ export default function WmsHomePage() {
           <WmsCompactPanel title="Session" icon={< HeartHandshake className='panel-icon' />}>
             <div className="flex items-center justify-between rounded-[20px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3.5">
               <div>
-                <p className="text-[13px] font-semibold text-[#12384b]">
+                <p className="text-[13px] font-semibold text-primary">
                   {data?.tenantReady ? 'Partner context ready' : 'Partner context pending'}
                 </p>
                 <p className="mt-1 text-[12px] text-[#617685]">{data?.context?.userRole ?? 'Unknown role'}</p>
@@ -121,7 +121,7 @@ export default function WmsHomePage() {
                 </span>
               ))}
               {isLoading ? (
-                <span className="wms-chip rounded-full border border-[#dce4ea] bg-[#fbfcfc] font-medium text-[#4d6677]">
+                <span className="pill pill-white">
                   Loading
                 </span>
               ) : null}

@@ -19,7 +19,7 @@ export function LocationNode({ node, depth = 0, onEdit }: LocationNodeProps) {
       <button
         type="button"
         onClick={() => onEdit(node)}
-        className={`wms-chip rounded-full border transition ${
+        className={`pill transition ${
           node.isActive
             ? 'border-[#dce4ea] bg-[#fbfcfc] text-[#4d6677] hover:border-[#c7d5de] hover:bg-white'
             : 'border-slate-200 bg-slate-50 text-slate-500'
@@ -41,7 +41,7 @@ export function LocationNode({ node, depth = 0, onEdit }: LocationNodeProps) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[13px] font-semibold text-[#12384b]">{node.name}</span>
+            <span className="text-[13px] font-semibold text-primary">{node.name}</span>
             <span className="rounded-full border border-[#e0e7ec] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7d909d]">
               {node.code}
             </span>
@@ -55,7 +55,7 @@ export function LocationNode({ node, depth = 0, onEdit }: LocationNodeProps) {
         <button
           type="button"
           onClick={() => onEdit(node)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#5e7887] transition hover:border-[#c6d4dd] hover:text-[#12384b]"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dce4ea] bg-white text-[#5e7887] transition hover:border-[#c6d4dd] hover:text-primary"
         >
           <Edit3 className="h-3.5 w-3.5" />
         </button>

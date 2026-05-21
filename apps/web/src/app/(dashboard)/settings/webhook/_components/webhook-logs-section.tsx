@@ -68,7 +68,7 @@ export function WebhookLogsSection({
             onClick={onRefresh}
             disabled={isLoading || !canRead}
             iconLeft={<RefreshCcw className="h-4 w-4" />}
-            className='flex gap-1.5'
+            className='btn-icon'
           >
             Refresh
           </Button>

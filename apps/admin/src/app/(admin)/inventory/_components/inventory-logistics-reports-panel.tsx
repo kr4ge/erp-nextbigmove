@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
-import dynamic from 'next/dynamic';
+import { BarChart3, ChevronLeft, ChevronRight } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../../warehouses/_utils/code39-barcode';
 import type { WmsInventoryUnitRecord } from '../_types/inventory';
@@ -16,13 +15,10 @@ type LogisticsDateSelection = {
   startDate: string;
   endDate: string;
 };
-type LogisticsDatePickerValue = {
-  startDate: Date | null;
-  endDate: Date | null;
-};
 
 type InventoryLogisticsReportsPanelProps = {
   units: WmsInventoryUnitRecord[];
+  dateRange?: LogisticsDateSelection;
 };
 
 const LOGISTICS_TABS: Array<{ value: LogisticsTab; label: string }> = [
@@ -49,22 +45,13 @@ const REPORT_STATUSES = new Set<WmsInventoryUnitRecord['status']>([
   'ARCHIVED',
 ]);
 const LOGISTICS_PAGE_SIZE = 4;
-const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
 export function InventoryLogisticsReportsPanel({
   units,
+  dateRange = getTodayDateSelection(),
 }: InventoryLogisticsReportsPanelProps) {
   const [activeTab, setActiveTab] = useState<LogisticsTab>('inbound');
-  const [dateRange, setDateRange] = useState<LogisticsDateSelection>(() => getTodayDateSelection());
   const [pageIndex, setPageIndex] = useState(0);
-  const today = useMemo(() => formatDateInputValue(new Date()), []);
-  const datePickerValue = useMemo<LogisticsDatePickerValue>(
-    () => ({
-      startDate: parseDateInputValue(dateRange.startDate),
-      endDate: parseDateInputValue(dateRange.endDate),
-    }),
-    [dateRange.endDate, dateRange.startDate],
-  );
   const filteredUnits = useMemo(
     () => buildLogisticsUnits(units, activeTab, dateRange),
     [units, activeTab, dateRange],
@@ -76,86 +63,32 @@ export function InventoryLogisticsReportsPanel({
     safePageIndex * LOGISTICS_PAGE_SIZE + LOGISTICS_PAGE_SIZE,
   );
   const hasCarousel = filteredUnits.length > LOGISTICS_PAGE_SIZE;
-  const isTodayRange = dateRange.startDate === today && dateRange.endDate === today;
-  const dateRangeButtonLabel = formatDateRangeButtonLabel(dateRange);
 
   useEffect(() => {
     setPageIndex(0);
   }, [activeTab, dateRange.startDate, dateRange.endDate, units]);
-
-  const handleDateRangeChange = (value: {
-    startDate?: Date | string | null;
-    endDate?: Date | string | null;
-  } | null) => {
-    setDateRange((current) => {
-      const nextStart = normalizeDatepickerValue(value?.startDate, current.startDate || today);
-      const nextEnd = normalizeDatepickerValue(value?.endDate, nextStart);
-
-      return {
-        startDate: nextStart,
-        endDate: nextEnd < nextStart ? nextStart : nextEnd,
-      };
-    });
-  };
 
   return (
     <WmsCompactPanel
       title="Logistics Reports"
       icon={<BarChart3 className='panel-icon' />}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="overflow-x-auto">
+        <div className="flex min-w-max gap-6 border-b border-slate-200">
           {LOGISTICS_TABS.map((tab) => (
             <button
               key={tab.value}
               type="button"
               onClick={() => setActiveTab(tab.value)}
-              className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${
+              className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
                 activeTab === tab.value
-                  ? 'bg-[#12384b] text-white'
-                  : 'bg-[#f4f7f9] text-[#6f8290] hover:bg-[#eaf0f4] hover:text-[#12384b]'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
               {tab.label}
             </button>
           ))}
-        </div>
-
-        <div className="relative shrink-0">
-          <Datepicker
-            value={datePickerValue}
-            onChange={handleDateRangeChange}
-            useRange={false}
-            asSingle={false}
-            showShortcuts={false}
-            showFooter={false}
-            primaryColor="yellow"
-            readOnly
-            inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm transition-[width] duration-300 ease-out focus:border-[#214c63] focus:outline-none focus:ring-2 focus:ring-[#dce4ea] dark:!border-slate-200 dark:!bg-white dark:!text-transparent ${
-              isTodayRange ? 'w-10' : 'w-[200px] sm:w-[236px]'
-            }`}
-            containerClassName=""
-            popupClassName={(defaultClass) => `${defaultClass} z-50 kpi-datepicker-light`}
-            displayFormat="MM/DD/YYYY"
-            separator=" – "
-            popoverDirection="down"
-            toggleIcon={() => (
-              <span className="flex w-full items-center gap-2 overflow-hidden">
-                <CalendarDays className="h-4 w-4 shrink-0" />
-                <span
-                  className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
-                    isTodayRange
-                      ? 'max-w-0 -translate-x-1 opacity-0'
-                      : 'max-w-[148px] translate-x-0 opacity-100 sm:max-w-[184px]'
-                  }`}
-                >
-                  {dateRangeButtonLabel}
-                </span>
-              </span>
-            )}
-            toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-primary"
-            placeholder=" "
-          />
         </div>
       </div>
 
@@ -165,7 +98,7 @@ export function InventoryLogisticsReportsPanel({
             type="button"
             onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
             disabled={safePageIndex === 0}
-            className="absolute left-0 top-1/2 z-10 inline-flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[#d7e0e7] bg-white text-[#6f8290] shadow-sm transition hover:bg-[#f4f7f9] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-35"
+            className="absolute left-0 top-1/2 z-10 inline-flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
             aria-label="Previous logistics units"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -178,7 +111,7 @@ export function InventoryLogisticsReportsPanel({
               <LogisticsUnitCard key={unit.id} unit={unit} tab={activeTab} />
             ))
           ) : (
-            <div className="col-span-full flex min-h-[220px] items-center justify-center rounded-[16px] border border-dashed border-[#dce4ea] bg-[#fbfcfd] px-4 text-center text-sm text-[#6f8290]">
+            <div className="col-span-full flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#dce4ea] bg-[#fbfcfd] px-4 text-center text-sm text-[#6f8290]">
               No units found for this date range.
             </div>
           )}
@@ -189,7 +122,7 @@ export function InventoryLogisticsReportsPanel({
             type="button"
             onClick={() => setPageIndex((current) => Math.min(totalPages - 1, current + 1))}
             disabled={safePageIndex >= totalPages - 1}
-            className="absolute right-0 top-1/2 z-10 inline-flex h-9 w-9 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-[#d7e0e7] bg-white text-[#6f8290] shadow-sm transition hover:bg-[#f4f7f9] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-35"
+            className="absolute right-0 top-1/2 z-10 inline-flex h-9 w-9 -translate-y-1/2 translate-x-1/2 items-center justify-center"
             aria-label="Next logistics units"
           >
             <ChevronRight className="h-4 w-4" />
@@ -206,7 +139,7 @@ export function InventoryLogisticsReportsPanel({
               onClick={() => setPageIndex(index)}
               className={`h-2.5 rounded-full transition ${
                 index === safePageIndex
-                  ? 'w-6 bg-[#12384b]'
+                  ? 'w-6 bg-primary'
                   : 'w-2.5 border border-[#cfd9e1] bg-[#dbe3ea] hover:bg-[#b9c7d2]'
               }`}
               aria-label={`Go to logistics page ${index + 1}`}
@@ -258,7 +191,7 @@ function LogisticsUnitCard({
         </span>
       </div>
 
-      <p className="mt-3 truncate text-sm font-semibold text-[#12384b]">{unit.code}</p>
+      <p className="mt-3 truncate text-sm font-semibold text-primary">{unit.code}</p>
       <p className="mt-0.5 truncate text-[12px] font-medium text-[#5f7483]">{unit.name}</p>
 
       <div className="mt-3 flex min-w-0 justify-center">
@@ -344,41 +277,7 @@ function formatDateInputValue(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function normalizeDatepickerValue(value: unknown, fallbackYmd: string) {
-  if (!value) {
-    return fallbackYmd;
-  }
 
-  if (typeof value === 'string') {
-    return value.slice(0, 10);
-  }
-
-  if (value instanceof Date) {
-    return formatDateInputValue(value);
-  }
-
-  return fallbackYmd;
-}
-
-function formatDateRangeButtonLabel(dateRange: LogisticsDateSelection) {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  const start = parseDateInputValue(dateRange.startDate);
-  const end = parseDateInputValue(dateRange.endDate);
-
-  if (!start || !end) {
-    return 'Select dates';
-  }
-
-  if (dateRange.startDate === dateRange.endDate) {
-    return formatter.format(start);
-  }
-
-  return `${formatter.format(start)} – ${formatter.format(end)}`;
-}
 
 function isStagedAging(unit: WmsInventoryUnitRecord) {
   if (unit.status !== 'STAGED') {
@@ -413,3 +312,6 @@ function getLogisticsReportTone(unit: WmsInventoryUnitRecord, tab: LogisticsTab)
     dotClassName: 'bg-emerald-500',
   };
 }
+
+
+

@@ -1,6 +1,6 @@
 'use client';
 
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
@@ -28,6 +28,8 @@ type BannerState = {
   tone: 'success' | 'error';
   message: string;
 } | null;
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
@@ -60,10 +62,20 @@ export function usePurchasingController() {
   const [selectedRequestType, setSelectedRequestType] = useState<WmsPurchasingRequestType | undefined>();
   const [selectedStatus, setSelectedStatus] = useState<WmsPurchasingBatchStatus | undefined>();
   const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerState>(null);
-  const deferredSearch = useDeferredValue(searchText.trim());
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchText(searchText.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchText]);
 
   const overviewQuery = useQuery({
     queryKey: [
@@ -72,7 +84,7 @@ export function usePurchasingController() {
       selectedStoreId ?? 'all-stores',
       selectedRequestType ?? 'all-types',
       selectedStatus ?? 'all-statuses',
-      deferredSearch,
+      debouncedSearchText,
       currentPage,
     ],
     queryFn: () =>
@@ -81,7 +93,7 @@ export function usePurchasingController() {
         storeId: selectedStoreId,
         requestType: selectedRequestType,
         status: selectedStatus,
-        search: deferredSearch || undefined,
+        search: debouncedSearchText || undefined,
         page: currentPage,
         pageSize: 10,
       }),
@@ -103,7 +115,7 @@ export function usePurchasingController() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedTenantId, selectedStoreId, selectedRequestType, selectedStatus, deferredSearch]);
+  }, [selectedTenantId, selectedStoreId, selectedRequestType, selectedStatus, debouncedSearchText]);
 
   useEffect(() => {
     if (!selectedBatchId) {

@@ -47,7 +47,7 @@ export function InventoryFilterBar({
           <button
             type="button"
             onClick={() => onSearchTextChange('')}
-            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-[#12384b]"
+            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-primary"
             aria-label="Clear search"
           >
             <X className="h-3 w-3" />

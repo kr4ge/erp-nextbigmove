@@ -52,7 +52,7 @@ export function TenantsFilterBar({
           <button
             type="button"
             onClick={() => onSearchTextChange('')}
-            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-[#12384b]"
+            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-primary"
             aria-label="Clear search"
           >
             <X className="h-3 w-3" />
@@ -78,7 +78,7 @@ export function TenantsFilterBar({
               key={chip.label}
               type="button"
               onClick={() => onStatusChange(chip.value)}
-              className={`rounded-xl px-3.5 py-1.5 text-[12px] font-semibold transition ${
+              className={`rounded-xl px-3.5 py-1.5 text-sm-custom font-semibold transition ${
                 isActive
                   ? 'bg-primary text-white'
                   : 'text-muted hover:text-primary'

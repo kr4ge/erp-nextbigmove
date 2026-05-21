@@ -2,7 +2,6 @@
 
 import {
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useState,
@@ -35,6 +34,8 @@ type CartLine = {
   quantity: number;
 };
 
+const SEARCH_DEBOUNCE_MS = 300;
+
 function getSourceRequestId() {
   const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
   const suffix = Math.random().toString(36).slice(2, 7).toUpperCase();
@@ -65,7 +66,7 @@ export function useRequestsController() {
   const [selectedRequestType, setSelectedRequestType] = useState<WmsPurchasingRequestType | ''>('');
   const [selectedStatus, setSelectedStatus] = useState<WmsPurchasingBatchStatus | ''>('');
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search.trim());
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [overviewPage, setOverviewPage] = useState(1);
 
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
@@ -77,11 +78,31 @@ export function useRequestsController() {
 
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [productSearchText, setProductSearchText] = useState('');
-  const deferredProductSearch = useDeferredValue(productSearchText.trim());
+  const [debouncedProductSearch, setDebouncedProductSearch] = useState('');
   const [productOptions, setProductOptions] = useState<WmsPurchasingProductOptionsResponse | null>(null);
   const [isLoadingProductOptions, setIsLoadingProductOptions] = useState(false);
   const [productOptionsError, setProductOptionsError] = useState<string | null>(null);
   const [productOptionsPage, setProductOptionsPage] = useState(1);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [search]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedProductSearch(productSearchText.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [productSearchText]);
 
   const refreshOverview = useCallback(async () => {
     setIsLoadingOverview(true);
@@ -91,7 +112,7 @@ export function useRequestsController() {
         ...(selectedStoreId ? { storeId: selectedStoreId } : {}),
         ...(selectedRequestType ? { requestType: selectedRequestType } : {}),
         ...(selectedStatus ? { status: selectedStatus } : {}),
-        ...(deferredSearch ? { search: deferredSearch } : {}),
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
         page: overviewPage,
         pageSize: 10,
       });
@@ -102,7 +123,7 @@ export function useRequestsController() {
     } finally {
       setIsLoadingOverview(false);
     }
-  }, [deferredSearch, overviewPage, selectedRequestType, selectedStatus, selectedStoreId]);
+  }, [debouncedSearch, overviewPage, selectedRequestType, selectedStatus, selectedStoreId]);
 
   useEffect(() => {
     void refreshOverview();
@@ -110,7 +131,7 @@ export function useRequestsController() {
 
   useEffect(() => {
     setOverviewPage(1);
-  }, [selectedStoreId, selectedRequestType, selectedStatus, deferredSearch]);
+  }, [selectedStoreId, selectedRequestType, selectedStatus, debouncedSearch]);
 
   useEffect(() => {
     if (!selectedBatchId) {
@@ -166,7 +187,7 @@ export function useRequestsController() {
     try {
       const data = await fetchWmsPurchasingProductOptions({
         ...(effectiveStoreId ? { storeId: effectiveStoreId } : {}),
-        ...(deferredProductSearch ? { search: deferredProductSearch } : {}),
+        ...(debouncedProductSearch ? { search: debouncedProductSearch } : {}),
         page: productOptionsPage,
         pageSize: 10,
       });
@@ -177,7 +198,7 @@ export function useRequestsController() {
     } finally {
       setIsLoadingProductOptions(false);
     }
-  }, [deferredProductSearch, effectiveStoreId, isProductPickerOpen, productOptionsPage]);
+  }, [debouncedProductSearch, effectiveStoreId, isProductPickerOpen, productOptionsPage]);
 
   useEffect(() => {
     void refreshProductOptions();

@@ -262,7 +262,7 @@ function RoleCard({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#12384b]">{role.name}</h2>
+            <h2 className="text-xl font-semibold tracking-[-0.03em] text-primary">{role.name}</h2>
             {role.isSystem ? <SettingsBadge tone="success">System</SettingsBadge> : <SettingsBadge>Custom</SettingsBadge>}
           </div>
           <p className="mt-1 font-mono text-xs text-[#7b8e9c]">{role.key}</p>

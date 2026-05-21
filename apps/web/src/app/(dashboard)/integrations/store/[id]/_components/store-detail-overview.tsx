@@ -52,7 +52,7 @@ export function StoreDetailOverview({
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <section className="panel panel-content">
         <div className="panel-header">
-          <Store className="h-3.5 w-3.5 text-primary" />
+          <Store className="panel-icon" />
           <h4 className="panel-title">Store Details</h4>
           <div className="ml-auto">
             <StatusBadge status={normalizeStatus(store.status)} />
@@ -82,7 +82,7 @@ export function StoreDetailOverview({
 
       <section className="panel panel-content">
         <div className="panel-header">
-          <Key className="h-3.5 w-3.5 text-primary" />
+          <Key className="panel-icon" />
           <h4 className="panel-title">API Key</h4>
         </div>
         <div className="p-3">

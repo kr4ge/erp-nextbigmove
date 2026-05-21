@@ -1,6 +1,6 @@
 'use client';
 
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
@@ -30,6 +30,8 @@ type UnitModalState = {
   open: boolean;
   unit: WmsInventoryUnitRecord | null;
 };
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
@@ -64,12 +66,21 @@ export function useInventoryController() {
   const [selectedStatus, setSelectedStatus] = useState<WmsInventoryUnitStatus | undefined>();
   const [currentPage, setCurrentPage] = useState(1);
   const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [unitModal, setUnitModal] = useState<UnitModalState>({
     open: false,
     unit: null,
   });
 
-  const deferredSearch = useDeferredValue(searchText.trim());
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchText(searchText.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchText]);
 
   const overviewQuery = useQuery({
     queryKey: [
@@ -78,14 +89,14 @@ export function useInventoryController() {
       selectedStoreId ?? 'all-stores',
       selectedWarehouseId ?? 'all-warehouses',
       selectedStatus ?? 'all-statuses',
-      deferredSearch,
+      debouncedSearchText,
     ],
     queryFn: () =>
       fetchWmsInventoryOverview({
         tenantId: selectedTenantId,
         storeId: selectedStoreId,
         warehouseId: selectedWarehouseId,
-        search: deferredSearch || undefined,
+        search: debouncedSearchText || undefined,
         status: selectedStatus,
       }),
   });
@@ -120,7 +131,7 @@ export function useInventoryController() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedTenantId, selectedStoreId, selectedWarehouseId, selectedStatus, deferredSearch]);
+  }, [selectedTenantId, selectedStoreId, selectedWarehouseId, selectedStatus, debouncedSearchText]);
 
   const errorMessage = useMemo(() => {
     if (!overviewQuery.error) {

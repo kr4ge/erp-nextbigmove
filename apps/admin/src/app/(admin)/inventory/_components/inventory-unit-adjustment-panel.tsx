@@ -183,7 +183,7 @@ export function InventoryUnitAdjustmentPanel({
 
             <div className="card flex-1 min-w-[240px]">
               <p className="card-label">Rule</p>
-              <p className="mt-1 text-[13px] font-semibold text-[#12384b]">{targetStatusMeta?.label}</p>
+              <p className="mt-1 text-[13px] font-semibold text-primary">{targetStatusMeta?.label}</p>
               <p className="mt-1 text-[12px] text-[#637786]">{targetStatusMeta?.hint}</p>
             </div>
           </div>
@@ -279,7 +279,7 @@ export function InventoryUnitAdjustmentPanel({
             onChange={(event) => setNotes(event.target.value)}
             rows={3}
             placeholder="Why is this unit being adjusted?"
-            className="w-full rounded-[14px] border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-2.5 text-[13px] text-[#12384b] outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
+            className="w-full rounded-[14px] border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-2.5 text-[13px] text-primary outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
           />
 
           {errorMessage ? (
@@ -293,7 +293,7 @@ export function InventoryUnitAdjustmentPanel({
               type="button"
               onClick={() => void handleSubmit()}
               disabled={!canSubmit}
-              className="inline-flex h-10 items-center rounded-[12px] bg-[#12384b] px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-10 items-center rounded-[12px] bg-primary px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isAdjustingUnit ? 'Saving adjustment…' : 'Apply adjustment'}
             </button>

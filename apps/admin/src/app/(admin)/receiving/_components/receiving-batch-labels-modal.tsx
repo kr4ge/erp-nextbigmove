@@ -109,7 +109,7 @@ export function ReceivingBatchLabelsModal({
                 type="button"
                 onClick={() => onOpenTransfer(batch.id)}
                 disabled={isLoading || isRecordingPrint || !transferEnabled}
-                className="inline-flex h-9 items-center gap-2 rounded-[12px] border border-[#d7e0e7] bg-white px-4 text-[12px] font-semibold text-[#12384b] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn btn-md btn-outline"
               >
                 Open Transfer
               </button>
@@ -119,7 +119,7 @@ export function ReceivingBatchLabelsModal({
                 type="button"
                 onClick={handlePrintBatch}
                 disabled={isLoading || isRecordingPrint || !batch || batch.units.length === 0}
-                className="inline-flex h-9 items-center gap-2 rounded-[12px] bg-[#f97316] px-4 text-[12px] font-semibold text-white transition hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn btn-md btn-primary btn-icon"
               >
                 <Printer className="h-4 w-4" />
                 {batch?.labelPrintCount ? 'Reprint Batch' : 'Print Batch'}
@@ -142,7 +142,7 @@ export function ReceivingBatchLabelsModal({
         <div className="space-y-3">
           <div className="card">
             <p className="card-label">Batch Context</p>
-            <p className="mt-1 text-sm font-semibold text-[#12384b]">
+            <p className="mt-1 text-sm font-semibold text-primary">
               {batch.sourceRequestId || batch.requestTitle || 'Manual request'}
             </p>
             <p className="mt-1 text-[12px] text-[#5f7483]">
@@ -161,16 +161,16 @@ export function ReceivingBatchLabelsModal({
                 {unitsWithMarkup.map((unit) => (
                   <article
                     key={unit.id}
-                    className="rounded-[12px] border border-[#dbe4ea] bg-white p-3"
+                    className="card"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-[13px] font-semibold text-[#12384b]">{unit.productName}</p>
+                        <p className="truncate text-[13px] font-semibold text-primary">{unit.productName}</p>
                         {unit.productCustomId ? (
                           <p className="mt-0.5 text-[11px] text-[#6a7f8e]">SKU {unit.productCustomId}</p>
                         ) : null}
                       </div>
-                      <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-[#f5b27f] px-1.5 text-[11px] font-semibold text-[#ea580c]">
+                      <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-primary/60 px-1.5 text-[11px] font-semibold text-primary">
                         {unit.sequence}
                       </span>
                     </div>
@@ -186,7 +186,7 @@ export function ReceivingBatchLabelsModal({
                     </div>
 
                     <div className="mt-2 space-y-1 text-[11px] leading-4 text-[#3f5f72]">
-                      <p className="font-semibold text-[#12384b]">{unit.code}</p>
+                      <p className="font-semibold text-primary">{unit.code}</p>
                       <p className="break-all">{unit.barcodeValue}</p>
                       <p>
                         {batch.warehouse.code} · {batch.warehouse.name}

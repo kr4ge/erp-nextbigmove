@@ -31,7 +31,7 @@ export function WmsWorkspaceCard({
     >
       <div className="panel-header">
         {icon}
-        <h2 className="panel-title text-[#12384b]">{title}</h2>
+        <h2 className="panel-title">{title}</h2>
       </div>
 
       {filters ? (

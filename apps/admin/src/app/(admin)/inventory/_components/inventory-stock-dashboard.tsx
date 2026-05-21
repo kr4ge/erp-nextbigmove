@@ -1,7 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import {LineChart, ScatterChart, TrendingDown, TrendingUp, Truck } from 'lucide-react';
+import { useMemo, useState, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
+import { CalendarDays, LineChart, ScatterChart, TrendingDown, TrendingUp, Truck } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import type { WmsInventoryOverviewResponse } from '../_types/inventory';
 import {
@@ -11,11 +12,23 @@ import {
 } from '../_utils/inventory-stock-dashboard';
 import { InventoryLogisticsReportsPanel } from './inventory-logistics-reports-panel';
 
+type LogisticsDateSelection = {
+  startDate: string;
+  endDate: string;
+};
+
+type LogisticsDatePickerValue = {
+  startDate: Date | null;
+  endDate: Date | null;
+};
+
 type InventoryStockDashboardProps = {
   overview: WmsInventoryOverviewResponse | null;
   isFetching: boolean;
   filters?: ReactNode;
 };
+
+const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
 export function InventoryStockDashboard({
   overview,
@@ -23,6 +36,32 @@ export function InventoryStockDashboard({
   filters,
 }: InventoryStockDashboardProps) {
   const dashboard = buildInventoryStockDashboard(overview);
+  const [logisticsDateRange, setLogisticsDateRange] = useState<LogisticsDateSelection>(() => getTodayDateSelection());
+  const today = useMemo(() => formatDateInputValue(new Date()), []);
+  const datePickerValue = useMemo<LogisticsDatePickerValue>(
+    () => ({
+      startDate: parseDateInputValue(logisticsDateRange.startDate),
+      endDate: parseDateInputValue(logisticsDateRange.endDate),
+    }),
+    [logisticsDateRange.endDate, logisticsDateRange.startDate],
+  );
+  const isTodayRange = logisticsDateRange.startDate === today && logisticsDateRange.endDate === today;
+  const dateRangeButtonLabel = formatDateRangeButtonLabel(logisticsDateRange);
+
+  const handleLogisticsDateRangeChange = (value: {
+    startDate?: Date | string | null;
+    endDate?: Date | string | null;
+  } | null) => {
+    setLogisticsDateRange((current) => {
+      const nextStart = normalizeDatepickerValue(value?.startDate, current.startDate || today);
+      const nextEnd = normalizeDatepickerValue(value?.endDate, nextStart);
+
+      return {
+        startDate: nextStart,
+        endDate: nextEnd < nextStart ? nextStart : nextEnd,
+      };
+    });
+  };
 
   return (
     <div className="space-y-5">
@@ -33,7 +72,48 @@ export function InventoryStockDashboard({
 
         {filters ? (
           <div className="mb-4 border-b border-[#e7edf2] pb-4">
-            {filters}
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-stretch xl:justify-between">
+              <div className="min-w-0 flex-1">
+                {filters}
+              </div>
+
+              <div className="relative flex h-10 shrink-0 items-stretch self-stretch">
+                <Datepicker
+                  value={datePickerValue}
+                  onChange={handleLogisticsDateRangeChange}
+                  useRange={false}
+                  asSingle={false}
+                  showShortcuts={false}
+                  showFooter={false}
+                  primaryColor="yellow"
+                  readOnly
+                  inputClassName={`h-full cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm transition-[width] duration-300 ease-out focus:border-[#214c63] focus:outline-none focus:ring-2 focus:ring-[#dce4ea] dark:!border-slate-200 dark:!bg-white dark:!text-transparent ${
+                    isTodayRange ? 'w-10' : 'w-[200px] sm:w-[236px]'
+                  }`}
+                  containerClassName=""
+                  popupClassName={(defaultClass) => `${defaultClass} z-50 kpi-datepicker-light`}
+                  displayFormat="MM/DD/YYYY"
+                  separator=" - "
+                  popoverDirection="down"
+                  toggleIcon={() => (
+                    <span className="flex w-full items-center gap-2 overflow-hidden">
+                      <CalendarDays className="h-4 w-4 shrink-0" />
+                      <span
+                        className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                          isTodayRange
+                            ? 'max-w-0 -translate-x-1 opacity-0'
+                            : 'max-w-[148px] translate-x-0 opacity-100 sm:max-w-[184px]'
+                        }`}
+                      >
+                        {dateRangeButtonLabel}
+                      </span>
+                    </span>
+                  )}
+                  toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-primary"
+                  placeholder=" "
+                />
+              </div>
+            </div>
           </div>
         ) : null}
 
@@ -61,7 +141,10 @@ export function InventoryStockDashboard({
       </WmsCompactPanel>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
-        <InventoryLogisticsReportsPanel units={overview?.units ?? []} />
+        <InventoryLogisticsReportsPanel
+          units={overview?.units ?? []}
+          dateRange={logisticsDateRange}
+        />
 
         <div className="space-y-5">
           <PlaceholderPanel title="Shipping Statistics" icon={<LineChart className='panel-icon' />}>
@@ -84,6 +167,69 @@ export function InventoryStockDashboard({
   );
 }
 
+function getTodayDateSelection(): LogisticsDateSelection {
+  const today = formatDateInputValue(new Date());
+
+  return { startDate: today, endDate: today };
+}
+
+function parseDateInputValue(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  const date = new Date(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeDatepickerValue(value: unknown, fallbackYmd: string) {
+  if (!value) {
+    return fallbackYmd;
+  }
+
+  if (typeof value === 'string') {
+    return value.slice(0, 10);
+  }
+
+  if (value instanceof Date) {
+    return formatDateInputValue(value);
+  }
+
+  return fallbackYmd;
+}
+
+function formatDateRangeButtonLabel(dateRange: LogisticsDateSelection) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const start = parseDateInputValue(dateRange.startDate);
+  const end = parseDateInputValue(dateRange.endDate);
+
+  if (!start || !end) {
+    return 'Select dates';
+  }
+
+  if (dateRange.startDate === dateRange.endDate) {
+    return formatter.format(start);
+  }
+
+  return `${formatter.format(start)} - ${formatter.format(end)}`;
+}
+
 function PlaceholderPanel({
   title,
   children,
@@ -103,7 +249,7 @@ function PlaceholderPanel({
 function BlankColumn() {
   return (
     <div
-      className="rounded-[16px] border border-dashed border-[#dce4ea] bg-[#fbfcfd]"
+      className="rounded-2xl border border-dashed border-[#dce4ea] bg-[#fbfcfd]"
       aria-hidden="true"
     />
   );
@@ -167,7 +313,7 @@ function Sparkline({ points }: { points: number[] }) {
 
   return (
     <svg
-      className="mt-5 h-11 w-[78px] text-[#12384b]"
+      className="mt-5 h-11 w-[78px] text-primary"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-label="Milestone trend"

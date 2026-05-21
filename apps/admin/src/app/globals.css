@@ -78,7 +78,6 @@
     --wms-card-radius: 22px;
     --wms-surface-padding: 1.125rem;
     --wms-card-padding: 0.875rem;
-    --wms-display-size: clamp(2.8rem, 3vw, 3.1rem);
     --wms-page-title-size: clamp(2.9rem, 3.35vw, 3.2rem);
     --wms-section-title-size: 1.36rem;
     --wms-control-height: 2.75rem;
@@ -190,10 +189,18 @@
       text-foreground;
   }
 
+  .btn-warning {
+    @apply
+      bg-warning-soft
+      text-warning
+      border-warning
+  }
+
   .btn-destructive {
     @apply
-      bg-destructive
-      text-primary-foreground;
+      bg-destructive-soft
+      text-destructive
+      border-destructive;
   }
 
   /* Panels and Cards */
@@ -353,10 +360,6 @@
     padding: var(--wms-card-padding);
   }
 
-  .wms-display {
-    font-size: var(--wms-display-size);
-  }
-
   .wms-page-title {
     font-size: var(--wms-page-title-size);
   }
@@ -368,53 +371,6 @@
   .wms-pill-control {
     height: var(--wms-control-height);
     font-size: var(--wms-control-font-size);
-  }
-
-  .wms-input {
-    height: var(--wms-control-height);
-    border-radius: 999px;
-    border: 1px solid #d7e0e7;
-    background: #fbfcfc;
-    padding: 0 0.95rem;
-    font-size: var(--wms-control-font-size);
-    color: #12384b;
-    outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  }
-
-  .wms-input:focus,
-  .wms-textarea:focus,
-  .wms-select:focus {
-    border-color: #96b4c3;
-    box-shadow: 0 0 0 4px rgba(18, 56, 75, 0.08);
-  }
-
-  .wms-textarea {
-    border-radius: 22px;
-    border: 1px solid #d7e0e7;
-    background: #fbfcfc;
-    padding: 0.9rem 1rem;
-    font-size: var(--wms-control-font-size);
-    color: #12384b;
-    outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  }
-
-  .wms-select {
-    height: var(--wms-control-height);
-    border-radius: 999px;
-    border: 1px solid #d7e0e7;
-    background: #fbfcfc;
-    padding: 0 0.95rem;
-    font-size: var(--wms-control-font-size);
-    color: #12384b;
-    outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  }
-
-  .wms-chip {
-    font-size: var(--wms-chip-font-size);
-    padding: var(--wms-chip-padding-y) var(--wms-chip-padding-x);
   }
 
   .scrollbar-hide {
@@ -433,7 +389,6 @@
     --wms-shell-pad-x: 1.125rem;
     --wms-shell-pad-y: 1.35rem;
     --wms-shell-pad-top: 0.6rem;
-    --wms-display-size: clamp(2.95rem, 2.8vw, 3.2rem);
     --wms-page-title-size: clamp(3.05rem, 3vw, 3.35rem);
   }
 }

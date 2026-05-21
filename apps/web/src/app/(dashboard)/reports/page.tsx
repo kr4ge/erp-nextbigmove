@@ -138,7 +138,7 @@ export default function ReportsPage() {
               onClick={handleExportCsv}
               disabled={!hasRows || isLoading}
               loading={isExportingCsv}
-              className='flex gap-1.5'
+              className='btn-icon'
             >
               Export CSV
             </Button>
@@ -148,7 +148,7 @@ export default function ReportsPage() {
               onClick={handleExportXlsx}
               disabled={!hasRows || isLoading}
               loading={isExportingXlsx}
-              className='flex gap-1.5'
+              className='btn-icon'
             >
               Export XLSX
             </Button>
@@ -206,7 +206,7 @@ export default function ReportsPage() {
               iconLeft={<RefreshCw className="h-4 w-4" />}
               onClick={() => void fetchReport()}
               disabled={isLoading}
-              className='flex gap-1.5'
+              className='btn-icon'
             >
               Refresh
             </Button>

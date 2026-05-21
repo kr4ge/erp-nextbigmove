@@ -83,7 +83,7 @@ export function StoreOrdersTab({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <ClipboardList className="h-3.5 w-3.5 text-primary" />
+        <ClipboardList className="panel-icon" />
         <h4 className="panel-title">Orders</h4>
         {/* {orders.length > 0 && (
           <span className="panel-title">

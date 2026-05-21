@@ -288,7 +288,7 @@ function UserRow({
   onDeactivate: (user: WmsSettingsUser) => void;
 }) {
   return (
-    <tr className="text-sm text-[#12384b]">
+    <tr className="text-sm text-primary">
       <td className="px-5 py-4 align-middle">
         <p className="font-semibold">{user.displayName}</p>
         <p className="mt-1 text-xs text-[#6f8290]">{user.email}</p>
@@ -401,7 +401,7 @@ function UserRowActions({
         aria-expanded={open}
         aria-label={`Open actions for ${user.displayName}`}
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d7e0e7] bg-white text-[#5f7483] transition hover:border-[#c9d5de] hover:bg-[#f7fafc] hover:text-[#12384b]"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d7e0e7] bg-white text-[#5f7483] transition hover:border-[#c9d5de] hover:bg-[#f7fafc] hover:text-primary"
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>
@@ -426,7 +426,7 @@ function UserRowActions({
                   setOpen(false);
                   onEdit(user);
                 }}
-                className="flex w-full items-center rounded-[14px] px-3 py-2.5 text-left text-[13px] font-medium text-[#12384b] transition hover:bg-[#f5f8fa]"
+                className="flex w-full items-center rounded-[14px] px-3 py-2.5 text-left text-[13px] font-medium text-primary transition hover:bg-[#f5f8fa]"
               >
                 Edit user
               </button>

@@ -139,7 +139,7 @@ export function WmsRoleFormModal({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 items-center rounded-[12px] border border-[#d7e0e7] bg-white px-4 text-[13px] font-semibold text-[#12384b] transition hover:bg-[#f8fafb]"
+            className="inline-flex h-10 items-center rounded-[12px] border border-[#d7e0e7] bg-white px-4 text-[13px] font-semibold text-primary transition hover:bg-[#f8fafb]"
           >
             Cancel
           </button>
@@ -147,7 +147,7 @@ export function WmsRoleFormModal({
             type="submit"
             form="wms-role-form"
             disabled={isSubmitting || form.permissionKeys.length === 0}
-            className="inline-flex h-10 items-center rounded-[12px] bg-[#12384b] px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3040] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-10 items-center rounded-[12px] bg-primary px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3040] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting ? 'Saving...' : isEdit ? 'Save changes' : 'Create role'}
           </button>
@@ -187,7 +187,7 @@ export function WmsRoleFormModal({
 
           <div className="rounded-[14px] border border-[#dce4ea] bg-[#f8fafb] px-3 py-2.5">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8293a0]">Scope</p>
-            <p className="mt-1 text-sm font-semibold text-[#12384b]">WMS workspace</p>
+            <p className="mt-1 text-sm font-semibold text-primary">WMS workspace</p>
           </div>
 
           <div className="sm:col-span-2">
@@ -195,7 +195,7 @@ export function WmsRoleFormModal({
               <textarea
                 value={form.description}
                 onChange={(event) => setField('description', event.target.value)}
-                className="wms-input min-h-[84px] w-full rounded-[14px]"
+                className="input"
                 placeholder="What this WMS role is allowed to do."
               />
             </WmsFormField>
@@ -224,7 +224,7 @@ export function WmsRoleFormModal({
                   {permissions.map((permission) => (
                     <label
                       key={permission.key}
-                      className="flex cursor-pointer items-start gap-2 rounded-[12px] border border-[#e2e9ee] bg-[#fbfcfc] px-3 py-2.5 text-[12px] text-[#12384b] transition hover:bg-white"
+                      className="flex cursor-pointer items-start gap-2 rounded-[12px] border border-[#e2e9ee] bg-[#fbfcfc] px-3 py-2.5 text-[12px] text-primary transition hover:bg-white"
                     >
                       <input
                         type="checkbox"

@@ -70,26 +70,28 @@ function SettingsTabs() {
   }, [permissions, user?.role]);
 
   return (
-    <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-[#dce4ea] bg-white p-2 shadow-[0_18px_55px_-44px_rgba(18,56,75,0.36)]">
-      {tabs.map((tab) => {
-        const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+    <div className="overflow-x-auto md:flex-1">
+      <nav className="flex min-w-max gap-6 border-b border-slate-200">
+        {tabs.map((tab) => {
+          const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
 
-        return (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            prefetch={false}
-            className={`btn btn-md ${
-              isActive
-                ? 'bg-primary text-white'
-                : 'btn-outline'
-            }`}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
-    </nav>
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              prefetch={false}
+              className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
+                isActive
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </div>
   );
 }
 
@@ -106,8 +108,8 @@ export function SettingsStatCard({
     tone === 'gold'
       ? 'border-[#f3df9f] bg-[#fff8de] text-[#8a6814]'
       : tone === 'blue'
-        ? 'border-[#cfe3ee] bg-[#f1f8fb] text-[#12384b]'
-        : 'border-[#dce4ea] bg-white text-[#12384b]';
+        ? 'border-[#cfe3ee] bg-[#f1f8fb] text-primary'
+        : 'border-[#dce4ea] bg-white text-primary';
 
   return (
     <div className={`card ${toneClass}`}>
@@ -164,9 +166,9 @@ export function SettingsLinkCard({
       className="group rounded-[26px] border border-[#dce4ea] bg-white px-5 py-5 shadow-[0_18px_55px_-42px_rgba(18,56,75,0.4)] transition hover:-translate-y-0.5 hover:border-[#cbd8e0]"
     >
       <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#9a894f]">{meta}</p>
-      <h2 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-[#12384b]">{title}</h2>
+      <h2 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-primary">{title}</h2>
       <p className="mt-2 text-sm leading-6 text-[#637786]">{description}</p>
-      <span className="mt-5 inline-flex rounded-full bg-[#12384b] px-4 py-2 text-xs font-semibold text-white transition group-hover:bg-[#0f3040]">
+      <span className="mt-5 inline-flex rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition group-hover:bg-[#0f3040]">
         Open
       </span>
     </Link>

@@ -1220,7 +1220,7 @@ export default function SalesPerformancePage() {
 
       <DashboardSection
         title="Sales Performance Monitoring"
-        icon={<Gauge className="h-3.5 w-3.5 text-primary" />}
+        icon={<Gauge className="panel-icon" />}
         meta={`Last updated: ${data?.lastUpdatedAt ? new Date(data.lastUpdatedAt).toLocaleString() : '-'}`}
         className=""
         contentClassName="space-y-5"
@@ -1343,7 +1343,7 @@ export default function SalesPerformancePage() {
 
       <DashboardSection
         title="Performance Breakdown"
-        icon={<BarChart3 className="h-3.5 w-3.5 text-primary" />}
+        icon={<BarChart3 className="panel-icon" />}
         meta={`${activeRowCount || 0} rows`}
         className=""
         contentClassName="space-y-3"
@@ -1406,7 +1406,7 @@ export default function SalesPerformancePage() {
 
       <DashboardSection
         title="Delivery Monitoring"
-        icon={<LineChart className="h-3.5 w-3.5 text-primary" />}
+        icon={<LineChart className="panel-icon" />}
         className=""
         contentClassName="space-y-3"
       >

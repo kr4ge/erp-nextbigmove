@@ -493,7 +493,7 @@ export function KpiProgressSection({
   return (
     <DashboardSection
       title={title}
-      icon={<Target className="h-3.5 w-3.5 text-primary" />}
+      icon={<Target className="panel-icon" />}
       contentClassName="space-y-3"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -550,7 +550,7 @@ export function PersonalKpiSection({
   return (
     <DashboardSection
       title={title}
-      icon={<Target className="h-3.5 w-3.5 text-primary" />}
+      icon={<Target className="panel-icon" />}
       className="panel panel-content"
       contentClassName="space-y-3"
       headerClassName=""
@@ -845,7 +845,7 @@ export function ExecutiveKpiSection({
   return (
     <DashboardSection
       title="Marketing KPI Overview"
-      icon={<Target className="h-3.5 w-3.5 text-primary" />}
+      icon={<Target className="panel-icon" />}
       contentClassName="space-y-3"
       headerClassName="px-3 py-2.5"
       titleClassName="text-xs tracking-[0.18em]"
@@ -901,7 +901,7 @@ export function TeamKpiSection({ data, loading, error }: TeamKpiSectionProps) {
   return (
     <DashboardSection
       title="Marketing KPI Overview"
-      icon={<Target className="h-3.5 w-3.5 text-primary" />}
+      icon={<Target className="panel-icon" />}
       contentClassName="space-y-3"
       headerClassName="px-3 py-2.5"
       titleClassName="text-xs tracking-[0.18em]"

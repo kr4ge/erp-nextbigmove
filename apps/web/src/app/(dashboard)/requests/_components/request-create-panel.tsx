@@ -118,7 +118,7 @@ export function RequestCreatePanel({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <ClipboardList className="h-3.5 w-3.5 text-orange-500" />
+        <ClipboardList className="panel-icon" />
         <h4 className="panel-title">Stock Request Cart</h4>
       </div>
 

@@ -59,7 +59,7 @@ export function RequestsQueuePanel({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <ListChecks className="h-3.5 w-3.5 text-orange-500" />
+        <ListChecks className="panel-icon" />
         <h4 className="panel-title">Request Queue</h4>
         <span className="ml-auto text-xs text-slate-500">{total} total</span>
       </div>

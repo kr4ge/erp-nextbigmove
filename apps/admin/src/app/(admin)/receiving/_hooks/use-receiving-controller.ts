@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
@@ -57,6 +57,8 @@ type TransferWorkspaceState = {
   batchId: string | null;
 };
 
+const SEARCH_DEBOUNCE_MS = 300;
+
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
     const payload = error.response?.data;
@@ -87,6 +89,7 @@ export function useReceivingController() {
   const [selectedStoreId, setSelectedStoreIdState] = useState<string | undefined>();
   const [selectedWarehouseId, setSelectedWarehouseIdState] = useState<string | undefined>();
   const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [banner, setBanner] = useState<BannerState>(null);
   const [receiveModal, setReceiveModal] = useState<ReceiveModalState>({
     open: false,
@@ -110,7 +113,16 @@ export function useReceivingController() {
   const [manualStagingLocationId, setManualStagingLocationId] = useState('');
   const [manualNotes, setManualNotes] = useState('');
   const [manualLines, setManualLines] = useState<ManualReceiveLineState[]>([]);
-  const deferredSearch = useDeferredValue(searchText.trim());
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchText(searchText.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchText]);
 
   const overviewQuery = useQuery({
     queryKey: [
@@ -118,14 +130,14 @@ export function useReceivingController() {
       selectedTenantId ?? 'default-tenant',
       selectedStoreId ?? 'all-stores',
       selectedWarehouseId ?? 'all-warehouses',
-      deferredSearch,
+      debouncedSearchText,
     ],
     queryFn: () =>
       fetchWmsReceivingOverview({
         tenantId: selectedTenantId,
         storeId: selectedStoreId,
         warehouseId: selectedWarehouseId,
-        search: deferredSearch || undefined,
+        search: debouncedSearchText || undefined,
       }),
   });
 

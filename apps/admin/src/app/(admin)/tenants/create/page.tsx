@@ -347,24 +347,24 @@ export default function CreateTenantPage() {
                     onClick={() => handlePlanSelect(preset)}
                     className={`group relative overflow-hidden rounded-[18px] border p-4 text-left transition ${
                       isActive
-                        ? 'border-[#12384b] shadow-[0_18px_36px_-28px_rgba(18,56,75,0.45)]'
+                        ? 'border-primary shadow-[0_18px_36px_-28px_rgba(18,56,75,0.45)]'
                         : 'border-[#dce4ea] hover:border-[#c6d4dd]'
                     }`}
                   >
                     <div className={`card absolute inset-0 bg-gradient-to-br opacity-60 ${preset.accent}`} />
                     <div className="relative z-10 flex h-full flex-col gap-3">
                       <div className="flex items-center justify-between">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-[#12384b] shadow-sm">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-primary shadow-sm">
                           <Icon className="h-4 w-4" />
                         </span>
                         {isActive ? (
-                          <span className="rounded-full bg-[#12384b] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
+                          <span className="rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
                             Selected
                           </span>
                         ) : null}
                       </div>
                       <div>
-                        <p className="text-[15px] font-semibold text-[#12384b]">{preset.label}</p>
+                        <p className="text-[15px] font-semibold text-primary">{preset.label}</p>
                         <p className="mt-1 text-[12px] leading-5 text-[#5f7483]">{preset.tagline}</p>
                       </div>
                       <div className="mt-auto flex items-center justify-between text-[11px] font-semibold text-[#4d6677]">
@@ -379,7 +379,7 @@ export default function CreateTenantPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <WmsFormField label="Status">
-                <select {...register('status')} className="wms-select w-full rounded-[14px]">
+                <select {...register('status')} className="input w-full">
                   {statusOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -437,14 +437,14 @@ export default function CreateTenantPage() {
         <div className="flex items-center justify-end gap-3 rounded-[20px] border border-[#dce4ea] bg-white/90 px-4 py-3 shadow-[0_18px_36px_-28px_rgba(18,56,75,0.35)] backdrop-blur">
           <Link
             href="/tenants"
-            className="wms-pill-control inline-flex items-center rounded-full border border-[#d7e0e7] bg-white px-4 font-semibold text-[#325368] transition hover:border-[#c6d4dd]"
+            className="btn btn-md btn-outline"
           >
             Cancel
           </Link>
           <button
             type="submit"
             disabled={isLoading}
-            className="wms-pill-control inline-flex items-center gap-2 rounded-full bg-[#12384b] px-4 font-semibold text-white shadow-[0_16px_36px_-24px_rgba(18,56,75,0.7)] transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-55"
+            className="btn btn-md btn-primary"
           >
             {isLoading ? 'Creating…' : 'Create tenant'}
           </button>

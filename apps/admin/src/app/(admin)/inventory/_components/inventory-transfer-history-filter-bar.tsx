@@ -25,7 +25,7 @@ export function InventoryTransferHistoryFilterBar({
 }: InventoryTransferHistoryFilterBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2.5">
-      <label className="wms-pill-control flex min-w-[240px] flex-1 items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 text-[#12384b]">
+      <label className="wms-pill-control flex min-w-[240px] flex-1 items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 text-primary">
         <Search className="h-4 w-4 text-[#8193a0]" />
         <input
           value={searchText}
@@ -37,7 +37,7 @@ export function InventoryTransferHistoryFilterBar({
           <button
             type="button"
             onClick={() => onSearchTextChange('')}
-            className="flex h-5 w-5 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-[#12384b]"
+            className="flex h-5 w-5 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-primary"
             aria-label="Clear search"
           >
             <X className="h-3 w-3" />

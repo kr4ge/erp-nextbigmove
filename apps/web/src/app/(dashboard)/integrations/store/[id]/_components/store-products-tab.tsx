@@ -35,7 +35,7 @@ export function StoreProductsTab({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <Package className="h-3.5 w-3.5 text-primary" />
+        <Package className="panel-icon" />
         <h4 className="panel-title">Products</h4>
         {filteredProducts.length > 0 && (
           <div className="ml-auto flex items-center gap-2 text-xs-tight text-slate-500">

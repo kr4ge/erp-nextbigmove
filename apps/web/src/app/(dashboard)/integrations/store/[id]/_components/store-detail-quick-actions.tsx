@@ -25,7 +25,7 @@ export function StoreDetailQuickActions({
   return (
     <section className="panel panel-content">
       <div className="panel-header">
-        <RefreshCcw className="h-3.5 w-3.5 text-primary" />
+        <RefreshCcw className="panel-icon" />
         <h4 className="panel-title">Quick Actions</h4>
       </div>
       <div className="flex flex-wrap items-center gap-2 p-3">
@@ -34,7 +34,7 @@ export function StoreDetailQuickActions({
           size="sm"
           iconLeft={<DollarSign className="h-3.5 w-3.5" />}
           onClick={onSetInitialOffer}
-          className='flex gap-1.5'
+          className='btn-icon'
         >
           Set Initial Offer
         </Button>
@@ -45,7 +45,7 @@ export function StoreDetailQuickActions({
           onClick={onSyncProducts}
           disabled={isSyncingProducts}
           loading={isSyncingProducts}
-          className='flex gap-1.5'
+          className='btn-icon'
         >
           {isSyncingProducts ? 'Syncing...' : 'Sync Products'}
         </Button>
@@ -56,7 +56,7 @@ export function StoreDetailQuickActions({
           onClick={onSyncTags}
           disabled={isSyncingTags}
           loading={isSyncingTags}
-          className='flex gap-1.5'
+          className='btn-icon'
         >
           {isSyncingTags ? 'Syncing...' : 'Sync Tags'}
         </Button>
@@ -67,7 +67,7 @@ export function StoreDetailQuickActions({
           onClick={onSyncWarehouses}
           disabled={isSyncingWarehouses}
           loading={isSyncingWarehouses}
-          className='flex gap-1.5'
+          className='btn-icon'
         >
           {isSyncingWarehouses ? 'Syncing...' : 'Sync Warehouses'}
         </Button>

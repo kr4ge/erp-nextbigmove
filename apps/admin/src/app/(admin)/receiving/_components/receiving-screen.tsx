@@ -16,7 +16,7 @@ export function ReceivingScreen() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h1 className="wms-page-title font-medium tracking-tight text-[#12384b]">Receiving</h1>
+          <h1 className="wms-page-title font-medium tracking-tight text-primary">Receiving</h1>
           <p className="mt-1 text-sm text-[#5f7483]">
             Convert approved purchasing batches into staged serialized stock.
           </p>
@@ -41,7 +41,7 @@ export function ReceivingScreen() {
             value={controller.searchText}
             onChange={(event) => controller.setSearchText(event.target.value)}
             placeholder="Search by request, item, or receiving batch"
-            className="h-[42px] min-w-[260px] rounded-full border border-[#d7e0e7] bg-white px-4 text-[13px] font-medium text-[#12384b] outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
+            className="h-[42px] min-w-[260px] rounded-full border border-[#d7e0e7] bg-white px-4 text-[13px] font-medium text-primary outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
           />
         </div>
       </div>
@@ -145,7 +145,7 @@ function InsightCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[18px] border border-[#dce4ea] bg-white px-4 py-3">
       <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">{label}</p>
-      <p className="mt-2 text-[1.4rem] font-semibold tracking-tight text-[#12384b]">{value}</p>
+      <p className="mt-2 text-[1.4rem] font-semibold tracking-tight text-primary">{value}</p>
     </div>
   );
 }

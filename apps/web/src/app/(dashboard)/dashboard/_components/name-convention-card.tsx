@@ -111,7 +111,7 @@ export function NameConventionCard({
   return (
     <DashboardSection
       title="Name Convention"
-      icon={<ClipboardList className="h-3.5 w-3.5 text-primary" />}
+      icon={<ClipboardList className="panel-icon" />}
       contentClassName="space-y-3"
       headerClassName=""
       titleClassName=""

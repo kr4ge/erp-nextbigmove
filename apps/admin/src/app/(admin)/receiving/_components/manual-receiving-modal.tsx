@@ -157,7 +157,7 @@ export function ManualReceivingModal({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-9 items-center rounded-[12px] border border-[#d7e0e7] bg-white px-3.5 text-[12px] font-semibold text-[#12384b] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
+              className="inline-flex h-9 items-center rounded-[12px] border border-[#d7e0e7] bg-white px-3.5 text-[12px] font-semibold text-primary transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
             >
               Cancel
             </button>
@@ -165,7 +165,7 @@ export function ManualReceivingModal({
               type="button"
               onClick={() => void onSubmit()}
               disabled={!warehouseId || !stagingLocationId || totalUnits <= 0 || isSubmitting}
-              className="inline-flex h-9 items-center justify-center rounded-[12px] bg-[#12384b] px-4 text-[12px] font-semibold text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center rounded-[12px] bg-primary px-4 text-[12px] font-semibold text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create stock batch'}
             </button>
@@ -202,7 +202,7 @@ export function ManualReceivingModal({
                     {selectedProducts.map((line) => (
                       <tr key={line.id} className="align-top">
                         <td className="px-4 py-3">
-                          <p className="font-semibold text-[#12384b]">{line.product.label}</p>
+                          <p className="font-semibold text-primary">{line.product.label}</p>
                           <p className="mt-0.5 text-[12px] text-[#708492]">{line.product.variationLabel}</p>
                         </td>
                         <td className="px-4 py-3 text-[12px] text-[#5f7483]">
@@ -214,7 +214,7 @@ export function ManualReceivingModal({
                             min={1}
                             value={line.quantity}
                             onChange={(event) => onQuantityChange(line.id, Number(event.target.value))}
-                            className="h-9 w-20 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-[#12384b] outline-none transition focus:border-[#96b4c3]"
+                            className="h-9 w-20 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-primary outline-none transition focus:border-[#96b4c3]"
                           />
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -251,7 +251,7 @@ export function ManualReceivingModal({
                       value={productSearchText}
                       onChange={(event) => setProductSearchText(event.target.value)}
                       placeholder="Search products in the selected store"
-                      className="h-10 w-full rounded-[12px] border border-[#d7e0e7] bg-white pl-9 pr-3 text-[13px] text-[#12384b] outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
+                      className="h-10 w-full rounded-[12px] border border-[#d7e0e7] bg-white pl-9 pr-3 text-[13px] text-primary outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
                     />
                   </label>
                   <button
@@ -279,7 +279,7 @@ export function ManualReceivingModal({
                             className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-[#f8fafb]"
                           >
                             <div className="min-w-0">
-                              <p className="truncate text-[13px] font-semibold text-[#12384b]">{product.label}</p>
+                              <p className="truncate text-[13px] font-semibold text-primary">{product.label}</p>
                               <p className="mt-0.5 truncate text-[12px] text-[#708492]">
                                 {product.variationLabel}
                                 {product.customId ? ` · ${product.customId}` : ''}
@@ -359,7 +359,7 @@ export function ManualReceivingModal({
               onChange={(event) => onNotesChange(event.target.value)}
               rows={5}
               placeholder="Optional intake notes or audit context"
-              className="mt-3 w-full rounded-[14px] border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-2.5 text-[13px] text-[#12384b] outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
+              className="mt-3 w-full rounded-[14px] border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-2.5 text-[13px] text-primary outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
             />
           </div>
         </aside>
@@ -381,11 +381,11 @@ function AddProductCallout({
     <button
       type="button"
       onClick={onClick}
-      className="group w-full rounded-[16px] border border-dashed border-[#ced9e1] bg-[#f8fafb] px-4 py-5 text-center transition hover:border-[#b8c8d4] hover:bg-[#f4f8fa]"
+      className="group w-full rounded-2xl border border-dashed border-[#ced9e1] bg-[#f8fafb] px-4 py-5 text-center transition hover:border-[#b8c8d4] hover:bg-[#f4f8fa]"
     >
       <span className="text-[13px] font-medium text-[#5f7483]">{label}</span>
       <span className="px-1.5 text-[13px] text-[#8193a0]">or</span>
-      <span className="text-[13px] font-semibold text-[#12384b] group-hover:text-[#0f3242]">{actionLabel}</span>
+      <span className="text-[13px] font-semibold text-primary group-hover:text-[#0f3242]">{actionLabel}</span>
     </button>
   );
 }

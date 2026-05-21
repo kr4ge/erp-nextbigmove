@@ -58,12 +58,12 @@ export function InventoryStockScreen() {
                   type="button"
                   onClick={() => inventory.setCurrentPage(inventory.currentPage - 1)}
                   disabled={inventory.currentPage === 1}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
 
-                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-[#12384b]">
+                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-primary">
                   {inventory.currentPage} / {inventory.totalPages}
                 </span>
 
@@ -71,7 +71,7 @@ export function InventoryStockScreen() {
                   type="button"
                   onClick={() => inventory.setCurrentPage(inventory.currentPage + 1)}
                   disabled={inventory.currentPage === inventory.totalPages}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>

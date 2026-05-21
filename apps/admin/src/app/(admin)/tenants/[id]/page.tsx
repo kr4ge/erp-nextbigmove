@@ -455,7 +455,7 @@ export default function TenantDetailsPage() {
                     'Cancel this tenant? The organization will lose access immediately.',
                   )
                 }
-                className="wms-pill-control inline-flex w-full items-center justify-center gap-2 mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 font-semibold text-rose-700 transition hover:bg-rose-100"
+                className="btn btn-md btn-destructive btn-icon mt-3 w-full"
               >
                 <AlertTriangle className="h-3.5 w-3.5" />
                 Cancel tenant
@@ -482,18 +482,18 @@ function UsageRow({
   percent: number;
 }) {
   const barColor =
-    percent >= 90 ? 'bg-rose-400' : percent >= 70 ? 'bg-amber-400' : 'bg-[#12384b]';
+    percent >= 90 ? 'bg-rose-400' : percent >= 70 ? 'bg-amber-400' : 'bg-primary';
 
   return (
     <div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#12384b] text-white">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-white">
             {icon}
           </span>
           {label}
         </div>
-        <span className="text-[12px] font-semibold tabular-nums text-[#12384b]">
+        <span className="text-[12px] font-semibold tabular-nums text-primary">
           {current.toLocaleString()} / {max.toLocaleString()}
         </span>
       </div>
@@ -514,16 +514,16 @@ function TimelineRow({
   value: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-[16px] border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-2.5">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-2.5">
       <div className="flex min-w-0 items-center gap-2.5">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#12384b] text-white">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-white">
           {icon}
         </span>
         <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">
           {label}
         </span>
       </div>
-      <span className="truncate text-right text-[12.5px] font-semibold text-[#12384b]" title={value}>
+      <span className="truncate text-right text-[12.5px] font-semibold text-primary" title={value}>
         {value}
       </span>
     </div>
@@ -547,15 +547,15 @@ function QuickActionButton({
 }) {
   const toneClasses: Record<QuickActionTone, string> = {
     neutral:
-      'border border-[#d7e0e7] bg-white text-[#12384b] hover:border-[#c6d4dd] hover:bg-[#f8fafb]',
+      'btn-outline',
     primary:
-      'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+      'btn-success',
     warning:
-      'border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
+      'btn-warning',
   };
 
   const base =
-    'wms-pill-control inline-flex w-full items-center justify-between gap-2 rounded-2xl px-4 font-semibold transition';
+    'btn btn-md btn-icon w-full';
 
   if (href) {
     return (

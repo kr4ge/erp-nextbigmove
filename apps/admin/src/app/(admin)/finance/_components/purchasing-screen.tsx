@@ -15,6 +15,8 @@ import { PurchasingBatchModal } from './purchasing-batch-modal';
 import { PurchasingBatchesTable } from './purchasing-batches-table';
 import { PurchasingFilterBar } from './purchasing-filter-bar';
 
+const NOTICE_AUTO_DISMISS_MS = 5000;
+
 export function PurchasingScreen() {
   const router = useRouter();
   const controller = usePurchasingController();
@@ -33,13 +35,22 @@ export function PurchasingScreen() {
     <div className="space-y-5">
       <WmsPageShell title="Purchasing">
         {controller.banner ? (
-          <WmsInlineNotice tone={controller.banner.tone}>
+          <WmsInlineNotice
+            tone={controller.banner.tone}
+            dismissible
+            autoDismissMs={NOTICE_AUTO_DISMISS_MS}
+            onDismiss={controller.clearBanner}
+          >
             {controller.banner.message}
           </WmsInlineNotice>
         ) : null}
 
         {controller.errorMessage ? (
-          <WmsInlineNotice tone="error">
+          <WmsInlineNotice
+            tone="error"
+            dismissible
+            autoDismissMs={NOTICE_AUTO_DISMISS_MS}
+          >
             {controller.errorMessage}
           </WmsInlineNotice>
         ) : null}
@@ -65,10 +76,10 @@ export function PurchasingScreen() {
           footer={(
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-[12px] text-[#6f8290]">
-                <ScanSearch className="h-3.5 w-3.5 text-[#12384b]" />
+                <ScanSearch className="panel-icon" />
                 <span>
-                  Showing page <span className="font-semibold text-[#12384b]">{pagination?.page ?? 1}</span> of{' '}
-                  <span className="font-semibold text-[#12384b]">{pagination?.totalPages ?? 1}</span>
+                  Showing page <span className="font-semibold text-primary">{pagination?.page ?? 1}</span> of{' '}
+                  <span className="font-semibold text-primary">{pagination?.totalPages ?? 1}</span>
                 </span>
               </div>
 
@@ -77,12 +88,12 @@ export function PurchasingScreen() {
                   type="button"
                   onClick={() => controller.setCurrentPage(controller.currentPage - 1)}
                   disabled={controller.currentPage <= 1}
-                  className="inline-flex h-9 items-center rounded-xl border border-[#d7e0e7] bg-white px-3 text-[12px] font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 items-center rounded-xl border border-[#d7e0e7] bg-white px-3 text-[12px] font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   Previous
                 </button>
 
-                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-[#12384b]">
+                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-primary">
                   {(pagination?.total ?? 0).toLocaleString()} total
                 </span>
 
@@ -90,7 +101,7 @@ export function PurchasingScreen() {
                   type="button"
                   onClick={() => controller.setCurrentPage(controller.currentPage + 1)}
                   disabled={controller.currentPage >= (pagination?.totalPages ?? 1)}
-                  className="inline-flex h-9 items-center rounded-xl border border-[#d7e0e7] bg-white px-3 text-[12px] font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 items-center rounded-xl border border-[#d7e0e7] bg-white px-3 text-[12px] font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   Next
                 </button>

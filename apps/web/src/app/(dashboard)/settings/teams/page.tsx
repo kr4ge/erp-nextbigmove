@@ -157,7 +157,7 @@ export default function TeamsPage() {
         <div className="lg:col-span-2">
           <section className="panel panel-content overflow-hidden">
             <div className="panel-header">
-              <Users className="h-3.5 w-3.5 text-primary" />
+              <Users className="panel-icon" />
               <h2 className="panel-title">Existing Teams</h2>
             </div>
             {deleteError && (
@@ -231,7 +231,7 @@ export default function TeamsPage() {
         <div>
           <section className="panel panel-content">
             <div className="panel-header">
-              <PlusCircle className="h-3.5 w-3.5 text-primary" />
+              <PlusCircle className="panel-icon" />
               <h2 className="panel-title">{editingTeam ? 'Edit Team' : 'Create Team'}</h2>
             </div>
             <div className="p-4">
