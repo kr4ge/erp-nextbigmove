@@ -116,8 +116,8 @@ export function RequestsQueuePanel({
           </select>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-[#dce4ea]">
-          <table className="min-w-full divide-y divide-[#e6edf5] text-sm">
+        <div className="overflow-x-auto rounded-xl border border-[#dce4ea]">
+          <table className="min-w-[720px] divide-y divide-[#e6edf5] text-sm">
             <thead className="bg-[#f8fbff] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[#73859a]">
               <tr>
                 <th className="px-3 py-2">Request</th>

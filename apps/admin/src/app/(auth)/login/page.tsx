@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -9,6 +9,8 @@ import apiClient from '@/lib/api-client';
 import {
   clearAdminSession,
   fetchEffectivePermissions,
+  readStoredAdminUser,
+  readStoredPermissions,
   storePermissions,
 } from '@/lib/admin-session';
 import { hasWmsAccess } from '@/lib/wms-access';
@@ -24,6 +26,7 @@ export default function AdminLoginPage() {
   const router = useRouter();
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
   const {
     register,
@@ -47,6 +50,62 @@ export default function AdminLoginPage() {
 
     return fallback;
   };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkSession() {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        if (isMounted) {
+          setCheckingSession(false);
+        }
+        return;
+      }
+
+      const user = readStoredAdminUser();
+      if (!user?.role) {
+        clearAdminSession();
+        if (isMounted) {
+          setCheckingSession(false);
+        }
+        return;
+      }
+
+      try {
+        let permissions = readStoredPermissions();
+
+        if (user.role !== 'SUPER_ADMIN') {
+          permissions = await fetchEffectivePermissions();
+          if (!isMounted) {
+            return;
+          }
+          storePermissions(permissions);
+        }
+
+        if (!hasWmsAccess(user.role, permissions)) {
+          clearAdminSession();
+          if (isMounted) {
+            setCheckingSession(false);
+          }
+          return;
+        }
+
+        router.replace('/wms');
+      } catch {
+        clearAdminSession();
+        if (isMounted) {
+          setCheckingSession(false);
+        }
+      }
+    }
+
+    void checkSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   const onSubmit = async (data: LoginForm) => {
     setError('');
@@ -83,6 +142,10 @@ export default function AdminLoginPage() {
       setIsLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 px-4">

@@ -121,38 +121,42 @@ export default function RequestsPage() {
       />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)]">
-        <RequestsQueuePanel
-          rows={queueRows}
-          stores={queueFilters?.stores ?? []}
-          requestTypes={queueFilters?.requestTypes ?? []}
-          statuses={queueFilters?.statuses ?? []}
-          selectedStoreId={selectedStoreId}
-          selectedRequestType={selectedRequestType}
-          selectedStatus={selectedStatus}
-          search={search}
-          page={queuePagination.page}
-          totalPages={queuePagination.totalPages}
-          total={queuePagination.total}
-          selectedBatchId={selectedBatchId}
-          onStoreChange={setSelectedStoreId}
-          onRequestTypeChange={setSelectedRequestType}
-          onStatusChange={setSelectedStatus}
-          onSearchChange={setSearch}
-          onPageChange={setOverviewPage}
-          onSelectBatch={setSelectedBatchId}
-        />
+        <div className="min-w-0">
+          <RequestsQueuePanel
+            rows={queueRows}
+            stores={queueFilters?.stores ?? []}
+            requestTypes={queueFilters?.requestTypes ?? []}
+            statuses={queueFilters?.statuses ?? []}
+            selectedStoreId={selectedStoreId}
+            selectedRequestType={selectedRequestType}
+            selectedStatus={selectedStatus}
+            search={search}
+            page={queuePagination.page}
+            totalPages={queuePagination.totalPages}
+            total={queuePagination.total}
+            selectedBatchId={selectedBatchId}
+            onStoreChange={setSelectedStoreId}
+            onRequestTypeChange={setSelectedRequestType}
+            onStatusChange={setSelectedStatus}
+            onSearchChange={setSearch}
+            onPageChange={setOverviewPage}
+            onSelectBatch={setSelectedBatchId}
+          />
+        </div>
 
-        <RequestDetailPanel
-          batch={selectedBatch}
-          isLoading={isLoadingBatch}
-          error={batchError}
-          canSubmitPaymentProof={selectedBatch?.status === 'PENDING_PAYMENT'}
-          isSubmittingPaymentProof={isSubmittingPaymentProof}
-          onSubmitPaymentProof={submitPaymentProof}
-          canRespondToRevision={selectedBatch?.status === 'REVISION'}
-          isRespondingToRevision={isRespondingToRevision}
-          onRespondToRevision={respondToRevision}
-        />
+        <div className="min-w-0">
+          <RequestDetailPanel
+            batch={selectedBatch}
+            isLoading={isLoadingBatch}
+            error={batchError}
+            canSubmitPaymentProof={selectedBatch?.status === 'PENDING_PAYMENT'}
+            isSubmittingPaymentProof={isSubmittingPaymentProof}
+            onSubmitPaymentProof={submitPaymentProof}
+            canRespondToRevision={selectedBatch?.status === 'REVISION'}
+            isRespondingToRevision={isRespondingToRevision}
+            onRespondToRevision={respondToRevision}
+          />
+        </div>
       </div>
     </div>
   );
