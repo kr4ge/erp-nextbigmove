@@ -10,34 +10,31 @@ const navItems: Array<{
   icon: ComponentProps<typeof Feather>['name'];
   emphasis?: boolean;
 }> = [
-  { key: 'stock', label: 'Stock', icon: 'box' },
-  { key: 'scan', label: 'Scan', icon: 'maximize' },
-  { key: 'pick', label: 'Pick', icon: 'navigation', emphasis: true },
-  { key: 'pack', label: 'Pack', icon: 'package' },
-  { key: 'me', label: 'Me', icon: 'user' },
+  { key: 'home', label: 'Home', icon: 'home' },
+  { key: 'tasks', label: 'Tasks', icon: 'calendar' },
+  { key: 'scan', label: 'Scan', icon: 'maximize', emphasis: true },
+  { key: 'history', label: 'History', icon: 'file-text' },
+  { key: 'account', label: 'Account', icon: 'users' },
 ];
 
 export function StoxBottomNav({
   activeTab,
-  allowedTabs,
   onChange,
 }: {
   activeTab: StoxTabKey;
-  allowedTabs: StoxTabKey[];
   onChange: (tab: StoxTabKey) => void;
 }) {
-  const visibleNavItems = navItems.filter((item) => allowedTabs.includes(item.key));
-
   return (
     <View style={styles.shell}>
       <View style={styles.bar}>
-        {visibleNavItems.map((item) => {
+        {navItems.map((item) => {
           const active = item.key === activeTab;
           const center = item.emphasis === true;
 
           return (
             <Pressable
               key={item.key}
+              accessibilityLabel={item.label}
               onPress={() => {
                 onChange(item.key);
               }}
@@ -51,24 +48,15 @@ export function StoxBottomNav({
                   />
                 </View>
               ) : (
-                <View style={styles.iconWrap}>
+                <View style={[styles.iconWrap, active && styles.iconWrapActive]}>
                   <Feather
                     name={item.icon}
-                    size={20}
-                    color={active ? tokens.colors.panel : tokens.colors.inkSoft}
+                    size={19}
+                    color={active ? '#6437F6' : '#B19CF2'}
                   />
                 </View>
               )}
 
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.label,
-                  active && styles.activeLabel,
-                  center && styles.centerLabel,
-                ]}>
-                {item.label}
-              </Text>
             </Pressable>
           );
         })}
@@ -79,70 +67,70 @@ export function StoxBottomNav({
 
 const styles = StyleSheet.create({
   shell: {
-    backgroundColor: tokens.colors.surface,
-    borderTopColor: tokens.colors.border,
-    borderTopWidth: 1,
-    paddingTop: 0,
-    paddingHorizontal: 8,
+    backgroundColor: 'transparent',
   },
   bar: {
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
+    backgroundColor: '#EEE9FF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     flexDirection: 'row',
+    height: 56,
     justifyContent: 'space-between',
-    minHeight: 56,
+    overflow: 'visible',
+    paddingHorizontal: 22,
+    paddingTop: 10,
+    width: '100%',
   },
   item: {
-    alignItems: 'center',
+    alignItems: 'flex-end',
     flex: 1,
-    gap: 1,
-    justifyContent: 'flex-end',
-    minHeight: 44,
-    paddingBottom: 2,
+    justifyContent: 'center',
+    minHeight: 40,
     paddingHorizontal: 2,
   },
   centerItem: {
     justifyContent: 'flex-start',
-    marginTop: -12,
-    minHeight: 66,
+    marginTop: -42,
+    minHeight: 88,
   },
   iconWrap: {
     alignItems: 'center',
-    height: 24,
+    borderRadius: 18,
+    height: 36,
     justifyContent: 'center',
+    width: 36,
+  },
+  iconWrapActive: {
+    backgroundColor: 'rgba(100, 55, 246, 0.12)',
+    shadowColor: 'rgba(94, 52, 240, 0.15)',
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    elevation: 4,
   },
   centerBubble: {
     alignItems: 'center',
-    backgroundColor: tokens.colors.panelMuted,
-    borderColor: tokens.colors.surface,
-    borderRadius: 28,
-    borderWidth: 4,
-    height: 54,
+    backgroundColor: '#6437F6',
+    borderColor: '#F6F1FF',
+    borderRadius: 32,
+    borderWidth: 6,
+    height: 64,
     justifyContent: 'center',
-    shadowColor: tokens.colors.shadow,
+    shadowColor: 'rgba(100, 55, 246, 0.38)',
     shadowOpacity: 1,
-    shadowRadius: 18,
+    shadowRadius: 22,
     shadowOffset: {
       width: 0,
       height: 10,
     },
-    width: 54,
-    elevation: 8,
+    width: 64,
+    elevation: 12,
   },
   centerBubbleActive: {
-    backgroundColor: tokens.colors.panel,
-  },
-  label: {
-    color: tokens.colors.inkSoft,
-    fontSize: 10,
-    fontWeight: '700',
-    maxWidth: '100%',
-  },
-  activeLabel: {
-    color: tokens.colors.panel,
-  },
-  centerLabel: {
-    color: tokens.colors.ink,
-    fontSize: 12,
-    marginTop: -4,
+    backgroundColor: '#5B30EE',
   },
 });

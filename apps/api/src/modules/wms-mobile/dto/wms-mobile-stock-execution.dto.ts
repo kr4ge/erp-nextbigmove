@@ -18,6 +18,29 @@ export class GetWmsMobileStockScopedDto {
   tenantId?: string;
 }
 
+export class GetWmsMobileHomeInventorySummaryDto extends GetWmsMobileStockScopedDto {
+  @IsOptional()
+  @IsUUID()
+  storeId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+}
+
+export class GetWmsMobileHomeTaskSummaryDto extends GetWmsMobileStockScopedDto {
+  @IsOptional()
+  @IsUUID()
+  storeId?: string;
+}
+
+export class GetWmsMobileTrackingLookupDto extends GetWmsMobileStockScopedDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  code!: string;
+}
+
 export class WmsMobileStockMoveDto {
   @IsOptional()
   @IsUUID()

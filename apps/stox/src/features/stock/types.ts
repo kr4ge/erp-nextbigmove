@@ -1,3 +1,5 @@
+import type { WmsMobileBasketLookupResponse, WmsMobilePickingTask } from '@/src/features/picking/types';
+
 export type StockMode = 'putaway' | 'move' | 'bins' | 'recent';
 
 export type StockFilters = {
@@ -56,6 +58,13 @@ export type WmsMobileStockResponse = {
     putawayBatches: number;
     transfers: number;
     bins: number;
+    unitsOnHand: number;
+    dispatchedUnits: number;
+    warehouseCapacity: {
+      usedUnits: number;
+      totalUnits: number;
+      utilizationPercent: number;
+    };
   };
   putawayQueue: WmsMobilePutawayBatch[];
   movableUnits: WmsMobileMovableUnit[];
@@ -197,6 +206,11 @@ export type WmsMobileStockUnitDetail = {
   updatedAt: string;
 };
 
+export type WmsMobileStockUnitLookupResponse = {
+  unit: WmsMobileStockUnitDetail;
+  task: WmsMobilePickingTask | null;
+};
+
 export type WmsMobileStockBinDetail = {
   id: string;
   code: string;
@@ -282,3 +296,11 @@ export type WmsMobileStockScanResult =
       type: 'none';
       code: string;
     };
+
+export type WmsMobileTrackingLookupResponse = {
+  found: boolean;
+  code: string;
+  task: WmsMobilePickingTask | null;
+};
+
+export type WmsMobileBasketLookupResult = WmsMobileBasketLookupResponse;

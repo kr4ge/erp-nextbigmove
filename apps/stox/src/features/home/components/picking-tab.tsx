@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
+import { canUsePickWorkspace } from '@/src/features/home/rbac';
 import { usePickingWorkspace } from '@/src/features/picking/hooks/use-picking-workspace';
 import type {
   PickingFilters,
@@ -21,11 +23,10 @@ import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
 import {
-  StockScopeFilterChip,
   StockScopeFilterModal,
 } from '@/src/features/stock/components/stock-scope-filter';
 import type { StockScopeOption } from '@/src/features/stock/utils/stock-scope';
-import { SectionLabel, TaskHeader, TaskHeaderIconButton, UtilityPill } from './stox-primitives';
+import { BlockedTaskState, SectionLabel, TaskHeader, TaskHeaderIconButton, UtilityPill } from './stox-primitives';
 
 type PickingTabProps = {
   bootstrap: BootstrapResponse;
@@ -44,16 +45,30 @@ const PICK_TABS: Array<{ key: PickTabKey; label: string }> = [
 
 const PICK_STATUS_FILTERS: Array<{ label: string; value: PickingStatus | null }> = [
   { label: 'All', value: null },
-  { label: 'Ready', value: 'READY' },
+  { label: 'To do', value: 'READY' },
   { label: 'Partial', value: 'PARTIAL' },
   { label: 'Restocking', value: 'RESTOCKING' },
-  { label: 'Issue', value: 'ISSUE' },
-  { label: 'Picking', value: 'IN_PICKING' },
+  { label: 'Issues', value: 'ISSUE' },
+  { label: 'In Progress', value: 'IN_PICKING' },
 ];
 
 export function PickingTab({ bootstrap, device, session }: PickingTabProps) {
+  if (!canUsePickWorkspace(bootstrap)) {
+    return (
+      <>
+        <TaskHeader title="Pick" />
+        <BlockedTaskState copy="This account needs WMS fulfillment write or edit permission and a PICK task assignment in WMS Web." />
+      </>
+    );
+  }
+
+  return <PickingWorkspaceTab bootstrap={bootstrap} device={device} session={session} />;
+}
+
+function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
   const [activeFilter, setActiveFilter] = useState<PickingFilterKey | null>(null);
   const [activeTab, setActiveTab] = useState<PickTabKey>('list');
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const {
     activeBin,
     activeTask,
@@ -85,6 +100,48 @@ export function PickingTab({ bootstrap, device, session }: PickingTabProps) {
   );
   const activePartnerName = resolveActivePartnerName(picking, bootstrap, filters.tenantId);
   const activeStoreName = resolveActiveStoreName(picking, bootstrap, filters.storeId);
+  const taskPool = useMemo(() => {
+    if (activeTab === 'picked') {
+      return picking?.pickedHistory ?? [];
+    }
+
+    if (activeTab === 'list') {
+      return picking?.tasks ?? [];
+    }
+
+    return [];
+  }, [activeTab, picking?.pickedHistory, picking?.tasks]);
+  const dateOptions = useMemo(() => buildPickDateOptions(taskPool), [taskPool]);
+  const filteredTaskPool = useMemo(() => {
+    if (!selectedDateKey || activeTab === 'baskets') {
+      return taskPool;
+    }
+
+    return taskPool.filter((task) => getPickTaskDateKey(task) === selectedDateKey);
+  }, [activeTab, selectedDateKey, taskPool]);
+
+  useEffect(() => {
+    if (activeTab === 'baskets') {
+      if (selectedDateKey !== null) {
+        setSelectedDateKey(null);
+      }
+      return;
+    }
+
+    if (dateOptions.length === 0) {
+      if (selectedDateKey !== null) {
+        setSelectedDateKey(null);
+      }
+      return;
+    }
+
+    if (selectedDateKey && dateOptions.some((option) => option.key === selectedDateKey)) {
+      return;
+    }
+
+    const preferred = dateOptions.find((option) => option.isToday)?.key ?? dateOptions[0]?.key ?? null;
+    setSelectedDateKey(preferred);
+  }, [activeTab, dateOptions, selectedDateKey]);
 
   const updateFilter = (value: string | null) => {
     setFilters((current) => {
@@ -114,33 +171,47 @@ export function PickingTab({ bootstrap, device, session }: PickingTabProps) {
 
   return (
     <>
-      <TaskHeader
-        title="Pick"
-        action={(
-          <TaskHeaderIconButton
-            icon="refresh-cw"
-            loading={isRefreshing}
-            onPress={refreshPicking}
-          />
-        )}
-      />
-
       {!activeTask ? (
-        <View style={styles.filterRow}>
-          {bootstrap.user.role === 'SUPER_ADMIN' ? (
-            <StockScopeFilterChip
-              label="Partner"
-              value={activePartnerName}
-              onPress={() => setActiveFilter('tenant')}
+        <>
+          <View style={styles.queueHeader}>
+            <TaskHeaderIconButton
+              icon="refresh-cw"
+              loading={isRefreshing}
+              onPress={refreshPicking}
+            />
+            <Text style={styles.queueHeaderTitle}>Today&apos;s Tasks</Text>
+            <View style={styles.queueBellButton}>
+              <Feather name="bell" size={18} color="#1F1F28" />
+            <View style={styles.queueBellDot} />
+          </View>
+          </View>
+
+          {activeTab !== 'baskets' && dateOptions.length > 0 ? (
+            <TaskDateCarousel
+              options={dateOptions}
+              value={selectedDateKey}
+              onChange={setSelectedDateKey}
             />
           ) : null}
 
-          <StockScopeFilterChip
-            label="Store"
-            value={activeStoreName}
-            onPress={() => setActiveFilter('store')}
-          />
-        </View>
+          <View style={styles.queueFilterStack}>
+            {bootstrap.user.role === 'SUPER_ADMIN' ? (
+              <ScopeDropdownCard
+                icon="briefcase"
+                label="Partner"
+                value={activePartnerName}
+                onPress={() => setActiveFilter('tenant')}
+              />
+            ) : null}
+
+            <ScopeDropdownCard
+              icon="shopping-bag"
+              label="Store"
+              value={activeStoreName}
+              onPress={() => setActiveFilter('store')}
+            />
+          </View>
+        </>
       ) : null}
 
       {error ? (
@@ -179,7 +250,7 @@ export function PickingTab({ bootstrap, device, session }: PickingTabProps) {
                 activeTaskId={activeTaskId}
                 hasMore={Boolean(picking?.pagination.hasMore)}
                 isLoadingMore={isLoadingMore}
-                tasks={picking?.tasks ?? []}
+                tasks={filteredTaskPool}
                 total={picking?.pagination.total ?? 0}
                 onLoadMore={loadMore}
                 onSelect={setActiveTaskId}
@@ -192,9 +263,10 @@ export function PickingTab({ bootstrap, device, session }: PickingTabProps) {
               activeTaskId={activeTaskId}
               emptyCopy="Picked baskets stay here until they are handed off to a packer."
               emptyTitle="No picked baskets"
-              tasks={picking?.pickedHistory ?? []}
+              showHeader={false}
+              tasks={filteredTaskPool}
               title="Picked"
-              trailing={`${picking?.pickedHistory.length ?? 0}`}
+              trailing={`${filteredTaskPool.length}`}
               onSelect={setActiveTaskId}
             />
           ) : null}
@@ -239,6 +311,7 @@ function PickTaskList({
         activeTaskId={activeTaskId}
         emptyCopy="Confirmed orders will show here after sync."
         emptyTitle="No pick tasks"
+        showHeader={false}
         tasks={tasks}
         title="Orders"
         trailing={`${tasks.length}/${total}`}
@@ -265,7 +338,10 @@ function PickTabSwitcher({
   onChange: (tab: PickTabKey) => void;
 }) {
   return (
-    <View style={styles.pickTabs}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.pickTabs}>
       {PICK_TABS.map((tab) => {
         const active = activeTab === tab.key;
         return (
@@ -279,7 +355,7 @@ function PickTabSwitcher({
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -291,7 +367,10 @@ function PickStatusFilterRow({
   onChange: (status: PickingStatus | null) => void;
 }) {
   return (
-    <View style={styles.statusFilterRow}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.statusFilterRow}>
       {PICK_STATUS_FILTERS.map((option) => {
         const active = value === option.value;
         return (
@@ -305,7 +384,7 @@ function PickStatusFilterRow({
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -313,6 +392,7 @@ function TaskCollectionSection({
   activeTaskId,
   emptyCopy,
   emptyTitle,
+  showHeader,
   tasks,
   title,
   trailing,
@@ -321,6 +401,7 @@ function TaskCollectionSection({
   activeTaskId: string | null;
   emptyCopy: string;
   emptyTitle: string;
+  showHeader?: boolean;
   tasks: WmsMobilePickingTask[];
   title: string;
   trailing?: string;
@@ -328,7 +409,7 @@ function TaskCollectionSection({
 }) {
   return (
     <>
-      <SectionLabel title={title} trailing={trailing} />
+      {showHeader !== false ? <SectionLabel title={title} trailing={trailing} /> : null}
 
       {tasks.length === 0 ? (
         <SurfaceCard style={styles.emptyCard}>
@@ -377,6 +458,68 @@ function AvailableBasketSection({ baskets }: { baskets: WmsMobilePickBasket[] })
   );
 }
 
+function ScopeDropdownCard({
+  icon,
+  label,
+  value,
+  onPress,
+}: {
+  icon: ComponentProps<typeof Feather>['name'];
+  label: string;
+  value: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.scopeDropdownWrap, pressed ? styles.scopeDropdownWrapPressed : null]}>
+      <SurfaceCard style={styles.scopeDropdownCard}>
+        <View style={styles.scopeDropdownIcon}>
+          <Feather name={icon} size={15} color="#F55DB8" />
+        </View>
+        <View style={styles.scopeDropdownCopy}>
+          <Text style={styles.scopeDropdownLabel}>{label}</Text>
+          <Text numberOfLines={1} style={styles.scopeDropdownValue}>{value}</Text>
+        </View>
+        <Feather name="chevron-down" size={18} color="#2B2836" />
+      </SurfaceCard>
+    </Pressable>
+  );
+}
+
+function TaskDateCarousel({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ key: string; month: string; day: string; weekday: string }>;
+  value: string | null;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.dateCarousel}>
+      {options.map((option) => {
+        const active = value === option.key;
+        return (
+          <Pressable
+            key={option.key}
+            onPress={() => onChange(option.key)}
+            style={({ pressed }) => [
+              styles.dateCard,
+              active ? styles.dateCardActive : null,
+              pressed ? styles.dateCardPressed : null,
+            ]}>
+            <Text style={[styles.dateCardMonth, active ? styles.dateCardMonthActive : null]}>{option.month}</Text>
+            <Text style={[styles.dateCardDay, active ? styles.dateCardDayActive : null]}>{option.day}</Text>
+            <Text style={[styles.dateCardWeekday, active ? styles.dateCardWeekdayActive : null]}>{option.weekday}</Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
 function PickTaskCard({
   active,
   task,
@@ -388,7 +531,10 @@ function PickTaskCard({
 }) {
   const visibleLines = getVisiblePickLines(task.lines);
   const shortageNote = visibleLines.find((line) => line.issueReason)?.issueReason ?? null;
-  const extraLines = Math.max(visibleLines.length - 2, 0);
+  const summary = visibleLines
+    .slice(0, 2)
+    .map((line) => `${line.required}x ${line.productName}`)
+    .join(' • ');
 
   return (
     <Pressable
@@ -399,46 +545,34 @@ function PickTaskCard({
         active ? styles.activeTaskPressable : null,
       ]}>
       <SurfaceCard style={styles.compactTaskCard}>
-        <View style={styles.compactDateRow}>
-          <Text style={styles.compactDateLabel}>Date</Text>
-          <Text numberOfLines={1} style={styles.compactDateValue}>
-            {formatPickOrderDate(task.orderDateLocal ?? task.orderDate)}
+        <View style={styles.compactTopRow}>
+          <Text numberOfLines={1} style={styles.compactStoreLabel}>
+            {task.store?.name ?? 'Store'}
           </Text>
+          <View style={styles.compactIconBadge}>
+            <Feather name="shopping-bag" size={14} color="#F55DB8" />
+          </View>
         </View>
 
-        <View style={styles.compactMainRow}>
-          <Text numberOfLines={1} style={styles.compactOrderTitle}>
-            {task.store?.name ?? 'Store'} - {task.posOrderId}
-          </Text>
-          <StatusBadge status={task.status} label={task.statusLabel} />
-        </View>
+        <Text numberOfLines={1} style={styles.compactOrderTitle}>{task.posOrderId}</Text>
 
-        <Text style={styles.compactUnitCount}>
-          {task.totals.required} required unit{task.totals.required === 1 ? '' : 's'}
-          {task.totals.picked > 0 ? ` · ${task.totals.picked} picked` : ''}
+        <Text numberOfLines={2} style={styles.compactSummary}>
+          {summary || `${task.totals.required} required unit${task.totals.required === 1 ? '' : 's'}`}
         </Text>
-
-        <View style={styles.compactLineList}>
-          {visibleLines.slice(0, 2).map((line) => (
-            <Text key={line.id} numberOfLines={1} style={styles.compactLineText}>
-              {line.required} - {line.productName}
-            </Text>
-          ))}
-          {extraLines > 0 ? (
-            <Text style={styles.compactMoreText}>+{extraLines} more item{extraLines === 1 ? '' : 's'}</Text>
-          ) : null}
-        </View>
 
         {shortageNote ? (
           <Text numberOfLines={2} style={styles.compactIssueText}>{shortageNote}</Text>
         ) : null}
 
-        {task.basket ? (
-          <Text numberOfLines={1} style={styles.basketMeta}>
-            Basket {task.basket.barcode}
-            {task.basket.assignedPacker ? ` · Packer ${task.basket.assignedPacker.name}` : ` · ${task.basket.statusLabel}`}
-          </Text>
-        ) : null}
+        <View style={styles.compactFooterRow}>
+          <View style={styles.compactDateMeta}>
+            <Feather name="clock" size={13} color="#9C83FF" />
+            <Text style={styles.compactDateValue}>
+              {formatPickQueueDate(task.orderDateLocal ?? task.orderDate)}
+            </Text>
+          </View>
+          <StatusBadge status={task.status} label={mapPickCardStatus(task.status, task.statusLabel)} />
+        </View>
       </SurfaceCard>
     </Pressable>
   );
@@ -955,6 +1089,71 @@ function resolveActiveStoreName(
   return stores.find((store) => store.id === storeId)?.name ?? 'Store';
 }
 
+function buildPickDateOptions(tasks: WmsMobilePickingTask[]) {
+  const seen = new Map<string, { key: string; month: string; day: string; weekday: string; isToday: boolean; sort: number }>();
+  const todayKey = buildDateKey(new Date());
+
+  for (const task of tasks) {
+    const parsed = parsePickDate(task.orderDateLocal ?? task.orderDate);
+    if (!parsed) {
+      continue;
+    }
+
+    const key = buildDateKey(parsed);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.set(key, {
+      key,
+      month: parsed.toLocaleDateString('en-PH', { month: 'short' }),
+      day: parsed.toLocaleDateString('en-PH', { day: '2-digit' }),
+      weekday: parsed.toLocaleDateString('en-PH', { weekday: 'short' }),
+      isToday: key === todayKey,
+      sort: parsed.getTime(),
+    });
+  }
+
+  return Array.from(seen.values())
+    .sort((left, right) => left.sort - right.sort)
+    .map(({ sort, ...option }) => option);
+}
+
+function getPickTaskDateKey(task: WmsMobilePickingTask) {
+  const parsed = parsePickDate(task.orderDateLocal ?? task.orderDate);
+  return parsed ? buildDateKey(parsed) : null;
+}
+
+function parsePickDate(value: string) {
+  if (!value) {
+    return null;
+  }
+
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (dateOnlyMatch) {
+    return new Date(
+      Number(dateOnlyMatch[1]),
+      Number(dateOnlyMatch[2]) - 1,
+      Number(dateOnlyMatch[3]),
+    );
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function buildDateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    `${date.getMonth() + 1}`.padStart(2, '0'),
+    `${date.getDate()}`.padStart(2, '0'),
+  ].join('-');
+}
+
 function getStatusTone(status: string) {
   if (status === 'READY' || status === 'AVAILABLE' || status === 'IN_PICKING' || status === 'READY_FOR_PACK' || status === 'PICKED') {
     return 'ready';
@@ -981,6 +1180,39 @@ function formatPickOrderDate(value: string) {
   });
 }
 
+function formatPickQueueDate(value: string) {
+  const parsed = parsePickDate(value);
+  if (!parsed) {
+    return 'No date';
+  }
+
+  return parsed.toLocaleDateString('en-PH', {
+    hour: undefined,
+    minute: undefined,
+    month: 'short',
+    day: '2-digit',
+  });
+}
+
+function mapPickCardStatus(status: PickingStatus, fallback: string) {
+  if (status === 'READY') {
+    return 'To do';
+  }
+  if (status === 'IN_PICKING') {
+    return 'In Progress';
+  }
+  if (status === 'READY_FOR_PACK' || status === 'PICKED') {
+    return 'Picked';
+  }
+  if (status === 'RESTOCKING') {
+    return 'Restocking';
+  }
+  if (status === 'ISSUE') {
+    return 'Issues';
+  }
+  return fallback;
+}
+
 const styles = StyleSheet.create({
   loadingCard: {
     alignItems: 'center',
@@ -999,56 +1231,180 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.sm,
   },
   pickTabs: {
-    backgroundColor: tokens.colors.surfaceMuted,
-    borderColor: tokens.colors.border,
-    borderRadius: tokens.radius.pill,
-    borderWidth: 1,
-    flexDirection: 'row',
-    padding: 4,
+    gap: 10,
+    paddingBottom: 2,
   },
   pickTabButton: {
     alignItems: 'center',
-    borderRadius: tokens.radius.pill,
-    flex: 1,
-    minHeight: 42,
+    backgroundColor: '#EEE9FF',
+    borderRadius: 16,
+    minHeight: 40,
     justifyContent: 'center',
-    paddingHorizontal: tokens.spacing.sm,
+    paddingHorizontal: 18,
   },
   pickTabButtonActive: {
-    backgroundColor: tokens.colors.panel,
+    backgroundColor: '#6437F6',
+    shadowColor: '#6437F6',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
   },
   pickTabText: {
-    color: tokens.colors.inkMuted,
-    fontSize: 12,
-    fontWeight: '900',
+    color: '#6F5BCB',
+    fontSize: 15,
+    fontWeight: '700',
   },
   pickTabTextActive: {
-    color: tokens.colors.surface,
+    color: '#FFFFFF',
   },
   statusFilterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: tokens.spacing.xs,
+    gap: 10,
+    paddingBottom: 4,
   },
   statusFilterChip: {
-    backgroundColor: tokens.colors.surface,
-    borderColor: tokens.colors.border,
-    borderRadius: tokens.radius.pill,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: '#EEE9FF',
+    borderRadius: 14,
+    justifyContent: 'center',
+    minHeight: 38,
+    paddingHorizontal: 18,
   },
   statusFilterChipActive: {
-    backgroundColor: tokens.colors.accentSoft,
-    borderColor: tokens.colors.accentSoft,
+    backgroundColor: '#6437F6',
   },
   statusFilterText: {
-    color: tokens.colors.inkMuted,
-    fontSize: 11,
-    fontWeight: '900',
+    color: '#6F5BCB',
+    fontSize: 15,
+    fontWeight: '700',
   },
   statusFilterTextActive: {
-    color: tokens.colors.panel,
+    color: '#FFFFFF',
+  },
+  queueHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    marginTop: 2,
+  },
+  queueHeaderTitle: {
+    color: '#24232D',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  queueBellButton: {
+    alignItems: 'center',
+    height: 34,
+    justifyContent: 'center',
+    position: 'relative',
+    width: 34,
+  },
+  queueBellDot: {
+    backgroundColor: '#6437F6',
+    borderColor: '#FBFAFF',
+    borderRadius: 5,
+    borderWidth: 2,
+    height: 10,
+    position: 'absolute',
+    right: 5,
+    top: 4,
+    width: 10,
+  },
+  queueFilterStack: {
+    gap: 12,
+    marginBottom: 4,
+  },
+  scopeDropdownWrap: {
+    borderRadius: 24,
+  },
+  scopeDropdownWrapPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.995 }],
+  },
+  scopeDropdownCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    flexDirection: 'row',
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+  },
+  scopeDropdownIcon: {
+    alignItems: 'center',
+    backgroundColor: '#FFE1F2',
+    borderRadius: 12,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  scopeDropdownCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  scopeDropdownLabel: {
+    color: '#8F8AAB',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  scopeDropdownValue: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  dateCarousel: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  dateCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    height: 80,
+    justifyContent: 'center',
+    shadowColor: '#9C83FF',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    width: 56,
+  },
+  dateCardActive: {
+    backgroundColor: '#6437F6',
+  },
+  dateCardPressed: {
+    opacity: 0.92,
+  },
+  dateCardMonth: {
+    color: '#353346',
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  dateCardMonthActive: {
+    color: '#F4EEFF',
+  },
+  dateCardDay: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  dateCardDayActive: {
+    color: '#FFFFFF',
+  },
+  dateCardWeekday: {
+    color: '#59556D',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  dateCardWeekdayActive: {
+    color: '#F4EEFF',
   },
   errorCard: {
     alignItems: 'flex-start',
@@ -1063,17 +1419,25 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   emptyCard: {
-    gap: tokens.spacing.xs,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    gap: 8,
+    paddingVertical: 20,
+    shadowColor: '#9C83FF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.07,
+    shadowRadius: 20,
   },
   emptyTitle: {
-    color: tokens.colors.ink,
-    fontSize: 18,
+    color: '#24232D',
+    fontSize: 17,
     fontWeight: '800',
   },
   emptyCopy: {
-    color: tokens.colors.inkMuted,
+    color: '#7B7791',
     fontSize: 13,
     fontWeight: '600',
+    lineHeight: 18,
   },
   lookupCard: {
     gap: tokens.spacing.md,
@@ -1102,26 +1466,32 @@ const styles = StyleSheet.create({
   availableBasketGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: tokens.spacing.sm,
+    gap: 14,
   },
   availableBasketCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
     flexBasis: '47%',
     flexGrow: 1,
-    gap: 2,
-    paddingVertical: tokens.spacing.md,
+    gap: 4,
+    paddingVertical: 18,
+    shadowColor: '#9C83FF',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
   },
   availableBasketCode: {
-    color: tokens.colors.ink,
+    color: '#24232D',
     fontSize: 14,
-    fontWeight: '900',
-  },
-  availableBasketMeta: {
-    color: tokens.colors.inkMuted,
-    fontSize: 11,
     fontWeight: '800',
   },
+  availableBasketMeta: {
+    color: '#8F8AAB',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   taskList: {
-    gap: tokens.spacing.md,
+    gap: 18,
   },
   taskPressable: {},
   activeTaskPressable: {
@@ -1135,62 +1505,69 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.md,
   },
   compactTaskCard: {
-    gap: tokens.spacing.xs,
-    paddingVertical: tokens.spacing.md,
-  },
-  compactDateRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: tokens.spacing.xs,
-  },
-  compactDateLabel: {
-    color: tokens.colors.inkSoft,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
-  compactDateValue: {
-    color: tokens.colors.inkMuted,
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  compactMainRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: tokens.spacing.sm,
-    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
   },
   compactOrderTitle: {
-    color: tokens.colors.ink,
+    color: '#24232D',
     flex: 1,
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  compactUnitCount: {
-    color: tokens.colors.panel,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  compactLineList: {
-    gap: 2,
-  },
-  compactLineText: {
-    color: tokens.colors.inkMuted,
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: '800',
-  },
-  compactMoreText: {
-    color: tokens.colors.inkSoft,
-    fontSize: 11,
-    fontWeight: '900',
+    letterSpacing: -0.2,
   },
   compactIssueText: {
-    color: tokens.colors.danger,
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 15,
+    color: '#E8735B',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+  compactTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  compactStoreLabel: {
+    color: '#7B7791',
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 12,
+  },
+  compactIconBadge: {
+    alignItems: 'center',
+    backgroundColor: '#FFE1F2',
+    borderRadius: 12,
+    height: 30,
+    justifyContent: 'center',
+    width: 30,
+  },
+  compactSummary: {
+    color: '#524F66',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  compactFooterRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  compactDateMeta: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  compactDateValue: {
+    color: '#9C83FF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   taskHeader: {
     alignItems: 'flex-start',
@@ -1259,34 +1636,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   statusBadge: {
-    borderRadius: tokens.radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
   },
   statusReady: {
-    backgroundColor: 'rgba(15, 157, 122, 0.12)',
+    backgroundColor: '#EAF8F3',
   },
   statusWarn: {
-    backgroundColor: 'rgba(240, 197, 82, 0.22)',
+    backgroundColor: '#FFF1E8',
   },
   statusDanger: {
-    backgroundColor: 'rgba(211, 84, 69, 0.12)',
+    backgroundColor: '#FFE8E4',
   },
   statusText: {
-    color: tokens.colors.inkMuted,
+    color: '#6C6882',
     fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    fontWeight: '700',
   },
   statusTextReady: {
-    color: tokens.colors.success,
+    color: '#17B57C',
   },
   statusTextWarn: {
-    color: tokens.colors.accentStrong,
+    color: '#F28B50',
   },
   statusTextDanger: {
-    color: tokens.colors.danger,
+    color: '#E8735B',
   },
   executionHeader: {
     alignItems: 'center',

@@ -1,1 +1,1 @@
-export type StoxTabKey = 'stock' | 'scan' | 'pick' | 'pack' | 'me';
+export type StoxTabKey = 'home' | 'tasks' | 'scan' | 'history' | 'account';

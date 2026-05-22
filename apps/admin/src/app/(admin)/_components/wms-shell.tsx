@@ -31,6 +31,20 @@ type WmsShellNavItem = {
   }>;
 };
 
+function hasNavPermission(
+  candidate: string | string[] | undefined,
+  permissions: string[],
+  isPlatformAdmin: boolean,
+) {
+  if (!candidate || isPlatformAdmin) {
+    return true;
+  }
+
+  return Array.isArray(candidate)
+    ? candidate.some((permission) => permissions.includes(permission))
+    : permissions.includes(candidate);
+}
+
 const SIDEBAR_COLLAPSE_STORAGE_KEY = 'wms.sidebar.collapsed';
 
 export function WmsShell({ children }: { children: ReactNode }) {
@@ -117,7 +131,7 @@ export function WmsShell({ children }: { children: ReactNode }) {
     return WMS_NAV_ITEMS.filter((item) => {
       const itemAllowed =
         (!item.platformOnly || isPlatformAdmin)
-        && (!item.permission || isPlatformAdmin || state.permissions.includes(item.permission));
+        && hasNavPermission(item.permission, state.permissions, isPlatformAdmin);
 
       const visibleChildren =
         item.children?.filter((child) => {
@@ -125,7 +139,7 @@ export function WmsShell({ children }: { children: ReactNode }) {
             return false;
           }
 
-          return !child.permission || isPlatformAdmin || state.permissions.includes(child.permission);
+          return hasNavPermission(child.permission, state.permissions, isPlatformAdmin);
         }) ?? [];
 
       return itemAllowed || visibleChildren.length > 0;
@@ -137,7 +151,7 @@ export function WmsShell({ children }: { children: ReactNode }) {
             return false;
           }
 
-          return !child.permission || isPlatformAdmin || state.permissions.includes(child.permission);
+          return hasNavPermission(child.permission, state.permissions, isPlatformAdmin);
         }) ?? [],
     }));
   }, [state]);

@@ -2,8 +2,12 @@ import type { DeviceIdentity } from '@/src/features/auth/types';
 import { apiRequest } from '@/src/shared/services/http';
 import type {
   StockMode,
+  WmsMobileStockBatchDetail,
+  WmsMobileStockBinDetail,
   WmsMobileStockScanResult,
+  WmsMobileStockUnitLookupResponse,
   WmsMobileStockUnitDetail,
+  WmsMobileTrackingLookupResponse,
   WmsMobileStockResponse,
 } from '../types';
 
@@ -98,6 +102,91 @@ export function moveMobileStockUnit(params: {
       expectedUpdatedAt: params.expectedUpdatedAt,
       notes: params.notes,
     },
+  });
+}
+
+export function fetchMobileStockUnit(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  unitId: string;
+  tenantId?: string | null;
+}) {
+  const query: string[] = [];
+
+  if (params.tenantId) {
+    query.push(`tenantId=${encodeURIComponent(params.tenantId)}`);
+  }
+
+  return apiRequest<WmsMobileStockUnitLookupResponse>(
+    `/wms/mobile/stock/units/${params.unitId}${query.length ? `?${query.join('&')}` : ''}`,
+    {
+      method: 'GET',
+      token: params.accessToken,
+      device: params.device,
+    },
+  );
+}
+
+export function fetchMobileStockBin(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  binId: string;
+  tenantId?: string | null;
+}) {
+  const query: string[] = [];
+
+  if (params.tenantId) {
+    query.push(`tenantId=${encodeURIComponent(params.tenantId)}`);
+  }
+
+  return apiRequest<{ bin: WmsMobileStockBinDetail }>(
+    `/wms/mobile/stock/bins/${params.binId}${query.length ? `?${query.join('&')}` : ''}`,
+    {
+      method: 'GET',
+      token: params.accessToken,
+      device: params.device,
+    },
+  );
+}
+
+export function fetchMobileStockBatch(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  batchId: string;
+  tenantId?: string | null;
+}) {
+  const query: string[] = [];
+
+  if (params.tenantId) {
+    query.push(`tenantId=${encodeURIComponent(params.tenantId)}`);
+  }
+
+  return apiRequest<{ batch: WmsMobileStockBatchDetail }>(
+    `/wms/mobile/stock/batches/${params.batchId}${query.length ? `?${query.join('&')}` : ''}`,
+    {
+      method: 'GET',
+      token: params.accessToken,
+      device: params.device,
+    },
+  );
+}
+
+export function lookupMobileTrackingOrder(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  code: string;
+  tenantId?: string | null;
+}) {
+  const query = [`code=${encodeURIComponent(params.code)}`];
+
+  if (params.tenantId) {
+    query.push(`tenantId=${encodeURIComponent(params.tenantId)}`);
+  }
+
+  return apiRequest<WmsMobileTrackingLookupResponse>(`/wms/mobile/tracking/lookup?${query.join('&')}`, {
+    method: 'GET',
+    token: params.accessToken,
+    device: params.device,
   });
 }
 

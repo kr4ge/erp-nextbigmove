@@ -1,34 +1,21 @@
 import { Redirect } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useSession } from '@/src/features/auth/session-context';
+import { AccountTab } from '@/src/features/home/components/account-tab';
+import { HistoryTab } from '@/src/features/home/components/history-tab';
+import { HomeOverviewTab } from '@/src/features/home/components/home-overview-tab';
 import { InventoryTab } from '@/src/features/home/components/inventory-tab';
-import { PackingTab } from '@/src/features/home/components/packing-tab';
-import { PickingTab } from '@/src/features/home/components/picking-tab';
 import { ScanTab } from '@/src/features/home/components/scan-tab';
-import { SettingsTab } from '@/src/features/home/components/settings-tab';
 import { StoxShell } from '@/src/features/home/components/stox-shell';
-import {
-  canEnterStoxWorkspace,
-  getAllowedStoxTabs,
-  getFallbackStoxTab,
-} from '@/src/features/home/rbac';
+import { TasksTab } from '@/src/features/home/components/tasks-tab';
+import { canEnterStoxWorkspace } from '@/src/features/home/rbac';
 import type { StoxTabKey } from '@/src/features/home/types';
 import { getDisplayName, getInitials, resolveHomeContext } from '@/src/features/home/utils';
 
 export default function HomeScreen() {
-  const [activeTab, setActiveTab] = useState<StoxTabKey>('stock');
+  const [activeTab, setActiveTab] = useState<StoxTabKey>('home');
+  const [homePanel, setHomePanel] = useState<'overview' | 'stock'>('overview');
   const { bootstrap, device, session, isHydrating, isSubmitting, signOut, refreshBootstrap } = useSession();
-  const allowedTabs = useMemo(() => bootstrap ? getAllowedStoxTabs(bootstrap) : ['me' as StoxTabKey], [bootstrap]);
-
-  useEffect(() => {
-    if (!bootstrap) {
-      return;
-    }
-
-    if (!allowedTabs.includes(activeTab)) {
-      setActiveTab(getFallbackStoxTab(bootstrap));
-    }
-  }, [activeTab, allowedTabs, bootstrap]);
 
   if (!isHydrating && (!session || !bootstrap || !canEnterStoxWorkspace(bootstrap))) {
     return <Redirect href="/login" />;
@@ -43,17 +30,47 @@ export default function HomeScreen() {
 
   return (
     <StoxShell
-      contextLabel={activeTab === 'me' ? displayName : resolveHomeContext(bootstrap)}
+      contextLabel={resolveHomeContext(bootstrap)}
+      displayName={displayName}
       profileInitials={profileInitials}
       activeTab={activeTab}
-      allowedTabs={allowedTabs}
-      onChangeTab={setActiveTab}>
-      {activeTab === 'stock' ? (
-        <InventoryTab
+      hideHeader={
+        activeTab === 'home'
+        || activeTab === 'tasks'
+        || activeTab === 'scan'
+        || activeTab === 'history'
+      }
+      onChangeTab={(nextTab) => {
+        setActiveTab(nextTab);
+        if (nextTab === 'home') {
+          setHomePanel('overview');
+        }
+      }}>
+      {activeTab === 'home' ? (
+        homePanel === 'overview' ? (
+          <HomeOverviewTab
+            bootstrap={bootstrap}
+            device={device}
+            session={session}
+            onChangeTab={setActiveTab}
+            onOpenStock={() => setHomePanel('stock')}
+          />
+        ) : (
+          <InventoryTab
+            bootstrap={bootstrap}
+            device={device}
+            session={session}
+            onRefresh={refreshBootstrap}
+            onBack={() => setHomePanel('overview')}
+          />
+        )
+      ) : null}
+
+      {activeTab === 'tasks' ? (
+        <TasksTab
           bootstrap={bootstrap}
           device={device}
           session={session}
-          onRefresh={refreshBootstrap}
         />
       ) : null}
 
@@ -63,21 +80,20 @@ export default function HomeScreen() {
           device={device}
           session={session}
           onRefresh={refreshBootstrap}
+          onChangeTab={setActiveTab}
         />
       ) : null}
 
-      {activeTab === 'pick' ? (
-        <PickingTab
+      {activeTab === 'history' ? (
+        <HistoryTab
           bootstrap={bootstrap}
           device={device}
           session={session}
         />
       ) : null}
 
-      {activeTab === 'pack' ? <PackingTab /> : null}
-
-      {activeTab === 'me' ? (
-        <SettingsTab
+      {activeTab === 'account' ? (
+        <AccountTab
           bootstrap={bootstrap}
           device={device}
           isSubmitting={isSubmitting}

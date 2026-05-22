@@ -29,6 +29,11 @@ export const STOX_PACK_EXECUTE_PERMISSIONS = [
   'wms.dispatch.edit',
   'wms.dispatch.override',
 ] as const;
+export const STOX_HISTORY_READ_ALL_PERMISSIONS = [
+  'wms.history.read_all',
+  'wms.fulfillment.override',
+  'wms.dispatch.override',
+] as const;
 
 const STOX_PICK_SUPERVISOR_PERMISSIONS = [
   'wms.fulfillment.override',
@@ -38,12 +43,12 @@ const STOX_PACK_SUPERVISOR_PERMISSIONS = [
   'wms.dispatch.override',
 ] as const;
 
-const TAB_PERMISSIONS: Record<Exclude<StoxTabKey, 'me'>, string[]> = {
-  stock: [...STOX_STOCK_READ_PERMISSIONS],
-  scan: [...STOX_STOCK_READ_PERMISSIONS],
-  pick: [...STOX_PICK_EXECUTE_PERMISSIONS],
-  pack: [...STOX_PACK_EXECUTE_PERMISSIONS],
-};
+const STOX_SCAN_READ_PERMISSIONS = [
+  ...STOX_STOCK_READ_PERMISSIONS,
+  'wms.fulfillment.read',
+  ...STOX_PICK_EXECUTE_PERMISSIONS,
+  ...STOX_PACK_EXECUTE_PERMISSIONS,
+] as const;
 
 export function isPlatformAdmin(bootstrap: BootstrapResponse) {
   return bootstrap.user.role === 'SUPER_ADMIN';
@@ -65,25 +70,27 @@ export function hasAnyWmsPermission(
 }
 
 export function canUseStoxTab(bootstrap: BootstrapResponse, tab: StoxTabKey) {
-  if (tab === 'me') {
+  if (tab === 'account' || tab === 'home') {
     return true;
   }
 
-  if (tab === 'pick') {
-    return hasAnyWmsPermission(bootstrap, STOX_PICK_EXECUTE_PERMISSIONS)
-      && (hasOperationalSupervisorAccess(bootstrap, 'pick') || bootstrap.operations?.taskAssignment === 'PICK');
+  if (tab === 'tasks') {
+    return canUsePickWorkspace(bootstrap) || canUsePackWorkspace(bootstrap);
   }
 
-  if (tab === 'pack') {
-    return hasAnyWmsPermission(bootstrap, STOX_PACK_EXECUTE_PERMISSIONS)
-      && (hasOperationalSupervisorAccess(bootstrap, 'pack') || bootstrap.operations?.taskAssignment === 'PACK');
+  if (tab === 'history') {
+    return canUseStoxHistoryWorkspace(bootstrap);
   }
 
-  return hasAnyWmsPermission(bootstrap, TAB_PERMISSIONS[tab]);
+  if (tab === 'scan') {
+    return hasAnyWmsPermission(bootstrap, STOX_SCAN_READ_PERMISSIONS);
+  }
+
+  return false;
 }
 
 export function getAllowedStoxTabs(bootstrap: BootstrapResponse): StoxTabKey[] {
-  const preferredOrder: StoxTabKey[] = ['stock', 'scan', 'pick', 'pack', 'me'];
+  const preferredOrder: StoxTabKey[] = ['home', 'tasks', 'scan', 'history', 'account'];
 
   return preferredOrder.filter((tab) => canUseStoxTab(bootstrap, tab));
 }
@@ -91,7 +98,7 @@ export function getAllowedStoxTabs(bootstrap: BootstrapResponse): StoxTabKey[] {
 export function getFallbackStoxTab(bootstrap: BootstrapResponse): StoxTabKey {
   const allowedTabs = getAllowedStoxTabs(bootstrap);
 
-  return allowedTabs.find((tab) => tab !== 'me') ?? 'me';
+  return allowedTabs.find((tab) => tab !== 'account') ?? 'account';
 }
 
 export function canUseStoxStockPutaway(bootstrap: BootstrapResponse) {
@@ -100,6 +107,34 @@ export function canUseStoxStockPutaway(bootstrap: BootstrapResponse) {
 
 export function canUseStoxStockMove(bootstrap: BootstrapResponse) {
   return hasAnyWmsPermission(bootstrap, STOX_STOCK_MOVE_PERMISSIONS);
+}
+
+export function canUseStoxStockWorkspace(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_STOCK_READ_PERMISSIONS);
+}
+
+export function canUseStoxScanWorkspace(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_SCAN_READ_PERMISSIONS);
+}
+
+export function canUseStoxHistoryWorkspace(bootstrap: BootstrapResponse) {
+  return canUsePickWorkspace(bootstrap)
+    || canUsePackWorkspace(bootstrap)
+    || hasAnyWmsPermission(bootstrap, STOX_HISTORY_READ_ALL_PERMISSIONS);
+}
+
+export function canViewAllStoxHistory(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_HISTORY_READ_ALL_PERMISSIONS);
+}
+
+export function canUsePickWorkspace(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_PICK_EXECUTE_PERMISSIONS)
+    && (hasOperationalSupervisorAccess(bootstrap, 'pick') || bootstrap.operations?.taskAssignment === 'PICK');
+}
+
+export function canUsePackWorkspace(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_PACK_EXECUTE_PERMISSIONS)
+    && (hasOperationalSupervisorAccess(bootstrap, 'pack') || bootstrap.operations?.taskAssignment === 'PACK');
 }
 
 function hasOperationalSupervisorAccess(

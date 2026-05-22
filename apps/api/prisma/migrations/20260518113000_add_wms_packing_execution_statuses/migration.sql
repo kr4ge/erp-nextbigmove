@@ -1,0 +1,3 @@
+ALTER TYPE "WmsInventoryMovementType" ADD VALUE IF NOT EXISTS 'PACK';
+ALTER TYPE "WmsFulfillmentOrderStatus" ADD VALUE IF NOT EXISTS 'PACKING';
+ALTER TYPE "WmsFulfillmentOrderStatus" ADD VALUE IF NOT EXISTS 'PACKED';

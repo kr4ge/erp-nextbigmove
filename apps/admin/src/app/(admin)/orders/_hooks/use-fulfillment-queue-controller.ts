@@ -1,0 +1,205 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { WmsSearchableOption } from '../../_components/wms-searchable-select';
+import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
+import { fetchWmsPackQueue, fetchWmsPickQueue } from '../_services/fulfillment.service';
+import type {
+  WmsFulfillmentPackStatus,
+  WmsFulfillmentPickStatus,
+  WmsFulfillmentQueueMode,
+  WmsFulfillmentQueueResponse,
+  WmsFulfillmentQueueScope,
+} from '../_types/fulfillment';
+
+const PICK_STATUS_OPTIONS: Array<{ value: WmsFulfillmentPickStatus | ''; label: string }> = [
+  { value: '', label: 'All statuses' },
+  { value: 'READY', label: 'Ready' },
+  { value: 'PARTIAL', label: 'Partial' },
+  { value: 'RESTOCKING', label: 'Restocking' },
+  { value: 'ISSUE', label: 'Issue' },
+  { value: 'IN_PICKING', label: 'In Picking' },
+  { value: 'READY_FOR_PACK', label: 'Ready for Pack' },
+  { value: 'PICKED', label: 'Picked' },
+];
+
+const PACK_STATUS_OPTIONS: Array<{ value: WmsFulfillmentPackStatus | ''; label: string }> = [
+  { value: '', label: 'All statuses' },
+  { value: 'PICKED', label: 'Picked' },
+  { value: 'PACKING', label: 'Packing' },
+  { value: 'AWAITING_TRACKING', label: 'Awaiting Tracking' },
+  { value: 'PACKED', label: 'Packed' },
+];
+
+const PAGE_SIZE = 20;
+
+export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
+  const [data, setData] = useState<WmsFulfillmentQueueResponse | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedTenantIdState, setSelectedTenantIdState] = useState<string | undefined>(undefined);
+  const [selectedStoreIdState, setSelectedStoreIdState] = useState<string | undefined>(undefined);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [ownedOnly, setOwnedOnly] = useState(false);
+
+  const {
+    setSelectedTenantId,
+    setSelectedStoreId,
+  } = useWmsScopeFilters({
+    filters: data?.context
+      ? {
+        tenants: data.context.tenantOptions?.map((tenant) => ({ id: tenant.id })) ?? [],
+        stores: data.context.stores.map((store) => ({ id: store.id })),
+        activeTenantId: data.context.activeTenantId,
+        activeStoreId: data.context.activeStoreId,
+      }
+      : null,
+    selectedTenantId: selectedTenantIdState,
+    setSelectedTenantIdState,
+    selectedStoreId: selectedStoreIdState,
+    setSelectedStoreIdState,
+  });
+
+  const statusOptions = mode === 'pick' ? PICK_STATUS_OPTIONS : PACK_STATUS_OPTIONS;
+
+  const fetchQueue = useCallback(async (refresh = false) => {
+    if (refresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    setErrorMessage(null);
+
+    try {
+      const nextData = mode === 'pick'
+        ? await fetchWmsPickQueue({
+          tenantId: selectedTenantIdState,
+          storeId: selectedStoreIdState,
+          status: (selectedStatus || undefined) as WmsFulfillmentPickStatus | undefined,
+          page: currentPage,
+          pageSize: PAGE_SIZE,
+          ownedOnly,
+        })
+        : await fetchWmsPackQueue({
+          tenantId: selectedTenantIdState,
+          storeId: selectedStoreIdState,
+          status: (selectedStatus || undefined) as WmsFulfillmentPackStatus | undefined,
+          page: currentPage,
+          pageSize: PAGE_SIZE,
+        });
+
+      setData(nextData);
+    } catch (error) {
+      setErrorMessage(
+        typeof error === 'object'
+        && error !== null
+        && 'response' in error
+        && typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string'
+          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Unable to load fulfillment queue.'
+          : 'Unable to load fulfillment queue.',
+      );
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [
+    currentPage,
+    mode,
+    ownedOnly,
+    selectedStatus,
+    selectedStoreIdState,
+    selectedTenantIdState,
+  ]);
+
+  useEffect(() => {
+    void fetchQueue(false);
+  }, [fetchQueue]);
+
+  useEffect(() => {
+    if (mode !== 'pick' || ownedOnly || !data?.context) {
+      return;
+    }
+
+    if (data.context.taskAssignment === 'PICK' && data.context.canViewAllQueue === false) {
+      setCurrentPage(1);
+      setOwnedOnly(true);
+    }
+  }, [data?.context, mode, ownedOnly]);
+
+  const queueScope: WmsFulfillmentQueueScope = data?.context?.canViewAllQueue === false ? 'own' : 'all';
+
+  const tenantOptions = useMemo<WmsSearchableOption[]>(
+    () => (data?.context.tenantOptions ?? []).map((tenant) => ({
+      value: tenant.id,
+      label: tenant.name,
+      hint: tenant.slug,
+    })),
+    [data?.context.tenantOptions],
+  );
+
+  const storeOptions = useMemo<WmsSearchableOption[]>(
+    () => data?.context.stores.map((store) => ({
+      value: store.id,
+      label: store.name,
+      hint: store.tenantName ?? undefined,
+    })) ?? [],
+    [data?.context.stores],
+  );
+
+  const summaryItems = useMemo(() => {
+    const summary = data?.summary ?? {};
+
+    if (mode === 'pick') {
+      return [
+        { id: 'ready', label: 'Ready', value: summary.ready ?? 0 },
+        { id: 'partial', label: 'Partial', value: summary.partial ?? 0 },
+        { id: 'restocking', label: 'Restocking', value: summary.restocking ?? 0 },
+        { id: 'inPicking', label: 'In Picking', value: summary.inPicking ?? 0 },
+      ];
+    }
+
+    return [
+      { id: 'held', label: 'Held', value: summary.held ?? 0 },
+      { id: 'packing', label: 'Packing', value: summary.packing ?? 0 },
+      { id: 'awaitingTracking', label: 'Awaiting Tracking', value: summary.awaitingTracking ?? 0 },
+      { id: 'packed', label: 'Packed', value: data?.tasks.filter((task) => task.status === 'PACKED').length ?? 0 },
+    ];
+  }, [data?.summary, data?.tasks, mode]);
+
+  return {
+    currentPage,
+    data,
+    errorMessage,
+    isLoading,
+    isRefreshing,
+    mode,
+    queueScope,
+    selectedStatus,
+    selectedStoreId: selectedStoreIdState,
+    selectedTenantId: selectedTenantIdState,
+    setCurrentPage,
+    setSelectedStatus: (value: string) => {
+      setCurrentPage(1);
+      setSelectedStatus(value);
+    },
+    setSelectedStoreId: (value: string | undefined) => {
+      setCurrentPage(1);
+      setSelectedStoreId(value);
+    },
+    setSelectedTenantId: (value: string | undefined) => {
+      setCurrentPage(1);
+      setOwnedOnly(false);
+      setSelectedTenantId(value);
+    },
+    statusOptions,
+    storeOptions,
+    summaryItems,
+    tasks: data?.tasks ?? [],
+    tenantOptions,
+    tenantReady: data?.tenantReady ?? false,
+    totalPages: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / (data?.pagination.pageSize ?? PAGE_SIZE))),
+    refresh: () => fetchQueue(true),
+  };
+}

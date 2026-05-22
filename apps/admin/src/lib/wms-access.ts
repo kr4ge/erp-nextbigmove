@@ -26,7 +26,7 @@ export type WmsNavItem = {
   href?: string;
   label: string;
   icon: LucideIcon;
-  permission?: string;
+  permission?: string | string[];
   platformOnly?: boolean;
   children?: WmsNavItemChild[];
 };
@@ -34,7 +34,7 @@ export type WmsNavItem = {
 export type WmsNavItemChild = {
   href: string;
   label: string;
-  permission?: string;
+  permission?: string | string[];
   platformOnly?: boolean;
 };
 
@@ -91,10 +91,30 @@ export const WMS_NAV_ITEMS: WmsNavItem[] = [
     ],
   },
   {
-    href: '/orders',
     label: 'Fulfillment',
     icon: PackageCheck,
-    permission: 'wms.fulfillment.read',
+    children: [
+      {
+        href: '/orders/pick',
+        label: 'Pick',
+        permission: [
+          'wms.fulfillment.read',
+          'wms.fulfillment.write',
+          'wms.fulfillment.edit',
+          'wms.fulfillment.override',
+        ],
+      },
+      {
+        href: '/orders/pack',
+        label: 'Pack',
+        permission: [
+          'wms.dispatch.read',
+          'wms.dispatch.write',
+          'wms.dispatch.edit',
+          'wms.dispatch.override',
+        ],
+      },
+    ],
   },
   {
     href: '/shipments',

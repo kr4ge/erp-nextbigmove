@@ -4,8 +4,11 @@ import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { GetWmsMobileStockDto } from './dto/get-wms-mobile-stock.dto';
 import {
+  GetWmsMobileHomeInventorySummaryDto,
+  GetWmsMobileHomeTaskSummaryDto,
   GetWmsMobileStockScanDto,
   GetWmsMobileStockScopedDto,
+  GetWmsMobileTrackingLookupDto,
   WmsMobileStockMoveDto,
 } from './dto/wms-mobile-stock-execution.dto';
 import {
@@ -15,6 +18,14 @@ import {
   WmsMobilePickScanDto,
   WmsMobilePickScopedDto,
 } from './dto/wms-mobile-picking.dto';
+import {
+  GetWmsMobilePackingTasksDto,
+  WmsMobilePackCompleteDto,
+  WmsMobilePackScanDto,
+  WmsMobilePackScopedDto,
+  WmsMobilePackVoidDto,
+} from './dto/wms-mobile-packing.dto';
+import { GetWmsMobileHistoryFeedDto } from './dto/wms-mobile-history.dto';
 import { WmsMobileService } from './wms-mobile.service';
 
 @Controller('wms/mobile')
@@ -38,6 +49,34 @@ export class WmsMobileController {
   @Permissions('wms.inventory.read', 'wms.receiving.read')
   async getStock(@Request() req, @Query() query: GetWmsMobileStockDto) {
     return this.wmsMobileService.getStock(req.user, query, req);
+  }
+
+  @Get('home/inventory-summary')
+  @Permissions('wms.core.read')
+  async getHomeInventorySummary(
+    @Request() req,
+    @Query() query: GetWmsMobileHomeInventorySummaryDto,
+  ) {
+    return this.wmsMobileService.getHomeInventorySummary(req.user, query, req);
+  }
+
+  @Get('home/task-summary')
+  @Permissions(
+    'wms.core.read',
+    'wms.fulfillment.read',
+    'wms.fulfillment.write',
+    'wms.fulfillment.edit',
+    'wms.fulfillment.override',
+    'wms.dispatch.read',
+    'wms.dispatch.write',
+    'wms.dispatch.edit',
+    'wms.dispatch.override',
+  )
+  async getHomeTaskSummary(
+    @Request() req,
+    @Query() query: GetWmsMobileHomeTaskSummaryDto,
+  ) {
+    return this.wmsMobileService.getHomeTaskSummary(req.user, query, req);
   }
 
   @Get('stock/scan')
@@ -76,6 +115,19 @@ export class WmsMobileController {
     return this.wmsMobileService.getStockBatch(req.user, id, query, req);
   }
 
+  @Get('tracking/lookup')
+  @Permissions(
+    'wms.inventory.read',
+    'wms.receiving.read',
+    'wms.fulfillment.read',
+    'wms.dispatch.write',
+    'wms.dispatch.edit',
+    'wms.dispatch.override',
+  )
+  async lookupTracking(@Request() req, @Query() query: GetWmsMobileTrackingLookupDto) {
+    return this.wmsMobileService.lookupTrackingOrder(req.user, query, req);
+  }
+
   @Post('stock/putaway')
   @Permissions('wms.inventory.transfer', 'wms.receiving.edit', 'wms.receiving.write')
   async putawayStockUnit(@Request() req, @Body() body: WmsMobileStockMoveDto) {
@@ -89,7 +141,12 @@ export class WmsMobileController {
   }
 
   @Get('picking/tasks')
-  @Permissions('wms.fulfillment.read')
+  @Permissions(
+    'wms.fulfillment.read',
+    'wms.fulfillment.write',
+    'wms.fulfillment.edit',
+    'wms.fulfillment.override',
+  )
   async getPickingTasks(@Request() req, @Query() query: GetWmsMobilePickingTasksDto) {
     return this.wmsMobileService.getPickingTasks(req.user, query, req);
   }
@@ -158,5 +215,80 @@ export class WmsMobileController {
   @Permissions('wms.fulfillment.read')
   async lookupPickingBasket(@Request() req, @Query() query: GetWmsMobilePickBasketLookupDto) {
     return this.wmsMobileService.lookupPickingBasket(req.user, query, req);
+  }
+
+  @Get('packing/tasks')
+  @Permissions('wms.dispatch.read', 'wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async getPackingTasks(@Request() req, @Query() query: GetWmsMobilePackingTasksDto) {
+    return this.wmsMobileService.getPackingTasks(req.user, query, req);
+  }
+
+  @Get('history/feed')
+  @Permissions(
+    'wms.history.read_all',
+    'wms.inventory.read',
+    'wms.receiving.read',
+    'wms.fulfillment.read',
+    'wms.fulfillment.write',
+    'wms.fulfillment.edit',
+    'wms.fulfillment.override',
+    'wms.dispatch.read',
+    'wms.dispatch.write',
+    'wms.dispatch.edit',
+    'wms.dispatch.override',
+    'wms.dispatch.void',
+  )
+  async getHistoryFeed(@Request() req, @Query() query: GetWmsMobileHistoryFeedDto) {
+    return this.wmsMobileService.getHistoryFeed(req.user, query, req);
+  }
+
+  @Post('packing/tasks/:id/start')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async startPackingTask(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePackScopedDto,
+  ) {
+    return this.wmsMobileService.startPackingTask(req.user, id, body, req);
+  }
+
+  @Post('packing/tasks/:id/scan-unit')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async scanPackingUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePackScanDto,
+  ) {
+    return this.wmsMobileService.scanPackingUnit(req.user, id, body, req);
+  }
+
+  @Post('packing/tasks/:id/verify-tracking')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async verifyPackingTracking(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePackScanDto,
+  ) {
+    return this.wmsMobileService.verifyPackingTracking(req.user, id, body, req);
+  }
+
+  @Post('packing/tasks/:id/complete')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async completePackingTask(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePackCompleteDto,
+  ) {
+    return this.wmsMobileService.completePackingTask(req.user, id, body, req);
+  }
+
+  @Post('packing/tasks/:id/void')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override', 'wms.dispatch.void')
+  async voidPackingTask(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePackVoidDto,
+  ) {
+    return this.wmsMobileService.voidPackingTask(req.user, id, body, req);
   }
 }

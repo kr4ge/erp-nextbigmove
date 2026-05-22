@@ -168,6 +168,24 @@ export function ActionTile({
   );
 }
 
+export function BlockedTaskState({
+  copy,
+  title = 'Access blocked',
+}: {
+  copy: string;
+  title?: string;
+}) {
+  return (
+    <SurfaceCard style={styles.blockedCard}>
+      <View style={styles.blockedIconWrap}>
+        <Feather name="shield-off" size={18} color={tokens.colors.danger} />
+      </View>
+      <Text style={styles.blockedTitle}>{title}</Text>
+      <Text style={styles.blockedCopy}>{copy}</Text>
+    </SurfaceCard>
+  );
+}
+
 const styles = StyleSheet.create({
   taskHeader: {
     alignItems: 'center',
@@ -273,6 +291,29 @@ const styles = StyleSheet.create({
   },
   pressableCard: {
     flex: 1,
+  },
+  blockedCard: {
+    alignItems: 'flex-start',
+    gap: tokens.spacing.sm,
+  },
+  blockedIconWrap: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(211, 84, 69, 0.12)',
+    borderRadius: tokens.radius.pill,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  blockedTitle: {
+    color: tokens.colors.ink,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  blockedCopy: {
+    color: tokens.colors.inkMuted,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
   },
   actionTile: {
     flex: 1,

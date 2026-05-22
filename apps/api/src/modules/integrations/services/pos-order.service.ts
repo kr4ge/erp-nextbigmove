@@ -5,6 +5,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
+import { WmsInventoryService } from '../../wms-inventory/wms-inventory.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -76,7 +77,10 @@ export interface PosOrderUpsertOutcome {
 
 @Injectable()
 export class PosOrderService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wmsInventoryService: WmsInventoryService,
+  ) {}
 
   private extractStatusTimestampFromHistory(
     status: number | null | undefined,
@@ -663,6 +667,7 @@ export class PosOrderService {
   ): Promise<{ upserted: number; outcomes: PosOrderUpsertOutcome[] }> {
     let upserted = 0;
     const outcomes: PosOrderUpsertOutcome[] = [];
+    const dispatchCandidates: Array<{ shopId: string; posOrderId: string }> = [];
 
     const store = await this.prisma.posStore.findFirst({
       where: { id: storeId, tenantId },
@@ -816,6 +821,16 @@ export class PosOrderService {
         });
 
         upserted++;
+        if (
+          (order.status === 2 || order.status === 3)
+          && order.shopId
+          && order.posOrderId
+        ) {
+          dispatchCandidates.push({
+            shopId: order.shopId,
+            posOrderId: order.posOrderId,
+          });
+        }
         outcomes.push({
           shopId: order.shopId || shopId,
           orderId: order.posOrderId || posOrderId,
@@ -877,6 +892,14 @@ export class PosOrderService {
         WHERE "tenantId" = ${tenantId}::uuid
           AND "shopId" = ${store.shopId}
       `;
+    }
+
+    if (dispatchCandidates.length > 0) {
+      await this.wmsInventoryService.syncPackedUnitsToDispatchedForPosOrders({
+        tenantId,
+        storeId,
+        posOrderRefs: dispatchCandidates,
+      });
     }
 
     return { upserted, outcomes };

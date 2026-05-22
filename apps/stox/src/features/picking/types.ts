@@ -10,7 +10,10 @@ export type PickingStatus =
   | 'ISSUE'
   | 'IN_PICKING'
   | 'READY_FOR_PACK'
-  | 'PICKED';
+  | 'PICKED'
+  | 'PACKING'
+  | 'PACKED'
+  | 'CANCELED';
 
 export type WmsMobilePickingResponse = {
   tenantReady: boolean;
@@ -76,6 +79,7 @@ export type WmsMobilePickingTask = {
     required: number;
     allocated: number;
     picked: number;
+    packed: number;
     remaining: number;
   };
   store: {
@@ -93,10 +97,21 @@ export type WmsMobilePickingTask = {
     name: string;
     email: string;
   } | null;
+  packedBy: {
+    name: string;
+    email: string;
+  } | null;
   claimedAt: string | null;
   completedAt: string | null;
   orderDate: string;
   orderDateLocal: string | null;
+  tracking: string | null;
+  delivery: {
+    posStatus: number | null;
+    status: 'PACKED' | 'SHIPPED' | 'DELIVERED' | null;
+    label: string | null;
+    deliveredAt: string | null;
+  } | null;
   createdAt: string;
   basket: WmsMobilePickBasket | null;
   lines: WmsMobilePickingLine[];
@@ -149,6 +164,7 @@ export type WmsMobilePickingLine = {
   required: number;
   allocated: number;
   picked: number;
+  packed: number;
   shortage: number;
   reservations: WmsMobilePickReservation[];
 };

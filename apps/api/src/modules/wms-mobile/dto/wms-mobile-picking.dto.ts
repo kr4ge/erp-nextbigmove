@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export const WMS_MOBILE_PICKING_STATUSES = [
   'READY',
@@ -25,6 +25,11 @@ export class GetWmsMobilePickingTasksDto {
   @IsOptional()
   @IsIn(WMS_MOBILE_PICKING_STATUSES)
   status?: WmsMobilePickingStatusFilter;
+
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  ownedOnly?: boolean;
 
   @IsOptional()
   @Type(() => Number)

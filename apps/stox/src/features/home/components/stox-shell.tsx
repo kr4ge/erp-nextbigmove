@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Feather } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { StoxTabKey } from '@/src/features/home/types';
@@ -7,19 +8,21 @@ import { StoxBottomNav } from './stox-bottom-nav';
 
 type StoxShellProps = {
   contextLabel?: string;
+  displayName: string;
   profileInitials: string;
   activeTab: StoxTabKey;
-  allowedTabs: StoxTabKey[];
   onChangeTab: (tab: StoxTabKey) => void;
+  hideHeader?: boolean;
   children: ReactNode;
 };
 
 export function StoxShell({
   contextLabel,
+  displayName,
   profileInitials,
   activeTab,
-  allowedTabs,
   onChangeTab,
+  hideHeader = false,
   children,
 }: StoxShellProps) {
   return (
@@ -32,22 +35,31 @@ export function StoxShell({
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}>
-          <View style={styles.header}>
-            <View style={styles.copy}>
-              <Text style={styles.brand}>STOX</Text>
-              {contextLabel ? <Text numberOfLines={1} style={styles.context}>{contextLabel}</Text> : null}
-            </View>
+          {!hideHeader ? (
+            <View style={styles.header}>
+              <View style={styles.copy}>
+                <Text style={styles.brand}>STOX</Text>
+                <Text numberOfLines={1} style={styles.title}>{displayName}</Text>
+                {contextLabel ? <Text numberOfLines={1} style={styles.context}>{contextLabel}</Text> : null}
+              </View>
 
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{profileInitials}</Text>
+              <View style={styles.headerActions}>
+                <View style={styles.iconButton}>
+                  <Feather name="bell" size={18} color={tokens.colors.panel} />
+                </View>
+
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{profileInitials}</Text>
+                </View>
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {children}
         </ScrollView>
 
         <SafeAreaView style={styles.navDock} edges={['bottom']}>
-          <StoxBottomNav activeTab={activeTab} allowedTabs={allowedTabs} onChange={onChangeTab} />
+          <StoxBottomNav activeTab={activeTab} onChange={onChangeTab} />
         </SafeAreaView>
       </View>
     </SafeAreaView>
@@ -57,7 +69,7 @@ export function StoxShell({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: tokens.colors.background,
+    backgroundColor: '#FBFAFF',
   },
   root: {
     flex: 1,
@@ -67,68 +79,92 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topGlow: {
-    backgroundColor: tokens.colors.accentSoft,
+    backgroundColor: 'rgba(125, 87, 255, 0.12)',
     borderRadius: 220,
-    height: 220,
-    opacity: 0.55,
+    height: 210,
+    opacity: 0.42,
     position: 'absolute',
-    right: -70,
-    top: -80,
-    width: 220,
+    right: -82,
+    top: -92,
+    width: 210,
   },
   bottomGlow: {
-    backgroundColor: tokens.colors.backgroundMuted,
+    backgroundColor: 'rgba(255, 214, 140, 0.16)',
     borderRadius: 280,
-    bottom: 80,
-    height: 280,
-    left: -120,
-    opacity: 0.45,
+    bottom: 88,
+    height: 240,
+    left: -128,
+    opacity: 0.28,
     position: 'absolute',
-    width: 280,
+    width: 240,
   },
   content: {
     gap: tokens.spacing.lg,
     paddingHorizontal: tokens.spacing.lg,
-    paddingTop: tokens.spacing.md,
-    paddingBottom: tokens.spacing.xl,
+    paddingTop: tokens.spacing.sm,
+    paddingBottom: 112,
   },
   header: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingTop: 2,
   },
   copy: {
     flex: 1,
-    gap: 4,
+    gap: 2,
     paddingRight: tokens.spacing.md,
   },
   brand: {
     color: tokens.colors.accentStrong,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 2.4,
+    letterSpacing: 2.8,
+  },
+  title: {
+    color: tokens.colors.ink,
+    fontSize: 29,
+    fontWeight: '800',
+    letterSpacing: -1.1,
   },
   context: {
     color: tokens.colors.inkMuted,
     fontSize: 14,
     fontWeight: '600',
   },
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+  },
+  iconButton: {
+    alignItems: 'center',
+    backgroundColor: tokens.colors.surface,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    height: 46,
+    justifyContent: 'center',
+    width: 46,
+  },
   avatar: {
     alignItems: 'center',
-    backgroundColor: tokens.colors.panel,
-    borderColor: 'rgba(255,255,255,0.36)',
-    borderRadius: tokens.radius.pill,
-    borderWidth: 3,
-    height: 54,
+    backgroundColor: tokens.colors.accent,
+    borderColor: 'rgba(18,54,79,0.12)',
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 46,
     justifyContent: 'center',
-    width: 54,
+    width: 46,
   },
   avatarText: {
-    color: tokens.colors.surface,
-    fontSize: 16,
+    color: tokens.colors.panel,
+    fontSize: 14,
     fontWeight: '800',
   },
   navDock: {
-    backgroundColor: tokens.colors.surface,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 0,
+    paddingBottom: 0,
   },
 });

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { Feather } from '@expo/vector-icons';
 import {
   Pressable,
   StyleSheet,
@@ -7,6 +8,7 @@ import {
 } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
 import {
+  canUseStoxStockWorkspace,
   canUseStoxStockMove,
   canUseStoxStockPutaway,
 } from '@/src/features/home/rbac';
@@ -35,18 +37,53 @@ import {
   type StockFilterKey,
 } from '@/src/features/stock/utils/stock-scope';
 import { tokens } from '@/src/shared/theme/tokens';
-import { SectionLabel, TaskHeader, TaskHeaderIconButton } from './stox-primitives';
+import { BlockedTaskState, SectionLabel, TaskHeader, TaskHeaderIconButton } from './stox-primitives';
 
 export function InventoryTab({
   bootstrap,
   device,
   session,
   onRefresh,
+  onBack,
 }: {
   bootstrap: BootstrapResponse;
   device: DeviceIdentity | null;
   session: StoredSession;
   onRefresh: () => Promise<void>;
+  onBack?: () => void;
+}) {
+  if (!canUseStoxStockWorkspace(bootstrap)) {
+    return (
+      <>
+        <TaskHeader title="Stock" />
+        <BlockedTaskState copy="This account needs WMS inventory or receiving read permission to use Stock." />
+      </>
+    );
+  }
+
+  return (
+    <InventoryWorkspaceTab
+      bootstrap={bootstrap}
+      device={device}
+      session={session}
+      onRefresh={onRefresh}
+      onBack={onBack}
+    />
+  );
+}
+
+function InventoryWorkspaceTab({
+  bootstrap,
+  device,
+  session,
+  onRefresh,
+  onBack,
+}: {
+  bootstrap: BootstrapResponse;
+  device: DeviceIdentity | null;
+  session: StoredSession;
+  onRefresh: () => Promise<void>;
+  onBack?: () => void;
 }) {
   const {
     activeCount,
@@ -99,11 +136,21 @@ export function InventoryTab({
       <TaskHeader
         title="Stock"
         action={(
-          <TaskHeaderIconButton
-            icon="refresh-cw"
-            loading={isRefreshing || isSyncingQueue}
-            onPress={handleSync}
-          />
+          <View style={styles.headerActions}>
+            {onBack ? (
+              <Pressable
+                onPress={onBack}
+                style={({ pressed }) => [styles.backChip, pressed ? styles.backChipPressed : null]}>
+                <Feather name="arrow-left" size={16} color={tokens.colors.panel} />
+                <Text style={styles.backChipText}>Home</Text>
+              </Pressable>
+            ) : null}
+            <TaskHeaderIconButton
+              icon="refresh-cw"
+              loading={isRefreshing || isSyncingQueue}
+              onPress={handleSync}
+            />
+          </View>
         )}
       />
 
@@ -467,6 +514,30 @@ const modeCopy: Record<StockMode, { title: string }> = {
 };
 
 const styles = StyleSheet.create({
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+  },
+  backChip: {
+    alignItems: 'center',
+    backgroundColor: tokens.colors.surface,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  backChipPressed: {
+    opacity: 0.84,
+  },
+  backChipText: {
+    color: tokens.colors.panel,
+    fontSize: 13,
+    fontWeight: '800',
+  },
   actionRow: {
     flexDirection: 'row',
     gap: tokens.spacing.sm,

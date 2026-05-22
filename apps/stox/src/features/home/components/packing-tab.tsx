@@ -1,84 +1,1694 @@
-import type { ComponentProps } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
+import { canUsePackWorkspace } from '@/src/features/home/rbac';
+import { usePackingWorkspace } from '@/src/features/packing/hooks/use-packing-workspace';
+import type {
+  PackingFilters,
+  PackingStatusFilter,
+  WmsMobilePackingResponse,
+} from '@/src/features/packing/types';
+import type { WmsMobilePickingTask } from '@/src/features/picking/types';
+import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
+import { TextField } from '@/src/shared/components/text-field';
 import { tokens } from '@/src/shared/theme/tokens';
-import { SectionLabel, TaskHeader } from './stox-primitives';
+import {
+  StockScopeFilterModal,
+} from '@/src/features/stock/components/stock-scope-filter';
+import type { StockScopeOption } from '@/src/features/stock/utils/stock-scope';
+import { BlockedTaskState, SectionLabel, TaskHeader, TaskHeaderIconButton, UtilityPill } from './stox-primitives';
 
-export function PackingTab() {
-  const handlePlaceholder = (title: string) => {
-    Alert.alert(title, 'Next phase');
+type PackingTabProps = {
+  bootstrap: BootstrapResponse;
+  device: DeviceIdentity | null;
+  session: StoredSession;
+};
+
+type PackingFilterKey = 'tenant' | 'store';
+
+const PACK_STATUS_FILTERS: Array<{ label: string; value: PackingStatusFilter | null }> = [
+  { label: 'All', value: null },
+  { label: 'Awaiting pack', value: 'PICKED' },
+  { label: 'Packing', value: 'PACKING' },
+  { label: 'No tracking', value: 'AWAITING_TRACKING' },
+  { label: 'Packed', value: 'PACKED' },
+];
+
+export function PackingTab({ bootstrap, device, session }: PackingTabProps) {
+  if (!canUsePackWorkspace(bootstrap)) {
+    return (
+      <>
+        <TaskHeader title="Pack" />
+        <BlockedTaskState copy="This account needs WMS dispatch write or edit permission and a PACK task assignment in WMS Web." />
+      </>
+    );
+  }
+
+  return <PackingWorkspaceTab bootstrap={bootstrap} device={device} session={session} />;
+}
+
+function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
+  const [activeFilter, setActiveFilter] = useState<PackingFilterKey | null>(null);
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const {
+    activeTask,
+    activeTaskId,
+    completeTask,
+    error,
+    filters,
+    isLoading,
+    isLoadingMore,
+    isRefreshing,
+    isSubmitting,
+    loadMore,
+    packing,
+    refreshPacking,
+    scanUnit,
+    setActiveTaskId,
+    setFilters,
+    setStatusFilter,
+    startTask,
+    statusFilter,
+    verifyTracking,
+    voidTask,
+  } = usePackingWorkspace({ bootstrap, device, session });
+
+  const canDirectVoid = bootstrap.user.role === 'SUPER_ADMIN'
+    || bootstrap.access.permissions.includes('wms.dispatch.void')
+    || bootstrap.access.permissions.includes('wms.dispatch.override');
+
+  const filterOptions = useMemo(
+    () => buildPackingFilterOptions(activeFilter, packing, bootstrap, bootstrap.user.role === 'SUPER_ADMIN'),
+    [activeFilter, bootstrap, packing],
+  );
+  const activePartnerName = resolveActivePartnerName(packing, bootstrap, filters.tenantId);
+  const activeStoreName = resolveActiveStoreName(packing, bootstrap, filters.storeId);
+  const taskPool = packing?.tasks ?? [];
+  const isPackedHistoryView = statusFilter === 'PACKED';
+  const dateOptions = useMemo(() => buildPackDateOptions(taskPool), [taskPool]);
+  const filteredTasks = useMemo(() => {
+    if (isPackedHistoryView || !selectedDateKey) {
+      return taskPool;
+    }
+
+    return taskPool.filter((task) => getPackTaskDateKey(task) === selectedDateKey);
+  }, [isPackedHistoryView, selectedDateKey, taskPool]);
+
+  useEffect(() => {
+    if (isPackedHistoryView) {
+      if (selectedDateKey !== null) {
+        setSelectedDateKey(null);
+      }
+      return;
+    }
+
+    if (dateOptions.length === 0) {
+      if (selectedDateKey !== null) {
+        setSelectedDateKey(null);
+      }
+      return;
+    }
+
+    if (selectedDateKey && dateOptions.some((option) => option.key === selectedDateKey)) {
+      return;
+    }
+
+    const preferred = dateOptions.find((option) => option.isToday)?.key ?? dateOptions[0]?.key ?? null;
+    setSelectedDateKey(preferred);
+  }, [dateOptions, isPackedHistoryView, selectedDateKey]);
+
+  const updateFilter = (value: string | null) => {
+    setFilters((current) => {
+      if (activeFilter === 'tenant') {
+        return {
+          tenantId: value,
+          storeId: null,
+        };
+      }
+
+      return {
+        ...current,
+        storeId: value,
+      };
+    });
+    setActiveFilter(null);
   };
+
+  if (isLoading && !packing) {
+    return (
+      <SurfaceCard style={styles.loadingCard}>
+        <ActivityIndicator color={tokens.colors.panel} />
+        <Text style={styles.loadingText}>Loading pack queue</Text>
+      </SurfaceCard>
+    );
+  }
 
   return (
     <>
-      <TaskHeader title="Pack" />
+      {!activeTask ? (
+        <>
+          <View style={styles.queueHeader}>
+            <TaskHeaderIconButton
+              icon="refresh-cw"
+              loading={isRefreshing}
+              onPress={refreshPacking}
+            />
+            <Text style={styles.queueHeaderTitle}>Today&apos;s Tasks</Text>
+            <View style={styles.queueBellButton}>
+              <Feather name="bell" size={18} color="#1F1F28" />
+              <View style={styles.queueBellDot} />
+            </View>
+          </View>
 
-      <SectionLabel title="Ready" />
+          {!isPackedHistoryView && dateOptions.length > 0 ? (
+            <TaskDateCarousel
+              options={dateOptions}
+              value={selectedDateKey}
+              onChange={setSelectedDateKey}
+            />
+          ) : null}
 
-      <View style={styles.grid}>
-        <MiniTile
-          icon="tag"
-          label="Station"
-          onPress={() => {
-            handlePlaceholder('Station');
-          }}
+          {!isPackedHistoryView ? (
+            <View style={styles.queueFilterStack}>
+              {bootstrap.user.role === 'SUPER_ADMIN' ? (
+                <ScopeDropdownCard
+                  icon="briefcase"
+                  label="Partner"
+                  value={activePartnerName}
+                  onPress={() => setActiveFilter('tenant')}
+                />
+              ) : null}
+
+              <ScopeDropdownCard
+                icon="shopping-bag"
+                label="Store"
+                value={activeStoreName}
+                onPress={() => setActiveFilter('store')}
+              />
+            </View>
+          ) : null}
+        </>
+      ) : null}
+
+      {error ? (
+        <SurfaceCard style={styles.errorCard}>
+          <Feather name="alert-circle" size={18} color={tokens.colors.danger} />
+          <Text style={styles.errorText}>{error}</Text>
+        </SurfaceCard>
+      ) : null}
+
+      {activeTask ? (
+        <PackExecutionCard
+          canDirectVoid={canDirectVoid}
+          isSubmitting={isSubmitting}
+          task={activeTask}
+          onBack={() => setActiveTaskId(null)}
+          onComplete={completeTask}
+          onRefresh={refreshPacking}
+          onScanUnit={scanUnit}
+          onStart={startTask}
+          onVerifyTracking={verifyTracking}
+          onVoid={voidTask}
         />
-        <MiniTile
-          icon="archive"
-          label="Seal"
-          onPress={() => {
-            handlePlaceholder('Seal');
-          }}
+      ) : (
+        <>
+          <PackStatusFilterRow value={statusFilter} onChange={setStatusFilter} />
+
+          {!filteredTasks.length ? (
+            <SurfaceCard style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No pack tasks</Text>
+              <Text style={styles.emptyCopy}>
+                Picked baskets assigned to this pack station will appear here after picker handoff.
+              </Text>
+            </SurfaceCard>
+          ) : null}
+
+          <View style={styles.taskList}>
+            {filteredTasks.map((task) => (
+              <PackTaskCard
+                key={task.id}
+                active={activeTaskId === task.id}
+                task={task}
+                onPress={() => setActiveTaskId(task.id)}
+              />
+            ))}
+          </View>
+
+          {packing?.pagination.hasMore ? (
+            <PrimaryButton
+              label="Load more"
+              loading={isLoadingMore}
+              onPress={loadMore}
+              variant="secondary"
+            />
+          ) : null}
+        </>
+      )}
+
+      {!isPackedHistoryView ? (
+        <StockScopeFilterModal
+          options={filterOptions}
+          title={activeFilter === 'tenant' ? 'Partner' : 'Store'}
+          visible={activeFilter !== null}
+          onClose={() => setActiveFilter(null)}
+          onSelect={updateFilter}
         />
-        <MiniTile
-          icon="alert-triangle"
-          label="Hold"
-          onPress={() => {
-            handlePlaceholder('Hold');
-          }}
-        />
-      </View>
+      ) : null}
     </>
   );
 }
 
-function MiniTile({
+function PackStatusFilterRow({
+  value,
+  onChange,
+}: {
+  value: PackingStatusFilter | null;
+  onChange: (status: PackingStatusFilter | null) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.statusFilterRow}>
+      {PACK_STATUS_FILTERS.map((option) => {
+        const active = value === option.value;
+        return (
+          <Pressable
+            key={option.label}
+            onPress={() => onChange(option.value)}
+            style={[styles.statusFilterChip, active ? styles.statusFilterChipActive : null]}>
+            <Text style={[styles.statusFilterText, active ? styles.statusFilterTextActive : null]}>
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function ScopeDropdownCard({
   icon,
   label,
+  value,
   onPress,
 }: {
   icon: ComponentProps<typeof Feather>['name'];
   label: string;
+  value: string;
   onPress: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.tilePressable}>
-      <SurfaceCard tone="muted" style={styles.tile}>
-        <Feather name={icon} size={18} color={tokens.colors.panel} />
-        <Text style={styles.tileLabel}>{label}</Text>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.scopeDropdownWrap, pressed ? styles.scopeDropdownWrapPressed : null]}>
+      <SurfaceCard style={styles.scopeDropdownCard}>
+        <View style={styles.scopeDropdownIcon}>
+          <Feather name={icon} size={15} color="#F55DB8" />
+        </View>
+        <View style={styles.scopeDropdownCopy}>
+          <Text style={styles.scopeDropdownLabel}>{label}</Text>
+          <Text numberOfLines={1} style={styles.scopeDropdownValue}>{value}</Text>
+        </View>
+        <Feather name="chevron-down" size={18} color="#2B2836" />
       </SurfaceCard>
     </Pressable>
   );
 }
 
+function TaskDateCarousel({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ key: string; month: string; day: string; weekday: string }>;
+  value: string | null;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.dateCarousel}>
+      {options.map((option) => {
+        const active = value === option.key;
+        return (
+          <Pressable
+            key={option.key}
+            onPress={() => onChange(option.key)}
+            style={({ pressed }) => [
+              styles.dateCard,
+              active ? styles.dateCardActive : null,
+              pressed ? styles.dateCardPressed : null,
+            ]}>
+            <Text style={[styles.dateCardMonth, active ? styles.dateCardMonthActive : null]}>{option.month}</Text>
+            <Text style={[styles.dateCardDay, active ? styles.dateCardDayActive : null]}>{option.day}</Text>
+            <Text style={[styles.dateCardWeekday, active ? styles.dateCardWeekdayActive : null]}>{option.weekday}</Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function PackTaskCard({
+  active,
+  task,
+  onPress,
+}: {
+  active: boolean;
+  task: WmsMobilePickingTask;
+  onPress: () => void;
+}) {
+  const visibleLines = getVisiblePackLines(task.lines);
+  const tracking = task.tracking?.trim() || null;
+  const basketStatus = task.basket?.status ?? task.status;
+  const basketStatusLabel = task.basket?.status === 'FULL_HELD'
+    ? 'Awaiting pack'
+    : (task.basket?.statusLabel ?? task.statusLabel);
+  const summary = visibleLines
+    .slice(0, 2)
+    .map((line) => `${line.required}x ${line.productName}`)
+    .join(' • ');
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.taskPressable,
+        pressed ? styles.pressed : null,
+        active ? styles.activeTaskPressable : null,
+      ]}>
+      <SurfaceCard style={styles.compactTaskCard}>
+        <View style={styles.compactTopRow}>
+          <Text numberOfLines={1} style={styles.compactStoreLabel}>
+            {task.store?.name ?? 'Store'}
+          </Text>
+          <View style={styles.compactIconBadge}>
+            <Feather name="archive" size={14} color="#9C83FF" />
+          </View>
+        </View>
+
+        <Text numberOfLines={1} style={styles.compactOrderTitle}>{task.posOrderId}</Text>
+
+        <Text numberOfLines={1} style={styles.compactSummary}>
+          {tracking ? `Tracking ${tracking}` : 'Awaiting tracking print'}
+        </Text>
+
+        <Text numberOfLines={2} style={styles.compactMetaText}>
+          {summary || `${task.totals.required} required unit${task.totals.required === 1 ? '' : 's'}`}
+        </Text>
+
+        <View style={styles.compactFooterRow}>
+          <View style={styles.compactDateMeta}>
+            <Feather name="clock" size={13} color="#9C83FF" />
+            <Text style={styles.compactDateValue}>
+              {formatPackQueueDate(task.orderDateLocal ?? task.orderDate)}
+            </Text>
+          </View>
+          <PackStateBadge status={basketStatus} label={mapPackCardStatus(task, basketStatusLabel, tracking)} />
+        </View>
+      </SurfaceCard>
+    </Pressable>
+  );
+}
+
+function PackExecutionCard({
+  canDirectVoid,
+  isSubmitting,
+  task,
+  onBack,
+  onComplete,
+  onRefresh,
+  onScanUnit,
+  onStart,
+  onVerifyTracking,
+  onVoid,
+}: {
+  canDirectVoid: boolean;
+  isSubmitting: boolean;
+  task: WmsMobilePickingTask;
+  onBack: () => void;
+  onComplete: (taskId: string, trackingCode: string) => Promise<boolean>;
+  onRefresh: () => Promise<void>;
+  onScanUnit: (taskId: string, code: string) => Promise<boolean>;
+  onStart: (taskId: string) => Promise<boolean>;
+  onVerifyTracking: (taskId: string, code: string) => Promise<string | null>;
+  onVoid: (params: {
+    taskId: string;
+    reason: string;
+    supervisorIdentifier?: string | null;
+    supervisorPassword?: string | null;
+  }) => Promise<boolean>;
+}) {
+  const [unitCode, setUnitCode] = useState('');
+  const [trackingCode, setTrackingCode] = useState('');
+  const [verifiedTracking, setVerifiedTracking] = useState<string | null>(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [supervisorIdentifier, setSupervisorIdentifier] = useState('');
+  const [supervisorPassword, setSupervisorPassword] = useState('');
+  const [voidVisible, setVoidVisible] = useState(false);
+  const unitInputRef = useRef<TextInput>(null);
+  const trackingInputRef = useRef<TextInput>(null);
+  const unitSubmitInFlightRef = useRef(false);
+  const trackingSubmitInFlightRef = useRef(false);
+  const tracking = task.tracking?.trim() || null;
+  const canStart = task.status === 'PICKED' && Boolean(tracking);
+  const isPacking = task.status === 'PACKING';
+  const isAwaitingTracking = !tracking;
+  const packedAll = task.totals.packed >= task.totals.required && task.totals.required > 0;
+  const isPacked = task.status === 'PACKED';
+  const nextUnit = getNextPackReservation(task);
+
+  useEffect(() => {
+    setUnitCode('');
+    setTrackingCode('');
+    setVerifiedTracking(null);
+    setVoidReason('');
+    setSupervisorIdentifier('');
+    setSupervisorPassword('');
+    setVoidVisible(false);
+  }, [task.id]);
+
+  useEffect(() => {
+    if (!isPacking) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (!packedAll) {
+        unitInputRef.current?.focus();
+      } else {
+        trackingInputRef.current?.focus();
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [isPacking, packedAll, task.id]);
+
+  const submitUnit = async () => {
+    if (unitSubmitInFlightRef.current || isSubmitting) {
+      return;
+    }
+
+    const code = unitCode.trim();
+    if (!code) {
+      unitInputRef.current?.focus();
+      return;
+    }
+
+    unitSubmitInFlightRef.current = true;
+    try {
+      const ok = await onScanUnit(task.id, code);
+      if (ok) {
+        setUnitCode('');
+        setTimeout(() => unitInputRef.current?.focus(), 80);
+      }
+    } finally {
+      unitSubmitInFlightRef.current = false;
+    }
+  };
+
+  const submitTracking = async () => {
+    if (trackingSubmitInFlightRef.current || isSubmitting) {
+      return;
+    }
+
+    const code = trackingCode.trim();
+    if (!code) {
+      trackingInputRef.current?.focus();
+      return;
+    }
+
+    trackingSubmitInFlightRef.current = true;
+    try {
+      const verified = await onVerifyTracking(task.id, code);
+      if (verified) {
+        setTrackingCode(verified);
+        setVerifiedTracking(verified);
+      }
+    } finally {
+      trackingSubmitInFlightRef.current = false;
+    }
+  };
+
+  const submitVoid = async () => {
+    const reason = voidReason.trim();
+    if (!reason || isSubmitting) {
+      return;
+    }
+
+    const ok = await onVoid({
+      taskId: task.id,
+      reason,
+      supervisorIdentifier: canDirectVoid ? null : supervisorIdentifier.trim(),
+      supervisorPassword: canDirectVoid ? null : supervisorPassword,
+    });
+
+    if (ok) {
+      setVoidVisible(false);
+      setVoidReason('');
+      setSupervisorIdentifier('');
+      setSupervisorPassword('');
+    }
+  };
+
+  return (
+    <>
+      <View style={styles.executionHeader}>
+        <Pressable onPress={onBack} style={styles.backButton}>
+          <Feather name="chevron-left" size={20} color={tokens.colors.ink} />
+        </Pressable>
+        <View style={styles.executionTitleGroup}>
+          <Text numberOfLines={1} style={styles.executionTitle}>#{task.posOrderId}</Text>
+          <Text numberOfLines={1} style={styles.executionMeta}>
+            {task.customer.name ?? task.store?.name ?? 'Pack task'}
+          </Text>
+        </View>
+        <PackStateBadge
+          status={task.basket?.status ?? task.status}
+          label={mapPackCardStatus(task, task.basket?.statusLabel ?? task.statusLabel, tracking)}
+        />
+      </View>
+
+      <SurfaceCard style={styles.executionCard}>
+        <View style={styles.taskProgressRow}>
+          <View>
+            <Text style={styles.bigProgress}>{task.totals.packed}/{task.totals.required}</Text>
+            <Text style={styles.progressLabel}>units packed</Text>
+          </View>
+          <UtilityPill icon="package" label={`Basket ${task.basket?.barcode ?? 'None'}`} />
+        </View>
+
+        <View style={styles.basketSummary}>
+          <Text style={styles.basketLabel}>Picker {task.claimedBy?.name ?? task.claimedBy?.email ?? 'Unknown'}</Text>
+          <Text style={styles.historyMeta}>
+            {tracking ? `Tracking ${tracking}` : 'Awaiting tracking print'}
+          </Text>
+        </View>
+
+        {isAwaitingTracking ? (
+          <View style={styles.blockedPanel}>
+            <Text style={styles.blockedTitle}>Awaiting tracking</Text>
+            <Text style={styles.blockedCopy}>
+              This order cannot start packing until the waybill is printed and `posOrders.tracking` is available.
+            </Text>
+            <PrimaryButton label="Resync" onPress={onRefresh} variant="secondary" />
+          </View>
+        ) : null}
+
+        {isPacked ? (
+          <View style={styles.donePanelCompact}>
+            <Feather name="check-circle" size={24} color={tokens.colors.success} />
+            <Text style={styles.doneTitle}>{task.delivery?.label ?? 'Packed'}</Text>
+            <Text style={styles.doneCopy}>
+              {resolvePackedStateCopy(task)}
+            </Text>
+          </View>
+        ) : null}
+
+        {canStart ? (
+          <PrimaryButton
+            label="Start packing"
+            loading={isSubmitting}
+            onPress={() => void onStart(task.id)}
+          />
+        ) : null}
+
+        {task.status === 'PICKED' || task.status === 'PACKING' || task.status === 'PACKED' ? (
+          <Pressable
+            disabled={isSubmitting}
+            onPress={() => setVoidVisible(true)}
+            style={({ pressed }) => [
+              styles.voidButton,
+              pressed && !isSubmitting ? styles.pressed : null,
+              isSubmitting ? styles.voidButtonDisabled : null,
+            ]}>
+            <Feather name="slash" size={15} color="#B42318" />
+            <Text style={styles.voidButtonLabel}>Void order</Text>
+          </Pressable>
+        ) : null}
+
+        {isPacking ? (
+          <View style={styles.scanPanel}>
+            {nextUnit ? (
+              <View style={styles.nextUnitCard}>
+                <Text style={styles.scanLabel}>Next unit</Text>
+                <Text numberOfLines={1} style={styles.nextUnitCode}>{nextUnit.unit.code}</Text>
+                <Text numberOfLines={1} style={styles.nextUnitName}>{nextUnit.unit.name}</Text>
+              </View>
+            ) : (
+              <View style={styles.donePanelCompact}>
+                <Feather name="check-circle" size={24} color={tokens.colors.success} />
+                <Text style={styles.doneTitle}>All units verified</Text>
+                <Text style={styles.doneCopy}>
+                  Scan the tracking barcode, then mark this order packed.
+                </Text>
+              </View>
+            )}
+
+            {!packedAll ? (
+              <ScannerInput
+                autoSubmit
+                inputRef={unitInputRef}
+                label="Unit"
+                placeholder="Scan picked unit"
+                value={unitCode}
+                disabled={isSubmitting}
+                helper="Each scanned unit is verified against the handed-off order."
+                onChangeText={setUnitCode}
+                onSubmit={submitUnit}
+              />
+            ) : null}
+
+            <ScannerInput
+              autoSubmit
+              inputRef={trackingInputRef}
+              label="Tracking"
+              placeholder={tracking ?? 'Scan tracking barcode'}
+              value={trackingCode}
+              disabled={isSubmitting}
+              helper={verifiedTracking ? `Verified ${verifiedTracking}` : 'Scan the waybill barcode to confirm the order tracking number.'}
+              onChangeText={(value) => {
+                setTrackingCode(value);
+                setVerifiedTracking(null);
+              }}
+              onSubmit={submitTracking}
+            />
+
+            <PrimaryButton
+              disabled={!packedAll || !verifiedTracking}
+              label="Mark packed"
+              loading={isSubmitting}
+              onPress={() => void onComplete(task.id, verifiedTracking ?? trackingCode)}
+            />
+          </View>
+        ) : null}
+      </SurfaceCard>
+
+      <SectionLabel title="Items" />
+      <View style={styles.itemList}>
+        {getVisiblePackLines(task.lines).map((line) => (
+          <SurfaceCard key={line.id} tone="muted" style={styles.itemCard}>
+            <View style={styles.itemHeader}>
+              <Text numberOfLines={1} style={styles.itemName}>{line.productName}</Text>
+              <Text style={styles.itemQty}>{line.packed}/{line.required}</Text>
+            </View>
+            <Text numberOfLines={1} style={styles.itemMeta}>
+              {line.packed >= line.required ? 'Verified' : `${line.required - line.packed} left to verify`}
+            </Text>
+          </SurfaceCard>
+        ))}
+      </View>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={voidVisible}
+        onRequestClose={() => setVoidVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <Pressable style={styles.modalBackdropPressable} onPress={() => setVoidVisible(false)} />
+          <SurfaceCard style={styles.voidModalCard}>
+            <View style={styles.voidModalHeader}>
+              <Text style={styles.voidModalTitle}>Void pack order</Text>
+              <Pressable onPress={() => setVoidVisible(false)} style={styles.voidModalClose}>
+                <Feather name="x" size={18} color={tokens.colors.ink} />
+              </Pressable>
+            </View>
+            <Text style={styles.voidModalCopy}>
+              This will cancel the fulfillment task and return all involved units back to inventory bins.
+            </Text>
+
+            <TextField
+              label="Reason"
+              multiline
+              numberOfLines={3}
+              placeholder="Order canceled, discontinued, customer changed item, etc."
+              value={voidReason}
+              onChangeText={setVoidReason}
+              style={styles.voidReasonInput}
+            />
+
+            {!canDirectVoid ? (
+              <View style={styles.voidApprovalGroup}>
+                <Text style={styles.voidApprovalTitle}>Supervisor approval required</Text>
+                <TextField
+                  label="Supervisor email or employee ID"
+                  placeholder="manager@company.com or EMP-001"
+                  value={supervisorIdentifier}
+                  onChangeText={setSupervisorIdentifier}
+                />
+                <TextField
+                  label="Supervisor password"
+                  placeholder="Enter supervisor password"
+                  secureTextEntry
+                  value={supervisorPassword}
+                  onChangeText={setSupervisorPassword}
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.voidModalActions}>
+              <PrimaryButton
+                label="Keep order"
+                onPress={() => setVoidVisible(false)}
+                variant="secondary"
+                style={styles.voidSecondaryAction}
+              />
+              <PrimaryButton
+                disabled={!voidReason.trim() || (!canDirectVoid && (!supervisorIdentifier.trim() || !supervisorPassword.trim()))}
+                label={canDirectVoid ? 'Void now' : 'Request void'}
+                loading={isSubmitting}
+                onPress={() => void submitVoid()}
+                style={styles.voidPrimaryAction}
+              />
+            </View>
+          </SurfaceCard>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+function ScannerInput({
+  autoSubmit = false,
+  autoSubmitDelayMs = 120,
+  autoSubmitMinLength = 3,
+  disabled,
+  helper,
+  inputRef,
+  label,
+  placeholder,
+  value,
+  onChangeText,
+  onSubmit,
+}: {
+  autoSubmit?: boolean;
+  autoSubmitDelayMs?: number;
+  autoSubmitMinLength?: number;
+  disabled?: boolean;
+  helper?: string;
+  inputRef: RefObject<TextInput | null>;
+  label: string;
+  placeholder: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  onSubmit: () => void | Promise<void>;
+}) {
+  const submitRef = useRef(onSubmit);
+  const lastAutoSubmittedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    submitRef.current = onSubmit;
+  }, [onSubmit]);
+
+  useEffect(() => {
+    const cleaned = value.trim();
+    if (!cleaned) {
+      lastAutoSubmittedRef.current = null;
+      return;
+    }
+
+    if (
+      !autoSubmit
+      || disabled
+      || cleaned.length < autoSubmitMinLength
+      || lastAutoSubmittedRef.current === cleaned
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      lastAutoSubmittedRef.current = cleaned;
+      void submitRef.current();
+    }, autoSubmitDelayMs);
+
+    return () => clearTimeout(timer);
+  }, [autoSubmit, autoSubmitDelayMs, autoSubmitMinLength, disabled, value]);
+
+  return (
+    <View style={[styles.scanInputWrap, disabled ? styles.scanInputDisabled : null]}>
+      <Text style={styles.scanInputLabel}>{label}</Text>
+      <View style={styles.scanInputRow}>
+        <TextInput
+          ref={inputRef}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          blurOnSubmit={false}
+          editable={!disabled}
+          placeholder={placeholder}
+          placeholderTextColor={tokens.colors.inkSoft}
+          returnKeyType="done"
+          selectTextOnFocus
+          value={value}
+          onChangeText={onChangeText}
+          onSubmitEditing={() => {
+            void onSubmit();
+          }}
+          style={styles.scanInput}
+        />
+        <Pressable
+          disabled={disabled}
+          onPress={() => {
+            void onSubmit();
+          }}
+          style={styles.scanSubmit}>
+          <Feather name="corner-down-left" size={18} color={tokens.colors.surface} />
+        </Pressable>
+      </View>
+      {helper ? <Text style={styles.scanHelper}>{helper}</Text> : null}
+    </View>
+  );
+}
+
+function PackStateBadge({
+  label,
+  status,
+}: {
+  label: string;
+  status: string;
+}) {
+  const noTracking = label === 'No tracking';
+  const delivered = label === 'Delivered';
+  const shipped = label === 'Shipped';
+  const packed = status === 'PACKED';
+  const packing = status === 'PACKING';
+  const toneStyle = noTracking
+    ? styles.statusBadgeDanger
+    : delivered
+      ? styles.statusBadgeDelivered
+      : shipped
+        ? styles.statusBadgeDispatch
+        : packed
+      ? styles.statusBadgeReady
+      : packing
+        ? styles.statusBadgeWarn
+        : styles.statusBadgeReady;
+  const textStyle = noTracking
+    ? styles.statusTextDanger
+    : delivered
+      ? styles.statusTextDelivered
+      : shipped
+        ? styles.statusTextDispatch
+        : packed
+      ? styles.statusTextReady
+      : packing
+        ? styles.statusTextWarn
+        : styles.statusTextReady;
+
+  return (
+    <View style={[styles.statusBadge, toneStyle]}>
+      <Text style={[styles.statusText, textStyle]}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function getVisiblePackLines(lines: WmsMobilePickingTask['lines']) {
+  return lines.filter((line) => line.status !== 'CANCELED' && line.required > 0);
+}
+
+function getNextPackReservation(task: WmsMobilePickingTask) {
+  for (const line of getVisiblePackLines(task.lines)) {
+    const next = line.reservations.find((reservation) => (
+      reservation.status === 'PICKED'
+      && reservation.unit.status !== 'PACKED'
+      && reservation.unit.status !== 'DISPATCHED'
+    ));
+    if (next) {
+      return next;
+    }
+  }
+
+  return null;
+}
+
+function buildPackingFilterOptions(
+  activeFilter: PackingFilterKey | null,
+  packing: WmsMobilePackingResponse | null,
+  bootstrap: BootstrapResponse,
+  canFilterPartners: boolean,
+): StockScopeOption[] {
+  if (activeFilter === 'tenant' && canFilterPartners) {
+    const partners = packing?.context.tenantOptions ?? bootstrap.context.tenantOptions ?? [];
+    return [
+      { label: 'All partners', value: null },
+      ...partners.map((partner) => ({
+        label: partner.name,
+        value: partner.id,
+        meta: partner.slug,
+      })),
+    ];
+  }
+
+  const stores = packing?.context.stores ?? bootstrap.context.stores;
+  return [
+    { label: 'All stores', value: null },
+    ...stores.map((store) => ({
+      label: 'shopName' in store ? store.shopName || store.name : store.name,
+      value: store.id,
+      meta: 'tenantName' in store && typeof store.tenantName === 'string' ? store.tenantName : undefined,
+    })),
+  ];
+}
+
+function resolveActivePartnerName(
+  packing: { context: { tenantOptions?: Array<{ id: string; name: string }> } } | null,
+  bootstrap: BootstrapResponse,
+  tenantId: PackingFilters['tenantId'],
+) {
+  if (!tenantId) {
+    return 'All partners';
+  }
+
+  const partners = packing?.context.tenantOptions ?? bootstrap.context.tenantOptions ?? [];
+  return partners.find((partner) => partner.id === tenantId)?.name ?? 'Partner';
+}
+
+function resolveActiveStoreName(
+  packing: { context: { stores: Array<{ id: string; name: string }> } } | null,
+  bootstrap: BootstrapResponse,
+  storeId: PackingFilters['storeId'],
+) {
+  if (!storeId) {
+    return 'All stores';
+  }
+
+  const stores = packing?.context.stores ?? bootstrap.context.stores;
+  return stores.find((store) => store.id === storeId)?.name ?? 'Store';
+}
+
+function buildPackDateOptions(tasks: WmsMobilePickingTask[]) {
+  const seen = new Map<string, { key: string; month: string; day: string; weekday: string; isToday: boolean; sort: number }>();
+  const todayKey = buildDateKey(new Date());
+
+  for (const task of tasks) {
+    const parsed = parsePackDate(task.orderDateLocal ?? task.orderDate);
+    if (!parsed) {
+      continue;
+    }
+
+    const key = buildDateKey(parsed);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.set(key, {
+      key,
+      month: parsed.toLocaleDateString('en-PH', { month: 'short' }),
+      day: parsed.toLocaleDateString('en-PH', { day: '2-digit' }),
+      weekday: parsed.toLocaleDateString('en-PH', { weekday: 'short' }),
+      isToday: key === todayKey,
+      sort: parsed.getTime(),
+    });
+  }
+
+  return Array.from(seen.values())
+    .sort((left, right) => left.sort - right.sort)
+    .map(({ sort, ...option }) => option);
+}
+
+function getPackTaskDateKey(task: WmsMobilePickingTask) {
+  const parsed = parsePackDate(task.orderDateLocal ?? task.orderDate);
+  return parsed ? buildDateKey(parsed) : null;
+}
+
+function parsePackDate(value: string) {
+  if (!value) {
+    return null;
+  }
+
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (dateOnlyMatch) {
+    return new Date(
+      Number(dateOnlyMatch[1]),
+      Number(dateOnlyMatch[2]) - 1,
+      Number(dateOnlyMatch[3]),
+    );
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function buildDateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    `${date.getMonth() + 1}`.padStart(2, '0'),
+    `${date.getDate()}`.padStart(2, '0'),
+  ].join('-');
+}
+
+function formatPackQueueDate(value: string) {
+  const parsed = parsePackDate(value);
+  if (!parsed) {
+    return 'No date';
+  }
+
+  return parsed.toLocaleDateString('en-PH', {
+    month: 'short',
+    day: '2-digit',
+  });
+}
+
+function mapPackCardStatus(
+  task: WmsMobilePickingTask,
+  fallback: string,
+  tracking: string | null,
+) {
+  if (task.status === 'PACKED' && task.delivery?.label) {
+    return task.delivery.label;
+  }
+
+  const { status } = task;
+  if (!tracking && status !== 'PACKED') {
+    return 'No tracking';
+  }
+  if (status === 'PICKED') {
+    return 'Awaiting pack';
+  }
+  if (status === 'PACKING') {
+    return 'Packing';
+  }
+  if (status === 'PACKED') {
+    return 'Packed';
+  }
+  return fallback;
+}
+
+function resolvePackedStateCopy(task: WmsMobilePickingTask) {
+  if (task.delivery?.status === 'DELIVERED') {
+    return 'This order was delivered. The packed activity remains traceable in STOX history.';
+  }
+
+  if (task.delivery?.status === 'SHIPPED') {
+    return 'This order already left the warehouse and its units were moved to dispatched inventory.';
+  }
+
+  return 'This order is packed and the basket has already been released back to available.';
+}
+
 const styles = StyleSheet.create({
-  grid: {
-    flexDirection: 'row',
-    gap: tokens.spacing.md,
-  },
-  tilePressable: {
-    flex: 1,
-  },
-  tile: {
+  loadingCard: {
     alignItems: 'center',
     gap: tokens.spacing.sm,
-    minHeight: 104,
+    minHeight: 140,
     justifyContent: 'center',
   },
-  tileLabel: {
-    color: tokens.colors.ink,
+  loadingText: {
+    color: tokens.colors.inkMuted,
     fontSize: 14,
     fontWeight: '700',
+  },
+  queueHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    marginTop: 2,
+  },
+  queueHeaderTitle: {
+    color: '#24232D',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  queueBellButton: {
+    alignItems: 'center',
+    height: 34,
+    justifyContent: 'center',
+    position: 'relative',
+    width: 34,
+  },
+  queueBellDot: {
+    backgroundColor: '#6437F6',
+    borderColor: '#FBFAFF',
+    borderRadius: 5,
+    borderWidth: 2,
+    height: 10,
+    position: 'absolute',
+    right: 5,
+    top: 4,
+    width: 10,
+  },
+  queueFilterStack: {
+    gap: 12,
+    marginBottom: 4,
+  },
+  scopeDropdownWrap: {
+    borderRadius: 24,
+  },
+  scopeDropdownWrapPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.995 }],
+  },
+  scopeDropdownCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    flexDirection: 'row',
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+  },
+  scopeDropdownIcon: {
+    alignItems: 'center',
+    backgroundColor: '#FFE1F2',
+    borderRadius: 12,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  scopeDropdownCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  scopeDropdownLabel: {
+    color: '#8F8AAB',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  scopeDropdownValue: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  dateCarousel: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  dateCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    height: 80,
+    justifyContent: 'center',
+    shadowColor: '#9C83FF',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    width: 56,
+  },
+  dateCardActive: {
+    backgroundColor: '#6437F6',
+  },
+  dateCardPressed: {
+    opacity: 0.92,
+  },
+  dateCardMonth: {
+    color: '#353346',
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  dateCardMonthActive: {
+    color: '#F4EEFF',
+  },
+  dateCardDay: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  dateCardDayActive: {
+    color: '#FFFFFF',
+  },
+  dateCardWeekday: {
+    color: '#59556D',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  dateCardWeekdayActive: {
+    color: '#F4EEFF',
+  },
+  errorCard: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+  },
+  errorText: {
+    color: tokens.colors.danger,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  statusFilterRow: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  statusFilterChip: {
+    alignItems: 'center',
+    backgroundColor: '#EEE9FF',
+    borderRadius: 14,
+    minHeight: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  statusFilterChipActive: {
+    backgroundColor: '#6437F6',
+  },
+  statusFilterText: {
+    color: '#6F5BCB',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  statusFilterTextActive: {
+    color: '#FFFFFF',
+  },
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    gap: 8,
+    paddingVertical: 20,
+    shadowColor: '#9C83FF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.07,
+    shadowRadius: 20,
+  },
+  emptyTitle: {
+    color: '#24232D',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  emptyCopy: {
+    color: '#7B7791',
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  taskList: {
+    gap: 18,
+  },
+  taskPressable: {
+    borderRadius: 24,
+  },
+  activeTaskPressable: {
+    opacity: 0.92,
+  },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
+  },
+  compactTaskCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
+  },
+  compactTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  compactStoreLabel: {
+    color: '#7B7791',
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 12,
+  },
+  compactIconBadge: {
+    alignItems: 'center',
+    backgroundColor: '#F1E9FF',
+    borderRadius: 12,
+    height: 30,
+    justifyContent: 'center',
+    width: 30,
+  },
+  compactOrderTitle: {
+    color: '#24232D',
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  compactSummary: {
+    color: '#6437F6',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  compactMetaText: {
+    color: '#524F66',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  compactFooterRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  compactDateMeta: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  compactDateValue: {
+    color: '#9C83FF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  executionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+  },
+  backButton: {
+    alignItems: 'center',
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  executionTitleGroup: {
+    flex: 1,
+    gap: 2,
+  },
+  executionTitle: {
+    color: tokens.colors.ink,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  executionMeta: {
+    color: tokens.colors.inkMuted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  executionCard: {
+    gap: tokens.spacing.md,
+  },
+  taskProgressRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  bigProgress: {
+    color: tokens.colors.ink,
+    fontSize: 28,
+    fontWeight: '900',
+  },
+  progressLabel: {
+    color: tokens.colors.inkMuted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  basketSummary: {
+    gap: 4,
+  },
+  basketLabel: {
+    color: tokens.colors.ink,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  historyMeta: {
+    color: tokens.colors.inkMuted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  blockedPanel: {
+    backgroundColor: tokens.colors.surfaceMuted,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.lg,
+    borderWidth: 1,
+    gap: tokens.spacing.sm,
+    padding: tokens.spacing.md,
+  },
+  blockedTitle: {
+    color: tokens.colors.ink,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  blockedCopy: {
+    color: tokens.colors.inkMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  scanPanel: {
+    gap: tokens.spacing.md,
+  },
+  nextUnitCard: {
+    backgroundColor: tokens.colors.surfaceMuted,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.lg,
+    borderWidth: 1,
+    gap: 4,
+    padding: tokens.spacing.md,
+  },
+  scanLabel: {
+    color: tokens.colors.inkSoft,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  nextUnitCode: {
+    color: tokens.colors.ink,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  nextUnitName: {
+    color: tokens.colors.inkMuted,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  donePanelCompact: {
+    alignItems: 'center',
+    gap: tokens.spacing.xs,
+    paddingVertical: tokens.spacing.sm,
+  },
+  doneTitle: {
+    color: tokens.colors.ink,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  doneCopy: {
+    color: tokens.colors.inkMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  voidButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFF0F0',
+    borderColor: '#F3C9C7',
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  voidButtonDisabled: {
+    opacity: 0.6,
+  },
+  voidButtonLabel: {
+    color: '#B42318',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  scanInputWrap: {
+    gap: tokens.spacing.xs,
+  },
+  scanInputDisabled: {
+    opacity: 0.6,
+  },
+  scanInputLabel: {
+    color: tokens.colors.ink,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  scanInputRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: tokens.spacing.xs,
+  },
+  scanInput: {
+    backgroundColor: tokens.colors.surface,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.lg,
+    borderWidth: 1,
+    color: tokens.colors.ink,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '800',
+    minHeight: 52,
+    paddingHorizontal: tokens.spacing.md,
+  },
+  scanSubmit: {
+    alignItems: 'center',
+    backgroundColor: tokens.colors.panel,
+    borderRadius: tokens.radius.lg,
+    height: 52,
+    justifyContent: 'center',
+    width: 52,
+  },
+  scanHelper: {
+    color: tokens.colors.inkSoft,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  itemList: {
+    gap: tokens.spacing.sm,
+  },
+  itemCard: {
+    gap: 4,
+  },
+  itemHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    justifyContent: 'space-between',
+  },
+  itemName: {
+    color: tokens.colors.ink,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  itemQty: {
+    color: tokens.colors.panel,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  itemMeta: {
+    color: tokens.colors.inkMuted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalBackdrop: {
+    backgroundColor: 'rgba(21, 20, 31, 0.42)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: tokens.spacing.lg,
+  },
+  modalBackdropPressable: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  voidModalCard: {
+    gap: tokens.spacing.md,
+    padding: tokens.spacing.lg,
+  },
+  voidModalHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  voidModalTitle: {
+    color: tokens.colors.ink,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  voidModalClose: {
+    alignItems: 'center',
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  voidModalCopy: {
+    color: tokens.colors.inkMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  voidReasonInput: {
+    minHeight: 92,
+    paddingTop: tokens.spacing.md,
+    textAlignVertical: 'top',
+  },
+  voidApprovalGroup: {
+    gap: tokens.spacing.sm,
+  },
+  voidApprovalTitle: {
+    color: tokens.colors.ink,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  voidModalActions: {
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+  },
+  voidSecondaryAction: {
+    flex: 1,
+  },
+  voidPrimaryAction: {
+    flex: 1,
+  },
+  statusBadge: {
+    borderWidth: 1,
+    borderRadius: tokens.radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  statusBadgeReady: {
+    backgroundColor: '#EAF8F3',
+    borderColor: '#D8F0E6',
+  },
+  statusBadgeWarn: {
+    backgroundColor: '#FFF1E8',
+    borderColor: '#FFE0D1',
+  },
+  statusBadgeDanger: {
+    backgroundColor: '#FFE8E4',
+    borderColor: '#FFD5CF',
+  },
+  statusBadgeDispatch: {
+    backgroundColor: '#EAF4FF',
+    borderColor: '#D2E8FF',
+  },
+  statusBadgeDelivered: {
+    backgroundColor: '#EAF8F3',
+    borderColor: '#D8F0E6',
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusTextReady: {
+    color: '#17B57C',
+  },
+  statusTextWarn: {
+    color: '#F28B50',
+  },
+  statusTextDanger: {
+    color: '#E8735B',
+  },
+  statusTextDispatch: {
+    color: '#1989D6',
+  },
+  statusTextDelivered: {
+    color: '#17B57C',
   },
 });

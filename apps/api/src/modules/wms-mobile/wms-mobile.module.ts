@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { WmsInventoryModule } from '../wms-inventory/wms-inventory.module';
 import { WmsMobileController } from './wms-mobile.controller';
 import { WmsMobileService } from './wms-mobile.service';
 
 @Module({
+  imports: [WmsInventoryModule],
   controllers: [WmsMobileController],
   providers: [WmsMobileService],
 })

@@ -333,6 +333,7 @@ model User {
   wmsLabelPrintLogs                         WmsLabelPrintLog[]         @relation("WmsLabelPrintLogActor")
   wmsStaffActivities                        WmsStaffActivity[]         @relation("WmsStaffActivityActor")
   wmsFulfillmentOrdersClaimed               WmsFulfillmentOrder[]      @relation("WmsFulfillmentOrderClaimedBy")
+  wmsFulfillmentOrdersPacked                WmsFulfillmentOrder[]      @relation("WmsFulfillmentOrderPackedBy")
   wmsBasketsAssigned                        WmsBasket[]                @relation("WmsBasketAssignedPicker")
   wmsBasketsAssignedForPacking              WmsBasket[]                @relation("WmsBasketAssignedPacker")
   wmsPickReservationsReserved               WmsPickReservation[]       @relation("WmsPickReservationReservedBy")
@@ -646,6 +647,8 @@ enum WmsInventoryMovementType {
   ADJUSTMENT
   RESERVATION
   PICK
+  PACK
+  DISPATCH
 }
 
 enum WmsFulfillmentOrderStatus {
@@ -656,6 +659,8 @@ enum WmsFulfillmentOrderStatus {
   IN_PICKING
   READY_FOR_PACK
   PICKED
+  PACKING
+  PACKED
   CANCELED
 }
 
@@ -1575,6 +1580,8 @@ model WmsFulfillmentOrder {
   pickedQuantity    Int                       @default(0)
   claimedById       String?                   @db.Uuid
   claimedBy         User?                     @relation("WmsFulfillmentOrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
+  packedById        String?                   @db.Uuid
+  packedBy          User?                     @relation("WmsFulfillmentOrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
   claimedAt         DateTime?
   completedAt       DateTime?
   lastSyncedAt      DateTime                  @default(now())
@@ -1590,6 +1597,7 @@ model WmsFulfillmentOrder {
   @@index([tenantId, status, createdAt])
   @@index([storeId, status])
   @@index([claimedById, status])
+  @@index([packedById, status])
   @@index([posWarehouseRef])
   @@map("wms_fulfillment_orders")
 }

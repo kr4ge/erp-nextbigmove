@@ -1,5 +1,6 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
+import { WmsInventoryModule } from '../wms-inventory/wms-inventory.module';
 import { IntegrationController } from './integration.controller';
 import { PancakeWebhookController } from './pancake-webhook.controller';
 import { IntegrationService } from './integration.service';
@@ -21,6 +22,7 @@ import { PancakeWebhookQueueProcessor } from './processors/pancake-webhook.proce
 @Module({
   imports: [
     PrismaModule,
+    WmsInventoryModule,
     BullModule.registerQueue({
       name: PANCAKE_WEBHOOK_QUEUE,
     }),
