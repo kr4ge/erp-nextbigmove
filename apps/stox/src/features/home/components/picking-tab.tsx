@@ -51,6 +51,7 @@ const PICK_STATUS_FILTERS: Array<{ label: string; value: PickingStatus | null }>
   { label: 'Issues', value: 'ISSUE' },
   { label: 'In Progress', value: 'IN_PICKING' },
 ];
+const PICK_LIST_PAGE_SIZE = 10;
 
 export function PickingTab({ bootstrap, device, session }: PickingTabProps) {
   if (!canUsePickWorkspace(bootstrap)) {
@@ -112,6 +113,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     return [];
   }, [activeTab, picking?.pickedHistory, picking?.tasks]);
   const dateOptions = useMemo(() => buildPickDateOptions(taskPool), [taskPool]);
+  const totalPickTasks = picking?.pagination.total ?? 0;
   const filteredTaskPool = useMemo(() => {
     if (!selectedDateKey || activeTab === 'baskets') {
       return taskPool;
@@ -119,6 +121,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
 
     return taskPool.filter((task) => getPickTaskDateKey(task) === selectedDateKey);
   }, [activeTab, selectedDateKey, taskPool]);
+  const hiddenTaskCount = Math.max(taskPool.length - filteredTaskPool.length, 0);
 
   useEffect(() => {
     if (activeTab === 'baskets') {
@@ -139,8 +142,9 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
       return;
     }
 
-    const preferred = dateOptions.find((option) => option.isToday)?.key ?? dateOptions[0]?.key ?? null;
-    setSelectedDateKey(preferred);
+    if (selectedDateKey !== null) {
+      setSelectedDateKey(null);
+    }
   }, [activeTab, dateOptions, selectedDateKey]);
 
   const updateFilter = (value: string | null) => {
@@ -179,7 +183,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
               loading={isRefreshing}
               onPress={refreshPicking}
             />
-            <Text style={styles.queueHeaderTitle}>Today&apos;s Tasks</Text>
+            <Text style={styles.queueHeaderTitle}>Pick Tasks</Text>
             <View style={styles.queueBellButton}>
               <Feather name="bell" size={18} color="#1F1F28" />
             <View style={styles.queueBellDot} />
@@ -248,10 +252,13 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
               <PickStatusFilterRow value={statusFilter} onChange={setStatusFilter} />
               <PickTaskList
                 activeTaskId={activeTaskId}
+                hiddenCount={hiddenTaskCount}
                 hasMore={Boolean(picking?.pagination.hasMore)}
                 isLoadingMore={isLoadingMore}
+                loadedCount={taskPool.length}
+                onClearDateFilter={() => setSelectedDateKey(null)}
                 tasks={filteredTaskPool}
-                total={picking?.pagination.total ?? 0}
+                total={totalPickTasks}
                 onLoadMore={loadMore}
                 onSelect={setActiveTaskId}
               />
@@ -290,27 +297,37 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
 
 function PickTaskList({
   activeTaskId,
+  hiddenCount,
   hasMore,
   isLoadingMore,
+  loadedCount,
+  onClearDateFilter,
   tasks,
   total,
   onLoadMore,
   onSelect,
 }: {
   activeTaskId: string | null;
+  hiddenCount: number;
   hasMore: boolean;
   isLoadingMore: boolean;
+  loadedCount: number;
+  onClearDateFilter: () => void;
   tasks: WmsMobilePickingTask[];
   total: number;
   onLoadMore: () => void | Promise<void>;
   onSelect: (taskId: string) => void;
 }) {
+  const remaining = Math.max(total - loadedCount, 0);
+
   return (
     <>
       <TaskCollectionSection
         activeTaskId={activeTaskId}
-        emptyCopy="Confirmed orders will show here after sync."
-        emptyTitle="No pick tasks"
+        emptyCopy={hiddenCount > 0
+          ? 'Loaded orders are currently hidden by the selected date. Show all loaded dates or choose another day.'
+          : 'Confirmed orders will show here after sync.'}
+        emptyTitle={hiddenCount > 0 ? 'No tasks on this date' : 'No pick tasks'}
         showHeader={false}
         tasks={tasks}
         title="Orders"
@@ -318,13 +335,48 @@ function PickTaskList({
         onSelect={onSelect}
       />
 
-      {hasMore ? (
-        <PrimaryButton
-          label="Load more"
-          loading={isLoadingMore}
-          onPress={onLoadMore}
-          variant="secondary"
-        />
+      {(loadedCount > 0 || hasMore) ? (
+        <SurfaceCard style={styles.paginationCard}>
+          <View style={styles.paginationTopRow}>
+            <View style={styles.paginationIconWrap}>
+              <Feather name="layers" size={16} color="#6437F6" />
+            </View>
+            <View style={styles.paginationCopyWrap}>
+              <Text style={styles.paginationTitle}>
+                {loadedCount >= total && total > 0
+                  ? `All ${total} queued orders are loaded`
+                  : `${loadedCount} of ${total} queued orders loaded`}
+              </Text>
+              <Text style={styles.paginationCopy}>
+                {hiddenCount > 0
+                  ? `${tasks.length} visible now · ${hiddenCount} hidden by date filter`
+                  : `${tasks.length} visible in the current view`}
+              </Text>
+            </View>
+          </View>
+
+          {hiddenCount > 0 ? (
+            <Pressable onPress={onClearDateFilter} style={styles.paginationHintButton}>
+              <Feather name="calendar" size={14} color="#6437F6" />
+              <Text style={styles.paginationHintText}>Show all loaded dates</Text>
+            </Pressable>
+          ) : null}
+
+          {hasMore ? (
+            <PrimaryButton
+              label={`Load ${Math.min(PICK_LIST_PAGE_SIZE, remaining)} more order${Math.min(PICK_LIST_PAGE_SIZE, remaining) === 1 ? '' : 's'}`}
+              loading={isLoadingMore}
+              onPress={onLoadMore}
+              style={styles.paginationButton}
+              variant="secondary"
+            />
+          ) : (
+            <View style={styles.paginationDoneRow}>
+              <Feather name="check-circle" size={15} color="#2DAA73" />
+              <Text style={styles.paginationDoneText}>You have reached the end of the loaded queue.</Text>
+            </View>
+          )}
+        </SurfaceCard>
       ) : null}
     </>
   );
@@ -492,13 +544,25 @@ function TaskDateCarousel({
 }: {
   options: Array<{ key: string; month: string; day: string; weekday: string }>;
   value: string | null;
-  onChange: (key: string) => void;
+  onChange: (key: string | null) => void;
 }) {
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.dateCarousel}>
+      <Pressable
+        onPress={() => onChange(null)}
+        style={({ pressed }) => [
+          styles.dateCard,
+          value === null ? styles.dateCardActive : null,
+          pressed ? styles.dateCardPressed : null,
+          styles.dateCardAll,
+        ]}>
+        <Text style={[styles.dateCardAllLabel, value === null ? styles.dateCardAllLabelActive : null]}>All</Text>
+        <Text style={[styles.dateCardAllMeta, value === null ? styles.dateCardAllMetaActive : null]}>Dates</Text>
+      </Pressable>
+
       {options.map((option) => {
         const active = value === option.key;
         return (
@@ -1380,6 +1444,26 @@ const styles = StyleSheet.create({
   dateCardPressed: {
     opacity: 0.92,
   },
+  dateCardAll: {
+    width: 68,
+  },
+  dateCardAllLabel: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  dateCardAllLabelActive: {
+    color: '#FFFFFF',
+  },
+  dateCardAllMeta: {
+    color: '#6A6680',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  dateCardAllMetaActive: {
+    color: '#F4EEFF',
+  },
   dateCardMonth: {
     color: '#353346',
     fontSize: 12,
@@ -1492,6 +1576,78 @@ const styles = StyleSheet.create({
   },
   taskList: {
     gap: 18,
+  },
+  paginationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    gap: 14,
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    shadowColor: '#9C83FF',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+  },
+  paginationTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  paginationIconWrap: {
+    alignItems: 'center',
+    backgroundColor: '#EEE9FF',
+    borderRadius: 14,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  paginationCopyWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  paginationTitle: {
+    color: '#24232D',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  paginationCopy: {
+    color: '#7B7791',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  paginationHintButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  paginationHintText: {
+    color: '#6437F6',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  paginationButton: {
+    minHeight: 52,
+  },
+  paginationDoneRow: {
+    alignItems: 'center',
+    backgroundColor: '#EEF9F3',
+    borderRadius: 16,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingHorizontal: 14,
+  },
+  paginationDoneText: {
+    color: '#227E56',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   taskPressable: {},
   activeTaskPressable: {

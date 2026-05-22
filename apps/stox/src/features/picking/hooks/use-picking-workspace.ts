@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
 import { ApiError } from '@/src/shared/services/http';
 import {
@@ -44,21 +44,45 @@ export function usePickingWorkspace({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const requestInFlightRef = useRef(false);
+
+  const requestPickingPage = useCallback(async (nextPage: number) => {
+    if (!device) {
+      throw new Error('Device is not ready.');
+    }
+
+    return fetchMobilePickingTasks({
+      accessToken: session.accessToken,
+      device,
+      filters,
+      status: statusFilter,
+      page: nextPage,
+      pageSize: PICKING_PAGE_SIZE,
+    });
+  }, [device, filters, session.accessToken, statusFilter]);
 
   const loadPickingPage = useCallback(async ({
     append = false,
     loadingKind,
     page: nextPage,
+    preserveLoadedPages = 1,
   }: {
     append?: boolean;
     loadingKind: 'initial' | 'refresh' | 'more';
     page: number;
+    preserveLoadedPages?: number;
   }) => {
     if (!device) {
       setError('Device is not ready.');
       setIsLoading(false);
       return;
     }
+
+    if (requestInFlightRef.current) {
+      return;
+    }
+
+    requestInFlightRef.current = true;
 
     if (loadingKind === 'initial') {
       setIsLoading(true);
@@ -71,38 +95,39 @@ export function usePickingWorkspace({
     }
 
     try {
-      const nextPicking = await fetchMobilePickingTasks({
-        accessToken: session.accessToken,
-        device,
-        filters,
-        status: statusFilter,
-        page: nextPage,
-        pageSize: PICKING_PAGE_SIZE,
-      });
+      const nextPicking = append
+        ? await requestPickingPage(nextPage)
+        : preserveLoadedPages > 1
+          ? mergePickingPages(await Promise.all(
+              Array.from({ length: preserveLoadedPages }, (_, index) => requestPickingPage(index + 1)),
+            ))
+          : await requestPickingPage(nextPage);
 
       setPicking((current) => (
         append && current ? mergePickingPage(current, nextPicking) : nextPicking
       ));
-      setPage(nextPage);
+      setPage(append ? nextPage : nextPicking.pagination.page);
       setError(null);
     } catch (requestError) {
       setError(resolvePickingError(requestError));
     } finally {
+      requestInFlightRef.current = false;
       setIsLoading(false);
       setIsRefreshing(false);
       setIsLoadingMore(false);
     }
-  }, [device, filters, session.accessToken, statusFilter]);
+  }, [device, requestPickingPage]);
 
   const refreshPicking = useCallback(async () => {
     await loadPickingPage({
       loadingKind: 'refresh',
       page: 1,
+      preserveLoadedPages: page,
     });
-  }, [loadPickingPage]);
+  }, [loadPickingPage, page]);
 
   const loadMore = useCallback(async () => {
-    if (!picking?.pagination.hasMore || isLoadingMore) {
+    if (!picking?.pagination.hasMore || isLoadingMore || isRefreshing || isLoading) {
       return;
     }
 
@@ -111,7 +136,7 @@ export function usePickingWorkspace({
       loadingKind: 'more',
       page: page + 1,
     });
-  }, [isLoadingMore, loadPickingPage, page, picking?.pagination.hasMore]);
+  }, [isLoading, isLoadingMore, isRefreshing, loadPickingPage, page, picking?.pagination.hasMore]);
 
   const updateFilters = useCallback((nextFilters: SetStateAction<PickingFilters>) => {
     setPicking(null);
@@ -291,16 +316,17 @@ export function usePickingWorkspace({
 
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!isSubmitting) {
+      if (!isSubmitting && !isLoading && !isRefreshing && !isLoadingMore) {
         void loadPickingPage({
           loadingKind: 'refresh',
           page: 1,
+          preserveLoadedPages: page,
         });
       }
     }, 10000);
 
     return () => clearInterval(timer);
-  }, [isSubmitting, loadPickingPage]);
+  }, [isLoading, isLoadingMore, isRefreshing, isSubmitting, loadPickingPage, page]);
 
   const indexedTasks = useMemo(() => {
     if (!picking) {
@@ -364,8 +390,40 @@ function mergePickingPage(
   current: WmsMobilePickingResponse,
   next: WmsMobilePickingResponse,
 ): WmsMobilePickingResponse {
+  const tasks = mergePickingTaskRecords([current.tasks, next.tasks]);
+
+  return {
+    ...next,
+    tasks,
+  };
+}
+
+function mergePickingPages(pages: WmsMobilePickingResponse[]) {
+  const base = pages[0];
+  if (!base) {
+    throw new Error('Missing picking response');
+  }
+
+  const loadedTasks = mergePickingTaskRecords(pages.map((page) => page.tasks));
+  const pageSize = base.pagination.pageSize || PICKING_PAGE_SIZE;
+  const maxPage = Math.max(1, Math.ceil(base.pagination.total / pageSize));
+  const loadedPage = Math.min(pages.length, maxPage);
+
+  return {
+    ...base,
+    pagination: {
+      ...base.pagination,
+      page: loadedPage,
+      hasMore: loadedPage < maxPage,
+    },
+    tasks: loadedTasks,
+  };
+}
+
+function mergePickingTaskRecords(taskGroups: WmsMobilePickingTask[][]) {
   const seen = new Set<string>();
-  const tasks = [...current.tasks, ...next.tasks].filter((task) => {
+
+  return taskGroups.flat().filter((task) => {
     if (seen.has(task.id)) {
       return false;
     }
@@ -373,11 +431,6 @@ function mergePickingPage(
     seen.add(task.id);
     return true;
   });
-
-  return {
-    ...next,
-    tasks,
-  };
 }
 
 function replacePickingTask(

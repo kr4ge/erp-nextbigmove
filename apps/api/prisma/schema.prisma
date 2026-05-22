@@ -1145,6 +1145,7 @@ model PosOrder {
 
   @@unique([tenantId, shopId, posOrderId])
   @@index([tenantId, shopId, dateLocal])
+  @@index([tenantId, shopId, status, isVoid, insertedAt], map: "pos_orders_wms_pick_sync_idx")
   @@index([tenantId, teamId, dateLocal])
   @@index([tenantId, status, dateLocal, confirmationUpdateRequestedAt], map: "pos_orders_confirmation_queue_idx")
   @@index([tenantId, teamId, dateLocal, isRiskConfirmation], map: "pos_orders_tenant_team_date_risk_confirmation_idx")

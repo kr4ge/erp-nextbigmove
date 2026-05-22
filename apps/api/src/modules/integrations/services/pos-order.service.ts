@@ -5,6 +5,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
+import { WmsFulfillmentSyncService } from '../../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../../wms-inventory/wms-inventory.service';
 
 dayjs.extend(utc);
@@ -79,6 +80,7 @@ export interface PosOrderUpsertOutcome {
 export class PosOrderService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
     private readonly wmsInventoryService: WmsInventoryService,
   ) {}
 
@@ -667,11 +669,12 @@ export class PosOrderService {
   ): Promise<{ upserted: number; outcomes: PosOrderUpsertOutcome[] }> {
     let upserted = 0;
     const outcomes: PosOrderUpsertOutcome[] = [];
+    const fulfillmentCandidates: Array<{ shopId: string; posOrderId: string }> = [];
     const dispatchCandidates: Array<{ shopId: string; posOrderId: string }> = [];
 
     const store = await this.prisma.posStore.findFirst({
       where: { id: storeId, tenantId },
-      select: { initialValueOffer: true, shopId: true },
+      select: { initialValueOffer: true, shopId: true, teamId: true },
     });
     let initialValueOffer: number | null = null;
     if (store?.initialValueOffer !== null && store?.initialValueOffer !== undefined) {
@@ -822,6 +825,17 @@ export class PosOrderService {
 
         upserted++;
         if (
+          order.status === 1
+          && !order.isVoid
+          && order.shopId
+          && order.posOrderId
+        ) {
+          fulfillmentCandidates.push({
+            shopId: order.shopId,
+            posOrderId: order.posOrderId,
+          });
+        }
+        if (
           (order.status === 2 || order.status === 3)
           && order.shopId
           && order.posOrderId
@@ -892,6 +906,21 @@ export class PosOrderService {
         WHERE "tenantId" = ${tenantId}::uuid
           AND "shopId" = ${store.shopId}
       `;
+    }
+
+    if (store && fulfillmentCandidates.length > 0) {
+      await this.wmsFulfillmentSyncService.syncConfirmedPickingOrders({
+        tenantId,
+        storeId,
+        actorId: null,
+        stores: [{
+          id: storeId,
+          tenantId,
+          teamId: teamId ?? store.teamId ?? null,
+          shopId: store.shopId,
+        }],
+        posOrderRefs: fulfillmentCandidates,
+      });
     }
 
     if (dispatchCandidates.length > 0) {

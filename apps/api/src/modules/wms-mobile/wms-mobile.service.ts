@@ -29,6 +29,7 @@ import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EffectiveAccessService } from '../../common/services/effective-access.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
+import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
 import {
   GetWmsMobileStockDto,
@@ -232,6 +233,7 @@ export class WmsMobileService {
     private readonly cls: ClsService,
     private readonly effectiveAccessService: EffectiveAccessService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
+    private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
     private readonly wmsInventoryService: WmsInventoryService,
   ) {}
 
@@ -1703,13 +1705,6 @@ export class WmsMobileService {
       throw new ForbiddenException('Selected store is not available for STOX picking');
     }
 
-    await this.syncConfirmedPickingOrders({
-      tenantId,
-      storeId: activeStore?.id ?? null,
-      stores,
-      actorId: userId,
-    });
-
     const statusFilter = query.status
       ? (query.status as WmsFulfillmentOrderStatus)
       : { in: [...ACTIVE_PICKING_ORDER_STATUSES] };
@@ -1956,23 +1951,6 @@ export class WmsMobileService {
       throw new ForbiddenException('Selected store is not available for STOX packing');
     }
 
-    const dispatchRepairTenants = activeStore?.tenantId
-      ? [activeStore.tenantId]
-      : tenantId
-        ? [tenantId]
-        : Array.from(new Set(stores.map((store) => store.tenantId).filter(Boolean)));
-
-    if (dispatchRepairTenants.length > 0) {
-      await Promise.all(
-        dispatchRepairTenants.map((repairTenantId) => (
-          this.wmsInventoryService.syncPackedUnitsToDispatchedForPosOrders({
-            tenantId: repairTenantId,
-            storeId: activeStore?.tenantId === repairTenantId ? activeStore.id : null,
-          })
-        )),
-      );
-    }
-
     const scopedWhere: Prisma.WmsFulfillmentOrderWhereInput = {
       ...(tenantId ? { tenantId } : {}),
       ...(activeStore ? { storeId: activeStore.id } : {}),
@@ -2007,17 +1985,6 @@ export class WmsMobileService {
       (status) => status !== WmsFulfillmentOrderStatus.PACKED,
     );
     const includePackedHistory = selectedPackingStatuses.includes(WmsFulfillmentOrderStatus.PACKED);
-
-    if (includePackedHistory) {
-      await this.backfillPackedOrderActors(
-        isPackedHistoryOnly
-          ? {}
-          : {
-            tenantId,
-            storeId: activeStore?.id ?? null,
-          },
-      );
-    }
 
     const scopedBasketWhere: Prisma.WmsBasketWhereInput = {
       status: {
@@ -2859,7 +2826,7 @@ export class WmsMobileService {
       throw new ForbiddenException('Missing WMS user context');
     }
 
-    await this.allocateFulfillmentOrder(id, userId);
+    await this.wmsFulfillmentSyncService.allocateFulfillmentOrder(id, userId);
     const order = await this.findPickingOrderForAction(user, id, body.tenantId, request);
 
     if (order.claimedById === userId && (
