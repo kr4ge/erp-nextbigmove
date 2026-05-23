@@ -195,6 +195,7 @@ const HISTORY_PACK_ACTION_TYPES = [
 ] as const;
 const HISTORY_DISPATCH_ACTION_TYPES = [
   'ORDER_DISPATCH_SYNC',
+  'ORDER_DELIVERY_SYNC',
 ] as const;
 const HISTORY_SCAN_ACTION_TYPES = [
   'STOCK_SCAN',
@@ -2174,11 +2175,18 @@ export class WmsMobileService {
     const limit = query.limit ?? DEFAULT_HISTORY_PAGE_SIZE;
     const cursor = this.decodeHistoryCursor(query.cursor);
     const activeType = query.type ?? 'ALL';
+    const visibleFulfillmentOrderIds = !canViewAll && tenantId && this.historyTypeSupportsFulfillmentVisibility(activeType)
+      ? await this.resolveVisibleFulfillmentHistoryOrderIds({
+          tenantId,
+          userId,
+        })
+      : [];
     const where = this.buildHistoryActivityWhere({
       tenantId,
       actorId: activeActorId,
       type: activeType,
       cursor,
+      visibleFulfillmentOrderIds,
     });
 
     const rows = await this.prisma.wmsStaffActivity.findMany({
@@ -2899,7 +2907,10 @@ export class WmsMobileService {
     this.assertPickingTaskClaimedByUser(order, userId, { allowReadyWithoutBasket: true });
     this.assertPickingTaskHasBasket(order);
 
-    const location = await this.findLocationByCode(body.code);
+    const location = await this.findLocationByCode(body.code, {
+      warehouseId: order.warehouseId ?? null,
+      warehouseMismatchMessage: `Scanned bin belongs to another warehouse, not the order warehouse for ${order.posOrderId}`,
+    });
     if (!location || location.kind !== WmsLocationKind.BIN) {
       throw new NotFoundException('Scanned code is not a WMS bin');
     }
@@ -5148,14 +5159,34 @@ export class WmsMobileService {
     actorId: string | null;
     type: WmsMobileHistoryTypeFilter;
     cursor: { createdAt: Date; id: string } | null;
+    visibleFulfillmentOrderIds?: string[];
   }): Prisma.WmsStaffActivityWhereInput {
     const where: Prisma.WmsStaffActivityWhereInput = {
       ...(params.tenantId ? { tenantId: params.tenantId } : {}),
-      ...(params.actorId ? { actorId: params.actorId } : {}),
       actionType: {
         in: [...this.resolveHistoryActionTypes(params.type)],
       },
     };
+
+    const visibilityClauses: Prisma.WmsStaffActivityWhereInput[] = [];
+    if (params.actorId) {
+      visibilityClauses.push({ actorId: params.actorId });
+    }
+
+    if ((params.visibleFulfillmentOrderIds?.length ?? 0) > 0) {
+      visibilityClauses.push({
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: {
+          in: params.visibleFulfillmentOrderIds,
+        },
+      });
+    }
+
+    if (visibilityClauses.length === 1) {
+      Object.assign(where, visibilityClauses[0]);
+    } else if (visibilityClauses.length > 1) {
+      where.OR = visibilityClauses;
+    }
 
     if (params.type === 'ISSUE') {
       where.outcome = {
@@ -5197,6 +5228,58 @@ export class WmsMobileService {
       default:
         return HISTORY_ALL_ACTION_TYPES;
     }
+  }
+
+  private historyTypeSupportsFulfillmentVisibility(type: WmsMobileHistoryTypeFilter) {
+    return type !== 'SCAN';
+  }
+
+  private async resolveVisibleFulfillmentHistoryOrderIds(params: {
+    tenantId: string;
+    userId: string;
+  }) {
+    const [orders, activities] = await Promise.all([
+      this.prisma.wmsFulfillmentOrder.findMany({
+        where: {
+          tenantId: params.tenantId,
+          OR: [
+            { claimedById: params.userId },
+            { packedById: params.userId },
+          ],
+        },
+        select: {
+          id: true,
+        },
+      }),
+      this.prisma.wmsStaffActivity.findMany({
+        where: {
+          tenantId: params.tenantId,
+          actorId: params.userId,
+          resourceType: 'WMS_FULFILLMENT_ORDER',
+          resourceId: {
+            not: null,
+          },
+          actionType: {
+            in: [
+              ...HISTORY_PICK_ACTION_TYPES,
+              ...HISTORY_PACK_ACTION_TYPES,
+              ...HISTORY_VOID_ACTION_TYPES,
+            ],
+          },
+        },
+        select: {
+          resourceId: true,
+        },
+        distinct: ['resourceId'],
+      }),
+    ]);
+
+    return Array.from(
+      new Set([
+        ...orders.map((order) => order.id),
+        ...activities.flatMap((activity) => (activity.resourceId ? [activity.resourceId] : [])),
+      ]),
+    );
   }
 
   private encodeHistoryCursor(createdAt: Date, id: string) {
@@ -5321,6 +5404,8 @@ export class WmsMobileService {
         return 'Completed packing';
       case 'ORDER_DISPATCH_SYNC':
         return 'Synced dispatch status';
+      case 'ORDER_DELIVERY_SYNC':
+        return 'Synced delivery status';
       case 'PACKING_VOID_REQUEST':
         return 'Requested order void';
       case 'PACKING_VOID_APPROVAL':
@@ -5377,7 +5462,11 @@ export class WmsMobileService {
     const targetCode = this.readHistoryMetadataString(metadata, 'targetCode');
     const deliveryState = this.readHistoryMetadataString(metadata, 'deliveryState');
 
-    if (actionType === 'ORDER_DISPATCH_SYNC' && posOrderId && deliveryState) {
+    if (
+      (actionType === 'ORDER_DISPATCH_SYNC' || actionType === 'ORDER_DELIVERY_SYNC')
+      && posOrderId
+      && deliveryState
+    ) {
       return `Order ${posOrderId} · ${deliveryState === 'DELIVERED' ? 'Delivered' : 'Shipped'}`;
     }
 
@@ -5466,15 +5555,17 @@ export class WmsMobileService {
       parts.push(context.warehouseLabel);
     }
 
-    if (actionType === 'ORDER_DISPATCH_SYNC' && deliveryState) {
+    if ((actionType === 'ORDER_DISPATCH_SYNC' || actionType === 'ORDER_DELIVERY_SYNC') && deliveryState) {
       parts.push(deliveryState === 'DELIVERED' ? 'Courier marked delivered' : 'Courier marked shipped');
     }
 
-    if (typeof unitCount === 'number' && actionType === 'ORDER_DISPATCH_SYNC') {
-      parts.push(`${unitCount} unit${unitCount === 1 ? '' : 's'} dispatched`);
+    if (typeof unitCount === 'number' && (actionType === 'ORDER_DISPATCH_SYNC' || actionType === 'ORDER_DELIVERY_SYNC')) {
+      parts.push(
+        `${unitCount} unit${unitCount === 1 ? '' : 's'} ${actionType === 'ORDER_DELIVERY_SYNC' ? 'delivered' : 'dispatched'}`,
+      );
     }
 
-    if (mode === 'AUTO' && actionType === 'ORDER_DISPATCH_SYNC') {
+    if (mode === 'AUTO' && (actionType === 'ORDER_DISPATCH_SYNC' || actionType === 'ORDER_DELIVERY_SYNC')) {
       parts.push('Auto sync');
     }
 
@@ -5818,24 +5909,90 @@ export class WmsMobileService {
     });
   }
 
-  private async findLocationByCode(code: string) {
+  private async findLocationByCode(
+    code: string,
+    options?: {
+      warehouseId?: string | null;
+      warehouseMismatchMessage?: string;
+    },
+  ) {
     const normalizedCode = this.normalizeScannedCode(code);
-    const candidates = await this.buildLocationLookupCandidates(normalizedCode);
-    return this.prisma.wmsLocation.findFirst({
+    const scopedWarehouseId = options?.warehouseId ?? await this.resolveWarehouseScopeFromLocationCode(normalizedCode);
+    const candidates = await this.buildLocationLookupCandidates(normalizedCode, scopedWarehouseId ?? undefined);
+    const locationInclude = {
+      warehouse: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+        },
+      },
+    } satisfies Prisma.WmsLocationInclude;
+
+    if (scopedWarehouseId) {
+      const location = await this.prisma.wmsLocation.findFirst({
+        where: {
+          warehouseId: scopedWarehouseId,
+          isActive: true,
+          OR: this.buildLocationLookupWhere(candidates, normalizedCode),
+        },
+        include: locationInclude,
+      });
+
+      if (location) {
+        return location;
+      }
+
+      if (options?.warehouseId) {
+        const locationInAnotherWarehouse = await this.prisma.wmsLocation.findFirst({
+          where: {
+            isActive: true,
+            OR: this.buildLocationLookupWhere(candidates, normalizedCode),
+            NOT: {
+              warehouseId: scopedWarehouseId,
+            },
+          },
+          include: locationInclude,
+        });
+
+        if (locationInAnotherWarehouse) {
+          throw new BadRequestException(
+            options.warehouseMismatchMessage
+              ?? `Scanned bin ${locationInAnotherWarehouse.code} belongs to ${locationInAnotherWarehouse.warehouse.code}, not this warehouse`,
+          );
+        }
+      }
+
+      return null;
+    }
+
+    const matches = await this.prisma.wmsLocation.findMany({
       where: {
         isActive: true,
         OR: this.buildLocationLookupWhere(candidates, normalizedCode),
       },
-      include: {
-        warehouse: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
-          },
-        },
-      },
+      include: locationInclude,
+      orderBy: [
+        { warehouseId: 'asc' },
+        { code: 'asc' },
+      ],
+      take: 3,
     });
+
+    if (matches.length === 0) {
+      return null;
+    }
+
+    if (matches.length > 1) {
+      const warehouseCodes = Array.from(
+        new Set(matches.map((match) => match.warehouse.code)),
+      );
+      throw new BadRequestException(
+        `Location code ${normalizedCode} exists in multiple warehouses (${warehouseCodes.join(', ')}). Scan the warehouse-prefixed bin barcode instead.`,
+      );
+    }
+
+    return matches[0];
   }
 
   private async findBatchByCode(code: string, tenantId: string | null) {
@@ -6024,6 +6181,33 @@ export class WmsMobileService {
     });
 
     return Array.from(candidates);
+  }
+
+  private async resolveWarehouseScopeFromLocationCode(rawCode: string) {
+    const code = this.normalizeScannedCode(rawCode);
+    if (!code) {
+      return null;
+    }
+
+    const warehouses = await this.prisma.wmsWarehouse.findMany({
+      select: {
+        id: true,
+        code: true,
+      },
+      orderBy: {
+        code: 'desc',
+      },
+    });
+
+    const matchingWarehouse = warehouses
+      .sort((left, right) => right.code.length - left.code.length)
+      .find((warehouse) =>
+        [`WMS-${warehouse.code}-`, `${warehouse.code}-`].some((prefix) =>
+          code.toUpperCase().startsWith(prefix.toUpperCase()),
+        ),
+      );
+
+    return matchingWarehouse?.id ?? null;
   }
 
   private buildLocationLookupWhere(candidates: string[], scannedCode: string): Prisma.WmsLocationWhereInput[] {

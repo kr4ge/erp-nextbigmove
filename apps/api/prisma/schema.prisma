@@ -883,6 +883,7 @@ model WmsStaffActivity {
   @@index([actionType, createdAt])
   @@index([storeId, createdAt])
   @@index([warehouseId, createdAt])
+  @@index([tenantId, resourceType, resourceId, createdAt])
   @@map("wms_staff_activities")
 }
 

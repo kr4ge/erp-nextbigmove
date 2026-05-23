@@ -1686,10 +1686,6 @@ export class WmsInventoryService {
       },
     });
 
-    if (reservations.length === 0) {
-      return { dispatchedUnits: 0 };
-    }
-
     const uniqueReservations = Array.from(
       new Map(reservations.map((reservation) => [reservation.inventoryUnitId, reservation])).values(),
     );
@@ -1697,91 +1693,248 @@ export class WmsInventoryService {
     let dispatchedUnits = 0;
     const dispatchedByOrderId = new Map<string, Array<typeof uniqueReservations[number]>>();
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const reservation of uniqueReservations) {
-        const updateResult = await tx.wmsInventoryUnit.updateMany({
-          where: {
-            id: reservation.inventoryUnitId,
-            status: WmsInventoryUnitStatus.PACKED,
-          },
-          data: {
-            currentLocationId: null,
-            status: WmsInventoryUnitStatus.DISPATCHED,
-            updatedById: null,
-          },
-        });
+    if (uniqueReservations.length > 0) {
+      await this.prisma.$transaction(async (tx) => {
+        for (const reservation of uniqueReservations) {
+          const updateResult = await tx.wmsInventoryUnit.updateMany({
+            where: {
+              id: reservation.inventoryUnitId,
+              status: WmsInventoryUnitStatus.PACKED,
+            },
+            data: {
+              currentLocationId: null,
+              status: WmsInventoryUnitStatus.DISPATCHED,
+              updatedById: null,
+            },
+          });
 
-        if (updateResult.count === 0) {
-          continue;
+          if (updateResult.count === 0) {
+            continue;
+          }
+
+          dispatchedUnits += updateResult.count;
+          const dispatchedForOrder = dispatchedByOrderId.get(reservation.fulfillmentOrder.id) ?? [];
+          dispatchedForOrder.push(reservation);
+          dispatchedByOrderId.set(reservation.fulfillmentOrder.id, dispatchedForOrder);
+
+          const shippedStatus = reservation.fulfillmentOrder.posOrder?.status;
+          const note = shippedStatus === 3
+            ? `Auto-dispatched after POS order ${reservation.fulfillmentOrder.posOrderId} was marked delivered`
+            : `Auto-dispatched after POS order ${reservation.fulfillmentOrder.posOrderId} was marked shipped`;
+
+          await tx.wmsInventoryMovement.create({
+            data: {
+              tenantId: reservation.fulfillmentOrder.tenantId,
+              teamId: reservation.fulfillmentOrder.teamId ?? reservation.inventoryUnit.teamId,
+              inventoryUnitId: reservation.inventoryUnitId,
+              warehouseId: reservation.inventoryUnit.warehouseId,
+              fromLocationId: reservation.inventoryUnit.currentLocationId,
+              toLocationId: null,
+              fromStatus: reservation.inventoryUnit.status,
+              toStatus: WmsInventoryUnitStatus.DISPATCHED,
+              movementType: WmsInventoryMovementType.DISPATCH,
+              referenceType: 'WMS_FULFILLMENT_ORDER',
+              referenceId: reservation.fulfillmentOrder.id,
+              referenceCode: reservation.fulfillmentOrder.posOrderId,
+              notes: note,
+              actorId: null,
+              createdAt: now,
+            },
+          });
         }
+      });
 
-        dispatchedUnits += updateResult.count;
-        const dispatchedForOrder = dispatchedByOrderId.get(reservation.fulfillmentOrder.id) ?? [];
-        dispatchedForOrder.push(reservation);
-        dispatchedByOrderId.set(reservation.fulfillmentOrder.id, dispatchedForOrder);
+      await Promise.all(
+        Array.from(dispatchedByOrderId.entries()).map(async ([orderId, orderReservations]) => {
+          const sample = orderReservations[0];
+          const posStatus = sample.fulfillmentOrder.posOrder?.status ?? null;
+          const deliveryState = posStatus === 3 ? 'DELIVERED' : 'SHIPPED';
 
-        const shippedStatus = reservation.fulfillmentOrder.posOrder?.status;
-        const note = shippedStatus === 3
-          ? `Auto-dispatched after POS order ${reservation.fulfillmentOrder.posOrderId} was marked delivered`
-          : `Auto-dispatched after POS order ${reservation.fulfillmentOrder.posOrderId} was marked shipped`;
-
-        await tx.wmsInventoryMovement.create({
-          data: {
-            tenantId: reservation.fulfillmentOrder.tenantId,
-            teamId: reservation.fulfillmentOrder.teamId ?? reservation.inventoryUnit.teamId,
-            inventoryUnitId: reservation.inventoryUnitId,
-            warehouseId: reservation.inventoryUnit.warehouseId,
-            fromLocationId: reservation.inventoryUnit.currentLocationId,
-            toLocationId: null,
-            fromStatus: reservation.inventoryUnit.status,
-            toStatus: WmsInventoryUnitStatus.DISPATCHED,
-            movementType: WmsInventoryMovementType.DISPATCH,
-            referenceType: 'WMS_FULFILLMENT_ORDER',
-            referenceId: reservation.fulfillmentOrder.id,
-            referenceCode: reservation.fulfillmentOrder.posOrderId,
-            notes: note,
+          await this.wmsStaffActivityService.record({
+            tenantId: sample.fulfillmentOrder.tenantId,
             actorId: null,
-            createdAt: now,
-          },
-        });
-      }
+            teamId: sample.fulfillmentOrder.teamId ?? sample.inventoryUnit.teamId,
+            sessionId: (this.cls.get('sessionId') as string | undefined) ?? null,
+            actionType: 'ORDER_DISPATCH_SYNC',
+            resourceType: 'WMS_FULFILLMENT_ORDER',
+            resourceId: orderId,
+            taskType: 'DISPATCH',
+            taskId: orderId,
+            storeId: sample.fulfillmentOrder.storeId,
+            warehouseId: sample.fulfillmentOrder.warehouseId ?? sample.inventoryUnit.warehouseId,
+            fromStatus: WmsInventoryUnitStatus.PACKED,
+            toStatus: WmsInventoryUnitStatus.DISPATCHED,
+            outcome: WmsStaffActivityOutcome.SUCCESS,
+            metadata: {
+              deliveryState,
+              mode: 'AUTO',
+              posOrderId: sample.fulfillmentOrder.posOrderId,
+              posStatus,
+              trackingCode: sample.fulfillmentOrder.posOrder?.tracking ?? null,
+              unitCodes: orderReservations.map((reservation) => reservation.inventoryUnit.code),
+              unitCount: orderReservations.length,
+            },
+          });
+        }),
+      );
+    }
+
+    const deliveredOrders = await this.recordDeliveredOrderHistoryForDispatchedPosOrders({
+      tenantId: params.tenantId,
+      storeId: params.storeId ?? null,
+      refs,
     });
 
-    await Promise.all(
-      Array.from(dispatchedByOrderId.entries()).map(async ([orderId, orderReservations]) => {
-        const sample = orderReservations[0];
-        const posStatus = sample.fulfillmentOrder.posOrder?.status ?? null;
-        const deliveryState = posStatus === 3 ? 'DELIVERED' : 'SHIPPED';
+    return {
+      dispatchedUnits,
+      deliveredOrders,
+    };
+  }
 
+  private async recordDeliveredOrderHistoryForDispatchedPosOrders(params: {
+    tenantId: string;
+    storeId: string | null;
+    refs: Array<{
+      shopId: string;
+      posOrderId: string;
+    }>;
+  }) {
+    const deliveredOrders = await this.prisma.wmsFulfillmentOrder.findMany({
+      where: {
+        tenantId: params.tenantId,
+        ...(params.storeId ? { storeId: params.storeId } : {}),
+        status: WmsFulfillmentOrderStatus.PACKED,
+        posOrder: {
+          is: {
+            status: 3,
+          },
+        },
+        reservations: {
+          some: {
+            inventoryUnit: {
+              status: WmsInventoryUnitStatus.DISPATCHED,
+            },
+          },
+        },
+        ...(params.refs.length > 0
+          ? {
+              OR: params.refs.map((ref) => ({
+                shopId: ref.shopId,
+                posOrderId: ref.posOrderId,
+              })),
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        teamId: true,
+        storeId: true,
+        warehouseId: true,
+        posOrderId: true,
+        posOrder: {
+          select: {
+            status: true,
+            tracking: true,
+          },
+        },
+        reservations: {
+          where: {
+            inventoryUnit: {
+              status: WmsInventoryUnitStatus.DISPATCHED,
+            },
+          },
+          select: {
+            inventoryUnit: {
+              select: {
+                code: true,
+                teamId: true,
+                warehouseId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (deliveredOrders.length === 0) {
+      return 0;
+    }
+
+    const existingActivities = await this.prisma.wmsStaffActivity.findMany({
+      where: {
+        tenantId: params.tenantId,
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: {
+          in: deliveredOrders.map((order) => order.id),
+        },
+        actionType: {
+          in: ['ORDER_DISPATCH_SYNC', 'ORDER_DELIVERY_SYNC'],
+        },
+      },
+      select: {
+        resourceId: true,
+        actionType: true,
+        metadata: true,
+      },
+    });
+
+    const deliveredOrderIds = new Set(
+      existingActivities.flatMap((activity) => {
+        if (!activity.resourceId) {
+          return [];
+        }
+
+        if (activity.actionType === 'ORDER_DELIVERY_SYNC') {
+          return [activity.resourceId];
+        }
+
+        if (
+          activity.metadata
+          && !Array.isArray(activity.metadata)
+          && typeof activity.metadata === 'object'
+          && activity.metadata['deliveryState'] === 'DELIVERED'
+        ) {
+          return [activity.resourceId];
+        }
+
+        return [];
+      }),
+    );
+
+    const ordersToRecord = deliveredOrders.filter((order) => !deliveredOrderIds.has(order.id));
+    await Promise.all(
+      ordersToRecord.map(async (order) => {
+        const sampleReservation = order.reservations[0]?.inventoryUnit ?? null;
         await this.wmsStaffActivityService.record({
-          tenantId: sample.fulfillmentOrder.tenantId,
+          tenantId: order.tenantId,
           actorId: null,
-          teamId: sample.fulfillmentOrder.teamId ?? sample.inventoryUnit.teamId,
+          teamId: order.teamId ?? sampleReservation?.teamId ?? null,
           sessionId: (this.cls.get('sessionId') as string | undefined) ?? null,
-          actionType: 'ORDER_DISPATCH_SYNC',
+          actionType: 'ORDER_DELIVERY_SYNC',
           resourceType: 'WMS_FULFILLMENT_ORDER',
-          resourceId: orderId,
+          resourceId: order.id,
           taskType: 'DISPATCH',
-          taskId: orderId,
-          storeId: sample.fulfillmentOrder.storeId,
-          warehouseId: sample.fulfillmentOrder.warehouseId ?? sample.inventoryUnit.warehouseId,
-          fromStatus: WmsInventoryUnitStatus.PACKED,
+          taskId: order.id,
+          storeId: order.storeId,
+          warehouseId: order.warehouseId ?? sampleReservation?.warehouseId ?? null,
+          fromStatus: WmsInventoryUnitStatus.DISPATCHED,
           toStatus: WmsInventoryUnitStatus.DISPATCHED,
           outcome: WmsStaffActivityOutcome.SUCCESS,
           metadata: {
-            deliveryState,
+            deliveryState: 'DELIVERED',
             mode: 'AUTO',
-            posOrderId: sample.fulfillmentOrder.posOrderId,
-            posStatus,
-            trackingCode: sample.fulfillmentOrder.posOrder?.tracking ?? null,
-            unitCodes: orderReservations.map((reservation) => reservation.inventoryUnit.code),
-            unitCount: orderReservations.length,
+            posOrderId: order.posOrderId,
+            posStatus: order.posOrder?.status ?? 3,
+            trackingCode: order.posOrder?.tracking ?? null,
+            unitCodes: order.reservations.map((reservation) => reservation.inventoryUnit.code),
+            unitCount: order.reservations.length,
           },
         });
       }),
     );
 
-    return { dispatchedUnits };
+    return ordersToRecord.length;
   }
 
   private async getWarehouseCapacitySummary(params: {
