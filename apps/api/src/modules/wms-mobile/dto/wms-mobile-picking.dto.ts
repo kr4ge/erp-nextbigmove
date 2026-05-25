@@ -27,6 +27,12 @@ export class GetWmsMobilePickingTasksDto {
   status?: WmsMobilePickingStatusFilter;
 
   @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  search?: string;
+
+  @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   ownedOnly?: boolean;

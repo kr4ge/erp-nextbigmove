@@ -20,10 +20,9 @@ import type {
 } from '../_types/fulfillment';
 
 const PACK_STATUS_OPTIONS: Array<{ value: WmsFulfillmentPackStatus | ''; label: string }> = [
-  { value: '', label: 'All statuses' },
-  { value: 'PICKED', label: 'Awaiting pack' },
+  { value: '', label: 'All orders' },
   { value: 'PACKING', label: 'Packing' },
-  { value: 'AWAITING_TRACKING', label: 'No tracking' },
+  { value: 'AWAITING_TRACKING', label: 'Awaiting tracking' },
   { value: 'PACKED', label: 'Packed' },
 ];
 
@@ -169,7 +168,7 @@ export function useFulfillmentPackController() {
       { id: 'held', label: 'Held', value: summary.held ?? 0 },
       { id: 'packing', label: 'Packing', value: summary.packing ?? 0 },
       { id: 'awaitingTracking', label: 'Awaiting Tracking', value: summary.awaitingTracking ?? 0 },
-      { id: 'packed', label: 'Packed', value: (data?.tasks ?? []).filter((task) => task.status === 'PACKED').length },
+      { id: 'packed', label: 'Packed', value: summary.packed ?? 0 },
     ];
   }, [data?.summary, data?.tasks]);
 

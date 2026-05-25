@@ -91,7 +91,6 @@ export default function TenantsPage() {
     <div className="space-y-5">
       <WmsPageShell
         title="Tenants"
-        description=""
         actions={
           <Link
             href="/tenants/create"

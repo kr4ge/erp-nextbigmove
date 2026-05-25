@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import {
+  ChevronLeft,
+  ChevronRight,
   Clipboard,
   ScanSearch,
 } from 'lucide-react';
@@ -21,6 +23,12 @@ export function PurchasingScreen() {
   const router = useRouter();
   const controller = usePurchasingController();
   const pagination = controller.overview?.pagination;
+  const paginationTotal = pagination?.total ?? 0;
+  const paginationPageSize = pagination?.pageSize ?? (controller.overview?.batches.length ?? 0);
+  const paginationStart = paginationTotal === 0 ? 0 : ((controller.currentPage - 1) * paginationPageSize) + 1;
+  const paginationEnd = paginationTotal === 0
+    ? 0
+    : Math.min(paginationTotal, paginationStart + (controller.overview?.batches.length ?? 0) - 1);
   const receivingBridge = usePurchasingReceivingBridge({
     batch: controller.selectedBatch,
     tenantId: controller.selectedTenantId,
@@ -74,36 +82,32 @@ export function PurchasingScreen() {
             />
           )}
           footer={(
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-[12px] text-[#6f8290]">
-                <ScanSearch className="panel-icon" />
-                <span>
-                  Showing page <span className="font-semibold text-primary">{pagination?.page ?? 1}</span> of{' '}
-                  <span className="font-semibold text-primary">{pagination?.totalPages ?? 1}</span>
-                </span>
-              </div>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-slate-600">
+                Showing {paginationStart}-{paginationEnd} of {paginationTotal}
+              </p>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => controller.setCurrentPage(controller.currentPage - 1)}
                   disabled={controller.currentPage <= 1}
-                  className="inline-flex h-9 items-center rounded-xl border border-[#d7e0e7] bg-white px-3 text-[12px] font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  Previous
+                  <ChevronLeft className="h-4 w-4" />
                 </button>
 
-                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-primary">
-                  {(pagination?.total ?? 0).toLocaleString()} total
+                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-[#12384b]">
+                  {pagination?.page ?? 1} / {pagination?.totalPages ?? 1}
                 </span>
 
                 <button
                   type="button"
                   onClick={() => controller.setCurrentPage(controller.currentPage + 1)}
                   disabled={controller.currentPage >= (pagination?.totalPages ?? 1)}
-                  className="inline-flex h-9 items-center rounded-xl border border-[#d7e0e7] bg-white px-3 text-[12px] font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  Next
+                  <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
             </div>

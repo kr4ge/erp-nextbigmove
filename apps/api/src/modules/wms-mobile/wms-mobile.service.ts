@@ -1714,6 +1714,31 @@ export class WmsMobileService {
       ...(tenantId ? { tenantId } : {}),
       ...(activeStore ? { storeId: activeStore.id } : {}),
     };
+    const normalizedSearch = query.search?.trim() || null;
+    const searchWhere: Prisma.WmsFulfillmentOrderWhereInput = normalizedSearch
+      ? {
+          OR: [
+            { posOrderId: { contains: normalizedSearch, mode: 'insensitive' } },
+            {
+              store: {
+                is: {
+                  OR: [
+                    { name: { contains: normalizedSearch, mode: 'insensitive' } },
+                    { shopName: { contains: normalizedSearch, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            },
+            {
+              posOrder: {
+                is: {
+                  customerName: { contains: normalizedSearch, mode: 'insensitive' },
+                },
+              },
+            },
+          ],
+        }
+      : {};
     const queueOwnershipWhere: Prisma.WmsFulfillmentOrderWhereInput = ownedOnly
       ? { claimedById: userId }
       : {};
@@ -1775,6 +1800,7 @@ export class WmsMobileService {
     const taskWhere: Prisma.WmsFulfillmentOrderWhereInput = {
       ...scopedWhere,
       ...queueOwnershipWhere,
+      ...searchWhere,
       status: statusFilter,
     };
 
@@ -1785,6 +1811,7 @@ export class WmsMobileService {
         where: {
           ...scopedWhere,
           ...queueOwnershipWhere,
+          ...searchWhere,
         },
         _count: {
           _all: true,
@@ -1852,6 +1879,7 @@ export class WmsMobileService {
         page,
         pageSize,
         status: query.status ?? null,
+        search: normalizedSearch,
         total,
       },
     });
@@ -1956,6 +1984,31 @@ export class WmsMobileService {
       ...(tenantId ? { tenantId } : {}),
       ...(activeStore ? { storeId: activeStore.id } : {}),
     };
+    const normalizedSearch = query.search?.trim() || null;
+    const searchWhere: Prisma.WmsFulfillmentOrderWhereInput = normalizedSearch
+      ? {
+          OR: [
+            { posOrderId: { contains: normalizedSearch, mode: 'insensitive' } },
+            {
+              store: {
+                is: {
+                  OR: [
+                    { name: { contains: normalizedSearch, mode: 'insensitive' } },
+                    { shopName: { contains: normalizedSearch, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            },
+            {
+              posOrder: {
+                is: {
+                  customerName: { contains: normalizedSearch, mode: 'insensitive' },
+                },
+              },
+            },
+          ],
+        }
+      : {};
     const selectedPackingStatuses: WmsFulfillmentOrderStatus[] = query.status === 'PICKED'
       ? [WmsFulfillmentOrderStatus.PICKED]
       : query.status === 'PACKING'
@@ -1997,6 +2050,7 @@ export class WmsMobileService {
       fulfillmentOrder: {
         is: {
           ...scopedWhere,
+          ...searchWhere,
           status: {
             in: activeStatuses.length > 0 ? activeStatuses : [WmsFulfillmentOrderStatus.PICKED],
           },
@@ -2023,6 +2077,7 @@ export class WmsMobileService {
               : { assignedPackerId: userId }),
           },
         },
+        ...searchWhere,
       });
     }
 
@@ -2033,6 +2088,7 @@ export class WmsMobileService {
         ...(isPackSupervisor
           ? { packedById: { not: null } }
           : { packedById: userId }),
+        ...searchWhere,
       });
     }
 
@@ -2046,7 +2102,16 @@ export class WmsMobileService {
       ],
     };
 
-    const [total, heldCount, packingCount, awaitingTrackingCount, tasks] = await Promise.all([
+    const packedCountWhere: Prisma.WmsFulfillmentOrderWhereInput = {
+      ...scopedWhere,
+      status: WmsFulfillmentOrderStatus.PACKED,
+      ...(isPackSupervisor
+        ? { packedById: { not: null } }
+        : { packedById: userId }),
+      ...searchWhere,
+    };
+
+    const [total, heldCount, packingCount, awaitingTrackingCount, packedCount, tasks] = await Promise.all([
       this.prisma.wmsFulfillmentOrder.count({ where: taskWhere }),
       this.prisma.wmsBasket.count({
         where: {
@@ -2062,6 +2127,9 @@ export class WmsMobileService {
       }),
       this.prisma.wmsFulfillmentOrder.count({
         where: awaitingTrackingWhere,
+      }),
+      this.prisma.wmsFulfillmentOrder.count({
+        where: packedCountWhere,
       }),
       this.prisma.wmsFulfillmentOrder.findMany({
         where: taskWhere,
@@ -2089,10 +2157,12 @@ export class WmsMobileService {
       metadata: {
         page,
         pageSize,
+        search: normalizedSearch,
         total,
         held: heldCount,
         packing: packingCount,
         awaitingTracking: awaitingTrackingCount,
+        packed: packedCount,
       },
     });
 
@@ -2123,6 +2193,7 @@ export class WmsMobileService {
         held: heldCount,
         packing: packingCount,
         awaitingTracking: awaitingTrackingCount,
+        packed: packedCount,
       },
       tasks: tasks.map((task) => this.mapMobilePickingTask(task)),
     };
@@ -5842,6 +5913,7 @@ export class WmsMobileService {
         held: 0,
         packing: 0,
         awaitingTracking: 0,
+        packed: 0,
       },
       tasks: [],
     };

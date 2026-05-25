@@ -10,6 +10,7 @@ export async function fetchWmsPickQueue(params: {
   tenantId?: string;
   storeId?: string;
   status?: WmsFulfillmentPickStatus | '';
+  search?: string;
   page?: number;
   pageSize?: number;
   ownedOnly?: boolean;
@@ -19,6 +20,7 @@ export async function fetchWmsPickQueue(params: {
       ...(params.tenantId ? { tenantId: params.tenantId } : {}),
       ...(params.storeId ? { storeId: params.storeId } : {}),
       ...(params.status ? { status: params.status } : {}),
+      ...(params.search ? { search: params.search } : {}),
       ...(params.page ? { page: params.page } : {}),
       ...(params.pageSize ? { pageSize: params.pageSize } : {}),
       ...(params.ownedOnly ? { ownedOnly: true } : {}),
@@ -32,6 +34,7 @@ export async function fetchWmsPackQueue(params: {
   tenantId?: string;
   storeId?: string;
   status?: WmsFulfillmentPackStatus | '';
+  search?: string;
   page?: number;
   pageSize?: number;
 }) {
@@ -40,6 +43,7 @@ export async function fetchWmsPackQueue(params: {
       ...(params.tenantId ? { tenantId: params.tenantId } : {}),
       ...(params.storeId ? { storeId: params.storeId } : {}),
       ...(params.status ? { status: params.status } : {}),
+      ...(params.search ? { search: params.search } : {}),
       ...(params.page ? { page: params.page } : {}),
       ...(params.pageSize ? { pageSize: params.pageSize } : {}),
     },

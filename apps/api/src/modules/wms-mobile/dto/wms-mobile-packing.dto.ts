@@ -34,6 +34,12 @@ export class GetWmsMobilePackingTasksDto {
   status?: WmsMobilePackingStatusFilter;
 
   @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  search?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

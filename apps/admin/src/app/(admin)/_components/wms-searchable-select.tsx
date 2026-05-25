@@ -171,7 +171,7 @@ export function WmsSearchableSelect({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`wms-pill-control flex items-center gap-2 rounded-2xl border bg-white pl-3.5 pr-2.5 text-primary transition ${
+        className={`wms-pill-control flex items-center justify-between gap-2 rounded-2xl border bg-white pl-3.5 pr-2.5 text-primary transition ${
           open ? 'border-[#96b4c3] shadow-[0_0_0_4px_rgba(18,56,75,0.08)]' : 'border-[#d7e0e7] hover:border-[#c6d4dd]'
         } ${triggerClassName}`}
       >

@@ -31,7 +31,8 @@ const PACK_STATUS_OPTIONS: Array<{ value: WmsFulfillmentPackStatus | ''; label: 
   { value: 'PACKED', label: 'Packed' },
 ];
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
   const [data, setData] = useState<WmsFulfillmentQueueResponse | null>(null);
@@ -42,7 +43,19 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
   const [selectedTenantIdState, setSelectedTenantIdState] = useState<string | undefined>(undefined);
   const [selectedStoreIdState, setSelectedStoreIdState] = useState<string | undefined>(undefined);
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [ownedOnly, setOwnedOnly] = useState(false);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchText(searchText.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchText]);
 
   const {
     setSelectedTenantId,
@@ -78,6 +91,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
           tenantId: selectedTenantIdState,
           storeId: selectedStoreIdState,
           status: (selectedStatus || undefined) as WmsFulfillmentPickStatus | undefined,
+          search: debouncedSearchText || undefined,
           page: currentPage,
           pageSize: PAGE_SIZE,
           ownedOnly,
@@ -86,6 +100,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
           tenantId: selectedTenantIdState,
           storeId: selectedStoreIdState,
           status: (selectedStatus || undefined) as WmsFulfillmentPackStatus | undefined,
+          search: debouncedSearchText || undefined,
           page: currentPage,
           pageSize: PAGE_SIZE,
         });
@@ -108,6 +123,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     currentPage,
     mode,
     ownedOnly,
+    debouncedSearchText,
     selectedStatus,
     selectedStoreIdState,
     selectedTenantIdState,
@@ -176,10 +192,15 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     isRefreshing,
     mode,
     queueScope,
+    searchText,
     selectedStatus,
     selectedStoreId: selectedStoreIdState,
     selectedTenantId: selectedTenantIdState,
     setCurrentPage,
+    setSearchText: (value: string) => {
+      setCurrentPage(1);
+      setSearchText(value);
+    },
     setSelectedStatus: (value: string) => {
       setCurrentPage(1);
       setSelectedStatus(value);

@@ -18,19 +18,25 @@ export function FulfillmentPackQueueList({
   onSelectTask,
 }: FulfillmentPackQueueListProps) {
   if (!tenantReady) {
-    return <EmptyState copy="Select a tenant or store scope to load the pack queue." />;
+    return <div className="p-3">
+      <EmptyState copy="Select a tenant or store scope to load the pack queue." />
+    </div>
   }
 
   if (isLoading) {
-    return <EmptyState copy="Loading pack queue..." />;
+    return <div className="p-3">
+      <EmptyState copy="Loading pack queue..." />;
+    </div>
   }
 
   if (tasks.length === 0) {
-    return <EmptyState copy="No pack orders are in this view yet." />;
+    return <div className="p-3">
+      <EmptyState copy="No pack orders are in this view yet." />
+    </div>
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 p-3">
       {tasks.map((task) => {
         const active = activeTaskId === task.id;
         const tracking = task.tracking?.trim() || null;
@@ -51,31 +57,29 @@ export function FulfillmentPackQueueList({
                 : 'border-[#dce4ea] bg-white hover:border-[#c8d6df] hover:bg-[#fbfcfd]'
             }`}
           >
+            <div className="flex justify-end">
+              <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusTone(statusLabel)}`}>
+                {statusLabel}
+              </span>
+            </div>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8a9aa5]">
-                  {task.store?.name ?? 'Store'}
-                </p>
-                <p className="mt-1 truncate text-[15px] font-semibold text-[#12384b]">#{task.posOrderId}</p>
-                <p className="mt-1 truncate text-[12px] text-[#6b7d89]">
+                <p className="mt-1 truncate text-base font-semibold text-[#12384b]">{task.store?.name ?? 'Store'} &middot; #{task.posOrderId}</p>
+                <p className="mt-1 truncate text-xs text-[#6b7d89]">
                   {tracking ? `Tracking ${tracking}` : 'Awaiting tracking print'}
                 </p>
               </div>
-              <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${getStatusTone(statusLabel)}`}>
-                {statusLabel}
-              </span>
             </div>
 
             <p className="mt-3 line-clamp-2 text-[13px] text-[#12384b]">
               {summary || `${task.totals.required} required unit${task.totals.required === 1 ? '' : 's'}`}
             </p>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-[#718592]">
-              <span>{formatOrderDate(task.orderDateLocal ?? task.orderDate)}</span>
-              <span>•</span>
-              <span>{task.totals.packed}/{task.totals.required} packed</span>
-              <span>•</span>
-              <span>Basket {task.basket?.barcode ?? 'None'}</span>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#718592]">
+              <span>
+                {formatOrderDate(task.orderDateLocal ?? task.orderDate)} &middot; 
+                {` ${task.totals.packed}/${task.totals.required}`} &middot; 
+                {` ${task.basket?.barcode ?? 'None'}`}</span>
             </div>
           </button>
         );

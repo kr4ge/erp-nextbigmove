@@ -18,26 +18,28 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
   const isPick = mode === 'pick';
   const title = isPick ? 'Pick Queue' : 'Pack Queue';
   const scopeLabel = queue.queueScope === 'own' ? 'My queue' : 'All queues';
+  const paginationTotal = queue.data?.pagination.total ?? 0;
+  const paginationPageSize = queue.data?.pagination.pageSize ?? queue.tasks.length;
+  const paginationStart = paginationTotal === 0 ? 0 : ((queue.currentPage - 1) * paginationPageSize) + 1;
+  const paginationEnd = paginationTotal === 0
+    ? 0
+    : Math.min(paginationTotal, paginationStart + queue.tasks.length - 1);
 
   return (
     <div className="space-y-5">
       <WmsPageShell
         title={title}
-        breadcrumb="Fulfillment"
-        description={
-          isPick
-            ? 'Read-only queue visibility for WMS web. Supervisors can monitor the full pick queue, while picker accounts are scoped to their own claimed orders.'
-            : 'Read-only queue visibility for WMS web. Packer execution will be added in this Pack workspace after the queue structure is finalized.'
-        }
         actions={(
           <>
-            <span className="inline-flex h-11 items-center rounded-full border border-[#d7e0e7] bg-white px-4 text-[12px] font-semibold text-[#12384b]">
+            <span
+              className="btn btn-md btn-outline"
+            >
               {scopeLabel}
             </span>
             <button
               type="button"
               onClick={queue.refresh}
-              className="inline-flex h-11 items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 text-[12px] font-semibold text-[#12384b] transition hover:border-[#c6d4dd]"
+              className="btn btn-md btn-outline btn-icon"
             >
               <RefreshCcw className={`h-4 w-4 ${queue.isRefreshing ? 'animate-spin' : ''}`} />
               Refresh
@@ -51,20 +53,14 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
           </WmsInlineNotice>
         ) : null}
 
-        <WmsInlineNotice tone="info">
-          {queue.queueScope === 'own'
-            ? `This ${title.toLowerCase()} is scoped to orders assigned to your WMS task role.`
-            : `This ${title.toLowerCase()} is a monitoring view. Queue actions stay disabled in WMS web for this stage.`}
-        </WmsInlineNotice>
-
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {queue.summaryItems.map((item) => (
             <div
               key={item.id}
-              className="rounded-[22px] border border-[#dce4ea] bg-white px-5 py-4 shadow-[0_16px_40px_-34px_rgba(18,56,75,0.32)]"
+              className="card"
             >
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">{item.label}</p>
-              <p className="mt-2 text-[28px] font-semibold tracking-tight text-[#12384b]">{item.value}</p>
+              <p className="card-label">{item.label}</p>
+              <p className="card-value">{item.value}</p>
             </div>
           ))}
         </div>
@@ -74,6 +70,8 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
           icon={<PackageCheck className='panel-icon' />}
           filters={(
             <FulfillmentQueueFilterBar
+              searchText={queue.searchText}
+              onSearchTextChange={queue.setSearchText}
               tenantOptions={queue.tenantOptions}
               selectedTenantId={queue.selectedTenantId}
               onTenantChange={queue.setSelectedTenantId}
@@ -87,8 +85,8 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
           )}
           footer={(
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[12px] text-[#6f8290]">
-                {queue.data?.pagination.total ?? 0} order{(queue.data?.pagination.total ?? 0) === 1 ? '' : 's'} in view
+              <p className="text-sm text-slate-600">
+                Showing {paginationStart}-{paginationEnd} of {paginationTotal}
               </p>
 
               <div className="flex items-center gap-2">

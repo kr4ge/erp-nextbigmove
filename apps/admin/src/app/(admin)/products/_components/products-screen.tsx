@@ -21,6 +21,11 @@ export function ProductsScreen() {
   const storesInScope = controller.selectedStoreId
     ? 1
     : controller.overview?.filters.stores.length ?? 0;
+  const paginationTotal = controller.overview?.products.length ?? 0;
+  const paginationStart = paginationTotal === 0 ? 0 : ((controller.currentPage - 1) * controller.pageSize) + 1;
+  const paginationEnd = paginationTotal === 0
+    ? 0
+    : Math.min(paginationTotal, paginationStart + controller.products.length - 1);
 
   return (
     <div className="space-y-5">
@@ -101,18 +106,22 @@ export function ProductsScreen() {
               variant="embedded"
             />
 
-            <div className="flex items-center justify-end border-t border-[#e7edf2] bg-white px-4 py-3">
+            <div className="flex items-center justify-between border-t border-[#e7edf2] bg-white px-4 py-3">
+              <p className="text-sm text-slate-600">
+                Showing {paginationStart}-{paginationEnd} of {paginationTotal}
+              </p>
+
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => controller.setCurrentPage(controller.currentPage - 1)}
                   disabled={controller.currentPage === 1}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
 
-                <span className="rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-primary">
+                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-[#12384b]">
                   {controller.currentPage} / {controller.totalPages}
                 </span>
 
@@ -120,7 +129,7 @@ export function ProductsScreen() {
                   type="button"
                   onClick={() => controller.setCurrentPage(controller.currentPage + 1)}
                   disabled={controller.currentPage === controller.totalPages}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
