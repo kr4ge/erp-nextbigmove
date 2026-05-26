@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WmsSearchableOption } from '../../_components/wms-searchable-select';
 import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
-import { fetchWmsPackQueue, fetchWmsPickQueue } from '../_services/fulfillment.service';
+import { fetchWmsPackQueue, fetchWmsPickQueue, resyncWmsPickQueue } from '../_services/fulfillment.service';
 import type {
   WmsFulfillmentPackStatus,
   WmsFulfillmentPickStatus,
@@ -37,8 +37,10 @@ const SEARCH_DEBOUNCE_MS = 300;
 export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
   const [data, setData] = useState<WmsFulfillmentQueueResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'info'; message: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isResyncing, setIsResyncing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedTenantIdState, setSelectedTenantIdState] = useState<string | undefined>(undefined);
   const [selectedStoreIdState, setSelectedStoreIdState] = useState<string | undefined>(undefined);
@@ -107,14 +109,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
 
       setData(nextData);
     } catch (error) {
-      setErrorMessage(
-        typeof error === 'object'
-        && error !== null
-        && 'response' in error
-        && typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string'
-          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Unable to load fulfillment queue.'
-          : 'Unable to load fulfillment queue.',
-      );
+      setErrorMessage(resolveQueueError(error));
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -133,6 +128,42 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     void fetchQueue(false);
   }, [fetchQueue]);
 
+  const resyncPickQueue = useCallback(async () => {
+    if (mode !== 'pick') {
+      return false;
+    }
+
+    setIsResyncing(true);
+    setErrorMessage(null);
+    setNotice(null);
+
+    try {
+      const result = await resyncWmsPickQueue({
+        tenantId: selectedTenantIdState,
+        storeId: selectedStoreIdState,
+      });
+
+      await fetchQueue(true);
+
+      const scopeLabel = result.storeName
+        ? `for ${result.storeName}`
+        : result.storeCount === 1
+          ? 'for 1 active store'
+          : `across ${result.storeCount} active stores`;
+
+      setNotice({
+        tone: result.syncedOrders > 0 ? 'success' : 'info',
+        message: `Pick queue resynced ${scopeLabel}. ${result.syncedOrders} confirmed order${result.syncedOrders === 1 ? '' : 's'} reconciled.`,
+      });
+      return true;
+    } catch (error) {
+      setErrorMessage(resolveQueueError(error));
+      return false;
+    } finally {
+      setIsResyncing(false);
+    }
+  }, [fetchQueue, mode, selectedStoreIdState, selectedTenantIdState]);
+
   useEffect(() => {
     if (mode !== 'pick' || ownedOnly || !data?.context) {
       return;
@@ -145,6 +176,9 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
   }, [data?.context, mode, ownedOnly]);
 
   const queueScope: WmsFulfillmentQueueScope = data?.context?.canViewAllQueue === false ? 'own' : 'all';
+  const requiresTenantSelectionForResync = mode === 'pick'
+    && !data?.context?.activeTenantId
+    && (data?.context?.tenantOptions?.length ?? 0) > 0;
 
   const tenantOptions = useMemo<WmsSearchableOption[]>(
     () => (data?.context.tenantOptions ?? []).map((tenant) => ({
@@ -190,12 +224,16 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     errorMessage,
     isLoading,
     isRefreshing,
+    isResyncing,
     mode,
+    notice,
     queueScope,
+    requiresTenantSelectionForResync,
     searchText,
     selectedStatus,
     selectedStoreId: selectedStoreIdState,
     selectedTenantId: selectedTenantIdState,
+    clearNotice: () => setNotice(null),
     setCurrentPage,
     setSearchText: (value: string) => {
       setCurrentPage(1);
@@ -222,5 +260,15 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     tenantReady: data?.tenantReady ?? false,
     totalPages: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / (data?.pagination.pageSize ?? PAGE_SIZE))),
     refresh: () => fetchQueue(true),
+    resyncPickQueue,
   };
+}
+
+function resolveQueueError(error: unknown) {
+  return typeof error === 'object'
+    && error !== null
+    && 'response' in error
+    && typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string'
+    ? (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Unable to load fulfillment queue.'
+    : 'Unable to load fulfillment queue.';
 }

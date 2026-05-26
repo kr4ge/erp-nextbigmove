@@ -30,6 +30,25 @@ export async function fetchWmsPickQueue(params: {
   return response.data as WmsFulfillmentQueueResponse;
 }
 
+export async function resyncWmsPickQueue(params: {
+  tenantId?: string;
+  storeId?: string;
+}) {
+  const response = await apiClient.post('/wms/mobile/picking/tasks/resync', {
+    ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+    ...(params.storeId ? { storeId: params.storeId } : {}),
+  });
+
+  return response.data as {
+    success: boolean;
+    syncedOrders: number;
+    tenantId: string | null;
+    storeId: string | null;
+    storeName: string | null;
+    storeCount: number;
+  };
+}
+
 export async function fetchWmsPackQueue(params: {
   tenantId?: string;
   storeId?: string;

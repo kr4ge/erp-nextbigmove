@@ -29,9 +29,17 @@ export function WmsWorkspaceCard({
         className,
       )}
     >
-      <div className="panel-header">
-        {icon}
-        <h2 className="panel-title">{title}</h2>
+      <div className="panel-header flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          {icon}
+          <h2 className="panel-title">{title}</h2>
+        </div>
+
+        {actions ? (
+          <div className="flex shrink-0 items-center gap-2">
+            {actions}
+          </div>
+        ) : null}
       </div>
 
       {filters ? (

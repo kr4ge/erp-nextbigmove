@@ -82,6 +82,8 @@ export function ProductsProfilesTable({
                       <span className="font-semibold tabular-nums text-[#1d4b61]">
                         {profile.variationDisplayId}
                       </span>
+                    ) : !profile.isStockable ? (
+                      <span className="font-medium text-rose-700">Missing variation ID</span>
                     ) : (
                       <span className="italic text-[#8193a0]">—</span>
                     )}
@@ -99,25 +101,35 @@ export function ProductsProfilesTable({
                     <span className="block max-w-[180px] truncate">{profile.store.name}</span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm">
-                    <span
-                      className={`pill ${getProductProfileStatusClasses(profile.status)}`}
-                    >
-                      {formatProductProfileStatus(profile.status)}
-                    </span>
+                    {profile.isStockable && profile.status ? (
+                      <span
+                        className={`pill ${getProductProfileStatusClasses(profile.status)}`}
+                      >
+                        {formatProductProfileStatus(profile.status)}
+                      </span>
+                    ) : (
+                      <span className="pill border border-rose-200 bg-rose-50 text-rose-700">
+                        Not stockable
+                      </span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm">
-                    <span
-                      className={`pill ${
-                        profile.isSerialized
-                          ? 'border border-primary bg-primary text-white'
-                          : 'border border-[#dce4ea] bg-[#fbfcfc] text-[#4d6677]'
-                      }`}
-                    >
-                      {profile.isSerialized ? 'Yes' : 'No'}
-                    </span>
+                    {profile.isSerialized === null ? (
+                      <span className="text-[11px] font-medium text-[#8aa0ae]">N/A</span>
+                    ) : (
+                      <span
+                        className={`pill ${
+                          profile.isSerialized
+                            ? 'border border-primary bg-primary text-white'
+                            : 'border border-[#dce4ea] bg-[#fbfcfc] text-[#4d6677]'
+                        }`}
+                      >
+                        {profile.isSerialized ? 'Yes' : 'No'}
+                      </span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right">
-                    {canEditProfile ? (
+                    {profile.isStockable && canEditProfile ? (
                       <button
                         type="button"
                         onClick={() => onEditProfile(profile)}
@@ -126,6 +138,10 @@ export function ProductsProfilesTable({
                         <Pencil className="h-3 w-3" />
                         Edit
                       </button>
+                    ) : !profile.isStockable ? (
+                      <span className="text-[11px] font-medium text-rose-700">
+                        {profile.stockabilityReason ?? 'Requires variation ID sync'}
+                      </span>
                     ) : (
                       <span className="text-[11px] font-medium text-[#8aa0ae]">Read only</span>
                     )}

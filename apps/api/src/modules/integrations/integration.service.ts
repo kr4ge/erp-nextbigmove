@@ -3823,7 +3823,7 @@ export class IntegrationService {
         .map((item: any) => {
           const productId = this.extractProductIdFromPancakeProduct(item);
           const variationId = this.extractVariationIdFromPancakeProduct(item);
-          if (!productId || !variationId) return null;
+          if (!productId) return null;
 
           return {
             productId,
@@ -4584,36 +4584,45 @@ export class IntegrationService {
 
       const filteredProducts = products.filter(
         (p: any) =>
-          (p?.productId || p?.id)?.toString().trim().length > 0 &&
-          (p?.variationId || p?.id)?.toString().trim().length > 0,
+          typeof p?.productId === 'string'
+          && p.productId.trim().length > 0,
       );
 
       for (const p of filteredProducts) {
-        const productId = (p?.productId || p?.id)?.toString().trim();
-        const variationId = (p?.variationId || p?.id)?.toString().trim();
+        const productId = p.productId.toString().trim();
+        const variationIdRaw = p?.variationId?.toString?.().trim?.() || '';
+        const variationId = variationIdRaw.length > 0 ? variationIdRaw : null;
         const parsedRetailPrice = this.toRetailPriceDecimal(p.retailPrice);
         const productSnapshot = p?.productSnapshot ?? null;
-
-        const existing = await tx.posProduct.findFirst({
-          where: {
-            storeId,
-            OR: [
-              { variationId },
-              {
-                AND: [
-                  { productId },
+        const existing = variationId
+          ? await tx.posProduct.findFirst({
+              where: {
+                storeId,
+                OR: [
+                  { variationId },
                   {
-                    OR: [
-                      { variationId: null },
-                      { variationId: productId },
+                    AND: [
+                      { productId },
+                      {
+                        OR: [
+                          { variationId: null },
+                          { variationId: productId },
+                        ],
+                      },
                     ],
                   },
                 ],
               },
-            ],
-          },
-          select: { id: true },
-        });
+              select: { id: true },
+            })
+          : await tx.posProduct.findFirst({
+              where: {
+                storeId,
+                productId,
+                variationId: null,
+              },
+              select: { id: true },
+            });
 
         if (existing) {
           const updated = await tx.posProduct.update({
@@ -4629,28 +4638,30 @@ export class IntegrationService {
             },
           });
 
-          await tx.wmsProductProfile.upsert({
-            where: {
-              posProductId: updated.id,
-            },
-            update: {
-              tenantId: store.tenantId,
-              storeId,
-              productId,
-              variationId,
-              posWarehouseRef: p.warehouseId || null,
-            },
-            create: {
-              tenantId: store.tenantId,
-              storeId,
-              posProductId: updated.id,
-              productId,
-              variationId,
-              posWarehouseRef: p.warehouseId || null,
-              status: WmsProductProfileStatus.DEFAULT,
-              isSerialized: true,
-            },
-          });
+          if (variationId) {
+            await tx.wmsProductProfile.upsert({
+              where: {
+                posProductId: updated.id,
+              },
+              update: {
+                tenantId: store.tenantId,
+                storeId,
+                productId,
+                variationId,
+                posWarehouseRef: p.warehouseId || null,
+              },
+              create: {
+                tenantId: store.tenantId,
+                storeId,
+                posProductId: updated.id,
+                productId,
+                variationId,
+                posWarehouseRef: p.warehouseId || null,
+                status: WmsProductProfileStatus.DEFAULT,
+                isSerialized: true,
+              },
+            });
+          }
           continue;
         }
 
@@ -4667,18 +4678,20 @@ export class IntegrationService {
           },
         });
 
-        await tx.wmsProductProfile.create({
-          data: {
-            tenantId: store.tenantId,
-            storeId,
-            posProductId: created.id,
-            productId,
-            variationId,
-            posWarehouseRef: p.warehouseId || null,
-            status: WmsProductProfileStatus.DEFAULT,
-            isSerialized: true,
-          },
-        });
+        if (variationId) {
+          await tx.wmsProductProfile.create({
+            data: {
+              tenantId: store.tenantId,
+              storeId,
+              posProductId: created.id,
+              productId,
+              variationId,
+              posWarehouseRef: p.warehouseId || null,
+              status: WmsProductProfileStatus.DEFAULT,
+              isSerialized: true,
+            },
+          });
+        }
       }
     });
   }
@@ -4690,9 +4703,6 @@ export class IntegrationService {
       item?.product?.id ??
       item?.variation_info?.product_id ??
       item?.variation_info?.productId ??
-      item?._id ??
-      item?.uuid ??
-      item?.id ??
       null;
 
     if (raw === null || raw === undefined) return null;
@@ -4701,10 +4711,31 @@ export class IntegrationService {
   }
 
   private extractVariationIdFromPancakeProduct(item: any): string | null {
-    const raw = item?.id ?? item?.variation_id ?? item?.variationId ?? null;
-    if (raw === null || raw === undefined) return null;
-    const value = raw.toString().trim();
-    return value.length > 0 ? value : null;
+    const explicitRaw =
+      item?.variation_id ??
+      item?.variationId ??
+      item?.variation?.id ??
+      item?.variation?.variation_id ??
+      item?.variation?.variationId ??
+      null;
+    if (explicitRaw !== null && explicitRaw !== undefined) {
+      const explicitValue = explicitRaw.toString().trim();
+      if (explicitValue.length > 0) {
+        return explicitValue;
+      }
+    }
+
+    const candidateRaw = item?.id ?? item?._id ?? item?.uuid ?? null;
+    if (candidateRaw === null || candidateRaw === undefined) return null;
+    const candidateValue = candidateRaw.toString().trim();
+    if (!candidateValue) return null;
+
+    const productId = this.extractProductIdFromPancakeProduct(item);
+    if (productId && candidateValue === productId) {
+      return null;
+    }
+
+    return candidateValue;
   }
 
   private extractWarehouseIdFromPancakeProduct(item: any): string | null {

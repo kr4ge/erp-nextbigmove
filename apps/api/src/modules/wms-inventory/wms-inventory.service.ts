@@ -296,6 +296,12 @@ export class WmsInventoryService {
         ? query.warehouseId
         : null;
 
+    // Repair any shipped/delivered packed units before computing inventory totals.
+    await this.syncPackedUnitsToDispatchedForPosOrders({
+      tenantId: scope.activeTenantId,
+      storeId: activeStoreId,
+    });
+
     const where: Prisma.WmsInventoryUnitWhereInput = {
       tenantId: scope.activeTenantId,
       ...(activeStoreId ? { storeId: activeStoreId } : {}),

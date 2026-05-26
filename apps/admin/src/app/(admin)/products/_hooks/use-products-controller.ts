@@ -225,15 +225,25 @@ export function useProductsController() {
     setStatusFilter,
     setCurrentPage,
     setSearchText,
-    openProfileModal: (profile: WmsProductProfileRecord) => setProfileModal({ open: true, profile }),
+    openProfileModal: (profile: WmsProductProfileRecord) => {
+      if (!profile.isStockable || !profile.profileId) {
+        setBanner({
+          tone: 'error',
+          message: profile.stockabilityReason ?? 'This product cannot be stocked until it has a variation ID',
+        });
+        return;
+      }
+
+      setProfileModal({ open: true, profile });
+    },
     closeProfileModal: () => setProfileModal({ open: false, profile: null }),
     submitProfile: async (input: UpdateWmsProductProfileInput) => {
-      if (!profileModal.profile) {
+      if (!profileModal.profile?.profileId) {
         return;
       }
 
       await updateProfileMutation.mutateAsync({
-        id: profileModal.profile.id,
+        id: profileModal.profile.profileId,
         input,
       });
     },

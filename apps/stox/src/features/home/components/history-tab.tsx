@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
@@ -75,12 +75,15 @@ function HistoryFeedTab({ bootstrap, device, session }: HistoryTabProps) {
   const [items, setItems] = useState<WmsMobileHistoryItem[]>([]);
   const [actorOptions, setActorOptions] = useState<WmsMobileHistoryActorOption[]>([]);
   const [canViewAll, setCanViewAll] = useState(canViewAllStoxHistory(bootstrap));
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const nextCursorRef = useRef<string | null>(null);
+  const canViewAllRef = useRef(canViewAllStoxHistory(bootstrap));
+  const requestContextRef = useRef(0);
+  const loadMoreInFlightRef = useRef(false);
 
   const tenantId = bootstrap.tenant?.id ?? null;
 
@@ -103,6 +106,17 @@ function HistoryFeedTab({ bootstrap, device, session }: HistoryTabProps) {
       return;
     }
 
+    if (mode === 'more') {
+      if (loadMoreInFlightRef.current || !nextCursorRef.current) {
+        return;
+      }
+      loadMoreInFlightRef.current = true;
+    } else {
+      requestContextRef.current += 1;
+    }
+
+    const activeRequestContext = requestContextRef.current;
+
     if (mode === 'initial') {
       setIsLoading(true);
     } else if (mode === 'refresh') {
@@ -116,29 +130,37 @@ function HistoryFeedTab({ bootstrap, device, session }: HistoryTabProps) {
     try {
       const response = await fetchMobileHistoryFeed({
         accessToken: session.accessToken,
-        actorId: canViewAll ? selectedActorId : null,
-        cursor: mode === 'more' ? nextCursor : null,
+        actorId: canViewAllRef.current ? selectedActorId : null,
+        cursor: mode === 'more' ? nextCursorRef.current : null,
         device,
         limit: 20,
         tenantId,
         type: filter,
       });
 
+      if (activeRequestContext !== requestContextRef.current) {
+        return;
+      }
+
+      canViewAllRef.current = response.filters.canViewAll;
       setCanViewAll(response.filters.canViewAll);
       setActorOptions(response.filters.actorOptions);
-      setNextCursor(response.pagination.nextCursor);
+      nextCursorRef.current = response.pagination.nextCursor;
       setHasMore(response.pagination.hasMore);
       setItems((current) => (
-        mode === 'more' ? [...current, ...response.items] : response.items
+        mode === 'more' ? mergeHistoryItems(current, response.items) : response.items
       ));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Unable to load activity history.');
     } finally {
+      if (mode === 'more') {
+        loadMoreInFlightRef.current = false;
+      }
       setIsLoading(false);
       setIsRefreshing(false);
       setIsLoadingMore(false);
     }
-  }, [canViewAll, device, filter, nextCursor, selectedActorId, session.accessToken, tenantId]);
+  }, [device, filter, selectedActorId, session.accessToken, tenantId]);
 
   useEffect(() => {
     void loadHistory('initial');
@@ -248,6 +270,16 @@ function HistoryFeedTab({ bootstrap, device, session }: HistoryTabProps) {
       />
     </>
   );
+}
+
+function mergeHistoryItems(current: WmsMobileHistoryItem[], incoming: WmsMobileHistoryItem[]) {
+  if (current.length === 0) {
+    return incoming;
+  }
+
+  const seen = new Set(current.map((item) => item.id));
+  const appended = incoming.filter((item) => !seen.has(item.id));
+  return appended.length > 0 ? [...current, ...appended] : current;
 }
 
 function HistoryCenteredHeader({

@@ -349,13 +349,9 @@ export function HomeOverviewTab({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.carousel}>
         {inventoryCards.map((card) => (
-          <Pressable
+          <View
             key={card.id}
-            onPress={onOpenStock}
-            style={({ pressed }) => [
-              styles.inventoryCardPressable,
-              pressed ? styles.pressed : null,
-            ]}>
+            style={styles.inventoryCardPressable}>
             <View style={[styles.inventoryCard, { backgroundColor: card.soft }]}>
               <View style={styles.inventoryCardHeader}>
                 <Text style={styles.inventoryCardLabel}>{card.label}</Text>
@@ -366,7 +362,7 @@ export function HomeOverviewTab({
 
               <Text style={styles.inventoryCardValue}>{card.value}</Text>
             </View>
-          </Pressable>
+          </View>
         ))}
       </ScrollView>
 

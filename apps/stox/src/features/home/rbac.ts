@@ -31,8 +31,6 @@ export const STOX_PACK_EXECUTE_PERMISSIONS = [
 ] as const;
 export const STOX_HISTORY_READ_ALL_PERMISSIONS = [
   'wms.history.read_all',
-  'wms.fulfillment.override',
-  'wms.dispatch.override',
 ] as const;
 
 const STOX_PICK_SUPERVISOR_PERMISSIONS = [

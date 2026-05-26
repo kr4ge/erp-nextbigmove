@@ -553,7 +553,7 @@ export class PosOrderService {
     }
 
     let salesCod = 0;
-    if (rawOrder?.status === 6) {
+    if (normalizedStatus === 6) {
       salesCod = 0;
     } else if (hasConfirmedHistory) {
       salesCod = safeCod;
@@ -604,7 +604,7 @@ export class PosOrderService {
       dateLocal,
       deliveredAt,
       rtsAt,
-      status: rawOrder.status,
+      status: normalizedStatus ?? undefined,
       statusName: rawOrder.status_name,
       cod: codValue,
       salesCod,

@@ -57,6 +57,12 @@ export class WmsMobilePickScopedDto {
   tenantId?: string;
 }
 
+export class WmsMobilePickResyncDto extends WmsMobilePickScopedDto {
+  @IsOptional()
+  @IsUUID()
+  storeId?: string;
+}
+
 export class WmsMobilePickScanDto extends WmsMobilePickScopedDto {
   @IsString()
   @MinLength(1)

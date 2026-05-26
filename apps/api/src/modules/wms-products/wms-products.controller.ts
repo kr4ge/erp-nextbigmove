@@ -4,6 +4,7 @@ import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { WmsProductsService } from './wms-products.service';
 import { GetWmsProductsOverviewDto } from './dto/get-wms-products-overview.dto';
+import { GetWmsVariationIntegrityAuditDto } from './dto/get-wms-variation-integrity-audit.dto';
 import { UpdateWmsProductProfileDto } from './dto/update-wms-product-profile.dto';
 
 @Controller('wms/products')
@@ -15,6 +16,12 @@ export class WmsProductsController {
   @Permissions('wms.products.read')
   async getOverview(@Query() query: GetWmsProductsOverviewDto) {
     return this.wmsProductsService.getOverview(query);
+  }
+
+  @Get('variation-integrity-audit')
+  @Permissions('wms.products.read')
+  async getVariationIntegrityAudit(@Query() query: GetWmsVariationIntegrityAuditDto) {
+    return this.wmsProductsService.getVariationIntegrityAudit(query);
   }
 
   @Patch(':id')

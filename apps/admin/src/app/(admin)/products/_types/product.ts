@@ -15,11 +15,14 @@ export type WmsProductLocationSummary = {
 
 export type WmsProductProfileRecord = {
   id: string;
+  profileId: string | null;
   posProductId: string;
-  status: WmsProductProfileStatus;
-  isSerialized: boolean;
+  status: WmsProductProfileStatus | null;
+  isSerialized: boolean | null;
+  isStockable: boolean;
+  stockabilityReason: string | null;
   productId: string;
-  variationId: string;
+  variationId: string | null;
   variationDisplayId: string | null;
   productCustomId: string | null;
   name: string;
@@ -58,6 +61,7 @@ export type WmsProductsOverviewResponse = {
     warehouseScopedProducts: number;
     assignedProfiles: number;
     unassignedProfiles: number;
+    nonStockableProducts: number;
   };
   filters: {
     tenants: Array<{

@@ -55,6 +55,13 @@ export function InventoryStockReceivingScreen() {
     router.push(`/inventory/transfer?batch=${batchId}`);
   }
 
+  const manualInputDisabled = !receiving.canManualInput || !receiving.manualStoreId;
+  const manualInputTitle = !receiving.canManualInput
+    ? 'This account does not have manual stock input permission.'
+    : !receiving.manualStoreId
+      ? 'Select a store to enable manual stock input.'
+      : undefined;
+
   return (
     <div className="space-y-5">
       <WmsPageShell title="Stock Receiving">
@@ -73,16 +80,17 @@ export function InventoryStockReceivingScreen() {
         <WmsWorkspaceCard
           title="Batches"
           icon={<Package className='panel-icon' />}
-          actions={receiving.canManualInput ? (
+          actions={(
             <button
               type="button"
               onClick={() => receiving.openManualReceiveModal()}
-              disabled={!receiving.manualStoreId}
+              disabled={manualInputDisabled}
+              title={manualInputTitle}
               className="inline-flex h-9 items-center rounded-[12px] border border-[#d7e0e7] bg-white px-3.5 text-[12px] font-semibold text-primary transition hover:border-[#c6d4dd] hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Manual Input
             </button>
-          ) : null}
+          )}
           filters={(
             <InventoryOperationsFilterBar
               filters={receiving.overview?.filters}

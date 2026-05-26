@@ -17,6 +17,7 @@ import {
 } from '@prisma/client';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
 import { AssignWmsReceivingPutawayDto } from './dto/assign-wms-receiving-putaway.dto';
 import { CreateWmsReceivingBatchDto } from './dto/create-wms-receiving-batch.dto';
 import { GetWmsReceivingOverviewDto } from './dto/get-wms-receiving-overview.dto';
@@ -209,6 +210,7 @@ export class WmsReceivingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
+    private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
   ) {}
 
   async getOverview(query: GetWmsReceivingOverviewDto) {
@@ -779,6 +781,7 @@ export class WmsReceivingService {
         id: true,
         code: true,
         tenantId: true,
+        storeId: true,
         warehouseId: true,
         inventoryUnits: {
           select: {
@@ -786,6 +789,7 @@ export class WmsReceivingService {
             teamId: true,
             currentLocationId: true,
             status: true,
+            variationId: true,
             productProfile: {
               select: {
                 preferredLocationId: true,
@@ -857,6 +861,7 @@ export class WmsReceivingService {
         teamId: unit.teamId,
         currentLocationId: unit.currentLocationId,
         currentStatus: unit.status,
+        variationId: unit.variationId,
         binId: bin.id,
         binCode: bin.code,
       };
@@ -1006,6 +1011,14 @@ export class WmsReceivingService {
         totalUnits,
         putAwayUnits,
       };
+    });
+
+    await this.wmsFulfillmentSyncService.reallocateWaitingOrdersForRestockedVariations({
+      tenantId: batch.tenantId,
+      storeId: batch.storeId,
+      warehouseId: batch.warehouseId,
+      variationIds: validatedAssignments.map((assignment) => assignment.variationId),
+      actorId,
     });
 
     return {

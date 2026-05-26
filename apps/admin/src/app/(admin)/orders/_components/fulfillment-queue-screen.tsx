@@ -36,6 +36,20 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
             >
               {scopeLabel}
             </span>
+            {isPick ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void queue.resyncPickQueue();
+                }}
+                disabled={queue.isResyncing || queue.requiresTenantSelectionForResync}
+                className="btn btn-md btn-outline btn-icon"
+                title={queue.requiresTenantSelectionForResync ? 'Select a partner before resyncing the pick queue.' : undefined}
+              >
+                <RefreshCcw className={`h-4 w-4 ${queue.isResyncing ? 'animate-spin' : ''}`} />
+                Resync queue
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={queue.refresh}
@@ -50,6 +64,17 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
         {queue.errorMessage ? (
           <WmsInlineNotice tone="error">
             {queue.errorMessage}
+          </WmsInlineNotice>
+        ) : null}
+
+        {queue.notice ? (
+          <WmsInlineNotice
+            tone={queue.notice.tone}
+            dismissible
+            autoDismissMs={5000}
+            onDismiss={queue.clearNotice}
+          >
+            {queue.notice.message}
           </WmsInlineNotice>
         ) : null}
 

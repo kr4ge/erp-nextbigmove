@@ -15,6 +15,7 @@ import {
   GetWmsMobilePickBasketLookupDto,
   WmsMobilePickHandoffDto,
   GetWmsMobilePickingTasksDto,
+  WmsMobilePickResyncDto,
   WmsMobilePickScanDto,
   WmsMobilePickScopedDto,
 } from './dto/wms-mobile-picking.dto';
@@ -149,6 +150,12 @@ export class WmsMobileController {
   )
   async getPickingTasks(@Request() req, @Query() query: GetWmsMobilePickingTasksDto) {
     return this.wmsMobileService.getPickingTasks(req.user, query, req);
+  }
+
+  @Post('picking/tasks/resync')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit', 'wms.fulfillment.override')
+  async resyncPickingTasks(@Request() req, @Body() body: WmsMobilePickResyncDto) {
+    return this.wmsMobileService.resyncPickingTasks(req.user, body, req);
   }
 
   @Post('picking/tasks/:id/claim')

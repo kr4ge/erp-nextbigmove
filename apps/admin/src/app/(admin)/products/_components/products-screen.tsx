@@ -18,6 +18,7 @@ export function ProductsScreen() {
   const totalProducts = summary?.products ?? 0;
   const assignedProfiles = summary?.assignedProfiles ?? 0;
   const unassignedProfiles = summary?.unassignedProfiles ?? 0;
+  const nonStockableProducts = summary?.nonStockableProducts ?? 0;
   const storesInScope = controller.selectedStoreId
     ? 1
     : controller.overview?.filters.stores.length ?? 0;
@@ -63,11 +64,12 @@ export function ProductsScreen() {
         </div>
       ) : null}
 
-      <div className="grid gap-3 xl:grid-cols-4">
+      <div className="grid gap-3 xl:grid-cols-5">
         <InsightCard label="Products" value={totalProducts.toLocaleString()} />
         <InsightCard label="Stores" value={storesInScope.toLocaleString()} />
         <InsightCard label="Assigned" value={assignedProfiles.toLocaleString()} />
         <InsightCard label="Unassigned" value={unassignedProfiles.toLocaleString()} />
+        <InsightCard label="Not Stockable" value={nonStockableProducts.toLocaleString()} />
       </div>
 
       <WmsCompactPanel

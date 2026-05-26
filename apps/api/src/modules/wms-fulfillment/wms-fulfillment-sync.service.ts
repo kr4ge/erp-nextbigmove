@@ -33,6 +33,10 @@ const ACTIVE_PICK_RESERVATION_STATUSES = [
   WmsPickReservationStatus.RESERVED,
   WmsPickReservationStatus.PICKED,
 ] as const;
+const AUTO_REALLOCATION_ORDER_STATUSES = [
+  WmsFulfillmentOrderStatus.RESTOCKING,
+  WmsFulfillmentOrderStatus.PARTIAL,
+] as const;
 const FINALIZED_FULFILLMENT_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.IN_PICKING,
   WmsFulfillmentOrderStatus.READY_FOR_PACK,
@@ -41,6 +45,7 @@ const FINALIZED_FULFILLMENT_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.PACKED,
   WmsFulfillmentOrderStatus.CANCELED,
 ] as const;
+const PUTAWAY_REALLOCATION_ORDER_LIMIT = 80;
 
 @Injectable()
 export class WmsFulfillmentSyncService {
@@ -54,6 +59,7 @@ export class WmsFulfillmentSyncService {
     storeId: string | null;
     stores: FulfillmentSyncStore[];
     actorId: string | null;
+    limit?: number | null;
     posOrderRefs?: Array<{
       shopId: string;
       posOrderId: string;
@@ -77,6 +83,10 @@ export class WmsFulfillmentSyncService {
     const storeByTenantShop = new Map(scopedStores.map((store) => [`${store.tenantId}:${store.shopId}`, store]));
     const shopIds = Array.from(new Set(scopedStores.map((store) => store.shopId)));
     const tenantIds = Array.from(new Set(scopedStores.map((store) => store.tenantId)));
+    const shouldLimit = refs.length === 0 && params.limit !== null;
+    const effectiveLimit = shouldLimit
+      ? (typeof params.limit === 'number' ? params.limit : PICKING_SYNC_ORDER_LIMIT)
+      : null;
 
     const confirmedOrders = await this.prisma.posOrder.findMany({
       where: {
@@ -112,7 +122,7 @@ export class WmsFulfillmentSyncService {
         orderSnapshot: true,
       },
       orderBy: [{ insertedAt: 'asc' }],
-      ...(refs.length === 0 ? { take: PICKING_SYNC_ORDER_LIMIT } : {}),
+      ...(effectiveLimit && effectiveLimit > 0 ? { take: effectiveLimit } : {}),
     });
 
     let syncedOrders = 0;
@@ -237,6 +247,11 @@ export class WmsFulfillmentSyncService {
           })
         )));
 
+        await this.reconcileLegacyFulfillmentLines(tx, {
+          fulfillmentOrderId: existing.id,
+          canonicalVariationIds: lines.map((line) => line.variationId),
+        });
+
         await tx.wmsFulfillmentLine.updateMany({
           where: {
             fulfillmentOrderId: existing.id,
@@ -269,8 +284,83 @@ export class WmsFulfillmentSyncService {
   }
 
   async allocateFulfillmentOrder(fulfillmentOrderId: string, actorId: string | null) {
+    await this.allocateFulfillmentOrderWithOptions(fulfillmentOrderId, actorId, {
+      preferredWarehouseId: null,
+    });
+  }
+
+  async reallocateWaitingOrdersForRestockedVariations(params: {
+    tenantId: string;
+    storeId: string;
+    warehouseId: string;
+    variationIds: string[];
+    actorId: string | null;
+  }) {
+    const variationIds = Array.from(new Set(
+      params.variationIds
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ));
+
+    if (variationIds.length === 0) {
+      return { reallocatedOrders: 0 };
+    }
+
+    const candidateOrders = await this.prisma.wmsFulfillmentOrder.findMany({
+      where: {
+        tenantId: params.tenantId,
+        storeId: params.storeId,
+        status: {
+          in: [...AUTO_REALLOCATION_ORDER_STATUSES],
+        },
+        OR: [
+          { warehouseId: params.warehouseId },
+          { warehouseId: null },
+        ],
+        lines: {
+          some: {
+            variationId: {
+              in: variationIds,
+            },
+            quantityRequired: {
+              gt: 0,
+            },
+            status: {
+              in: [
+                WmsFulfillmentLineStatus.RESTOCKING,
+                WmsFulfillmentLineStatus.PARTIAL,
+              ],
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+      orderBy: [{ createdAt: 'asc' }],
+      take: PUTAWAY_REALLOCATION_ORDER_LIMIT,
+    });
+
+    for (const order of candidateOrders) {
+      await this.allocateFulfillmentOrderWithOptions(order.id, params.actorId, {
+        preferredWarehouseId: params.warehouseId,
+      });
+    }
+
+    return {
+      reallocatedOrders: candidateOrders.length,
+    };
+  }
+
+  private async allocateFulfillmentOrderWithOptions(
+    fulfillmentOrderId: string,
+    actorId: string | null,
+    options: {
+      preferredWarehouseId: string | null;
+    },
+  ) {
     await this.prisma.$transaction(async (tx) => {
-      const order = await tx.wmsFulfillmentOrder.findUnique({
+      const existingOrder = await tx.wmsFulfillmentOrder.findUnique({
         where: { id: fulfillmentOrderId },
         include: {
           lines: {
@@ -286,15 +376,58 @@ export class WmsFulfillmentSyncService {
       });
 
       if (
-        !order
-        || order.status === WmsFulfillmentOrderStatus.READY_FOR_PACK
-        || order.status === WmsFulfillmentOrderStatus.PICKED
-        || order.status === WmsFulfillmentOrderStatus.PACKING
-        || order.status === WmsFulfillmentOrderStatus.PACKED
-        || order.status === WmsFulfillmentOrderStatus.CANCELED
+        !existingOrder
+        || existingOrder.status === WmsFulfillmentOrderStatus.READY_FOR_PACK
+        || existingOrder.status === WmsFulfillmentOrderStatus.PICKED
+        || existingOrder.status === WmsFulfillmentOrderStatus.PACKING
+        || existingOrder.status === WmsFulfillmentOrderStatus.PACKED
+        || existingOrder.status === WmsFulfillmentOrderStatus.CANCELED
       ) {
         return;
       }
+
+      const canonicalVariationIds = Array.from(new Set(
+        existingOrder.lines.flatMap((line) => {
+          const snapshot = this.asJsonRecord(line.lineSnapshot);
+          const sourceVariationId = this.readString(snapshot?.sourceVariationId);
+          return sourceVariationId ?? line.variationId;
+        }),
+      ));
+
+      await this.reconcileLegacyFulfillmentLines(tx, {
+        fulfillmentOrderId: existingOrder.id,
+        canonicalVariationIds,
+      });
+
+      const anchoredWarehouseId = await this.resolveAllocationWarehouseId(tx, {
+        fulfillmentOrderId: existingOrder.id,
+        currentWarehouseId: existingOrder.warehouseId,
+        preferredWarehouseId: options.preferredWarehouseId,
+      });
+
+      if (anchoredWarehouseId && anchoredWarehouseId !== existingOrder.warehouseId) {
+        await tx.wmsFulfillmentOrder.update({
+          where: { id: existingOrder.id },
+          data: {
+            warehouseId: anchoredWarehouseId,
+          },
+        });
+      }
+
+      const order = await tx.wmsFulfillmentOrder.findUniqueOrThrow({
+        where: { id: fulfillmentOrderId },
+        include: {
+          lines: {
+            include: {
+              reservations: {
+                where: {
+                  status: { in: [...ACTIVE_PICK_RESERVATION_STATUSES] },
+                },
+              },
+            },
+          },
+        },
+      });
 
       for (const line of order.lines) {
         if (line.quantityRequired <= 0 || line.status === WmsFulfillmentLineStatus.CANCELED) {
@@ -319,6 +452,19 @@ export class WmsFulfillmentSyncService {
           variationId: line.variationId,
           take: missingQuantity,
         });
+
+        if (!order.warehouseId && availableUnits.length > 0) {
+          const anchorWarehouseId = availableUnits[0]?.warehouseId ?? null;
+          if (anchorWarehouseId) {
+            await tx.wmsFulfillmentOrder.update({
+              where: { id: order.id },
+              data: {
+                warehouseId: anchorWarehouseId,
+              },
+            });
+            order.warehouseId = anchorWarehouseId;
+          }
+        }
 
         for (const [index, unit] of availableUnits.entries()) {
           await tx.wmsPickReservation.upsert({
@@ -400,6 +546,7 @@ export class WmsFulfillmentSyncService {
       order: {
         tenantId: string;
         storeId: string;
+        warehouseId: string | null;
         posWarehouseRef: string | null;
       };
       variationId: string;
@@ -409,6 +556,7 @@ export class WmsFulfillmentSyncService {
     const baseWhere: Prisma.WmsInventoryUnitWhereInput = {
       tenantId: params.order.tenantId,
       storeId: params.order.storeId,
+      ...(params.order.warehouseId ? { warehouseId: params.order.warehouseId } : {}),
       variationId: params.variationId,
       status: WmsInventoryUnitStatus.PUTAWAY,
       currentLocation: {
@@ -433,28 +581,33 @@ export class WmsFulfillmentSyncService {
       code: true,
     } satisfies Prisma.WmsInventoryUnitSelect;
     const orderBy = [
+      ...(params.order.warehouseId ? [] : [{ warehouseId: 'asc' as const }]),
       { updatedAt: 'asc' as const },
       { code: 'asc' as const },
     ];
 
     if (!params.order.posWarehouseRef) {
-      return tx.wmsInventoryUnit.findMany({
+      const candidates = await tx.wmsInventoryUnit.findMany({
         where: baseWhere,
         select,
         orderBy,
-        take: params.take,
+        take: params.order.warehouseId ? params.take : Math.max(params.take, 50),
       });
+
+      return this.limitUnitsToAnchorWarehouse(candidates, params.take, params.order.warehouseId);
     }
 
-    const exactUnits = await tx.wmsInventoryUnit.findMany({
+    const exactCandidates = await tx.wmsInventoryUnit.findMany({
       where: {
         ...baseWhere,
         posWarehouseRef: params.order.posWarehouseRef,
       },
       select,
       orderBy,
-      take: params.take,
+      take: params.order.warehouseId ? params.take : Math.max(params.take, 50),
     });
+    const anchoredWarehouseId = params.order.warehouseId ?? exactCandidates[0]?.warehouseId ?? null;
+    const exactUnits = this.limitUnitsToAnchorWarehouse(exactCandidates, params.take, anchoredWarehouseId);
 
     const remainingQuantity = params.take - exactUnits.length;
     if (remainingQuantity <= 0) {
@@ -464,6 +617,7 @@ export class WmsFulfillmentSyncService {
     const fallbackUnits = await tx.wmsInventoryUnit.findMany({
       where: {
         ...baseWhere,
+        ...(anchoredWarehouseId ? { warehouseId: anchoredWarehouseId } : {}),
         posWarehouseRef: null,
         id: {
           notIn: exactUnits.map((unit) => unit.id),
@@ -483,6 +637,7 @@ export class WmsFulfillmentSyncService {
       order: {
         tenantId: string;
         storeId: string;
+        warehouseId: string | null;
         posWarehouseRef: string | null;
       };
       variationId: string;
@@ -493,8 +648,12 @@ export class WmsFulfillmentSyncService {
       storeId: params.order.storeId,
       variationId: params.variationId,
     };
-    const putawayWhere: Prisma.WmsInventoryUnitWhereInput = {
+    const warehouseScopedIdentityWhere: Prisma.WmsInventoryUnitWhereInput = {
       ...identityWhere,
+      ...(params.order.warehouseId ? { warehouseId: params.order.warehouseId } : {}),
+    };
+    const putawayWhere: Prisma.WmsInventoryUnitWhereInput = {
+      ...warehouseScopedIdentityWhere,
       status: WmsInventoryUnitStatus.PUTAWAY,
     };
     const binnedWhere: Prisma.WmsInventoryUnitWhereInput = {
@@ -523,8 +682,9 @@ export class WmsFulfillmentSyncService {
         }
       : unreservedWhere;
 
-    const [matchingUnits, putawayUnits, binnedUnits, freeBinnedUnits, scopedUnits] = await Promise.all([
+    const [matchingUnits, warehouseMatchingUnits, putawayUnits, binnedUnits, freeBinnedUnits, scopedUnits] = await Promise.all([
       tx.wmsInventoryUnit.count({ where: identityWhere }),
+      tx.wmsInventoryUnit.count({ where: warehouseScopedIdentityWhere }),
       tx.wmsInventoryUnit.count({ where: putawayWhere }),
       tx.wmsInventoryUnit.count({ where: binnedWhere }),
       tx.wmsInventoryUnit.count({ where: unreservedWhere }),
@@ -533,6 +693,10 @@ export class WmsFulfillmentSyncService {
 
     if (matchingUnits === 0) {
       return 'No WMS units match this order item for this store.';
+    }
+
+    if (params.order.warehouseId && warehouseMatchingUnits === 0) {
+      return 'Matching units exist, but not in the warehouse assigned to this order.';
     }
 
     if (putawayUnits === 0) {
@@ -552,6 +716,172 @@ export class WmsFulfillmentSyncService {
     }
 
     return 'No eligible unit is available for reservation.';
+  }
+
+  private async reconcileLegacyFulfillmentLines(
+    tx: Prisma.TransactionClient,
+    params: {
+      fulfillmentOrderId: string;
+      canonicalVariationIds: string[];
+    },
+  ) {
+    const order = await tx.wmsFulfillmentOrder.findUnique({
+      where: { id: params.fulfillmentOrderId },
+      select: {
+        warehouseId: true,
+      },
+    });
+
+    const lines = await tx.wmsFulfillmentLine.findMany({
+      where: {
+        fulfillmentOrderId: params.fulfillmentOrderId,
+      },
+      select: {
+        id: true,
+        variationId: true,
+        lineSnapshot: true,
+        reservations: {
+          where: {
+            status: {
+              in: [...ACTIVE_PICK_RESERVATION_STATUSES],
+            },
+          },
+          select: {
+            id: true,
+            inventoryUnitId: true,
+            inventoryUnit: {
+              select: {
+                warehouseId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const canonicalSet = new Set(params.canonicalVariationIds);
+    const lineByVariationId = new Map(lines.map((line) => [line.variationId, line]));
+    let resolvedWarehouseId = order?.warehouseId ?? null;
+
+    for (const line of lines) {
+      const snapshot = this.asJsonRecord(line.lineSnapshot);
+      const sourceVariationId = this.readString(snapshot?.sourceVariationId);
+
+      if (!sourceVariationId || sourceVariationId === line.variationId || !canonicalSet.has(sourceVariationId)) {
+        continue;
+      }
+
+      const canonicalLine = lineByVariationId.get(sourceVariationId);
+      if (!canonicalLine || canonicalLine.id === line.id) {
+        continue;
+      }
+
+      const canonicalReservationUnitIds = new Set(
+        canonicalLine.reservations.map((reservation) => reservation.inventoryUnitId),
+      );
+
+      for (const reservation of line.reservations) {
+        if (!resolvedWarehouseId && reservation.inventoryUnit.warehouseId) {
+          resolvedWarehouseId = reservation.inventoryUnit.warehouseId;
+        }
+
+        if (canonicalReservationUnitIds.has(reservation.inventoryUnitId)) {
+          await tx.wmsPickReservation.update({
+            where: { id: reservation.id },
+            data: {
+              status: WmsPickReservationStatus.CANCELED,
+            },
+          });
+          continue;
+        }
+
+        await tx.wmsPickReservation.update({
+          where: { id: reservation.id },
+          data: {
+            fulfillmentLineId: canonicalLine.id,
+          },
+        });
+        canonicalReservationUnitIds.add(reservation.inventoryUnitId);
+      }
+
+      await tx.wmsFulfillmentLine.update({
+        where: { id: line.id },
+        data: {
+          status: WmsFulfillmentLineStatus.CANCELED,
+          quantityRequired: 0,
+          quantityAllocated: 0,
+          quantityPicked: 0,
+          issueReason: null,
+        },
+      });
+    }
+
+    if (resolvedWarehouseId && resolvedWarehouseId !== order?.warehouseId) {
+      await tx.wmsFulfillmentOrder.update({
+        where: { id: params.fulfillmentOrderId },
+        data: {
+          warehouseId: resolvedWarehouseId,
+        },
+      });
+    }
+  }
+
+  private limitUnitsToAnchorWarehouse<
+    TUnit extends {
+      warehouseId: string;
+    },
+  >(units: TUnit[], take: number, warehouseId: string | null) {
+    const anchorWarehouseId = warehouseId ?? units[0]?.warehouseId ?? null;
+    if (!anchorWarehouseId) {
+      return units.slice(0, take);
+    }
+
+    return units
+      .filter((unit) => unit.warehouseId === anchorWarehouseId)
+      .slice(0, take);
+  }
+
+  private async resolveAllocationWarehouseId(
+    tx: Prisma.TransactionClient,
+    params: {
+      fulfillmentOrderId: string;
+      currentWarehouseId: string | null;
+      preferredWarehouseId: string | null;
+    },
+  ) {
+    if (params.currentWarehouseId) {
+      return params.currentWarehouseId;
+    }
+
+    const reservationWarehouses = await tx.wmsPickReservation.findMany({
+      where: {
+        fulfillmentOrderId: params.fulfillmentOrderId,
+        status: {
+          in: [...ACTIVE_PICK_RESERVATION_STATUSES],
+        },
+      },
+      select: {
+        inventoryUnit: {
+          select: {
+            warehouseId: true,
+          },
+        },
+      },
+    });
+
+    const uniqueReservationWarehouses = Array.from(new Set(
+      reservationWarehouses.map((reservation) => reservation.inventoryUnit.warehouseId),
+    ));
+
+    if (uniqueReservationWarehouses.length === 1) {
+      return uniqueReservationWarehouses[0] ?? null;
+    }
+
+    if (uniqueReservationWarehouses.length > 1) {
+      return null;
+    }
+
+    return params.preferredWarehouseId;
   }
 
   private async refreshFulfillmentOrderState(
@@ -802,11 +1132,10 @@ export class WmsFulfillmentSyncService {
       ].filter(Boolean) as string[];
       const resolvedProduct =
         (sourceVariationId ? productByVariationId.get(sourceVariationId) : null)
-        ?? (sourceProductId ? productByVariationId.get(sourceProductId) : null)
         ?? (sourceProductId ? productByProductId.get(sourceProductId) : null)
         ?? sourceDisplayIds.map((id) => productByCustomId.get(id)).find(Boolean)
         ?? null;
-      const variationId = resolvedProduct?.variationId ?? sourceVariationId ?? sourceProductId;
+      const variationId = sourceVariationId ?? resolvedProduct?.variationId ?? null;
       if (!variationId) {
         continue;
       }

@@ -47,6 +47,7 @@ import {
   GetWmsMobilePickBasketLookupDto,
   GetWmsMobilePickingTasksDto,
   WmsMobilePickHandoffDto,
+  WmsMobilePickResyncDto,
   WmsMobilePickScanDto,
   WmsMobilePickScopedDto,
 } from './dto/wms-mobile-picking.dto';
@@ -174,8 +175,6 @@ const PACK_SUPERVISOR_PERMISSIONS = [
 ] as const;
 const HISTORY_READ_ALL_PERMISSIONS = [
   'wms.history.read_all',
-  'wms.fulfillment.override',
-  'wms.dispatch.override',
 ] as const;
 const DEFAULT_HISTORY_PAGE_SIZE = 20;
 const HISTORY_PICK_ACTION_TYPES = [
@@ -466,6 +465,14 @@ export class WmsMobileService {
       : null;
     const activeStoreId = activeStore?.id ?? null;
     const activeWarehouseId = activeWarehouse?.id ?? null;
+
+    if (tenantId) {
+      // Repair any shipped/delivered packed units before computing stock totals.
+      await this.wmsInventoryService.syncPackedUnitsToDispatchedForPosOrders({
+        tenantId,
+        storeId: activeStoreId,
+      });
+    }
 
     const unitScope: Prisma.WmsInventoryUnitWhereInput = {
       ...(tenantId ? { tenantId } : {}),
@@ -887,6 +894,14 @@ export class WmsMobileService {
         select: { tenantId: true },
       });
       tenantId = store?.tenantId ?? null;
+    }
+
+    if (tenantId) {
+      // Repair any shipped/delivered packed units before computing summary totals.
+      await this.wmsInventoryService.syncPackedUnitsToDispatchedForPosOrders({
+        tenantId,
+        storeId: query.storeId ?? null,
+      });
     }
 
     const scope: Prisma.WmsInventoryUnitWhereInput = {
@@ -1518,6 +1533,14 @@ export class WmsMobileService {
       },
     });
 
+    await this.wmsFulfillmentSyncService.reallocateWaitingOrdersForRestockedVariations({
+      tenantId: unit.tenantId,
+      storeId: unit.storeId,
+      warehouseId: unit.warehouseId,
+      variationIds: [unit.variationId],
+      actorId: user.userId || user.id || null,
+    });
+
     return {
       success: true,
       unit: this.mapMobileUnitDetail(result),
@@ -1923,6 +1946,89 @@ export class WmsMobileService {
     };
   }
 
+  async resyncPickingTasks(user: BootstrapUser, body: WmsMobilePickResyncDto, request?: Request) {
+    const userId = user.userId || user.id || null;
+    const sessionId = (this.cls.get('sessionId') as string | undefined) || user.sessionId || null;
+    const tenantContext = await this.resolveMobileStockContext(
+      user,
+      { tenantId: body.tenantId } as GetWmsMobileStockDto,
+      request,
+    );
+    const tenantId = tenantContext.tenantId;
+
+    if (!userId) {
+      throw new ForbiddenException('User context is required for queue resync');
+    }
+
+    if (user.role === 'SUPER_ADMIN' && !tenantId) {
+      throw new BadRequestException('Select a partner before resyncing the pick queue');
+    }
+
+    const stores = await this.prisma.posStore.findMany({
+      where: {
+        ...(tenantId ? { tenantId } : {}),
+        status: IntegrationStatus.ACTIVE,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        teamId: true,
+        name: true,
+        shopId: true,
+        shopName: true,
+      },
+      orderBy: [{ name: 'asc' }],
+    });
+
+    const activeStore = body.storeId
+      ? stores.find((store) => store.id === body.storeId) ?? null
+      : null;
+
+    if (body.storeId && !activeStore) {
+      throw new ForbiddenException('Selected store is not available for WMS fulfillment resync');
+    }
+
+    const result = await this.wmsFulfillmentSyncService.syncConfirmedPickingOrders({
+      tenantId,
+      storeId: activeStore?.id ?? null,
+      actorId: userId,
+      stores: stores.map((store) => ({
+        id: store.id,
+        tenantId: store.tenantId,
+        teamId: store.teamId,
+        shopId: store.shopId,
+      })),
+      limit: null,
+    });
+
+    await this.wmsStaffActivityService.recordFromRequest({
+      request,
+      tenantId,
+      actorId: userId,
+      teamId: activeStore?.teamId ?? user.defaultTeamId ?? null,
+      sessionId,
+      actionType: 'PICKING_QUEUE_RESYNC',
+      resourceType: 'WMS_FULFILLMENT_ORDER',
+      resourceId: activeStore?.id ?? tenantId,
+      storeId: activeStore?.id ?? null,
+      metadata: {
+        syncedOrders: result.syncedOrders,
+        scopedStoreId: activeStore?.id ?? null,
+        scopedStoreName: activeStore ? (activeStore.shopName || activeStore.name) : null,
+        storeCount: activeStore ? 1 : stores.length,
+      },
+    });
+
+    return {
+      success: true,
+      syncedOrders: result.syncedOrders,
+      tenantId,
+      storeId: activeStore?.id ?? null,
+      storeName: activeStore ? (activeStore.shopName || activeStore.name) : null,
+      storeCount: activeStore ? 1 : stores.length,
+    };
+  }
+
   async getPackingTasks(user: BootstrapUser, query: GetWmsMobilePackingTasksDto, request?: Request) {
     const userId = user.userId || user.id || null;
     const tenantContext = await this.resolveMobileStockContext(user, query as GetWmsMobileStockDto, request);
@@ -2246,18 +2352,11 @@ export class WmsMobileService {
     const limit = query.limit ?? DEFAULT_HISTORY_PAGE_SIZE;
     const cursor = this.decodeHistoryCursor(query.cursor);
     const activeType = query.type ?? 'ALL';
-    const visibleFulfillmentOrderIds = !canViewAll && tenantId && this.historyTypeSupportsFulfillmentVisibility(activeType)
-      ? await this.resolveVisibleFulfillmentHistoryOrderIds({
-          tenantId,
-          userId,
-        })
-      : [];
     const where = this.buildHistoryActivityWhere({
       tenantId,
       actorId: activeActorId,
       type: activeType,
       cursor,
-      visibleFulfillmentOrderIds,
     });
 
     const rows = await this.prisma.wmsStaffActivity.findMany({
@@ -5230,34 +5329,14 @@ export class WmsMobileService {
     actorId: string | null;
     type: WmsMobileHistoryTypeFilter;
     cursor: { createdAt: Date; id: string } | null;
-    visibleFulfillmentOrderIds?: string[];
   }): Prisma.WmsStaffActivityWhereInput {
     const where: Prisma.WmsStaffActivityWhereInput = {
       ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      ...(params.actorId ? { actorId: params.actorId } : {}),
       actionType: {
         in: [...this.resolveHistoryActionTypes(params.type)],
       },
     };
-
-    const visibilityClauses: Prisma.WmsStaffActivityWhereInput[] = [];
-    if (params.actorId) {
-      visibilityClauses.push({ actorId: params.actorId });
-    }
-
-    if ((params.visibleFulfillmentOrderIds?.length ?? 0) > 0) {
-      visibilityClauses.push({
-        resourceType: 'WMS_FULFILLMENT_ORDER',
-        resourceId: {
-          in: params.visibleFulfillmentOrderIds,
-        },
-      });
-    }
-
-    if (visibilityClauses.length === 1) {
-      Object.assign(where, visibilityClauses[0]);
-    } else if (visibilityClauses.length > 1) {
-      where.OR = visibilityClauses;
-    }
 
     if (params.type === 'ISSUE') {
       where.outcome = {
@@ -5299,58 +5378,6 @@ export class WmsMobileService {
       default:
         return HISTORY_ALL_ACTION_TYPES;
     }
-  }
-
-  private historyTypeSupportsFulfillmentVisibility(type: WmsMobileHistoryTypeFilter) {
-    return type !== 'SCAN';
-  }
-
-  private async resolveVisibleFulfillmentHistoryOrderIds(params: {
-    tenantId: string;
-    userId: string;
-  }) {
-    const [orders, activities] = await Promise.all([
-      this.prisma.wmsFulfillmentOrder.findMany({
-        where: {
-          tenantId: params.tenantId,
-          OR: [
-            { claimedById: params.userId },
-            { packedById: params.userId },
-          ],
-        },
-        select: {
-          id: true,
-        },
-      }),
-      this.prisma.wmsStaffActivity.findMany({
-        where: {
-          tenantId: params.tenantId,
-          actorId: params.userId,
-          resourceType: 'WMS_FULFILLMENT_ORDER',
-          resourceId: {
-            not: null,
-          },
-          actionType: {
-            in: [
-              ...HISTORY_PICK_ACTION_TYPES,
-              ...HISTORY_PACK_ACTION_TYPES,
-              ...HISTORY_VOID_ACTION_TYPES,
-            ],
-          },
-        },
-        select: {
-          resourceId: true,
-        },
-        distinct: ['resourceId'],
-      }),
-    ]);
-
-    return Array.from(
-      new Set([
-        ...orders.map((order) => order.id),
-        ...activities.flatMap((activity) => (activity.resourceId ? [activity.resourceId] : [])),
-      ]),
-    );
   }
 
   private encodeHistoryCursor(createdAt: Date, id: string) {

@@ -1535,12 +1535,55 @@ export class WmsPurchasingService {
         );
       }
 
-      await this.validateResolutionTargets(
+      const resolutionTargets = await this.validateResolutionTargets(
         input.tenantId,
         lineStoreId,
         line.resolvedPosProductId,
         line.resolvedProfileId,
       );
+
+      const requestedVariationId = this.cleanOptionalText(line.variationId);
+      const resolvedVariationId =
+        resolutionTargets.profile?.variationId
+        ?? resolutionTargets.posProduct?.variationId
+        ?? null;
+      const canonicalVariationId = requestedVariationId ?? resolvedVariationId;
+
+      if (!canonicalVariationId) {
+        throw new BadRequestException(
+          `Line ${lineNo}: this product is not stockable because it is missing a variation ID`,
+        );
+      }
+
+      if (requestedVariationId && resolvedVariationId && requestedVariationId !== resolvedVariationId) {
+        throw new BadRequestException(
+          `Line ${lineNo}: variation ID does not match the selected stockable product`,
+        );
+      }
+
+      if (line.productId && canonicalVariationId === line.productId) {
+        const canonicalVariationProduct = await this.prisma.posProduct.findFirst({
+          where: {
+            storeId: lineStoreId,
+            productId: line.productId,
+            variationId: {
+              not: null,
+            },
+          },
+          select: {
+            variationId: true,
+          },
+        });
+
+        if (
+          canonicalVariationProduct?.variationId
+          && canonicalVariationProduct.variationId !== line.productId
+        ) {
+          throw new BadRequestException(
+            `Line ${lineNo}: request must use variation ID ${canonicalVariationProduct.variationId}, not product ID ${line.productId}`,
+          );
+        }
+      }
 
       if (lineStoreId !== input.storeId) {
         await this.validateStore(input.tenantId, lineStoreId);
@@ -1561,7 +1604,7 @@ export class WmsPurchasingService {
           originalApprovedQuantity: line.approvedQuantity ?? line.requestedQuantity,
         }),
         productId: this.cleanOptionalText(line.productId),
-        variationId: this.cleanOptionalText(line.variationId),
+        variationId: canonicalVariationId,
         requestedProductName: this.cleanOptionalText(line.requestedProductName),
         uom: this.cleanOptionalText(line.uom),
         requestedQuantity: line.requestedQuantity,
@@ -1707,6 +1750,13 @@ export class WmsPurchasingService {
     resolvedPosProductId?: string,
     resolvedProfileId?: string,
   ) {
+    let resolvedPosProduct:
+      | {
+          id: string;
+          variationId: string | null;
+        }
+      | null = null;
+
     if (resolvedPosProductId) {
       const posProduct = await this.prisma.posProduct.findFirst({
         where: {
@@ -1716,13 +1766,32 @@ export class WmsPurchasingService {
             tenantId,
           },
         },
-        select: { id: true },
+        select: {
+          id: true,
+          variationId: true,
+        },
       });
 
       if (!posProduct) {
         throw new BadRequestException('Resolved POS product is outside tenant/store scope');
       }
+
+      if (!posProduct.variationId) {
+        throw new BadRequestException(
+          'Resolved POS product is not stockable because it is missing a variation ID',
+        );
+      }
+
+      resolvedPosProduct = posProduct;
     }
+
+    let resolvedProfile:
+      | {
+          id: string;
+          posProductId: string;
+          variationId: string;
+        }
+      | null = null;
 
     if (resolvedProfileId) {
       const profile = await this.prisma.wmsProductProfile.findFirst({
@@ -1734,6 +1803,7 @@ export class WmsPurchasingService {
         select: {
           id: true,
           posProductId: true,
+          variationId: true,
         },
       });
 
@@ -1746,7 +1816,14 @@ export class WmsPurchasingService {
           'Resolved product profile does not match the selected POS product',
         );
       }
+
+      resolvedProfile = profile;
     }
+
+    return {
+      posProduct: resolvedPosProduct,
+      profile: resolvedProfile,
+    };
   }
 
   private assertBatchTenantScope(batchTenantId: string, activeTenantId: string) {

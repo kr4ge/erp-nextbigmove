@@ -76,8 +76,14 @@ export const WMS_SETTINGS_READ_PERMISSIONS = [
   ...WMS_ROLES_READ_PERMISSIONS,
 ] as const;
 
+function normalizeAdminRole(role: string | null | undefined) {
+  return typeof role === 'string'
+    ? role.trim().toUpperCase()
+    : null;
+}
+
 export function isPlatformAdminRole(role: string | null | undefined) {
-  return role === 'SUPER_ADMIN';
+  return normalizeAdminRole(role) === 'SUPER_ADMIN';
 }
 
 export function hasAnyAdminPermission(
