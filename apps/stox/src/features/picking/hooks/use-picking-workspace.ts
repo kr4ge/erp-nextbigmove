@@ -5,6 +5,7 @@ import {
   claimMobilePickingTask,
   fetchMobilePickingTasks,
   handoffMobilePickingTask,
+  retryMobilePickingAllocation,
   scanMobilePickingBasket,
   scanMobilePickingBin,
   scanMobilePickingUnit,
@@ -290,6 +291,35 @@ export function usePickingWorkspace({
     }
   }, [device, filters.tenantId, session.accessToken]);
 
+  const retryAllocation = useCallback(async (taskId: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return false;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await retryMobilePickingAllocation({
+        accessToken: session.accessToken,
+        device,
+        taskId,
+        tenantId: filters.tenantId,
+      });
+      setPicking((current) => current ? replacePickingTask(current, result.task) : current);
+      setActiveTaskId(result.task.id);
+      if (result.task.nextPick) {
+        setActiveBin(null);
+      }
+      setError(null);
+      return true;
+    } catch (requestError) {
+      setError(resolvePickingError(requestError));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -375,6 +405,7 @@ export function usePickingWorkspace({
     loadMore,
     picking,
     refreshPicking,
+    retryAllocation,
     scanBasket,
     scanBin,
     scanUnit,

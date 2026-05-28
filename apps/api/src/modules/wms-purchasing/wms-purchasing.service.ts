@@ -20,6 +20,7 @@ import {
 } from './dto/create-wms-purchasing-batch.dto';
 import { GetWmsPurchasingOverviewDto } from './dto/get-wms-purchasing-overview.dto';
 import { GetWmsPurchasingProductOptionsDto } from './dto/get-wms-purchasing-product-options.dto';
+import { MarkWmsSelfBuyShipmentDto } from './dto/mark-wms-self-buy-shipment.dto';
 import { RespondWmsPurchasingRevisionDto } from './dto/respond-wms-purchasing-revision.dto';
 import { SubmitWmsPurchasingPaymentProofDto } from './dto/submit-wms-purchasing-payment-proof.dto';
 import { UpdateWmsPurchasingLineDto } from './dto/update-wms-purchasing-line.dto';
@@ -33,6 +34,9 @@ const REQUEST_TYPE_ORDER: WmsPurchasingRequestType[] = [
 const STATUS_ORDER: WmsPurchasingBatchStatus[] = [
   WmsPurchasingBatchStatus.UNDER_REVIEW,
   WmsPurchasingBatchStatus.REVISION,
+  WmsPurchasingBatchStatus.AWAITING_PRODUCTS,
+  WmsPurchasingBatchStatus.SHIPPED,
+  WmsPurchasingBatchStatus.RECEIVING_EXCEPTION,
   WmsPurchasingBatchStatus.PENDING_PAYMENT,
   WmsPurchasingBatchStatus.PAYMENT_REVIEW,
   WmsPurchasingBatchStatus.RECEIVING_READY,
@@ -42,7 +46,10 @@ const STATUS_ORDER: WmsPurchasingBatchStatus[] = [
   WmsPurchasingBatchStatus.CANCELED,
 ];
 
-const STATUS_TRANSITIONS: Record<WmsPurchasingBatchStatus, readonly WmsPurchasingBatchStatus[]> = {
+const PROCUREMENT_STATUS_TRANSITIONS: Record<
+  WmsPurchasingBatchStatus,
+  readonly WmsPurchasingBatchStatus[]
+> = {
   [WmsPurchasingBatchStatus.UNDER_REVIEW]: [
     WmsPurchasingBatchStatus.PENDING_PAYMENT,
     WmsPurchasingBatchStatus.CANCELED,
@@ -52,6 +59,9 @@ const STATUS_TRANSITIONS: Record<WmsPurchasingBatchStatus, readonly WmsPurchasin
     WmsPurchasingBatchStatus.REJECTED,
     WmsPurchasingBatchStatus.CANCELED,
   ],
+  [WmsPurchasingBatchStatus.AWAITING_PRODUCTS]: [],
+  [WmsPurchasingBatchStatus.SHIPPED]: [],
+  [WmsPurchasingBatchStatus.RECEIVING_EXCEPTION]: [],
   [WmsPurchasingBatchStatus.PENDING_PAYMENT]: [],
   [WmsPurchasingBatchStatus.PAYMENT_REVIEW]: [
     WmsPurchasingBatchStatus.PENDING_PAYMENT,
@@ -62,6 +72,41 @@ const STATUS_TRANSITIONS: Record<WmsPurchasingBatchStatus, readonly WmsPurchasin
   [WmsPurchasingBatchStatus.RECEIVING_READY]: [],
   [WmsPurchasingBatchStatus.RECEIVING]: [
     WmsPurchasingBatchStatus.STOCKED,
+    WmsPurchasingBatchStatus.CANCELED,
+  ],
+  [WmsPurchasingBatchStatus.STOCKED]: [],
+  [WmsPurchasingBatchStatus.REJECTED]: [],
+  [WmsPurchasingBatchStatus.CANCELED]: [],
+};
+
+const SELF_BUY_STATUS_TRANSITIONS: Record<
+  WmsPurchasingBatchStatus,
+  readonly WmsPurchasingBatchStatus[]
+> = {
+  [WmsPurchasingBatchStatus.UNDER_REVIEW]: [
+    WmsPurchasingBatchStatus.AWAITING_PRODUCTS,
+    WmsPurchasingBatchStatus.CANCELED,
+  ],
+  [WmsPurchasingBatchStatus.REVISION]: [
+    WmsPurchasingBatchStatus.AWAITING_PRODUCTS,
+    WmsPurchasingBatchStatus.REJECTED,
+    WmsPurchasingBatchStatus.CANCELED,
+  ],
+  [WmsPurchasingBatchStatus.AWAITING_PRODUCTS]: [],
+  [WmsPurchasingBatchStatus.SHIPPED]: [
+    WmsPurchasingBatchStatus.RECEIVING_EXCEPTION,
+    WmsPurchasingBatchStatus.CANCELED,
+  ],
+  [WmsPurchasingBatchStatus.RECEIVING_EXCEPTION]: [
+    WmsPurchasingBatchStatus.AWAITING_PRODUCTS,
+    WmsPurchasingBatchStatus.CANCELED,
+  ],
+  [WmsPurchasingBatchStatus.PENDING_PAYMENT]: [],
+  [WmsPurchasingBatchStatus.PAYMENT_REVIEW]: [],
+  [WmsPurchasingBatchStatus.RECEIVING_READY]: [],
+  [WmsPurchasingBatchStatus.RECEIVING]: [
+    WmsPurchasingBatchStatus.STOCKED,
+    WmsPurchasingBatchStatus.RECEIVING_EXCEPTION,
     WmsPurchasingBatchStatus.CANCELED,
   ],
   [WmsPurchasingBatchStatus.STOCKED]: [],
@@ -638,7 +683,7 @@ export class WmsPurchasingService {
       lines: body.lines,
     });
 
-    if (status === WmsPurchasingBatchStatus.RECEIVING_READY) {
+    if (this.requiresOperationalReadinessValidation(body.requestType, status)) {
       this.validateReadyForReceiving({
         requestType: body.requestType,
         lines: lineData,
@@ -673,20 +718,22 @@ export class WmsPurchasingService {
           ? actorId
           : null,
         paymentVerifiedAt: this.parseOptionalDate(body.paymentVerifiedAt),
-        readyForReceivingAt:
-          status === WmsPurchasingBatchStatus.RECEIVING_READY ? now : null,
+        readyForReceivingAt: this.isReadyForReceivingQueueStatus(status) ? now : null,
         submittedById: actorId,
         reviewedById:
           status === WmsPurchasingBatchStatus.REVISION
+          || status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
           || status === WmsPurchasingBatchStatus.PENDING_PAYMENT
           || status === WmsPurchasingBatchStatus.PAYMENT_REVIEW
+          || status === WmsPurchasingBatchStatus.RECEIVING_EXCEPTION
           || status === WmsPurchasingBatchStatus.RECEIVING_READY
           || status === WmsPurchasingBatchStatus.RECEIVING
           || status === WmsPurchasingBatchStatus.STOCKED
             ? actorId
             : null,
         approvedById:
-          status === WmsPurchasingBatchStatus.PENDING_PAYMENT
+          status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+          || status === WmsPurchasingBatchStatus.PENDING_PAYMENT
           || status === WmsPurchasingBatchStatus.PAYMENT_REVIEW
           || status === WmsPurchasingBatchStatus.RECEIVING_READY
           || status === WmsPurchasingBatchStatus.RECEIVING
@@ -755,6 +802,10 @@ export class WmsPurchasingService {
       throw new BadRequestException('Cannot submit payment proof for a closed purchasing batch');
     }
 
+    if (batch.requestType === WmsPurchasingRequestType.SELF_BUY) {
+      throw new BadRequestException('Self-buy requests do not require payment proof');
+    }
+
     if (batch.status !== WmsPurchasingBatchStatus.PENDING_PAYMENT) {
       throw new BadRequestException('Payment proof can only be submitted while payment is pending');
     }
@@ -813,6 +864,7 @@ export class WmsPurchasingService {
       select: {
         id: true,
         tenantId: true,
+        requestType: true,
         status: true,
       },
     });
@@ -832,7 +884,11 @@ export class WmsPurchasingService {
       {
         status:
           body.decision === 'ACCEPT'
-            ? WmsPurchasingBatchStatus.PENDING_PAYMENT
+            ? (
+              batch.requestType === WmsPurchasingRequestType.SELF_BUY
+                ? WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+                : WmsPurchasingBatchStatus.PENDING_PAYMENT
+            )
             : WmsPurchasingBatchStatus.REJECTED,
         message:
           this.cleanOptionalText(body.message)
@@ -843,12 +899,96 @@ export class WmsPurchasingService {
           ),
         sourceStatus:
           body.decision === 'ACCEPT'
-            ? 'REVISION_ACCEPTED'
+            ? (
+              batch.requestType === WmsPurchasingRequestType.SELF_BUY
+                ? 'AWAITING_PRODUCTS'
+                : 'REVISION_ACCEPTED'
+            )
             : 'REVISION_REJECTED',
       },
       scope.activeTenantId,
       { bypassRevisionAcceptanceGuard: true },
     );
+  }
+
+  async markSelfBuyShipment(
+    id: string,
+    body: MarkWmsSelfBuyShipmentDto,
+    requestedTenantId?: string,
+  ) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const batch = await this.prisma.wmsPurchasingBatch.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        tenantId: true,
+        requestType: true,
+        status: true,
+      },
+    });
+
+    if (!batch) {
+      throw new NotFoundException('Purchasing batch was not found');
+    }
+
+    this.assertBatchTenantScope(batch.tenantId, scope.activeTenantId);
+
+    if (batch.requestType !== WmsPurchasingRequestType.SELF_BUY) {
+      throw new BadRequestException('Only self-buy requests can be marked as shipped');
+    }
+
+    if (
+      batch.status !== WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+      && batch.status !== WmsPurchasingBatchStatus.RECEIVING_EXCEPTION
+    ) {
+      throw new BadRequestException('Self-buy shipment can only be marked after WMS approval or exception follow-up');
+    }
+
+    const shipmentReference = this.cleanOptionalText(body.shipmentReference);
+    const message =
+      this.cleanOptionalText(body.message)
+      ?? (
+        batch.status === WmsPurchasingBatchStatus.RECEIVING_EXCEPTION
+          ? 'Partner confirmed a replacement shipment to warehouse'
+          : 'Partner marked products as shipped to warehouse'
+      );
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.wmsPurchasingBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: WmsPurchasingBatchStatus.SHIPPED,
+          sourceStatus: 'SHIPPED',
+          readyForReceivingAt: now,
+          updatedById: actorId,
+        },
+      });
+
+      await tx.wmsPurchasingEvent.create({
+        data: {
+          batchId: batch.id,
+          tenantId: batch.tenantId,
+          eventType: 'SELF_BUY_SHIPPED',
+          fromStatus: batch.status,
+          toStatus: WmsPurchasingBatchStatus.SHIPPED,
+          message,
+          actorId,
+          payload: shipmentReference
+            ? {
+                shipmentReference,
+              }
+            : undefined,
+        },
+      });
+    });
+
+    return this.getBatchById(batch.id, scope.activeTenantId);
   }
 
   async updateStatus(
@@ -890,7 +1030,7 @@ export class WmsPurchasingService {
     this.assertBatchTenantScope(current.tenantId, scope.activeTenantId);
 
     if (body.status !== current.status) {
-      const allowed = STATUS_TRANSITIONS[current.status];
+      const allowed = this.getAllowedStatusTransitions(current.requestType, current.status);
       if (!allowed.includes(body.status)) {
         throw new BadRequestException(
           `Cannot move purchasing batch from ${current.status} to ${body.status}`,
@@ -959,7 +1099,7 @@ export class WmsPurchasingService {
       );
     }
 
-    if (body.status === WmsPurchasingBatchStatus.RECEIVING_READY) {
+    if (this.requiresOperationalReadinessValidation(current.requestType, body.status)) {
       this.validateReadyForReceiving({
         requestType: current.requestType,
         lines: current.lines,
@@ -973,6 +1113,12 @@ export class WmsPurchasingService {
       ?? (
         body.status === WmsPurchasingBatchStatus.REVISION
           ? 'REVISION_REQUESTED'
+          : body.status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+            ? 'AWAITING_PRODUCTS'
+            : body.status === WmsPurchasingBatchStatus.SHIPPED
+              ? 'SHIPPED'
+              : body.status === WmsPurchasingBatchStatus.RECEIVING_EXCEPTION
+                ? 'RECEIVING_EXCEPTION'
           : body.status === WmsPurchasingBatchStatus.PENDING_PAYMENT
             ? 'PENDING_PAYMENT'
             : body.status === WmsPurchasingBatchStatus.PAYMENT_REVIEW
@@ -1029,12 +1175,15 @@ export class WmsPurchasingService {
               ? effectivePaymentVerifiedAt
               : undefined,
           sourceStatus: nextSourceStatus ?? undefined,
-          readyForReceivingAt:
-            body.status === WmsPurchasingBatchStatus.RECEIVING_READY
-              ? now
-              : undefined,
+          readyForReceivingAt: this.resolveReadyForReceivingAt(
+            current.readyForReceivingAt,
+            body.status,
+            now,
+          ),
           reviewedById:
             body.status === WmsPurchasingBatchStatus.REVISION
+            || body.status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+            || body.status === WmsPurchasingBatchStatus.RECEIVING_EXCEPTION
             || body.status === WmsPurchasingBatchStatus.PENDING_PAYMENT
             || body.status === WmsPurchasingBatchStatus.PAYMENT_REVIEW
             || body.status === WmsPurchasingBatchStatus.RECEIVING_READY
@@ -1043,7 +1192,8 @@ export class WmsPurchasingService {
               ? actorId
               : undefined,
           approvedById:
-            body.status === WmsPurchasingBatchStatus.PENDING_PAYMENT
+            body.status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+            || body.status === WmsPurchasingBatchStatus.PENDING_PAYMENT
             || body.status === WmsPurchasingBatchStatus.PAYMENT_REVIEW
             || body.status === WmsPurchasingBatchStatus.RECEIVING_READY
             || body.status === WmsPurchasingBatchStatus.RECEIVING
@@ -1267,7 +1417,12 @@ export class WmsPurchasingService {
       this.prisma.wmsPurchasingBatch.count({
         where: {
           ...where,
-          status: WmsPurchasingBatchStatus.RECEIVING_READY,
+          status: {
+            in: [
+              WmsPurchasingBatchStatus.RECEIVING_READY,
+              WmsPurchasingBatchStatus.SHIPPED,
+            ],
+          },
         },
       }),
       this.prisma.wmsPurchasingBatch.count({
@@ -1278,6 +1433,7 @@ export class WmsPurchasingService {
               WmsPurchasingBatchStatus.UNDER_REVIEW,
               WmsPurchasingBatchStatus.REVISION,
               WmsPurchasingBatchStatus.PAYMENT_REVIEW,
+              WmsPurchasingBatchStatus.RECEIVING_EXCEPTION,
             ],
           },
         },
@@ -1720,6 +1876,62 @@ export class WmsPurchasingService {
         );
       }
     }
+  }
+
+  private getAllowedStatusTransitions(
+    requestType: WmsPurchasingRequestType,
+    status: WmsPurchasingBatchStatus,
+  ) {
+    return requestType === WmsPurchasingRequestType.SELF_BUY
+      ? SELF_BUY_STATUS_TRANSITIONS[status]
+      : PROCUREMENT_STATUS_TRANSITIONS[status];
+  }
+
+  private requiresOperationalReadinessValidation(
+    requestType: WmsPurchasingRequestType,
+    status: WmsPurchasingBatchStatus,
+  ) {
+    return (
+      (
+        requestType === WmsPurchasingRequestType.PROCUREMENT
+        && status === WmsPurchasingBatchStatus.RECEIVING_READY
+      )
+      || (
+        requestType === WmsPurchasingRequestType.SELF_BUY
+        && status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+      )
+    );
+  }
+
+  private isReadyForReceivingQueueStatus(status: WmsPurchasingBatchStatus) {
+    return (
+      status === WmsPurchasingBatchStatus.RECEIVING_READY
+      || status === WmsPurchasingBatchStatus.SHIPPED
+    );
+  }
+
+  private resolveReadyForReceivingAt(
+    currentValue: Date | null,
+    nextStatus: WmsPurchasingBatchStatus,
+    now: Date,
+  ) {
+    if (this.isReadyForReceivingQueueStatus(nextStatus)) {
+      return now;
+    }
+
+    if (
+      nextStatus === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+      || nextStatus === WmsPurchasingBatchStatus.RECEIVING_EXCEPTION
+      || nextStatus === WmsPurchasingBatchStatus.PENDING_PAYMENT
+      || nextStatus === WmsPurchasingBatchStatus.PAYMENT_REVIEW
+      || nextStatus === WmsPurchasingBatchStatus.REVISION
+      || nextStatus === WmsPurchasingBatchStatus.REJECTED
+      || nextStatus === WmsPurchasingBatchStatus.CANCELED
+    ) {
+      return null;
+    }
+
+    return currentValue ?? undefined;
   }
 
   private async validateStore(tenantId: string, storeId: string) {

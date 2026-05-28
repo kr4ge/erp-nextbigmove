@@ -356,6 +356,7 @@ export class WmsReceivingService {
       status: {
         in: [
           WmsPurchasingBatchStatus.RECEIVING_READY,
+          WmsPurchasingBatchStatus.SHIPPED,
           WmsPurchasingBatchStatus.RECEIVING,
         ],
       },
@@ -786,6 +787,7 @@ export class WmsReceivingService {
         inventoryUnits: {
           select: {
             id: true,
+            storeId: true,
             currentLocationId: true,
             status: true,
             variationId: true,
@@ -857,6 +859,7 @@ export class WmsReceivingService {
 
       return {
         unitId: assignment.unitId,
+        storeId: unit.storeId,
         currentLocationId: unit.currentLocationId,
         currentStatus: unit.status,
         variationId: unit.variationId,
@@ -1010,13 +1013,28 @@ export class WmsReceivingService {
       };
     });
 
-    await this.wmsFulfillmentSyncService.reallocateWaitingOrdersForRestockedVariations({
-      tenantId: batch.tenantId,
-      storeId: batch.storeId,
-      warehouseId: batch.warehouseId,
-      variationIds: validatedAssignments.map((assignment) => assignment.variationId),
-      actorId,
-    });
+    const reallocationGroups = Array.from(
+      validatedAssignments.reduce((groups, assignment) => {
+        const existing = groups.get(assignment.storeId);
+        if (existing) {
+          existing.add(assignment.variationId);
+          return groups;
+        }
+
+        groups.set(assignment.storeId, new Set([assignment.variationId]));
+        return groups;
+      }, new Map<string, Set<string>>()),
+    );
+
+    for (const [storeId, variationIds] of reallocationGroups) {
+      await this.wmsFulfillmentSyncService.reallocateWaitingOrdersForRestockedVariations({
+        tenantId: batch.tenantId,
+        storeId,
+        warehouseId: batch.warehouseId,
+        variationIds: Array.from(variationIds),
+        actorId,
+      });
+    }
 
     return {
       updatedUnitCount: validatedAssignments.length,
@@ -1091,10 +1109,20 @@ export class WmsReceivingService {
 
     this.assertTenantScope(purchasingBatch.tenantId, scope.activeTenantId);
 
-    if (
-      purchasingBatch.status !== WmsPurchasingBatchStatus.RECEIVING_READY
-      && purchasingBatch.status !== WmsPurchasingBatchStatus.RECEIVING
-    ) {
+    const isReceivableProcurement =
+      purchasingBatch.requestType !== 'SELF_BUY'
+      && (
+        purchasingBatch.status === WmsPurchasingBatchStatus.RECEIVING_READY
+        || purchasingBatch.status === WmsPurchasingBatchStatus.RECEIVING
+      );
+    const isReceivableSelfBuy =
+      purchasingBatch.requestType === 'SELF_BUY'
+      && (
+        purchasingBatch.status === WmsPurchasingBatchStatus.SHIPPED
+        || purchasingBatch.status === WmsPurchasingBatchStatus.RECEIVING
+      );
+
+    if (!isReceivableProcurement && !isReceivableSelfBuy) {
       throw new BadRequestException('Selected purchasing batch is not ready for receiving');
     }
 

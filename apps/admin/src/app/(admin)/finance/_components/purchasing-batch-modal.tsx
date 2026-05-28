@@ -75,18 +75,87 @@ export function PurchasingBatchModal({
   }, [batch]);
 
   const editableLines = canEdit && (batch?.status === 'UNDER_REVIEW' || batch?.status === 'REVISION');
+  const isSelfBuy = batch?.requestType === 'SELF_BUY';
   const statusActions = useMemo(() => {
     if (!batch) {
       return [];
     }
 
     if (batch.status === 'UNDER_REVIEW') {
+      if (batch.requestType === 'SELF_BUY') {
+        return [
+          {
+            label: 'Approve for Shipment',
+            status: 'AWAITING_PRODUCTS' as WmsPurchasingBatchStatus,
+            tone: 'primary' as const,
+            description: 'Partner can now ship products to warehouse',
+          },
+          {
+            label: 'Cancel',
+            status: 'CANCELED' as WmsPurchasingBatchStatus,
+            tone: 'danger' as const,
+            description: 'Close this request',
+          },
+        ];
+      }
+
       return [
         {
           label: 'Accept',
           status: 'PENDING_PAYMENT' as WmsPurchasingBatchStatus,
           tone: 'primary' as const,
           description: 'No pricing or quantity changes',
+        },
+        {
+          label: 'Cancel',
+          status: 'CANCELED' as WmsPurchasingBatchStatus,
+          tone: 'danger' as const,
+          description: 'Close this request',
+        },
+      ];
+    }
+
+    if (batch.status === 'RECEIVING_EXCEPTION' && batch.requestType === 'SELF_BUY') {
+      return [
+        {
+          label: 'Return to Shipment Queue',
+          status: 'AWAITING_PRODUCTS' as WmsPurchasingBatchStatus,
+          tone: 'primary' as const,
+          description: 'Ask partner to resend or correct the shipment',
+        },
+        {
+          label: 'Cancel',
+          status: 'CANCELED' as WmsPurchasingBatchStatus,
+          tone: 'danger' as const,
+          description: 'Close this request',
+        },
+      ];
+    }
+
+    if (batch.status === 'SHIPPED' && batch.requestType === 'SELF_BUY') {
+      return [
+        {
+          label: 'Flag Shipment Issue',
+          status: 'RECEIVING_EXCEPTION' as WmsPurchasingBatchStatus,
+          tone: 'secondary' as const,
+          description: 'Partner shipment does not match the approved request',
+        },
+        {
+          label: 'Cancel',
+          status: 'CANCELED' as WmsPurchasingBatchStatus,
+          tone: 'danger' as const,
+          description: 'Close this request',
+        },
+      ];
+    }
+
+    if (batch.status === 'RECEIVING' && batch.requestType === 'SELF_BUY') {
+      return [
+        {
+          label: 'Flag Receiving Mismatch',
+          status: 'RECEIVING_EXCEPTION' as WmsPurchasingBatchStatus,
+          tone: 'secondary' as const,
+          description: 'Delivered stock does not match the approved self-buy request',
         },
         {
           label: 'Cancel',
@@ -348,7 +417,9 @@ export function PurchasingBatchModal({
                 >
                   {formatStatusLabel(batch.status)}
                 </span>
-                <p className="text-[12px] font-medium text-[#5f7483]">{getStatusHelper(batch.status)}</p>
+                <p className="text-[12px] font-medium text-[#5f7483]">
+                  {getStatusHelper(batch.status, batch.requestType)}
+                </p>
               </div>
             </MetricCard>
 
@@ -393,25 +464,50 @@ export function PurchasingBatchModal({
 
             <MetricCard label="Request Type">{formatRequestTypeLabel(batch.requestType)}</MetricCard>
             <MetricCard label="Source">{batch.sourceRequestId || 'Manual / adapter'}</MetricCard>
-            <MetricCard label="Invoice">{batch.invoice.number || batch.invoiceNumber || 'Not assigned'}</MetricCard>
-            <MetricCard label="Partner Amount">{formatMoney(batch.invoice.amount ?? batch.invoiceAmount)}</MetricCard>
-            <MetricCard label="Payment Submitted">{formatShortDate(batch.paymentSubmittedAt)}</MetricCard>
-            <MetricCard label="Payment Verified">{formatShortDate(batch.paymentVerifiedAt)}</MetricCard>
+            <MetricCard label={isSelfBuy ? 'Shipment Status' : 'Invoice'}>
+              {isSelfBuy
+                ? formatStatusLabel(batch.status)
+                : batch.invoice.number || batch.invoiceNumber || 'Not assigned'}
+            </MetricCard>
+            <MetricCard label={isSelfBuy ? 'Approved Units' : 'Partner Amount'}>
+              {isSelfBuy
+                ? String(batch.approvedQuantity)
+                : formatMoney(batch.invoice.amount ?? batch.invoiceAmount)}
+            </MetricCard>
+            <MetricCard label={isSelfBuy ? 'Shipment Notified' : 'Payment Submitted'}>
+              {formatShortDate(batch.requestType === 'SELF_BUY' ? batch.readyForReceivingAt : batch.paymentSubmittedAt)}
+            </MetricCard>
+            <MetricCard label={isSelfBuy ? 'Warehouse Intake' : 'Payment Verified'}>
+              {formatShortDate(batch.requestType === 'SELF_BUY' ? batch.updatedAt : batch.paymentVerifiedAt)}
+            </MetricCard>
             <MetricCard label="Receiving Ready">{formatShortDate(batch.readyForReceivingAt)}</MetricCard>
 
-            <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Bank Details</p>
-              <div className="mt-1.5 space-y-1 text-sm text-primary">
-                <p>Bank: {batch.invoice.bankDetails?.bankName || '—'}</p>
-                <p>Account Name: {batch.invoice.bankDetails?.bankAccountName || '—'}</p>
-                <p>Account Number: {batch.invoice.bankDetails?.bankAccountNumber || '—'}</p>
-                <p>Account Type: {batch.invoice.bankDetails?.bankAccountType || '—'}</p>
+            {!isSelfBuy ? (
+              <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Bank Details</p>
+                <div className="mt-1.5 space-y-1 text-sm text-primary">
+                  <p>Bank: {batch.invoice.bankDetails?.bankName || '—'}</p>
+                  <p>Account Name: {batch.invoice.bankDetails?.bankAccountName || '—'}</p>
+                  <p>Account Number: {batch.invoice.bankDetails?.bankAccountNumber || '—'}</p>
+                  <p>Account Type: {batch.invoice.bankDetails?.bankAccountType || '—'}</p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Self-buy Flow</p>
+                <div className="mt-1.5 space-y-1 text-sm text-primary">
+                  <p>WMS approves shipment instead of payment.</p>
+                  <p>Partner marks the request shipped from ERP.</p>
+                  <p>Warehouse receives and checks actual delivered stock against this request.</p>
+                </div>
+              </div>
+            )}
 
             <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Payment Proof</p>
-              {batch.paymentProofImageUrl ? (
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">
+                {isSelfBuy ? 'Partner Shipment Notice' : 'Payment Proof'}
+              </p>
+              {!isSelfBuy && batch.paymentProofImageUrl ? (
                 <div className="mt-1.5 space-y-2">
                   <a
                     href={batch.paymentProofImageUrl}
@@ -427,7 +523,15 @@ export function PurchasingBatchModal({
                   </p>
                 </div>
               ) : (
-                <p className="mt-1.5 text-[12px] text-[#7b8e9c]">No proof submitted yet</p>
+                <p className="mt-1.5 text-[12px] text-[#7b8e9c]">
+                  {isSelfBuy
+                    ? batch.status === 'SHIPPED'
+                      ? 'Partner already confirmed the self-buy shipment to warehouse.'
+                      : batch.status === 'RECEIVING_EXCEPTION'
+                        ? 'Warehouse flagged a mismatch and is waiting for partner follow-up.'
+                        : 'Shipment notice will appear after the partner marks the self-buy request as shipped.'
+                    : 'No proof submitted yet'}
+                </p>
               )}
             </div>
           </div>
@@ -456,7 +560,32 @@ function MetricCard({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-function getStatusHelper(status: WmsPurchasingBatchStatus) {
+function getStatusHelper(status: WmsPurchasingBatchStatus, requestType?: 'PROCUREMENT' | 'SELF_BUY') {
+  if (requestType === 'SELF_BUY') {
+    switch (status) {
+      case 'UNDER_REVIEW':
+        return 'Review the self-buy request, confirm stockable lines, then approve it for partner shipment.';
+      case 'REVISION':
+        return 'Changed quantities or product terms were sent back to the partner for confirmation.';
+      case 'AWAITING_PRODUCTS':
+        return 'WMS approved the request and is now waiting for the partner to ship products to warehouse.';
+      case 'SHIPPED':
+        return 'The partner marked products as shipped. The request can now move into warehouse receiving.';
+      case 'RECEIVING_EXCEPTION':
+        return 'Warehouse found a mismatch between delivered stock and the approved self-buy request.';
+      case 'RECEIVING':
+        return 'Receiving is in progress and the delivered self-buy stock is being serialized into staged units.';
+      case 'STOCKED':
+        return 'Receiving is complete and the self-buy stock has been accepted into inventory.';
+      case 'REJECTED':
+        return 'The request was rejected and will not proceed further.';
+      case 'CANCELED':
+        return 'The request was canceled and closed.';
+      default:
+        return 'Review the latest activity and proceed with the next operational step.';
+    }
+  }
+
   switch (status) {
     case 'UNDER_REVIEW':
       return 'Review the request, then accept it as-is or cancel it. Saving quantity or cost changes sends a revision to the partner.';

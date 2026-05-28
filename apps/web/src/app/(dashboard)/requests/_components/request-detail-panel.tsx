@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Receipt } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import type {
+  MarkWmsSelfBuyShipmentInput,
   RespondWmsPurchasingRevisionInput,
   SubmitWmsPurchasingPaymentProofInput,
   WmsPurchasingBatchDetail,
@@ -27,6 +28,9 @@ interface RequestDetailPanelProps {
   canRespondToRevision: boolean;
   isRespondingToRevision: boolean;
   onRespondToRevision: (input: RespondWmsPurchasingRevisionInput) => Promise<void>;
+  canMarkSelfBuyShipment: boolean;
+  isMarkingSelfBuyShipment: boolean;
+  onMarkSelfBuyShipment: (input: MarkWmsSelfBuyShipmentInput) => Promise<void>;
 }
 
 function formatAddress(value: string | null | undefined) {
@@ -50,13 +54,20 @@ export function RequestDetailPanel({
   canRespondToRevision,
   isRespondingToRevision,
   onRespondToRevision,
+  canMarkSelfBuyShipment,
+  isMarkingSelfBuyShipment,
+  onMarkSelfBuyShipment,
 }: RequestDetailPanelProps) {
   const [proofImageUrl, setProofImageUrl] = useState('');
   const [proofMessage, setProofMessage] = useState('');
+  const [shipmentReference, setShipmentReference] = useState('');
+  const [shipmentMessage, setShipmentMessage] = useState('');
 
   useEffect(() => {
     setProofImageUrl(batch?.paymentProofImageUrl ?? '');
     setProofMessage('');
+    setShipmentReference('');
+    setShipmentMessage('');
   }, [batch?.id, batch?.paymentProofImageUrl]);
 
   if (isLoading) {
@@ -103,6 +114,7 @@ export function RequestDetailPanel({
 
   const billTo = batch.store.name;
   const bank = batch.invoice.bankDetails;
+  const isSelfBuy = batch.requestType === 'SELF_BUY';
   const lineItemsTotal = batch.lines.reduce((sum, line) => {
     const quantity = line.approvedQuantity ?? line.requestedQuantity;
     const unitRate = line.partnerUnitCost ?? 0;
@@ -151,7 +163,7 @@ export function RequestDetailPanel({
           <div className="flex items-center justify-between gap-2">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7b8ba1]">
-                Billing Statement
+                {isSelfBuy ? 'Self-buy Request' : 'Billing Statement'}
               </p>
               <h2 className="text-base font-semibold text-[#12344d]">
                 {batch.invoice.number || batch.sourceRequestId || batch.id.slice(0, 8)}
@@ -217,26 +229,41 @@ export function RequestDetailPanel({
             </table>
           </div>
 
-          <div className="rounded-xl border border-[#e3e9ef] bg-white p-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-semibold text-[#12344d]">Total Amount</span>
-              <span className="font-semibold text-[#12344d]">{formatMoney(invoiceAmount)}</span>
-            </div>
-          </div>
+          {!isSelfBuy ? (
+            <>
+              <div className="rounded-xl border border-[#e3e9ef] bg-white p-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-semibold text-[#12344d]">Total Amount</span>
+                  <span className="font-semibold text-[#12344d]">{formatMoney(invoiceAmount)}</span>
+                </div>
+              </div>
 
-          <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3 text-sm text-[#12344d]">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">
-              Bank Details
-            </p>
-            <div className="mt-2 space-y-1 text-sm">
-              <p>Bank: {bank?.bankName || '—'}</p>
-              <p>Account Name: {bank?.bankAccountName || '—'}</p>
-              <p>Account Number: {bank?.bankAccountNumber || '—'}</p>
-              <p>Account Type: {bank?.bankAccountType || '—'}</p>
-              <p>Branch: {bank?.bankBranch || '—'}</p>
-              {bank?.paymentInstructions ? <p>Instructions: {bank.paymentInstructions}</p> : null}
+              <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3 text-sm text-[#12344d]">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">
+                  Bank Details
+                </p>
+                <div className="mt-2 space-y-1 text-sm">
+                  <p>Bank: {bank?.bankName || '—'}</p>
+                  <p>Account Name: {bank?.bankAccountName || '—'}</p>
+                  <p>Account Number: {bank?.bankAccountNumber || '—'}</p>
+                  <p>Account Type: {bank?.bankAccountType || '—'}</p>
+                  <p>Branch: {bank?.bankBranch || '—'}</p>
+                  {bank?.paymentInstructions ? <p>Instructions: {bank.paymentInstructions}</p> : null}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3 text-sm text-[#12344d]">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">
+                Warehouse Handoff
+              </p>
+              <div className="mt-2 space-y-1 text-sm">
+                <p>Approved Units: {batch.approvedQuantity}</p>
+                <p>Received Units: {batch.receivedQuantity}</p>
+                <p>Ready for warehouse: {formatShortDate(batch.readyForReceivingAt)}</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </Card>
 
@@ -306,10 +333,10 @@ export function RequestDetailPanel({
       <Card className="border-[#d9e2ec]">
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">
-            Payment Proof
+            {isSelfBuy ? 'Shipment to Warehouse' : 'Payment Proof'}
           </p>
 
-          {batch.paymentProofImageUrl ? (
+          {!isSelfBuy && batch.paymentProofImageUrl ? (
             <div className="space-y-2">
               <a
                 href={batch.paymentProofImageUrl}
@@ -325,10 +352,12 @@ export function RequestDetailPanel({
               </p>
             </div>
           ) : (
-            <p className="text-sm text-[#5a7184]">No payment proof uploaded yet.</p>
+            <p className="text-sm text-[#5a7184]">
+              {isSelfBuy ? 'No shipment notice recorded yet.' : 'No payment proof uploaded yet.'}
+            </p>
           )}
 
-          {canSubmitPaymentProof ? (
+          {!isSelfBuy && canSubmitPaymentProof ? (
             <div className="space-y-2 rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3">
               <input
                 value={proofImageUrl}
@@ -359,21 +388,68 @@ export function RequestDetailPanel({
                 </button>
               </div>
             </div>
+          ) : isSelfBuy && canMarkSelfBuyShipment ? (
+            <div className="space-y-2 rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3">
+              <input
+                value={shipmentReference}
+                onChange={(event) => setShipmentReference(event.target.value)}
+                placeholder="Optional shipment reference or tracking"
+                className="input"
+              />
+              <textarea
+                value={shipmentMessage}
+                onChange={(event) => setShipmentMessage(event.target.value)}
+                placeholder="Optional message to warehouse"
+                rows={2}
+                className="input"
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  disabled={isMarkingSelfBuyShipment}
+                  onClick={() =>
+                    void onMarkSelfBuyShipment({
+                      ...(shipmentReference.trim()
+                        ? { shipmentReference: shipmentReference.trim() }
+                        : {}),
+                      ...(shipmentMessage.trim() ? { message: shipmentMessage.trim() } : {}),
+                    })
+                  }
+                  className="btn btn-md btn-primary-soft"
+                >
+                  {isMarkingSelfBuyShipment ? 'Submitting...' : 'Mark Products Shipped'}
+                </button>
+              </div>
+            </div>
           ) : (
             <p className="text-xs text-[#6d8191]">
-              {batch.status === 'UNDER_REVIEW'
-                ? 'WMS is still reviewing this request.'
-                : batch.status === 'REVISION'
-                  ? 'Accept the revised request first before submitting payment proof.'
-                  : batch.status === 'PAYMENT_REVIEW'
-                    ? 'Your payment proof is being reviewed by WMS.'
-                    : batch.status === 'RECEIVING_READY'
-                      ? 'Payment has been verified. The request is queued for warehouse receiving.'
-                      : batch.status === 'RECEIVING'
-                        ? 'The request is being received and serialized in the warehouse.'
-                        : batch.status === 'STOCKED'
-                          ? 'The request has been stocked into serialized inventory.'
-                          : 'Payment proof submission opens when the request status is Pending Payment.'}
+              {isSelfBuy
+                ? batch.status === 'UNDER_REVIEW'
+                  ? 'WMS is reviewing the self-buy request before you ship products to warehouse.'
+                  : batch.status === 'REVISION'
+                    ? 'Accept the revised request first before shipping products to warehouse.'
+                    : batch.status === 'SHIPPED'
+                      ? 'WMS has been notified that products are on the way to the warehouse.'
+                      : batch.status === 'RECEIVING_EXCEPTION'
+                        ? 'WMS reported a mismatch on received stock. Review the notes and re-ship if needed.'
+                        : batch.status === 'RECEIVING'
+                          ? 'The warehouse is checking and serializing the delivered self-buy stock.'
+                          : batch.status === 'STOCKED'
+                            ? 'The self-buy stock has been accepted into warehouse inventory.'
+                            : 'Shipment notice opens once WMS approves the self-buy request.'
+                : batch.status === 'UNDER_REVIEW'
+                  ? 'WMS is still reviewing this request.'
+                  : batch.status === 'REVISION'
+                    ? 'Accept the revised request first before submitting payment proof.'
+                    : batch.status === 'PAYMENT_REVIEW'
+                      ? 'Your payment proof is being reviewed by WMS.'
+                      : batch.status === 'RECEIVING_READY'
+                        ? 'Payment has been verified. The request is queued for warehouse receiving.'
+                        : batch.status === 'RECEIVING'
+                          ? 'The request is being received and serialized in the warehouse.'
+                          : batch.status === 'STOCKED'
+                            ? 'The request has been stocked into serialized inventory.'
+                            : 'Payment proof submission opens when the request status is Pending Payment.'}
             </p>
           )}
         </div>

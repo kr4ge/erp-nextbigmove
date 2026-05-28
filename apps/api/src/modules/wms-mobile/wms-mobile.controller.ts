@@ -14,6 +14,7 @@ import {
 import {
   GetWmsMobilePickBasketLookupDto,
   WmsMobilePickHandoffDto,
+  WmsMobilePickReallocateDto,
   GetWmsMobilePickingTasksDto,
   WmsMobilePickResyncDto,
   WmsMobilePickScanDto,
@@ -158,6 +159,12 @@ export class WmsMobileController {
     return this.wmsMobileService.resyncPickingTasks(req.user, body, req);
   }
 
+  @Post('picking/tasks/reallocate')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit', 'wms.fulfillment.override')
+  async reallocatePickingTasks(@Request() req, @Body() body: WmsMobilePickReallocateDto) {
+    return this.wmsMobileService.reallocatePickingTasks(req.user, body, req);
+  }
+
   @Post('picking/tasks/:id/claim')
   @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
   async claimPickingTask(
@@ -196,6 +203,16 @@ export class WmsMobileController {
     @Body() body: WmsMobilePickScanDto,
   ) {
     return this.wmsMobileService.scanPickingUnit(req.user, id, body, req);
+  }
+
+  @Post('picking/tasks/:id/retry-allocation')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  async retryPickingTaskAllocation(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickScopedDto,
+  ) {
+    return this.wmsMobileService.retryPickingTaskAllocation(req.user, id, body, req);
   }
 
   @Post('picking/tasks/:id/complete')

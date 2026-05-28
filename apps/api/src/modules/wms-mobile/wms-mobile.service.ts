@@ -47,6 +47,7 @@ import {
   GetWmsMobilePickBasketLookupDto,
   GetWmsMobilePickingTasksDto,
   WmsMobilePickHandoffDto,
+  WmsMobilePickReallocateDto,
   WmsMobilePickResyncDto,
   WmsMobilePickScanDto,
   WmsMobilePickScopedDto,
@@ -2008,6 +2009,193 @@ export class WmsMobileService {
       storeId: activeStore?.id ?? null,
       storeName: activeStore ? (activeStore.shopName || activeStore.name) : null,
       storeCount: activeStore ? 1 : stores.length,
+    };
+  }
+
+  async reallocatePickingTasks(user: BootstrapUser, body: WmsMobilePickReallocateDto, request?: Request) {
+    const userId = user.userId || user.id || null;
+    const sessionId = (this.cls.get('sessionId') as string | undefined) || user.sessionId || null;
+    const tenantContext = await this.resolveMobileStockContext(
+      user,
+      { tenantId: body.tenantId } as GetWmsMobileStockDto,
+      request,
+    );
+    const tenantId = tenantContext.tenantId;
+
+    if (!userId) {
+      throw new ForbiddenException('User context is required for queue reallocation');
+    }
+
+    const [access, taskAssignment] = await Promise.all([
+      this.effectiveAccessService.resolveUserAccess({
+        userId,
+        basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+        workspace: 'wms',
+      }),
+      this.getWmsTaskAssignment(userId),
+    ]);
+    const pickQueueAccess = this.resolvePickQueueAccess(user, access.permissions, taskAssignment);
+
+    if (!pickQueueAccess.canViewAll) {
+      throw new ForbiddenException('Only pick supervisors can reallocate the full pick queue');
+    }
+
+    if (user.role === 'SUPER_ADMIN' && !tenantId) {
+      throw new BadRequestException('Select a partner before reallocating the pick queue');
+    }
+
+    const stores = await this.prisma.posStore.findMany({
+      where: {
+        ...(tenantId ? { tenantId } : {}),
+        status: IntegrationStatus.ACTIVE,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        shopName: true,
+      },
+      orderBy: [{ name: 'asc' }],
+    });
+
+    const activeStore = body.storeId
+      ? stores.find((store) => store.id === body.storeId) ?? null
+      : null;
+
+    if (body.storeId && !activeStore) {
+      throw new ForbiddenException('Selected store is not available for WMS fulfillment reallocation');
+    }
+
+    const result = await this.wmsFulfillmentSyncService.reallocateWaitingOrders({
+      tenantId,
+      storeId: activeStore?.id ?? null,
+      actorId: userId,
+      limit: null,
+    });
+
+    await this.wmsStaffActivityService.recordFromRequest({
+      request,
+      tenantId,
+      actorId: userId,
+      sessionId,
+      actionType: 'PICKING_QUEUE_REALLOCATION',
+      resourceType: 'WMS_FULFILLMENT_ORDER',
+      resourceId: activeStore?.id ?? tenantId,
+      storeId: activeStore?.id ?? null,
+      metadata: {
+        checkedOrders: result.checkedOrders,
+        scopedStoreId: activeStore?.id ?? null,
+        scopedStoreName: activeStore ? (activeStore.shopName || activeStore.name) : null,
+        storeCount: activeStore ? 1 : stores.length,
+      },
+    });
+
+    return {
+      success: true,
+      checkedOrders: result.checkedOrders,
+      tenantId,
+      storeId: activeStore?.id ?? null,
+      storeName: activeStore ? (activeStore.shopName || activeStore.name) : null,
+      storeCount: activeStore ? 1 : stores.length,
+    };
+  }
+
+  async retryPickingTaskAllocation(
+    user: BootstrapUser,
+    fulfillmentOrderId: string,
+    body: WmsMobilePickScopedDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    const sessionId = (this.cls.get('sessionId') as string | undefined) || user.sessionId || null;
+    const tenantContext = await this.resolveMobileStockContext(
+      user,
+      { tenantId: body.tenantId } as GetWmsMobileStockDto,
+      request,
+    );
+    const tenantId = tenantContext.tenantId;
+
+    if (!userId) {
+      throw new ForbiddenException('User context is required for allocation retry');
+    }
+
+    const [access, taskAssignment, order] = await Promise.all([
+      this.effectiveAccessService.resolveUserAccess({
+        userId,
+        basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+        workspace: 'wms',
+      }),
+      this.getWmsTaskAssignment(userId),
+      this.prisma.wmsFulfillmentOrder.findUnique({
+        where: { id: fulfillmentOrderId },
+        select: {
+          id: true,
+          tenantId: true,
+          storeId: true,
+          claimedById: true,
+        },
+      }),
+    ]);
+    const pickQueueAccess = this.resolvePickQueueAccess(user, access.permissions, taskAssignment);
+
+    if (!order) {
+      throw new NotFoundException('Picking task not found');
+    }
+
+    if (tenantId && order.tenantId !== tenantId) {
+      throw new ForbiddenException('This picking task is outside the active tenant scope');
+    }
+
+    const stores = await this.prisma.posStore.findMany({
+      where: {
+        ...(tenantId ? { tenantId } : {}),
+        status: IntegrationStatus.ACTIVE,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!stores.some((store) => store.id === order.storeId)) {
+      throw new ForbiddenException('This picking task is outside the available store scope');
+    }
+
+    if (!pickQueueAccess.canViewAll && order.claimedById && order.claimedById !== userId) {
+      throw new ForbiddenException('This task is already claimed by another picker');
+    }
+
+    await this.wmsFulfillmentSyncService.retryAllocationForFulfillmentOrder(fulfillmentOrderId, userId);
+
+    const updatedOrder = await this.prisma.wmsFulfillmentOrder.findUniqueOrThrow({
+      where: { id: fulfillmentOrderId },
+      include: this.pickingTaskInclude(),
+    });
+
+    await this.wmsStaffActivityService.recordFromRequest({
+      request,
+      tenantId: updatedOrder.tenantId,
+      actorId: userId,
+      sessionId,
+      actionType: 'PICKING_ALLOCATION_RETRY',
+      resourceType: 'WMS_FULFILLMENT_ORDER',
+      resourceId: updatedOrder.id,
+      taskType: 'PICK',
+      taskId: updatedOrder.id,
+      storeId: updatedOrder.storeId,
+      warehouseId: updatedOrder.warehouseId,
+      metadata: {
+        posOrderId: updatedOrder.posOrderId,
+        shopId: updatedOrder.shopId,
+        status: updatedOrder.status,
+        totalQuantity: updatedOrder.totalQuantity,
+        allocatedQuantity: updatedOrder.allocatedQuantity,
+        pickedQuantity: updatedOrder.pickedQuantity,
+      },
+    });
+
+    return {
+      success: true,
+      task: this.mapMobilePickingTask(updatedOrder),
     };
   }
 

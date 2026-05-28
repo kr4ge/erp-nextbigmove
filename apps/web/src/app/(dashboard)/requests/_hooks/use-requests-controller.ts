@@ -12,11 +12,13 @@ import {
   fetchWmsPurchasingBatch,
   fetchWmsPurchasingOverview,
   fetchWmsPurchasingProductOptions,
+  markWmsSelfBuyShipment,
   respondWmsPurchasingRevision,
   submitWmsPurchasingPaymentProof,
 } from '../_services/requests.service';
 import type {
   CreateWmsPurchasingBatchInput,
+  MarkWmsSelfBuyShipmentInput,
   RespondWmsPurchasingRevisionInput,
   SubmitWmsPurchasingPaymentProofInput,
   WmsPurchasingBatchDetail,
@@ -75,6 +77,7 @@ export function useRequestsController() {
   const [batchError, setBatchError] = useState<string | null>(null);
   const [isSubmittingPaymentProof, setIsSubmittingPaymentProof] = useState(false);
   const [isRespondingToRevision, setIsRespondingToRevision] = useState(false);
+  const [isMarkingSelfBuyShipment, setIsMarkingSelfBuyShipment] = useState(false);
 
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [productSearchText, setProductSearchText] = useState('');
@@ -381,7 +384,9 @@ export function useRequestsController() {
         addToast(
           'success',
           input.decision === 'ACCEPT'
-            ? 'Revised request accepted. Payment is now pending.'
+            ? selectedBatch?.requestType === 'SELF_BUY'
+              ? 'Revised request accepted. WMS is now waiting for your shipment.'
+              : 'Revised request accepted. Payment is now pending.'
             : 'Revised request rejected.',
         );
         await refreshOverview();
@@ -389,6 +394,28 @@ export function useRequestsController() {
         addToast('error', parseRequestError(error, 'Failed to respond to revision'));
       } finally {
         setIsRespondingToRevision(false);
+      }
+    },
+    [addToast, refreshOverview, selectedBatch?.requestType, selectedBatchId],
+  );
+
+  const markSelfBuyShipment = useCallback(
+    async (input: MarkWmsSelfBuyShipmentInput) => {
+      if (!selectedBatchId) {
+        addToast('error', 'Select a request first');
+        return;
+      }
+
+      setIsMarkingSelfBuyShipment(true);
+      try {
+        const response = await markWmsSelfBuyShipment(selectedBatchId, input);
+        setSelectedBatch(response.batch);
+        addToast('success', 'Shipment notice sent to WMS receiving queue');
+        await refreshOverview();
+      } catch (error) {
+        addToast('error', parseRequestError(error, 'Failed to mark self-buy shipment'));
+      } finally {
+        setIsMarkingSelfBuyShipment(false);
       }
     },
     [addToast, refreshOverview, selectedBatchId],
@@ -421,6 +448,8 @@ export function useRequestsController() {
     isSubmittingPaymentProof,
     respondToRevision,
     isRespondingToRevision,
+    markSelfBuyShipment,
+    isMarkingSelfBuyShipment,
     createStoreScopeId,
     createRequestType,
     createPartnerNotes,

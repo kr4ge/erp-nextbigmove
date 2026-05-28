@@ -3,6 +3,7 @@ import type {
   CreateWmsPurchasingBatchInput,
   GetWmsPurchasingProductOptionsParams,
   GetWmsPurchasingOverviewParams,
+  MarkWmsSelfBuyShipmentInput,
   RespondWmsPurchasingRevisionInput,
   SubmitWmsPurchasingPaymentProofInput,
   WmsPurchasingBatchDetail,
@@ -70,6 +71,18 @@ export async function respondWmsPurchasingRevision(
 ) {
   const response = await apiClient.post(
     `${STOCK_REQUESTS_API_PATH}/${id}/revision-response`,
+    input,
+  );
+
+  return response.data as { batch: WmsPurchasingBatchDetail };
+}
+
+export async function markWmsSelfBuyShipment(
+  id: string,
+  input: MarkWmsSelfBuyShipmentInput,
+) {
+  const response = await apiClient.post(
+    `${STOCK_REQUESTS_API_PATH}/${id}/self-buy/shipped`,
     input,
   );
 

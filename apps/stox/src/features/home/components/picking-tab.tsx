@@ -85,6 +85,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     loadMore,
     picking,
     refreshPicking,
+    retryAllocation,
     scanBasket,
     scanBin,
     scanUnit,
@@ -239,6 +240,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
           }}
           onClaim={claimTask}
           onRefresh={refreshPicking}
+          onRetryAllocation={retryAllocation}
           onHandoff={handoffTask}
           packerOptions={picking?.context.packerOptions ?? []}
           onScanBasket={scanBasket}
@@ -652,6 +654,7 @@ function PickExecutionCard({
   onClaim,
   packerOptions,
   onRefresh,
+  onRetryAllocation,
   onScanBasket,
   onScanBin,
   onScanUnit,
@@ -665,6 +668,7 @@ function PickExecutionCard({
   onClaim: (taskId: string) => Promise<void>;
   packerOptions: WmsMobilePickingPackerOption[];
   onRefresh: () => Promise<void>;
+  onRetryAllocation: (taskId: string) => Promise<boolean>;
   onScanBasket: (taskId: string, code: string) => Promise<boolean>;
   onScanBin: (taskId: string, code: string) => Promise<boolean>;
   onScanUnit: (taskId: string, code: string) => Promise<boolean>;
@@ -859,7 +863,16 @@ function PickExecutionCard({
             <Text style={styles.blockedCopy}>
               {task.issueReason ?? 'This order is not ready because one or more products are short.'}
             </Text>
-            <PrimaryButton label="Resync" onPress={onRefresh} variant="secondary" />
+            <View style={styles.blockedActions}>
+              <PrimaryButton
+                label="Retry allocation"
+                loading={isSubmitting}
+                onPress={async () => {
+                  await onRetryAllocation(task.id);
+                }}
+              />
+              <PrimaryButton label="Refresh" onPress={onRefresh} variant="secondary" />
+            </View>
           </View>
         ) : null}
 
@@ -1894,6 +1907,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
+  },
+  blockedActions: {
+    gap: tokens.spacing.sm,
   },
   donePanel: {
     alignItems: 'center',

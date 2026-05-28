@@ -60,6 +60,8 @@ export default function RequestsPage() {
     isSubmittingPaymentProof,
     respondToRevision,
     isRespondingToRevision,
+    markSelfBuyShipment,
+    isMarkingSelfBuyShipment,
   } = useRequestsController();
 
   if (isLoadingOverview) {
@@ -149,12 +151,24 @@ export default function RequestsPage() {
             batch={selectedBatch}
             isLoading={isLoadingBatch}
             error={batchError}
-            canSubmitPaymentProof={selectedBatch?.status === 'PENDING_PAYMENT'}
+            canSubmitPaymentProof={
+              selectedBatch?.requestType === 'PROCUREMENT'
+              && selectedBatch?.status === 'PENDING_PAYMENT'
+            }
             isSubmittingPaymentProof={isSubmittingPaymentProof}
             onSubmitPaymentProof={submitPaymentProof}
             canRespondToRevision={selectedBatch?.status === 'REVISION'}
             isRespondingToRevision={isRespondingToRevision}
             onRespondToRevision={respondToRevision}
+            canMarkSelfBuyShipment={
+              selectedBatch?.requestType === 'SELF_BUY'
+              && (
+                selectedBatch?.status === 'AWAITING_PRODUCTS'
+                || selectedBatch?.status === 'RECEIVING_EXCEPTION'
+              )
+            }
+            isMarkingSelfBuyShipment={isMarkingSelfBuyShipment}
+            onMarkSelfBuyShipment={markSelfBuyShipment}
           />
         </div>
       </div>

@@ -12,7 +12,7 @@ export type WmsReceivablePurchasingBatch = {
   sourceRequestId: string | null;
   requestTitle: string | null;
   requestType: 'PROCUREMENT' | 'SELF_BUY';
-  status: 'RECEIVING_READY' | 'RECEIVING';
+  status: 'RECEIVING_READY' | 'SHIPPED' | 'RECEIVING';
   store: {
     id: string;
     name: string;

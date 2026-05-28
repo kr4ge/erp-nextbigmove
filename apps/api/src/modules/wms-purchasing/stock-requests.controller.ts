@@ -16,6 +16,7 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { CreateWmsPurchasingBatchDto } from './dto/create-wms-purchasing-batch.dto';
 import { GetWmsPurchasingOverviewDto } from './dto/get-wms-purchasing-overview.dto';
 import { GetWmsPurchasingProductOptionsDto } from './dto/get-wms-purchasing-product-options.dto';
+import { MarkWmsSelfBuyShipmentDto } from './dto/mark-wms-self-buy-shipment.dto';
 import { RespondWmsPurchasingRevisionDto } from './dto/respond-wms-purchasing-revision.dto';
 import { SubmitWmsPurchasingPaymentProofDto } from './dto/submit-wms-purchasing-payment-proof.dto';
 import { WmsPurchasingService } from './wms-purchasing.service';
@@ -82,6 +83,16 @@ export class StockRequestsController {
     @Body() body: RespondWmsPurchasingRevisionDto,
   ) {
     return this.wmsPurchasingService.respondToRevision(id, body, this.getTenantId(req));
+  }
+
+  @Post(':id/self-buy/shipped')
+  @Permissions('stock_request.write')
+  async markSelfBuyShipment(
+    @Request() req: TenantRequest,
+    @Param('id') id: string,
+    @Body() body: MarkWmsSelfBuyShipmentDto,
+  ) {
+    return this.wmsPurchasingService.markSelfBuyShipment(id, body, this.getTenantId(req));
   }
 
   private getTenantId(req: TenantRequest) {

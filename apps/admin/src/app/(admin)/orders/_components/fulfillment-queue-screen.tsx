@@ -18,6 +18,7 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
   const isPick = mode === 'pick';
   const title = isPick ? 'Pick Queue' : 'Pack Queue';
   const scopeLabel = queue.queueScope === 'own' ? 'My queue' : 'All queues';
+  const canBulkReallocate = queue.queueScope === 'all';
   const paginationTotal = queue.data?.pagination.total ?? 0;
   const paginationPageSize = queue.data?.pagination.pageSize ?? queue.tasks.length;
   const paginationStart = paginationTotal === 0 ? 0 : ((queue.currentPage - 1) * paginationPageSize) + 1;
@@ -37,18 +38,38 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
               {scopeLabel}
             </span>
             {isPick ? (
-              <button
-                type="button"
-                onClick={() => {
-                  void queue.resyncPickQueue();
-                }}
-                disabled={queue.isResyncing || queue.requiresTenantSelectionForResync}
-                className="btn btn-md btn-outline btn-icon"
-                title={queue.requiresTenantSelectionForResync ? 'Select a partner before resyncing the pick queue.' : undefined}
-              >
-                <RefreshCcw className={`h-4 w-4 ${queue.isResyncing ? 'animate-spin' : ''}`} />
-                Resync queue
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void queue.reallocatePickQueue();
+                  }}
+                  disabled={queue.isReallocating || queue.requiresTenantSelectionForResync || !canBulkReallocate}
+                  className="btn btn-md btn-outline btn-icon"
+                  title={
+                    queue.requiresTenantSelectionForResync
+                      ? 'Select a partner before reallocating waiting pick orders.'
+                      : !canBulkReallocate
+                        ? 'Only supervisors can reallocate the full pick queue from WMS Web.'
+                        : undefined
+                  }
+                >
+                  <PackageCheck className={`h-4 w-4 ${queue.isReallocating ? 'animate-pulse' : ''}`} />
+                  Reallocate waiting
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void queue.resyncPickQueue();
+                  }}
+                  disabled={queue.isResyncing || queue.requiresTenantSelectionForResync}
+                  className="btn btn-md btn-outline btn-icon"
+                  title={queue.requiresTenantSelectionForResync ? 'Select a partner before resyncing the pick queue.' : undefined}
+                >
+                  <RefreshCcw className={`h-4 w-4 ${queue.isResyncing ? 'animate-spin' : ''}`} />
+                  Resync queue
+                </button>
+              </>
             ) : null}
             <button
               type="button"

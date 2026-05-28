@@ -45,6 +45,7 @@ const FINALIZED_FULFILLMENT_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.CANCELED,
 ] as const;
 const PUTAWAY_REALLOCATION_ORDER_LIMIT = 80;
+const MANUAL_REALLOCATION_ORDER_LIMIT = 200;
 
 @Injectable()
 export class WmsFulfillmentSyncService {
@@ -346,6 +347,144 @@ export class WmsFulfillmentSyncService {
     return {
       reallocatedOrders: candidateOrders.length,
     };
+  }
+
+  async reallocateWaitingOrders(params: {
+    tenantId: string | null;
+    storeId: string | null;
+    warehouseId?: string | null;
+    actorId: string | null;
+    limit?: number | null;
+  }) {
+    const availableRestockVariations = await this.prisma.wmsInventoryUnit.findMany({
+      where: {
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        ...(params.storeId ? { storeId: params.storeId } : {}),
+        ...(params.warehouseId ? { warehouseId: params.warehouseId } : {}),
+        status: WmsInventoryUnitStatus.PUTAWAY,
+        currentLocation: {
+          is: {
+            kind: WmsLocationKind.BIN,
+          },
+        },
+        pickReservations: {
+          none: {
+            status: { in: [...ACTIVE_PICK_RESERVATION_STATUSES] },
+          },
+        },
+      },
+      select: {
+        storeId: true,
+        variationId: true,
+      },
+      distinct: ['storeId', 'variationId'],
+    });
+
+    if (availableRestockVariations.length === 0) {
+      return {
+        checkedOrders: 0,
+      };
+    }
+
+    const variationIdsByStore = availableRestockVariations.reduce((map, unit) => {
+      const current = map.get(unit.storeId);
+      if (current) {
+        current.add(unit.variationId);
+        return map;
+      }
+
+      map.set(unit.storeId, new Set([unit.variationId]));
+      return map;
+    }, new Map<string, Set<string>>());
+    const candidateStoreIds = Array.from(variationIdsByStore.keys());
+    const candidateVariationIds = Array.from(new Set(
+      availableRestockVariations.map((unit) => unit.variationId),
+    ));
+
+    const candidateOrders = await this.prisma.wmsFulfillmentOrder.findMany({
+      where: {
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        ...(params.storeId
+          ? { storeId: params.storeId }
+          : { storeId: { in: candidateStoreIds } }),
+        status: {
+          in: [...AUTO_REALLOCATION_ORDER_STATUSES],
+        },
+        ...(params.warehouseId
+          ? {
+              OR: [
+                { warehouseId: params.warehouseId },
+                { warehouseId: null },
+              ],
+            }
+          : {}),
+        lines: {
+          some: {
+            quantityRequired: {
+              gt: 0,
+            },
+            variationId: {
+              in: candidateVariationIds,
+            },
+            status: {
+              in: [
+                WmsFulfillmentLineStatus.RESTOCKING,
+                WmsFulfillmentLineStatus.PARTIAL,
+              ],
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        warehouseId: true,
+        storeId: true,
+        lines: {
+          where: {
+            quantityRequired: {
+              gt: 0,
+            },
+            status: {
+              in: [
+                WmsFulfillmentLineStatus.RESTOCKING,
+                WmsFulfillmentLineStatus.PARTIAL,
+              ],
+            },
+            variationId: {
+              in: candidateVariationIds,
+            },
+          },
+          select: {
+            variationId: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: 'asc' }],
+      take: params.limit === null ? undefined : (params.limit ?? MANUAL_REALLOCATION_ORDER_LIMIT),
+    });
+
+    const filteredOrders = candidateOrders.filter((order) => {
+      const availableVariations = variationIdsByStore.get(order.storeId);
+      if (!availableVariations) {
+        return false;
+      }
+
+      return order.lines.some((line) => availableVariations.has(line.variationId));
+    });
+
+    for (const order of filteredOrders) {
+      await this.allocateFulfillmentOrderWithOptions(order.id, params.actorId, {
+        preferredWarehouseId: order.warehouseId ?? params.warehouseId ?? null,
+      });
+    }
+
+    return {
+      checkedOrders: filteredOrders.length,
+    };
+  }
+
+  async retryAllocationForFulfillmentOrder(fulfillmentOrderId: string, actorId: string | null) {
+    await this.allocateFulfillmentOrder(fulfillmentOrderId, actorId);
   }
 
   private async allocateFulfillmentOrderWithOptions(

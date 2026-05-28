@@ -61,7 +61,11 @@ export function usePurchasingReceivingBridge({
       sourceRequestId: batch.sourceRequestId,
       requestTitle: batch.requestTitle,
       requestType: batch.requestType,
-      status: batch.status === 'RECEIVING' ? 'RECEIVING' : 'RECEIVING_READY',
+      status:
+        batch.status === 'RECEIVING'
+        || batch.status === 'SHIPPED'
+          ? batch.status
+          : 'RECEIVING_READY',
       store: batch.store,
       lineCount: batch.lines.length,
       remainingQuantity: batch.lines.reduce((sum, line) => {
@@ -93,7 +97,11 @@ export function usePurchasingReceivingBridge({
   const canCreateReceiving = Boolean(
     canPostReceiving
     && receivableBatch
-    && (batch?.status === 'RECEIVING_READY' || batch?.status === 'RECEIVING')
+    && (
+      batch?.status === 'RECEIVING_READY'
+      || batch?.status === 'SHIPPED'
+      || batch?.status === 'RECEIVING'
+    )
     && receivableBatch.remainingQuantity > 0,
   );
 

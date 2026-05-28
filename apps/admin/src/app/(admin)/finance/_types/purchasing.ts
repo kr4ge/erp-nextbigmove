@@ -3,6 +3,9 @@ export type WmsPurchasingRequestType = 'PROCUREMENT' | 'SELF_BUY';
 export type WmsPurchasingBatchStatus =
   | 'UNDER_REVIEW'
   | 'REVISION'
+  | 'AWAITING_PRODUCTS'
+  | 'SHIPPED'
+  | 'RECEIVING_EXCEPTION'
   | 'PENDING_PAYMENT'
   | 'PAYMENT_REVIEW'
   | 'RECEIVING_READY'

@@ -17,6 +17,12 @@ export function getStatusClasses(value: WmsPurchasingBatchStatus) {
       return 'border border-[#f7d8a5] bg-[#fff4dd] text-[#9c5a08]';
     case 'REVISION':
       return 'border border-[#d8def3] bg-[#f4f6fe] text-[#43538a]';
+    case 'AWAITING_PRODUCTS':
+      return 'border border-[#cfe0f3] bg-[#eef6ff] text-[#2b5b8a]';
+    case 'SHIPPED':
+      return 'border border-[#d0e0f8] bg-[#edf4ff] text-[#24527a]';
+    case 'RECEIVING_EXCEPTION':
+      return 'border border-[#fde0c7] bg-[#fff5eb] text-[#b45309]';
     case 'PENDING_PAYMENT':
       return 'border border-[#b8d9c8] bg-[#ebf8f1] text-[#1f6f45]';
     case 'PAYMENT_REVIEW':

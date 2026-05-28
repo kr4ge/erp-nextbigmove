@@ -63,6 +63,12 @@ export class WmsMobilePickResyncDto extends WmsMobilePickScopedDto {
   storeId?: string;
 }
 
+export class WmsMobilePickReallocateDto extends WmsMobilePickScopedDto {
+  @IsOptional()
+  @IsUUID()
+  storeId?: string;
+}
+
 export class WmsMobilePickScanDto extends WmsMobilePickScopedDto {
   @IsString()
   @MinLength(1)

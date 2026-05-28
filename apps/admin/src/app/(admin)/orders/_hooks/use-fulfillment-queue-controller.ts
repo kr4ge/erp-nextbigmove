@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WmsSearchableOption } from '../../_components/wms-searchable-select';
 import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
-import { fetchWmsPackQueue, fetchWmsPickQueue, resyncWmsPickQueue } from '../_services/fulfillment.service';
+import {
+  fetchWmsPackQueue,
+  fetchWmsPickQueue,
+  reallocateWmsPickQueue,
+  resyncWmsPickQueue,
+} from '../_services/fulfillment.service';
 import type {
   WmsFulfillmentPackStatus,
   WmsFulfillmentPickStatus,
@@ -41,6 +46,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isResyncing, setIsResyncing] = useState(false);
+  const [isReallocating, setIsReallocating] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedTenantIdState, setSelectedTenantIdState] = useState<string | undefined>(undefined);
   const [selectedStoreIdState, setSelectedStoreIdState] = useState<string | undefined>(undefined);
@@ -164,6 +170,42 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     }
   }, [fetchQueue, mode, selectedStoreIdState, selectedTenantIdState]);
 
+  const reallocatePickQueue = useCallback(async () => {
+    if (mode !== 'pick') {
+      return false;
+    }
+
+    setIsReallocating(true);
+    setErrorMessage(null);
+    setNotice(null);
+
+    try {
+      const result = await reallocateWmsPickQueue({
+        tenantId: selectedTenantIdState,
+        storeId: selectedStoreIdState,
+      });
+
+      await fetchQueue(true);
+
+      const scopeLabel = result.storeName
+        ? `for ${result.storeName}`
+        : result.storeCount === 1
+          ? 'for 1 active store'
+          : `across ${result.storeCount} active stores`;
+
+      setNotice({
+        tone: result.checkedOrders > 0 ? 'success' : 'info',
+        message: `Waiting pick orders rechecked ${scopeLabel}. ${result.checkedOrders} order${result.checkedOrders === 1 ? '' : 's'} retried for allocation.`,
+      });
+      return true;
+    } catch (error) {
+      setErrorMessage(resolveQueueError(error));
+      return false;
+    } finally {
+      setIsReallocating(false);
+    }
+  }, [fetchQueue, mode, selectedStoreIdState, selectedTenantIdState]);
+
   useEffect(() => {
     if (mode !== 'pick' || ownedOnly || !data?.context) {
       return;
@@ -223,6 +265,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     data,
     errorMessage,
     isLoading,
+    isReallocating,
     isRefreshing,
     isResyncing,
     mode,
@@ -260,6 +303,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     tenantReady: data?.tenantReady ?? false,
     totalPages: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / (data?.pagination.pageSize ?? PAGE_SIZE))),
     refresh: () => fetchQueue(true),
+    reallocatePickQueue,
     resyncPickQueue,
   };
 }

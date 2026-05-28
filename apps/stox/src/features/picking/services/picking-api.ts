@@ -96,6 +96,20 @@ export function scanMobilePickingUnit(params: PickingRequestParams & {
   );
 }
 
+export function retryMobilePickingAllocation(params: PickingRequestParams & { taskId: string }) {
+  return apiRequest<{ success: boolean; task: WmsMobilePickingTask }>(
+    `/wms/mobile/picking/tasks/${params.taskId}/retry-allocation`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+      },
+    },
+  );
+}
+
 export function handoffMobilePickingTask(params: PickingRequestParams & {
   taskId: string;
   packerId: string;
