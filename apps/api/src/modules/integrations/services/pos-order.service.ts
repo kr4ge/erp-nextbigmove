@@ -916,7 +916,6 @@ export class PosOrderService {
         stores: [{
           id: storeId,
           tenantId,
-          teamId: teamId ?? store.teamId ?? null,
           shopId: store.shopId,
         }],
         posOrderRefs: fulfillmentCandidates,

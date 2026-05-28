@@ -433,35 +433,38 @@ export class WmsPurchasingService {
         : {}),
     };
 
-    const [total, profiles] = await Promise.all([
-      this.prisma.wmsProductProfile.count({ where }),
-      this.prisma.wmsProductProfile.findMany({
-        where,
-        include: {
-          posProduct: {
-            select: {
-              id: true,
-              productId: true,
-              variationId: true,
-              customId: true,
-              name: true,
-              productSnapshot: true,
-              retailPrice: true,
-              store: {
-                select: {
-                  id: true,
-                  name: true,
-                  shopName: true,
-                },
+    const profileCandidates = await this.prisma.wmsProductProfile.findMany({
+      where,
+      include: {
+        posProduct: {
+          select: {
+            id: true,
+            productId: true,
+            variationId: true,
+            customId: true,
+            name: true,
+            productSnapshot: true,
+            retailPrice: true,
+            store: {
+              select: {
+                id: true,
+                name: true,
+                shopName: true,
               },
             },
           },
         },
-        orderBy: [{ updatedAt: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-    ]);
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+
+    const profiles = profileCandidates.filter(
+      (profile) =>
+        this.isStockableVariation(profile.posProduct.productId, profile.posProduct.variationId)
+        && this.isStockableVariation(profile.productId, profile.variationId),
+    );
+    const total = profiles.length;
+    const paginatedProfiles = profiles.slice((page - 1) * pageSize, page * pageSize);
 
     return {
       tenantReady: true,
@@ -480,7 +483,7 @@ export class WmsPurchasingService {
         total,
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
       },
-      products: profiles.map((profile) => {
+      products: paginatedProfiles.map((profile) => {
         const snapshot = profile.posProduct.productSnapshot as
           | {
               display_id?: string | null;
@@ -604,7 +607,6 @@ export class WmsPurchasingService {
     const actorId = (this.cls.get('userId') as string | undefined) ?? null;
 
     await this.validateStore(scope.activeTenantId, body.storeId);
-    await this.validateTeam(scope.activeTenantId, body.teamId);
 
     const status = body.status ?? WmsPurchasingBatchStatus.UNDER_REVIEW;
     const sourceType = body.sourceType ?? WmsPurchasingSourceType.ERP_REQUEST;
@@ -649,7 +651,6 @@ export class WmsPurchasingService {
     const created = await this.prisma.wmsPurchasingBatch.create({
       data: {
         tenantId: scope.activeTenantId,
-        teamId: body.teamId ?? null,
         storeId: body.storeId,
         requestType: body.requestType,
         status,
@@ -1555,6 +1556,12 @@ export class WmsPurchasingService {
         );
       }
 
+      if (line.productId && this.isLegacyVariationMapping(line.productId, canonicalVariationId)) {
+        throw new BadRequestException(
+          `Line ${lineNo}: this product still uses a legacy variation mapping. Sync this product first.`,
+        );
+      }
+
       if (requestedVariationId && resolvedVariationId && requestedVariationId !== resolvedVariationId) {
         throw new BadRequestException(
           `Line ${lineNo}: variation ID does not match the selected stockable product`,
@@ -1562,7 +1569,7 @@ export class WmsPurchasingService {
       }
 
       if (line.productId && canonicalVariationId === line.productId) {
-        const canonicalVariationProduct = await this.prisma.posProduct.findFirst({
+        const canonicalVariationProducts = await this.prisma.posProduct.findMany({
           where: {
             storeId: lineStoreId,
             productId: line.productId,
@@ -1574,6 +1581,9 @@ export class WmsPurchasingService {
             variationId: true,
           },
         });
+        const canonicalVariationProduct = canonicalVariationProducts.find(
+          (product) => this.isStockableVariation(line.productId!, product.variationId),
+        );
 
         if (
           canonicalVariationProduct?.variationId
@@ -1726,24 +1736,6 @@ export class WmsPurchasingService {
     }
   }
 
-  private async validateTeam(tenantId: string, teamId?: string) {
-    if (!teamId) {
-      return;
-    }
-
-    const team = await this.prisma.team.findFirst({
-      where: {
-        id: teamId,
-        tenantId,
-      },
-      select: { id: true },
-    });
-
-    if (!team) {
-      throw new BadRequestException('Selected team is outside tenant scope');
-    }
-  }
-
   private async validateResolutionTargets(
     tenantId: string,
     storeId: string,
@@ -1753,6 +1745,7 @@ export class WmsPurchasingService {
     let resolvedPosProduct:
       | {
           id: string;
+          productId: string;
           variationId: string | null;
         }
       | null = null;
@@ -1768,6 +1761,7 @@ export class WmsPurchasingService {
         },
         select: {
           id: true,
+          productId: true,
           variationId: true,
         },
       });
@@ -1776,9 +1770,9 @@ export class WmsPurchasingService {
         throw new BadRequestException('Resolved POS product is outside tenant/store scope');
       }
 
-      if (!posProduct.variationId) {
+      if (!this.isStockableVariation(posProduct.productId, posProduct.variationId)) {
         throw new BadRequestException(
-          'Resolved POS product is not stockable because it is missing a variation ID',
+          this.getStockabilityReason(posProduct.productId, posProduct.variationId),
         );
       }
 
@@ -1790,6 +1784,10 @@ export class WmsPurchasingService {
           id: string;
           posProductId: string;
           variationId: string;
+          posProduct: {
+            productId: string;
+            variationId: string | null;
+          };
         }
       | null = null;
 
@@ -1804,6 +1802,12 @@ export class WmsPurchasingService {
           id: true,
           posProductId: true,
           variationId: true,
+          posProduct: {
+            select: {
+              productId: true,
+              variationId: true,
+            },
+          },
         },
       });
 
@@ -1814,6 +1818,18 @@ export class WmsPurchasingService {
       if (resolvedPosProductId && profile.posProductId !== resolvedPosProductId) {
         throw new BadRequestException(
           'Resolved product profile does not match the selected POS product',
+        );
+      }
+
+      if (!this.isStockableVariation(profile.posProduct.productId, profile.posProduct.variationId)) {
+        throw new BadRequestException(
+          this.getStockabilityReason(profile.posProduct.productId, profile.posProduct.variationId),
+        );
+      }
+
+      if (!this.isStockableVariation(profile.posProduct.productId, profile.variationId)) {
+        throw new BadRequestException(
+          'Resolved product profile still uses a legacy variation mapping. Sync this product first.',
         );
       }
 
@@ -1909,6 +1925,26 @@ export class WmsPurchasingService {
     }
 
     return Number(value);
+  }
+
+  private isLegacyVariationMapping(productId: string, variationId: string | null | undefined) {
+    return Boolean(variationId) && variationId === productId;
+  }
+
+  private isStockableVariation(productId: string, variationId: string | null | undefined) {
+    return Boolean(variationId) && !this.isLegacyVariationMapping(productId, variationId);
+  }
+
+  private getStockabilityReason(productId: string, variationId: string | null | undefined) {
+    if (!variationId) {
+      return 'Resolved POS product is not stockable because it is missing a variation ID';
+    }
+
+    if (this.isLegacyVariationMapping(productId, variationId)) {
+      return 'Resolved POS product still uses a legacy variation mapping. Sync this product first.';
+    }
+
+    return 'Resolved POS product is not stockable';
   }
 
   private numberOrNull(value: number | null | undefined) {

@@ -4592,6 +4592,7 @@ export class IntegrationService {
         const productId = p.productId.toString().trim();
         const variationIdRaw = p?.variationId?.toString?.().trim?.() || '';
         const variationId = variationIdRaw.length > 0 ? variationIdRaw : null;
+        const hasStockableVariation = Boolean(variationId) && variationId !== productId;
         const parsedRetailPrice = this.toRetailPriceDecimal(p.retailPrice);
         const productSnapshot = p?.productSnapshot ?? null;
         const existing = variationId
@@ -4638,7 +4639,7 @@ export class IntegrationService {
             },
           });
 
-          if (variationId) {
+          if (hasStockableVariation) {
             await tx.wmsProductProfile.upsert({
               where: {
                 posProductId: updated.id,
@@ -4678,7 +4679,7 @@ export class IntegrationService {
           },
         });
 
-        if (variationId) {
+        if (hasStockableVariation) {
           await tx.wmsProductProfile.create({
             data: {
               tenantId: store.tenantId,

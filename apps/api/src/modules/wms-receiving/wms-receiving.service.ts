@@ -786,7 +786,6 @@ export class WmsReceivingService {
         inventoryUnits: {
           select: {
             id: true,
-            teamId: true,
             currentLocationId: true,
             status: true,
             variationId: true,
@@ -858,7 +857,6 @@ export class WmsReceivingService {
 
       return {
         unitId: assignment.unitId,
-        teamId: unit.teamId,
         currentLocationId: unit.currentLocationId,
         currentStatus: unit.status,
         variationId: unit.variationId,
@@ -949,7 +947,6 @@ export class WmsReceivingService {
       await tx.wmsInventoryMovement.createMany({
         data: validatedAssignments.map((assignment) => ({
           tenantId: scope.activeTenantId!,
-          teamId: assignment.teamId,
           inventoryUnitId: assignment.unitId,
           warehouseId: batch.warehouseId,
           fromLocationId: assignment.currentLocationId,
@@ -1188,7 +1185,6 @@ export class WmsReceivingService {
         data: {
           code: receivingCode,
           tenantId: scope.activeTenantId!,
-          teamId: purchasingBatch.teamId,
           storeId: purchasingBatch.storeId,
           purchasingBatchId: purchasingBatch.id,
           warehouseId: warehouse.id,
@@ -1233,7 +1229,6 @@ export class WmsReceivingService {
 
           return {
             tenantId: scope.activeTenantId!,
-            teamId: purchasingBatch.teamId,
             storeId: entry.purchasingLine.storeId,
             posProductId: entry.purchasingLine.resolvedPosProductId!,
             productProfileId: entry.purchasingLine.resolvedProfileId!,
@@ -1269,7 +1264,6 @@ export class WmsReceivingService {
         },
         select: {
           id: true,
-          teamId: true,
         },
       });
 
@@ -1277,7 +1271,6 @@ export class WmsReceivingService {
         await tx.wmsInventoryMovement.createMany({
           data: createdUnits.map((unit) => ({
             tenantId: scope.activeTenantId!,
-            teamId: unit.teamId,
             inventoryUnitId: unit.id,
             warehouseId: warehouse.id,
             fromLocationId: null,
@@ -1379,7 +1372,6 @@ export class WmsReceivingService {
         id: true,
         name: true,
         shopName: true,
-        teamId: true,
       },
     });
 
@@ -1411,6 +1403,8 @@ export class WmsReceivingService {
         posProduct: {
           select: {
             id: true,
+            productId: true,
+            variationId: true,
             name: true,
             customId: true,
           },
@@ -1432,6 +1426,21 @@ export class WmsReceivingService {
 
       if (profile.status === WmsProductProfileStatus.ARCHIVED) {
         throw new BadRequestException(`Product ${profile.posProduct.name} is archived and cannot be received`);
+      }
+
+      if (!this.isStockableVariation(profile.posProduct.productId, profile.posProduct.variationId)) {
+        throw new BadRequestException(
+          `${profile.posProduct.name}: ${this.getStockabilityReason(
+            profile.posProduct.productId,
+            profile.posProduct.variationId,
+          )}`,
+        );
+      }
+
+      if (!this.isStockableVariation(profile.productId, profile.variationId)) {
+        throw new BadRequestException(
+          `${profile.posProduct.name}: still uses a legacy variation mapping. Sync this product first.`,
+        );
       }
 
       return {
@@ -1469,7 +1478,6 @@ export class WmsReceivingService {
         data: {
           code: receivingCode,
           tenantId,
-          teamId: store.teamId,
           storeId: store.id,
           warehouseId: warehouse.id,
           stagingLocationId: stagingLocation.id,
@@ -1511,7 +1519,6 @@ export class WmsReceivingService {
 
           return {
             tenantId,
-            teamId: store.teamId,
             storeId: store.id,
             posProductId: entry.profile.posProductId,
             productProfileId: entry.profile.id,
@@ -1547,7 +1554,6 @@ export class WmsReceivingService {
         },
         select: {
           id: true,
-          teamId: true,
         },
       });
 
@@ -1555,7 +1561,6 @@ export class WmsReceivingService {
         await tx.wmsInventoryMovement.createMany({
           data: createdUnits.map((unit) => ({
             tenantId,
-            teamId: unit.teamId,
             inventoryUnitId: unit.id,
             warehouseId: warehouse.id,
             fromLocationId: null,
@@ -2162,6 +2167,26 @@ export class WmsReceivingService {
 
   private buildUnitIdentifier(prefix: string, unitNumber: number) {
     return `${prefix}${unitNumber.toString().padStart(8, '0')}`;
+  }
+
+  private isLegacyVariationMapping(productId: string, variationId: string | null | undefined) {
+    return Boolean(variationId) && variationId === productId;
+  }
+
+  private isStockableVariation(productId: string, variationId: string | null | undefined) {
+    return Boolean(variationId) && !this.isLegacyVariationMapping(productId, variationId);
+  }
+
+  private getStockabilityReason(productId: string, variationId: string | null | undefined) {
+    if (!variationId) {
+      return 'missing variation ID. Sync this product first.';
+    }
+
+    if (this.isLegacyVariationMapping(productId, variationId)) {
+      return 'still uses a legacy variation mapping. Sync this product first.';
+    }
+
+    return 'is not stockable.';
   }
 
   private cleanOptionalText(value?: string | null) {

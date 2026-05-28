@@ -120,18 +120,12 @@ model Team {
   userPermissionAssignments UserPermissionAssignment[]
   defaultUsers              User[]                     @relation("UserDefaultTeam")
   workflowExecutionLogs     WorkflowExecutionLog[]     @relation("TeamWorkflowExecutionLog")
-  wmsPurchasingBatches      WmsPurchasingBatch[]
-  wmsReceivingBatches       WmsReceivingBatch[]
-  wmsFulfillmentOrders      WmsFulfillmentOrder[]
-  wmsTransfers              WmsTransfer[]
-  wmsInventoryMovements     WmsInventoryMovement[]
 
   // Sharing back-relations
   sharedIntegrationLinks IntegrationSharedTeam[]
   sharedWorkflowLinks    WorkflowSharedTeam[]
   analyticsSharesOwned   AnalyticsShare[]        @relation("AnalyticsShareOwner")
   analyticsSharesShared  AnalyticsShare[]        @relation("AnalyticsShareTarget")
-  wmsInventoryUnits      WmsInventoryUnit[]
 
   @@unique([tenantId, teamCode])
   @@index([tenantId])
@@ -855,7 +849,6 @@ model WmsStaffActivity {
   tenant       Tenant?                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   actorId      String?                  @db.Uuid
   actor        User?                    @relation("WmsStaffActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
-  teamId       String?                  @db.Uuid
   platform     WmsStaffActivityPlatform @default(WEB)
   sessionId    String?
   deviceId     String?
@@ -1323,8 +1316,6 @@ model WmsPurchasingBatch {
   id                        String                   @id @default(uuid()) @db.Uuid
   tenantId                  String                   @db.Uuid
   tenant                    Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId                    String?                  @db.Uuid
-  team                      Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   storeId                   String                   @db.Uuid
   store                     PosStore                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
   requestType               WmsPurchasingRequestType
@@ -1436,8 +1427,6 @@ model WmsReceivingBatch {
   code                String                  @unique
   tenantId            String                  @db.Uuid
   tenant              Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId              String?                 @db.Uuid
-  team                Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
   storeId             String                  @db.Uuid
   store               PosStore                @relation(fields: [storeId], references: [id], onDelete: Cascade)
   purchasingBatchId   String?                 @db.Uuid
@@ -1510,8 +1499,6 @@ model WmsInventoryUnit {
   id                  String                      @id @default(uuid()) @db.Uuid
   tenantId            String                      @db.Uuid
   tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId              String?                     @db.Uuid
-  team                Team?                       @relation(fields: [teamId], references: [id], onDelete: SetNull)
   storeId             String                      @db.Uuid
   store               PosStore                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   posProductId        String                      @db.Uuid
@@ -1562,8 +1549,6 @@ model WmsFulfillmentOrder {
   id                String                    @id @default(uuid()) @db.Uuid
   tenantId          String                    @db.Uuid
   tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId            String?                   @db.Uuid
-  team              Team?                     @relation(fields: [teamId], references: [id], onDelete: SetNull)
   storeId           String                    @db.Uuid
   store             PosStore                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
   posOrderDbId      String                    @db.Uuid
@@ -1692,8 +1677,6 @@ model WmsTransfer {
   code           String            @unique
   tenantId       String            @db.Uuid
   tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId         String?           @db.Uuid
-  team           Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
   warehouseId    String            @db.Uuid
   warehouse      WmsWarehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   fromLocationId String?           @db.Uuid
@@ -1735,8 +1718,6 @@ model WmsInventoryMovement {
   id              String                   @id @default(uuid()) @db.Uuid
   tenantId        String                   @db.Uuid
   tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId          String?                  @db.Uuid
-  team            Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   inventoryUnitId String                   @db.Uuid
   inventoryUnit   WmsInventoryUnit         @relation(fields: [inventoryUnitId], references: [id], onDelete: Cascade)
   warehouseId     String                   @db.Uuid

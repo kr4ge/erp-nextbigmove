@@ -105,10 +105,6 @@ export class CreateWmsPurchasingBatchDto {
   @IsUUID()
   storeId!: string;
 
-  @IsOptional()
-  @IsUUID()
-  teamId?: string;
-
   @IsEnum(WmsPurchasingRequestType)
   requestType!: WmsPurchasingRequestType;
 

@@ -23,7 +23,6 @@ type FulfillmentLineDraft = {
 type FulfillmentSyncStore = {
   id: string;
   tenantId: string;
-  teamId: string | null;
   shopId: string;
 };
 
@@ -113,7 +112,6 @@ export class WmsFulfillmentSyncService {
       select: {
         id: true,
         tenantId: true,
-        teamId: true,
         shopId: true,
         posOrderId: true,
         insertedAt: true,
@@ -155,7 +153,6 @@ export class WmsFulfillmentSyncService {
           return tx.wmsFulfillmentOrder.create({
             data: {
               tenantId: posOrder.tenantId,
-              teamId: posOrder.teamId ?? store.teamId,
               storeId: store.id,
               posOrderDbId: posOrder.id,
               shopId: posOrder.shopId,
@@ -197,7 +194,6 @@ export class WmsFulfillmentSyncService {
         await tx.wmsFulfillmentOrder.update({
           where: { id: existing.id },
           data: {
-            teamId: posOrder.teamId ?? store.teamId,
             posWarehouseRef,
             warehouseId,
             customerName: posOrder.customerName,
@@ -505,7 +501,6 @@ export class WmsFulfillmentSyncService {
           await tx.wmsInventoryMovement.create({
             data: {
               tenantId: unit.tenantId,
-              teamId: unit.teamId,
               inventoryUnitId: unit.id,
               warehouseId: unit.warehouseId,
               fromLocationId: unit.currentLocationId,
@@ -573,7 +568,6 @@ export class WmsFulfillmentSyncService {
     const select = {
       id: true,
       tenantId: true,
-      teamId: true,
       storeId: true,
       warehouseId: true,
       currentLocationId: true,

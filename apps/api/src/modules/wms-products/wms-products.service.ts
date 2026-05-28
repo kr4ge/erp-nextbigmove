@@ -172,16 +172,16 @@ export class WmsProductsService {
         : {}),
     };
 
-    const nonStockableWhere: Prisma.PosProductWhereInput = {
+    const productCandidateWhere: Prisma.PosProductWhereInput = {
       store: {
         tenantId: scope.activeTenantId,
       },
-      variationId: null,
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activePosWarehouse ? { warehouseId: activePosWarehouse.warehouseId } : {}),
       ...(!query.status && query.search
         ? {
             OR: [
+              { variationId: { contains: query.search, mode: 'insensitive' } },
               { productId: { contains: query.search, mode: 'insensitive' } },
               { customId: { contains: query.search, mode: 'insensitive' } },
               { name: { contains: query.search, mode: 'insensitive' } },
@@ -190,19 +190,7 @@ export class WmsProductsService {
         : {}),
     };
 
-    const [
-      profiles,
-      totalProfiles,
-      nonStockableProducts,
-      defaultProfiles,
-      readyProfiles,
-      serializedProfiles,
-      warehouseScopedProducts,
-      assignedProfiles,
-      unassignedProfiles,
-      warehouseCounts,
-      locationOptions,
-    ] =
+    const [profileCandidates, productCandidates, warehouseCounts, locationOptions] =
       await Promise.all([
         this.prisma.wmsProductProfile.findMany({
           where,
@@ -231,11 +219,10 @@ export class WmsProductsService {
           },
           orderBy: [{ updatedAt: 'desc' }],
         }),
-        this.prisma.wmsProductProfile.count({ where }),
         query.status
           ? Promise.resolve([] as NonStockableProductRecord[])
           : this.prisma.posProduct.findMany({
-              where: nonStockableWhere,
+              where: productCandidateWhere,
               select: {
                 id: true,
                 productId: true,
@@ -257,42 +244,6 @@ export class WmsProductsService {
               },
               orderBy: [{ updatedAt: 'desc' }],
             }),
-        this.prisma.wmsProductProfile.count({
-          where: {
-            ...where,
-            status: WmsProductProfileStatus.DEFAULT,
-          },
-        }),
-        this.prisma.wmsProductProfile.count({
-          where: {
-            ...where,
-            status: WmsProductProfileStatus.READY,
-          },
-        }),
-        this.prisma.wmsProductProfile.count({
-          where: {
-            ...where,
-            isSerialized: true,
-          },
-        }),
-        this.prisma.wmsProductProfile.count({
-          where: {
-            ...where,
-            posWarehouseRef: { not: null },
-          },
-        }),
-        this.prisma.wmsProductProfile.count({
-          where: {
-            ...where,
-            preferredLocationId: { not: null },
-          },
-        }),
-        this.prisma.wmsProductProfile.count({
-          where: {
-            ...where,
-            preferredLocationId: null,
-          },
-        }),
         activeStoreId
           ? this.prisma.posProduct.groupBy({
               by: ['warehouseId'],
@@ -327,6 +278,26 @@ export class WmsProductsService {
           orderBy: [{ warehouse: { code: 'asc' } }, { code: 'asc' }],
         }),
       ]);
+
+    const profiles = profileCandidates.filter(
+      (profile) =>
+        this.isStockableVariation(profile.posProduct.productId, profile.posProduct.variationId)
+        && this.isStockableVariation(profile.productId, profile.variationId),
+    );
+    const nonStockableProducts = productCandidates.filter(
+      (product) => !this.isStockableVariation(product.productId, product.variationId),
+    );
+    const totalProfiles = profiles.length;
+    const defaultProfiles = profiles.filter(
+      (profile) => profile.status === WmsProductProfileStatus.DEFAULT,
+    ).length;
+    const readyProfiles = profiles.filter(
+      (profile) => profile.status === WmsProductProfileStatus.READY,
+    ).length;
+    const serializedProfiles = profiles.filter((profile) => profile.isSerialized).length;
+    const warehouseScopedProducts = profiles.filter((profile) => profile.posWarehouseRef).length;
+    const assignedProfiles = profiles.filter((profile) => profile.preferredLocationId).length;
+    const unassignedProfiles = profiles.filter((profile) => !profile.preferredLocationId).length;
 
     const locationIds = Array.from(
       new Set(
@@ -683,12 +654,27 @@ export class WmsProductsService {
         name: store.shopName || store.name,
       },
       syncedCount: result.syncedCount,
-      profileCount: await this.prisma.wmsProductProfile.count({
-        where: {
-          tenantId: scope.activeTenantId,
-          storeId: store.id,
-        },
-      }),
+      profileCount: (
+        await this.prisma.wmsProductProfile.findMany({
+          where: {
+            tenantId: scope.activeTenantId,
+            storeId: store.id,
+          },
+          select: {
+            productId: true,
+            variationId: true,
+            posProduct: {
+              select: {
+                productId: true,
+                variationId: true,
+              },
+            },
+          },
+        })
+      ).filter((profile) =>
+        this.isStockableVariation(profile.productId, profile.variationId)
+        && this.isStockableVariation(profile.posProduct.productId, profile.posProduct.variationId),
+      ).length,
     };
   }
 
@@ -734,6 +720,16 @@ export class WmsProductsService {
 
     const preferredLocationId =
       body.preferredLocationId === undefined ? existing.preferredLocationId : body.preferredLocationId;
+
+    if (!this.isStockableVariation(existing.posProduct.productId, existing.posProduct.variationId)) {
+      throw new BadRequestException(
+        this.getStockabilityReason(existing.posProduct.productId, existing.posProduct.variationId),
+      );
+    }
+
+    if (!this.isStockableVariation(existing.productId, existing.variationId)) {
+      throw new BadRequestException('This product profile still uses a legacy variation mapping. Sync this product first.');
+    }
 
     await this.validateLocationReference(preferredLocationId ?? null, PRODUCT_SECTION_LOCATION_KINDS);
 
@@ -935,14 +931,18 @@ export class WmsProductsService {
       },
     });
 
-    if (!products.length) {
+    const stockableProducts = products.filter((product) =>
+      this.isStockableVariation(product.productId, product.variationId),
+    );
+
+    if (!stockableProducts.length) {
       return;
     }
 
     const existingProfiles = await this.prisma.wmsProductProfile.findMany({
       where: {
         posProductId: {
-          in: products.map((product) => product.id),
+          in: stockableProducts.map((product) => product.id),
         },
       },
       select: {
@@ -951,7 +951,7 @@ export class WmsProductsService {
     });
 
     const existingProductIds = new Set(existingProfiles.map((profile) => profile.posProductId));
-    const missingProfiles = products.filter((product) => !existingProductIds.has(product.id));
+    const missingProfiles = stockableProducts.filter((product) => !existingProductIds.has(product.id));
 
     if (!missingProfiles.length) {
       return;
@@ -1107,9 +1107,9 @@ export class WmsProductsService {
       status: null,
       isSerialized: null,
       isStockable: false,
-      stockabilityReason: 'Missing variation ID',
+      stockabilityReason: this.getStockabilityReason(product.productId, product.variationId),
       productId: product.productId,
-      variationId: null,
+      variationId: product.variationId,
       variationDisplayId: snapshotCustomId,
       productCustomId: product.customId,
       name: product.name,
@@ -1139,5 +1139,25 @@ export class WmsProductsService {
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
     };
+  }
+
+  private isLegacyVariationMapping(productId: string, variationId: string | null | undefined) {
+    return Boolean(variationId) && variationId === productId;
+  }
+
+  private isStockableVariation(productId: string, variationId: string | null | undefined) {
+    return Boolean(variationId) && !this.isLegacyVariationMapping(productId, variationId);
+  }
+
+  private getStockabilityReason(productId: string, variationId: string | null | undefined) {
+    if (!variationId) {
+      return 'Missing variation ID';
+    }
+
+    if (this.isLegacyVariationMapping(productId, variationId)) {
+      return 'Legacy variation mapping detected. Sync this product first.';
+    }
+
+    return 'This product is not stockable';
   }
 }

@@ -465,7 +465,7 @@ export function useReceivingController() {
   const manualProductOptions = useMemo(
     () =>
       (manualProductsQuery.data?.products ?? [])
-        .filter((product) => product.status !== 'ARCHIVED')
+        .filter((product) => product.isStockable && product.status !== 'ARCHIVED')
         .map((product) => ({
           id: product.id,
           label: product.name,

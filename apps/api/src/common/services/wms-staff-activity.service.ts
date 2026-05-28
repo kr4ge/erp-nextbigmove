@@ -7,7 +7,6 @@ import { RequestClientContextService } from './request-client-context.service';
 type RecordStaffActivityParams = {
   tenantId?: string | null;
   actorId?: string | null;
-  teamId?: string | null;
   platform?: WmsStaffActivityPlatform;
   sessionId?: string | null;
   deviceId?: string | null;
@@ -50,7 +49,6 @@ export class WmsStaffActivityService {
         data: {
           tenantId: params.tenantId ?? null,
           actorId: params.actorId ?? null,
-          teamId: params.teamId ?? null,
           platform: params.platform,
           sessionId: params.sessionId ?? null,
           deviceId: params.deviceId ?? null,

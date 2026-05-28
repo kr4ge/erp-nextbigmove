@@ -318,7 +318,6 @@ export class WmsMobileService {
       request,
       tenantId,
       actorId: userId,
-      teamId: defaultTeamId,
       sessionId,
       actionType: 'BOOTSTRAP',
       resourceType: 'STOX_APP',
@@ -751,7 +750,6 @@ export class WmsMobileService {
       request,
       tenantId: activityTenantId,
       actorId: userId,
-      teamId: activeStore?.teamId ?? user.defaultTeamId ?? null,
       sessionId,
       actionType: 'STOCK_VIEW',
       resourceType: 'STOX_STOCK',
@@ -1247,7 +1245,6 @@ export class WmsMobileService {
     if (unit) {
       await this.recordStockActivity(user, request, {
         tenantId: unit.tenantId,
-        teamId: unit.teamId,
         actionType: 'STOCK_SCAN',
         resourceType: 'WMS_INVENTORY_UNIT',
         resourceId: unit.id,
@@ -1265,7 +1262,6 @@ export class WmsMobileService {
     if (location) {
       await this.recordStockActivity(user, request, {
         tenantId: tenantContext.tenantId,
-        teamId: null,
         actionType: 'STOCK_SCAN',
         resourceType: 'WMS_LOCATION',
         resourceId: location.id,
@@ -1283,7 +1279,6 @@ export class WmsMobileService {
     if (batch) {
       await this.recordStockActivity(user, request, {
         tenantId: batch.tenantId,
-        teamId: batch.teamId,
         actionType: 'STOCK_SCAN',
         resourceType: 'WMS_RECEIVING_BATCH',
         resourceId: batch.id,
@@ -1299,7 +1294,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: tenantContext.tenantId,
-      teamId: null,
       actionType: 'STOCK_SCAN',
       resourceType: 'STOX_STOCK',
       resourceId: null,
@@ -1328,7 +1322,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: unit.tenantId,
-      teamId: unit.teamId,
       actionType: 'STOCK_UNIT_VIEW',
       resourceType: 'WMS_INVENTORY_UNIT',
       resourceId: unit.id,
@@ -1357,7 +1350,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: tenantContext.tenantId,
-      teamId: null,
       actionType: 'STOCK_BIN_VIEW',
       resourceType: 'WMS_LOCATION',
       resourceId: bin.id,
@@ -1381,7 +1373,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: batch.tenantId,
-      teamId: batch.teamId,
       actionType: 'STOCK_BATCH_VIEW',
       resourceType: 'WMS_RECEIVING_BATCH',
       resourceId: batch.id,
@@ -1435,7 +1426,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: tenantContext.tenantId,
-      teamId: order?.teamId ?? null,
       actionType: 'STOCK_SCAN',
       resourceType: 'WMS_FULFILLMENT_ORDER',
       resourceId: order?.id ?? null,
@@ -1494,7 +1484,6 @@ export class WmsMobileService {
       await tx.wmsInventoryMovement.create({
         data: {
           tenantId: unit.tenantId,
-          teamId: unit.teamId,
           inventoryUnitId: unit.id,
           warehouseId: unit.warehouseId,
           fromLocationId: unit.currentLocationId,
@@ -1520,7 +1509,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: unit.tenantId,
-      teamId: unit.teamId,
       actionType: 'STOCK_PUTAWAY',
       resourceType: 'WMS_INVENTORY_UNIT',
       resourceId: unit.id,
@@ -1591,7 +1579,6 @@ export class WmsMobileService {
         data: {
           code: transferCode,
           tenantId: unit.tenantId,
-          teamId: unit.teamId,
           warehouseId: unit.warehouseId,
           fromLocationId: unit.currentLocationId,
           toLocationId: target.id,
@@ -1623,7 +1610,6 @@ export class WmsMobileService {
       await tx.wmsInventoryMovement.create({
         data: {
           tenantId: unit.tenantId,
-          teamId: unit.teamId,
           inventoryUnitId: unit.id,
           warehouseId: unit.warehouseId,
           fromLocationId: unit.currentLocationId,
@@ -1648,7 +1634,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: unit.tenantId,
-      teamId: unit.teamId,
       actionType: 'STOCK_MOVE',
       resourceType: 'WMS_INVENTORY_UNIT',
       resourceId: unit.id,
@@ -1892,7 +1877,6 @@ export class WmsMobileService {
       request,
       tenantId: tenantId ?? activeStore?.tenantId ?? null,
       actorId: userId,
-      teamId: activeStore?.teamId ?? user.defaultTeamId ?? null,
       sessionId,
       actionType: 'PICKING_VIEW',
       resourceType: 'STOX_PICKING',
@@ -1995,7 +1979,6 @@ export class WmsMobileService {
       stores: stores.map((store) => ({
         id: store.id,
         tenantId: store.tenantId,
-        teamId: store.teamId,
         shopId: store.shopId,
       })),
       limit: null,
@@ -2005,7 +1988,6 @@ export class WmsMobileService {
       request,
       tenantId,
       actorId: userId,
-      teamId: activeStore?.teamId ?? user.defaultTeamId ?? null,
       sessionId,
       actionType: 'PICKING_QUEUE_RESYNC',
       resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -2254,7 +2236,6 @@ export class WmsMobileService {
       request,
       tenantId: tenantId ?? activeStore?.tenantId ?? null,
       actorId: userId,
-      teamId: activeStore?.teamId ?? user.defaultTeamId ?? null,
       sessionId,
       actionType: 'PACKING_VIEW',
       resourceType: 'STOX_PACKING',
@@ -2533,7 +2514,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: updatedOrder.tenantId,
-      teamId: updatedOrder.teamId,
       actionType: 'PACKING_START',
       resourceType: 'WMS_FULFILLMENT_ORDER',
       resourceId: updatedOrder.id,
@@ -2604,7 +2584,6 @@ export class WmsMobileService {
       await tx.wmsInventoryMovement.create({
         data: {
           tenantId: order.tenantId,
-          teamId: order.teamId,
           inventoryUnitId: matchingReservation.inventoryUnitId,
           warehouseId: matchingReservation.inventoryUnit.warehouseId,
           fromLocationId: null,
@@ -2626,7 +2605,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: updatedOrder.tenantId,
-      teamId: updatedOrder.teamId,
       actionType: 'PACKING_UNIT_SCAN',
       resourceType: 'WMS_INVENTORY_UNIT',
       resourceId: matchingReservation.inventoryUnitId,
@@ -2658,7 +2636,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: order.tenantId,
-      teamId: order.teamId,
       actionType: 'PACKING_TRACKING_VERIFY',
       resourceType: 'WMS_FULFILLMENT_ORDER',
       resourceId: order.id,
@@ -2748,7 +2725,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: updatedOrder.tenantId,
-      teamId: updatedOrder.teamId,
       actionType: 'PACKING_COMPLETE',
       resourceType: 'WMS_FULFILLMENT_ORDER',
       resourceId: updatedOrder.id,
@@ -2799,7 +2775,6 @@ export class WmsMobileService {
       : await this.resolvePackVoidSupervisorApproval({
           requester: user,
           tenantId: order.tenantId,
-          teamId: order.teamId,
           request,
           supervisorIdentifier: body.supervisorIdentifier,
           supervisorPassword: body.supervisorPassword,
@@ -2849,7 +2824,6 @@ export class WmsMobileService {
         await tx.wmsInventoryMovement.create({
           data: {
             tenantId: scopedOrder.tenantId,
-            teamId: scopedOrder.teamId,
             inventoryUnitId: reservation.inventoryUnitId,
             warehouseId: reservation.inventoryUnit.warehouseId,
             fromLocationId: reservation.inventoryUnit.currentLocationId,
@@ -2921,7 +2895,6 @@ export class WmsMobileService {
       request,
       tenantId: updatedOrder.tenantId,
       actorId: userId,
-      teamId: updatedOrder.teamId,
       sessionId: (this.cls.get('sessionId') as string | undefined) || user.sessionId || null,
       actionType: approval.mode === 'DIRECT' ? 'PACKING_VOID_COMPLETE' : 'PACKING_VOID_REQUEST',
       resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -2945,7 +2918,6 @@ export class WmsMobileService {
         request,
         tenantId: updatedOrder.tenantId,
         actorId: approval.approver.id,
-        teamId: updatedOrder.teamId,
         sessionId: (this.cls.get('sessionId') as string | undefined) || user.sessionId || null,
         actionType: 'PACKING_VOID_APPROVAL',
         resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -2967,7 +2939,6 @@ export class WmsMobileService {
         request,
         tenantId: updatedOrder.tenantId,
         actorId: userId,
-        teamId: updatedOrder.teamId,
         sessionId: (this.cls.get('sessionId') as string | undefined) || user.sessionId || null,
         actionType: 'PACKING_VOID_COMPLETE',
         resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -3052,7 +3023,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: updatedOrder.tenantId,
-      teamId: updatedOrder.teamId,
       actionType: 'PICKING_CLAIM',
       resourceType: 'WMS_FULFILLMENT_ORDER',
       resourceId: updatedOrder.id,
@@ -3095,7 +3065,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: order.tenantId,
-      teamId: order.teamId,
       actionType: 'PICKING_BIN_SCAN',
       resourceType: 'WMS_LOCATION',
       resourceId: location.id,
@@ -3236,7 +3205,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: updatedOrder.tenantId,
-      teamId: updatedOrder.teamId,
       actionType: 'PICKING_BASKET_SCAN',
       resourceType: 'WMS_BASKET',
       resourceId: updatedOrder.basket?.id ?? null,
@@ -3319,7 +3287,6 @@ export class WmsMobileService {
       await tx.wmsInventoryMovement.create({
         data: {
           tenantId: order.tenantId,
-          teamId: order.teamId,
           inventoryUnitId: matchingReservation.inventoryUnitId,
           warehouseId: matchingReservation.inventoryUnit.warehouseId,
           fromLocationId: matchingReservation.inventoryUnit.currentLocationId,
@@ -3344,7 +3311,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: order.tenantId,
-      teamId: order.teamId,
       actionType: 'PICKING_UNIT_SCAN',
       resourceType: 'WMS_INVENTORY_UNIT',
       resourceId: matchingReservation.inventoryUnitId,
@@ -3381,7 +3347,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: scopedBasket?.tenantId ?? tenantContext.tenantId,
-      teamId: scopedBasket?.fulfillmentOrder?.teamId ?? null,
       actionType: 'PICKING_BASKET_LOOKUP',
       resourceType: 'WMS_BASKET',
       resourceId: scopedBasket?.id ?? null,
@@ -3433,7 +3398,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: updatedOrder.tenantId,
-      teamId: updatedOrder.teamId,
       actionType: 'PICKING_COMPLETE',
       resourceType: 'WMS_FULFILLMENT_ORDER',
       resourceId: updatedOrder.id,
@@ -3523,7 +3487,6 @@ export class WmsMobileService {
 
     await this.recordStockActivity(user, request, {
       tenantId: updatedOrder.tenantId,
-      teamId: updatedOrder.teamId,
       actionType: 'PICKING_HANDOFF',
       resourceType: 'WMS_FULFILLMENT_ORDER',
       resourceId: updatedOrder.id,
@@ -3550,7 +3513,6 @@ export class WmsMobileService {
     stores: Array<{
       id: string;
       tenantId: string;
-      teamId: string | null;
       shopId: string;
       name: string;
       shopName: string;
@@ -3593,7 +3555,6 @@ export class WmsMobileService {
       select: {
         id: true,
         tenantId: true,
-        teamId: true,
         shopId: true,
         posOrderId: true,
         insertedAt: true,
@@ -3633,7 +3594,6 @@ export class WmsMobileService {
           return tx.wmsFulfillmentOrder.create({
             data: {
               tenantId: posOrder.tenantId,
-              teamId: posOrder.teamId ?? store.teamId,
               storeId: store.id,
               posOrderDbId: posOrder.id,
               shopId: posOrder.shopId,
@@ -3682,7 +3642,6 @@ export class WmsMobileService {
         await tx.wmsFulfillmentOrder.update({
           where: { id: existing.id },
           data: {
-            teamId: posOrder.teamId ?? store.teamId,
             posWarehouseRef,
             warehouseId,
             customerName: posOrder.customerName,
@@ -3865,7 +3824,6 @@ export class WmsMobileService {
           await tx.wmsInventoryMovement.create({
             data: {
               tenantId: unit.tenantId,
-              teamId: unit.teamId,
               inventoryUnitId: unit.id,
               warehouseId: unit.warehouseId,
               fromLocationId: unit.currentLocationId,
@@ -3931,7 +3889,6 @@ export class WmsMobileService {
     const select = {
       id: true,
       tenantId: true,
-      teamId: true,
       storeId: true,
       warehouseId: true,
       currentLocationId: true,
@@ -4753,7 +4710,6 @@ export class WmsMobileService {
   private async resolvePackVoidSupervisorApproval(params: {
     requester: BootstrapUser;
     tenantId: string;
-    teamId: string | null;
     request?: Request;
     supervisorIdentifier?: string;
     supervisorPassword?: string;
@@ -4794,7 +4750,6 @@ export class WmsMobileService {
         request: params.request,
         tenantId: params.tenantId,
         actorId: requesterId,
-        teamId: params.teamId,
         sessionId: (this.cls.get('sessionId') as string | undefined) || params.requester.sessionId || null,
         actionType: 'PACKING_VOID_REQUEST',
         resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -4817,7 +4772,6 @@ export class WmsMobileService {
         request: params.request,
         tenantId: params.tenantId,
         actorId: requesterId,
-        teamId: params.teamId,
         sessionId: (this.cls.get('sessionId') as string | undefined) || params.requester.sessionId || null,
         actionType: 'PACKING_VOID_REQUEST',
         resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -4845,7 +4799,6 @@ export class WmsMobileService {
         request: params.request,
         tenantId: params.tenantId,
         actorId: requesterId,
-        teamId: params.teamId,
         sessionId: (this.cls.get('sessionId') as string | undefined) || params.requester.sessionId || null,
         actionType: 'PACKING_VOID_REQUEST',
         resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -6738,7 +6691,6 @@ export class WmsMobileService {
     request: Request | undefined,
     activity: {
       tenantId: string | null;
-      teamId: string | null;
       actionType: string;
       resourceType: string;
       resourceId: string | null;
@@ -6751,7 +6703,6 @@ export class WmsMobileService {
       request,
       tenantId: activity.tenantId,
       actorId: user.userId || user.id || null,
-      teamId: activity.teamId,
       sessionId: (this.cls.get('sessionId') as string | undefined) || user.sessionId || null,
       actionType: activity.actionType,
       resourceType: activity.resourceType,

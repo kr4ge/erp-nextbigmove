@@ -849,7 +849,6 @@ export class WmsInventoryService {
 
     const sourceLocationId = units[0].currentLocationId!;
     const warehouseId = units[0].warehouseId;
-    const teamId = units[0].teamId;
 
     if (units.some((unit) => unit.currentLocationId !== sourceLocationId)) {
       throw new BadRequestException('Selected units must come from the same source location');
@@ -916,7 +915,6 @@ export class WmsInventoryService {
         data: {
           code: transferCode,
           tenantId: scope.activeTenantId!,
-          teamId,
           warehouseId,
           fromLocationId: sourceLocationId,
           toLocationId: targetLocation.id,
@@ -949,7 +947,6 @@ export class WmsInventoryService {
       await tx.wmsInventoryMovement.createMany({
         data: units.map((unit) => ({
           tenantId: scope.activeTenantId!,
-          teamId: unit.teamId,
           inventoryUnitId: unit.id,
           warehouseId: unit.warehouseId,
           fromLocationId: unit.currentLocationId,
@@ -1083,7 +1080,6 @@ export class WmsInventoryService {
     });
 
     const warehouseId = units[0].warehouseId;
-    const teamId = units[0].teamId;
 
     if (units.some((unit) => unit.warehouseId !== warehouseId)) {
       throw new BadRequestException('Selected units must belong to the same warehouse');
@@ -1177,7 +1173,6 @@ export class WmsInventoryService {
       await tx.wmsInventoryMovement.createMany({
         data: units.map((unit) => ({
           tenantId: scope.activeTenantId!,
-          teamId: unit.teamId,
           inventoryUnitId: unit.id,
           warehouseId: unit.warehouseId,
           fromLocationId: unit.currentLocationId,
@@ -1669,7 +1664,6 @@ export class WmsInventoryService {
             code: true,
             currentLocationId: true,
             status: true,
-            teamId: true,
             warehouseId: true,
           },
         },
@@ -1677,7 +1671,6 @@ export class WmsInventoryService {
           select: {
             id: true,
             posOrderId: true,
-            teamId: true,
             tenantId: true,
             storeId: true,
             warehouseId: true,
@@ -1731,7 +1724,6 @@ export class WmsInventoryService {
           await tx.wmsInventoryMovement.create({
             data: {
               tenantId: reservation.fulfillmentOrder.tenantId,
-              teamId: reservation.fulfillmentOrder.teamId ?? reservation.inventoryUnit.teamId,
               inventoryUnitId: reservation.inventoryUnitId,
               warehouseId: reservation.inventoryUnit.warehouseId,
               fromLocationId: reservation.inventoryUnit.currentLocationId,
@@ -1759,7 +1751,6 @@ export class WmsInventoryService {
           await this.wmsStaffActivityService.record({
             tenantId: sample.fulfillmentOrder.tenantId,
             actorId: null,
-            teamId: sample.fulfillmentOrder.teamId ?? sample.inventoryUnit.teamId,
             sessionId: (this.cls.get('sessionId') as string | undefined) ?? null,
             actionType: 'ORDER_DISPATCH_SYNC',
             resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -1834,7 +1825,6 @@ export class WmsInventoryService {
       select: {
         id: true,
         tenantId: true,
-        teamId: true,
         storeId: true,
         warehouseId: true,
         posOrderId: true,
@@ -1854,7 +1844,6 @@ export class WmsInventoryService {
             inventoryUnit: {
               select: {
                 code: true,
-                teamId: true,
                 warehouseId: true,
               },
             },
@@ -1915,7 +1904,6 @@ export class WmsInventoryService {
         await this.wmsStaffActivityService.record({
           tenantId: order.tenantId,
           actorId: null,
-          teamId: order.teamId ?? sampleReservation?.teamId ?? null,
           sessionId: (this.cls.get('sessionId') as string | undefined) ?? null,
           actionType: 'ORDER_DELIVERY_SYNC',
           resourceType: 'WMS_FULFILLMENT_ORDER',
