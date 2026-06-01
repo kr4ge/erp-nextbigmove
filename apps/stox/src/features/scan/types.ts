@@ -3,6 +3,7 @@ import type {
   WmsMobileBasketLookupResult,
   WmsMobileStockBatchDetail,
   WmsMobileStockBinDetail,
+  WmsMobileTrackingReturnFlow,
   WmsMobileStockUnitDetail,
 } from '@/src/features/stock/types';
 
@@ -31,4 +32,5 @@ export type UniversalScanResult =
   | {
       kind: 'tracking';
       task: WmsMobilePickingTask;
+      returnFlow: WmsMobileTrackingReturnFlow | null;
     };

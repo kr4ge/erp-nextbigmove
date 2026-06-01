@@ -40,8 +40,10 @@ const INBOUND_STATUSES = new Set<WmsInventoryUnitRecord['status']>([
 ]);
 
 const REPORT_STATUSES = new Set<WmsInventoryUnitRecord['status']>([
+  'DEADSTOCK',
   'RTS',
   'DAMAGED',
+  'LOST',
   'ARCHIVED',
 ]);
 const LOGISTICS_PAGE_SIZE = 4;
@@ -290,7 +292,21 @@ function isStagedAging(unit: WmsInventoryUnitRecord) {
 }
 
 function getLogisticsReportTone(unit: WmsInventoryUnitRecord, tab: LogisticsTab) {
-  if (tab === 'reports' || unit.status === 'DAMAGED' || unit.status === 'RTS' || !unit.currentLocation) {
+  if (unit.status === 'DEADSTOCK') {
+    return {
+      label: 'Deadstock',
+      className: 'text-amber-700',
+      dotClassName: 'bg-amber-500',
+    };
+  }
+
+  if (
+    tab === 'reports'
+    || unit.status === 'DAMAGED'
+    || unit.status === 'LOST'
+    || unit.status === 'RTS'
+    || !unit.currentLocation
+  ) {
     return {
       label: 'Exception',
       className: 'text-rose-600',
@@ -312,6 +328,5 @@ function getLogisticsReportTone(unit: WmsInventoryUnitRecord, tab: LogisticsTab)
     dotClassName: 'bg-emerald-500',
   };
 }
-
 
 

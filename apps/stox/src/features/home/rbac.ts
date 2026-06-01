@@ -29,6 +29,15 @@ export const STOX_PACK_EXECUTE_PERMISSIONS = [
   'wms.dispatch.edit',
   'wms.dispatch.override',
 ] as const;
+export const STOX_RTS_READ_PERMISSIONS = [
+  'wms.rts.read',
+  ...STOX_STOCK_READ_PERMISSIONS,
+  'wms.dispatch.read',
+  ...STOX_PACK_EXECUTE_PERMISSIONS,
+] as const;
+export const STOX_RTS_VERIFY_PERMISSIONS = [
+  ...STOX_PACK_EXECUTE_PERMISSIONS,
+] as const;
 export const STOX_HISTORY_READ_ALL_PERMISSIONS = [
   'wms.history.read_all',
 ] as const;
@@ -113,6 +122,14 @@ export function canUseStoxStockWorkspace(bootstrap: BootstrapResponse) {
 
 export function canUseStoxScanWorkspace(bootstrap: BootstrapResponse) {
   return hasAnyWmsPermission(bootstrap, STOX_SCAN_READ_PERMISSIONS);
+}
+
+export function canUseStoxRtsWorkspace(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_RTS_READ_PERMISSIONS);
+}
+
+export function canVerifyStoxRts(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_RTS_VERIFY_PERMISSIONS);
 }
 
 export function canUseStoxHistoryWorkspace(bootstrap: BootstrapResponse) {

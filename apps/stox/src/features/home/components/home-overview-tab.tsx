@@ -16,6 +16,7 @@ import type { StoxTabKey } from '../types';
 import {
   canUsePackWorkspace,
   canUsePickWorkspace,
+  canUseStoxRtsWorkspace,
 } from '../rbac';
 import {
   fetchMobileHomeInventorySummary,
@@ -30,6 +31,7 @@ type HomeOverviewTabProps = {
   session: StoredSession;
   onChangeTab: (tab: StoxTabKey) => void;
   onOpenStock: () => void;
+  onOpenRts: () => void;
 };
 
 type HomeSnapshot = {
@@ -72,6 +74,7 @@ export function HomeOverviewTab({
   session,
   onChangeTab,
   onOpenStock,
+  onOpenRts,
 }: HomeOverviewTabProps) {
   const [snapshot, setSnapshot] = useState<HomeSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +85,7 @@ export function HomeOverviewTab({
   const initials = getInitials(displayName);
   const canLoadPick = canUsePickWorkspace(bootstrap);
   const canLoadPack = canUsePackWorkspace(bootstrap);
+  const canLoadRts = canUseStoxRtsWorkspace(bootstrap);
   const tenantId = bootstrap.tenant?.id ?? null;
   const storeId = bootstrap.context.defaultStoreId ?? null;
   const warehouseId = bootstrap.context.defaultWarehouseId ?? null;
@@ -110,7 +114,7 @@ export function HomeOverviewTab({
           tenantId,
           warehouseId,
         }),
-        canLoadPick || canLoadPack
+        canLoadPick || canLoadPack || canLoadRts
           ? fetchMobileHomeTaskSummary({
             accessToken: session.accessToken,
             device,
@@ -159,6 +163,7 @@ export function HomeOverviewTab({
   }, [
     canLoadPack,
     canLoadPick,
+    canLoadRts,
     device,
     session.accessToken,
     storeId,
@@ -373,18 +378,30 @@ export function HomeOverviewTab({
 
       <View style={styles.taskGroupList}>
         {taskGroups.map((group) => (
-          <SurfaceCard key={group.id} style={styles.taskGroupCard}>
-            <View style={[styles.taskGroupIcon, { backgroundColor: group.soft }]}>
-              <Feather name={group.icon as never} size={20} color={group.accent} />
-            </View>
-            <View style={styles.taskGroupCopy}>
-              <Text style={styles.taskGroupTitle}>{group.label}</Text>
-              <Text style={styles.taskGroupMeta}>{group.caption}</Text>
-            </View>
-            <View style={[styles.taskGroupMetric, { backgroundColor: group.soft }]}>
-              <Text style={styles.taskGroupMetricValue}>{formatCount(group.value)}</Text>
-            </View>
-          </SurfaceCard>
+          <Pressable
+            key={group.id}
+            onPress={() => {
+              if (group.id === 'rts') {
+                onOpenRts();
+                return;
+              }
+
+              onChangeTab('tasks');
+            }}
+            style={({ pressed }) => [styles.taskGroupPressable, pressed ? styles.pressed : null]}>
+            <SurfaceCard style={styles.taskGroupCard}>
+              <View style={[styles.taskGroupIcon, { backgroundColor: group.soft }]}>
+                <Feather name={group.icon as never} size={20} color={group.accent} />
+              </View>
+              <View style={styles.taskGroupCopy}>
+                <Text style={styles.taskGroupTitle}>{group.label}</Text>
+                <Text style={styles.taskGroupMeta}>{group.caption}</Text>
+              </View>
+              <View style={[styles.taskGroupMetric, { backgroundColor: group.soft }]}>
+                <Text style={styles.taskGroupMetricValue}>{formatCount(group.value)}</Text>
+              </View>
+            </SurfaceCard>
+          </Pressable>
         ))}
       </View>
 
@@ -756,6 +773,9 @@ const styles = StyleSheet.create({
   },
   taskGroupList: {
     gap: 14,
+  },
+  taskGroupPressable: {
+    borderRadius: 15,
   },
   taskGroupCard: {
     alignItems: 'center',

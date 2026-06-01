@@ -133,7 +133,7 @@ export function ActionTile({
 }: {
   icon: IconName;
   title: string;
-  meta: string;
+  meta?: string;
   status?: string;
   onPress?: () => void | Promise<void>;
   style?: StyleProp<ViewStyle>;
@@ -149,7 +149,7 @@ export function ActionTile({
         {status ? <Text style={styles.actionStatus}>{status}</Text> : null}
       </View>
       <Text style={styles.actionTitle}>{title}</Text>
-      <Text style={styles.actionMeta}>{meta}</Text>
+      {meta ? <Text style={styles.actionMeta}>{meta}</Text> : null}
     </SurfaceCard>
   );
 

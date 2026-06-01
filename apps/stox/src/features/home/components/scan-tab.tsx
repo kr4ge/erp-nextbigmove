@@ -5,6 +5,7 @@ import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/fea
 import { useUniversalScan } from '@/src/features/scan/hooks/use-universal-scan';
 import type { UniversalScanResult } from '@/src/features/scan/types';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
+import type { WmsMobileTrackingReturnFlow } from '@/src/features/stock/types';
 import { canUseStoxScanWorkspace } from '@/src/features/home/rbac';
 import type { StoxTabKey } from '@/src/features/home/types';
 import { PrimaryButton } from '@/src/shared/components/primary-button';
@@ -19,6 +20,7 @@ type ScanTabProps = {
   session: StoredSession;
   onRefresh: () => Promise<void>;
   onChangeTab?: (tab: StoxTabKey) => void;
+  onOpenRtsTask?: (task: WmsMobilePickingTask, returnFlow: WmsMobileTrackingReturnFlow | null) => void;
 };
 
 type ScanFocusKey = 'auto' | 'unit' | 'tracking' | 'basket' | 'bin';
@@ -75,6 +77,7 @@ export function ScanTab({
   session,
   onRefresh,
   onChangeTab,
+  onOpenRtsTask,
 }: ScanTabProps) {
   if (!canUseStoxScanWorkspace(bootstrap)) {
     return (
@@ -92,6 +95,7 @@ export function ScanTab({
       session={session}
       onRefresh={onRefresh}
       onChangeTab={onChangeTab}
+      onOpenRtsTask={onOpenRtsTask}
     />
   );
 }
@@ -102,6 +106,7 @@ function ScanWorkspaceTab({
   session,
   onRefresh,
   onChangeTab,
+  onOpenRtsTask,
 }: ScanTabProps) {
   const [tenantId, setTenantId] = useState<string | null>(bootstrap.tenant?.id ?? null);
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -270,7 +275,12 @@ function ScanWorkspaceTab({
       />
 
       {scan.result ? (
-        <ScanResultCard result={scan.result} onChangeTab={onChangeTab} onReset={scan.reset} />
+        <ScanResultCard
+          result={scan.result}
+          onChangeTab={onChangeTab}
+          onOpenRtsTask={onOpenRtsTask}
+          onReset={scan.reset}
+        />
       ) : (
         <EmptyScanState focus={activeFocus} />
       )}
@@ -358,10 +368,12 @@ function EmptyScanState({
 function ScanResultCard({
   result,
   onChangeTab,
+  onOpenRtsTask,
   onReset,
 }: {
   result: UniversalScanResult;
   onChangeTab?: (tab: StoxTabKey) => void;
+  onOpenRtsTask?: (task: WmsMobilePickingTask, returnFlow: WmsMobileTrackingReturnFlow | null) => void;
   onReset: () => void;
 }) {
   if (result.kind === 'unit') {
@@ -420,6 +432,8 @@ function ScanResultCard({
 
   if (result.kind === 'tracking') {
     const relatedUnits = flattenTaskUnits(result.task).slice(0, 8);
+    const hasReturnWorkflow = Boolean(result.returnFlow?.eligible);
+    const returnNotice = getReturnNoticeCopy(result.returnFlow);
 
     return (
       <SurfaceCard style={styles.resultCard}>
@@ -439,6 +453,13 @@ function ScanResultCard({
           onPressTasks={() => onChangeTab?.('tasks')}
         />
 
+        {hasReturnWorkflow ? (
+          <InlineNotice
+            title={result.returnFlow?.state === 'RETURNING' ? 'Return already in transit' : 'RTS workflow available'}
+            copy={returnNotice}
+          />
+        ) : null}
+
         {relatedUnits.length > 0 ? (
           <RelatedCodesBlock
             title="Units included in this waybill"
@@ -447,8 +468,10 @@ function ScanResultCard({
         ) : null}
 
         <ResultActionRow
-          primaryLabel="Open task"
-          onPrimaryPress={() => onChangeTab?.('tasks')}
+          primaryLabel={hasReturnWorkflow ? 'Open RTS' : 'Open task'}
+          onPrimaryPress={hasReturnWorkflow
+            ? () => onOpenRtsTask?.(result.task, result.returnFlow ?? null)
+            : () => onChangeTab?.('tasks')}
           onSecondaryPress={onReset}
         />
       </SurfaceCard>
@@ -531,6 +554,133 @@ function ScanResultCard({
       />
 
       <ResultActionRow onSecondaryPress={onReset} />
+    </SurfaceCard>
+  );
+}
+
+function ReturnVerificationPanel({
+  flow,
+  task,
+  isVerifying,
+  onVerifyReturnUnit,
+}: {
+  flow: WmsMobileTrackingReturnFlow;
+  task: WmsMobilePickingTask;
+  isVerifying: boolean;
+  onVerifyReturnUnit?: (taskId: string, code: string) => Promise<boolean>;
+}) {
+  const [returnCode, setReturnCode] = useState('');
+  const lastAutoSubmittedCodeRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setReturnCode('');
+    lastAutoSubmittedCodeRef.current = null;
+  }, [flow.state, flow.pendingUnits.length, flow.verifiedUnits.length, task.id]);
+
+  useEffect(() => {
+    const nextCode = returnCode.trim();
+    if (!flow.canVerify || !onVerifyReturnUnit || isVerifying || nextCode.length < 3 || lastAutoSubmittedCodeRef.current === nextCode) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      lastAutoSubmittedCodeRef.current = nextCode;
+      void (async () => {
+        const verified = await onVerifyReturnUnit(task.id, nextCode);
+        if (verified) {
+          setReturnCode('');
+        }
+      })();
+    }, 220);
+
+    return () => clearTimeout(timer);
+  }, [flow.canVerify, isVerifying, onVerifyReturnUnit, returnCode, task.id]);
+
+  useEffect(() => {
+    if (!returnCode.trim()) {
+      lastAutoSubmittedCodeRef.current = null;
+    }
+  }, [returnCode]);
+
+  const handleVerify = () => {
+    if (!onVerifyReturnUnit || !returnCode.trim() || isVerifying) {
+      return;
+    }
+
+    void (async () => {
+      const verified = await onVerifyReturnUnit(task.id, returnCode);
+      if (verified) {
+        setReturnCode('');
+      }
+    })();
+  };
+
+  return (
+    <SurfaceCard tone="muted" style={styles.returnPanel}>
+      <Text style={styles.returnPanelTitle}>{flow.label ?? 'RTS verification'}</Text>
+      <Text style={styles.returnPanelCopy}>
+        {flow.posStatusLabel ? `POS status: ${flow.posStatusLabel}. ` : ''}
+        {flow.state === 'RETURNING'
+          ? 'Wait until the order is marked Returned before receiving units back into warehouse flow.'
+          : flow.state === 'VERIFIED'
+            ? 'All dispatched units for this waybill have been verified and can now be reclassified.'
+            : 'Verify each returned unit against the original dispatched waybill before final disposition.'}
+      </Text>
+
+      <View style={styles.detailRow}>
+        <UtilityPill icon="refresh-ccw" label={`${flow.verifiedUnits.length}/${flow.expectedUnits} verified`} />
+        <UtilityPill icon="user" label={`Picked ${task.claimedBy?.name ?? 'Unknown'}`} tone="accent" />
+        <UtilityPill icon="shopping-bag" label={`Packed ${task.packedBy?.name ?? 'Unknown'}`} />
+      </View>
+
+      {flow.lastVerifiedAt ? (
+        <Text style={styles.returnMetaText}>
+          Last verification {formatScanDateTime(flow.lastVerifiedAt)}
+          {flow.lastVerifiedBy ? ` by ${flow.lastVerifiedBy.name}` : ''}
+        </Text>
+      ) : null}
+
+      {flow.pendingUnits.length > 0 ? (
+        <RelatedCodesBlock
+          title="Pending returned units"
+          codes={flow.pendingUnits.map((unit) => unit.code)}
+        />
+      ) : null}
+
+      {flow.verifiedUnits.length > 0 ? (
+        <RelatedCodesBlock
+          title="Verified returned units"
+          codes={flow.verifiedUnits.map((unit) => unit.code)}
+        />
+      ) : null}
+
+      {flow.canVerify && onVerifyReturnUnit ? (
+        <View style={styles.returnInputWrap}>
+          <Text style={styles.returnInputLabel}>Returned unit</Text>
+          <View style={styles.returnInputRow}>
+            <TextInput
+              autoCapitalize="characters"
+              autoCorrect={false}
+              blurOnSubmit={false}
+              placeholder="Scan returned serialized unit"
+              placeholderTextColor="#8C83B3"
+              returnKeyType="done"
+              selectTextOnFocus
+              showSoftInputOnFocus={false}
+              value={returnCode}
+              onChangeText={setReturnCode}
+              onSubmitEditing={handleVerify}
+              style={styles.returnInput}
+            />
+            <PrimaryButton
+              label={isVerifying ? 'Checking' : 'Mark RTS'}
+              loading={isVerifying}
+              onPress={handleVerify}
+              style={styles.returnVerifyButton}
+            />
+          </View>
+        </View>
+      ) : null}
     </SurfaceCard>
   );
 }
@@ -679,6 +829,36 @@ function scanLabel(kind: UniversalScanResult['kind']) {
     default:
       return 'Result';
   }
+}
+
+function getReturnNoticeCopy(flow: WmsMobileTrackingReturnFlow | null) {
+  if (!flow) {
+    return 'This waybill can be traced in Scan, but RTS starts from the dedicated Inventory return screen.';
+  }
+
+  if (flow.state === 'RETURNING') {
+    return 'The order is already returning. Open RTS from Inventory to monitor it, then verify units once POS marks it Returned.';
+  }
+
+  if (flow.state === 'VERIFIED') {
+    return 'All returned units were already verified. Continue in Inventory RTS to decide whether they go back to stock, deadstock, damage, or loss.';
+  }
+
+  return 'This waybill is ready for the dedicated RTS inventory workflow. Open RTS to verify returned serialized units one by one.';
+}
+
+function formatScanDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 const styles = StyleSheet.create({
@@ -979,6 +1159,58 @@ const styles = StyleSheet.create({
   },
   relatedBlock: {
     gap: tokens.spacing.sm,
+  },
+  returnPanel: {
+    gap: tokens.spacing.sm,
+    padding: tokens.spacing.md,
+  },
+  returnPanelTitle: {
+    color: tokens.colors.ink,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  returnPanelCopy: {
+    color: tokens.colors.inkMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  returnMetaText: {
+    color: '#8C83B3',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  returnInputWrap: {
+    gap: 8,
+  },
+  returnInputLabel: {
+    color: '#8C83B3',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  returnInputRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  returnInput: {
+    backgroundColor: '#FFFDF8',
+    borderColor: '#E6DDF6',
+    borderRadius: 18,
+    borderWidth: 1,
+    color: tokens.colors.ink,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    minHeight: 54,
+    paddingHorizontal: 14,
+  },
+  returnVerifyButton: {
+    minHeight: 54,
+    minWidth: 118,
+    paddingHorizontal: 14,
   },
   relatedTitle: {
     color: tokens.colors.ink,

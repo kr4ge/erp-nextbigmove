@@ -33,6 +33,7 @@ const HISTORY_FILTER_OPTIONS: HistoryFilterOption[] = [
   { key: 'PICK', label: 'Pick' },
   { key: 'PACK', label: 'Pack' },
   { key: 'DISPATCH', label: 'Dispatch' },
+  { key: 'RTS', label: 'RTS' },
   { key: 'SCAN', label: 'Scan' },
   { key: 'VOID', label: 'Void' },
   { key: 'ISSUE', label: 'Issues' },
@@ -42,6 +43,7 @@ const HISTORY_CATEGORY_META = {
   pick: { icon: 'package', tone: '#6C3EF4', soft: '#F2EBFF' },
   pack: { icon: 'shopping-bag', tone: '#3F65F5', soft: '#EBF1FF' },
   dispatch: { icon: 'truck', tone: '#1989D6', soft: '#E6F6FF' },
+  rts: { icon: 'refresh-ccw', tone: '#F59E0B', soft: '#FFF4DA' },
   scan: { icon: 'maximize', tone: '#A155F7', soft: '#F3EAFF' },
   void: { icon: 'slash', tone: '#F57A3F', soft: '#FFF0E8' },
   issue: { icon: 'alert-circle', tone: '#E05353', soft: '#FFECEC' },
@@ -385,6 +387,8 @@ function formatHistoryEyebrow(category: WmsMobileHistoryItem['category']) {
       return 'Pack';
     case 'dispatch':
       return 'Dispatch';
+    case 'rts':
+      return 'RTS';
     case 'scan':
       return 'Scan';
     case 'void':

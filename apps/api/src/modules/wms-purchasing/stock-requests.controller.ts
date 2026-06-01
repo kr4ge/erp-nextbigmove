@@ -7,12 +7,16 @@ import {
   Post,
   Query,
   Request,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
+import type { UploadedImageFile } from '../../common/services/media-assets.service';
 import { CreateWmsPurchasingBatchDto } from './dto/create-wms-purchasing-batch.dto';
 import { GetWmsPurchasingOverviewDto } from './dto/get-wms-purchasing-overview.dto';
 import { GetWmsPurchasingProductOptionsDto } from './dto/get-wms-purchasing-product-options.dto';
@@ -73,6 +77,28 @@ export class StockRequestsController {
     @Body() body: SubmitWmsPurchasingPaymentProofDto,
   ) {
     return this.wmsPurchasingService.submitPartnerPaymentProof(id, body, this.getTenantId(req));
+  }
+
+  @Post('payment-proof-upload')
+  @Permissions('stock_request.write')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: {
+      fileSize: Math.max(
+        1,
+        Number(process.env.OBJECT_STORAGE_PAYMENT_PROOF_MAX_FILE_MB || '8'),
+      ) * 1024 * 1024,
+    },
+  }))
+  async uploadPaymentProofImage(
+    @Request() req: TenantRequest,
+    @UploadedFile() file: UploadedImageFile,
+  ) {
+    return {
+      asset: await this.wmsPurchasingService.uploadPartnerPaymentProofImage(
+        file,
+        this.getTenantId(req),
+      ),
+    };
   }
 
   @Post(':id/revision-response')

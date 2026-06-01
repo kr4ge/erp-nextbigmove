@@ -8,6 +8,7 @@ import type {
   WmsMobileStockUnitLookupResponse,
   WmsMobileStockUnitDetail,
   WmsMobileTrackingLookupResponse,
+  WmsMobileRtsTasksResponse,
   WmsMobileStockResponse,
 } from '../types';
 
@@ -187,6 +188,67 @@ export function lookupMobileTrackingOrder(params: {
     method: 'GET',
     token: params.accessToken,
     device: params.device,
+  });
+}
+
+export function fetchMobileRtsTasks(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  tenantId?: string | null;
+  storeId?: string | null;
+  page?: number;
+  pageSize?: number;
+}) {
+  const query: string[] = [];
+
+  if (params.tenantId) {
+    query.push(`tenantId=${encodeURIComponent(params.tenantId)}`);
+  }
+
+  if (params.storeId) {
+    query.push(`storeId=${encodeURIComponent(params.storeId)}`);
+  }
+
+  if (params.page) {
+    query.push(`page=${encodeURIComponent(String(params.page))}`);
+  }
+
+  if (params.pageSize) {
+    query.push(`pageSize=${encodeURIComponent(String(params.pageSize))}`);
+  }
+
+  return apiRequest<WmsMobileRtsTasksResponse>(`/wms/mobile/tracking/tasks/rts${query.length ? `?${query.join('&')}` : ''}`, {
+    method: 'GET',
+    token: params.accessToken,
+    device: params.device,
+  });
+}
+
+export function verifyMobileTrackingReturnUnit(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  taskId: string;
+  code: string;
+  tenantId?: string | null;
+}) {
+  return apiRequest<{
+    success: boolean;
+    task: WmsMobileTrackingLookupResponse['task'];
+    returnFlow: WmsMobileTrackingLookupResponse['returnFlow'];
+    unit: {
+      id: string;
+      code: string;
+      status: string;
+      statusLabel: string;
+    };
+  }>(`/wms/mobile/tracking/tasks/${params.taskId}/verify-return-unit`, {
+    method: 'POST',
+    token: params.accessToken,
+    device: params.device,
+    body: {
+      code: params.code,
+      tenantId: params.tenantId,
+    },
   });
 }
 

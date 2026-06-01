@@ -2,12 +2,14 @@ export type WmsInventoryUnitStatus =
   | 'RECEIVED'
   | 'STAGED'
   | 'PUTAWAY'
+  | 'DEADSTOCK'
   | 'RESERVED'
   | 'PICKED'
   | 'PACKED'
   | 'DISPATCHED'
   | 'RTS'
   | 'DAMAGED'
+  | 'LOST'
   | 'ARCHIVED';
 
 export type WmsInventoryUnitRecord = {
@@ -217,7 +219,7 @@ export type GetWmsInventoryTransfersParams = {
 
 export type CreateWmsInventoryAdjustmentInput = {
   unitIds: string[];
-  targetStatus: Extract<WmsInventoryUnitStatus, 'STAGED' | 'PUTAWAY' | 'RTS' | 'DAMAGED' | 'ARCHIVED'>;
+  targetStatus: Extract<WmsInventoryUnitStatus, 'STAGED' | 'PUTAWAY' | 'DEADSTOCK' | 'RTS' | 'DAMAGED' | 'LOST' | 'ARCHIVED'>;
   targetLocationId?: string;
   notes?: string;
 };

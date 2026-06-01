@@ -13,8 +13,10 @@ import { WmsInventoryUnitStatus } from '@prisma/client';
 const ADJUSTABLE_WMS_INVENTORY_STATUSES = [
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
+  WmsInventoryUnitStatus.LOST,
   WmsInventoryUnitStatus.ARCHIVED,
 ] as const;
 

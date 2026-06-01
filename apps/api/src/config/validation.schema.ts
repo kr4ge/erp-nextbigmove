@@ -32,4 +32,16 @@ export default Joi.object({
   PANCAKE_WEBHOOK_QUEUE_TIMEOUT_MS: Joi.number().integer().min(1000).default(120000),
   PANCAKE_WEBHOOK_QUEUE_REMOVE_ON_COMPLETE: Joi.number().integer().min(1).default(1000),
   PANCAKE_WEBHOOK_QUEUE_REMOVE_ON_FAIL: Joi.number().integer().min(1).default(5000),
+
+  // Object storage
+  OBJECT_STORAGE_PROVIDER: Joi.string().default('s3-compatible'),
+  OBJECT_STORAGE_ENDPOINT: Joi.string().allow('', null),
+  OBJECT_STORAGE_REGION: Joi.string().default('us-east-1'),
+  OBJECT_STORAGE_BUCKET: Joi.string().allow('', null),
+  OBJECT_STORAGE_ACCESS_KEY_ID: Joi.string().allow('', null),
+  OBJECT_STORAGE_SECRET_ACCESS_KEY: Joi.string().allow('', null),
+  OBJECT_STORAGE_FORCE_PATH_STYLE: Joi.string().valid('true', 'false').default('false'),
+  OBJECT_STORAGE_AUTO_CREATE_BUCKET: Joi.string().valid('true', 'false').default('false'),
+  OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS: Joi.number().integer().min(60).default(900),
+  OBJECT_STORAGE_PAYMENT_PROOF_MAX_FILE_MB: Joi.number().integer().min(1).default(8),
 });

@@ -8,6 +8,7 @@ import type {
   MarkWmsSelfBuyShipmentInput,
   RespondWmsPurchasingRevisionInput,
   SubmitWmsPurchasingPaymentProofInput,
+  UploadedWmsPurchasingProofImage,
   WmsPurchasingBatchDetail,
 } from '../_types/request';
 import {
@@ -25,6 +26,8 @@ interface RequestDetailPanelProps {
   canSubmitPaymentProof: boolean;
   isSubmittingPaymentProof: boolean;
   onSubmitPaymentProof: (input: SubmitWmsPurchasingPaymentProofInput) => Promise<void>;
+  isUploadingPaymentProofImage: boolean;
+  onUploadPaymentProofImage: (file: File) => Promise<UploadedWmsPurchasingProofImage | null>;
   canRespondToRevision: boolean;
   isRespondingToRevision: boolean;
   onRespondToRevision: (input: RespondWmsPurchasingRevisionInput) => Promise<void>;
@@ -51,6 +54,8 @@ export function RequestDetailPanel({
   canSubmitPaymentProof,
   isSubmittingPaymentProof,
   onSubmitPaymentProof,
+  isUploadingPaymentProofImage,
+  onUploadPaymentProofImage,
   canRespondToRevision,
   isRespondingToRevision,
   onRespondToRevision,
@@ -58,13 +63,17 @@ export function RequestDetailPanel({
   isMarkingSelfBuyShipment,
   onMarkSelfBuyShipment,
 }: RequestDetailPanelProps) {
-  const [proofImageUrl, setProofImageUrl] = useState('');
+  const [proofAssetId, setProofAssetId] = useState<string | null>(null);
+  const [proofPreviewUrl, setProofPreviewUrl] = useState('');
+  const [proofFileName, setProofFileName] = useState('');
   const [proofMessage, setProofMessage] = useState('');
   const [shipmentReference, setShipmentReference] = useState('');
   const [shipmentMessage, setShipmentMessage] = useState('');
 
   useEffect(() => {
-    setProofImageUrl(batch?.paymentProofImageUrl ?? '');
+    setProofAssetId(null);
+    setProofPreviewUrl(batch?.paymentProofImageUrl ?? '');
+    setProofFileName('');
     setProofMessage('');
     setShipmentReference('');
     setShipmentMessage('');
@@ -338,6 +347,13 @@ export function RequestDetailPanel({
 
           {!isSelfBuy && batch.paymentProofImageUrl ? (
             <div className="space-y-2">
+              <div className="overflow-hidden rounded-xl border border-[#e3e9ef] bg-white">
+                <img
+                  src={batch.paymentProofImageUrl}
+                  alt="Payment proof"
+                  className="h-auto max-h-[320px] w-full object-contain bg-[#f8fbfd]"
+                />
+              </div>
               <a
                 href={batch.paymentProofImageUrl}
                 target="_blank"
@@ -359,12 +375,47 @@ export function RequestDetailPanel({
 
           {!isSelfBuy && canSubmitPaymentProof ? (
             <div className="space-y-2 rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3">
-              <input
-                value={proofImageUrl}
-                onChange={(event) => setProofImageUrl(event.target.value)}
-                placeholder="Paste payment proof image URL"
-                className="input"
-              />
+              <div className="space-y-2 rounded-xl border border-dashed border-[#d7e0e7] bg-white p-3">
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  disabled={isUploadingPaymentProofImage || isSubmittingPaymentProof}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) {
+                      return;
+                    }
+
+                    void (async () => {
+                      const asset = await onUploadPaymentProofImage(file);
+                      if (!asset) {
+                        return;
+                      }
+
+                      setProofAssetId(asset.assetId);
+                      setProofPreviewUrl(asset.imageUrl);
+                      setProofFileName(asset.originalFileName || file.name);
+                    })();
+                    event.currentTarget.value = '';
+                  }}
+                  className="block w-full text-sm text-[#4d6677] file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-[#0f3040]"
+                />
+                <p className="text-xs text-[#6d8191]">PNG, JPEG, or WebP. The server will compress and store the image automatically.</p>
+                {proofPreviewUrl ? (
+                  <div className="space-y-2">
+                    <div className="overflow-hidden rounded-xl border border-[#e3e9ef] bg-[#f8fbfd]">
+                      <img
+                        src={proofPreviewUrl}
+                        alt="Uploaded payment proof preview"
+                        className="h-auto max-h-[320px] w-full object-contain"
+                      />
+                    </div>
+                    <p className="text-xs text-[#6d8191]">
+                      {proofFileName || 'Uploaded image ready'}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
               <textarea
                 value={proofMessage}
                 onChange={(event) => setProofMessage(event.target.value)}
@@ -375,16 +426,20 @@ export function RequestDetailPanel({
               <div className="flex justify-end">
                 <button
                   type="button"
-                  disabled={!proofImageUrl.trim() || isSubmittingPaymentProof}
+                  disabled={!proofAssetId || isSubmittingPaymentProof || isUploadingPaymentProofImage}
                   onClick={() =>
                     void onSubmitPaymentProof({
-                      paymentProofImageUrl: proofImageUrl.trim(),
+                      ...(proofAssetId ? { paymentProofAssetId: proofAssetId } : {}),
                       ...(proofMessage.trim() ? { message: proofMessage.trim() } : {}),
                     })
                   }
                   className="btn btn-md btn-primary-soft"
                 >
-                  {isSubmittingPaymentProof ? 'Submitting...' : 'Submit Payment Proof'}
+                  {isUploadingPaymentProofImage
+                    ? 'Uploading...'
+                    : isSubmittingPaymentProof
+                      ? 'Submitting...'
+                      : 'Submit Payment Proof'}
                 </button>
               </div>
             </div>

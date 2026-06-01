@@ -3,6 +3,7 @@ module.exports = function (options, webpack) {
     ...options,
     externals: {
       bcrypt: 'commonjs2 bcrypt',
+      sharp: 'commonjs2 sharp',
     },
   };
 };

@@ -172,6 +172,10 @@ export class CreateWmsPurchasingBatchDto {
   paymentProofImageUrl?: string;
 
   @IsOptional()
+  @IsUUID('4')
+  paymentProofAssetId?: string;
+
+  @IsOptional()
   @IsDateString()
   paymentVerifiedAt?: string;
 

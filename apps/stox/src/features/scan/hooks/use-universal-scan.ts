@@ -7,6 +7,7 @@ import {
   fetchMobileStockUnit,
   lookupMobileTrackingOrder,
   scanMobileStockCode,
+  verifyMobileTrackingReturnUnit,
 } from '@/src/features/stock/services/stock-api';
 import { ApiError } from '@/src/shared/services/http';
 import type { UniversalScanFilters, UniversalScanResult } from '../types';
@@ -26,6 +27,7 @@ export function useUniversalScan({
   const [code, setCode] = useState('');
   const [result, setResult] = useState<UniversalScanResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isVerifyingReturn, setIsVerifyingReturn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -122,6 +124,7 @@ export function useUniversalScan({
         setResult({
           kind: 'tracking',
           task: trackingResult.task,
+          returnFlow: trackingResult.returnFlow,
         });
         setCode('');
         return;
@@ -144,15 +147,61 @@ export function useUniversalScan({
     setMessage(null);
   }, []);
 
+  const verifyReturnUnit = useCallback(async (taskId: string, nextCode: string) => {
+    const normalized = normalizeScannedCode(nextCode);
+
+    if (!device) {
+      setError('Device is not ready.');
+      return false;
+    }
+
+    if (!normalized) {
+      setError('Scan or enter the returned unit.');
+      return false;
+    }
+
+    setIsVerifyingReturn(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await verifyMobileTrackingReturnUnit({
+        accessToken: session.accessToken,
+        device,
+        taskId,
+        code: normalized,
+        tenantId: filters.tenantId,
+      });
+
+      if (response.task) {
+        setResult({
+          kind: 'tracking',
+          task: response.task,
+          returnFlow: response.returnFlow,
+        });
+      }
+
+      setMessage(`Unit ${response.unit.code} marked RTS.`);
+      return true;
+    } catch (requestError) {
+      setError(resolveScanError(requestError));
+      return false;
+    } finally {
+      setIsVerifyingReturn(false);
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
   return {
     code,
     error,
     isScanning,
+    isVerifyingReturn,
     message,
     result,
     reset,
     scan,
     setCode: (value: string) => setCode(normalizeScannedCode(value)),
+    verifyReturnUnit,
   };
 }
 

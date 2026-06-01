@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { MediaAssetsService, type UploadedImageFile } from '../../common/services/media-assets.service';
 import {
   CreateWmsPurchasingBatchDto,
   type CreateWmsPurchasingBatchLineInput,
@@ -187,6 +188,12 @@ type PurchasingBatchDetailRecord = Prisma.WmsPurchasingBatchGetPayload<{
         email: true;
       };
     };
+    paymentProofAsset: {
+      select: {
+        id: true;
+        objectKey: true;
+      };
+    };
   };
 }>;
 
@@ -209,6 +216,7 @@ export class WmsPurchasingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
+    private readonly mediaAssetsService: MediaAssetsService,
   ) {}
 
   async getOverview(query: GetWmsPurchasingOverviewDto) {
@@ -624,6 +632,12 @@ export class WmsPurchasingService {
             email: true,
           },
         },
+        paymentProofAsset: {
+          select: {
+            id: true,
+            objectKey: true,
+          },
+        },
       },
     });
 
@@ -635,8 +649,20 @@ export class WmsPurchasingService {
     const invoiceBankDetails = await this.resolveInvoiceBankDetails();
 
     return {
-      batch: this.mapBatchDetail(batch, invoiceBankDetails),
+      batch: await this.mapBatchDetail(batch, invoiceBankDetails),
     };
+  }
+
+  async uploadPartnerPaymentProofImage(
+    file: UploadedImageFile | undefined,
+    requestedTenantId?: string,
+  ) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    return this.mediaAssetsService.uploadPaymentProofImage(file, scope.activeTenantId);
   }
 
   async createBatch(body: CreateWmsPurchasingBatchDto, requestedTenantId?: string) {
@@ -693,6 +719,12 @@ export class WmsPurchasingService {
     }
 
     const now = new Date();
+    const paymentProofAsset = await this.resolvePaymentProofAsset(
+      body.paymentProofAssetId,
+      scope.activeTenantId,
+    );
+    const paymentProofImageUrl = this.cleanOptionalText(body.paymentProofImageUrl);
+    const hasPaymentProof = Boolean(paymentProofAsset || paymentProofImageUrl);
     const created = await this.prisma.wmsPurchasingBatch.create({
       data: {
         tenantId: scope.activeTenantId,
@@ -709,12 +741,13 @@ export class WmsPurchasingService {
         wmsNotes: this.cleanOptionalText(body.wmsNotes),
         invoiceNumber: this.cleanOptionalText(body.invoiceNumber),
         invoiceAmount: this.numberOrNull(body.invoiceAmount),
-        paymentProofImageUrl: this.cleanOptionalText(body.paymentProofImageUrl),
+        paymentProofImageUrl: paymentProofAsset ? null : paymentProofImageUrl,
+        paymentProofAssetId: paymentProofAsset?.id ?? null,
         paymentSubmittedAt: this.parseOptionalDate(body.paymentSubmittedAt),
-        paymentProofSubmittedAt: this.cleanOptionalText(body.paymentProofImageUrl)
+        paymentProofSubmittedAt: hasPaymentProof
           ? this.parseOptionalDate(body.paymentSubmittedAt) ?? now
           : null,
-        paymentProofSubmittedById: this.cleanOptionalText(body.paymentProofImageUrl)
+        paymentProofSubmittedById: hasPaymentProof
           ? actorId
           : null,
         paymentVerifiedAt: this.parseOptionalDate(body.paymentVerifiedAt),
@@ -810,9 +843,13 @@ export class WmsPurchasingService {
       throw new BadRequestException('Payment proof can only be submitted while payment is pending');
     }
 
+    const paymentProofAsset = await this.resolvePaymentProofAsset(
+      body.paymentProofAssetId,
+      scope.activeTenantId,
+    );
     const paymentProofImageUrl = this.cleanOptionalText(body.paymentProofImageUrl);
-    if (!paymentProofImageUrl) {
-      throw new BadRequestException('Payment proof image URL is required');
+    if (!paymentProofAsset && !paymentProofImageUrl) {
+      throw new BadRequestException('Uploaded payment proof image is required');
     }
 
     const now = new Date();
@@ -821,7 +858,8 @@ export class WmsPurchasingService {
         where: { id: batch.id },
         data: {
           status: WmsPurchasingBatchStatus.PAYMENT_REVIEW,
-          paymentProofImageUrl,
+          paymentProofImageUrl: paymentProofAsset ? null : paymentProofImageUrl,
+          paymentProofAssetId: paymentProofAsset?.id ?? null,
           paymentSubmittedAt: now,
           paymentProofSubmittedAt: now,
           paymentProofSubmittedById: actorId,
@@ -840,7 +878,8 @@ export class WmsPurchasingService {
           message: this.cleanOptionalText(body.message) ?? 'Partner submitted payment proof',
           actorId,
           payload: {
-            paymentProofImageUrl,
+            paymentProofImageUrl: paymentProofImageUrl ?? null,
+            paymentProofAssetId: paymentProofAsset?.id ?? null,
           },
         },
       });
@@ -1008,6 +1047,11 @@ export class WmsPurchasingService {
     const current = await this.prisma.wmsPurchasingBatch.findUnique({
       where: { id },
       include: {
+        paymentProofAsset: {
+          select: {
+            id: true,
+          },
+        },
         lines: {
           select: {
             lineNo: true,
@@ -1061,8 +1105,19 @@ export class WmsPurchasingService {
         : Number(effectiveInvoiceAmountRaw);
 
     const providedPaymentProofImageUrl = this.cleanOptionalText(body.paymentProofImageUrl);
+    const providedPaymentProofAsset = await this.resolvePaymentProofAsset(
+      body.paymentProofAssetId,
+      scope.activeTenantId,
+    );
+    const effectivePaymentProofAssetId =
+      body.paymentProofAssetId !== undefined
+        ? (providedPaymentProofAsset?.id ?? null)
+        : (current.paymentProofAsset?.id ?? null);
     const effectivePaymentProofImageUrl =
-      providedPaymentProofImageUrl ?? current.paymentProofImageUrl;
+      body.paymentProofImageUrl !== undefined
+        ? providedPaymentProofImageUrl
+        : current.paymentProofImageUrl;
+    const hasEffectivePaymentProof = Boolean(effectivePaymentProofAssetId || effectivePaymentProofImageUrl);
 
     const effectivePaymentSubmittedAt =
       body.paymentSubmittedAt === undefined
@@ -1073,7 +1128,7 @@ export class WmsPurchasingService {
       this.parseOptionalDate(body.paymentVerifiedAt)
       ?? (
         body.status === WmsPurchasingBatchStatus.RECEIVING_READY
-        && effectivePaymentProofImageUrl
+        && hasEffectivePaymentProof
           ? now
           : current.paymentVerifiedAt
       );
@@ -1152,17 +1207,21 @@ export class WmsPurchasingService {
               : undefined,
           paymentSubmittedAt:
             body.paymentSubmittedAt !== undefined ? effectivePaymentSubmittedAt : undefined,
+          paymentProofAssetId:
+            body.paymentProofAssetId !== undefined ? effectivePaymentProofAssetId : undefined,
           paymentProofImageUrl:
-            body.paymentProofImageUrl !== undefined ? effectivePaymentProofImageUrl : undefined,
+            body.paymentProofImageUrl !== undefined || body.paymentProofAssetId !== undefined
+              ? (effectivePaymentProofAssetId ? null : effectivePaymentProofImageUrl)
+              : undefined,
           paymentProofSubmittedAt:
-            body.paymentProofImageUrl !== undefined
-              ? effectivePaymentProofImageUrl
+            body.paymentProofImageUrl !== undefined || body.paymentProofAssetId !== undefined
+              ? hasEffectivePaymentProof
                 ? now
                 : null
               : undefined,
           paymentProofSubmittedById:
-            body.paymentProofImageUrl !== undefined
-              ? effectivePaymentProofImageUrl
+            body.paymentProofImageUrl !== undefined || body.paymentProofAssetId !== undefined
+              ? hasEffectivePaymentProof
                 ? actorId
                 : null
               : undefined,
@@ -1170,7 +1229,7 @@ export class WmsPurchasingService {
             body.paymentVerifiedAt !== undefined
             || (
               body.status === WmsPurchasingBatchStatus.RECEIVING_READY
-              && effectivePaymentProofImageUrl
+              && hasEffectivePaymentProof
             )
               ? effectivePaymentVerifiedAt
               : undefined,
@@ -1219,6 +1278,7 @@ export class WmsPurchasingService {
             invoiceAmount: effectiveInvoiceAmount,
             paymentSubmittedAt: body.paymentSubmittedAt ?? null,
             paymentProofImageUrl: effectivePaymentProofImageUrl,
+            paymentProofAssetId: effectivePaymentProofAssetId,
             paymentVerifiedAt: effectivePaymentVerifiedAt,
             sourceStatus: nextSourceStatus,
           },
@@ -1480,11 +1540,16 @@ export class WmsPurchasingService {
     };
   }
 
-  private mapBatchDetail(
+  private async mapBatchDetail(
     batch: PurchasingBatchDetailRecord,
     invoiceBankDetails: InvoiceBankDetailsRecord | null,
   ) {
-    const listRow = this.mapBatchListRow(batch);
+    const listRow = {
+      ...this.mapBatchListRow(batch),
+      paymentProofImageUrl:
+        await this.mediaAssetsService.createSignedAssetUrl(batch.paymentProofAsset)
+        ?? batch.paymentProofImageUrl,
+    };
 
     return {
       ...listRow,
@@ -1571,6 +1636,15 @@ export class WmsPurchasingService {
         createdAt: event.createdAt,
       })),
     };
+  }
+
+  private async resolvePaymentProofAsset(assetId: string | null | undefined, tenantId: string) {
+    const normalized = this.cleanOptionalText(assetId);
+    if (!normalized) {
+      return null;
+    }
+
+    return this.mediaAssetsService.assertTenantOwnedPaymentProofAsset(normalized, tenantId);
   }
 
   private async resolveInvoiceBankDetails(): Promise<InvoiceBankDetailsRecord | null> {

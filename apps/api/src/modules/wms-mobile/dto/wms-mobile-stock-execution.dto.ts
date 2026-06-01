@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsISO8601, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsISO8601, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class GetWmsMobileStockScanDto {
   @IsString()
@@ -39,6 +39,32 @@ export class GetWmsMobileTrackingLookupDto extends GetWmsMobileStockScopedDto {
   @MinLength(1)
   @MaxLength(120)
   code!: string;
+}
+
+export class WmsMobileTrackingReturnUnitDto extends GetWmsMobileStockScopedDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  code!: string;
+}
+
+export class GetWmsMobileRtsTasksDto extends GetWmsMobileStockScopedDto {
+  @IsOptional()
+  @IsUUID()
+  storeId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(50)
+  pageSize?: number;
 }
 
 export class WmsMobileStockMoveDto {

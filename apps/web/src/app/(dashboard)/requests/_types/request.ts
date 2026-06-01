@@ -255,13 +255,25 @@ export type CreateWmsPurchasingBatchInput = {
   invoiceAmount?: number;
   paymentSubmittedAt?: string;
   paymentProofImageUrl?: string;
+  paymentProofAssetId?: string;
   paymentVerifiedAt?: string;
   lines: CreateWmsPurchasingBatchLineInput[];
 };
 
 export type SubmitWmsPurchasingPaymentProofInput = {
-  paymentProofImageUrl: string;
+  paymentProofImageUrl?: string;
+  paymentProofAssetId?: string;
   message?: string;
+};
+
+export type UploadedWmsPurchasingProofImage = {
+  assetId: string;
+  imageUrl: string;
+  contentType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  originalFileName: string | null;
 };
 
 export type MarkWmsSelfBuyShipmentInput = {

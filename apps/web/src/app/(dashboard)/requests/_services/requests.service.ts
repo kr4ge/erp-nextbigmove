@@ -6,6 +6,7 @@ import type {
   MarkWmsSelfBuyShipmentInput,
   RespondWmsPurchasingRevisionInput,
   SubmitWmsPurchasingPaymentProofInput,
+  UploadedWmsPurchasingProofImage,
   WmsPurchasingBatchDetail,
   WmsPurchasingProductOptionsResponse,
   WmsPurchasingOverviewResponse,
@@ -63,6 +64,23 @@ export async function submitWmsPurchasingPaymentProof(
   );
 
   return response.data as { batch: WmsPurchasingBatchDetail };
+}
+
+export async function uploadWmsPurchasingPaymentProofImage(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.post(
+    `${STOCK_REQUESTS_API_PATH}/payment-proof-upload`,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    },
+  );
+
+  return response.data as { asset: UploadedWmsPurchasingProofImage };
 }
 
 export async function respondWmsPurchasingRevision(

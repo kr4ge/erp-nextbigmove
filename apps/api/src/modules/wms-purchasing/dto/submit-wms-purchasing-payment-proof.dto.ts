@@ -1,9 +1,14 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class SubmitWmsPurchasingPaymentProofDto {
+  @IsOptional()
   @IsString()
   @MaxLength(1024)
-  paymentProofImageUrl!: string;
+  paymentProofImageUrl?: string;
+
+  @IsOptional()
+  @IsUUID('4')
+  paymentProofAssetId?: string;
 
   @IsOptional()
   @IsString()

@@ -39,12 +39,14 @@ const INVENTORY_STATUSES: WmsInventoryUnitStatus[] = [
   'RECEIVED',
   'STAGED',
   'PUTAWAY',
+  'DEADSTOCK',
   'RESERVED',
   'PICKED',
   'PACKED',
   'DISPATCHED',
   'RTS',
   'DAMAGED',
+  'LOST',
   'ARCHIVED',
 ];
 

@@ -509,6 +509,13 @@ export function PurchasingBatchModal({
               </p>
               {!isSelfBuy && batch.paymentProofImageUrl ? (
                 <div className="mt-1.5 space-y-2">
+                  <div className="overflow-hidden rounded-xl border border-[#dce4ea] bg-[#f8fbfd]">
+                    <img
+                      src={batch.paymentProofImageUrl}
+                      alt="Payment proof"
+                      className="h-auto max-h-[260px] w-full object-contain"
+                    />
+                  </div>
                   <a
                     href={batch.paymentProofImageUrl}
                     target="_blank"

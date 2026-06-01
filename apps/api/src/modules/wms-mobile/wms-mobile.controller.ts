@@ -5,10 +5,12 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { GetWmsMobileStockDto } from './dto/get-wms-mobile-stock.dto';
 import {
   GetWmsMobileHomeInventorySummaryDto,
+  GetWmsMobileRtsTasksDto,
   GetWmsMobileHomeTaskSummaryDto,
   GetWmsMobileStockScanDto,
   GetWmsMobileStockScopedDto,
   GetWmsMobileTrackingLookupDto,
+  WmsMobileTrackingReturnUnitDto,
   WmsMobileStockMoveDto,
 } from './dto/wms-mobile-stock-execution.dto';
 import {
@@ -65,6 +67,7 @@ export class WmsMobileController {
   @Get('home/task-summary')
   @Permissions(
     'wms.core.read',
+    'wms.rts.read',
     'wms.fulfillment.read',
     'wms.fulfillment.write',
     'wms.fulfillment.edit',
@@ -128,6 +131,34 @@ export class WmsMobileController {
   )
   async lookupTracking(@Request() req, @Query() query: GetWmsMobileTrackingLookupDto) {
     return this.wmsMobileService.lookupTrackingOrder(req.user, query, req);
+  }
+
+  @Get('tracking/tasks/rts')
+  @Permissions(
+    'wms.rts.read',
+    'wms.inventory.read',
+    'wms.receiving.read',
+    'wms.dispatch.read',
+    'wms.dispatch.write',
+    'wms.dispatch.edit',
+    'wms.dispatch.override',
+  )
+  async getRtsTasks(@Request() req, @Query() query: GetWmsMobileRtsTasksDto) {
+    return this.wmsMobileService.getRtsTasks(req.user, query, req);
+  }
+
+  @Post('tracking/tasks/:id/verify-return-unit')
+  @Permissions(
+    'wms.dispatch.write',
+    'wms.dispatch.edit',
+    'wms.dispatch.override',
+  )
+  async verifyTrackingReturnUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobileTrackingReturnUnitDto,
+  ) {
+    return this.wmsMobileService.verifyTrackingReturnUnit(req.user, id, body, req);
   }
 
   @Post('stock/putaway')

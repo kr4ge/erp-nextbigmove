@@ -28,8 +28,14 @@ const ADJUSTABLE_STATUS_OPTIONS: Array<{
 }> = [
   { value: 'STAGED', label: 'Staged', hint: 'Move back into receiving staging.' },
   { value: 'PUTAWAY', label: 'Put Away', hint: 'Place the unit into a bin.' },
-  { value: 'RTS', label: 'RTS', hint: 'Move the unit into the RTS zone.' },
+  {
+    value: 'DEADSTOCK',
+    label: 'Deadstock',
+    hint: 'Keep the unit in a bin but classify it as deadstock. Still fulfillable.',
+  },
+  { value: 'RTS', label: 'RTS', hint: 'Mark the unit as a verified return pending final disposition.' },
   { value: 'DAMAGED', label: 'Damaged', hint: 'Move the unit into damage or quarantine.' },
+  { value: 'LOST', label: 'Lost', hint: 'Mark the unit missing and remove it from active stock.' },
   { value: 'ARCHIVED', label: 'Archived', hint: 'Remove the unit from active stock.' },
 ];
 
@@ -105,8 +111,6 @@ export function InventoryUnitAdjustmentPanel({
         return transferOptions.operationalLocations.filter(
           (location) => location.kind === 'RECEIVING_STAGING',
         );
-      case 'RTS':
-        return transferOptions.operationalLocations.filter((location) => location.kind === 'RTS');
       case 'DAMAGED':
         return transferOptions.operationalLocations.filter(
           (location) => location.kind === 'DAMAGE' || location.kind === 'QUARANTINE',
@@ -119,7 +123,10 @@ export function InventoryUnitAdjustmentPanel({
   const targetLocationId = useMemo(() => {
     switch (targetStatus) {
       case 'PUTAWAY':
+      case 'DEADSTOCK':
         return binId || null;
+      case 'RTS':
+      case 'LOST':
       case 'ARCHIVED':
         return null;
       default:
@@ -128,7 +135,7 @@ export function InventoryUnitAdjustmentPanel({
   }, [binId, operationalLocationId, targetStatus]);
 
   const selectedBinHasCapacityConflict =
-    targetStatus === 'PUTAWAY'
+    (targetStatus === 'PUTAWAY' || targetStatus === 'DEADSTOCK')
     && selectedBin
     && selectedBin.availableUnits !== null
     && selectedBin.availableUnits < 1;
@@ -137,7 +144,9 @@ export function InventoryUnitAdjustmentPanel({
     canAdjustUnits
     && !isAdjustingUnit
     && (
-      targetStatus === 'ARCHIVED'
+      targetStatus === 'RTS'
+      || targetStatus === 'LOST'
+      || targetStatus === 'ARCHIVED'
       || Boolean(targetLocationId)
     )
     && !selectedBinHasCapacityConflict;
@@ -196,7 +205,6 @@ export function InventoryUnitAdjustmentPanel({
               options={ADJUSTABLE_STATUS_OPTIONS.map((status) => ({
                 value: status.value,
                 label: status.label,
-                hint: status.hint,
               }))}
               placeholder="Search statuses…"
               allLabel="Select status"
@@ -204,7 +212,7 @@ export function InventoryUnitAdjustmentPanel({
             />
           </div>
 
-          {targetStatus === 'PUTAWAY' ? (
+          {targetStatus === 'PUTAWAY' || targetStatus === 'DEADSTOCK' ? (
             <div className="grid gap-3 md:grid-cols-3">
               <WmsSearchableSelect
                 label="Section"
@@ -249,8 +257,16 @@ export function InventoryUnitAdjustmentPanel({
                 clearable={false}
               />
             </div>
-          ) : targetStatus === 'ARCHIVED' ? (
-            <InlineMutedBox message="Archiving removes the unit from its current location and active stock." />
+          ) : targetStatus === 'ARCHIVED' || targetStatus === 'LOST' || targetStatus === 'RTS' ? (
+            <InlineMutedBox
+              message={
+                targetStatus === 'RTS'
+                  ? 'RTS removes the unit from active dispatch flow until you decide whether it goes back to stock, deadstock, damage, or loss.'
+                  : targetStatus === 'LOST'
+                  ? 'Lost removes the unit from its current location and marks it missing until it is found again.'
+                  : 'Archiving removes the unit from its current location and active stock.'
+              }
+            />
           ) : (
             <WmsSearchableSelect
               label="Destination"
@@ -266,7 +282,7 @@ export function InventoryUnitAdjustmentPanel({
             />
           )}
 
-          {targetStatus === 'PUTAWAY' && selectedBin ? (
+          {(targetStatus === 'PUTAWAY' || targetStatus === 'DEADSTOCK') && selectedBin ? (
             <p className="text-[12px] text-[#637786]">
               {selectedBin.availableUnits === null
                 ? 'Bin has no explicit capacity limit.'

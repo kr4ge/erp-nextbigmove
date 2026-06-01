@@ -46,6 +46,10 @@ const FINALIZED_FULFILLMENT_ORDER_STATUSES = [
 ] as const;
 const PUTAWAY_REALLOCATION_ORDER_LIMIT = 80;
 const MANUAL_REALLOCATION_ORDER_LIMIT = 200;
+const FULFILLABLE_UNIT_STATUSES = [
+  WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.DEADSTOCK,
+] as const;
 
 @Injectable()
 export class WmsFulfillmentSyncService {
@@ -361,7 +365,9 @@ export class WmsFulfillmentSyncService {
         ...(params.tenantId ? { tenantId: params.tenantId } : {}),
         ...(params.storeId ? { storeId: params.storeId } : {}),
         ...(params.warehouseId ? { warehouseId: params.warehouseId } : {}),
-        status: WmsInventoryUnitStatus.PUTAWAY,
+        status: {
+          in: [...FULFILLABLE_UNIT_STATUSES],
+        },
         currentLocation: {
           is: {
             kind: WmsLocationKind.BIN,
@@ -692,7 +698,9 @@ export class WmsFulfillmentSyncService {
       storeId: params.order.storeId,
       ...(params.order.warehouseId ? { warehouseId: params.order.warehouseId } : {}),
       variationId: params.variationId,
-      status: WmsInventoryUnitStatus.PUTAWAY,
+      status: {
+        in: [...FULFILLABLE_UNIT_STATUSES],
+      },
       currentLocation: {
         is: {
           kind: WmsLocationKind.BIN,
@@ -787,7 +795,9 @@ export class WmsFulfillmentSyncService {
     };
     const putawayWhere: Prisma.WmsInventoryUnitWhereInput = {
       ...warehouseScopedIdentityWhere,
-      status: WmsInventoryUnitStatus.PUTAWAY,
+      status: {
+        in: [...FULFILLABLE_UNIT_STATUSES],
+      },
     };
     const binnedWhere: Prisma.WmsInventoryUnitWhereInput = {
       ...putawayWhere,

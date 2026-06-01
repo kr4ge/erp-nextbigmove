@@ -301,6 +301,60 @@ export type WmsMobileTrackingLookupResponse = {
   found: boolean;
   code: string;
   task: WmsMobilePickingTask | null;
+  returnFlow: WmsMobileTrackingReturnFlow | null;
+};
+
+export type WmsMobileRtsTasksResponse = {
+  tenantReady: boolean;
+  serverTime: string;
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    hasMore: boolean;
+  };
+  context: {
+    activeTenantId: string | null;
+    activeStoreId: string | null;
+    stores: Array<{
+      id: string;
+      tenantId?: string | null;
+      name: string;
+      tenantName?: string | null;
+      tenantSlug?: string | null;
+    }>;
+  };
+  tasks: Array<{
+    task: WmsMobilePickingTask;
+    returnFlow: WmsMobileTrackingReturnFlow;
+  }>;
+};
+
+export type WmsMobileTrackingReturnUnit = {
+  id: string;
+  code: string;
+  barcode: string;
+  status: string;
+  statusLabel: string;
+  name: string;
+  customId: string | null;
+};
+
+export type WmsMobileTrackingReturnFlow = {
+  eligible: boolean;
+  posStatus: number | null;
+  posStatusLabel: string | null;
+  state: 'NONE' | 'RETURNING' | 'READY_TO_VERIFY' | 'PARTIAL' | 'VERIFIED';
+  label: string | null;
+  canVerify: boolean;
+  expectedUnits: number;
+  verifiedUnits: WmsMobileTrackingReturnUnit[];
+  pendingUnits: WmsMobileTrackingReturnUnit[];
+  lastVerifiedAt: string | null;
+  lastVerifiedBy: {
+    name: string;
+    email: string;
+  } | null;
 };
 
 export type WmsMobileBasketLookupResult = WmsMobileBasketLookupResponse;

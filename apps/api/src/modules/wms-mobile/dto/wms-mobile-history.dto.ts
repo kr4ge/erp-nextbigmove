@@ -6,6 +6,7 @@ export const WMS_MOBILE_HISTORY_TYPES = [
   'PICK',
   'PACK',
   'DISPATCH',
+  'RTS',
   'SCAN',
   'VOID',
   'ISSUE',

@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -43,6 +44,10 @@ export class UpdateWmsPurchasingStatusDto {
   @IsString()
   @MaxLength(1024)
   paymentProofImageUrl?: string;
+
+  @IsOptional()
+  @IsUUID('4')
+  paymentProofAssetId?: string;
 
   @IsOptional()
   @IsDateString()

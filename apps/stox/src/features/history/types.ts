@@ -1,4 +1,4 @@
-export type HistoryActivityFilter = 'ALL' | 'PICK' | 'PACK' | 'DISPATCH' | 'SCAN' | 'VOID' | 'ISSUE';
+export type HistoryActivityFilter = 'ALL' | 'PICK' | 'PACK' | 'DISPATCH' | 'RTS' | 'SCAN' | 'VOID' | 'ISSUE';
 
 export type WmsMobileHistoryActorOption = {
   id: string;
@@ -9,7 +9,7 @@ export type WmsMobileHistoryActorOption = {
 
 export type WmsMobileHistoryItem = {
   id: string;
-  category: 'pick' | 'pack' | 'dispatch' | 'scan' | 'void' | 'issue';
+  category: 'pick' | 'pack' | 'dispatch' | 'rts' | 'scan' | 'void' | 'issue';
   actionType: string;
   title: string;
   subject: string;

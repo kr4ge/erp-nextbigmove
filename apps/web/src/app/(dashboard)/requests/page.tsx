@@ -58,6 +58,8 @@ export default function RequestsPage() {
     batchError,
     submitPaymentProof,
     isSubmittingPaymentProof,
+    uploadPaymentProofImage,
+    isUploadingPaymentProofImage,
     respondToRevision,
     isRespondingToRevision,
     markSelfBuyShipment,
@@ -157,6 +159,8 @@ export default function RequestsPage() {
             }
             isSubmittingPaymentProof={isSubmittingPaymentProof}
             onSubmitPaymentProof={submitPaymentProof}
+            isUploadingPaymentProofImage={isUploadingPaymentProofImage}
+            onUploadPaymentProofImage={uploadPaymentProofImage}
             canRespondToRevision={selectedBatch?.status === 'REVISION'}
             isRespondingToRevision={isRespondingToRevision}
             onRespondToRevision={respondToRevision}

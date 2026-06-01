@@ -15,12 +15,14 @@ import {
   markWmsSelfBuyShipment,
   respondWmsPurchasingRevision,
   submitWmsPurchasingPaymentProof,
+  uploadWmsPurchasingPaymentProofImage,
 } from '../_services/requests.service';
 import type {
   CreateWmsPurchasingBatchInput,
   MarkWmsSelfBuyShipmentInput,
   RespondWmsPurchasingRevisionInput,
   SubmitWmsPurchasingPaymentProofInput,
+  UploadedWmsPurchasingProofImage,
   WmsPurchasingBatchDetail,
   WmsPurchasingBatchStatus,
   WmsPurchasingOverviewResponse,
@@ -76,6 +78,7 @@ export function useRequestsController() {
   const [isLoadingBatch, setIsLoadingBatch] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [isSubmittingPaymentProof, setIsSubmittingPaymentProof] = useState(false);
+  const [isUploadingPaymentProofImage, setIsUploadingPaymentProofImage] = useState(false);
   const [isRespondingToRevision, setIsRespondingToRevision] = useState(false);
   const [isMarkingSelfBuyShipment, setIsMarkingSelfBuyShipment] = useState(false);
 
@@ -370,6 +373,23 @@ export function useRequestsController() {
     [addToast, refreshOverview, selectedBatchId],
   );
 
+  const uploadPaymentProofImage = useCallback(
+    async (file: File): Promise<UploadedWmsPurchasingProofImage | null> => {
+      setIsUploadingPaymentProofImage(true);
+      try {
+        const response = await uploadWmsPurchasingPaymentProofImage(file);
+        addToast('success', 'Payment proof image uploaded');
+        return response.asset;
+      } catch (error) {
+        addToast('error', parseRequestError(error, 'Failed to upload payment proof image'));
+        return null;
+      } finally {
+        setIsUploadingPaymentProofImage(false);
+      }
+    },
+    [addToast],
+  );
+
   const respondToRevision = useCallback(
     async (input: RespondWmsPurchasingRevisionInput) => {
       if (!selectedBatchId) {
@@ -446,6 +466,8 @@ export function useRequestsController() {
     batchError,
     submitPaymentProof,
     isSubmittingPaymentProof,
+    uploadPaymentProofImage,
+    isUploadingPaymentProofImage,
     respondToRevision,
     isRespondingToRevision,
     markSelfBuyShipment,

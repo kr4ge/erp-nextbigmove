@@ -26,12 +26,14 @@ const UNIT_STATUS_ORDER: WmsInventoryUnitStatus[] = [
   WmsInventoryUnitStatus.RECEIVED,
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.RESERVED,
   WmsInventoryUnitStatus.PICKED,
   WmsInventoryUnitStatus.PACKED,
   WmsInventoryUnitStatus.DISPATCHED,
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
+  WmsInventoryUnitStatus.LOST,
   WmsInventoryUnitStatus.ARCHIVED,
 ];
 
@@ -182,6 +184,7 @@ const TRANSFERABLE_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.RECEIVED,
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
 ]);
@@ -189,8 +192,10 @@ const TRANSFERABLE_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
 const ADJUSTABLE_UNIT_TARGET_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
+  WmsInventoryUnitStatus.LOST,
   WmsInventoryUnitStatus.ARCHIVED,
 ]);
 
@@ -330,6 +335,7 @@ export class WmsInventoryService {
       status: {
         notIn: [
           WmsInventoryUnitStatus.DISPATCHED,
+          WmsInventoryUnitStatus.LOST,
           WmsInventoryUnitStatus.ARCHIVED,
         ],
       },
@@ -1100,7 +1106,7 @@ export class WmsInventoryService {
 
     if (targetLocationKinds.length === 0) {
       if (body.targetLocationId) {
-        throw new BadRequestException('Archived adjustments should not include a destination location');
+        throw new BadRequestException(`Status ${body.targetStatus} should not include a destination location`);
       }
     } else {
       if (!body.targetLocationId) {
@@ -2045,7 +2051,9 @@ export class WmsInventoryService {
   ) {
     switch (targetKind) {
       case WmsLocationKind.BIN:
-        return WmsInventoryUnitStatus.PUTAWAY;
+        return currentStatus === WmsInventoryUnitStatus.DEADSTOCK
+          ? WmsInventoryUnitStatus.DEADSTOCK
+          : WmsInventoryUnitStatus.PUTAWAY;
       case WmsLocationKind.RECEIVING_STAGING:
         return WmsInventoryUnitStatus.STAGED;
       case WmsLocationKind.RTS:
@@ -2063,11 +2071,13 @@ export class WmsInventoryService {
       case WmsInventoryUnitStatus.STAGED:
         return [WmsLocationKind.RECEIVING_STAGING];
       case WmsInventoryUnitStatus.PUTAWAY:
+      case WmsInventoryUnitStatus.DEADSTOCK:
         return [WmsLocationKind.BIN];
       case WmsInventoryUnitStatus.RTS:
-        return [WmsLocationKind.RTS];
+        return [];
       case WmsInventoryUnitStatus.DAMAGED:
         return [WmsLocationKind.DAMAGE, WmsLocationKind.QUARANTINE];
+      case WmsInventoryUnitStatus.LOST:
       case WmsInventoryUnitStatus.ARCHIVED:
         return [];
       default:
@@ -2080,11 +2090,13 @@ export class WmsInventoryService {
       case WmsInventoryUnitStatus.STAGED:
         return 'receiving staging location';
       case WmsInventoryUnitStatus.PUTAWAY:
+      case WmsInventoryUnitStatus.DEADSTOCK:
         return 'bin location';
       case WmsInventoryUnitStatus.RTS:
-        return 'RTS location';
+        return 'no location';
       case WmsInventoryUnitStatus.DAMAGED:
         return 'damage or quarantine location';
+      case WmsInventoryUnitStatus.LOST:
       case WmsInventoryUnitStatus.ARCHIVED:
         return 'no location';
       default:

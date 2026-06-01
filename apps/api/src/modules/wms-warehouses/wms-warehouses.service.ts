@@ -1337,7 +1337,9 @@ export class WmsWarehousesService {
       this.prisma.wmsInventoryUnit.count({
         where: {
           warehouseId,
-          status: WmsInventoryUnitStatus.PUTAWAY,
+          status: {
+            in: [WmsInventoryUnitStatus.PUTAWAY, WmsInventoryUnitStatus.DEADSTOCK],
+          },
         },
       }),
       this.prisma.wmsInventoryUnit.count({
@@ -1354,6 +1356,9 @@ export class WmsWarehousesService {
               status: {
                 in: [WmsInventoryUnitStatus.RTS, WmsInventoryUnitStatus.DAMAGED],
               },
+            },
+            {
+              status: WmsInventoryUnitStatus.LOST,
             },
             {
               currentLocation: {
