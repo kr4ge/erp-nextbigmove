@@ -53,6 +53,19 @@ export function formatShortDate(value: string | null | undefined) {
   }).format(date);
 }
 
+export function formatDateTime(value: string | null | undefined) {
+  if (!value) return 'â€”';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'â€”';
+  return new Intl.DateTimeFormat('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}
+
 export function formatMoney(value: number | null | undefined) {
   if (value === null || value === undefined) return '—';
   return new Intl.NumberFormat('en-PH', {

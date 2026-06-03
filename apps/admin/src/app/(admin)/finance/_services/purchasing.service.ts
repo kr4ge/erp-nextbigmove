@@ -31,6 +31,26 @@ export async function fetchWmsPurchasingBatch(id: string, tenantId?: string) {
   return response.data as { batch: WmsPurchasingBatchDetail };
 }
 
+export async function fetchWmsPurchasingUnreadNotificationCount(tenantId?: string) {
+  const response = await apiClient.get('/wms/purchasing/notifications/unread-count', {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as { count: number };
+}
+
+export async function markWmsPurchasingNotificationsRead(id: string, tenantId?: string) {
+  const response = await apiClient.post(
+    `/wms/purchasing/${id}/notifications/read`,
+    undefined,
+    {
+      params: tenantId ? { tenantId } : undefined,
+    },
+  );
+
+  return response.data as { success: boolean };
+}
+
 export async function updateWmsPurchasingStatus(
   id: string,
   input: UpdateWmsPurchasingStatusInput,

@@ -168,7 +168,7 @@ export function WarehousesScreen() {
       ) : null}
 
       {controller.errorMessage ? (
-        <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {controller.errorMessage}
         </div>
       ) : null}
@@ -230,7 +230,7 @@ export function WarehousesScreen() {
           </div>
         </div>
       ) : (
-        <div className="rounded-[24px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center">
+        <div className="rounded-xl border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center">
           <p className="text-sm font-medium text-primary">No warehouse records yet</p>
           <button
             type="button"

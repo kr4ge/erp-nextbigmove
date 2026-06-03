@@ -13,6 +13,7 @@ import {
   type StoredAdminUser,
 } from '@/lib/admin-session';
 import { hasWmsAccess, WMS_NAV_ITEMS } from '@/lib/wms-access';
+import { usePurchasingNotificationCount } from '../finance/_hooks/use-purchasing-notification-count';
 import { WmsSidebarBrand } from './wms-sidebar-brand';
 import { WmsTopbar } from './wms-topbar';
 
@@ -51,11 +52,21 @@ export function WmsShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [state, setState] = useState<WmsShellState | null>(null);
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [hasLoadedSidebarPreference, setHasLoadedSidebarPreference] = useState(false);
+  const canReadPurchasingQueue =
+    state?.user.role === 'SUPER_ADMIN'
+    || state?.permissions.includes('wms.purchasing.read')
+    || state?.permissions.includes('stock_request.read')
+    || false;
+  const purchasingNotifications = usePurchasingNotificationCount(
+    canReadPurchasingQueue,
+    activeTenantId,
+  );
 
   useEffect(() => {
     const stored = localStorage.getItem(SIDEBAR_COLLAPSE_STORAGE_KEY);
@@ -106,6 +117,13 @@ export function WmsShell({ children }: { children: ReactNode }) {
           return;
         }
 
+        const storedTenantId = localStorage.getItem('current_tenant_id');
+        const nextTenantId = storedTenantId ?? user.tenantId ?? null;
+        if (nextTenantId) {
+          localStorage.setItem('current_tenant_id', nextTenantId);
+        }
+
+        setActiveTenantId(nextTenantId);
         setState({ user, permissions });
         setIsLoading(false);
       } catch {
@@ -120,6 +138,34 @@ export function WmsShell({ children }: { children: ReactNode }) {
       isMounted = false;
     };
   }, [router]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const syncTenantScope = () => {
+      setActiveTenantId(localStorage.getItem('current_tenant_id'));
+    };
+
+    const handleTenantScopeChanged = () => {
+      syncTenantScope();
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'current_tenant_id') {
+        syncTenantScope();
+      }
+    };
+
+    window.addEventListener('wmsTenantScopeChanged', handleTenantScopeChanged);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('wmsTenantScopeChanged', handleTenantScopeChanged);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   const navItems = useMemo(() => {
     if (!state) {
@@ -250,6 +296,7 @@ export function WmsShell({ children }: { children: ReactNode }) {
               pathname={pathname}
               isSidebarCollapsed={isSidebarCollapsed}
               expandedItems={expandedItems}
+              purchasingNotificationCount={purchasingNotifications.count}
               onToggleItem={(label, nextExpanded) =>
                 setExpandedItems((current) => ({
                   ...current,
@@ -292,6 +339,7 @@ export function WmsShell({ children }: { children: ReactNode }) {
                 pathname={pathname}
                 isSidebarCollapsed={false}
                 expandedItems={expandedItems}
+                purchasingNotificationCount={purchasingNotifications.count}
                 onToggleItem={(label, nextExpanded) =>
                   setExpandedItems((current) => ({
                     ...current,
@@ -325,6 +373,7 @@ type WmsSidebarNavProps = {
   pathname: string;
   isSidebarCollapsed: boolean;
   expandedItems: Record<string, boolean>;
+  purchasingNotificationCount: number;
   onToggleItem: (label: string, nextExpanded: boolean) => void;
   onNavigate?: () => void;
 };
@@ -334,6 +383,7 @@ function WmsSidebarNav({
   pathname,
   isSidebarCollapsed,
   expandedItems,
+  purchasingNotificationCount,
   onToggleItem,
   onNavigate,
 }: WmsSidebarNavProps) {
@@ -459,14 +509,32 @@ function WmsSidebarNav({
             onClick={onNavigate}
             aria-label={item.label}
             title={isSidebarCollapsed ? item.label : undefined}
-            className={`flex items-center rounded-xl py-3 text-sm-custom font-medium transition hover:bg-white/10 ${
+            className={`relative flex items-center rounded-xl py-3 text-sm-custom font-medium transition hover:bg-white/10 ${
               isActive
                 ? 'bg-[#f7cf5f] text-primary hover:text-white active:text-white shadow-[0_20px_40px_-30px_rgba(247,207,95,0.85)]'
                 : 'text-white/88 hover:bg-white/8 hover:text-white'
             } ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3.5 px-4'}`}
           >
             <Icon className="h-4 w-4 shrink-0" />
-            {!isSidebarCollapsed ? <span>{item.label}</span> : null}
+            {!isSidebarCollapsed ? (
+              <span className="flex items-center gap-2">
+                <span>{item.label}</span>
+                {item.href === '/purchasing' && purchasingNotificationCount > 0 ? (
+                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive mt-0.5 px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
+                    {purchasingNotificationCount > 99 ? '99+' : purchasingNotificationCount}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+            {item.href === '/purchasing' && purchasingNotificationCount > 0 ? (
+              <span
+                className={`absolute flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm ${
+                  isSidebarCollapsed ? 'right-1 top-1' : 'hidden'
+                }`}
+              >
+                {purchasingNotificationCount > 99 ? '99+' : purchasingNotificationCount}
+              </span>
+            ) : null}
           </Link>
         );
       })}

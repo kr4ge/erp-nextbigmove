@@ -2,12 +2,14 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { NotificationSystem } from '@prisma/client';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
@@ -35,6 +37,12 @@ export class WmsPurchasingController {
   @Permissions('wms.purchasing.read', 'stock_request.read')
   async getProductOptions(@Query() query: GetWmsPurchasingProductOptionsDto) {
     return this.wmsPurchasingService.getProductOptions(query);
+  }
+
+  @Get('notifications/unread-count')
+  @Permissions('wms.purchasing.read', 'stock_request.read')
+  async getUnreadNotificationCount(@Query('tenantId') tenantId?: string) {
+    return this.wmsPurchasingService.getUnreadNotificationCount(NotificationSystem.WMS, tenantId);
   }
 
   @Get(':id')
@@ -70,6 +78,13 @@ export class WmsPurchasingController {
     @Query('tenantId') tenantId?: string,
   ) {
     return this.wmsPurchasingService.respondToRevision(id, body, tenantId);
+  }
+
+  @Post(':id/notifications/read')
+  @HttpCode(200)
+  @Permissions('wms.purchasing.read', 'stock_request.read')
+  async markNotificationsRead(@Param('id') id: string, @Query('tenantId') tenantId?: string) {
+    return this.wmsPurchasingService.markBatchNotificationsRead(id, NotificationSystem.WMS, tenantId);
   }
 
   @Patch(':id/status')

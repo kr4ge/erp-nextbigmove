@@ -77,17 +77,27 @@ export function ManualReceivingModal({
 }: ManualReceivingModalProps) {
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [productSearchText, setProductSearchText] = useState('');
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) {
       setProductSearchText('');
       setIsProductPickerOpen(false);
+      setQuantityDrafts({});
       return;
     }
 
     setProductSearchText('');
     setIsProductPickerOpen(false);
   }, [open]);
+
+  useEffect(() => {
+    setQuantityDrafts((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([lineId]) => lines.some((line) => line.id === lineId)),
+      ),
+    );
+  }, [lines]);
 
   const activeWarehouse = useMemo(
     () => warehouseOptions.find((option) => option.id === warehouseId) ?? null,
@@ -138,6 +148,39 @@ export function ManualReceivingModal({
     setIsProductPickerOpen(false);
   }
 
+  function handleQuantityDraftChange(lineId: string, value: string) {
+    setQuantityDrafts((current) => ({
+      ...current,
+      [lineId]: value,
+    }));
+
+    if (value === '') {
+      return;
+    }
+
+    const nextQuantity = Number(value);
+
+    if (!Number.isFinite(nextQuantity)) {
+      return;
+    }
+
+    onQuantityChange(lineId, nextQuantity);
+  }
+
+  function handleQuantityDraftBlur(lineId: string) {
+    setQuantityDrafts((current) => {
+      const draft = current[lineId];
+
+      if (draft === undefined) {
+        return current;
+      }
+
+      const nextDrafts = { ...current };
+      delete nextDrafts[lineId];
+      return nextDrafts;
+    });
+  }
+
   if (!open) {
     return null;
   }
@@ -146,7 +189,6 @@ export function ManualReceivingModal({
     <WmsModal
       open={open}
       title="Manual Stock Input"
-      description={storeName ? `${storeName} · Create staged serialized units without a purchasing batch` : 'Create staged serialized units without a purchasing batch'}
       onClose={onClose}
       panelClassName="w-[min(94vw,1080px)] min-h-[620px] max-h-[calc(100dvh-3.5rem)] sm:min-h-[660px] sm:max-h-[calc(100dvh-4.5rem)]"
       bodyClassName="py-4"
@@ -175,7 +217,7 @@ export function ManualReceivingModal({
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-4">
-          <section className="overflow-hidden rounded-[18px] border border-[#dce4ea] bg-white">
+          <section className="overflow-hidden rounded-xl border border-[#dce4ea] bg-white">
             <div className="border-b border-[#e7edf2] px-4 py-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">
@@ -212,8 +254,9 @@ export function ManualReceivingModal({
                           <input
                             type="number"
                             min={1}
-                            value={line.quantity}
-                            onChange={(event) => onQuantityChange(line.id, Number(event.target.value))}
+                            value={quantityDrafts[line.id] ?? String(line.quantity)}
+                            onChange={(event) => handleQuantityDraftChange(line.id, event.target.value)}
+                            onBlur={() => handleQuantityDraftBlur(line.id)}
                             className="h-9 w-20 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-primary outline-none transition focus:border-[#96b4c3]"
                           />
                         </td>
@@ -233,7 +276,7 @@ export function ManualReceivingModal({
                 </table>
               </div>
             ) : !isProductPickerOpen ? (
-              <div className="px-4 pt-4">
+              <div className="px-4 pt-4 mb-3">
                 <AddProductCallout
                   label="Build this stock batch by selecting products"
                   actionLabel="Add product"
@@ -310,8 +353,8 @@ export function ManualReceivingModal({
         </div>
 
         <aside className="space-y-3">
-          <div className="rounded-[18px] border border-[#dce4ea] bg-white px-4 py-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Intake Settings</p>
+          <div className="card">
+            <p className="card-label">Intake Settings</p>
             <div className="mt-3 space-y-3">
               <div className="space-y-1.5">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8193a0]">Warehouse</p>
@@ -352,14 +395,14 @@ export function ManualReceivingModal({
             </div>
           </div>
 
-          <div className="rounded-[18px] border border-[#dce4ea] bg-white px-4 py-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Notes</p>
+          <div className="card">
+            <p className="card-label">Notes</p>
             <textarea
               value={notes}
               onChange={(event) => onNotesChange(event.target.value)}
               rows={5}
               placeholder="Optional intake notes or audit context"
-              className="mt-3 w-full rounded-[14px] border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-2.5 text-[13px] text-primary outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
+              className="input mt-3"
             />
           </div>
         </aside>

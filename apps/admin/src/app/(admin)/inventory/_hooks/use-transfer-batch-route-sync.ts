@@ -7,7 +7,7 @@ import type { WmsReceivingBatchRow } from '../../receiving/_types/receiving';
 type UseTransferBatchRouteSyncInput = {
   transferBatches: WmsReceivingBatchRow[];
   selectedBatchId: string | null;
-  onSelectBatch: (batch: WmsReceivingBatchRow) => void;
+  onSelectBatch: (batch: WmsReceivingBatchRow | null) => void;
 };
 
 export function useTransferBatchRouteSync({
@@ -45,6 +45,11 @@ export function useTransferBatchRouteSync({
     }
 
     handledBatchParamRef.current = null;
+
+    if (selectedBatchId && !transferBatches.some((batch) => batch.id === selectedBatchId)) {
+      onSelectBatch(transferBatches[0] ?? null);
+      return;
+    }
 
     if (!selectedBatchId && transferBatches[0]) {
       onSelectBatch(transferBatches[0]);

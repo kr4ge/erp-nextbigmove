@@ -53,6 +53,6 @@ import { ManualMetaUploadProcessor } from './processors/manual-meta-upload.proce
     PancakeWebhookReconcileProcessor,
     ManualMetaUploadProcessor,
   ],
-  exports: [WorkflowService],
+  exports: [WorkflowService, WorkflowExecutionGateway],
 })
 export class WorkflowModule {}

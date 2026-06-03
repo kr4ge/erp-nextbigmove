@@ -7,10 +7,13 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
+import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { useProductsController } from '../_hooks/use-products-controller';
 import { ProductsFilterBar } from './products-filter-bar';
 import { ProductProfileModal } from './product-profile-modal';
 import { ProductsProfilesTable } from './products-profiles-table';
+
+const NOTICE_AUTO_DISMISS_MS = 5000;
 
 export function ProductsScreen() {
   const controller = useProductsController();
@@ -47,21 +50,26 @@ export function ProductsScreen() {
       </div>
 
       {controller.banner ? (
-        <div
-          className={`rounded-[24px] border px-4 py-3 text-sm ${
-            controller.banner.tone === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-rose-200 bg-rose-50 text-rose-700'
-          }`}
+        <WmsInlineNotice
+          tone={controller.banner.tone}
+          className="rounded-xl"
+          dismissible
+          autoDismissMs={NOTICE_AUTO_DISMISS_MS}
+          onDismiss={controller.clearBanner}
         >
           {controller.banner.message}
-        </div>
+        </WmsInlineNotice>
       ) : null}
 
       {controller.errorMessage ? (
-        <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <WmsInlineNotice
+          tone="error"
+          className="rounded-xl"
+          dismissible
+          autoDismissMs={NOTICE_AUTO_DISMISS_MS}
+        >
           {controller.errorMessage}
-        </div>
+        </WmsInlineNotice>
       ) : null}
 
       <div className="grid gap-3 xl:grid-cols-5">

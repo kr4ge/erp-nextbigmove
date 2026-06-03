@@ -1,9 +1,10 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Receipt } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type {
   MarkWmsSelfBuyShipmentInput,
   RespondWmsPurchasingRevisionInput,
@@ -12,6 +13,7 @@ import type {
   WmsPurchasingBatchDetail,
 } from '../_types/request';
 import {
+  formatDateTime,
   formatMoney,
   formatRequestTypeLabel,
   formatShortDate,
@@ -35,6 +37,16 @@ interface RequestDetailPanelProps {
   isMarkingSelfBuyShipment: boolean;
   onMarkSelfBuyShipment: (input: MarkWmsSelfBuyShipmentInput) => Promise<void>;
 }
+
+type ImageSize = {
+  width: number;
+  height: number;
+};
+
+type ImageFocusPoint = {
+  x: number;
+  y: number;
+};
 
 function formatAddress(value: string | null | undefined) {
   if (!value) {
@@ -69,6 +81,12 @@ export function RequestDetailPanel({
   const [proofMessage, setProofMessage] = useState('');
   const [shipmentReference, setShipmentReference] = useState('');
   const [shipmentMessage, setShipmentMessage] = useState('');
+  const [activeProofImageUrl, setActiveProofImageUrl] = useState<string | null>(null);
+  const [isProofImageZoomed, setIsProofImageZoomed] = useState(false);
+  const [proofImageBaseSize, setProofImageBaseSize] = useState<ImageSize | null>(null);
+  const [proofImageFocusPoint, setProofImageFocusPoint] = useState<ImageFocusPoint | null>(null);
+  const proofImageScrollRef = useRef<HTMLDivElement | null>(null);
+  const proofImageRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
     setProofAssetId(null);
@@ -77,7 +95,37 @@ export function RequestDetailPanel({
     setProofMessage('');
     setShipmentReference('');
     setShipmentMessage('');
+    setActiveProofImageUrl(null);
+    setIsProofImageZoomed(false);
+    setProofImageBaseSize(null);
+    setProofImageFocusPoint(null);
   }, [batch?.id, batch?.paymentProofImageUrl]);
+
+  useEffect(() => {
+    if (!isProofImageZoomed || !proofImageBaseSize || !proofImageFocusPoint || !proofImageScrollRef.current) {
+      return;
+    }
+
+    const scrollContainer = proofImageScrollRef.current;
+    const zoomedWidth = proofImageBaseSize.width * PAYMENT_PROOF_ZOOM_SCALE;
+    const zoomedHeight = proofImageBaseSize.height * PAYMENT_PROOF_ZOOM_SCALE;
+    const targetLeft = clamp(
+      zoomedWidth * proofImageFocusPoint.x - scrollContainer.clientWidth / 2,
+      0,
+      Math.max(0, zoomedWidth - scrollContainer.clientWidth),
+    );
+    const targetTop = clamp(
+      zoomedHeight * proofImageFocusPoint.y - scrollContainer.clientHeight / 2,
+      0,
+      Math.max(0, zoomedHeight - scrollContainer.clientHeight),
+    );
+
+    const frameId = window.requestAnimationFrame(() => {
+      scrollContainer.scrollTo({ left: targetLeft, top: targetTop });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isProofImageZoomed, proofImageBaseSize, proofImageFocusPoint]);
 
   if (isLoading) {
     return (
@@ -124,6 +172,7 @@ export function RequestDetailPanel({
   const billTo = batch.store.name;
   const bank = batch.invoice.bankDetails;
   const isSelfBuy = batch.requestType === 'SELF_BUY';
+  const paymentProofImageUrl = getSafeImageUrl(batch.paymentProofImageUrl);
   const lineItemsTotal = batch.lines.reduce((sum, line) => {
     const quantity = line.approvedQuantity ?? line.requestedQuantity;
     const unitRate = line.partnerUnitCost ?? 0;
@@ -158,8 +207,15 @@ export function RequestDetailPanel({
       };
     })
     .filter((line): line is NonNullable<typeof line> => Boolean(line));
+  const zoomedProofImageSize = proofImageBaseSize
+    ? {
+        width: proofImageBaseSize.width * PAYMENT_PROOF_ZOOM_SCALE,
+        height: proofImageBaseSize.height * PAYMENT_PROOF_ZOOM_SCALE,
+      }
+    : null;
 
   return (
+    <>
     <section className="panel panel-content">
       <div className="panel-header">
         <Receipt className="panel-icon" />
@@ -345,25 +401,39 @@ export function RequestDetailPanel({
             {isSelfBuy ? 'Shipment to Warehouse' : 'Payment Proof'}
           </p>
 
-          {!isSelfBuy && batch.paymentProofImageUrl ? (
+          {!isSelfBuy && paymentProofImageUrl ? (
             <div className="space-y-2">
-              <div className="overflow-hidden rounded-xl border border-[#e3e9ef] bg-white">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveProofImageUrl(paymentProofImageUrl);
+                  setIsProofImageZoomed(false);
+                  setProofImageBaseSize(null);
+                  setProofImageFocusPoint(null);
+                }}
+                className="block w-full overflow-hidden rounded-xl border border-[#e3e9ef] bg-white text-left transition hover:border-[#b9c9d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7fb0cc]/40"
+                aria-label="Open payment proof image"
+              >
                 <img
-                  src={batch.paymentProofImageUrl}
+                  src={paymentProofImageUrl}
                   alt="Payment proof"
                   className="h-auto max-h-[320px] w-full object-contain bg-[#f8fbfd]"
                 />
-              </div>
-              <a
-                href={batch.paymentProofImageUrl}
-                target="_blank"
-                rel="noreferrer"
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveProofImageUrl(paymentProofImageUrl);
+                  setIsProofImageZoomed(false);
+                  setProofImageBaseSize(null);
+                  setProofImageFocusPoint(null);
+                }}
                 className="btn btn-sm btn-primary-soft"
               >
                 Open uploaded proof
-              </a>
+              </button>
               <p className="text-xs text-[#6d8191]">
-                Submitted: {formatShortDate(batch.paymentProofSubmittedAt || batch.paymentSubmittedAt)}
+                Submitted: {formatDateTime(batch.paymentProofSubmittedAt || batch.paymentSubmittedAt)}
                 {batch.paymentProofSubmittedBy ? ` · ${batch.paymentProofSubmittedBy.name}` : ''}
               </p>
             </div>
@@ -511,5 +581,85 @@ export function RequestDetailPanel({
       </Card>
       </div>
     </section>
+
+    <Dialog
+      open={Boolean(activeProofImageUrl)}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          return;
+        }
+        setActiveProofImageUrl(null);
+        setIsProofImageZoomed(false);
+        setProofImageBaseSize(null);
+        setProofImageFocusPoint(null);
+      }}
+    >
+      <DialogContent
+        className="max-w-[min(96vw,980px)] border-[#E2E8F0] bg-white p-4 sm:p-5"
+        closeButtonClassName="data-[state=open]:bg-[#F1F5F9]"
+        overlayClassName="backdrop-blur-[1.5px]"
+      >
+        <DialogHeader>
+          <DialogTitle className="text-[#0F172A]">Payment Proof Preview</DialogTitle>
+          <DialogDescription className="text-[#64748B]">
+            Submitted {formatDateTime(batch.paymentProofSubmittedAt || batch.paymentSubmittedAt)}
+          </DialogDescription>
+        </DialogHeader>
+
+        {activeProofImageUrl ? (
+          <div className="flex min-h-[60dvh] items-center justify-center">
+            <div className="flex min-h-[60dvh] items-center justify-center">
+            <button
+              type="button"
+              onClick={() => setIsProofImageZoomed((current) => !current)}
+              className="block h-full w-full cursor-zoom-in overflow-auto rounded-xl border border-white/10 bg-[#050f16] p-3 text-left"
+              aria-label={isProofImageZoomed ? 'Zoom out payment proof image' : 'Zoom in payment proof image'}
+            >
+              <div
+                className="mx-auto transition-[width,transform] duration-200 ease-out"
+                style={{ width: isProofImageZoomed ? '160%' : '100%' }}
+              >
+                <img
+                  src={activeProofImageUrl}
+                  alt="Payment proof preview"
+                  className={`block h-auto w-full rounded-xl border border-white/10 bg-white object-contain shadow-[0_24px_80px_-36px_rgba(0,0,0,0.7)] ${
+                    isProofImageZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
+                  }`}
+                />
+              </div>
+            </button>
+          </div>
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+    </>
   );
+}
+
+const PAYMENT_PROOF_ZOOM_SCALE = 2;
+
+function getSafeImageUrl(url: string | null | undefined) {
+  if (!url) {
+    return null;
+  }
+
+  const normalized = url.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalized, 'https://safe-preview.local');
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }

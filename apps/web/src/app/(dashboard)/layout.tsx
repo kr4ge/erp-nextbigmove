@@ -19,6 +19,7 @@ import {
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
 import { filterErpPermissions } from '@/lib/permission-workspace';
+import { useRequestNotificationCount } from './requests/_hooks/use-request-notification-count';
 
 interface NavLink {
   href: string;
@@ -179,6 +180,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [popupPosition, setPopupPosition] = useState<{ top: number; left: number } | null>(null);
   const navButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const mobileNavCloseTimerRef = useRef<number | null>(null);
+  const requestNotifications = useRequestNotificationCount(
+    permissions.includes('stock_request.read'),
+    tenant?.id ?? user?.tenantId ?? null,
+  );
 
   const openMobileNav = () => {
     if (typeof window === 'undefined') {
@@ -551,6 +556,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             const isExpanded = expandedItem === link.href;
             const hasActiveChild =
               hasChildren && link.children!.some((child) => normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`));
+            const requestNotificationCount = link.href === '/requests' ? requestNotifications.count : 0;
 
             return (
               <div key={link.href} className="relative">
@@ -605,7 +611,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   ) : (
                     <Link
                       href={link.href}
-                      className={`group flex items-center rounded-xl px-3 py-3 transition-all duration-300 ${
+                      className={`group relative flex items-center rounded-xl px-3 py-3 transition-all duration-300 ${
                         isActive ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
                       } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}
                     >
@@ -623,8 +629,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             : 'ml-3 flex-1 transition-all duration-300 overflow-hidden'
                         }
                       >
-                        <span className="text-sm-custom font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
+                        <span className="flex items-center gap-2 text-sm-custom font-semibold text-slate-900 whitespace-nowrap">
+                          <span>{link.label}</span>
+                          {requestNotificationCount > 0 ? (
+                            <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
+                              {requestNotificationCount > 99 ? '99+' : requestNotificationCount}
+                            </span>
+                          ) : null}
+                        </span>
                       </div>
+                      {requestNotificationCount > 0 ? (
+                        <span
+                          className={`absolute flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive mt-0.5 px-1 text-[10px] font-semibold leading-none text-white shadow-sm ${
+                            isSidebarCollapsed ? 'right-1 top-1' : 'hidden'
+                          }`}
+                        >
+                          {requestNotificationCount > 99 ? '99+' : requestNotificationCount}
+                        </span>
+                      ) : null}
                     </Link>
                   )}
                   {/* Expanded submenu when sidebar is open */}
@@ -789,6 +811,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     (child) => normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`),
                   ),
                 );
+                const requestNotificationCount = link.href === '/requests' ? requestNotifications.count : 0;
 
                 return (
                   <div key={`mobile-${link.href}`} className="space-y-1">
@@ -828,7 +851,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       <Link
                         href={link.href}
                         onClick={closeMobileNav}
-                        className={`group flex items-center rounded-xl px-3 py-3 transition-all duration-300 ${
+                        className={`group relative flex items-center rounded-xl px-3 py-3 transition-all duration-300 ${
                           isActive ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
                         }`}
                       >
@@ -839,7 +862,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         >
                           {link.icon}
                         </span>
-                        <span className="ml-3 text-sm-custom font-semibold text-slate-900">{link.label}</span>
+                        <span className="ml-3 flex items-center gap-2 text-sm-custom font-semibold text-slate-900">
+                          <span>{link.label}</span>
+                          {requestNotificationCount > 0 ? (
+                            <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
+                              {requestNotificationCount > 99 ? '99+' : requestNotificationCount}
+                            </span>
+                          ) : null}
+                        </span>
+                        {requestNotificationCount > 0 ? (
+                          <span className="hidden absolute right-2 top-2 h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
+                            {requestNotificationCount > 99 ? '99+' : requestNotificationCount}
+                          </span>
+                        ) : null}
                       </Link>
                     )}
 

@@ -357,7 +357,7 @@ export function InventoryTransfersTab({
                     key={batch.id}
                     type="button"
                     onClick={() => onSelectBatch(batch)}
-                    className={`w-[216px] shrink-0 rounded-2xl border px-3 py-2.5 text-left transition sm:w-[228px] ${
+                    className={`card ${
                       active
                         ? 'border-primary bg-white'
                         : 'border-border bg-transparent hover:border-[#dce4ea] hover:bg-[#f8fbfc]'
@@ -413,7 +413,7 @@ export function InventoryTransfersTab({
             <button
               type="button"
               onClick={() => onOpenLabels(selectedBatch)}
-              className="inline-flex items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-3 py-1.5 text-[11px] font-semibold text-primary transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
+              className="pill pill-ghost flex gap-1.5 rounded-lg"
             >
               <Tags className="h-3.5 w-3.5" />
               Labels
@@ -440,7 +440,7 @@ export function InventoryTransfersTab({
             </div>
           ) : (
             <div className="space-y-3.5">
-              <div className="grid gap-2 rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-3 py-2.5 text-[11px] text-[#4d6677] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
+              <div className="flex justify-between rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-3 py-2.5 text-[11px] text-[#4d6677] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
                 <span className="truncate font-semibold text-primary">
                   {selectedBatch.sourceRequestId || selectedBatch.requestTitle || 'Manual request'}
                 </span>
@@ -875,7 +875,10 @@ function buildTransferGroups(units: TransferUnit[]): TransferGroup[] {
 }
 
 function isTransferCompleted(unit: TransferUnit) {
-  return unit.status === 'PUTAWAY' && unit.currentLocation?.kind === 'BIN';
+  return (
+    unit.currentLocation?.kind === 'BIN'
+    && (unit.status === 'PUTAWAY' || unit.status === 'RESERVED')
+  );
 }
 
 function formatBinOptionLabel(bin: WmsReceivingPutawayOptionsResponse['sections'][number]['racks'][number]['bins'][number]) {

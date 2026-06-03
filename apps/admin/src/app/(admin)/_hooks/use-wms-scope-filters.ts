@@ -27,6 +27,20 @@ type UseWmsScopeFiltersOptions = {
   autoSelectWarehouseOnStoreChange?: boolean;
 };
 
+function syncTenantScopeStorage(tenantId: string | undefined) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (tenantId) {
+    localStorage.setItem('current_tenant_id', tenantId);
+  } else {
+    localStorage.removeItem('current_tenant_id');
+  }
+
+  window.dispatchEvent(new CustomEvent('wmsTenantScopeChanged', { detail: tenantId ?? null }));
+}
+
 export function useWmsScopeFilters({
   filters,
   selectedTenantId,
@@ -46,6 +60,7 @@ export function useWmsScopeFilters({
       activeTenantId
       && (!selectedTenantId || !tenants?.some((tenant) => tenant.id === selectedTenantId))
     ) {
+      syncTenantScopeStorage(activeTenantId);
       setSelectedTenantIdState(activeTenantId);
     }
   }, [filters?.activeTenantId, filters?.tenants, selectedTenantId, setSelectedTenantIdState]);
@@ -144,6 +159,7 @@ export function useWmsScopeFilters({
   ]);
 
   const setSelectedTenantId = useCallback((tenantId: string | undefined) => {
+    syncTenantScopeStorage(tenantId);
     setSelectedTenantIdState(tenantId);
     setSelectedStoreIdState(undefined);
     if (includeWarehouse) {

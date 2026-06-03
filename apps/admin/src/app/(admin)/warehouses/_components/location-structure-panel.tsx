@@ -88,7 +88,7 @@ export function LocationStructurePanel({
   if (!warehouse) {
     return (
       <WmsCompactPanel title="Structure" eyebrow="Phase 2">
-        <div className="rounded-[24px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center">
+        <div className="rounded-xl border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center">
           <p className="text-sm font-medium text-primary">No WMS warehouse yet</p>
           <p className="mt-1 text-sm text-[#6b7f8c]">
             Create the first warehouse to start mapping sections, racks, bins, and operational zones.
@@ -103,7 +103,7 @@ export function LocationStructurePanel({
       <button
         type="button"
         onClick={() => onEditWarehouse(warehouse)}
-        className="pill pill-ghost flex gap-2 rounded-lg"
+        className="pill pill-ghost flex gap-1.5 rounded-lg"
       >
         <Edit3 className="h-3.5 w-3.5" />
         Edit
@@ -165,7 +165,7 @@ export function LocationStructurePanel({
               );
             })
           ) : (
-            <div className="rounded-[24px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center xl:col-span-4">
+            <div className="rounded-xl border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-5 py-10 text-center xl:col-span-4">
               <p className="text-sm font-medium text-primary">No structural layout yet</p>
               <p className="mt-1 text-sm text-[#6b7f8c]">
                 Add sections first, then place racks inside sections and slots inside racks.
@@ -183,7 +183,7 @@ export function LocationStructurePanel({
                 key={location.id}
                 type="button"
                 onClick={() => onEditLocation(location)}
-                className="shrink-0 rounded-full border border-[#dce4ea] bg-white px-3 py-1.5 text-[11px] font-semibold text-primary transition hover:border-[#c6d4dd]"
+                className="btn btn-sm btn-outline"
               >
                 {location.code}
               </button>

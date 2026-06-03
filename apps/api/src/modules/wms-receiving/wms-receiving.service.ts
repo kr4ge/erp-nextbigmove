@@ -17,7 +17,9 @@ import {
 } from '@prisma/client';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { NotificationStateService } from '../../common/services/notification-state.service';
 import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
+import { WorkflowExecutionGateway } from '../workflows/gateways/workflow-execution.gateway';
 import { AssignWmsReceivingPutawayDto } from './dto/assign-wms-receiving-putaway.dto';
 import { CreateWmsReceivingBatchDto } from './dto/create-wms-receiving-batch.dto';
 import { GetWmsReceivingOverviewDto } from './dto/get-wms-receiving-overview.dto';
@@ -210,6 +212,8 @@ export class WmsReceivingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
+    private readonly notificationStateService: NotificationStateService,
+    private readonly workflowExecutionGateway: WorkflowExecutionGateway,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
   ) {}
 
@@ -1346,7 +1350,7 @@ export class WmsReceivingService {
         },
       });
 
-      await tx.wmsPurchasingEvent.create({
+      const event = await tx.wmsPurchasingEvent.create({
         data: {
           batchId: purchasingBatch.id,
           tenantId: scope.activeTenantId!,
@@ -1364,10 +1368,43 @@ export class WmsReceivingService {
         },
       });
 
-      return receivingBatch.id;
+      await this.notificationStateService.syncPurchasingBatchEvent(tx, {
+        tenantId: scope.activeTenantId!,
+        batchId: purchasingBatch.id,
+        sourceEventId: event.id,
+        sourceEventType: event.eventType,
+        fromStatus: event.fromStatus,
+        toStatus: event.toStatus,
+        context: {
+          message: event.message,
+          payload: event.payload,
+        },
+      });
+
+      return {
+        receivingBatchId: receivingBatch.id,
+        purchasingUpdate: {
+          batchId: purchasingBatch.id,
+          status: nextPurchasingStatus,
+        },
+      };
     });
 
-    return this.getBatchById(created, scope.activeTenantId);
+    this.workflowExecutionGateway.emitTenantEvent(
+      scope.activeTenantId!,
+      null,
+      'stock-requests:updated',
+      {
+        tenantId: scope.activeTenantId!,
+        batchId: created.purchasingUpdate.batchId,
+        status: created.purchasingUpdate.status,
+        sourceStatus: created.purchasingUpdate.status,
+        eventType: 'RECEIVING_BATCH_CREATED',
+        updatedAt: new Date().toISOString(),
+      },
+    );
+
+    return this.getBatchById(created.receivingBatchId, scope.activeTenantId);
   }
 
   private async createManualBatch(input: {

@@ -107,7 +107,7 @@ export function InventoryLogisticsReportsPanel({
           </button>
         ) : null}
 
-        <div className={`grid min-h-[286px] gap-3 md:grid-cols-2 ${hasCarousel ? 'px-6 md:px-8' : ''}`}>
+        <div className={`grid gap-3 md:grid-cols-2 ${hasCarousel ? 'px-6 md:px-8' : ''}`}>
           {visibleUnits.length > 0 ? (
             visibleUnits.map((unit) => (
               <LogisticsUnitCard key={unit.id} unit={unit} tab={activeTab} />

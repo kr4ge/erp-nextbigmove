@@ -34,6 +34,16 @@ export async function fetchWmsPurchasingBatch(id: string) {
   return response.data as { batch: WmsPurchasingBatchDetail };
 }
 
+export async function fetchStockRequestUnreadNotificationCount() {
+  const response = await apiClient.get(`${STOCK_REQUESTS_API_PATH}/notifications/unread-count`);
+  return response.data as { count: number };
+}
+
+export async function markStockRequestNotificationsRead(id: string) {
+  const response = await apiClient.post(`${STOCK_REQUESTS_API_PATH}/${id}/notifications/read`);
+  return response.data as { success: boolean };
+}
+
 export async function fetchWmsPurchasingProductOptions(
   params: GetWmsPurchasingProductOptionsParams = {},
 ) {

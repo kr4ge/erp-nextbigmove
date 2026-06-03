@@ -36,15 +36,15 @@ export function ReceivingBatchesTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-[#eef2f5]">
+      <table className="w-full min-w-[1360px] divide-y divide-[#eef2f5]">
         <thead className="bg-white">
           <tr>
             <HeaderCell>Batch</HeaderCell>
             <HeaderCell>Source</HeaderCell>
-            <HeaderCell>Warehouse</HeaderCell>
+            <HeaderCell className="whitespace-nowrap">Warehouse</HeaderCell>
             <HeaderCell className="text-right">Units</HeaderCell>
-            <HeaderCell>Status</HeaderCell>
-            <HeaderCell>Created</HeaderCell>
+            <HeaderCell className="w-[160px]">Status</HeaderCell>
+            <HeaderCell className="whitespace-nowrap">Created</HeaderCell>
             <HeaderCell className="text-right">Action</HeaderCell>
           </tr>
         </thead>
@@ -71,20 +71,20 @@ export function ReceivingBatchesTable({
                   </p>
                 </div>
               </td>
-              <td className="px-4 py-3 text-sm text-primary">
+              <td className="whitespace-nowrap px-4 py-3 text-sm text-primary">
                 {batch.warehouse.code} · {batch.warehouse.name}
               </td>
               <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-primary">
                 {batch.unitCount}
               </td>
-              <td className="px-4 py-3">
+              <td className="w-[160px] px-4 py-3">
                 <span
-                  className={`pill ${getReceivingStatusClassName(batch.status)}`}
+                  className={`pill inline-flex whitespace-nowrap ${getReceivingStatusClassName(batch.status)}`}
                 >
                   {formatReceivingStatusLabel(batch.status)}
                 </span>
               </td>
-              <td className="px-4 py-3 text-sm text-[#4d6677]">{formatShortDate(batch.createdAt)}</td>
+              <td className="whitespace-nowrap px-4 py-3 text-sm text-[#4d6677]">{formatShortDate(batch.createdAt)}</td>
               <td className="px-4 py-3 text-right">
                 <div className="flex justify-end gap-2">
                   {onTransferBatch && canTransferBatch && batch.status !== 'COMPLETED' && batch.labelPrintCount > 0 ? (

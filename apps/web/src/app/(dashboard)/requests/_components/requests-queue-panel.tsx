@@ -117,7 +117,7 @@ export function RequestsQueuePanel({
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-[#dce4ea]">
-          <table className="min-w-[720px] divide-y divide-[#e6edf5] text-sm">
+          <table className="w-full min-w-[720px] divide-y divide-[#e6edf5] text-sm">
             <thead className="bg-[#f8fbff] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[#73859a]">
               <tr>
                 <th className="px-3 py-2">Request</th>
@@ -152,7 +152,7 @@ export function RequestsQueuePanel({
                   <td className="px-3 py-2.5">{row.store.name}</td>
                   <td className="px-3 py-2.5">{formatRequestTypeLabel(row.requestType)}</td>
                   <td className="px-3 py-2.5 tabular-nums">{row.requestedQuantity}</td>
-                  <td className="px-3 py-2.5">
+                  <td className="w-[160px] px-3 py-2.5">
                     <span
                       className={clsx(
                         'inline-flex rounded-full px-2 py-1 text-xs font-semibold',
@@ -162,7 +162,7 @@ export function RequestsQueuePanel({
                       {formatStatusLabel(row.status)}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 text-[#66788a]">{formatShortDate(row.updatedAt)}</td>
+                  <td className="w-[120px] px-3 py-2.5 text-[#66788a]">{formatShortDate(row.updatedAt)}</td>
                 </tr>
               ))}
             </tbody>

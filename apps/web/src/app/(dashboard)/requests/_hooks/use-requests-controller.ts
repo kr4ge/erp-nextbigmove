@@ -4,19 +4,23 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/toast';
 import {
   createWmsPurchasingBatch,
   fetchWmsPurchasingBatch,
   fetchWmsPurchasingOverview,
   fetchWmsPurchasingProductOptions,
+  markStockRequestNotificationsRead,
   markWmsSelfBuyShipment,
   respondWmsPurchasingRevision,
   submitWmsPurchasingPaymentProof,
   uploadWmsPurchasingPaymentProofImage,
 } from '../_services/requests.service';
+import { useStockRequestRealtime } from './use-stock-request-realtime';
 import type {
   CreateWmsPurchasingBatchInput,
   MarkWmsSelfBuyShipmentInput,
@@ -55,6 +59,7 @@ function getUnitAmount(product: WmsPurchasingProductOption, requestType: WmsPurc
 
 export function useRequestsController() {
   const { addToast } = useToast();
+  const queryClient = useQueryClient();
 
   const [overview, setOverview] = useState<WmsPurchasingOverviewResponse | null>(null);
   const [isLoadingOverview, setIsLoadingOverview] = useState(true);
@@ -81,6 +86,7 @@ export function useRequestsController() {
   const [isUploadingPaymentProofImage, setIsUploadingPaymentProofImage] = useState(false);
   const [isRespondingToRevision, setIsRespondingToRevision] = useState(false);
   const [isMarkingSelfBuyShipment, setIsMarkingSelfBuyShipment] = useState(false);
+  const markedNotificationRef = useRef<string | null>(null);
 
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [productSearchText, setProductSearchText] = useState('');
@@ -141,6 +147,7 @@ export function useRequestsController() {
 
   useEffect(() => {
     if (!selectedBatchId) {
+      markedNotificationRef.current = null;
       setSelectedBatch(null);
       setBatchError(null);
       return;
@@ -175,6 +182,47 @@ export function useRequestsController() {
       active = false;
     };
   }, [selectedBatchId]);
+
+  const refreshSelectedBatch = useCallback(async (batchId: string) => {
+    setIsLoadingBatch(true);
+    setBatchError(null);
+
+    try {
+      const response = await fetchWmsPurchasingBatch(batchId);
+      setSelectedBatch(response.batch);
+    } catch (error) {
+      setBatchError(parseRequestError(error, 'Failed to load request detail'));
+      setSelectedBatch(null);
+    } finally {
+      setIsLoadingBatch(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedBatch) {
+      return;
+    }
+
+    const markKey = [
+      selectedBatch.id,
+      selectedBatch.events[0]?.id ?? 'no-event',
+    ].join(':');
+
+    if (markedNotificationRef.current === markKey) {
+      return;
+    }
+
+    markedNotificationRef.current = markKey;
+
+    void markStockRequestNotificationsRead(selectedBatch.id)
+      .then(() =>
+        queryClient.invalidateQueries({ queryKey: ['erp-stock-request-notification-count'] }))
+      .catch(() => {
+        if (markedNotificationRef.current === markKey) {
+          markedNotificationRef.current = null;
+        }
+      });
+  }, [queryClient, selectedBatch]);
 
   const effectiveStoreId = useMemo(() => {
     if (createStoreScopeId) {
@@ -440,6 +488,18 @@ export function useRequestsController() {
     },
     [addToast, refreshOverview, selectedBatchId],
   );
+
+  const handleRealtimeUpdate = useCallback((payload: { batchId?: string }) => {
+    void refreshOverview();
+
+    if (selectedBatchId && (!payload.batchId || payload.batchId === selectedBatchId)) {
+      void refreshSelectedBatch(selectedBatchId);
+    }
+  }, [refreshOverview, refreshSelectedBatch, selectedBatchId]);
+
+  useStockRequestRealtime({
+    onUpdate: handleRealtimeUpdate,
+  });
 
   return {
     isLoadingOverview,

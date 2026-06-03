@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
@@ -13,6 +13,7 @@ import {
 import {
   fetchWmsPurchasingBatch,
   fetchWmsPurchasingOverview,
+  markWmsPurchasingNotificationsRead,
   updateWmsPurchasingLine,
   updateWmsPurchasingStatus,
 } from '../_services/purchasing.service';
@@ -23,6 +24,7 @@ import type {
   WmsPurchasingRequestType,
 } from '../_types/purchasing';
 import { STATUS_TRANSITIONS } from '../_utils/purchasing-presenters';
+import { usePurchasingRealtime } from './use-purchasing-realtime';
 
 type BannerState = {
   tone: 'success' | 'error';
@@ -66,6 +68,7 @@ export function usePurchasingController() {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerState>(null);
+  const markedNotificationRef = useRef<string | null>(null);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -119,6 +122,7 @@ export function usePurchasingController() {
 
   useEffect(() => {
     if (!selectedBatchId) {
+      markedNotificationRef.current = null;
       return;
     }
 
@@ -182,12 +186,52 @@ export function usePurchasingController() {
     ? STATUS_TRANSITIONS[selectedBatch.status]
     : [];
 
+  useEffect(() => {
+    if (!selectedBatch) {
+      return;
+    }
+
+    const markKey = [
+      selectedTenantId ?? 'default-tenant',
+      selectedBatch.id,
+      selectedBatch.events[0]?.id ?? 'no-event',
+    ].join(':');
+
+    if (markedNotificationRef.current === markKey) {
+      return;
+    }
+
+    markedNotificationRef.current = markKey;
+
+    void markWmsPurchasingNotificationsRead(selectedBatch.id, selectedTenantId)
+      .then(() =>
+        queryClient.invalidateQueries({ queryKey: ['wms-purchasing-notification-count'] }))
+      .catch(() => {
+        if (markedNotificationRef.current === markKey) {
+          markedNotificationRef.current = null;
+        }
+      });
+  }, [queryClient, selectedBatch, selectedTenantId]);
+
   const errorMessage = useMemo(() => {
     if (!overviewQuery.error) {
       return null;
     }
     return getErrorMessage(overviewQuery.error);
   }, [overviewQuery.error]);
+
+  const handleRealtimeUpdate = useCallback((payload: { batchId?: string }) => {
+    void queryClient.invalidateQueries({ queryKey: ['wms-purchasing-overview'] });
+
+    if (selectedBatchId && (!payload.batchId || payload.batchId === selectedBatchId)) {
+      void queryClient.invalidateQueries({ queryKey: ['wms-purchasing-batch'] });
+    }
+  }, [queryClient, selectedBatchId]);
+
+  usePurchasingRealtime({
+    tenantId: selectedTenantId ?? null,
+    onUpdate: handleRealtimeUpdate,
+  });
 
   return {
     overview: overviewQuery.data ?? null,

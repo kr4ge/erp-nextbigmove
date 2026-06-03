@@ -34,7 +34,7 @@ export function LocationNode({ node, depth = 0, onEdit }: LocationNodeProps) {
 
   return (
     <div
-      className={`rounded-[24px] border border-[#dce4ea] bg-[#fcfcfb] p-4 ${
+      className={`rounded-xl border border-[#dce4ea] bg-[#fcfcfb] p-4 ${
         depth === 0 ? 'shadow-[0_20px_45px_-38px_rgba(18,56,75,0.34)]' : ''
       }`}
     >

@@ -1,7 +1,7 @@
 'use client';
 
 import { ClipboardCheck, Clock, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsModal } from '../../_components/wms-modal';
 import type {
@@ -10,6 +10,7 @@ import type {
   WmsPurchasingBatchStatus,
 } from '../_types/purchasing';
 import {
+  formatDateTime,
   formatMoney,
   formatRequestTypeLabel,
   formatShortDate,
@@ -38,6 +39,16 @@ type LineDraft = {
   partnerUnitCost: string;
 };
 
+type ImageSize = {
+  width: number;
+  height: number;
+};
+
+type ImageFocusPoint = {
+  x: number;
+  y: number;
+};
+
 export function PurchasingBatchModal({
   open,
   batch,
@@ -53,6 +64,12 @@ export function PurchasingBatchModal({
   onCreateReceiving,
 }: PurchasingBatchModalProps) {
   const [lineDrafts, setLineDrafts] = useState<Record<string, LineDraft>>({});
+  const [activeProofImageUrl, setActiveProofImageUrl] = useState<string | null>(null);
+  const [isProofImageZoomed, setIsProofImageZoomed] = useState(false);
+  const [proofImageBaseSize, setProofImageBaseSize] = useState<ImageSize | null>(null);
+  const [proofImageFocusPoint, setProofImageFocusPoint] = useState<ImageFocusPoint | null>(null);
+  const proofImageScrollRef = useRef<HTMLDivElement | null>(null);
+  const proofImageRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
     if (!batch) {
@@ -74,8 +91,16 @@ export function PurchasingBatchModal({
     );
   }, [batch]);
 
+  useEffect(() => {
+    setActiveProofImageUrl(null);
+    setIsProofImageZoomed(false);
+    setProofImageBaseSize(null);
+    setProofImageFocusPoint(null);
+  }, [batch?.id, open]);
+
   const editableLines = canEdit && (batch?.status === 'UNDER_REVIEW' || batch?.status === 'REVISION');
   const isSelfBuy = batch?.requestType === 'SELF_BUY';
+  const paymentProofImageUrl = getSafeImageUrl(batch?.paymentProofImageUrl);
   const statusActions = useMemo(() => {
     if (!batch) {
       return [];
@@ -172,19 +197,16 @@ export function PurchasingBatchModal({
           label: 'Request New Proof',
           status: 'PENDING_PAYMENT' as WmsPurchasingBatchStatus,
           tone: 'secondary' as const,
-          description: 'Return to partner payment queue',
         },
         {
           label: 'Verify Payment',
           status: 'RECEIVING_READY' as WmsPurchasingBatchStatus,
           tone: 'primary' as const,
-          description: 'Hand off to warehouse receiving',
         },
         {
           label: 'Reject',
           status: 'REJECTED' as WmsPurchasingBatchStatus,
           tone: 'danger' as const,
-          description: 'Close this request',
         },
       ];
     }
@@ -202,12 +224,13 @@ export function PurchasingBatchModal({
     : 'Loading batch details';
 
   return (
-    <WmsModal
-      open={open}
-      title={title}
-      description={description}
-      onClose={onClose}
-    >
+    <>
+      <WmsModal
+        open={open}
+        title={title}
+        description={description}
+        onClose={onClose}
+      >
       {!batch || isLoading ? (
         <div className="flex h-44 items-center justify-center text-sm text-[#718797]">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -417,9 +440,9 @@ export function PurchasingBatchModal({
                 >
                   {formatStatusLabel(batch.status)}
                 </span>
-                <p className="text-[12px] font-medium text-[#5f7483]">
+                {/* <p className="text-[12px] font-medium text-[#5f7483]">
                   {getStatusHelper(batch.status, batch.requestType)}
-                </p>
+                </p> */}
               </div>
             </MetricCard>
 
@@ -436,7 +459,6 @@ export function PurchasingBatchModal({
                       className={getActionClassName(action.tone)}
                     >
                       {isUpdatingStatus ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : action.label}
-                      <span className="ml-auto text-[11px] font-medium opacity-75">{action.description}</span>
                     </button>
                   ))}
                 </div>
@@ -507,25 +529,35 @@ export function PurchasingBatchModal({
               <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">
                 {isSelfBuy ? 'Partner Shipment Notice' : 'Payment Proof'}
               </p>
-              {!isSelfBuy && batch.paymentProofImageUrl ? (
-                <div className="mt-1.5 space-y-2">
-                  <div className="overflow-hidden rounded-xl border border-[#dce4ea] bg-[#f8fbfd]">
+                {!isSelfBuy && paymentProofImageUrl ? (
+                  <div className="mt-1.5 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveProofImageUrl(paymentProofImageUrl);
+                        setIsProofImageZoomed(false);
+                      }}
+                      className="block w-full overflow-hidden rounded-xl border border-[#dce4ea] bg-[#f8fbfd] text-left transition hover:border-[#b9c9d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7fb0cc]/40"
+                      aria-label="Open payment proof image"
+                    >
                     <img
-                      src={batch.paymentProofImageUrl}
+                      src={paymentProofImageUrl}
                       alt="Payment proof"
                       className="h-auto max-h-[260px] w-full object-contain"
                     />
-                  </div>
-                  <a
-                    href={batch.paymentProofImageUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex rounded-full border border-[#d7e0e7] bg-[#fbfcfc] px-3 py-1 text-[11px] font-semibold text-primary transition hover:border-primary"
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveProofImageUrl(paymentProofImageUrl);
+                      setIsProofImageZoomed(false);
+                    }}
+                    className="btn btn-sm btn-outline"
                   >
                     Open proof image
-                  </a>
+                  </button>
                   <p className="text-[12px] text-[#5f7483]">
-                    Submitted {formatShortDate(batch.paymentProofSubmittedAt || batch.paymentSubmittedAt)}
+                    Submitted {formatDateTime(batch.paymentProofSubmittedAt || batch.paymentSubmittedAt)}
                     {batch.paymentProofSubmittedBy ? ` · ${batch.paymentProofSubmittedBy.name}` : ''}
                   </p>
                 </div>
@@ -544,8 +576,66 @@ export function PurchasingBatchModal({
           </div>
         </div>
       )}
-    </WmsModal>
+      </WmsModal>
+
+      <WmsModal
+        open={Boolean(activeProofImageUrl)}
+        title="Payment Proof Preview"
+        description={batch ? `Submitted ${formatDateTime(batch.paymentProofSubmittedAt || batch.paymentSubmittedAt)}` : undefined}
+        onClose={() => {
+          setActiveProofImageUrl(null);
+          setIsProofImageZoomed(false);
+        }}
+        panelClassName="!w-[min(96vw,980px)]"
+        bodyClassName="bg-surface p-3 sm:p-4"
+      >
+        {activeProofImageUrl ? (
+          <div className="flex min-h-[60dvh] items-center justify-center">
+            <button
+              type="button"
+              onClick={() => setIsProofImageZoomed((current) => !current)}
+              className="block h-full w-full cursor-zoom-in overflow-auto rounded-xl border border-white/10 bg-[#050f16] p-3 text-left"
+              aria-label={isProofImageZoomed ? 'Zoom out payment proof image' : 'Zoom in payment proof image'}
+            >
+              <div
+                className="mx-auto transition-[width,transform] duration-200 ease-out"
+                style={{ width: isProofImageZoomed ? '160%' : '100%' }}
+              >
+                <img
+                  src={activeProofImageUrl}
+                  alt="Payment proof preview"
+                  className={`block h-auto w-full rounded-xl border border-white/10 bg-white object-contain shadow-[0_24px_80px_-36px_rgba(0,0,0,0.7)] ${
+                    isProofImageZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
+                  }`}
+                />
+              </div>
+            </button>
+          </div>
+        ) : null}
+      </WmsModal>
+    </>
   );
+}
+
+function getSafeImageUrl(url: string | null | undefined) {
+  if (!url) {
+    return null;
+  }
+
+  const normalized = url.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalized, 'https://safe-preview.local');
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return normalized;
+  } catch {
+    return null;
+  }
 }
 
 function HeaderCell({ children, className = '' }: { children: string; className?: string }) {

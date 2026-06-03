@@ -51,20 +51,20 @@ export function FulfillmentPackQueueList({
             key={task.id}
             type="button"
             onClick={() => onSelectTask(task.id)}
-            className={`w-full rounded-[22px] border px-4 py-4 text-left transition ${
+            className={`card w-full text-left transition ${
               active
                 ? 'border-[#12384b] bg-[#f7fafb] shadow-[0_24px_50px_-40px_rgba(18,56,75,0.4)]'
                 : 'border-[#dce4ea] bg-white hover:border-[#c8d6df] hover:bg-[#fbfcfd]'
             }`}
           >
-            <div className="flex justify-end">
+            <div className="flex justify-between">
+              <p className="mt-1 truncate text-sm-custom 2xl:text-base font-semibold text-[#12384b]">{task.store?.name ?? 'Store'} &middot; #{task.posOrderId}</p>
               <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusTone(statusLabel)}`}>
                 {statusLabel}
               </span>
             </div>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="mt-1 truncate text-base font-semibold text-[#12384b]">{task.store?.name ?? 'Store'} &middot; #{task.posOrderId}</p>
                 <p className="mt-1 truncate text-xs text-[#6b7d89]">
                   {tracking ? `Tracking ${tracking}` : 'Awaiting tracking print'}
                 </p>

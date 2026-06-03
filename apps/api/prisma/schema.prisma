@@ -70,6 +70,7 @@ model Tenant {
   wmsInventoryMovements               WmsInventoryMovement[]
   wmsLabelPrintLogs                   WmsLabelPrintLog[]
   wmsStaffActivities                  WmsStaffActivity[]
+  notificationStates                  NotificationState[]
   reconcileMarketing                  ReconcileMarketing[]
   reconcileSales                      ReconcileSales[]
   reconcileSalesAttributions          ReconcileSalesAttribution[]
@@ -177,6 +178,17 @@ enum RoleScope {
 enum RbacWorkspace {
   ERP
   WMS
+}
+
+enum NotificationSystem {
+  ERP
+  WMS
+}
+
+enum NotificationDomain {
+  PURCHASING
+  TRANSFER
+  PICK_PACK
 }
 
 model Role {
@@ -336,6 +348,7 @@ model User {
   wmsPickReservationsReserved               WmsPickReservation[]       @relation("WmsPickReservationReservedBy")
   wmsPickReservationsPicked                 WmsPickReservation[]       @relation("WmsPickReservationPickedBy")
   wmsStaffAssignmentsManaged                WmsStaffAssignment[]       @relation("WmsStaffAssignmentAssignedBy")
+  readNotificationStates                    NotificationState[]        @relation("NotificationStateReadBy")
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -1461,6 +1474,34 @@ model WmsPurchasingEvent {
 
   @@index([tenantId, batchId, createdAt])
   @@map("wms_purchasing_events")
+}
+
+model NotificationState {
+  id              String             @id @default(uuid()) @db.Uuid
+  tenantId        String             @db.Uuid
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  system          NotificationSystem
+  domain          NotificationDomain
+  entityType      String
+  entityId        String
+  sourceEventId   String?
+  sourceEventType String
+  fromState       String?
+  toState         String?
+  context         Json?
+  isUnread        Boolean            @default(true)
+  readAt          DateTime?
+  readByUserId    String?            @db.Uuid
+  readByUser      User?              @relation("NotificationStateReadBy", fields: [readByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@unique([tenantId, system, domain, entityType, entityId])
+  @@index([tenantId, system, domain, isUnread])
+  @@index([tenantId, domain, entityType, entityId])
+  @@index([tenantId, sourceEventId])
+  @@index([readByUserId])
+  @@map("notification_states")
 }
 
 model WmsReceivingBatch {

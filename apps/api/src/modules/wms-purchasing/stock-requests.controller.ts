@@ -3,6 +3,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -12,6 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { NotificationSystem } from '@prisma/client';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -55,6 +57,15 @@ export class StockRequestsController {
       ...query,
       tenantId: this.getTenantId(req),
     });
+  }
+
+  @Get('notifications/unread-count')
+  @Permissions('stock_request.read')
+  async getUnreadNotificationCount(@Request() req: TenantRequest) {
+    return this.wmsPurchasingService.getUnreadNotificationCount(
+      NotificationSystem.ERP,
+      this.getTenantId(req),
+    );
   }
 
   @Get(':id')
@@ -109,6 +120,17 @@ export class StockRequestsController {
     @Body() body: RespondWmsPurchasingRevisionDto,
   ) {
     return this.wmsPurchasingService.respondToRevision(id, body, this.getTenantId(req));
+  }
+
+  @Post(':id/notifications/read')
+  @HttpCode(200)
+  @Permissions('stock_request.read')
+  async markNotificationsRead(@Request() req: TenantRequest, @Param('id') id: string) {
+    return this.wmsPurchasingService.markBatchNotificationsRead(
+      id,
+      NotificationSystem.ERP,
+      this.getTenantId(req),
+    );
   }
 
   @Post(':id/self-buy/shipped')

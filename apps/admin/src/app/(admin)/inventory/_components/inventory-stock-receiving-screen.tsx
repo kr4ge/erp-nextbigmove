@@ -86,7 +86,7 @@ export function InventoryStockReceivingScreen() {
               onClick={() => receiving.openManualReceiveModal()}
               disabled={manualInputDisabled}
               title={manualInputTitle}
-              className="inline-flex h-9 items-center rounded-[12px] border border-[#d7e0e7] bg-white px-3.5 text-[12px] font-semibold text-primary transition hover:border-[#c6d4dd] hover:bg-[#f8fafb] disabled:cursor-not-allowed disabled:opacity-50"
+              className="pill pill-ghost flex gap-1.5 rounded-lg disabled:cursor-not-allowed disabled:opacity-50"
             >
               Manual Input
             </button>

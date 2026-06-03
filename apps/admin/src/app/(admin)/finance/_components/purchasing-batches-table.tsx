@@ -25,14 +25,14 @@ export function PurchasingBatchesTable({
   return (
     <div className="overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-[#eef2f5]">
+        <table className="w-full min-w-[1080px] 2xl:min-w-full divide-y divide-[#eef2f5]">
           <thead className="bg-[#eff3f6]">
             <tr>
-              <TableHeader className="min-w-[260px]">Request</TableHeader>
+              <TableHeader className="min-w-[220px]">Request</TableHeader>
               <TableHeader>Type</TableHeader>
               <TableHeader>Store</TableHeader>
               <TableHeader className="text-right">Qty</TableHeader>
-              <TableHeader>Status</TableHeader>
+              <TableHeader className="w-[172px]">Status</TableHeader>
               <TableHeader>Updated</TableHeader>
               <TableHeader className="text-right">Action</TableHeader>
             </tr>
@@ -63,7 +63,7 @@ export function PurchasingBatchesTable({
               batches.map((batch) => (
                 <tr key={batch.id} className="group transition hover:bg-[#fbfcfc]">
                   <td className="px-4 py-3">
-                    <div className="max-w-[260px] space-y-0.5">
+                    <div className="max-w-[220px] space-y-0.5">
                       <p className="truncate text-sm font-semibold text-primary">
                         {batch.sourceRequestId || batch.requestTitle || batch.id.slice(0, 8)}
                       </p>
@@ -83,9 +83,9 @@ export function PurchasingBatchesTable({
                   <td className="px-4 py-3 text-right text-sm tabular-nums text-primary">
                     {batch.approvedQuantity.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="w-[172px] px-4 py-3 text-sm">
                     <span
-                      className={`pill ${getStatusClasses(batch.status)}`}
+                      className={`pill inline-flex whitespace-nowrap ${getStatusClasses(batch.status)}`}
                     >
                       {formatStatusLabel(batch.status)}
                     </span>
@@ -97,7 +97,7 @@ export function PurchasingBatchesTable({
                     <button
                       type="button"
                       onClick={() => onOpenBatch(batch.id)}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-[#d7e0e7] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-primary transition hover:border-primary hover:bg-primary hover:text-white"
+                      className="btn btn-sm btn-outline btn-icon ml-auto"
                     >
                       <Eye className="h-3.5 w-3.5" />
                       View

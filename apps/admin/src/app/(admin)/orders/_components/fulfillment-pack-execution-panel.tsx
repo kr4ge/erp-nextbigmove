@@ -94,7 +94,7 @@ export function FulfillmentPackExecutionPanel({
         <div className="flex min-h-[520px] items-center justify-center rounded-2xl border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-8 py-10 text-center">
           <div className="max-w-sm">
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Pack window</p>
-            <h3 className="mt-3 text-[24px] font-semibold tracking-tight text-[#12384b]">Select a pack order</h3>
+            <h3 className="mt-3 text-xl font-semibold tracking-tight text-primary">Select a pack order</h3>
             <p className="mt-3 text-sm leading-6 text-[#607482]">
               This execution window will let packers start packing, scan units, verify waybills, complete packing, and void orders when permitted.
             </p>
@@ -110,7 +110,7 @@ export function FulfillmentPackExecutionPanel({
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
               
-            <h3 className="truncate text-[18px] font-semibold tracking-tight text-[#12384b]">{task.store?.tenantName ?? 'Tenant'} · {task.store?.name ?? 'Store'} &middot; #{task.posOrderId}</h3>
+            <h3 className="truncate text-[18px] font-semibold tracking-tight text-primary">{task.store?.tenantName ?? 'Tenant'} · {task.store?.name ?? 'Store'} &middot; #{task.posOrderId}</h3>
           </div>
 
           <span className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold ${getStatusTone(resolvePackStateLabel(task, tracking))}`}>
@@ -152,12 +152,12 @@ export function FulfillmentPackExecutionPanel({
                     <div key={line.id} className="rounded-[18px] border border-[#e8eef2] bg-white px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-[14px] font-semibold text-[#12384b]">{line.productName}</p>
+                          <p className="truncate text-[14px] font-semibold text-primary">{line.productName}</p>
                           <p className="mt-1 text-[12px] text-[#6f8290]">
                             {line.packed >= line.required ? 'Verified' : `${line.required - line.packed} left to verify`}
                           </p>
                         </div>
-                        <span className="text-[13px] font-semibold text-[#12384b]">{line.packed}/{line.required}</span>
+                        <span className="text-[13px] font-semibold text-primary">{line.packed}/{line.required}</span>
                       </div>
                     </div>
                   ))}
@@ -201,7 +201,7 @@ export function FulfillmentPackExecutionPanel({
           ) : null}
 
           {isPacked ? (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+            <div className="card border-emerald-200 bg-emerald-50">
               <div className="flex items-start gap-3">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />
                 <div>
@@ -213,15 +213,15 @@ export function FulfillmentPackExecutionPanel({
           ) : null}
 
           {isPacking ? (
-            <div className="space-y-4 rounded-[22px] border border-[#dce4ea] bg-white p-4">
+            <div className="card space-y-3">
               {nextUnit ? (
-                <div className="rounded-[18px] border border-[#ebe3ff] bg-[#f6f2ff] px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8b7bd0]">Next unit</p>
-                  <p className="mt-1 text-[16px] font-semibold text-[#2a1f57]">{nextUnit.unit.code}</p>
+                <div className="card border-[#ebe3ff] bg-[#f6f2ff]">
+                  <p className="card-label text-[#8b7bd0]">Next unit</p>
+                  <p className="mt-1 text-base font-semibold text-[#2a1f57]">{nextUnit.unit.code}</p>
                   <p className="mt-1 text-sm text-[#61548c]">{nextUnit.unit.name}</p>
                 </div>
               ) : (
-                <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <div className="card border-emerald-200 bg-emerald-50">
                   <p className="text-sm font-semibold text-emerald-800">All units verified</p>
                   <p className="mt-1 text-sm text-emerald-700">Scan the tracking barcode, then mark this order packed.</p>
                 </div>
@@ -345,7 +345,7 @@ export function FulfillmentPackExecutionPanel({
                         value={supervisorIdentifier}
                         onChange={(event) => setSupervisorIdentifier(event.target.value)}
                         placeholder="manager@company.com or EMP-001"
-                        className="h-11 w-full rounded-[16px] border border-[#e2d7ae] bg-white px-3.5 text-[13px] text-[#12384b] outline-none transition focus:border-[#caa93c] focus:shadow-[0_0_0_4px_rgba(202,169,60,0.14)]"
+                        className="h-11 w-full rounded-[16px] border border-[#e2d7ae] bg-white px-3.5 text-[13px] text-primary outline-none transition focus:border-[#caa93c] focus:shadow-[0_0_0_4px_rgba(202,169,60,0.14)]"
                       />
                     </label>
                     <label className="block space-y-1.5">
@@ -355,7 +355,7 @@ export function FulfillmentPackExecutionPanel({
                         value={supervisorPassword}
                         onChange={(event) => setSupervisorPassword(event.target.value)}
                         placeholder="Enter supervisor password"
-                        className="h-11 w-full rounded-[16px] border border-[#e2d7ae] bg-white px-3.5 text-[13px] text-[#12384b] outline-none transition focus:border-[#caa93c] focus:shadow-[0_0_0_4px_rgba(202,169,60,0.14)]"
+                        className="h-11 w-full rounded-[16px] border border-[#e2d7ae] bg-white px-3.5 text-[13px] text-primary outline-none transition focus:border-[#caa93c] focus:shadow-[0_0_0_4px_rgba(202,169,60,0.14)]"
                       />
                     </label>
                   </div>
@@ -421,8 +421,8 @@ function ScannerInput({
   }, [autoSubmit, autoSubmitDelayMs, autoSubmitMinLength, disabled, value]);
 
   return (
-    <label className={`block rounded-xl border px-4 py-3 ${disabled ? 'border-[#e5eaee] bg-[#f8fafb]' : 'border-[#d7e0e7] bg-white'}`}>
-      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8193a0]">{label}</span>
+    <label className={`card block ${disabled ? 'border-[#e5eaee] bg-[#f8fafb]' : 'border-[#d7e0e7] bg-white'}`}>
+      <span className="card-label">{label}</span>
       <div className="mt-2 flex items-center gap-2">
         <input
           ref={inputRef}
@@ -438,7 +438,7 @@ function ScannerInput({
           disabled={disabled}
           autoCapitalize="characters"
           autoCorrect="off"
-          className="h-11 min-w-0 flex-1 rounded-[16px] border border-[#d7e0e7] bg-[#fbfcfc] px-3.5 text-[13px] text-[#12384b] outline-none transition focus:border-[#96b4c3] focus:bg-white focus:shadow-[0_0_0_4px_rgba(18,56,75,0.08)] disabled:cursor-not-allowed"
+          className="input"
         />
         <button
           type="button"
@@ -446,7 +446,7 @@ function ScannerInput({
           onClick={() => {
             void onSubmit();
           }}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#12384b] text-white transition hover:bg-[#0f3141] disabled:cursor-not-allowed disabled:opacity-45"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-primary text-white transition hover:bg-[#0f3141] disabled:cursor-not-allowed disabled:opacity-45"
         >
           <CornerDownLeft className="h-4 w-4" />
         </button>
@@ -478,7 +478,7 @@ function KeyValue({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="card-label">{label}</p>
-      <p className="mt-1 text-[13px] font-semibold text-[#12384b]">{value}</p>
+      <p className="mt-1 text-[13px] font-semibold text-primary">{value}</p>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { WmsStaffActivityService } from './wms-staff-activity.service';
 import { WmsAccessGuard } from '../guards/wms-access.guard';
 import { ObjectStorageService } from './object-storage.service';
 import { MediaAssetsService } from './media-assets.service';
+import { NotificationStateService } from './notification-state.service';
 
 @Global()
 @Module({
@@ -19,6 +20,7 @@ import { MediaAssetsService } from './media-assets.service';
     WmsAccessGuard,
     ObjectStorageService,
     MediaAssetsService,
+    NotificationStateService,
   ],
   exports: [
     TeamContextService,
@@ -28,6 +30,7 @@ import { MediaAssetsService } from './media-assets.service';
     WmsAccessGuard,
     ObjectStorageService,
     MediaAssetsService,
+    NotificationStateService,
   ],
 })
 export class CommonServicesModule {}

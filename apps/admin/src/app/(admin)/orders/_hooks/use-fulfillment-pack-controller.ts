@@ -26,7 +26,7 @@ const PACK_STATUS_OPTIONS: Array<{ value: WmsFulfillmentPackStatus | ''; label: 
   { value: 'PACKED', label: 'Packed' },
 ];
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 5;
 const EXECUTION_PERMISSIONS = [
   'wms.dispatch.write',
   'wms.dispatch.edit',
@@ -166,8 +166,8 @@ export function useFulfillmentPackController() {
     const summary = data?.summary ?? {};
     return [
       { id: 'held', label: 'Held', value: summary.held ?? 0 },
-      { id: 'packing', label: 'Packing', value: summary.packing ?? 0 },
       { id: 'awaitingTracking', label: 'Awaiting Tracking', value: summary.awaitingTracking ?? 0 },
+      { id: 'packing', label: 'Packing', value: summary.packing ?? 0 },
       { id: 'packed', label: 'Packed', value: summary.packed ?? 0 },
     ];
   }, [data?.summary, data?.tasks]);

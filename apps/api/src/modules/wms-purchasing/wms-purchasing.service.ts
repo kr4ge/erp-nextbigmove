@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  NotificationDomain,
+  NotificationSystem,
   Prisma,
   WmsPurchasingBatchStatus,
   WmsProductProfileStatus,
@@ -15,6 +17,8 @@ import {
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MediaAssetsService, type UploadedImageFile } from '../../common/services/media-assets.service';
+import { NotificationStateService } from '../../common/services/notification-state.service';
+import { WorkflowExecutionGateway } from '../workflows/gateways/workflow-execution.gateway';
 import {
   CreateWmsPurchasingBatchDto,
   type CreateWmsPurchasingBatchLineInput,
@@ -217,6 +221,8 @@ export class WmsPurchasingService {
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
     private readonly mediaAssetsService: MediaAssetsService,
+    private readonly notificationStateService: NotificationStateService,
+    private readonly workflowExecutionGateway: WorkflowExecutionGateway,
   ) {}
 
   async getOverview(query: GetWmsPurchasingOverviewDto) {
@@ -419,6 +425,21 @@ export class WmsPurchasingService {
         totalPages,
       },
       batches: batches.map((batch) => this.mapBatchListRow(batch)),
+    };
+  }
+
+  async getUnreadNotificationCount(system: NotificationSystem, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      return { count: 0 };
+    }
+
+    return {
+      count: await this.notificationStateService.getUnreadCount({
+        tenantId: scope.activeTenantId,
+        system,
+        domain: NotificationDomain.PURCHASING,
+      }),
     };
   }
 
@@ -653,6 +674,57 @@ export class WmsPurchasingService {
     };
   }
 
+  async markBatchNotificationsRead(
+    id: string,
+    system: NotificationSystem,
+    requestedTenantId?: string,
+  ) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const batch = await this.prisma.wmsPurchasingBatch.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        tenantId: true,
+        status: true,
+        sourceStatus: true,
+      },
+    });
+
+    if (!batch) {
+      throw new NotFoundException('Purchasing batch was not found');
+    }
+
+    this.assertBatchTenantScope(batch.tenantId, scope.activeTenantId);
+
+    const updatedCount = await this.notificationStateService.markEntityRead({
+      tenantId: batch.tenantId,
+      system,
+      domain: NotificationDomain.PURCHASING,
+      entityType: this.notificationStateService.getPurchasingEntityType(),
+      entityId: batch.id,
+      readByUserId: actorId,
+    });
+
+    if (updatedCount > 0) {
+      this.emitStockRequestUpdate({
+        tenantId: batch.tenantId,
+        batchId: batch.id,
+        status: batch.status,
+        sourceStatus: batch.sourceStatus ?? null,
+        eventType: 'NOTIFICATION_READ',
+      });
+    }
+
+    return {
+      success: true,
+    };
+  }
+
   async uploadPartnerPaymentProofImage(
     file: UploadedImageFile | undefined,
     requestedTenantId?: string,
@@ -725,79 +797,95 @@ export class WmsPurchasingService {
     );
     const paymentProofImageUrl = this.cleanOptionalText(body.paymentProofImageUrl);
     const hasPaymentProof = Boolean(paymentProofAsset || paymentProofImageUrl);
-    const created = await this.prisma.wmsPurchasingBatch.create({
-      data: {
-        tenantId: scope.activeTenantId,
-        storeId: body.storeId,
-        requestType: body.requestType,
-        status,
-        sourceType,
-        sourceRequestId,
-        sourceRequestType: body.sourceRequestType ?? null,
-        sourceStatus: this.cleanOptionalText(body.sourceStatus),
-        sourceSnapshot: this.toJsonValue(body.sourceSnapshot),
-        requestTitle: this.cleanOptionalText(body.requestTitle),
-        partnerNotes: this.cleanOptionalText(body.partnerNotes),
-        wmsNotes: this.cleanOptionalText(body.wmsNotes),
-        invoiceNumber: this.cleanOptionalText(body.invoiceNumber),
-        invoiceAmount: this.numberOrNull(body.invoiceAmount),
-        paymentProofImageUrl: paymentProofAsset ? null : paymentProofImageUrl,
-        paymentProofAssetId: paymentProofAsset?.id ?? null,
-        paymentSubmittedAt: this.parseOptionalDate(body.paymentSubmittedAt),
-        paymentProofSubmittedAt: hasPaymentProof
-          ? this.parseOptionalDate(body.paymentSubmittedAt) ?? now
-          : null,
-        paymentProofSubmittedById: hasPaymentProof
-          ? actorId
-          : null,
-        paymentVerifiedAt: this.parseOptionalDate(body.paymentVerifiedAt),
-        readyForReceivingAt: this.isReadyForReceivingQueueStatus(status) ? now : null,
-        submittedById: actorId,
-        reviewedById:
-          status === WmsPurchasingBatchStatus.REVISION
-          || status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
-          || status === WmsPurchasingBatchStatus.PENDING_PAYMENT
-          || status === WmsPurchasingBatchStatus.PAYMENT_REVIEW
-          || status === WmsPurchasingBatchStatus.RECEIVING_EXCEPTION
-          || status === WmsPurchasingBatchStatus.RECEIVING_READY
-          || status === WmsPurchasingBatchStatus.RECEIVING
-          || status === WmsPurchasingBatchStatus.STOCKED
+    let createdId = '';
+    await this.prisma.$transaction(async (tx) => {
+      const created = await tx.wmsPurchasingBatch.create({
+        data: {
+          tenantId: scope.activeTenantId!,
+          storeId: body.storeId,
+          requestType: body.requestType,
+          status,
+          sourceType,
+          sourceRequestId,
+          sourceRequestType: body.sourceRequestType ?? null,
+          sourceStatus: this.cleanOptionalText(body.sourceStatus),
+          sourceSnapshot: this.toJsonValue(body.sourceSnapshot),
+          requestTitle: this.cleanOptionalText(body.requestTitle),
+          partnerNotes: this.cleanOptionalText(body.partnerNotes),
+          wmsNotes: this.cleanOptionalText(body.wmsNotes),
+          invoiceNumber: this.cleanOptionalText(body.invoiceNumber),
+          invoiceAmount: this.numberOrNull(body.invoiceAmount),
+          paymentProofImageUrl: paymentProofAsset ? null : paymentProofImageUrl,
+          paymentProofAssetId: paymentProofAsset?.id ?? null,
+          paymentSubmittedAt: this.parseOptionalDate(body.paymentSubmittedAt),
+          paymentProofSubmittedAt: hasPaymentProof
+            ? this.parseOptionalDate(body.paymentSubmittedAt) ?? now
+            : null,
+          paymentProofSubmittedById: hasPaymentProof
             ? actorId
             : null,
-        approvedById:
-          status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
-          || status === WmsPurchasingBatchStatus.PENDING_PAYMENT
-          || status === WmsPurchasingBatchStatus.PAYMENT_REVIEW
-          || status === WmsPurchasingBatchStatus.RECEIVING_READY
-          || status === WmsPurchasingBatchStatus.RECEIVING
-          || status === WmsPurchasingBatchStatus.STOCKED
-            ? actorId
-            : null,
-        createdById: actorId,
-        updatedById: actorId,
-        lines: {
-          createMany: {
-            data: lineData.map((line) => ({
-              ...line,
-              createdById: actorId,
-              updatedById: actorId,
-            })),
+          paymentVerifiedAt: this.parseOptionalDate(body.paymentVerifiedAt),
+          readyForReceivingAt: this.isReadyForReceivingQueueStatus(status) ? now : null,
+          submittedById: actorId,
+          reviewedById:
+            status === WmsPurchasingBatchStatus.REVISION
+            || status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+            || status === WmsPurchasingBatchStatus.PENDING_PAYMENT
+            || status === WmsPurchasingBatchStatus.PAYMENT_REVIEW
+            || status === WmsPurchasingBatchStatus.RECEIVING_EXCEPTION
+            || status === WmsPurchasingBatchStatus.RECEIVING_READY
+            || status === WmsPurchasingBatchStatus.RECEIVING
+            || status === WmsPurchasingBatchStatus.STOCKED
+              ? actorId
+              : null,
+          approvedById:
+            status === WmsPurchasingBatchStatus.AWAITING_PRODUCTS
+            || status === WmsPurchasingBatchStatus.PENDING_PAYMENT
+            || status === WmsPurchasingBatchStatus.PAYMENT_REVIEW
+            || status === WmsPurchasingBatchStatus.RECEIVING_READY
+            || status === WmsPurchasingBatchStatus.RECEIVING
+            || status === WmsPurchasingBatchStatus.STOCKED
+              ? actorId
+              : null,
+          createdById: actorId,
+          updatedById: actorId,
+          lines: {
+            createMany: {
+              data: lineData.map((line) => ({
+                ...line,
+                createdById: actorId,
+                updatedById: actorId,
+              })),
+            },
           },
         },
-        events: {
-          create: {
-            tenantId: scope.activeTenantId,
-            eventType: 'STATUS_CHANGED',
-            toStatus: status,
-            message: 'Purchasing batch created',
-            actorId,
-          },
+        select: { id: true },
+      });
+
+      const event = await tx.wmsPurchasingEvent.create({
+        data: {
+          batchId: created.id,
+          tenantId: scope.activeTenantId!,
+          eventType: 'STATUS_CHANGED',
+          toStatus: status,
+          message: 'Purchasing batch created',
+          actorId,
         },
-      },
-      select: { id: true },
+      });
+
+      await this.syncPurchasingNotificationEvent(tx, event);
+      createdId = created.id;
     });
 
-    return this.getBatchById(created.id, scope.activeTenantId);
+    this.emitStockRequestUpdate({
+      tenantId: scope.activeTenantId,
+      batchId: createdId,
+      status,
+      sourceStatus: this.cleanOptionalText(body.sourceStatus) ?? null,
+      eventType: 'STATUS_CHANGED',
+    });
+
+    return this.getBatchById(createdId, scope.activeTenantId);
   }
 
   async submitPartnerPaymentProof(
@@ -868,7 +956,7 @@ export class WmsPurchasingService {
         },
       });
 
-      await tx.wmsPurchasingEvent.create({
+      const event = await tx.wmsPurchasingEvent.create({
         data: {
           batchId: batch.id,
           tenantId: batch.tenantId,
@@ -883,6 +971,16 @@ export class WmsPurchasingService {
           },
         },
       });
+
+      await this.syncPurchasingNotificationEvent(tx, event);
+    });
+
+    this.emitStockRequestUpdate({
+      tenantId: batch.tenantId,
+      batchId: batch.id,
+      status: WmsPurchasingBatchStatus.PAYMENT_REVIEW,
+      sourceStatus: 'PAYMENT_REVIEW',
+      eventType: 'PAYMENT_PROOF_SUBMITTED',
     });
 
     return this.getBatchById(batch.id, scope.activeTenantId);
@@ -1009,7 +1107,7 @@ export class WmsPurchasingService {
         },
       });
 
-      await tx.wmsPurchasingEvent.create({
+      const event = await tx.wmsPurchasingEvent.create({
         data: {
           batchId: batch.id,
           tenantId: batch.tenantId,
@@ -1025,6 +1123,16 @@ export class WmsPurchasingService {
             : undefined,
         },
       });
+
+      await this.syncPurchasingNotificationEvent(tx, event);
+    });
+
+    this.emitStockRequestUpdate({
+      tenantId: batch.tenantId,
+      batchId: batch.id,
+      status: WmsPurchasingBatchStatus.SHIPPED,
+      sourceStatus: 'SHIPPED',
+      eventType: 'SELF_BUY_SHIPPED',
     });
 
     return this.getBatchById(batch.id, scope.activeTenantId);
@@ -1263,7 +1371,7 @@ export class WmsPurchasingService {
         },
       });
 
-      await tx.wmsPurchasingEvent.create({
+      const event = await tx.wmsPurchasingEvent.create({
         data: {
           batchId: current.id,
           tenantId: current.tenantId,
@@ -1284,6 +1392,16 @@ export class WmsPurchasingService {
           },
         },
       });
+
+      await this.syncPurchasingNotificationEvent(tx, event);
+    });
+
+    this.emitStockRequestUpdate({
+      tenantId: current.tenantId,
+      batchId: current.id,
+      status: body.status,
+      sourceStatus: nextSourceStatus ?? null,
+      eventType: body.status === current.status ? 'BATCH_UPDATED' : 'STATUS_CHANGED',
     });
 
     return this.getBatchById(id, scope.activeTenantId);
@@ -1414,7 +1532,7 @@ export class WmsPurchasingService {
       });
 
       if (shouldAutoRequestRevision) {
-        await tx.wmsPurchasingEvent.create({
+        const event = await tx.wmsPurchasingEvent.create({
           data: {
             batchId: line.batchId,
             tenantId: line.batch.tenantId,
@@ -1429,6 +1547,8 @@ export class WmsPurchasingService {
             },
           },
         });
+
+        await this.syncPurchasingNotificationEvent(tx, event);
       }
 
       await tx.wmsPurchasingEvent.create({
@@ -1456,7 +1576,64 @@ export class WmsPurchasingService {
       });
     });
 
+    this.emitStockRequestUpdate({
+      tenantId: line.batch.tenantId,
+      batchId: line.batchId,
+      status: shouldAutoRequestRevision ? WmsPurchasingBatchStatus.REVISION : line.batch.status,
+      sourceStatus: shouldAutoRequestRevision ? 'REVISION_REQUESTED' : null,
+      eventType: shouldAutoRequestRevision ? 'STATUS_CHANGED' : 'LINE_UPDATED',
+    });
+
     return this.getBatchById(batchId, scope.activeTenantId);
+  }
+
+  private emitStockRequestUpdate(params: {
+    tenantId: string;
+    batchId: string;
+    status: WmsPurchasingBatchStatus;
+    sourceStatus: string | null;
+    eventType: string;
+  }) {
+    this.workflowExecutionGateway.emitTenantEvent(
+      params.tenantId,
+      null,
+      'stock-requests:updated',
+      {
+        tenantId: params.tenantId,
+        batchId: params.batchId,
+        status: params.status,
+        sourceStatus: params.sourceStatus,
+        eventType: params.eventType,
+        updatedAt: new Date().toISOString(),
+      },
+    );
+  }
+
+  private async syncPurchasingNotificationEvent(
+    client: Prisma.TransactionClient,
+    event: {
+      id: string;
+      tenantId: string;
+      batchId: string;
+      eventType: string;
+      fromStatus: WmsPurchasingBatchStatus | null;
+      toStatus: WmsPurchasingBatchStatus | null;
+      message: string | null;
+      payload: Prisma.JsonValue | null;
+    },
+  ) {
+    await this.notificationStateService.syncPurchasingBatchEvent(client, {
+      tenantId: event.tenantId,
+      batchId: event.batchId,
+      sourceEventId: event.id,
+      sourceEventType: event.eventType,
+      fromStatus: event.fromStatus,
+      toStatus: event.toStatus,
+      context: {
+        message: event.message,
+        payload: event.payload,
+      },
+    });
   }
 
   private async computeSummaryCounts(where: Prisma.WmsPurchasingBatchWhereInput) {
