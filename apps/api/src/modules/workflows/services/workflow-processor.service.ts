@@ -16,6 +16,7 @@ import { WorkflowExecutionGateway } from '../gateways/workflow-execution.gateway
 import { WorkflowLogService } from './workflow-log.service';
 import { ReconcileMarketingService } from './reconcile-marketing.service';
 import { ReconcileSalesService } from './reconcile-sales.service';
+import { ReconcileSalesAttributionService } from './reconcile-sales-attribution.service';
 import { WorkflowProgressCacheService } from './workflow-progress-cache.service';
 import { WORKFLOW_QUEUE, WorkflowJobData } from '../workflow.constants';
 
@@ -54,6 +55,7 @@ export class WorkflowProcessorService {
     private readonly workflowProgressCache: WorkflowProgressCacheService,
     private readonly reconcileMarketingService: ReconcileMarketingService,
     private readonly reconcileSalesService: ReconcileSalesService,
+    private readonly reconcileSalesAttributionService: ReconcileSalesAttributionService,
     @InjectQueue(WORKFLOW_QUEUE) private readonly workflowQueue: Queue<WorkflowJobData>,
   ) {}
 
@@ -332,6 +334,10 @@ export class WorkflowProcessorService {
               context.tenantId,
               date,
               null,
+            );
+            await this.reconcileSalesAttributionService.aggregateDay(
+              context.tenantId,
+              date,
             );
             // Notify listeners that marketing/sales data has been updated
             this.executionGateway.emitTenantEvent(

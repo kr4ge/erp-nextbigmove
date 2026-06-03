@@ -11,6 +11,10 @@ export const analyticsOverviewApi = {
     return apiClient.get<T>(`/analytics/sales/overview?${query.toString()}`);
   },
 
+  getSalesByTeamOverview<T>(query: URLSearchParams) {
+    return apiClient.get<T>(`/analytics/sales-by-team/overview?${query.toString()}`);
+  },
+
   getSalesPerformanceOverview<T>(params: QueryParams) {
     return apiClient.get<T>('/analytics/sales-performance/overview', { params });
   },

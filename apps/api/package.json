@@ -17,6 +17,7 @@
     "studio": "prisma studio",
     "prisma:generate": "prisma generate",
     "geo:sync": "node prisma/sync-pos-geo.js",
+    "analytics:validate:sales-attribution": "ts-node prisma/validate-sales-attribution.ts",
     "seed": "ts-node prisma/seed.ts",
     "seed:rbac-bootstrap": "ts-node prisma/rbac-bootstrap.ts",
     "clean": "rm -rf dist"

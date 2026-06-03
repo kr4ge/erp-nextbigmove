@@ -4,6 +4,7 @@ import { Job } from 'bull';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ReconcileMarketingService } from '../services/reconcile-marketing.service';
 import { ReconcileSalesService } from '../services/reconcile-sales.service';
+import { ReconcileSalesAttributionService } from '../services/reconcile-sales-attribution.service';
 import { WorkflowExecutionGateway } from '../gateways/workflow-execution.gateway';
 import {
   PANCAKE_WEBHOOK_RECONCILE_JOB,
@@ -19,6 +20,7 @@ export class PancakeWebhookReconcileProcessor {
     private readonly prisma: PrismaService,
     private readonly reconcileMarketingService: ReconcileMarketingService,
     private readonly reconcileSalesService: ReconcileSalesService,
+    private readonly reconcileSalesAttributionService: ReconcileSalesAttributionService,
     private readonly executionGateway: WorkflowExecutionGateway,
   ) {}
 
@@ -48,6 +50,15 @@ export class PancakeWebhookReconcileProcessor {
             },
           },
         }),
+        this.prisma.reconcileSalesAttribution.deleteMany({
+          where: {
+            tenantId,
+            date: {
+              gte: dayStart,
+              lt: dayEnd,
+            },
+          },
+        }),
         this.prisma.reconcileMarketing.deleteMany({
           where: {
             tenantId,
@@ -62,6 +73,7 @@ export class PancakeWebhookReconcileProcessor {
 
     await this.reconcileMarketingService.reconcileDay(tenantId, dateLocal, null);
     await this.reconcileSalesService.aggregateDay(tenantId, dateLocal, null);
+    await this.reconcileSalesAttributionService.aggregateDay(tenantId, dateLocal);
 
     this.executionGateway.emitTenantEvent(
       tenantId,

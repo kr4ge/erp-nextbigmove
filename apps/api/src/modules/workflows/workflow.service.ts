@@ -29,6 +29,7 @@ import { WorkflowProgressCacheService } from './services/workflow-progress-cache
 import { MetaInsightService } from '../integrations/services/meta-insight.service';
 import { ReconcileMarketingService } from './services/reconcile-marketing.service';
 import { ReconcileSalesService } from './services/reconcile-sales.service';
+import { ReconcileSalesAttributionService } from './services/reconcile-sales-attribution.service';
 import { createReadStream } from 'fs';
 import { promises as fsp } from 'fs';
 import { extname } from 'path';
@@ -108,6 +109,7 @@ export class WorkflowService {
     private readonly metaInsightService: MetaInsightService,
     private readonly reconcileMarketingService: ReconcileMarketingService,
     private readonly reconcileSalesService: ReconcileSalesService,
+    private readonly reconcileSalesAttributionService: ReconcileSalesAttributionService,
     @InjectQueue(WORKFLOW_QUEUE) private readonly workflowQueue: Queue<WorkflowJobData>,
     @InjectQueue(MANUAL_META_UPLOAD_QUEUE)
     private readonly manualMetaUploadQueue: Queue<ManualMetaUploadJobData>,
@@ -876,6 +878,7 @@ export class WorkflowService {
       }
       for (const date of datesProcessed) {
         await this.reconcileSalesService.aggregateDay(job.data.tenantId, date, null);
+        await this.reconcileSalesAttributionService.aggregateDay(job.data.tenantId, date);
       }
 
       const result = {
@@ -1140,6 +1143,7 @@ export class WorkflowService {
     }
     for (const date of datesProcessed) {
       await this.reconcileSalesService.aggregateDay(tenantId, date, null);
+      await this.reconcileSalesAttributionService.aggregateDay(tenantId, date);
     }
 
     return {

@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import * as dayjs from 'dayjs';
@@ -6,142 +11,41 @@ import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { AnalyticsCacheService } from './analytics-cache.service';
-import { ReconcileMarketingService } from '../workflows/services/reconcile-marketing.service';
-import { ReconcileSalesService } from '../workflows/services/reconcile-sales.service';
-import { ReconcileSalesAttributionService } from '../workflows/services/reconcile-sales-attribution.service';
+import type { SalesAttributionOverviewContract } from './contracts/sales-attribution-overview.contract';
+import { GetSalesAttributionOverviewQueryDto } from './dto/get-sales-attribution-overview-query.dto';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(customParseFormat);
 
 const TIMEZONE = 'Asia/Manila';
-const PROCESSED_SALES_STATUSES = [1, 2, 3, 9, 12, 13] as const;
+const NULL_MAPPING_FILTER_KEY = '__null__';
+const UNASSIGNED_MAPPING_KEY = '__unassigned_mapping__';
+const NULL_TEAM_FILTER_KEY = '__null__';
+const UNASSIGNED_TEAM_CODE_KEY = '__unassigned_team_code__';
 
-type SalesKpis = {
-  revenue: number;
-  delivered: number;
-  shipped: number;
-  waiting_pickup: number;
-  rts: number;
-  ad_spend: number;
-  processed: number;   // amount (COD) of processed orders
-  cancellation_rate_pct: number;
-  confirmed: number;   // amount (COD) of confirmed orders
-  unconfirmed: number; // amount (COD) of unconfirmed/pending orders
-  canceled: number;    // amount (COD) of canceled orders
-  aov: number;
-  contribution_margin: number;
-  net_margin: number;
-  ar_pct: number;
-  cpp: number;
-  processed_cpp: number;
-  conversion_rate: number;
-  profit_efficiency: number;
-  cogs: number;
-  cogs_canceled: number;
-  cogs_restocking: number;
-  cogs_rts: number;
-  cogs_delivered: number;
-  cod_fee: number;
-  cod_fee_delivered: number;
-  sf_sdr_fees: number;
-  ff_sdr_fees: number;
-  if_sdr_fees: number;
-  gross_cod: number;
-  canceled_cod: number;
-  restocking_cod: number;
-  rts_cod: number;
-  sf_fees: number;
-  ff_fees: number;
-  if_fees: number;
-  cm_rts_forecast?: number;
-};
-
-type SalesCounts = {
-  purchases: number;
-  delivered: number;
-  shipped: number;
-  waiting_pickup: number;
-  rts: number;
-  restocking: number;
-  confirmed: number;
-  unconfirmed: number;
-  canceled: number;
-};
-
-type ProductRow = {
-  mapping: string | null;
-  revenue: number;
-  gross_sales: number;
-  cogs: number;
-  aov: number;
-  cpp: number;
-  processed_cpp: number;
-  ad_spend: number;
-  ar_pct: number;
-  profit_efficiency: number;
-  contribution_margin: number;
-  net_margin: number;
-  rts_count: number;
-  delivered_count: number;
-  cod_raw: number;
-  purchases_raw: number;
-  sf_raw: number;
-  ff_raw: number;
-  if_raw: number;
-  cod_fee_delivered_raw: number;
-  cogs_ec: number; // COGS excluding canceled
-  cogs_rts: number;
-  cogs_restocking: number;
-  canceled_cod: number;
-  restocking_cod: number;
-  rts_cod: number;
-};
-
-type DeliveryStatusRow = {
-  mapping: string | null;
-  total_orders: number;
-  new_orders: number;
-  restocking: number;
-  confirmed: number;
-  printed: number;
-  waiting_pickup: number;
-  shipped: number;
-  delivered: number;
-  rts: number;
-  canceled: number;
-  deleted: number;
-};
+type SalesAttributionKpis = SalesAttributionOverviewContract['kpis'];
+type SalesAttributionCounts = SalesAttributionOverviewContract['counts'];
+type SalesAttributionProductRow = SalesAttributionOverviewContract['products'][number];
+type SalesAttributionDeliveryRow = NonNullable<SalesAttributionOverviewContract['deliveryStatuses']>[number];
 
 @Injectable()
-export class SalesAnalyticsService {
+export class SalesAttributionAnalyticsService {
+  private readonly logger = new Logger(SalesAttributionAnalyticsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly teamContext: TeamContextService,
     private readonly analyticsCache: AnalyticsCacheService,
-    private readonly reconcileMarketingService: ReconcileMarketingService,
-    private readonly reconcileSalesService: ReconcileSalesService,
-    private readonly reconcileSalesAttributionService: ReconcileSalesAttributionService,
   ) {}
 
-  private readonly logger = new Logger(SalesAnalyticsService.name);
-
-  private parseDate(input?: string): Date {
-    if (!input) return new Date();
-    const d = new Date(input);
-    if (Number.isNaN(d.getTime())) {
-      throw new BadRequestException('Invalid date');
-    }
-    return d;
+  private normalize(value?: string | null): string {
+    return (value || '').trim().toLowerCase();
   }
 
-  private normalize(val?: string | null): string {
-    return (val || '').trim().toLowerCase();
-  }
-
-  private toNumber(val: any): number {
-    const n = typeof val === 'string' ? parseFloat(val) : Number(val);
-    return Number.isFinite(n) ? n : 0;
+  private toNumber(value: unknown): number {
+    const numeric = typeof value === 'string' ? parseFloat(value) : Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
   }
 
   private shiftDate(dateStr: string, days: number): string {
@@ -149,12 +53,24 @@ export class SalesAnalyticsService {
   }
 
   private diffDays(startStr: string, endStr: string): number {
-    const s = dayjs(startStr, 'YYYY-MM-DD');
-    const e = dayjs(endStr, 'YYYY-MM-DD');
-    return e.diff(s, 'day');
+    const start = dayjs(startStr, 'YYYY-MM-DD');
+    const end = dayjs(endStr, 'YYYY-MM-DD');
+    return end.diff(start, 'day');
   }
 
-  private computeKpis(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean; rtsForecastPct?: number; processedSalesValue?: number }): SalesKpis {
+  private computeKpis(
+    sum: any,
+    opts: {
+      excludeCancel: boolean;
+      excludeRestocking: boolean;
+      excludeAbandoned: boolean;
+      excludeRts: boolean;
+      includeTax12: boolean;
+      includeTax1: boolean;
+      rtsForecastPct?: number;
+      processedSalesValue?: number;
+    },
+  ): SalesAttributionKpis {
     const spendBase = this.toNumber(sum?._sum?.spend);
     const spendMultiplier = 1 + (opts.includeTax12 ? 0.12 : 0) + (opts.includeTax1 ? 0.01 : 0);
     const spend = spendBase * spendMultiplier;
@@ -165,7 +81,6 @@ export class SalesAnalyticsService {
     const rtsCod = this.toNumber(sum?._sum?.rtsCodPos);
     const codFee = this.toNumber(sum?._sum?.codFeePos);
 
-    // Revenue after optional exclusions
     const revenue =
       cod
       - (opts.excludeCancel ? canceledCod : 0)
@@ -180,29 +95,29 @@ export class SalesAnalyticsService {
     const cogsDelivered = this.toNumber(sum?._sum?.cogsDeliveredPos);
     const sf = this.toNumber(sum?._sum?.sfPos);
     const ff = this.toNumber(sum?._sum?.ffPos);
-    const inf = this.toNumber(sum?._sum?.ifPos);
+    const iF = this.toNumber(sum?._sum?.ifPos);
     const sfSdr = this.toNumber(sum?._sum?.sfSdrPos);
     const ffSdr = this.toNumber(sum?._sum?.ffSdrPos);
     const ifSdr = this.toNumber(sum?._sum?.ifSdrPos);
-    // COGS after optional exclusions (remove excluded portions from the total once)
     const cogsAdjusted =
       cogs
       - (opts.excludeCancel ? cogsCanceled : 0)
       - (opts.excludeRestocking ? cogsRestocking : 0);
     const arPct = revenue > 0 ? (spend / revenue) * 100 : 0;
 
-    const cm =
+    const contributionMargin =
       revenue
       - cogsAdjusted
       - sf
       - ff
-      - inf
+      - iF
       - spend
       - codFee
       + cogsRts;
+
     const delivered = this.toNumber(sum?._sum?.deliveredCodPos);
     const codFeeDelivered = this.toNumber(sum?._sum?.codFeeDeliveredPos);
-    const net =
+    const netMargin =
       delivered
       - sfSdr
       - ffSdr
@@ -211,7 +126,6 @@ export class SalesAnalyticsService {
       - cogsDelivered
       - spend;
 
-    // AOV uses adjusted purchases (respecting exclude flags for cancel/restocking/RTS)
     const purchasesRaw = this.toNumber(sum?._sum?.purchasesPos);
     const cancelAdjCount = opts.excludeCancel ? this.toNumber(sum?._sum?.canceledCount) : 0;
     const restockAdjCount = opts.excludeRestocking ? this.toNumber(sum?._sum?.restockingCount) : 0;
@@ -223,7 +137,7 @@ export class SalesAnalyticsService {
     const processedCpp = processedPurchases > 0 ? spend / processedPurchases : 0;
     const leads = this.toNumber(sum?._sum?.leads);
     const conversionRate = leads > 0 ? (purchasesAdj / leads) * 100 : 0;
-    const profitEfficiency = spend > 0 ? (cm / spend) * 100 : 0;
+    const profitEfficiency = spend > 0 ? (contributionMargin / spend) * 100 : 0;
 
     const grossCodAdjusted =
       cod
@@ -244,7 +158,7 @@ export class SalesAnalyticsService {
       spend -
       sf -
       ff -
-      inf -
+      iF -
       this.toNumber(sum?._sum?.codFeeDeliveredPos) -
       cogsAdjustedForCmRts +
       cogsRts;
@@ -266,11 +180,10 @@ export class SalesAnalyticsService {
       profit_efficiency: profitEfficiency,
       confirmed: this.toNumber(sum?._sum?.confirmedCodPos),
       unconfirmed: this.toNumber(sum?._sum?.unconfirmedCodPos),
-      // Show canceled COD regardless of exclude_cancel toggle for KPI display
       canceled: this.toNumber(sum?._sum?.canceledCodPos),
-      contribution_margin: cm,
-      net_margin: net,
-      cogs: cogs,
+      contribution_margin: contributionMargin,
+      net_margin: netMargin,
+      cogs,
       cogs_canceled: cogsCanceled,
       cogs_restocking: cogsRestocking,
       cogs_rts: cogsRts,
@@ -284,37 +197,55 @@ export class SalesAnalyticsService {
       canceled_cod: canceledCod,
       restocking_cod: restockingCod,
       rts_cod: rtsCod,
+      abandoned_cod: abandonedCod,
       sf_fees: sf,
       ff_fees: ff,
-      if_fees: inf,
+      if_fees: iF,
       cm_rts_forecast: cmRtsForecast,
+      rts_pct: 0,
     };
   }
 
-  private computeCounts(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean }): SalesCounts {
+  private computeCounts(
+    sum: any,
+    opts: {
+      excludeCancel: boolean;
+      excludeRestocking: boolean;
+      excludeAbandoned: boolean;
+      excludeRts: boolean;
+    },
+  ): SalesAttributionCounts {
     const purchasesRaw = this.toNumber(sum?._sum?.purchasesPos);
     const cancelAdj = opts.excludeCancel ? this.toNumber(sum?._sum?.canceledCount) : 0;
     const restockAdj = opts.excludeRestocking ? this.toNumber(sum?._sum?.restockingCount) : 0;
     const abandonedAdj = opts.excludeAbandoned ? this.toNumber(sum?._sum?.abandonedCount) : 0;
     const rtsAdj = opts.excludeRts ? this.toNumber(sum?._sum?.rtsCount) : 0;
-    const adj = Math.min(purchasesRaw, cancelAdj + restockAdj + abandonedAdj + rtsAdj);
-    const purchases = Math.max(0, purchasesRaw - adj);
+    const adjustment = Math.min(purchasesRaw, cancelAdj + restockAdj + abandonedAdj + rtsAdj);
+    const purchases = Math.max(0, purchasesRaw - adjustment);
     return {
       purchases,
       delivered: this.toNumber(sum?._sum?.deliveredCount),
       shipped: this.toNumber(sum?._sum?.shippedCount),
       waiting_pickup: this.toNumber(sum?._sum?.waitingPickupCount),
-      // Keep RTS count constant regardless of excludeRts toggle so KPI remains comparable
       rts: this.toNumber(sum?._sum?.rtsCount),
       restocking: this.toNumber(sum?._sum?.restockingCount),
       confirmed: this.toNumber(sum?._sum?.confirmedCount),
       unconfirmed: this.toNumber(sum?._sum?.unconfirmedCount),
-      // Show canceled count regardless of exclude_cancel toggle for KPI display
       canceled: this.toNumber(sum?._sum?.canceledCount),
     };
   }
 
-  private computeProductRow(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean }): ProductRow {
+  private computeProductRow(
+    sum: any,
+    opts: {
+      excludeCancel: boolean;
+      excludeRestocking: boolean;
+      excludeAbandoned: boolean;
+      excludeRts: boolean;
+      includeTax12: boolean;
+      includeTax1: boolean;
+    },
+  ): SalesAttributionProductRow {
     const spendBase = this.toNumber(sum?._sum?.spend);
     const spendMultiplier = 1 + (opts.includeTax12 ? 0.12 : 0) + (opts.includeTax1 ? 0.01 : 0);
     const spend = spendBase * spendMultiplier;
@@ -349,15 +280,15 @@ export class SalesAnalyticsService {
 
     const sf = this.toNumber(sum?._sum?.sfPos);
     const ff = this.toNumber(sum?._sum?.ffPos);
-    const inf = this.toNumber(sum?._sum?.ifPos);
+    const iF = this.toNumber(sum?._sum?.ifPos);
     const codFee = this.toNumber(sum?._sum?.codFeePos);
 
-    const cm =
+    const contributionMargin =
       revenue
       - cogsAdjusted
       - sf
       - ff
-      - inf
+      - iF
       - spend
       - codFee
       + cogsRts;
@@ -368,7 +299,7 @@ export class SalesAnalyticsService {
     const ifSdr = this.toNumber(sum?._sum?.ifSdrPos);
     const codFeeDelivered = this.toNumber(sum?._sum?.codFeeDeliveredPos);
     const cogsDelivered = this.toNumber(sum?._sum?.cogsDeliveredPos);
-    const net =
+    const netMargin =
       delivered
       - sfSdr
       - ffSdr
@@ -378,7 +309,7 @@ export class SalesAnalyticsService {
       - spend;
 
     const arPct = revenue > 0 ? (spend / revenue) * 100 : 0;
-    const profitEfficiency = spend > 0 ? (cm / spend) * 100 : 0;
+    const profitEfficiency = spend > 0 ? (contributionMargin / spend) * 100 : 0;
     const aov = purchasesAdj > 0 ? revenue / purchasesAdj : 0;
     const cpp = purchasesAdj > 0 ? spend / purchasesAdj : 0;
     const processedCpp = processedPurchases > 0 ? spend / processedPurchases : 0;
@@ -394,32 +325,103 @@ export class SalesAnalyticsService {
       ad_spend: spend,
       ar_pct: arPct,
       profit_efficiency: profitEfficiency,
-      contribution_margin: cm,
-      net_margin: net,
+      contribution_margin: contributionMargin,
+      net_margin: netMargin,
       rts_count: this.toNumber(sum?._sum?.rtsCount),
       delivered_count: this.toNumber(sum?._sum?.deliveredCount),
       cod_raw: cod,
       purchases_raw: purchasesRaw,
       sf_raw: sf,
       ff_raw: ff,
-      if_raw: inf,
+      if_raw: iF,
       cod_fee_delivered_raw: this.toNumber(sum?._sum?.codFeeDeliveredPos),
-      cogs_ec: cogs - cogsCanceled, // exclude canceled only
+      cogs_ec: cogs - cogsCanceled,
       cogs_rts: cogsRts,
       cogs_restocking: this.toNumber(sum?._sum?.cogsRestockingPos),
       canceled_cod: canceledCod,
       restocking_cod: restockingCod,
       rts_cod: rtsCod,
+      abandoned_cod: abandonedCod,
     };
   }
 
-  async getOverview(params: { startDate?: string; endDate?: string; mappings?: string[]; excludeCancel?: boolean; excludeRestocking?: boolean; excludeAbandoned?: boolean; excludeRts?: boolean; includeTax12?: boolean; includeTax1?: boolean }) {
-    const { startDate, endDate, mappings = [], excludeCancel = true, excludeRestocking = true, excludeAbandoned = true, excludeRts = true, includeTax12 = false, includeTax1 = false } = params;
+  private async resolveAllowedTeamCodeKeys(tenantId: string): Promise<string[] | null> {
+    const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
+    if (effectiveTeamIds === null) {
+      return null;
+    }
+    if (effectiveTeamIds.length === 0) {
+      return [];
+    }
 
-    const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
-    const endStr = (endDate && endDate.trim()) || startStr;
+    const teams = await this.prisma.team.findMany({
+      where: {
+        tenantId,
+        id: { in: effectiveTeamIds },
+        teamCode: { not: null },
+      },
+      select: {
+        teamCode: true,
+      },
+    });
 
-    // Validate date formats
+    return Array.from(
+      new Set(
+        teams
+          .map((team) => this.normalize(team.teamCode))
+          .filter((teamCode) => teamCode.length > 0),
+      ),
+    ).sort();
+  }
+
+  private buildRollupWhere(params: {
+    tenantId: string;
+    range: { gte: Date; lte: Date };
+    allowedTeamCodeKeys: string[] | null;
+    selectedTeamCode: string | null;
+    normalizedMappings: string[];
+  }) {
+    const includeNull = params.normalizedMappings.includes(NULL_MAPPING_FILTER_KEY);
+    const nonNullMappings = params.normalizedMappings.filter(
+      (mapping) => mapping !== NULL_MAPPING_FILTER_KEY,
+    );
+
+    const where: any = {
+      tenantId: params.tenantId,
+      date: params.range,
+    };
+
+    if (params.allowedTeamCodeKeys !== null) {
+      if (params.allowedTeamCodeKeys.length === 0) {
+        where.teamCodeKey = '__no_access__';
+      } else {
+        where.teamCodeKey = { in: params.allowedTeamCodeKeys };
+      }
+    }
+
+    if (params.selectedTeamCode) {
+      where.teamCodeKey =
+        params.selectedTeamCode === NULL_TEAM_FILTER_KEY
+          ? UNASSIGNED_TEAM_CODE_KEY
+          : params.selectedTeamCode;
+    }
+
+    if (nonNullMappings.length > 0 || includeNull) {
+      where.OR = [
+        ...(nonNullMappings.length > 0 ? [{ mappingKey: { in: nonNullMappings } }] : []),
+        ...(includeNull ? [{ mappingKey: UNASSIGNED_MAPPING_KEY }] : []),
+      ];
+    }
+
+    return where;
+  }
+
+  async getOverview(
+    query: GetSalesAttributionOverviewQueryDto,
+  ): Promise<SalesAttributionOverviewContract> {
+    const startStr = (query.start_date && query.start_date.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+    const endStr = (query.end_date && query.end_date.trim()) || startStr;
+
     if (!dayjs(startStr, 'YYYY-MM-DD', true).isValid()) {
       throw new BadRequestException('Invalid start_date format. Expected YYYY-MM-DD');
     }
@@ -429,93 +431,85 @@ export class SalesAnalyticsService {
     if (endStr < startStr) {
       throw new BadRequestException('start_date must be before or equal to end_date');
     }
+
     const rangeDays = this.diffDays(startStr, endStr) + 1;
     const prevEndStr = this.shiftDate(startStr, -1);
     const prevStartStr = this.shiftDate(startStr, -rangeDays);
 
-    // Convert to Date objects for Prisma queries (date column stores calendar dates, no time component)
-    const startDate_dt = new Date(`${startStr}T00:00:00.000Z`);
-    const endDate_dt = new Date(`${endStr}T00:00:00.000Z`);
-    const prevStartDate_dt = new Date(`${prevStartStr}T00:00:00.000Z`);
-    const prevEndDate_dt = new Date(`${prevEndStr}T00:00:00.000Z`);
+    const startDate = new Date(`${startStr}T00:00:00.000Z`);
+    const endDate = new Date(`${endStr}T00:00:00.000Z`);
+    const prevStartDate = new Date(`${prevStartStr}T00:00:00.000Z`);
+    const prevEndDate = new Date(`${prevEndStr}T00:00:00.000Z`);
 
-    const normalizedMappings = mappings.map((m) => this.normalize(m)).filter((v) => v.length > 0);
-    const includeNull = normalizedMappings.includes(this.normalize('__null__'));
+    const normalizedMappings = (query.mapping || [])
+      .map((mapping) => this.normalize(mapping))
+      .filter((mapping) => mapping.length > 0);
+    const normalizedTeamCode = this.normalize(query.team_code) || null;
 
-    const { tenantId, teamId } = await this.teamContext.getContext();
-    const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
+    const { tenantId } = await this.teamContext.getContext();
+    const allowedTeamCodeKeys = await this.resolveAllowedTeamCodeKeys(tenantId);
 
-    const mappingFilter =
-      normalizedMappings.length > 0
-        ? {
-            OR: [
-              ...normalizedMappings
-                .filter((m) => m !== this.normalize('__null__'))
-                .map((m) => ({
-                  mapping: { equals: m, mode: 'insensitive' as const },
-                })),
-              ...(includeNull ? [{ mapping: null as any }] : []),
-            ],
-          }
-        : {};
+    if (normalizedTeamCode && allowedTeamCodeKeys !== null) {
+      const requestedTeamCodeKey =
+        normalizedTeamCode === NULL_TEAM_FILTER_KEY
+          ? UNASSIGNED_TEAM_CODE_KEY
+          : normalizedTeamCode;
+      if (!allowedTeamCodeKeys.includes(requestedTeamCodeKey)) {
+        throw new ForbiddenException('You do not have access to this team');
+      }
+    }
 
-    const baseWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        date: { gte: startDate_dt, lte: endDate_dt },
-      },
-      effectiveTeamIds || undefined,
-    );
+    const currentBaseWhere = this.buildRollupWhere({
+      tenantId,
+      range: { gte: startDate, lte: endDate },
+      allowedTeamCodeKeys,
+      selectedTeamCode: normalizedTeamCode,
+      normalizedMappings,
+    });
 
-    const where = {
-      ...baseWhere,
-      ...mappingFilter,
-    };
-    const processedSalesWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        dateLocal: { gte: startStr, lte: endStr },
-        status: { in: [...PROCESSED_SALES_STATUSES] },
-        ...mappingFilter,
-      },
-      effectiveTeamIds || undefined,
-    );
-    const prevProcessedSalesWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        dateLocal: { gte: prevStartStr, lte: prevEndStr },
-        status: { in: [...PROCESSED_SALES_STATUSES] },
-        ...mappingFilter,
-      },
-      effectiveTeamIds || undefined,
-    );
-    const cancellationRateWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        dateLocal: { gte: startStr, lte: endStr },
-        ...mappingFilter,
-      },
-      effectiveTeamIds || undefined,
-    );
-    const prevCancellationRateWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        dateLocal: { gte: prevStartStr, lte: prevEndStr },
-        ...mappingFilter,
-      },
-      effectiveTeamIds || undefined,
-    );
+    const previousBaseWhere = this.buildRollupWhere({
+      tenantId,
+      range: { gte: prevStartDate, lte: prevEndDate },
+      allowedTeamCodeKeys,
+      selectedTeamCode: normalizedTeamCode,
+      normalizedMappings,
+    });
+
+    const currentFilterWhere = this.buildRollupWhere({
+      tenantId,
+      range: { gte: startDate, lte: endDate },
+      allowedTeamCodeKeys,
+      selectedTeamCode: null,
+      normalizedMappings: [],
+    });
+
+    const currentMappingFilterWhere = this.buildRollupWhere({
+      tenantId,
+      range: { gte: startDate, lte: endDate },
+      allowedTeamCodeKeys,
+      selectedTeamCode: normalizedTeamCode,
+      normalizedMappings: [],
+    });
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
-    const cacheTeamIds = effectiveTeamIds ? [...effectiveTeamIds].sort() : teamId ? [teamId] : [];
-    const cacheKeyPayload = {
+    const cachePayload = {
       tenantId,
-      teamIds: cacheTeamIds,
+      teamCodeScope: allowedTeamCodeKeys,
       start: startStr,
       end: endStr,
-      mappings: normalizedMappings.sort(),
-      includeNull,
-      processedSalesStatuses: PROCESSED_SALES_STATUSES,
-      cancellationRateFormula: 'status_6_over_status_not_7',
-      flags: { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1 },
+      teamCode: normalizedTeamCode,
+      mappings: [...normalizedMappings].sort(),
+      flags: {
+        excludeCancel: query.exclude_cancel,
+        excludeRestocking: query.exclude_restocking,
+        excludeAbandoned: query.exclude_abandoned,
+        excludeRts: query.exclude_rts,
+        includeTax12: query.include_tax_12,
+        includeTax1: query.include_tax_1,
+      },
     };
-    const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
-    const cached = await this.analyticsCache.get<any>(cacheKey);
+    const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales-by-team:${this.analyticsCache.hashObject(cachePayload)}`;
+    const cached = await this.analyticsCache.get<SalesAttributionOverviewContract>(cacheKey);
     if (cached) {
       this.logger.log(`CACHE HIT ${cacheKey}`);
       return cached;
@@ -523,21 +517,17 @@ export class SalesAnalyticsService {
     this.logger.log(`CACHE MISS ${cacheKey}`);
 
     const [
-      agg,
-      prevAgg,
-      processedSalesAgg,
-      prevProcessedSalesAgg,
-      totalOrdersCount,
-      cancelledOrdersCount,
-      prevTotalOrdersCount,
-      prevCancelledOrdersCount,
+      aggregate,
+      previousAggregate,
+      teamRows,
+      nullTeamCount,
       mappingRows,
-      nullCount,
+      nullMappingCount,
       productGroups,
       lastUpdatedAgg,
     ] = await Promise.all([
-      this.prisma.reconcileSales.aggregate({
-        where,
+      this.prisma.reconcileSalesAttribution.aggregate({
+        where: currentBaseWhere,
         _sum: {
           spend: true,
           codPos: true,
@@ -579,12 +569,8 @@ export class SalesAnalyticsService {
           ifSdrPos: true,
         },
       }),
-      this.prisma.reconcileSales.aggregate({
-        where: {
-          ...baseWhere,
-          ...mappingFilter,
-          date: { gte: prevStartDate_dt, lte: prevEndDate_dt },
-        },
+      this.prisma.reconcileSalesAttribution.aggregate({
+        where: previousBaseWhere,
         _sum: {
           spend: true,
           codPos: true,
@@ -626,59 +612,43 @@ export class SalesAnalyticsService {
           ifSdrPos: true,
         },
       }),
-      this.prisma.posOrder.aggregate({
-        where: processedSalesWhere,
-        _sum: {
-          cod: true,
-        },
-      }),
-      this.prisma.posOrder.aggregate({
-        where: prevProcessedSalesWhere,
-        _sum: {
-          cod: true,
-        },
-      }),
-      this.prisma.posOrder.count({
+      this.prisma.reconcileSalesAttribution.findMany({
         where: {
-          ...cancellationRateWhere,
-          OR: [{ status: { not: 7 } }, { status: null }],
+          ...currentFilterWhere,
+          teamCode: { not: null },
+        },
+        distinct: ['teamCodeKey'],
+        select: {
+          teamCodeKey: true,
+          teamCode: true,
         },
       }),
-      this.prisma.posOrder.count({
+      this.prisma.reconcileSalesAttribution.count({
         where: {
-          ...cancellationRateWhere,
-          status: 6,
+          ...currentFilterWhere,
+          teamCode: null,
         },
       }),
-      this.prisma.posOrder.count({
+      this.prisma.reconcileSalesAttribution.findMany({
         where: {
-          ...prevCancellationRateWhere,
-          OR: [{ status: { not: 7 } }, { status: null }],
-        },
-      }),
-      this.prisma.posOrder.count({
-        where: {
-          ...prevCancellationRateWhere,
-          status: 6,
-        },
-      }),
-      this.prisma.reconcileSales.findMany({
-        where: {
-          ...baseWhere,
+          ...currentMappingFilterWhere,
           mapping: { not: null },
         },
-        distinct: ['mapping'],
-        select: { mapping: true },
+        distinct: ['mappingKey'],
+        select: {
+          mappingKey: true,
+          mapping: true,
+        },
       }),
-      this.prisma.reconcileSales.count({
+      this.prisma.reconcileSalesAttribution.count({
         where: {
-          ...baseWhere,
+          ...currentMappingFilterWhere,
           mapping: null,
         },
       }),
-      this.prisma.reconcileSales.groupBy({
-        by: ['mapping'],
-        where,
+      this.prisma.reconcileSalesAttribution.groupBy({
+        by: ['mapping', 'mappingKey'],
+        where: currentBaseWhere,
         _sum: {
           spend: true,
           codPos: true,
@@ -720,98 +690,152 @@ export class SalesAnalyticsService {
           ifSdrPos: true,
         },
       }),
-      this.prisma.reconcileSales.aggregate({
-        where,
+      this.prisma.reconcileSalesAttribution.aggregate({
+        where: currentBaseWhere,
         _max: { updatedAt: true },
       }),
     ]);
 
-    const mappingOptions: string[] = [];
-    const mappingDisplayMap: Record<string, string> = {};
-    mappingRows.forEach((r) => {
-      if (!r.mapping) return;
-      const norm = this.normalize(r.mapping);
-      if (!mappingDisplayMap[norm]) {
-        mappingDisplayMap[norm] = r.mapping;
-        mappingOptions.push(norm);
+    const teamCodes: string[] = [];
+    const teamCodeDisplayMap: Record<string, string> = {};
+    teamRows.forEach((row) => {
+      if (!row.teamCode) return;
+      const normalized = row.teamCodeKey || this.normalize(row.teamCode);
+      if (!normalized) return;
+      if (!teamCodeDisplayMap[normalized]) {
+        teamCodeDisplayMap[normalized] = row.teamCode;
+        teamCodes.push(normalized);
       }
     });
-    if (nullCount > 0) {
-      const key = this.normalize('__null__');
-      mappingDisplayMap[key] = `Unassigned (${nullCount})`;
-      mappingOptions.push(key);
+    if (nullTeamCount > 0) {
+      teamCodeDisplayMap[NULL_TEAM_FILTER_KEY] = 'Unassigned';
+      teamCodes.push(NULL_TEAM_FILTER_KEY);
+    }
+    teamCodes.sort((a, b) => (teamCodeDisplayMap[a] || a).localeCompare(teamCodeDisplayMap[b] || b));
+
+    const mappingOptions: string[] = [];
+    const mappingDisplayMap: Record<string, string> = {};
+    mappingRows.forEach((row) => {
+      if (!row.mapping) return;
+      const normalized = row.mappingKey || this.normalize(row.mapping);
+      if (!mappingDisplayMap[normalized]) {
+        mappingDisplayMap[normalized] = row.mapping;
+        mappingOptions.push(normalized);
+      }
+    });
+    if (nullMappingCount > 0) {
+      mappingDisplayMap[NULL_MAPPING_FILTER_KEY] = `Unassigned (${nullMappingCount})`;
+      mappingOptions.push(NULL_MAPPING_FILTER_KEY);
     }
     mappingOptions.sort((a, b) => (mappingDisplayMap[a] || a).localeCompare(mappingDisplayMap[b] || b));
 
-    const products = productGroups.map((g) => {
-      const row = this.computeProductRow({ _sum: g._sum, mapping: g.mapping }, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, includeTax12, includeTax1 });
+    const products = productGroups.map((group) => {
+      const row = this.computeProductRow(
+        { _sum: group._sum, mapping: group.mapping },
+        {
+          excludeCancel: query.exclude_cancel,
+          excludeRestocking: query.exclude_restocking,
+          excludeAbandoned: query.exclude_abandoned,
+          excludeRts: query.exclude_rts,
+          includeTax12: query.include_tax_12,
+          includeTax1: query.include_tax_1,
+        },
+      );
       return {
         ...row,
-        mapping: g.mapping,
+        mapping: group.mapping,
       };
     });
 
-    const deliveryStatuses: DeliveryStatusRow[] = productGroups.map((g) => ({
-      mapping: g.mapping,
-      total_orders: this.toNumber(g._sum?.purchasesPos),
-      new_orders: this.toNumber(g._sum?.unconfirmedCount),
-      restocking: this.toNumber(g._sum?.restockingCount),
-      confirmed: this.toNumber(g._sum?.confirmedCount),
-      printed: this.toNumber(g._sum?.printedCount),
-      waiting_pickup: this.toNumber(g._sum?.waitingPickupCount),
-      shipped: this.toNumber(g._sum?.shippedCount),
-      delivered: this.toNumber(g._sum?.deliveredCount),
-      rts: this.toNumber(g._sum?.rtsCount),
-      canceled: this.toNumber(g._sum?.canceledCount),
-      deleted: this.toNumber(g._sum?.deletedCount),
+    const deliveryStatuses: SalesAttributionDeliveryRow[] = productGroups.map((group) => ({
+      mapping: group.mapping,
+      total_orders: this.toNumber(group._sum?.purchasesPos),
+      new_orders: this.toNumber(group._sum?.unconfirmedCount),
+      restocking: this.toNumber(group._sum?.restockingCount),
+      confirmed: this.toNumber(group._sum?.confirmedCount),
+      printed: this.toNumber(group._sum?.printedCount),
+      waiting_pickup: this.toNumber(group._sum?.waitingPickupCount),
+      shipped: this.toNumber(group._sum?.shippedCount),
+      delivered: this.toNumber(group._sum?.deliveredCount),
+      rts: this.toNumber(group._sum?.rtsCount),
+      canceled: this.toNumber(group._sum?.canceledCount),
+      deleted: this.toNumber(group._sum?.deletedCount),
     }));
+
+    const processedSalesValue =
+      this.toNumber(aggregate?._sum?.confirmedCodPos) +
+      this.toNumber(aggregate?._sum?.waitingPickupCodPos) +
+      this.toNumber(aggregate?._sum?.shippedCodPos) +
+      this.toNumber(aggregate?._sum?.deliveredCodPos);
+    const previousProcessedSalesValue =
+      this.toNumber(previousAggregate?._sum?.confirmedCodPos) +
+      this.toNumber(previousAggregate?._sum?.waitingPickupCodPos) +
+      this.toNumber(previousAggregate?._sum?.shippedCodPos) +
+      this.toNumber(previousAggregate?._sum?.deliveredCodPos);
+    const totalOrdersCount = this.toNumber(aggregate?._sum?.purchasesPos);
+    const cancelledOrdersCount = this.toNumber(aggregate?._sum?.canceledCount);
+    const prevTotalOrdersCount = this.toNumber(previousAggregate?._sum?.purchasesPos);
+    const prevCancelledOrdersCount = this.toNumber(previousAggregate?._sum?.canceledCount);
 
     const rtsForecastPct = 20;
     const kpis = {
-      ...this.computeKpis(agg, {
-        excludeCancel,
-        excludeRestocking,
-        excludeAbandoned,
-        excludeRts,
-        includeTax12,
-        includeTax1,
+      ...this.computeKpis(aggregate, {
+        excludeCancel: query.exclude_cancel,
+        excludeRestocking: query.exclude_restocking,
+        excludeAbandoned: query.exclude_abandoned,
+        excludeRts: query.exclude_rts,
+        includeTax12: query.include_tax_12,
+        includeTax1: query.include_tax_1,
         rtsForecastPct,
-        processedSalesValue: this.toNumber(processedSalesAgg?._sum?.cod),
+        processedSalesValue,
       }),
       cancellation_rate_pct:
         totalOrdersCount > 0 ? (cancelledOrdersCount / totalOrdersCount) * 100 : 0,
     };
     const prevKpis = {
-      ...this.computeKpis(prevAgg, {
-        excludeCancel,
-        excludeRestocking,
-        excludeAbandoned,
-        excludeRts,
-        includeTax12,
-        includeTax1,
+      ...this.computeKpis(previousAggregate, {
+        excludeCancel: query.exclude_cancel,
+        excludeRestocking: query.exclude_restocking,
+        excludeAbandoned: query.exclude_abandoned,
+        excludeRts: query.exclude_rts,
+        includeTax12: query.include_tax_12,
+        includeTax1: query.include_tax_1,
         rtsForecastPct,
-        processedSalesValue: this.toNumber(prevProcessedSalesAgg?._sum?.cod),
+        processedSalesValue: previousProcessedSalesValue,
       }),
       cancellation_rate_pct:
         prevTotalOrdersCount > 0
           ? (prevCancelledOrdersCount / prevTotalOrdersCount) * 100
           : 0,
     };
-    const counts = this.computeCounts(agg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts });
-    const prevCounts = this.computeCounts(prevAgg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts });
+    const counts = this.computeCounts(aggregate, {
+      excludeCancel: query.exclude_cancel,
+      excludeRestocking: query.exclude_restocking,
+      excludeAbandoned: query.exclude_abandoned,
+      excludeRts: query.exclude_rts,
+    });
+    const prevCounts = this.computeCounts(previousAggregate, {
+      excludeCancel: query.exclude_cancel,
+      excludeRestocking: query.exclude_restocking,
+      excludeAbandoned: query.exclude_abandoned,
+      excludeRts: query.exclude_rts,
+    });
 
-    const response = {
+    const response: SalesAttributionOverviewContract = {
       kpis,
+      prevKpis,
       counts,
       prevCounts,
-      prevKpis,
       filters: {
+        teamCodes,
+        teamCodeDisplayMap,
         mappings: mappingOptions,
         mappingsDisplayMap: mappingDisplayMap,
       },
       selected: {
         start_date: startStr,
         end_date: endStr,
+        teamCode: normalizedTeamCode,
         mappings: normalizedMappings,
       },
       rangeDays,
@@ -823,116 +847,5 @@ export class SalesAnalyticsService {
     this.logger.log(`CACHE SET ${cacheKey}`);
     await this.analyticsCache.set(cacheKey, response);
     return response;
-  }
-
-  async reconcileRange(startDate?: string, endDate?: string) {
-    if (!startDate || !endDate) {
-      throw new BadRequestException('start_date and end_date are required');
-    }
-
-    const { tenantId } = await this.teamContext.getContext();
-    const since = dayjs(startDate).format('YYYY-MM-DD');
-    const until = dayjs(endDate).format('YYYY-MM-DD');
-
-    if (
-      !dayjs(since, 'YYYY-MM-DD', true).isValid() ||
-      !dayjs(until, 'YYYY-MM-DD', true).isValid()
-    ) {
-      throw new BadRequestException('Invalid date range');
-    }
-
-    const dates: string[] = [];
-    let current = dayjs(since);
-    const end = dayjs(until);
-    if (current.isAfter(end)) {
-      current = end;
-    }
-
-    while (current.isBefore(end) || current.isSame(end, 'day')) {
-      dates.push(current.format('YYYY-MM-DD'));
-      current = current.add(1, 'day');
-    }
-
-    const errors: Array<{ date: string; source: string; error: string }> = [];
-    for (const date of dates) {
-      const dayStart = new Date(`${date}T00:00:00.000Z`);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-      try {
-        await this.prisma.reconcileSales.deleteMany({
-          where: {
-            tenantId,
-            date: {
-              gte: dayStart,
-              lt: dayEnd,
-            },
-          },
-        });
-        await this.prisma.reconcileSalesAttribution.deleteMany({
-          where: {
-            tenantId,
-            date: {
-              gte: dayStart,
-              lt: dayEnd,
-            },
-          },
-        });
-        await this.prisma.reconcileMarketing.deleteMany({
-          where: {
-            tenantId,
-            date: {
-              gte: dayStart,
-              lt: dayEnd,
-            },
-          },
-        });
-      } catch (err: any) {
-        errors.push({
-          date,
-          source: 'reconcile_reset',
-          error: err?.message || 'Failed to reset reconcile rows',
-        });
-        continue;
-      }
-
-      try {
-        await this.reconcileMarketingService.reconcileDay(tenantId, date, null);
-      } catch (err: any) {
-        errors.push({
-          date,
-          source: 'reconcile_marketing',
-          error: err?.message || 'Reconcile marketing failed',
-        });
-      }
-
-      try {
-        await this.reconcileSalesService.aggregateDay(tenantId, date, null);
-      } catch (err: any) {
-        errors.push({
-          date,
-          source: 'reconcile_sales',
-          error: err?.message || 'Reconcile sales failed',
-        });
-      }
-
-      try {
-        await this.reconcileSalesAttributionService.aggregateDay(tenantId, date);
-      } catch (err: any) {
-        errors.push({
-          date,
-          source: 'reconcile_sales_attribution',
-          error: err?.message || 'Reconcile sales attribution failed',
-        });
-      }
-    }
-
-    await this.analyticsCache.bumpVersion(tenantId);
-
-    return {
-      processedDays: dates.length,
-      startDate: since,
-      endDate: until,
-      errors,
-    };
   }
 }

@@ -16,6 +16,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { IntegrationModule } from '../integrations/integration.module';
 import { ReconcileMarketingService } from './services/reconcile-marketing.service';
 import { ReconcileSalesService } from './services/reconcile-sales.service';
+import { ReconcileSalesAttributionService } from './services/reconcile-sales-attribution.service';
 import { PancakeWebhookReconcileProcessor } from './processors/pancake-webhook-reconcile.processor';
 import { PANCAKE_WEBHOOK_RECONCILE_QUEUE } from '../integrations/pancake-webhook.constants';
 import { ManualMetaUploadProcessor } from './processors/manual-meta-upload.processor';
@@ -48,6 +49,7 @@ import { ManualMetaUploadProcessor } from './processors/manual-meta-upload.proce
     WorkflowExecutionReconcilerService,
     ReconcileMarketingService,
     ReconcileSalesService,
+    ReconcileSalesAttributionService,
     PancakeWebhookReconcileProcessor,
     ManualMetaUploadProcessor,
   ],

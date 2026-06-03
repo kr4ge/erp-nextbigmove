@@ -11,25 +11,31 @@ import { AnalyticsShareController } from './analytics-share.controller';
 import { AnalyticsShareService } from './analytics-share.service';
 import { SalesPerformanceController } from './sales-performance.controller';
 import { SalesPerformanceService } from './sales-performance.service';
+import { SalesAttributionAnalyticsController } from './sales-attribution-analytics.controller';
+import { SalesAttributionAnalyticsService } from './sales-attribution-analytics.service';
 import { ReconcileMarketingService } from '../workflows/services/reconcile-marketing.service';
 import { ReconcileSalesService } from '../workflows/services/reconcile-sales.service';
+import { ReconcileSalesAttributionService } from '../workflows/services/reconcile-sales-attribution.service';
 
 @Module({
   imports: [PrismaModule, CommonServicesModule],
   controllers: [
     MarketingAnalyticsController,
     SalesAnalyticsController,
+    SalesAttributionAnalyticsController,
     AnalyticsShareController,
     SalesPerformanceController,
   ],
   providers: [
     MarketingAnalyticsService,
     SalesAnalyticsService,
+    SalesAttributionAnalyticsService,
     AnalyticsShareService,
     SalesPerformanceService,
     AnalyticsCacheService,
     ReconcileMarketingService,
     ReconcileSalesService,
+    ReconcileSalesAttributionService,
     PermissionsGuard,
   ],
 })

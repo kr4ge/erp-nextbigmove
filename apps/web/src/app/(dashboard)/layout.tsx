@@ -8,6 +8,7 @@ import {
   StoreIcon,
   Network,
   BarChart3,
+  Users,
   ClipboardList,
   Target,
   Package,
@@ -57,6 +58,7 @@ const baseNavigation: NavLink[] = [
     ),
     children: [
       { href: '/analytics/sales', label: 'Sales', icon: <StoreIcon className="h-4 w-4" /> },
+      { href: '/analytics/sales-by-team', label: 'Sales by Team', icon: <Users className="h-4 w-4" /> },
       { href: '/analytics/sales-performance', label: 'Sales Performance', icon: <BarChart3 className="h-4 w-4" /> },
       { href: '/analytics/marketing', label: 'Marketing', icon: <Network className="h-4 w-4" /> },
     ],
@@ -277,6 +279,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       const children = (link.children || []).filter((child) => {
         if (child.href === '/analytics/marketing') return hasMarketing;
         if (child.href === '/analytics/sales') return hasSales;
+        if (child.href === '/analytics/sales-by-team') return hasSales;
         if (child.href === '/analytics/sales-performance') return hasSalesPerformance;
         return false;
       });
