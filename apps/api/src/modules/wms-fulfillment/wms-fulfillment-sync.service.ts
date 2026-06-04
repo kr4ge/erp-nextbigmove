@@ -87,6 +87,7 @@ export class WmsFulfillmentSyncService {
     const storeByTenantShop = new Map(scopedStores.map((store) => [`${store.tenantId}:${store.shopId}`, store]));
     const shopIds = Array.from(new Set(scopedStores.map((store) => store.shopId)));
     const tenantIds = Array.from(new Set(scopedStores.map((store) => store.tenantId)));
+    const tenantGoLiveFilters = await this.buildTenantGoLiveOrderFilters(tenantIds);
     const shouldLimit = refs.length === 0 && params.limit !== null;
     const effectiveLimit = shouldLimit
       ? (typeof params.limit === 'number' ? params.limit : PICKING_SYNC_ORDER_LIMIT)
@@ -98,14 +99,19 @@ export class WmsFulfillmentSyncService {
         isVoid: false,
         shopId: { in: shopIds },
         tenantId: params.tenantId ? params.tenantId : { in: tenantIds },
-        ...(refs.length > 0
-          ? {
-              OR: refs.map((ref) => ({
-                shopId: ref.shopId,
-                posOrderId: ref.posOrderId,
-              })),
-            }
-          : {}),
+        AND: [
+          {
+            OR: tenantGoLiveFilters,
+          },
+          ...(refs.length > 0
+            ? [{
+                OR: refs.map((ref) => ({
+                  shopId: ref.shopId,
+                  posOrderId: ref.posOrderId,
+                })),
+              }]
+            : []),
+        ],
         wmsFulfillmentOrders: {
           none: {
             status: {
@@ -282,6 +288,48 @@ export class WmsFulfillmentSyncService {
     }
 
     return { syncedOrders };
+  }
+
+  private async buildTenantGoLiveOrderFilters(tenantIds: string[]): Promise<Prisma.PosOrderWhereInput[]> {
+    const uniqueTenantIds = Array.from(new Set(
+      tenantIds
+        .map((tenantId) => tenantId?.trim())
+        .filter((tenantId): tenantId is string => Boolean(tenantId)),
+    ));
+
+    if (uniqueTenantIds.length === 0) {
+      return [];
+    }
+
+    const tenants = await this.prisma.tenant.findMany({
+      where: {
+        id: {
+          in: uniqueTenantIds,
+        },
+      },
+      select: {
+        id: true,
+        wmsFulfillmentGoLiveAt: true,
+      },
+    });
+    const goLiveByTenantId = new Map(
+      tenants.map((tenant) => [tenant.id, tenant.wmsFulfillmentGoLiveAt] as const),
+    );
+
+    return uniqueTenantIds.map((tenantId) => {
+      const goLiveAt = goLiveByTenantId.get(tenantId) ?? null;
+
+      return goLiveAt
+        ? {
+            tenantId,
+            insertedAt: {
+              gte: goLiveAt,
+            },
+          }
+        : {
+            tenantId,
+          };
+    });
   }
 
   async allocateFulfillmentOrder(fulfillmentOrderId: string, actorId: string | null) {

@@ -180,9 +180,19 @@ export class TenantService {
     }
 
     // Update tenant
+    const updateData: Record<string, unknown> = {
+      ...updateTenantDto,
+    };
+
+    if ('wmsFulfillmentGoLiveAt' in updateTenantDto) {
+      updateData.wmsFulfillmentGoLiveAt = updateTenantDto.wmsFulfillmentGoLiveAt
+        ? new Date(updateTenantDto.wmsFulfillmentGoLiveAt)
+        : null;
+    }
+
     const updatedTenant = await this.prisma.tenant.update({
       where: { id },
-      data: updateTenantDto as any,
+      data: updateData as any,
       include: {
         _count: {
           select: {

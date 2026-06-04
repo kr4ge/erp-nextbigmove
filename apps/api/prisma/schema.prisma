@@ -32,6 +32,7 @@ model Tenant {
   // Billing
   planType     String  @default("trial")
   billingEmail String?
+  wmsFulfillmentGoLiveAt DateTime?
 
   // Timestamps
   createdAt DateTime @default(now())

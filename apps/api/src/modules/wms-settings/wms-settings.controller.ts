@@ -1,7 +1,7 @@
 import {
+  BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   Patch,
@@ -10,8 +10,12 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  Delete,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { mkdirSync } from 'fs';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
@@ -28,6 +32,22 @@ export class WmsSettingsController {
     private readonly wmsSettingsService: WmsSettingsService,
     private readonly wmsStoxReleasesService: WmsStoxReleasesService,
   ) {}
+
+  private static buildStoxUploadRoot() {
+    const uploadRoot = process.env.STOX_APK_UPLOAD_TMP_DIR
+      || join(process.cwd(), 'tmp', 'wms-stox-releases');
+    mkdirSync(uploadRoot, { recursive: true });
+    return uploadRoot;
+  }
+
+  private static buildStoxMaxUploadBytes() {
+    const maxMb = Number(process.env.OBJECT_STORAGE_STOX_APK_MAX_FILE_MB || '150');
+    if (!Number.isFinite(maxMb) || maxMb <= 0) {
+      return 150 * 1024 * 1024;
+    }
+
+    return Math.floor(maxMb * 1024 * 1024);
+  }
 
   @Get('users')
   @Permissions('wms.users.read')
@@ -118,11 +138,25 @@ export class WmsSettingsController {
   @Post('stox/releases')
   @Permissions('wms.stox.write')
   @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: WmsSettingsController.buildStoxUploadRoot(),
+      filename: (_req, file, cb) => {
+        const safeExt = extname(file.originalname || '').toLowerCase();
+        const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        cb(null, `${token}${safeExt || '.apk'}`);
+      },
+    }),
     limits: {
-      fileSize: Math.max(
-        1,
-        Number(process.env.OBJECT_STORAGE_STOX_APK_MAX_FILE_MB || '150'),
-      ) * 1024 * 1024,
+      fileSize: WmsSettingsController.buildStoxMaxUploadBytes(),
+    },
+    fileFilter: (_req, file, cb) => {
+      const normalizedName = (file.originalname || '').trim().toLowerCase();
+      if (!normalizedName.endsWith('.apk')) {
+        cb(new BadRequestException('Only Android APK files are supported'), false);
+        return;
+      }
+
+      cb(null, true);
     },
   }))
   async createStoxRelease(

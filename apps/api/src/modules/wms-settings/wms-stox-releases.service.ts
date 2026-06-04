@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
+import { createReadStream } from 'fs';
+import { unlink } from 'fs/promises';
+import { Readable } from 'stream';
 import {
   BadRequestException,
   ConflictException,
@@ -22,10 +25,11 @@ type WmsSettingsActor = {
 };
 
 export type UploadedBinaryFile = {
-  buffer: Buffer;
+  buffer?: Buffer;
   mimetype: string;
   size: number;
   originalname: string;
+  path?: string;
 };
 
 type ReleaseRecord = Prisma.WmsStoxAppReleaseGetPayload<{
@@ -171,23 +175,23 @@ export class WmsStoxReleasesService {
     const year = `${now.getUTCFullYear()}`;
     const month = `${now.getUTCMonth() + 1}`.padStart(2, '0');
     const objectKey = `wms/stox/android/${year}/${month}/${normalizedVersion}/${dto.buildNumber}/${randomUUID()}.apk`;
-    const checksumSha256 = createHash('sha256').update(file.buffer).digest('hex');
-
-    await this.objectStorageService.uploadObject({
-      key: objectKey,
-      body: file.buffer,
-      contentType: 'application/vnd.android.package-archive',
-      cacheControl: 'private, max-age=31536000, immutable',
-      metadata: {
-        app: 'stox',
-        platform: STOX_PLATFORM,
-        channel: STOX_CHANNEL,
-        version: normalizedVersion,
-        buildNumber: `${dto.buildNumber}`,
-      },
-    });
+    const checksumSha256 = await this.computeSha256(file);
 
     try {
+      await this.objectStorageService.uploadObject({
+        key: objectKey,
+        body: this.buildUploadBody(file),
+        contentType: 'application/vnd.android.package-archive',
+        cacheControl: 'private, max-age=31536000, immutable',
+        metadata: {
+          app: 'stox',
+          platform: STOX_PLATFORM,
+          channel: STOX_CHANNEL,
+          version: normalizedVersion,
+          buildNumber: `${dto.buildNumber}`,
+        },
+      });
+
       const created = await this.prisma.$transaction(async (tx) => {
         if (dto.isActive ?? true) {
           await tx.wmsStoxAppRelease.updateMany({
@@ -254,6 +258,8 @@ export class WmsStoxReleasesService {
       }
 
       throw error;
+    } finally {
+      await this.cleanupUploadedFile(file);
     }
   }
 
@@ -381,6 +387,49 @@ export class WmsStoxReleasesService {
 
   private buildDownloadFileName(version: string, buildNumber: number) {
     return `stox-${version}-${buildNumber}.apk`;
+  }
+
+  private buildUploadBody(file: UploadedBinaryFile): Buffer | Readable {
+    if (file.buffer) {
+      return file.buffer;
+    }
+
+    if (file.path) {
+      return createReadStream(file.path);
+    }
+
+    throw new BadRequestException('Uploaded STOX APK file is missing file contents');
+  }
+
+  private async computeSha256(file: UploadedBinaryFile) {
+    if (file.buffer) {
+      return createHash('sha256').update(file.buffer).digest('hex');
+    }
+
+    if (!file.path) {
+      throw new BadRequestException('Uploaded STOX APK file is missing file contents');
+    }
+
+    const hash = createHash('sha256');
+
+    await new Promise<void>((resolve, reject) => {
+      const stream = createReadStream(file.path!);
+      stream.on('data', (chunk) => {
+        hash.update(chunk);
+      });
+      stream.on('error', reject);
+      stream.on('end', resolve);
+    });
+
+    return hash.digest('hex');
+  }
+
+  private async cleanupUploadedFile(file: UploadedBinaryFile) {
+    if (!file.path) {
+      return;
+    }
+
+    await unlink(file.path).catch(() => undefined);
   }
 
   private getDisplayName(user: { firstName: string | null; lastName: string | null; email: string }) {

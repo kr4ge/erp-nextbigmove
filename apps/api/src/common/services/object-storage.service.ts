@@ -7,10 +7,11 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Readable } from 'stream';
 
 type UploadObjectInput = {
   key: string;
-  body: Buffer;
+  body: Buffer | Readable;
   contentType: string;
   cacheControl?: string;
   metadata?: Record<string, string>;

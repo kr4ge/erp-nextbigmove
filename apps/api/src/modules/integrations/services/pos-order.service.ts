@@ -676,6 +676,10 @@ export class PosOrderService {
       where: { id: storeId, tenantId },
       select: { initialValueOffer: true, shopId: true, teamId: true },
     });
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { wmsFulfillmentGoLiveAt: true },
+    });
     let initialValueOffer: number | null = null;
     if (store?.initialValueOffer !== null && store?.initialValueOffer !== undefined) {
       const value = Number(store.initialValueOffer);
@@ -829,6 +833,10 @@ export class PosOrderService {
           && !order.isVoid
           && order.shopId
           && order.posOrderId
+          && (
+            !tenant?.wmsFulfillmentGoLiveAt
+            || order.insertedAt >= tenant.wmsFulfillmentGoLiveAt
+          )
         ) {
           fulfillmentCandidates.push({
             shopId: order.shopId,

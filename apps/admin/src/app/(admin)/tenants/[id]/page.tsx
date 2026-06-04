@@ -47,6 +47,7 @@ const updateTenantSchema = z.object({
   status: z.enum(['TRIAL', 'ACTIVE', 'SUSPENDED', 'CANCELLED']),
   maxUsers: z.number().min(1).max(10000),
   maxIntegrations: z.number().min(1).max(100),
+  wmsFulfillmentGoLiveAt: z.string().nullable().optional(),
 });
 
 type UpdateTenantForm = z.infer<typeof updateTenantSchema>;
@@ -123,6 +124,7 @@ export default function TenantDetailsPage() {
         setValue('status', tenantData.status);
         setValue('maxUsers', tenantData.maxUsers);
         setValue('maxIntegrations', tenantData.maxIntegrations);
+        setValue('wmsFulfillmentGoLiveAt', toDateTimeLocalInputValue(tenantData.wmsFulfillmentGoLiveAt));
       } catch (error: unknown) {
         setError(getErrorMessage(error, 'Failed to load tenant'));
       } finally {
@@ -152,7 +154,10 @@ export default function TenantDetailsPage() {
 
     try {
       const token = localStorage.getItem('access_token');
-      await apiClient.patch(`/tenants/${tenantId}`, data, {
+      await apiClient.patch(`/tenants/${tenantId}`, {
+        ...data,
+        wmsFulfillmentGoLiveAt: toIsoDateTimeOrNull(data.wmsFulfillmentGoLiveAt),
+      }, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -350,6 +355,29 @@ export default function TenantDetailsPage() {
             </div>
           </WmsCompactPanel>
 
+          <WmsCompactPanel title="WMS cutover" icon={<Clock className='panel-icon' />}>
+            <div className="grid gap-4 p-5">
+              <div>
+                <WmsFormField
+                  label="Fulfillment go-live"
+                  hint="Only POS orders inserted at or after this timestamp will enter WMS pick and pack queues for this tenant."
+                >
+                  <input
+                    {...register('wmsFulfillmentGoLiveAt')}
+                    type="datetime-local"
+                    className="input"
+                  />
+                </WmsFormField>
+                {errors.wmsFulfillmentGoLiveAt ? (
+                  <p className="mt-1.5 text-[12px] text-rose-600">{errors.wmsFulfillmentGoLiveAt.message}</p>
+                ) : null}
+              </div>
+              <p className="text-[12px] leading-5 text-[#6f8290]">
+                Existing legacy fulfillment rows are not deleted by this setting. It prevents pre-go-live orders from entering or appearing in active WMS pick and pack queues.
+              </p>
+            </div>
+          </WmsCompactPanel>
+
           <div className="flex items-center justify-end gap-3 rounded-2xl border border-[#dce4ea] bg-white/90 px-4 py-3 shadow-[0_18px_36px_-28px_rgba(18,56,75,0.35)] backdrop-blur">
             <span className="mr-auto text-[12px] text-[#6f8290]">
               {isDirty ? 'You have unsaved changes' : 'All changes saved'}
@@ -403,6 +431,13 @@ export default function TenantDetailsPage() {
                   icon={<CalendarClock className="h-3.5 w-3.5" />}
                   label="Trial ends"
                   value={formatTenantDateTime(tenant.trialEndsAt)}
+                />
+              ) : null}
+              {tenant.wmsFulfillmentGoLiveAt ? (
+                <TimelineRow
+                  icon={<Clock className="h-3.5 w-3.5" />}
+                  label="WMS go-live"
+                  value={formatTenantDateTime(tenant.wmsFulfillmentGoLiveAt)}
                 />
               ) : null}
             </div>
@@ -466,6 +501,29 @@ export default function TenantDetailsPage() {
       </div>
     </WmsPageShell>
   );
+}
+
+function toDateTimeLocalInputValue(value: string | null | undefined) {
+  if (!value) {
+    return '';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+
+  const local = new Date(parsed.getTime() - (parsed.getTimezoneOffset() * 60_000));
+  return local.toISOString().slice(0, 16);
+}
+
+function toIsoDateTimeOrNull(value: string | null | undefined) {
+  if (!value || value.trim().length === 0) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 function UsageRow({

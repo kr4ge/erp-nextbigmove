@@ -9,6 +9,7 @@ export type TenantRecord = {
   planType: TenantPlan;
   maxUsers: number;
   maxIntegrations: number;
+  wmsFulfillmentGoLiveAt: string | null;
   createdAt: string;
   updatedAt?: string;
   trialEndsAt: string | null;

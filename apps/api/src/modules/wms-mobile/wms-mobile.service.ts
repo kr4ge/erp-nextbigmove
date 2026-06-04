@@ -1031,7 +1031,14 @@ export class WmsMobileService {
       tenantId = store?.tenantId ?? null;
     }
 
-    const scope: Prisma.WmsFulfillmentOrderWhereInput = {
+    const fulfillmentGoLiveAt = await this.getFulfillmentGoLiveAt(tenantId);
+    const fulfillmentGoLiveWhere = this.buildFulfillmentGoLiveWhere(fulfillmentGoLiveAt);
+    const fulfillmentScope: Prisma.WmsFulfillmentOrderWhereInput = {
+      ...(tenantId ? { tenantId } : {}),
+      ...(query.storeId ? { storeId: query.storeId } : {}),
+      ...fulfillmentGoLiveWhere,
+    };
+    const rtsScope: Prisma.WmsFulfillmentOrderWhereInput = {
       ...(tenantId ? { tenantId } : {}),
       ...(query.storeId ? { storeId: query.storeId } : {}),
     };
@@ -1135,7 +1142,7 @@ export class WmsMobileService {
       this.prisma.wmsFulfillmentOrder.groupBy({
         by: ['status'],
         where: {
-          ...scope,
+          ...fulfillmentScope,
           status: {
             in: [
               WmsFulfillmentOrderStatus.READY,
@@ -1151,7 +1158,7 @@ export class WmsMobileService {
       this.prisma.wmsFulfillmentOrder.groupBy({
         by: ['status'],
         where: {
-          ...scope,
+          ...fulfillmentScope,
           status: {
             in: [
               WmsFulfillmentOrderStatus.PICKED,
@@ -1176,13 +1183,13 @@ export class WmsMobileService {
       }),
       this.prisma.wmsFulfillmentOrder.count({
         where: {
-          ...scope,
+          ...fulfillmentScope,
           status: WmsFulfillmentOrderStatus.RESTOCKING,
         },
       }),
       this.prisma.wmsFulfillmentOrder.count({
         where: {
-          ...scope,
+          ...fulfillmentScope,
           status: {
             in: [
               WmsFulfillmentOrderStatus.PICKED,
@@ -1205,11 +1212,18 @@ export class WmsMobileService {
       }),
       this.prisma.wmsFulfillmentOrder.count({
         where: {
-          ...scope,
+          ...fulfillmentScope,
           ...deliveredAttributionWhere,
           status: WmsFulfillmentOrderStatus.PACKED,
           posOrder: {
             is: {
+              ...(fulfillmentGoLiveAt
+                ? {
+                    insertedAt: {
+                      gte: fulfillmentGoLiveAt,
+                    },
+                  }
+                : {}),
               status: 3,
             },
           },
@@ -1217,7 +1231,7 @@ export class WmsMobileService {
       }),
       this.prisma.wmsFulfillmentOrder.count({
         where: this.buildOpenRtsOrderWhere({
-          ...scope,
+          ...rtsScope,
         }),
       }),
       this.prisma.wmsStaffActivity.groupBy({
@@ -1973,9 +1987,13 @@ export class WmsMobileService {
       ? (query.status as WmsFulfillmentOrderStatus)
       : { in: [...ACTIVE_PICKING_ORDER_STATUSES] };
     const ownedOnly = Boolean(query.ownedOnly && userId && !pickQueueAccess.canViewAll);
+    const fulfillmentGoLiveWhere = this.buildFulfillmentGoLiveWhere(
+      await this.getFulfillmentGoLiveAt(tenantId),
+    );
     const scopedWhere: Prisma.WmsFulfillmentOrderWhereInput = {
       ...(tenantId ? { tenantId } : {}),
       ...(activeStore ? { storeId: activeStore.id } : {}),
+      ...fulfillmentGoLiveWhere,
     };
     const normalizedSearch = query.search?.trim() || null;
     const searchWhere: Prisma.WmsFulfillmentOrderWhereInput = normalizedSearch
@@ -2510,9 +2528,13 @@ export class WmsMobileService {
       throw new ForbiddenException('Selected store is not available for STOX packing');
     }
 
+    const fulfillmentGoLiveWhere = this.buildFulfillmentGoLiveWhere(
+      await this.getFulfillmentGoLiveAt(tenantId),
+    );
     const scopedWhere: Prisma.WmsFulfillmentOrderWhereInput = {
       ...(tenantId ? { tenantId } : {}),
       ...(activeStore ? { storeId: activeStore.id } : {}),
+      ...fulfillmentGoLiveWhere,
     };
     const normalizedSearch = query.search?.trim() || null;
     const searchWhere: Prisma.WmsFulfillmentOrderWhereInput = normalizedSearch
@@ -5810,6 +5832,37 @@ export class WmsMobileService {
           },
           quantityRequired: {
             gt: 0,
+          },
+        },
+      },
+    };
+  }
+
+  private async getFulfillmentGoLiveAt(tenantId: string | null): Promise<Date | null> {
+    if (!tenantId) {
+      return null;
+    }
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        wmsFulfillmentGoLiveAt: true,
+      },
+    });
+
+    return tenant?.wmsFulfillmentGoLiveAt ?? null;
+  }
+
+  private buildFulfillmentGoLiveWhere(goLiveAt: Date | null): Prisma.WmsFulfillmentOrderWhereInput {
+    if (!goLiveAt) {
+      return {};
+    }
+
+    return {
+      posOrder: {
+        is: {
+          insertedAt: {
+            gte: goLiveAt,
           },
         },
       },

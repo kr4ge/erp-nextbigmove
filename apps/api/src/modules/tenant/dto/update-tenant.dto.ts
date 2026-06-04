@@ -9,6 +9,7 @@ import {
   Min,
   Max,
   IsOptional,
+  IsDateString,
 } from 'class-validator';
 
 export class UpdateTenantDto {
@@ -48,4 +49,8 @@ export class UpdateTenantDto {
   @Min(1)
   @Max(100)
   maxIntegrations?: number;
+
+  @IsOptional()
+  @IsDateString()
+  wmsFulfillmentGoLiveAt?: string | null;
 }
