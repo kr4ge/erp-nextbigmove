@@ -329,6 +329,8 @@ model User {
   wmsPurchasingBatchLinesCreated            WmsPurchasingBatchLine[]   @relation("WmsPurchasingBatchLineCreatedBy")
   wmsPurchasingBatchLinesUpdated            WmsPurchasingBatchLine[]   @relation("WmsPurchasingBatchLineUpdatedBy")
   mediaAssetsCreated                        MediaAsset[]               @relation("MediaAssetCreatedBy")
+  wmsStoxAppReleasesCreated                 WmsStoxAppRelease[]        @relation("WmsStoxAppReleaseCreatedBy")
+  wmsStoxAppReleasesActivated               WmsStoxAppRelease[]        @relation("WmsStoxAppReleaseActivatedBy")
   wmsPurchasingEvents                       WmsPurchasingEvent[]       @relation("WmsPurchasingEventActor")
   wmsReceivingBatchesCreated                WmsReceivingBatch[]        @relation("WmsReceivingBatchCreatedBy")
   wmsReceivingBatchesUpdated                WmsReceivingBatch[]        @relation("WmsReceivingBatchUpdatedBy")
@@ -598,6 +600,14 @@ enum WmsPurchasingRequestType {
 
 enum MediaAssetKind {
   PAYMENT_PROOF_IMAGE
+}
+
+enum WmsStoxAppPlatform {
+  ANDROID
+}
+
+enum WmsStoxReleaseChannel {
+  INTERNAL
 }
 
 enum WmsPurchasingBatchStatus {
@@ -1362,6 +1372,37 @@ model MediaAsset {
   @@index([tenantId, kind])
   @@index([createdById])
   @@map("media_assets")
+}
+
+model WmsStoxAppRelease {
+  id               String                @id @default(uuid()) @db.Uuid
+  platform         WmsStoxAppPlatform    @default(ANDROID)
+  channel          WmsStoxReleaseChannel @default(INTERNAL)
+  version          String
+  buildNumber      Int
+  releaseNotes     String?
+  isActive         Boolean               @default(false)
+  storageProvider  String
+  bucket           String
+  objectKey        String
+  contentType      String
+  byteSize         Int
+  checksumSha256   String?               @db.VarChar(64)
+  originalFileName String?
+  createdById      String?               @db.Uuid
+  createdBy        User?                 @relation("WmsStoxAppReleaseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  activatedById    String?               @db.Uuid
+  activatedBy      User?                 @relation("WmsStoxAppReleaseActivatedBy", fields: [activatedById], references: [id], onDelete: SetNull)
+  activatedAt      DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@unique([platform, channel, version, buildNumber])
+  @@unique([bucket, objectKey])
+  @@index([platform, channel, isActive])
+  @@index([createdById])
+  @@index([activatedById])
+  @@map("wms_stox_app_releases")
 }
 
 model WmsPurchasingBatch {

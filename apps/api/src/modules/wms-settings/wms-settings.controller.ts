@@ -1,15 +1,33 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Request,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { CreateWmsSettingsRoleDto, UpdateWmsSettingsRoleDto } from './dto/wms-settings-role.dto';
+import { CreateWmsStoxReleaseDto } from './dto/wms-stox-release.dto';
 import { CreateWmsSettingsUserDto, UpdateWmsSettingsUserDto } from './dto/wms-settings-user.dto';
 import { WmsSettingsService } from './wms-settings.service';
+import { UploadedBinaryFile, WmsStoxReleasesService } from './wms-stox-releases.service';
 
 @Controller('wms/settings')
 @UseGuards(JwtAuthGuard, WmsAccessGuard)
 export class WmsSettingsController {
-  constructor(private readonly wmsSettingsService: WmsSettingsService) {}
+  constructor(
+    private readonly wmsSettingsService: WmsSettingsService,
+    private readonly wmsStoxReleasesService: WmsStoxReleasesService,
+  ) {}
 
   @Get('users')
   @Permissions('wms.users.read')
@@ -89,5 +107,35 @@ export class WmsSettingsController {
   @Permissions('wms.roles.write')
   async deleteRole(@Request() req, @Param('id') id: string) {
     return this.wmsSettingsService.deleteRole(req.user, id, req);
+  }
+
+  @Get('stox/releases')
+  @Permissions('wms.stox.read')
+  async listStoxReleases(@Request() req) {
+    return this.wmsStoxReleasesService.listReleases(req.user);
+  }
+
+  @Post('stox/releases')
+  @Permissions('wms.stox.write')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: {
+      fileSize: Math.max(
+        1,
+        Number(process.env.OBJECT_STORAGE_STOX_APK_MAX_FILE_MB || '150'),
+      ) * 1024 * 1024,
+    },
+  }))
+  async createStoxRelease(
+    @Request() req,
+    @Body() body: CreateWmsStoxReleaseDto,
+    @UploadedFile() file: UploadedBinaryFile,
+  ) {
+    return this.wmsStoxReleasesService.createRelease(req.user, body, file);
+  }
+
+  @Post('stox/releases/:id/activate')
+  @Permissions('wms.stox.write')
+  async activateStoxRelease(@Request() req, @Param('id') id: string) {
+    return this.wmsStoxReleasesService.activateRelease(req.user, id);
   }
 }

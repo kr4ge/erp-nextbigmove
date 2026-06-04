@@ -31,6 +31,7 @@ import { EffectiveAccessService } from '../../common/services/effective-access.s
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
 import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
+import { WmsStoxReleasesService } from '../wms-settings/wms-stox-releases.service';
 import {
   GetWmsMobileStockDto,
   type WmsMobileStockMode,
@@ -261,7 +262,12 @@ export class WmsMobileService {
     private readonly wmsStaffActivityService: WmsStaffActivityService,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
     private readonly wmsInventoryService: WmsInventoryService,
+    private readonly wmsStoxReleasesService: WmsStoxReleasesService,
   ) {}
+
+  async getActiveStoxRelease(user: BootstrapUser) {
+    return this.wmsStoxReleasesService.getLatestActiveRelease(user);
+  }
 
   async getBootstrap(user: BootstrapUser, request?: Request) {
     const userId = user.userId || user.id || null;

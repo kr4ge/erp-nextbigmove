@@ -153,3 +153,43 @@ export type WmsSettingsRolesResponse = {
   roles: WmsSettingsRole[];
   permissions: WmsSettingsPermission[];
 };
+
+export type WmsStoxReleaseActor = {
+  id: string;
+  email: string;
+  displayName: string;
+};
+
+export type WmsStoxRelease = {
+  id: string;
+  platform: 'ANDROID';
+  channel: 'INTERNAL';
+  version: string;
+  buildNumber: number;
+  releaseNotes: string | null;
+  isActive: boolean;
+  contentType: string;
+  byteSize: number;
+  originalFileName: string | null;
+  downloadFileName: string;
+  downloadUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  activatedAt: string | null;
+  createdBy: WmsStoxReleaseActor | null;
+  activatedBy: WmsStoxReleaseActor | null;
+};
+
+export type WmsStoxReleasesResponse = {
+  scope: WmsSettingsScope;
+  latestRelease: WmsStoxRelease | null;
+  releases: WmsStoxRelease[];
+};
+
+export type CreateWmsStoxReleaseInput = {
+  version: string;
+  buildNumber: number;
+  releaseNotes?: string | null;
+  isActive?: boolean;
+  file: File;
+};

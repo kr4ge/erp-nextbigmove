@@ -12,6 +12,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.nextbigmove.stox",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -42,8 +43,16 @@
       "expo-secure-store"
     ],
     "experiments": {
+      "autolinkingModuleResolution": true,
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f7da6de3-bc96-4114-9a98-9e9d1bdf13f9"
+      }
+    },
+    "owner": "kr4ge"
   }
 }

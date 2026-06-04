@@ -8,7 +8,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Pie, PolarChart } from 'victory-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
@@ -49,6 +48,9 @@ type HomeSnapshot = {
 };
 
 const NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
+const HOME_RING_SEGMENTS = 28;
+const HOME_RING_SWEEP_DEGREES = 344;
+const HOME_RING_START_DEGREES = -86;
 
 const IN_PROGRESS_CARD_META = {
   units: {
@@ -439,39 +441,40 @@ export function HomeOverviewTab({
 function ProgressRing({ value }: { value: number }) {
   const size = 104;
   const progress = Math.max(0, Math.min(100, value));
-  const chartData = [
-    {
-      color: '#F7F1FF',
-      label: 'Done',
-      value: Math.max(progress, 0.001),
-    },
-    {
-      color: 'rgba(255,255,255,0.24)',
-      label: 'Remaining',
-      value: Math.max(100 - progress, 0.001),
-    },
-  ];
+  const strokeWidth = 8;
+  const segmentLength = 12;
+  const segmentWidth = 6;
+  const segmentRadius = (size / 2) - segmentLength / 2 - strokeWidth;
+  const activeSegmentCount = Math.round((progress / 100) * HOME_RING_SEGMENTS);
 
   return (
     <View style={[styles.ringWrap, { height: size, width: size }]}>
-      <PolarChart
-        data={chartData}
-        labelKey="label"
-        valueKey="value"
-        colorKey="color"
-        containerStyle={styles.ringChartContainer}>
-        <Pie.Chart
-          innerRadius="68%"
-          startAngle={-86}
-          circleSweepDegrees={344}>
-          {({ slice }) => (
-            <Pie.Slice
-              animate={{ type: 'spring' }}
-              opacity={slice.label === 'Done' ? 1 : 0.78}
-            />
-          )}
-        </Pie.Chart>
-      </PolarChart>
+      <View style={styles.ringTrack} />
+      {Array.from({ length: HOME_RING_SEGMENTS }, (_, index) => {
+        const angle = HOME_RING_START_DEGREES + ((HOME_RING_SWEEP_DEGREES / HOME_RING_SEGMENTS) * index);
+        const radians = (angle * Math.PI) / 180;
+        const isActive = index < activeSegmentCount;
+        const centerOffset = size / 2;
+        const x = centerOffset + (segmentRadius * Math.cos(radians)) - (segmentWidth / 2);
+        const y = centerOffset + (segmentRadius * Math.sin(radians)) - (segmentLength / 2);
+
+        return (
+          <View
+            key={angle}
+            style={[
+              styles.ringSegment,
+              {
+                backgroundColor: isActive ? '#F7F1FF' : 'rgba(255,255,255,0.24)',
+                height: segmentLength,
+                left: x,
+                top: y,
+                transform: [{ rotate: `${angle + 90}deg` }],
+                width: segmentWidth,
+              },
+            ]}
+          />
+        );
+      })}
       <Text style={styles.ringValue}>{Math.max(0, Math.min(100, value))}%</Text>
     </View>
   );
@@ -699,10 +702,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-  ringChartContainer: {
-    ...StyleSheet.absoluteFillObject,
+  ringTrack: {
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 52,
+    borderWidth: 8,
     height: 104,
+    position: 'absolute',
     width: 104,
+  },
+  ringSegment: {
+    borderRadius: 999,
+    position: 'absolute',
   },
   ringValue: {
     color: '#FFFFFF',

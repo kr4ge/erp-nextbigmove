@@ -52,6 +52,40 @@ export type WmsMobileHomeTaskSummaryResponse = {
   };
 };
 
+export type WmsMobileActiveStoxReleaseResponse = {
+  scope: {
+    isPlatformAdmin: boolean;
+    tenantId: string | null;
+  };
+  release: {
+    id: string;
+    platform: 'ANDROID';
+    channel: 'INTERNAL';
+    version: string;
+    buildNumber: number;
+    releaseNotes: string | null;
+    isActive: boolean;
+    contentType: string;
+    byteSize: number;
+    originalFileName: string | null;
+    downloadFileName: string;
+    downloadUrl: string | null;
+    createdAt: string;
+    updatedAt: string;
+    activatedAt: string | null;
+    createdBy: {
+      id: string;
+      email: string;
+      displayName: string;
+    } | null;
+    activatedBy: {
+      id: string;
+      email: string;
+      displayName: string;
+    } | null;
+  } | null;
+};
+
 export function fetchMobileHomeInventorySummary(params: {
   accessToken: string;
   device: DeviceIdentity;
@@ -107,4 +141,15 @@ export function fetchMobileHomeTaskSummary(params: {
       device: params.device,
     },
   );
+}
+
+export function fetchActiveStoxRelease(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+}) {
+  return apiRequest<WmsMobileActiveStoxReleaseResponse>('/wms/mobile/stox/release', {
+    method: 'GET',
+    token: params.accessToken,
+    device: params.device,
+  });
 }

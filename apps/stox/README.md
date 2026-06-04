@@ -1,50 +1,97 @@
-# Welcome to your Expo app 👋
+# STOX Android Release
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+STOX is an internal Android app for WMS operations. It is not distributed through Google Play.
 
-## Get started
+The production connection path is:
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```txt
+STOX app -> https://api.nextbigmove.com/api/v1 -> production database
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+The app never connects directly to the database.
 
-## Learn more
+## Current production config
 
-To learn more about developing your project with Expo, look at the following resources:
+- Android package: `com.nextbigmove.stox`
+- Android build profile: `production`
+- Distribution mode: internal
+- Android artifact type: APK
+- Production API URL: `https://api.nextbigmove.com/api/v1`
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+These values are configured in:
 
-## Join the community
+- [app.json](./app.json)
+- [eas.json](./eas.json)
 
-Join our community of developers creating universal apps.
+## One-time first setup
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+The first EAS build has an interactive setup step because Expo needs to:
+
+- create or link the EAS project
+- add `extra.eas.projectId` into `app.json`
+- create Android signing credentials
+
+Run these commands from `apps/stox`:
+
+```bash
+npm run eas:init
+npm run build:android:prod
+```
+
+Expected first-time behavior:
+
+1. `npm run eas:init`
+   - logs into Expo if needed
+   - creates or links the project on EAS
+   - writes `extra.eas.projectId` into `app.json`
+   - run this on your local machine, not on the production server
+
+2. `npm run build:android:prod`
+   - creates an internal Android APK on EAS
+   - uses the production API URL from `eas.json`
+   - auto-increments Android build version remotely
+   - run this on your local machine, not on the production server
+
+## Repeat build command
+
+After the first setup is complete, the release build command is:
+
+```bash
+npm run build:android:prod
+```
+
+## What to verify after the first build
+
+On a real Android device:
+
+1. Download and install the APK
+2. Open STOX
+3. Log in with a WMS account
+4. Confirm the app can:
+   - authenticate
+   - load `/wms/mobile/bootstrap`
+   - open Home
+   - open Pick / Pack / RTS / Inventory flows
+
+## Versioning behavior
+
+EAS is configured to manage Android build version remotely:
+
+- `expo.version` remains the user-facing app version
+- Android `versionCode` auto-increments on each production build
+
+That behavior is set in `eas.json` with:
+
+- `cli.appVersionSource = remote`
+- `android.autoIncrement = true`
+
+## What this phase does not do yet
+
+This phase does not yet provide:
+
+- APK hosting in DigitalOcean Spaces
+- WMS download page
+- release metadata/history in backend
+- in-app update notice
+
+Those belong to the next release-distribution phase.

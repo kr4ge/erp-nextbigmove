@@ -44,4 +44,5 @@ export default Joi.object({
   OBJECT_STORAGE_AUTO_CREATE_BUCKET: Joi.string().valid('true', 'false').default('false'),
   OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS: Joi.number().integer().min(60).default(900),
   OBJECT_STORAGE_PAYMENT_PROOF_MAX_FILE_MB: Joi.number().integer().min(1).default(8),
+  OBJECT_STORAGE_STOX_APK_MAX_FILE_MB: Joi.number().integer().min(1).default(150),
 });

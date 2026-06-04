@@ -49,6 +49,12 @@ export class WmsMobileController {
     return this.wmsMobileService.getTenantOptions(req.user);
   }
 
+  @Get('stox/release')
+  @Permissions('wms.core.read')
+  async getActiveStoxRelease(@Request() req) {
+    return this.wmsMobileService.getActiveStoxRelease(req.user);
+  }
+
   @Get('stock')
   @Permissions('wms.inventory.read', 'wms.receiving.read')
   async getStock(@Request() req, @Query() query: GetWmsMobileStockDto) {

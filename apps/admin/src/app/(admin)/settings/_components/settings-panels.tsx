@@ -8,6 +8,7 @@ import { readStoredAdminUser, readStoredPermissions, type StoredAdminUser } from
 import {
   hasAnyAdminPermission,
   WMS_ROLES_READ_PERMISSIONS,
+  WMS_STOX_READ_PERMISSIONS,
   WMS_USERS_READ_PERMISSIONS,
 } from '@/lib/wms-permissions';
 import { User } from 'lucide-react';
@@ -63,6 +64,11 @@ function SettingsTabs() {
         href: '/settings/roles',
         label: 'Roles',
         visible: hasAnyAdminPermission(role, permissions, WMS_ROLES_READ_PERMISSIONS),
+      },
+      {
+        href: '/settings/stox',
+        label: 'STOX',
+        visible: hasAnyAdminPermission(role, permissions, WMS_STOX_READ_PERMISSIONS),
       },
     ];
 

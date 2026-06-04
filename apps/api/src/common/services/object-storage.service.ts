@@ -16,6 +16,12 @@ type UploadObjectInput = {
   metadata?: Record<string, string>;
 };
 
+type SignedReadUrlOptions = {
+  ttlSeconds?: number;
+  downloadFileName?: string;
+  responseContentType?: string;
+};
+
 @Injectable()
 export class ObjectStorageService implements OnModuleInit {
   private readonly logger = new Logger(ObjectStorageService.name);
@@ -88,12 +94,17 @@ export class ObjectStorageService implements OnModuleInit {
     };
   }
 
-  async createSignedReadUrl(key: string, ttlSeconds = this.signedUrlTtlSeconds) {
+  async createSignedReadUrl(key: string, options?: SignedReadUrlOptions) {
     const client = this.getClient();
+    const ttlSeconds = options?.ttlSeconds ?? this.signedUrlTtlSeconds;
 
     return getSignedUrl(client, new GetObjectCommand({
       Bucket: this.getBucketName(),
       Key: key,
+      ResponseContentDisposition: options?.downloadFileName
+        ? `attachment; filename="${this.escapeContentDispositionFileName(options.downloadFileName)}"`
+        : undefined,
+      ResponseContentType: options?.responseContentType,
     }), {
       expiresIn: ttlSeconds,
     });
@@ -131,5 +142,9 @@ export class ObjectStorageService implements OnModuleInit {
     }
 
     return Math.floor(parsed);
+  }
+
+  private escapeContentDispositionFileName(fileName: string) {
+    return fileName.replace(/["\\]/g, '_');
   }
 }

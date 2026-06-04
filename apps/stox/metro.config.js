@@ -6,10 +6,11 @@ const monorepoRoot = path.resolve(projectRoot, '../..');
 
 const config = getDefaultConfig(projectRoot);
 
-config.watchFolders = [projectRoot, monorepoRoot];
+config.watchFolders = Array.from(
+  new Set([...(config.watchFolders ?? []), projectRoot, monorepoRoot]),
+);
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
-  path.resolve(projectRoot, 'node_modules/react-native/node_modules'),
   path.resolve(monorepoRoot, 'node_modules'),
 ];
 config.resolver.extraNodeModules = {
@@ -17,6 +18,6 @@ config.resolver.extraNodeModules = {
   'react-dom': path.resolve(projectRoot, 'node_modules/react-dom'),
   'react-native': path.resolve(projectRoot, 'node_modules/react-native'),
 };
-config.resolver.disableHierarchicalLookup = true;
+config.resolver.disableHierarchicalLookup = false;
 
 module.exports = config;

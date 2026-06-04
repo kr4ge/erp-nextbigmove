@@ -76,6 +76,14 @@ export const WMS_SETTINGS_READ_PERMISSIONS = [
   ...WMS_ROLES_READ_PERMISSIONS,
 ] as const;
 
+export const WMS_STOX_READ_PERMISSIONS = [
+  'wms.stox.read',
+] as const;
+
+export const WMS_STOX_WRITE_PERMISSIONS = [
+  'wms.stox.write',
+] as const;
+
 function normalizeAdminRole(role: string | null | undefined) {
   return typeof role === 'string'
     ? role.trim().toUpperCase()
