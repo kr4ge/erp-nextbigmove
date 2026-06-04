@@ -181,6 +181,7 @@ export class WmsStoxReleasesService {
       await this.objectStorageService.uploadObject({
         key: objectKey,
         body: this.buildUploadBody(file),
+        contentLength: file.size,
         contentType: 'application/vnd.android.package-archive',
         cacheControl: 'private, max-age=31536000, immutable',
         metadata: {

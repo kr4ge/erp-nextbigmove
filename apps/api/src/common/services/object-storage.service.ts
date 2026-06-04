@@ -12,6 +12,7 @@ import { Readable } from 'stream';
 type UploadObjectInput = {
   key: string;
   body: Buffer | Readable;
+  contentLength?: number;
   contentType: string;
   cacheControl?: string;
   metadata?: Record<string, string>;
@@ -84,6 +85,7 @@ export class ObjectStorageService implements OnModuleInit {
       Bucket: this.getBucketName(),
       Key: input.key,
       Body: input.body,
+      ContentLength: input.contentLength,
       ContentType: input.contentType,
       CacheControl: input.cacheControl,
       Metadata: input.metadata,
