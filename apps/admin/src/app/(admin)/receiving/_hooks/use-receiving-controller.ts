@@ -47,6 +47,7 @@ type ManualReceiveLineState = {
   id: string;
   profileId: string;
   quantity: number;
+  unitCost: number | null;
 };
 
 type ManualReceiveModalState = {
@@ -79,6 +80,15 @@ function getErrorMessage(error: unknown) {
   }
 
   return 'Request failed';
+}
+
+function parseOptionalCost(value: string | null | undefined) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function useReceivingController() {
@@ -413,6 +423,7 @@ export function useReceivingController() {
         .map((line) => ({
           profileId: line.profileId,
           receiveQuantity: Math.max(0, Math.floor(line.quantity)),
+          unitCost: line.unitCost ?? undefined,
         })),
     });
   }
@@ -472,6 +483,7 @@ export function useReceivingController() {
           variationLabel: product.variationDisplayId ?? product.variationId ?? 'No variation',
           customId: product.productCustomId ?? product.customId ?? null,
           hint: product.productCustomId ?? product.customId ?? null,
+          defaultUnitCost: parseOptionalCost(product.supplierUnitCost) ?? parseOptionalCost(product.inhouseUnitCost),
         })),
     [manualProductsQuery.data?.products],
   );
@@ -547,7 +559,7 @@ export function useReceivingController() {
     addManualLine: () =>
       setManualLines((current) => [
         ...current,
-        { id: `manual-${Date.now()}-${current.length}`, profileId: '', quantity: 1 },
+        { id: `manual-${Date.now()}-${current.length}`, profileId: '', quantity: 1, unitCost: null },
       ]),
     addManualProduct: (profileId: string) =>
       setManualLines((current) => {
@@ -560,9 +572,15 @@ export function useReceivingController() {
           );
         }
 
+        const product = manualProductOptions.find((option) => option.id === profileId);
         return [
           ...current,
-          { id: `manual-${Date.now()}-${current.length}`, profileId, quantity: 1 },
+          {
+            id: `manual-${Date.now()}-${current.length}`,
+            profileId,
+            quantity: 1,
+            unitCost: product?.defaultUnitCost ?? null,
+          },
         ];
       }),
     removeManualLine: (lineId: string) =>
@@ -576,6 +594,14 @@ export function useReceivingController() {
         current.map((line) =>
           line.id === lineId
             ? { ...line, quantity: Number.isFinite(quantity) ? Math.max(0, Math.floor(quantity)) : 0 }
+            : line,
+        ),
+      ),
+    setManualLineUnitCost: (lineId: string, unitCost: number | null) =>
+      setManualLines((current) =>
+        current.map((line) =>
+          line.id === lineId
+            ? { ...line, unitCost: unitCost !== null && Number.isFinite(unitCost) ? Math.max(0, unitCost) : null }
             : line,
         ),
       ),

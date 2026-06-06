@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsISO8601, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsISO8601, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+
+const WMS_MOBILE_STOCK_COUNT_SESSION_STATUSES = ['OPEN', 'SUBMITTED', 'CLOSED', 'CANCELED'] as const;
 
 export class GetWmsMobileStockScanDto {
   @IsString()
@@ -98,6 +100,64 @@ export class WmsMobileStockMoveDto {
   @IsISO8601()
   expectedUpdatedAt?: string;
 
+  @IsOptional()
+  @Type(() => String)
+  @IsString()
+  @MaxLength(400)
+  notes?: string;
+}
+
+export class GetWmsMobileStockCountSessionsDto extends GetWmsMobileStockScopedDto {
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  @IsOptional()
+  @IsIn(WMS_MOBILE_STOCK_COUNT_SESSION_STATUSES)
+  status?: (typeof WMS_MOBILE_STOCK_COUNT_SESSION_STATUSES)[number];
+}
+
+export class WmsMobileStartStockCountDto extends GetWmsMobileStockScopedDto {
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  targetCode!: string;
+
+  @IsOptional()
+  @Type(() => String)
+  @IsString()
+  @MaxLength(400)
+  notes?: string;
+}
+
+export class WmsMobileScanStockCountUnitDto extends GetWmsMobileStockScopedDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  code!: string;
+}
+
+export class WmsMobileSubmitStockCountDto extends GetWmsMobileStockScopedDto {
+  @IsOptional()
+  @Type(() => String)
+  @IsString()
+  @MaxLength(400)
+  notes?: string;
+}
+
+export class WmsMobileReopenStockCountDto extends GetWmsMobileStockScopedDto {
+  @IsOptional()
+  @Type(() => String)
+  @IsString()
+  @MaxLength(400)
+  notes?: string;
+}
+
+export class WmsMobileCloseoutStockCountDto extends GetWmsMobileStockScopedDto {
   @IsOptional()
   @Type(() => String)
   @IsString()

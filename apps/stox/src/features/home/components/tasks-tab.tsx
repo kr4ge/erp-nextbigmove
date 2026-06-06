@@ -1,6 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
-import { canUsePackWorkspace, canUsePickWorkspace } from '../rbac';
+import {
+  canUseAssignedRtsWorkspace,
+  canUseAssignedInventoryWorkspace,
+  canUsePackWorkspace,
+  canUsePickWorkspace,
+} from '../rbac';
+import type { StoxTaskMode, StoxTaskRoute } from '../types';
+import { InventoryTab } from './inventory-tab';
 import { PackingTab } from './packing-tab';
 import { PickingTab } from './picking-tab';
 import { BlockedTaskState } from './stox-primitives';
@@ -11,32 +18,68 @@ type TasksTabProps = {
   bootstrap: BootstrapResponse;
   device: DeviceIdentity | null;
   session: StoredSession;
+  onRefresh: () => Promise<void>;
+  route?: StoxTaskRoute | null;
+  onRouteConsumed?: () => void;
 };
 
-type TaskMode = 'pick' | 'pack';
-
-export function TasksTab({ bootstrap, device, session }: TasksTabProps) {
+export function TasksTab({ bootstrap, device, session, onRefresh, route, onRouteConsumed }: TasksTabProps) {
   const canPick = canUsePickWorkspace(bootstrap);
   const canPack = canUsePackWorkspace(bootstrap);
-  const defaultMode: TaskMode = bootstrap.operations?.taskAssignment === 'PACK' && canPack
-    ? 'pack'
-    : 'pick';
-  const [mode, setMode] = useState<TaskMode>(defaultMode);
-
-  const canSwitchModes = canPick && canPack;
-  const visibleMode = useMemo(() => {
-    if (mode === 'pack' && !canPack && canPick) {
-      return 'pick';
+  const canInventoryTasks = canUseAssignedInventoryWorkspace(bootstrap);
+  const canInventory = canInventoryTasks || canUseAssignedRtsWorkspace(bootstrap);
+  const availableModes = useMemo(
+    () => [
+      canPick ? 'pick' : null,
+      canPack ? 'pack' : null,
+      canInventory ? 'inventory' : null,
+    ].filter((mode): mode is StoxTaskMode => mode !== null),
+    [canInventory, canPack, canPick],
+  );
+  const defaultMode = useMemo<StoxTaskMode>(() => {
+    if (route?.mode && availableModes.includes(route.mode)) {
+      return route.mode;
     }
-    if (mode === 'pick' && !canPick && canPack) {
+
+    if (bootstrap.operations?.taskAssignment === 'INVENTORY' && canInventory) {
+      return 'inventory';
+    }
+
+    if (bootstrap.operations?.taskAssignment === 'PACK' && canPack) {
       return 'pack';
     }
-    return mode;
-  }, [canPack, canPick, mode]);
 
-  if (!canPick && !canPack) {
+    if (canPick) {
+      return 'pick';
+    }
+
+    return availableModes[0] ?? 'pick';
+  }, [availableModes, bootstrap.operations?.taskAssignment, canInventory, canPack, canPick, route?.mode]);
+  const [mode, setMode] = useState<StoxTaskMode>(defaultMode);
+  const [activeRoute, setActiveRoute] = useState<StoxTaskRoute | null>(route ?? null);
+
+  useEffect(() => {
+    if (!route || !availableModes.includes(route.mode)) {
+      return;
+    }
+
+    setActiveRoute(route);
+    setMode(route.mode);
+    onRouteConsumed?.();
+  }, [availableModes, onRouteConsumed, route]);
+
+  const canSwitchModes = availableModes.length > 1;
+  const visibleMode = useMemo(() => {
+    if (availableModes.includes(mode)) {
+      return mode;
+    }
+
+    return availableModes[0] ?? 'pick';
+  }, [availableModes, mode]);
+
+  if (availableModes.length === 0) {
     return (
-      <BlockedTaskState copy="This account is not assigned to a PICK or PACK workstation right now." />
+      <BlockedTaskState copy="This account is not assigned to a PICK, PACK, or INVENTORY workstation right now." />
     );
   }
 
@@ -44,8 +87,36 @@ export function TasksTab({ bootstrap, device, session }: TasksTabProps) {
     <>
       {canSwitchModes ? (
         <View style={styles.modeRow}>
-          <ModeChip active={visibleMode === 'pick'} label="Pick queue" onPress={() => setMode('pick')} />
-          <ModeChip active={visibleMode === 'pack'} label="Pack queue" onPress={() => setMode('pack')} />
+          {availableModes.includes('pick') ? (
+            <ModeChip
+              active={visibleMode === 'pick'}
+              label="Pick queue"
+              onPress={() => {
+                setActiveRoute(null);
+                setMode('pick');
+              }}
+            />
+          ) : null}
+          {availableModes.includes('pack') ? (
+            <ModeChip
+              active={visibleMode === 'pack'}
+              label="Pack queue"
+              onPress={() => {
+                setActiveRoute(null);
+                setMode('pack');
+              }}
+            />
+          ) : null}
+          {availableModes.includes('inventory') ? (
+            <ModeChip
+              active={visibleMode === 'inventory'}
+              label="Inventory"
+              onPress={() => {
+                setActiveRoute(null);
+                setMode('inventory');
+              }}
+            />
+          ) : null}
         </View>
       ) : null}
 
@@ -55,6 +126,16 @@ export function TasksTab({ bootstrap, device, session }: TasksTabProps) {
 
       {visibleMode === 'pack' ? (
         <PackingTab bootstrap={bootstrap} device={device} session={session} />
+      ) : null}
+
+      {visibleMode === 'inventory' ? (
+        <InventoryTab
+          bootstrap={bootstrap}
+          device={device}
+          session={session}
+          onRefresh={onRefresh}
+          route={activeRoute?.mode === 'inventory' ? activeRoute : null}
+        />
       ) : null}
     </>
   );

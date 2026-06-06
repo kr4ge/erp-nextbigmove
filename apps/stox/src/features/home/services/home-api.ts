@@ -11,6 +11,8 @@ export type WmsMobileHomeInventorySummaryResponse = {
   summary: {
     totalUnits: number;
     locatedUnits: number;
+    stagedUnits: number;
+    movableUnits: number;
     unitsOnHand: number;
     dispatchedUnits: number;
     warehouseCapacity: {
@@ -32,11 +34,15 @@ export type WmsMobileHomeTaskSummaryResponse = {
       ready: number;
       partial: number;
       inPicking: number;
+      readyForPack: number;
+      picked: number;
       total: number;
     };
     pack: {
       picked: number;
       packing: number;
+      awaitingTracking: number;
+      packed: number;
       total: number;
     };
     groups: {

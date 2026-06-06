@@ -1149,10 +1149,26 @@ export class WmsReceivingService {
           receiveQuantity,
           unitCost:
             requestLine?.unitCost
-            ?? this.toNumber(line.supplierUnitCost)
-            ?? this.toNumber(line.partnerUnitCost)
-            ?? this.toNumber(line.resolvedProfile?.supplierUnitCost)
-            ?? this.toNumber(line.resolvedProfile?.inhouseUnitCost),
+            ?? (
+              purchasingBatch.requestType === 'SELF_BUY'
+                ? this.toNumber(line.partnerUnitCost)
+                : this.toNumber(line.supplierUnitCost)
+            )
+            ?? (
+              purchasingBatch.requestType === 'SELF_BUY'
+                ? null
+                : this.toNumber(line.partnerUnitCost)
+            )
+            ?? (
+              purchasingBatch.requestType === 'SELF_BUY'
+                ? null
+                : this.toNumber(line.resolvedProfile?.supplierUnitCost)
+            )
+            ?? (
+              purchasingBatch.requestType === 'SELF_BUY'
+                ? null
+                : this.toNumber(line.resolvedProfile?.inhouseUnitCost)
+            ),
           notes: this.cleanOptionalText(requestLine?.notes),
         };
       })
@@ -1178,6 +1194,15 @@ export class WmsReceivingService {
       if (entry.purchasingLine.resolvedProfile?.status === WmsProductProfileStatus.ARCHIVED) {
         throw new BadRequestException(
           `Line ${entry.purchasingLine.lineNo}: archived product profiles cannot be received`,
+        );
+      }
+
+      if (
+        purchasingBatch.requestType === 'SELF_BUY'
+        && (entry.unitCost === null || entry.unitCost <= 0)
+      ) {
+        throw new BadRequestException(
+          `Line ${entry.purchasingLine.lineNo}: self-buy actual unit COGS is required before receiving`,
         );
       }
 
@@ -1254,10 +1279,17 @@ export class WmsReceivingService {
 
       const unitCodePrefix = this.buildUnitCodePrefix(partnerRequestLabel, warehouse.code);
       let nextUnitNumber = await this.getNextUnitNumber(tx, unitCodePrefix);
+      const unitBarcodes = await this.reserveUnitBarcodes(
+        tx,
+        selectedLines.reduce((total, entry) => total + entry.receiveQuantity, 0),
+      );
+      let unitBarcodeIndex = 0;
       const unitRows = selectedLines.flatMap((entry) =>
         Array.from({ length: entry.receiveQuantity }, () => {
           const unitIdentifier = this.buildUnitIdentifier(unitCodePrefix, nextUnitNumber);
+          const unitBarcode = unitBarcodes[unitBarcodeIndex];
           nextUnitNumber += 1;
+          unitBarcodeIndex += 1;
 
           return {
             tenantId: scope.activeTenantId!,
@@ -1271,11 +1303,12 @@ export class WmsReceivingService {
             variationId: entry.purchasingLine.variationId ?? entry.purchasingLine.resolvedProfile!.variationId,
             posWarehouseRef: entry.purchasingLine.resolvedProfile?.posWarehouseRef ?? null,
             code: unitIdentifier,
-            barcode: unitIdentifier,
+            barcode: unitBarcode,
             status: WmsInventoryUnitStatus.STAGED,
             sourceType: WmsInventoryUnitSourceType.RECEIVING,
             sourceRefId: receivingBatch.id,
             sourceRefLabel: receivingCode,
+            unitCost: this.decimalOrNull(entry.unitCost),
             notes: entry.notes,
             createdById: actorId,
             updatedById: actorId,
@@ -1577,10 +1610,17 @@ export class WmsReceivingService {
 
       const unitCodePrefix = this.buildUnitCodePrefix(partnerRequestLabel, warehouse.code);
       let nextUnitNumber = await this.getNextUnitNumber(tx, unitCodePrefix);
+      const unitBarcodes = await this.reserveUnitBarcodes(
+        tx,
+        selectedLines.reduce((total, entry) => total + entry.receiveQuantity, 0),
+      );
+      let unitBarcodeIndex = 0;
       const unitRows = selectedLines.flatMap((entry) =>
         Array.from({ length: entry.receiveQuantity }, () => {
           const unitIdentifier = this.buildUnitIdentifier(unitCodePrefix, nextUnitNumber);
+          const unitBarcode = unitBarcodes[unitBarcodeIndex];
           nextUnitNumber += 1;
+          unitBarcodeIndex += 1;
 
           return {
             tenantId,
@@ -1594,11 +1634,12 @@ export class WmsReceivingService {
             variationId: entry.profile.variationId,
             posWarehouseRef: entry.profile.posWarehouseRef ?? null,
             code: unitIdentifier,
-            barcode: unitIdentifier,
+            barcode: unitBarcode,
             status: WmsInventoryUnitStatus.STAGED,
             sourceType: WmsInventoryUnitSourceType.MANUAL_INPUT,
             sourceRefId: receivingBatch.id,
             sourceRefLabel: receivingCode,
+            unitCost: this.decimalOrNull(entry.unitCost),
             notes: entry.notes,
             createdById: actorId,
             updatedById: actorId,
@@ -2133,6 +2174,7 @@ export class WmsReceivingService {
         lastLabelPrintedAt: unit.lastLabelPrintedAt,
         productId: unit.productId,
         variationId: unit.variationId,
+        unitCost: this.toNumber(unit.unitCost),
         productName: unit.posProduct.name,
         productCustomId: unit.posProduct.customId,
         currentLocation: unit.currentLocation
@@ -2232,6 +2274,33 @@ export class WmsReceivingService {
 
   private buildUnitIdentifier(prefix: string, unitNumber: number) {
     return `${prefix}${unitNumber.toString().padStart(8, '0')}`;
+  }
+
+  private async reserveUnitBarcodes(tx: Prisma.TransactionClient, count: number) {
+    if (count <= 0) {
+      return [];
+    }
+
+    const rows = await tx.$queryRaw<Array<{ value: string }>>(Prisma.sql`
+      SELECT nextval('wms_inventory_unit_barcode_seq')::text AS value
+      FROM generate_series(1, ${count})
+    `);
+
+    if (rows.length !== count) {
+      throw new Error('Unable to reserve WMS unit barcode values');
+    }
+
+    return rows.map((row) => this.formatCompactUnitBarcode(row.value));
+  }
+
+  private formatCompactUnitBarcode(value: string) {
+    const normalized = value.replace(/\D/g, '');
+
+    if (!normalized) {
+      throw new Error('Unable to format empty WMS unit barcode value');
+    }
+
+    return normalized.length % 2 === 0 ? normalized : `0${normalized}`;
   }
 
   private isLegacyVariationMapping(productId: string, variationId: string | null | undefined) {

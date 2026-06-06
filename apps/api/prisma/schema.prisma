@@ -71,6 +71,7 @@ model Tenant {
   wmsInventoryMovements               WmsInventoryMovement[]
   wmsLabelPrintLogs                   WmsLabelPrintLog[]
   wmsStaffActivities                  WmsStaffActivity[]
+  wmsInventoryCountSessions           WmsInventoryCountSession[]
   notificationStates                  NotificationState[]
   reconcileMarketing                  ReconcileMarketing[]
   reconcileSales                      ReconcileSales[]
@@ -339,6 +340,9 @@ model User {
   wmsReceivingLinesUpdated                  WmsReceivingLine[]         @relation("WmsReceivingLineUpdatedBy")
   wmsInventoryUnitsCreated                  WmsInventoryUnit[]         @relation("WmsInventoryUnitCreatedBy")
   wmsInventoryUnitsUpdated                  WmsInventoryUnit[]         @relation("WmsInventoryUnitUpdatedBy")
+  wmsInventoryCountSessionsStarted          WmsInventoryCountSession[] @relation("WmsInventoryCountSessionStartedBy")
+  wmsInventoryCountSessionsSubmitted        WmsInventoryCountSession[] @relation("WmsInventoryCountSessionSubmittedBy")
+  wmsInventoryCountSessionsClosed           WmsInventoryCountSession[] @relation("WmsInventoryCountSessionClosedBy")
   wmsTransfersCreated                       WmsTransfer[]              @relation("WmsTransferCreatedBy")
   wmsTransfersUpdated                       WmsTransfer[]              @relation("WmsTransferUpdatedBy")
   wmsInventoryMovements                     WmsInventoryMovement[]     @relation("WmsInventoryMovementActor")
@@ -681,6 +685,20 @@ enum WmsInventoryMovementType {
   DISPATCH
 }
 
+enum WmsInventoryCountSessionStatus {
+  OPEN
+  SUBMITTED
+  CLOSED
+  CANCELED
+}
+
+enum WmsInventoryCountEntryStatus {
+  PENDING
+  COUNTED
+  MISSING
+  UNEXPECTED
+}
+
 enum WmsFulfillmentOrderStatus {
   READY
   PARTIAL
@@ -749,6 +767,7 @@ enum WmsStaffActivityOutcome {
 enum WmsStaffAssignmentTaskType {
   PICK
   PACK
+  INVENTORY
 }
 
 enum AnalyticsShareScope {
@@ -1263,6 +1282,7 @@ model WmsWarehouse {
   baskets            WmsBasket[]
   transfers          WmsTransfer[]
   inventoryMovements WmsInventoryMovement[]
+  inventoryCounts    WmsInventoryCountSession[]
 
   @@index([status])
   @@map("wms_warehouses")
@@ -1306,6 +1326,7 @@ model WmsLocation {
   transferDestinations   WmsTransfer[]          @relation("WmsTransferToLocation")
   movementSources        WmsInventoryMovement[] @relation("WmsInventoryMovementFromLocation")
   movementDestinations   WmsInventoryMovement[] @relation("WmsInventoryMovementToLocation")
+  countSessions          WmsInventoryCountSession[]
 
   @@unique([barcode])
   @@unique([warehouseId, code])
@@ -1647,6 +1668,7 @@ model WmsInventoryUnit {
   sourceType          WmsInventoryUnitSourceType?
   sourceRefId         String?
   sourceRefLabel      String?
+  unitCost            Decimal?                    @db.Decimal(14, 2)
   notes               String?
   createdById         String?                     @db.Uuid
   createdBy           User?                       @relation("WmsInventoryUnitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -1657,7 +1679,9 @@ model WmsInventoryUnit {
   labelPrintLogs      WmsLabelPrintLog[]          @relation("WmsLabelPrintLogUnit")
   movements           WmsInventoryMovement[]
   transferItems       WmsTransferItem[]
+  storeTransferItems  WmsInventoryStoreTransferItem[]
   pickReservations    WmsPickReservation[]
+  countEntries        WmsInventoryCountEntry[]
 
   @@index([tenantId, storeId])
   @@index([tenantId, status])
@@ -1667,6 +1691,63 @@ model WmsInventoryUnit {
   @@index([productProfileId])
   @@index([sourceType, sourceRefId])
   @@map("wms_inventory_units")
+}
+
+model WmsInventoryCountSession {
+  id                String                         @id @default(uuid()) @db.Uuid
+  tenantId          String                         @db.Uuid
+  tenant            Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  warehouseId       String                         @db.Uuid
+  warehouse         WmsWarehouse                   @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  locationId        String                         @db.Uuid
+  location          WmsLocation                    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  status            WmsInventoryCountSessionStatus @default(OPEN)
+  expectedUnitCount Int                            @default(0)
+  countedUnitCount  Int                            @default(0)
+  missingUnitCount  Int                            @default(0)
+  unexpectedUnitCount Int                          @default(0)
+  startedById       String?                        @db.Uuid
+  startedBy         User?                          @relation("WmsInventoryCountSessionStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+  submittedById     String?                        @db.Uuid
+  submittedBy       User?                          @relation("WmsInventoryCountSessionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  closedById        String?                        @db.Uuid
+  closedBy          User?                          @relation("WmsInventoryCountSessionClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  notes             String?
+  startedAt         DateTime                       @default(now())
+  submittedAt       DateTime?
+  closedAt          DateTime?
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+  entries           WmsInventoryCountEntry[]
+
+  @@index([tenantId, warehouseId, status, createdAt])
+  @@index([locationId, status])
+  @@index([startedById])
+  @@index([submittedById])
+  @@index([closedById])
+  @@map("wms_inventory_count_sessions")
+}
+
+model WmsInventoryCountEntry {
+  id               String                       @id @default(uuid()) @db.Uuid
+  sessionId        String                       @db.Uuid
+  session          WmsInventoryCountSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  inventoryUnitId  String?                      @db.Uuid
+  inventoryUnit    WmsInventoryUnit?            @relation(fields: [inventoryUnitId], references: [id], onDelete: SetNull)
+  status           WmsInventoryCountEntryStatus @default(PENDING)
+  unitCode         String
+  unitBarcode      String?
+  productName      String
+  productCustomId  String?
+  scannedCode      String?
+  scannedAt        DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  @@unique([sessionId, unitCode])
+  @@index([sessionId, status])
+  @@index([inventoryUnitId])
+  @@map("wms_inventory_count_entries")
 }
 
 model WmsFulfillmentOrder {
@@ -1836,6 +1917,77 @@ model WmsTransferItem {
   @@unique([transferId, inventoryUnitId])
   @@index([inventoryUnitId])
   @@map("wms_transfer_items")
+}
+
+model WmsInventoryStoreTransfer {
+  id              String                          @id @default(uuid()) @db.Uuid
+  code            String                          @unique
+  tenantId        String                          @db.Uuid
+  fromStoreId     String                          @db.Uuid
+  toStoreId       String                          @db.Uuid
+  targetProfileId String                          @db.Uuid
+  notes           String?
+  createdById     String?                         @db.Uuid
+  updatedById     String?                         @db.Uuid
+  createdAt       DateTime                        @default(now())
+  updatedAt       DateTime                        @updatedAt
+  items           WmsInventoryStoreTransferItem[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, fromStoreId, toStoreId])
+  @@index([targetProfileId])
+  @@map("wms_inventory_store_transfers")
+}
+
+model WmsInventoryStoreTransferItem {
+  id                   String                    @id @default(uuid()) @db.Uuid
+  transferId           String                    @db.Uuid
+  transfer             WmsInventoryStoreTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  inventoryUnitId      String                    @db.Uuid
+  inventoryUnit        WmsInventoryUnit          @relation(fields: [inventoryUnitId], references: [id], onDelete: Cascade)
+  lineNo               Int
+  fromStoreId          String                    @db.Uuid
+  toStoreId            String                    @db.Uuid
+  fromPosProductId     String                    @db.Uuid
+  toPosProductId       String                    @db.Uuid
+  fromProductProfileId String                    @db.Uuid
+  toProductProfileId   String                    @db.Uuid
+  fromProductId        String
+  toProductId          String
+  fromVariationId      String
+  toVariationId        String
+  unitCost             Decimal?                  @db.Decimal(14, 2)
+  createdAt            DateTime                  @default(now())
+
+  @@unique([transferId, lineNo])
+  @@unique([transferId, inventoryUnitId])
+  @@index([inventoryUnitId])
+  @@index([fromStoreId, toStoreId])
+  @@index([fromVariationId, toVariationId])
+  @@map("wms_inventory_store_transfer_items")
+}
+
+model WmsProductProfileEquivalence {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @db.Uuid
+  sourceStoreId     String   @db.Uuid
+  targetStoreId     String   @db.Uuid
+  sourceProfileId   String   @db.Uuid
+  targetProfileId   String   @db.Uuid
+  sourceVariationId String
+  targetVariationId String
+  matchSource       String   @default("TRANSFER")
+  transferCount     Int      @default(0)
+  lastTransferAt    DateTime?
+  createdById       String?  @db.Uuid
+  updatedById       String?  @db.Uuid
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([tenantId, sourceProfileId, targetStoreId])
+  @@index([tenantId, targetStoreId])
+  @@index([sourceProfileId, targetProfileId])
+  @@map("wms_product_profile_equivalences")
 }
 
 model WmsInventoryMovement {

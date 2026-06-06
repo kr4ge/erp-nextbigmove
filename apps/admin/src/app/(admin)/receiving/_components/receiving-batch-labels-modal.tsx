@@ -5,7 +5,11 @@ import { Loader2, Printer } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
 import type { WmsReceivingBatchDetail } from '../_types/receiving';
 import { printReceivingBatchLabels } from '../_utils/print-receiving-batch-labels';
-import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../../warehouses/_utils/code39-barcode';
+import {
+  isCode128CCompatible,
+  normalizeBarcodeValue,
+  renderCode128CSvgMarkup,
+} from '../../warehouses/_utils/code39-barcode';
 
 type ReceivingBatchLabelsModalProps = {
   open: boolean;
@@ -41,12 +45,15 @@ export function ReceivingBatchLabelsModal({
         ...unit,
         barcodeValue: normalizeBarcodeValue(unit.barcode),
         sequence: index + 1,
-        barcodeMarkup: renderCode128SvgMarkup(unit.barcode, {
-          height: 30,
-          moduleWidth: 1,
-          quietZone: 10,
-          textSize: 8,
-        }),
+        sequenceLabel: String(index + 1).padStart(2, '0'),
+        barcodeMarkup: isCode128CCompatible(unit.barcode)
+          ? renderCode128CSvgMarkup(unit.barcode, {
+              height: 30,
+              moduleWidth: 1,
+              quietZone: 10,
+              textSize: 8,
+            })
+          : '',
       })),
     [batch?.units],
   );
@@ -176,18 +183,24 @@ export function ReceivingBatchLabelsModal({
                     </div>
 
                     <div className="relative mt-2 rounded-[8px] border border-[#0f3040] bg-white p-1">
-                      <div
-                        className="flex items-center justify-center"
-                        dangerouslySetInnerHTML={{ __html: unit.barcodeMarkup }}
-                      />
-                      <span className="absolute bottom-1 right-1 text-[11px] font-semibold leading-none text-[#0f3040]">
-                        {unit.sequence}
-                      </span>
+                      {unit.barcodeMarkup ? (
+                        <div
+                          className="flex items-center justify-center"
+                          dangerouslySetInnerHTML={{ __html: unit.barcodeMarkup }}
+                        />
+                      ) : (
+                        <p className="py-3 text-center text-[11px] font-semibold text-amber-700">
+                          Run compact barcode migration for Code128C labels.
+                        </p>
+                      )}
+                      <p className="mt-1 text-center text-[11px] font-semibold leading-none text-[#0f3040]">
+                        {unit.barcodeValue}
+                        <sub className="ml-1 text-[8px] leading-none">{unit.sequenceLabel}</sub>
+                      </p>
                     </div>
 
                     <div className="mt-2 space-y-1 text-[11px] leading-4 text-[#3f5f72]">
                       <p className="font-semibold text-primary">{unit.code}</p>
-                      <p className="break-all">{unit.barcodeValue}</p>
                       <p>
                         {batch.warehouse.code} · {batch.warehouse.name}
                         {batch.stagingLocation ? ` · ${batch.stagingLocation.code} · ${batch.stagingLocation.name}` : ''}

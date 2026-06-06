@@ -16,6 +16,8 @@ import {
   TenantStatus,
   WmsFulfillmentLineStatus,
   WmsFulfillmentOrderStatus,
+  WmsInventoryCountEntryStatus,
+  WmsInventoryCountSessionStatus,
   WmsInventoryMovementType,
   WmsInventoryUnitStatus,
   WmsLocationKind,
@@ -39,11 +41,17 @@ import {
 import {
   GetWmsMobileHomeInventorySummaryDto,
   GetWmsMobileRtsTasksDto,
+  WmsMobileCloseoutStockCountDto,
+  GetWmsMobileStockCountSessionsDto,
   GetWmsMobileHomeTaskSummaryDto,
   GetWmsMobileStockScanDto,
   GetWmsMobileStockScopedDto,
   GetWmsMobileTrackingLookupDto,
+  WmsMobileReopenStockCountDto,
+  WmsMobileScanStockCountUnitDto,
+  WmsMobileStartStockCountDto,
   WmsMobileTrackingReturnUnitDto,
+  WmsMobileSubmitStockCountDto,
   WmsMobileStockMoveDto,
 } from './dto/wms-mobile-stock-execution.dto';
 import {
@@ -744,12 +752,29 @@ export class WmsMobileService {
           id: true,
           code: true,
           name: true,
+          kind: true,
           capacity: true,
           warehouse: {
             select: {
               id: true,
               code: true,
               name: true,
+            },
+          },
+          parent: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              kind: true,
+              parent: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  kind: true,
+                },
+              },
             },
           },
           _count: {
@@ -884,13 +909,30 @@ export class WmsMobileService {
         const occupiedUnits = bin._count.inventoryUnits;
         const availableUnits =
           bin.capacity === null ? null : Math.max(bin.capacity - occupiedUnits, 0);
+        const rack = bin.parent?.kind === WmsLocationKind.RACK ? bin.parent : null;
+        const section = rack?.parent?.kind === WmsLocationKind.SECTION ? rack.parent : null;
 
         return {
           id: bin.id,
           code: bin.code,
           name: bin.name,
-          label: `${bin.code} · ${bin.name}`,
+          kind: bin.kind,
+          label: `${bin.warehouse.code} · ${bin.code}`,
           warehouse: bin.warehouse,
+          section: section
+            ? {
+              id: section.id,
+              code: section.code,
+              name: section.name,
+            }
+            : null,
+          rack: rack
+            ? {
+              id: rack.id,
+              code: rack.code,
+              name: rack.name,
+            }
+            : null,
           capacity: bin.capacity,
           occupiedUnits,
           availableUnits,
@@ -946,7 +988,15 @@ export class WmsMobileService {
       ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
     };
 
-    const [totalUnits, locatedUnits, unitsOnHand, dispatchedUnits, bins] = await Promise.all([
+    const [
+      totalUnits,
+      locatedUnits,
+      stagedUnits,
+      movableUnits,
+      unitsOnHand,
+      dispatchedUnits,
+      bins,
+    ] = await Promise.all([
       this.prisma.wmsInventoryUnit.count({
         where: scope,
       }),
@@ -955,6 +1005,20 @@ export class WmsMobileService {
           ...scope,
           currentLocationId: {
             not: null,
+          },
+        },
+      }),
+      this.prisma.wmsInventoryUnit.count({
+        where: {
+          ...scope,
+          status: WmsInventoryUnitStatus.STAGED,
+        },
+      }),
+      this.prisma.wmsInventoryUnit.count({
+        where: {
+          ...scope,
+          status: {
+            in: [...STOCK_TRANSFERABLE_UNIT_STATUSES],
           },
         },
       }),
@@ -1001,6 +1065,8 @@ export class WmsMobileService {
       summary: {
         dispatchedUnits,
         locatedUnits,
+        movableUnits,
+        stagedUnits,
         totalUnits,
         unitsOnHand,
         warehouseCapacity,
@@ -1066,11 +1132,35 @@ export class WmsMobileService {
       || this.hasAnyRequiredPermission(permissions, PICK_ASSIGNMENT_PERMISSIONS);
     const canPack = user.role === 'SUPER_ADMIN'
       || this.hasAnyRequiredPermission(permissions, PACK_HANDOFF_PERMISSIONS);
+    const pickQueueAccess = (() => {
+      try {
+        return userId
+          ? this.resolvePickQueueAccess(user, permissions, taskAssignment)
+          : { canViewAll: false };
+      } catch {
+        return { canViewAll: false };
+      }
+    })();
     const packBasketAssignmentWhere: Prisma.WmsBasketWhereInput = isPackSupervisor
       ? { assignedPackerId: { not: null } }
       : taskAssignment === WmsStaffAssignmentTaskType.PACK && userId
         ? { assignedPackerId: userId }
         : { assignedPackerId: { not: null } };
+    const pickActiveOwnershipWhere: Prisma.WmsFulfillmentOrderWhereInput = pickQueueAccess.canViewAll
+      ? {}
+      : userId
+        ? {
+            OR: [
+              { claimedById: null },
+              { claimedById: userId },
+            ],
+          }
+        : { claimedById: '__missing_user__' };
+    const pickCompletedOwnershipWhere: Prisma.WmsFulfillmentOrderWhereInput = pickQueueAccess.canViewAll
+      ? {}
+      : userId
+        ? { claimedById: userId }
+        : { claimedById: '__missing_user__' };
     const deliveredAttributionWhere: Prisma.WmsFulfillmentOrderWhereInput = (() => {
       if (!userId || user.role === 'SUPER_ADMIN') {
         return {};
@@ -1138,16 +1228,40 @@ export class WmsMobileService {
         },
       ],
     };
-    const [pickGroups, packGroups, restockingCount, packingWithoutTrackingCount, deliveredCount, rtsCount, completedTodayGroups] = await Promise.all([
+    const packedAttributionWhere: Prisma.WmsFulfillmentOrderWhereInput = {
+      ...(isPackSupervisor
+        ? { packedById: { not: null } }
+        : userId
+          ? { packedById: userId }
+          : { packedById: '__missing_user__' }),
+    };
+    const [pickGroups, pickCompletedGroups, packGroups, restockingCount, packingWithoutTrackingCount, packedCount, deliveredCount, rtsCount, completedTodayGroups] = await Promise.all([
       this.prisma.wmsFulfillmentOrder.groupBy({
         by: ['status'],
         where: {
           ...fulfillmentScope,
+          ...pickActiveOwnershipWhere,
           status: {
             in: [
               WmsFulfillmentOrderStatus.READY,
               WmsFulfillmentOrderStatus.PARTIAL,
               WmsFulfillmentOrderStatus.IN_PICKING,
+            ],
+          },
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      this.prisma.wmsFulfillmentOrder.groupBy({
+        by: ['status'],
+        where: {
+          ...fulfillmentScope,
+          ...pickCompletedOwnershipWhere,
+          status: {
+            in: [
+              WmsFulfillmentOrderStatus.READY_FOR_PACK,
+              WmsFulfillmentOrderStatus.PICKED,
             ],
           },
         },
@@ -1213,6 +1327,13 @@ export class WmsMobileService {
       this.prisma.wmsFulfillmentOrder.count({
         where: {
           ...fulfillmentScope,
+          ...packedAttributionWhere,
+          status: WmsFulfillmentOrderStatus.PACKED,
+        },
+      }),
+      this.prisma.wmsFulfillmentOrder.count({
+        where: {
+          ...fulfillmentScope,
           ...deliveredAttributionWhere,
           status: WmsFulfillmentOrderStatus.PACKED,
           posOrder: {
@@ -1248,6 +1369,7 @@ export class WmsMobileService {
       }),
     ]);
     const pickCounts = this.mapStatusCounts(pickGroups);
+    const pickCompletedCounts = this.mapStatusCounts(pickCompletedGroups);
     const packCounts = this.mapStatusCounts(packGroups);
     const completedTodayCounts = Object.fromEntries(
       completedTodayGroups.map((group) => [group.actionType, group._count._all]),
@@ -1255,6 +1377,8 @@ export class WmsMobileService {
     const ready = pickCounts[WmsFulfillmentOrderStatus.READY] ?? 0;
     const partial = pickCounts[WmsFulfillmentOrderStatus.PARTIAL] ?? 0;
     const inPicking = pickCounts[WmsFulfillmentOrderStatus.IN_PICKING] ?? 0;
+    const readyForPack = pickCompletedCounts[WmsFulfillmentOrderStatus.READY_FOR_PACK] ?? 0;
+    const pickedHistory = pickCompletedCounts[WmsFulfillmentOrderStatus.PICKED] ?? 0;
     const picked = packCounts[WmsFulfillmentOrderStatus.PICKED] ?? 0;
     const packing = packCounts[WmsFulfillmentOrderStatus.PACKING] ?? 0;
 
@@ -1268,11 +1392,15 @@ export class WmsMobileService {
           ready,
           partial,
           inPicking,
+          readyForPack,
+          picked: pickedHistory,
           total: ready + partial + inPicking,
         },
         pack: {
           picked,
           packing,
+          awaitingTracking: packingWithoutTrackingCount,
+          packed: packedCount,
           total: picked + packing,
         },
         groups: {
@@ -1436,6 +1564,449 @@ export class WmsMobileService {
     };
   }
 
+  async getStockCountSessions(
+    user: BootstrapUser,
+    query: GetWmsMobileStockCountSessionsDto,
+    request?: Request,
+  ) {
+    const tenantContext = await this.resolveMobileStockContext(user, { tenantId: query.tenantId }, request);
+
+    const sessions = await this.prisma.wmsInventoryCountSession.findMany({
+      where: {
+        ...(tenantContext.tenantId ? { tenantId: tenantContext.tenantId } : {}),
+        ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
+        ...(query.status ? { status: query.status } : {}),
+      },
+      include: this.mobileCountSessionInclude(),
+      orderBy: [
+        { status: 'asc' },
+        { createdAt: 'desc' },
+      ],
+      take: 12,
+    });
+
+    return {
+      context: {
+        activeTenantId: tenantContext.tenantId ?? null,
+        activeWarehouseId: query.warehouseId ?? null,
+      },
+      sessions: sessions.map((session) => this.mapMobileCountSessionSummary(session)),
+      tenantReady: Boolean(tenantContext.tenantId),
+    };
+  }
+
+  async getStockCountSession(
+    user: BootstrapUser,
+    id: string,
+    query: GetWmsMobileStockScopedDto,
+    request?: Request,
+  ) {
+    const tenantContext = await this.resolveMobileStockContext(user, { tenantId: query.tenantId }, request);
+    const session = await this.findMobileCountSessionById(id, tenantContext.tenantId);
+
+    if (!session) {
+      throw new NotFoundException('Cycle count session was not found');
+    }
+
+    await this.recordStockActivity(user, request, {
+      tenantId: session.tenantId,
+      actionType: 'STOCK_COUNT_VIEW',
+      resourceType: 'WMS_INVENTORY_COUNT_SESSION',
+      resourceId: session.id,
+      warehouseId: session.warehouseId,
+      metadata: {
+        locationCode: session.location.code,
+        status: session.status,
+      },
+    });
+
+    return {
+      session: this.mapMobileCountSessionDetail(session),
+    };
+  }
+
+  async startStockCountSession(
+    user: BootstrapUser,
+    body: WmsMobileStartStockCountDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    const tenantContext = await this.resolveMobileStockContext(user, { tenantId: body.tenantId }, request);
+    const tenantId = tenantContext.tenantId ?? null;
+
+    if (!tenantId) {
+      throw new BadRequestException('Select a Partner scope before starting a cycle count.');
+    }
+
+    const warehouseId = body.warehouseId ?? await this.resolveWarehouseScopeFromLocationCode(body.targetCode);
+
+    if (!warehouseId) {
+      throw new BadRequestException('Select a warehouse or scan a warehouse-prefixed bin code first.');
+    }
+
+    const location = await this.findLocationByCode(body.targetCode, {
+      warehouseId,
+      warehouseMismatchMessage: 'Scanned count bin belongs to another warehouse.',
+    });
+
+    if (!location || !location.isActive) {
+      throw new NotFoundException('Count bin was not found');
+    }
+
+    if (location.kind !== WmsLocationKind.BIN) {
+      throw new BadRequestException('Cycle counts can only be started from a BIN location.');
+    }
+
+    const existingOpenSession = await this.prisma.wmsInventoryCountSession.findFirst({
+      where: {
+        tenantId,
+        locationId: location.id,
+        status: WmsInventoryCountSessionStatus.OPEN,
+      },
+      include: this.mobileCountSessionInclude(),
+    });
+
+    if (existingOpenSession) {
+      return {
+        session: this.mapMobileCountSessionDetail(existingOpenSession),
+        resumed: true,
+      };
+    }
+
+    const now = new Date();
+    const created = await this.prisma.$transaction(async (tx) => {
+      const expectedUnits = await tx.wmsInventoryUnit.findMany({
+        where: {
+          tenantId,
+          warehouseId,
+          currentLocationId: location.id,
+        },
+        select: {
+          id: true,
+          code: true,
+          barcode: true,
+          posProduct: {
+            select: {
+              name: true,
+              customId: true,
+            },
+          },
+        },
+        orderBy: [{ updatedAt: 'desc' }],
+      });
+
+      const session = await tx.wmsInventoryCountSession.create({
+        data: {
+          tenantId,
+          warehouseId,
+          locationId: location.id,
+          startedById: userId ?? undefined,
+          expectedUnitCount: expectedUnits.length,
+          notes: this.cleanOptionalText(body.notes),
+          startedAt: now,
+          entries: {
+            create: expectedUnits.map((unit) => ({
+              inventoryUnitId: unit.id,
+              status: WmsInventoryCountEntryStatus.PENDING,
+              unitCode: unit.code,
+              unitBarcode: unit.barcode,
+              productName: unit.posProduct.name,
+              productCustomId: unit.posProduct.customId,
+            })),
+          },
+        },
+        include: this.mobileCountSessionInclude(),
+      });
+
+      return session;
+    });
+
+    await this.recordStockActivity(user, request, {
+      tenantId: created.tenantId,
+      actionType: 'STOCK_COUNT_START',
+      resourceType: 'WMS_INVENTORY_COUNT_SESSION',
+      resourceId: created.id,
+      warehouseId: created.warehouseId,
+      metadata: {
+        locationCode: created.location.code,
+        expectedUnitCount: created.expectedUnitCount,
+      },
+    });
+
+    return {
+      session: this.mapMobileCountSessionDetail(created),
+      resumed: false,
+    };
+  }
+
+  async scanStockCountUnit(
+    user: BootstrapUser,
+    id: string,
+    body: WmsMobileScanStockCountUnitDto,
+    request?: Request,
+  ) {
+    const tenantContext = await this.resolveMobileStockContext(user, { tenantId: body.tenantId }, request);
+    const session = await this.findMobileCountSessionById(id, tenantContext.tenantId);
+
+    if (!session) {
+      throw new NotFoundException('Cycle count session was not found');
+    }
+
+    if (session.status !== WmsInventoryCountSessionStatus.OPEN) {
+      throw new ConflictException('This cycle count session is already closed.');
+    }
+
+    const scannedCode = this.normalizeScannedCode(body.code);
+    const unit = await this.findUnitByCode(scannedCode, session.tenantId);
+
+    if (!unit) {
+      throw new NotFoundException(`No inventory unit was found for ${scannedCode}.`);
+    }
+
+    if (unit.warehouseId !== session.warehouseId) {
+      throw new BadRequestException(`Unit ${unit.code} belongs to another warehouse.`);
+    }
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      const expectedEntry = await tx.wmsInventoryCountEntry.findFirst({
+        where: {
+          sessionId: session.id,
+          inventoryUnitId: unit.id,
+        },
+      });
+
+      if (expectedEntry) {
+        if (expectedEntry.status !== WmsInventoryCountEntryStatus.COUNTED) {
+          await tx.wmsInventoryCountEntry.update({
+            where: { id: expectedEntry.id },
+            data: {
+              status: WmsInventoryCountEntryStatus.COUNTED,
+              scannedCode,
+              scannedAt: now,
+            },
+          });
+        }
+      } else {
+        const existingUnexpected = await tx.wmsInventoryCountEntry.findFirst({
+          where: {
+            sessionId: session.id,
+            unitCode: unit.code,
+            status: WmsInventoryCountEntryStatus.UNEXPECTED,
+          },
+        });
+
+        if (!existingUnexpected) {
+          await tx.wmsInventoryCountEntry.create({
+            data: {
+              sessionId: session.id,
+              inventoryUnitId: unit.id,
+              status: WmsInventoryCountEntryStatus.UNEXPECTED,
+              unitCode: unit.code,
+              unitBarcode: unit.barcode,
+              productName: unit.posProduct.name,
+              productCustomId: unit.posProduct.customId,
+              scannedCode,
+              scannedAt: now,
+            },
+          });
+        }
+      }
+
+      await this.refreshCountSessionSummary(tx, session.id);
+    });
+
+    const refreshed = await this.findMobileCountSessionById(session.id, session.tenantId);
+
+    await this.recordStockActivity(user, request, {
+      tenantId: session.tenantId,
+      actionType: 'STOCK_COUNT_UNIT_SCAN',
+      resourceType: 'WMS_INVENTORY_COUNT_SESSION',
+      resourceId: session.id,
+      warehouseId: session.warehouseId,
+      metadata: {
+        code: scannedCode,
+        unitCode: unit.code,
+        locationCode: session.location.code,
+      },
+    });
+
+    return {
+      session: refreshed ? this.mapMobileCountSessionDetail(refreshed) : null,
+    };
+  }
+
+  async submitStockCountSession(
+    user: BootstrapUser,
+    id: string,
+    body: WmsMobileSubmitStockCountDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    const tenantContext = await this.resolveMobileStockContext(user, { tenantId: body.tenantId }, request);
+    const session = await this.findMobileCountSessionById(id, tenantContext.tenantId);
+
+    if (!session) {
+      throw new NotFoundException('Cycle count session was not found');
+    }
+
+    if (session.status !== WmsInventoryCountSessionStatus.OPEN) {
+      throw new ConflictException('This cycle count session is already closed.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.wmsInventoryCountEntry.updateMany({
+        where: {
+          sessionId: session.id,
+          status: WmsInventoryCountEntryStatus.PENDING,
+        },
+        data: {
+          status: WmsInventoryCountEntryStatus.MISSING,
+        },
+      });
+
+      await this.refreshCountSessionSummary(tx, session.id);
+
+      await tx.wmsInventoryCountSession.update({
+        where: { id: session.id },
+        data: {
+          status: WmsInventoryCountSessionStatus.SUBMITTED,
+          submittedAt: new Date(),
+          submittedById: userId ?? undefined,
+          notes: this.cleanOptionalText(body.notes) ?? session.notes,
+        },
+      });
+    });
+
+    const refreshed = await this.findMobileCountSessionById(session.id, session.tenantId);
+
+    await this.recordStockActivity(user, request, {
+      tenantId: session.tenantId,
+      actionType: 'STOCK_COUNT_SUBMIT',
+      resourceType: 'WMS_INVENTORY_COUNT_SESSION',
+      resourceId: session.id,
+      warehouseId: session.warehouseId,
+      metadata: {
+        locationCode: session.location.code,
+      },
+    });
+
+    return {
+      session: refreshed ? this.mapMobileCountSessionDetail(refreshed) : null,
+    };
+  }
+
+  async reopenStockCountSession(
+    user: BootstrapUser,
+    id: string,
+    body: WmsMobileReopenStockCountDto,
+    request?: Request,
+  ) {
+    const tenantContext = await this.resolveMobileStockContext(user, { tenantId: body.tenantId }, request);
+    const session = await this.findMobileCountSessionById(id, tenantContext.tenantId);
+
+    if (!session) {
+      throw new NotFoundException('Cycle count session was not found');
+    }
+
+    if (
+      session.status !== WmsInventoryCountSessionStatus.SUBMITTED
+      && session.status !== WmsInventoryCountSessionStatus.CLOSED
+    ) {
+      throw new ConflictException('Only submitted or closed count sessions can be reopened.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.wmsInventoryCountEntry.updateMany({
+        where: {
+          sessionId: session.id,
+          status: WmsInventoryCountEntryStatus.MISSING,
+        },
+        data: {
+          status: WmsInventoryCountEntryStatus.PENDING,
+        },
+      });
+
+      await this.refreshCountSessionSummary(tx, session.id);
+
+      await tx.wmsInventoryCountSession.update({
+        where: { id: session.id },
+        data: {
+          status: WmsInventoryCountSessionStatus.OPEN,
+          submittedAt: null,
+          submittedById: null,
+          closedAt: null,
+          closedById: null,
+          notes: this.cleanOptionalText(body.notes) ?? session.notes,
+        },
+      });
+    });
+
+    const refreshed = await this.findMobileCountSessionById(session.id, session.tenantId);
+
+    await this.recordStockActivity(user, request, {
+      tenantId: session.tenantId,
+      actionType: 'STOCK_COUNT_REOPEN',
+      resourceType: 'WMS_INVENTORY_COUNT_SESSION',
+      resourceId: session.id,
+      warehouseId: session.warehouseId,
+      metadata: {
+        locationCode: session.location.code,
+        previousStatus: session.status,
+      },
+    });
+
+    return {
+      session: refreshed ? this.mapMobileCountSessionDetail(refreshed) : null,
+    };
+  }
+
+  async closeoutStockCountSession(
+    user: BootstrapUser,
+    id: string,
+    body: WmsMobileCloseoutStockCountDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    const tenantContext = await this.resolveMobileStockContext(user, { tenantId: body.tenantId }, request);
+    const session = await this.findMobileCountSessionById(id, tenantContext.tenantId);
+
+    if (!session) {
+      throw new NotFoundException('Cycle count session was not found');
+    }
+
+    if (session.status !== WmsInventoryCountSessionStatus.SUBMITTED) {
+      throw new ConflictException('Only submitted count sessions can be closed out.');
+    }
+
+    await this.prisma.wmsInventoryCountSession.update({
+      where: { id: session.id },
+      data: {
+        status: WmsInventoryCountSessionStatus.CLOSED,
+        closedAt: new Date(),
+        closedById: userId ?? undefined,
+        notes: this.cleanOptionalText(body.notes) ?? session.notes,
+      },
+    });
+
+    const refreshed = await this.findMobileCountSessionById(session.id, session.tenantId);
+
+    await this.recordStockActivity(user, request, {
+      tenantId: session.tenantId,
+      actionType: 'STOCK_COUNT_CLOSEOUT',
+      resourceType: 'WMS_INVENTORY_COUNT_SESSION',
+      resourceId: session.id,
+      warehouseId: session.warehouseId,
+      metadata: {
+        locationCode: session.location.code,
+      },
+    });
+
+    return {
+      session: refreshed ? this.mapMobileCountSessionDetail(refreshed) : null,
+    };
+  }
+
   async lookupTrackingOrder(
     user: BootstrapUser,
     query: GetWmsMobileTrackingLookupDto,
@@ -1443,6 +2014,7 @@ export class WmsMobileService {
   ) {
     const tenantContext = await this.resolveMobileStockContext(user, { tenantId: query.tenantId }, request);
     const normalizedCode = this.normalizeTrackingCode(query.code);
+    const fulfillmentGoLiveAt = await this.getFulfillmentGoLiveAt(tenantContext.tenantId);
     const candidates = await this.prisma.wmsFulfillmentOrder.findMany({
       where: {
         ...(tenantContext.tenantId ? { tenantId: tenantContext.tenantId } : {}),
@@ -1461,6 +2033,13 @@ export class WmsMobileService {
         },
         posOrder: {
           is: {
+            ...(fulfillmentGoLiveAt
+              ? {
+                  insertedAt: {
+                    gte: fulfillmentGoLiveAt,
+                  },
+                }
+              : {}),
             tracking: {
               contains: query.code.trim(),
               mode: 'insensitive',
@@ -1646,8 +2225,8 @@ export class WmsMobileService {
         });
       });
 
-      await this.recordStockActivity(user, request, {
-        tenantId: updatedOrder.tenantId,
+	    await this.recordStockActivity(user, request, {
+	      tenantId: updatedOrder.tenantId,
         actionType: 'ORDER_RTS_UNIT_VERIFY',
         resourceType: 'WMS_FULFILLMENT_ORDER',
         resourceId: updatedOrder.id,
@@ -2568,7 +3147,6 @@ export class WmsMobileService {
       : query.status === 'PACKED'
         ? [WmsFulfillmentOrderStatus.PACKED]
         : [...PACK_QUEUE_ORDER_STATUSES];
-    const isPackedHistoryOnly = query.status === 'PACKED';
     const trackingMissingFilter: Prisma.WmsFulfillmentOrderWhereInput = {
       OR: [
         {
@@ -2635,7 +3213,7 @@ export class WmsMobileService {
 
     if (includePackedHistory && query.status !== 'AWAITING_TRACKING') {
       taskWhereBranches.push({
-        ...(isPackedHistoryOnly ? {} : scopedWhere),
+        ...scopedWhere,
         status: WmsFulfillmentOrderStatus.PACKED,
         ...(isPackSupervisor
           ? { packedById: { not: null } }
@@ -3199,6 +3777,10 @@ export class WmsMobileService {
         posOrderId: updatedOrder.posOrderId,
         trackingCode: this.normalizeTrackingCode(body.trackingCode),
       },
+    });
+
+    await this.wmsInventoryService.syncPosOrderCogsFromMatchedInventoryUnits({
+      fulfillmentOrderIds: [updatedOrder.id],
     });
 
     await this.wmsInventoryService.syncPackedUnitsToDispatchedForPosOrders({
@@ -3996,6 +4578,7 @@ export class WmsMobileService {
     const storeByTenantShop = new Map(scopedStores.map((store) => [`${store.tenantId}:${store.shopId}`, store]));
     const shopIds = Array.from(new Set(scopedStores.map((store) => store.shopId)));
     const tenantIds = Array.from(new Set(scopedStores.map((store) => store.tenantId)));
+    const tenantGoLiveFilters = await this.buildTenantGoLivePosOrderFilters(tenantIds);
 
     const confirmedOrders = await this.prisma.posOrder.findMany({
       where: {
@@ -4003,6 +4586,11 @@ export class WmsMobileService {
         isVoid: false,
         shopId: { in: shopIds },
         tenantId: params.tenantId ? params.tenantId : { in: tenantIds },
+        AND: [
+          {
+            OR: tenantGoLiveFilters,
+          },
+        ],
         wmsFulfillmentOrders: {
           none: {
             status: {
@@ -4993,10 +5581,14 @@ export class WmsMobileService {
       { tenantId: requestedTenantId ?? undefined } as GetWmsMobileStockDto,
       request,
     );
+    const fulfillmentGoLiveWhere = this.buildFulfillmentGoLiveWhere(
+      await this.getFulfillmentGoLiveAt(tenantContext.tenantId),
+    );
     const order = await this.prisma.wmsFulfillmentOrder.findFirst({
       where: {
         id,
         ...(tenantContext.tenantId ? { tenantId: tenantContext.tenantId } : {}),
+        ...fulfillmentGoLiveWhere,
       },
       include: this.pickingTaskInclude(),
     });
@@ -5032,10 +5624,14 @@ export class WmsMobileService {
       { tenantId: requestedTenantId ?? undefined } as GetWmsMobileStockDto,
       request,
     );
+    const fulfillmentGoLiveWhere = this.buildFulfillmentGoLiveWhere(
+      await this.getFulfillmentGoLiveAt(tenantContext.tenantId),
+    );
     const order = await this.prisma.wmsFulfillmentOrder.findFirst({
       where: {
         id,
         ...(tenantContext.tenantId ? { tenantId: tenantContext.tenantId } : {}),
+        ...fulfillmentGoLiveWhere,
         status: {
           in: [...PACK_LIST_ORDER_STATUSES],
         },
@@ -5836,6 +6432,48 @@ export class WmsMobileService {
         },
       },
     };
+  }
+
+  private async buildTenantGoLivePosOrderFilters(tenantIds: string[]): Promise<Prisma.PosOrderWhereInput[]> {
+    const uniqueTenantIds = Array.from(new Set(
+      tenantIds
+        .map((tenantId) => tenantId?.trim())
+        .filter((tenantId): tenantId is string => Boolean(tenantId)),
+    ));
+
+    if (uniqueTenantIds.length === 0) {
+      return [];
+    }
+
+    const tenants = await this.prisma.tenant.findMany({
+      where: {
+        id: {
+          in: uniqueTenantIds,
+        },
+      },
+      select: {
+        id: true,
+        wmsFulfillmentGoLiveAt: true,
+      },
+    });
+    const goLiveByTenantId = new Map(
+      tenants.map((tenant) => [tenant.id, tenant.wmsFulfillmentGoLiveAt] as const),
+    );
+
+    return uniqueTenantIds.map((tenantId) => {
+      const goLiveAt = goLiveByTenantId.get(tenantId) ?? null;
+
+      return goLiveAt
+        ? {
+            tenantId,
+            insertedAt: {
+              gte: goLiveAt,
+            },
+          }
+        : {
+            tenantId,
+          };
+    });
   }
 
   private async getFulfillmentGoLiveAt(tenantId: string | null): Promise<Date | null> {
@@ -6882,6 +7520,154 @@ export class WmsMobileService {
         customId: unit.posProduct.customId,
         updatedAt: unit.updatedAt,
       })),
+    };
+  }
+
+  private mobileCountSessionInclude() {
+    return {
+      warehouse: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+        },
+      },
+      location: {
+        include: {
+          warehouse: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+        },
+      },
+      startedBy: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      submittedBy: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      closedBy: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      entries: {
+        orderBy: [
+          { status: 'asc' },
+          { scannedAt: 'desc' },
+          { createdAt: 'asc' },
+        ],
+      },
+    } satisfies Prisma.WmsInventoryCountSessionInclude;
+  }
+
+  private async findMobileCountSessionById(id: string, tenantId: string | null) {
+    return this.prisma.wmsInventoryCountSession.findFirst({
+      where: {
+        id,
+        ...(tenantId ? { tenantId } : {}),
+      },
+      include: this.mobileCountSessionInclude(),
+    });
+  }
+
+  private async refreshCountSessionSummary(tx: Prisma.TransactionClient, sessionId: string) {
+    const grouped = await tx.wmsInventoryCountEntry.groupBy({
+      by: ['status'],
+      where: {
+        sessionId,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+
+    const counts = Object.fromEntries(
+      grouped.map((group) => [group.status, group._count._all]),
+    ) as Partial<Record<WmsInventoryCountEntryStatus, number>>;
+
+    const expectedUnitCount =
+      (counts[WmsInventoryCountEntryStatus.PENDING] ?? 0)
+      + (counts[WmsInventoryCountEntryStatus.COUNTED] ?? 0)
+      + (counts[WmsInventoryCountEntryStatus.MISSING] ?? 0);
+
+    await tx.wmsInventoryCountSession.update({
+      where: { id: sessionId },
+      data: {
+        expectedUnitCount,
+        countedUnitCount: counts[WmsInventoryCountEntryStatus.COUNTED] ?? 0,
+        missingUnitCount: counts[WmsInventoryCountEntryStatus.MISSING] ?? 0,
+        unexpectedUnitCount: counts[WmsInventoryCountEntryStatus.UNEXPECTED] ?? 0,
+      },
+    });
+  }
+
+  private mapMobileCountSessionSummary(session: any) {
+    const pendingUnitCount = Math.max(
+      session.expectedUnitCount - session.countedUnitCount - session.missingUnitCount,
+      0,
+    );
+
+    return {
+      id: session.id,
+      status: session.status,
+      statusLabel: this.formatEnumLabel(session.status),
+      warehouse: session.warehouse,
+      location: {
+        id: session.location.id,
+        code: session.location.code,
+        name: session.location.name,
+        kind: session.location.kind,
+        label: `${session.location.warehouse.code} · ${session.location.code}`,
+      },
+      notes: session.notes,
+      startedAt: session.startedAt,
+      submittedAt: session.submittedAt,
+      closedAt: session.closedAt,
+      startedBy: this.mapActor(session.startedBy),
+      submittedBy: this.mapActor(session.submittedBy),
+      closedBy: this.mapActor(session.closedBy),
+      summary: {
+        expectedUnits: session.expectedUnitCount,
+        countedUnits: session.countedUnitCount,
+        pendingUnits: pendingUnitCount,
+        missingUnits: session.missingUnitCount,
+        unexpectedUnits: session.unexpectedUnitCount,
+        varianceUnits: session.missingUnitCount + session.unexpectedUnitCount,
+      },
+    };
+  }
+
+  private mapMobileCountSessionDetail(session: any) {
+    return {
+      ...this.mapMobileCountSessionSummary(session),
+      entries: Array.isArray(session.entries)
+        ? session.entries.map((entry: any) => ({
+            id: entry.id,
+            inventoryUnitId: entry.inventoryUnitId ?? null,
+            status: entry.status,
+            statusLabel: this.formatEnumLabel(entry.status),
+            unitCode: entry.unitCode,
+            unitBarcode: entry.unitBarcode,
+            productName: entry.productName,
+            productCustomId: entry.productCustomId,
+            scannedCode: entry.scannedCode ?? null,
+            scannedAt: entry.scannedAt ?? null,
+          }))
+        : [],
     };
   }
 

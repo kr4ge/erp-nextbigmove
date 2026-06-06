@@ -29,7 +29,7 @@ type FormState = {
   lastName: string;
   employeeId: string;
   roleId: string;
-  taskAssignmentType: '' | 'PICK' | 'PACK';
+  taskAssignmentType: '' | 'PICK' | 'PACK' | 'INVENTORY';
   status: string;
 };
 

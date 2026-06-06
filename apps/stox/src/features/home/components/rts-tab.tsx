@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
@@ -24,6 +24,7 @@ type RtsTabProps = {
   session: StoredSession;
   onRefresh: () => Promise<void>;
   onBack?: () => void;
+  modeSwitcher?: ReactNode;
   initialTask?: WmsMobilePickingTask | null;
   initialReturnFlow?: WmsMobileTrackingReturnFlow | null;
 };
@@ -46,6 +47,7 @@ export function RtsTab({
   session,
   onRefresh,
   onBack,
+  modeSwitcher,
   initialTask = null,
   initialReturnFlow = null,
 }: RtsTabProps) {
@@ -64,6 +66,7 @@ export function RtsTab({
       device={device}
       initialReturnFlow={initialReturnFlow}
       initialTask={initialTask}
+      modeSwitcher={modeSwitcher}
       onBack={onBack}
       onRefresh={onRefresh}
       session={session}
@@ -76,6 +79,7 @@ function RtsWorkspaceTab({
   device,
   initialReturnFlow,
   initialTask,
+  modeSwitcher,
   onBack,
   onRefresh,
   session,
@@ -442,6 +446,12 @@ function RtsWorkspaceTab({
               onPress={() => setActiveFilter('store')}
             />
           </View>
+
+          {modeSwitcher ? (
+            <View style={styles.modeSwitcherSlot}>
+              {modeSwitcher}
+            </View>
+          ) : null}
 
           <RtsStatusFilterRow value={queueStateFilter} onChange={setQueueStateFilter} />
         </>
@@ -1044,6 +1054,9 @@ const styles = StyleSheet.create({
     right: 5,
     top: 4,
     width: 10,
+  },
+  modeSwitcherSlot: {
+    marginBottom: 4,
   },
   queueFilterStack: {
     gap: 12,

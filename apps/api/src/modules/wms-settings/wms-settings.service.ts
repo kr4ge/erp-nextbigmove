@@ -52,6 +52,14 @@ const WMS_PACK_ASSIGNMENT_PERMISSIONS = [
   'wms.dispatch.override',
 ] as const;
 
+const WMS_INVENTORY_ASSIGNMENT_PERMISSIONS = [
+  'wms.inventory.transfer',
+  'wms.inventory.edit',
+  'wms.inventory.write',
+  'wms.receiving.edit',
+  'wms.receiving.write',
+] as const;
+
 @Injectable()
 export class WmsSettingsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -968,7 +976,9 @@ export class WmsSettingsService {
 
     const requiredPermissions = taskType === WmsStaffAssignmentTaskType.PICK
       ? WMS_PICK_ASSIGNMENT_PERMISSIONS
-      : WMS_PACK_ASSIGNMENT_PERMISSIONS;
+      : taskType === WmsStaffAssignmentTaskType.PACK
+        ? WMS_PACK_ASSIGNMENT_PERMISSIONS
+        : WMS_INVENTORY_ASSIGNMENT_PERMISSIONS;
 
     return requiredPermissions.some((permission) => effectivePermissions.has(permission));
   }
@@ -990,7 +1000,11 @@ export class WmsSettingsService {
   private normalizeTaskAssignmentType(
     taskType: string | WmsStaffAssignmentTaskType | null | undefined,
   ): WmsStaffAssignmentTaskType | null {
-    if (taskType === WmsStaffAssignmentTaskType.PICK || taskType === WmsStaffAssignmentTaskType.PACK) {
+    if (
+      taskType === WmsStaffAssignmentTaskType.PICK
+      || taskType === WmsStaffAssignmentTaskType.PACK
+      || taskType === WmsStaffAssignmentTaskType.INVENTORY
+    ) {
       return taskType;
     }
 

@@ -3,6 +3,8 @@ import { apiRequest } from '@/src/shared/services/http';
 import type {
   StockMode,
   WmsMobileStockBatchDetail,
+  WmsMobileStockCountSessionsResponse,
+  WmsMobileStockCountSessionDetail,
   WmsMobileStockBinDetail,
   WmsMobileStockScanResult,
   WmsMobileStockUnitLookupResponse,
@@ -168,6 +170,167 @@ export function fetchMobileStockBatch(params: {
       method: 'GET',
       token: params.accessToken,
       device: params.device,
+    },
+  );
+}
+
+export function fetchMobileStockCountSessions(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  tenantId?: string | null;
+  warehouseId?: string | null;
+  status?: 'OPEN' | 'SUBMITTED' | 'CLOSED' | 'CANCELED';
+}) {
+  const query: string[] = [];
+
+  if (params.tenantId) {
+    query.push(`tenantId=${encodeURIComponent(params.tenantId)}`);
+  }
+
+  if (params.warehouseId) {
+    query.push(`warehouseId=${encodeURIComponent(params.warehouseId)}`);
+  }
+
+  if (params.status) {
+    query.push(`status=${encodeURIComponent(params.status)}`);
+  }
+
+  return apiRequest<WmsMobileStockCountSessionsResponse>(
+    `/wms/mobile/stock/counts${query.length ? `?${query.join('&')}` : ''}`,
+    {
+      method: 'GET',
+      token: params.accessToken,
+      device: params.device,
+    },
+  );
+}
+
+export function fetchMobileStockCountSession(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  sessionId: string;
+  tenantId?: string | null;
+}) {
+  const query: string[] = [];
+
+  if (params.tenantId) {
+    query.push(`tenantId=${encodeURIComponent(params.tenantId)}`);
+  }
+
+  return apiRequest<{ session: WmsMobileStockCountSessionDetail }>(
+    `/wms/mobile/stock/counts/${params.sessionId}${query.length ? `?${query.join('&')}` : ''}`,
+    {
+      method: 'GET',
+      token: params.accessToken,
+      device: params.device,
+    },
+  );
+}
+
+export function startMobileStockCountSession(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  tenantId?: string | null;
+  warehouseId?: string | null;
+  targetCode: string;
+  notes?: string | null;
+}) {
+  return apiRequest<{ session: WmsMobileStockCountSessionDetail; resumed: boolean }>(
+    '/wms/mobile/stock/counts/start',
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        warehouseId: params.warehouseId,
+        targetCode: params.targetCode,
+        notes: params.notes,
+      },
+    },
+  );
+}
+
+export function scanMobileStockCountUnit(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  sessionId: string;
+  tenantId?: string | null;
+  code: string;
+}) {
+  return apiRequest<{ session: WmsMobileStockCountSessionDetail | null }>(
+    `/wms/mobile/stock/counts/${params.sessionId}/scan-unit`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        code: params.code,
+      },
+    },
+  );
+}
+
+export function submitMobileStockCountSession(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  sessionId: string;
+  tenantId?: string | null;
+  notes?: string | null;
+}) {
+  return apiRequest<{ session: WmsMobileStockCountSessionDetail | null }>(
+    `/wms/mobile/stock/counts/${params.sessionId}/submit`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        notes: params.notes,
+      },
+    },
+  );
+}
+
+export function reopenMobileStockCountSession(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  sessionId: string;
+  tenantId?: string | null;
+  notes?: string | null;
+}) {
+  return apiRequest<{ session: WmsMobileStockCountSessionDetail | null }>(
+    `/wms/mobile/stock/counts/${params.sessionId}/reopen`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        notes: params.notes,
+      },
+    },
+  );
+}
+
+export function closeoutMobileStockCountSession(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  sessionId: string;
+  tenantId?: string | null;
+  notes?: string | null;
+}) {
+  return apiRequest<{ session: WmsMobileStockCountSessionDetail | null }>(
+    `/wms/mobile/stock/counts/${params.sessionId}/closeout`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        notes: params.notes,
+      },
     },
   );
 }

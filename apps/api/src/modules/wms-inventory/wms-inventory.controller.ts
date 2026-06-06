@@ -2,9 +2,11 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/co
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { CreateWmsInventoryStoreTransferDto } from './dto/create-wms-inventory-store-transfer.dto';
 import { CreateWmsInventoryAdjustmentDto } from './dto/create-wms-inventory-adjustment.dto';
 import { CreateWmsInventoryTransferDto } from './dto/create-wms-inventory-transfer.dto';
 import { GetWmsInventoryOverviewDto } from './dto/get-wms-inventory-overview.dto';
+import { GetWmsInventoryStoreTransferOptionsDto } from './dto/get-wms-inventory-store-transfer-options.dto';
 import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.dto';
 import { GetWmsInventoryUnitMovementsDto } from './dto/get-wms-inventory-unit-movements.dto';
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
@@ -25,6 +27,12 @@ export class WmsInventoryController {
   @Permissions('wms.inventory.read')
   async getTransfers(@Query() query: GetWmsInventoryTransfersDto) {
     return this.wmsInventoryService.getTransfers(query);
+  }
+
+  @Get('store-transfer/options')
+  @Permissions('wms.inventory.read')
+  async getStoreTransferOptions(@Query() query: GetWmsInventoryStoreTransferOptionsDto) {
+    return this.wmsInventoryService.getStoreTransferOptions(query);
   }
 
   @Get(':id/movements')
@@ -62,6 +70,24 @@ export class WmsInventoryController {
     @Query('tenantId') tenantId?: string,
   ) {
     return this.wmsInventoryService.createTransfer(body, tenantId);
+  }
+
+  @Post('store-transfers')
+  @Permissions('wms.inventory.transfer', 'wms.inventory.edit', 'wms.inventory.write')
+  async createStoreTransfer(
+    @Body() body: CreateWmsInventoryStoreTransferDto,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.wmsInventoryService.createStoreTransfer(body, tenantId);
+  }
+
+  @Post('store-transfers/preview')
+  @Permissions('wms.inventory.transfer', 'wms.inventory.edit', 'wms.inventory.write')
+  async previewStoreTransfer(
+    @Body() body: CreateWmsInventoryStoreTransferDto,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.wmsInventoryService.previewStoreTransfer(body, tenantId);
   }
 
   @Post('adjustments')

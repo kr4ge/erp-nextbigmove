@@ -1,115 +1,78 @@
-import { Feather } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
 import {
-  canUseStoxRtsWorkspace,
+  canUseAssignedRtsWorkspace,
+  canUseAssignedInventoryWorkspace,
   canUseStoxStockWorkspace,
 } from '@/src/features/home/rbac';
-import { tokens } from '@/src/shared/theme/tokens';
-import {
-  ActionTile,
-  BlockedTaskState,
-  SectionLabel,
-  TaskHeader,
-  TaskHeaderIconButton,
-} from './stox-primitives';
+import type { StoxTaskRoute } from '@/src/features/home/types';
+import { StockWorkspace } from '@/src/features/stock/components/stock-workspace';
+import { RtsTab } from './rts-tab';
+import { BlockedTaskState, TaskHeader } from './stox-primitives';
 
 export function InventoryTab({
   bootstrap,
-  device: _device,
-  session: _session,
+  device,
+  session,
   onRefresh,
-  onBack,
-  onOpenRts,
+  route,
 }: {
   bootstrap: BootstrapResponse;
   device: DeviceIdentity | null;
   session: StoredSession;
   onRefresh: () => Promise<void>;
-  onBack?: () => void;
-  onOpenRts?: () => void;
+  route?: StoxTaskRoute | null;
 }) {
-  const canUseInventory = canUseStoxStockWorkspace(bootstrap) || canUseStoxRtsWorkspace(bootstrap);
+  const canUseInventory = canUseAssignedInventoryWorkspace(bootstrap);
+  const canUseStockWorkspace = canUseStoxStockWorkspace(bootstrap);
+  const canUseRts = canUseAssignedRtsWorkspace(bootstrap);
 
-  if (!canUseInventory) {
+  if (!canUseInventory && !canUseRts) {
     return (
       <>
         <TaskHeader title="Inventory" />
-        <BlockedTaskState copy="This account needs WMS inventory, receiving, or RTS access to use Inventory tasks." />
+        <BlockedTaskState copy="This account needs an INVENTORY task assignment or RTS access to use Inventory tasks." />
       </>
+    );
+  }
+
+  if (!canUseStockWorkspace && !canUseRts) {
+    return (
+      <>
+        <TaskHeader title="Inventory" />
+        <BlockedTaskState
+          title="Inventory tasks unavailable"
+          copy="This account is assigned to Inventory, but its WMS role cannot run stock putaway, move, or count workflows yet."
+        />
+      </>
+    );
+  }
+
+  if (!canUseStockWorkspace && canUseRts) {
+    return (
+      <RtsTab
+        bootstrap={bootstrap}
+        device={device}
+        initialReturnFlow={route?.rtsReturnFlow ?? null}
+        initialTask={route?.rtsTask ?? null}
+        session={session}
+        onRefresh={onRefresh}
+      />
     );
   }
 
   return (
     <>
-      <TaskHeader
-        title="Inventory"
-        action={(
-          <View style={styles.headerActions}>
-            {onBack ? (
-              <Pressable
-                onPress={onBack}
-                style={({ pressed }) => [styles.backChip, pressed ? styles.backChipPressed : null]}>
-                <Feather name="arrow-left" size={16} color={tokens.colors.panel} />
-                <Text style={styles.backChipText}>Home</Text>
-              </Pressable>
-            ) : null}
-            <TaskHeaderIconButton icon="refresh-cw" onPress={onRefresh} />
-          </View>
-        )}
+      <StockWorkspace
+        bootstrap={bootstrap}
+        device={device}
+        initialView={route?.inventoryView}
+        routeKey={route?.key}
+        rtsInitialReturnFlow={route?.rtsReturnFlow ?? null}
+        rtsInitialTask={route?.rtsTask ?? null}
+        session={session}
+        onRefresh={onRefresh}
+        variant="task"
       />
-
-      <SectionLabel title="Inventory Tasks" trailing="RTS" />
-
-      <ActionTile
-        icon="refresh-ccw"
-        title="RTS Verification"
-        status="Open"
-        onPress={onOpenRts}
-      />
-
-      <View style={styles.taskGrid}>
-        <ActionTile
-          icon="inbox"
-          title="Putaway"
-          status="Soon"
-        />
-        <ActionTile
-          icon="repeat"
-          title="Move"
-          status="Soon"
-        />
-      </View>
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: tokens.spacing.sm,
-  },
-  backChip: {
-    alignItems: 'center',
-    backgroundColor: tokens.colors.surface,
-    borderColor: tokens.colors.border,
-    borderRadius: tokens.radius.pill,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  backChipPressed: {
-    opacity: 0.84,
-  },
-  backChipText: {
-    color: tokens.colors.panel,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  taskGrid: {
-    gap: tokens.spacing.md,
-  },
-});

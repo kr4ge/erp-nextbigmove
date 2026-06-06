@@ -938,6 +938,21 @@ export class PosOrderService {
       });
     }
 
+    const wmsCogsCandidates = Array.from(
+      new Map(
+        [...fulfillmentCandidates, ...dispatchCandidates]
+          .map((ref) => [`${ref.shopId}::${ref.posOrderId}`, ref] as const),
+      ).values(),
+    );
+
+    if (wmsCogsCandidates.length > 0) {
+      await this.wmsInventoryService.syncPosOrderCogsFromMatchedInventoryUnits({
+        tenantId,
+        storeId,
+        posOrderRefs: wmsCogsCandidates,
+      });
+    }
+
     return { upserted, outcomes };
   }
 

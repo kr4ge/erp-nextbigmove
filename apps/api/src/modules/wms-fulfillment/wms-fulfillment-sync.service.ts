@@ -726,6 +726,10 @@ export class WmsFulfillmentSyncService {
 
       await this.refreshFulfillmentOrderState(tx, order.id, new Date());
     });
+
+    await this.wmsInventoryService.syncPosOrderCogsFromMatchedInventoryUnits({
+      fulfillmentOrderIds: [fulfillmentOrderId],
+    });
   }
 
   private async findAvailablePickUnitsForLine(

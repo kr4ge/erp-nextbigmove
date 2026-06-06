@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 type ScopeOption = {
   id: string;
@@ -25,6 +25,7 @@ type UseWmsScopeFiltersOptions = {
   setSelectedWarehouseIdState?: (value: string | undefined) => void;
   includeWarehouse?: boolean;
   autoSelectWarehouseOnStoreChange?: boolean;
+  allowAllTenants?: boolean;
 };
 
 function syncTenantScopeStorage(tenantId: string | undefined) {
@@ -51,19 +52,41 @@ export function useWmsScopeFilters({
   setSelectedWarehouseIdState,
   includeWarehouse = false,
   autoSelectWarehouseOnStoreChange = false,
+  allowAllTenants = false,
 }: UseWmsScopeFiltersOptions) {
+  const tenantSelectionInitializedRef = useRef(false);
+
   useEffect(() => {
     const activeTenantId = filters?.activeTenantId;
     const tenants = filters?.tenants;
+    const selectedTenantExists = Boolean(
+      selectedTenantId && tenants?.some((tenant) => tenant.id === selectedTenantId),
+    );
 
     if (
       activeTenantId
-      && (!selectedTenantId || !tenants?.some((tenant) => tenant.id === selectedTenantId))
+      && (!selectedTenantId || !selectedTenantExists)
     ) {
+      if (allowAllTenants && tenantSelectionInitializedRef.current && !selectedTenantId) {
+        return;
+      }
+
       syncTenantScopeStorage(activeTenantId);
       setSelectedTenantIdState(activeTenantId);
+      tenantSelectionInitializedRef.current = true;
+      return;
     }
-  }, [filters?.activeTenantId, filters?.tenants, selectedTenantId, setSelectedTenantIdState]);
+
+    if (tenants) {
+      tenantSelectionInitializedRef.current = true;
+    }
+  }, [
+    allowAllTenants,
+    filters?.activeTenantId,
+    filters?.tenants,
+    selectedTenantId,
+    setSelectedTenantIdState,
+  ]);
 
   useEffect(() => {
     const activeStoreId = filters?.activeStoreId;
@@ -159,6 +182,7 @@ export function useWmsScopeFilters({
   ]);
 
   const setSelectedTenantId = useCallback((tenantId: string | undefined) => {
+    tenantSelectionInitializedRef.current = true;
     syncTenantScopeStorage(tenantId);
     setSelectedTenantIdState(tenantId);
     setSelectedStoreIdState(undefined);

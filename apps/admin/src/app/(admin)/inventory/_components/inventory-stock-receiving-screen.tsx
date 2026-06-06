@@ -146,6 +146,7 @@ export function InventoryStockReceivingScreen() {
         onAddProduct={receiving.addManualProduct}
         onRemoveLine={receiving.removeManualLine}
         onQuantityChange={receiving.setManualLineQuantity}
+        onUnitCostChange={receiving.setManualLineUnitCost}
         onSubmit={receiving.submitManualReceive}
       />
     </div>

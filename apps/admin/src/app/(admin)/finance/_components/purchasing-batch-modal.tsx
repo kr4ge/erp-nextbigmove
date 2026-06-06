@@ -49,6 +49,16 @@ type ImageFocusPoint = {
   y: number;
 };
 
+function parseCostDraft(value: string) {
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function PurchasingBatchModal({
   open,
   batch,
@@ -100,7 +110,58 @@ export function PurchasingBatchModal({
 
   const editableLines = canEdit && (batch?.status === 'UNDER_REVIEW' || batch?.status === 'REVISION');
   const isSelfBuy = batch?.requestType === 'SELF_BUY';
+  const showSupplierCogs = !isSelfBuy;
   const paymentProofImageUrl = getSafeImageUrl(batch?.paymentProofImageUrl);
+  const pendingLineUpdates = useMemo(() => {
+    if (!batch || !editableLines) {
+      return [];
+    }
+
+    return batch.lines.flatMap((line) => {
+      const draft = lineDrafts[line.id];
+      if (!draft) {
+        return [];
+      }
+
+      const initialApprovedQuantity = line.approvedQuantity ?? line.requestedQuantity;
+      const normalizedApprovedQuantity =
+        draft.approvedQuantity.trim() === ''
+          ? 0
+          : Number.parseInt(draft.approvedQuantity, 10);
+      const nextApprovedQuantity = Number.isFinite(normalizedApprovedQuantity)
+        ? Math.max(0, Math.min(line.requestedQuantity, Math.floor(normalizedApprovedQuantity)))
+        : initialApprovedQuantity;
+      const nextSupplierUnitCost = parseCostDraft(draft.supplierUnitCost);
+      const nextPartnerUnitCost = parseCostDraft(draft.partnerUnitCost);
+      const supplierChanged =
+        showSupplierCogs
+        && nextSupplierUnitCost !== null
+        && nextSupplierUnitCost !== (line.supplierUnitCost ?? null);
+      const partnerChanged =
+        nextPartnerUnitCost !== null && nextPartnerUnitCost !== (line.partnerUnitCost ?? null);
+      const approvedChanged = nextApprovedQuantity !== initialApprovedQuantity;
+
+      if (!approvedChanged && !supplierChanged && !partnerChanged) {
+        return [];
+      }
+
+      const payload: UpdateWmsPurchasingLineInput = {};
+      if (approvedChanged) {
+        payload.approvedQuantity = nextApprovedQuantity;
+      }
+      if (supplierChanged) {
+        payload.supplierUnitCost = nextSupplierUnitCost ?? undefined;
+      }
+      if (partnerChanged) {
+        payload.partnerUnitCost = nextPartnerUnitCost ?? undefined;
+      }
+
+      return [{
+        lineId: line.id,
+        payload,
+      }];
+    });
+  }, [batch, editableLines, lineDrafts, showSupplierCogs]);
   const statusActions = useMemo(() => {
     if (!batch) {
       return [];
@@ -129,7 +190,7 @@ export function PurchasingBatchModal({
           label: 'Accept',
           status: 'PENDING_PAYMENT' as WmsPurchasingBatchStatus,
           tone: 'primary' as const,
-          description: 'No pricing or quantity changes',
+          description: 'No COGS or quantity changes',
         },
         {
           label: 'Cancel',
@@ -214,6 +275,17 @@ export function PurchasingBatchModal({
     return [];
   }, [batch]);
 
+  async function handleStatusAction(status: WmsPurchasingBatchStatus) {
+    if (status !== 'CANCELED' && pendingLineUpdates.length > 0) {
+      for (const update of pendingLineUpdates) {
+        await onUpdateLine(update.lineId, update.payload);
+      }
+      return;
+    }
+
+    await onApplyStatus(status);
+  }
+
   if (!open) {
     return null;
   }
@@ -248,8 +320,10 @@ export function PurchasingBatchModal({
                       <HeaderCell>Item</HeaderCell>
                       <HeaderCell className="text-right">Requested</HeaderCell>
                       <HeaderCell className="text-right">Approved</HeaderCell>
-                      <HeaderCell className="text-right">Supplier</HeaderCell>
-                      <HeaderCell className="text-right">Partner</HeaderCell>
+                      {showSupplierCogs ? <HeaderCell className="text-right">Supplier COGS</HeaderCell> : null}
+                      <HeaderCell className="text-right">
+                        {isSelfBuy ? 'Actual Unit COGS' : 'Inhouse COGS'}
+                      </HeaderCell>
                       {editableLines ? <HeaderCell className="text-right">Save</HeaderCell> : null}
                     </tr>
                   </thead>
@@ -265,10 +339,22 @@ export function PurchasingBatchModal({
                         draft.approvedQuantity.trim() === ''
                           ? 0
                           : Number.parseInt(draft.approvedQuantity, 10);
+                      const nextApprovedQuantity = Number.isFinite(normalizedApprovedQuantity)
+                        ? Math.max(0, Math.min(line.requestedQuantity, Math.floor(normalizedApprovedQuantity)))
+                        : initialApprovedQuantity;
+                      const nextSupplierUnitCost = parseCostDraft(draft.supplierUnitCost);
+                      const nextPartnerUnitCost = parseCostDraft(draft.partnerUnitCost);
+                      const supplierChanged =
+                        showSupplierCogs
+                        && nextSupplierUnitCost !== null
+                        && nextSupplierUnitCost !== (line.supplierUnitCost ?? null);
+                      const partnerChanged =
+                        nextPartnerUnitCost !== null && nextPartnerUnitCost !== (line.partnerUnitCost ?? null);
+                      const approvedChanged = nextApprovedQuantity !== initialApprovedQuantity;
                       const isDirty =
-                        normalizedApprovedQuantity !== initialApprovedQuantity
-                        || draft.supplierUnitCost !== (line.supplierUnitCost?.toString() ?? '')
-                        || draft.partnerUnitCost !== (line.partnerUnitCost?.toString() ?? '');
+                        approvedChanged
+                        || supplierChanged
+                        || partnerChanged;
 
                       return (
                         <tr key={line.id}>
@@ -329,28 +415,30 @@ export function PurchasingBatchModal({
                               line.approvedQuantity ?? line.requestedQuantity
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right text-sm tabular-nums text-[#4d6677]">
-                            {editableLines ? (
-                              <input
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                value={draft.supplierUnitCost}
-                                onChange={(event) =>
-                                  setLineDrafts((current) => ({
-                                    ...current,
-                                    [line.id]: {
-                                      ...draft,
-                                      supplierUnitCost: event.target.value,
-                                    },
-                                  }))
-                                }
-                                className="h-9 w-28 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-primary outline-none transition focus:border-[#96b4c3]"
-                              />
-                            ) : (
-                              formatMoney(line.supplierUnitCost)
-                            )}
-                          </td>
+                          {showSupplierCogs ? (
+                            <td className="px-4 py-3 text-right text-sm tabular-nums text-[#4d6677]">
+                              {editableLines ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={draft.supplierUnitCost}
+                                  onChange={(event) =>
+                                    setLineDrafts((current) => ({
+                                      ...current,
+                                      [line.id]: {
+                                        ...draft,
+                                        supplierUnitCost: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className="h-9 w-28 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-primary outline-none transition focus:border-[#96b4c3]"
+                                />
+                              ) : (
+                                formatMoney(line.supplierUnitCost)
+                              )}
+                            </td>
+                          ) : null}
                           <td className="px-4 py-3 text-right text-sm tabular-nums text-[#4d6677]">
                             {editableLines ? (
                               <input
@@ -379,18 +467,9 @@ export function PurchasingBatchModal({
                                 type="button"
                                 onClick={() =>
                                   void onUpdateLine(line.id, {
-                                    approvedQuantity: Math.max(
-                                      0,
-                                      Math.min(line.requestedQuantity, Math.floor(normalizedApprovedQuantity)),
-                                    ),
-                                    supplierUnitCost:
-                                      draft.supplierUnitCost.trim() === ''
-                                        ? undefined
-                                        : Number(draft.supplierUnitCost),
-                                    partnerUnitCost:
-                                      draft.partnerUnitCost.trim() === ''
-                                        ? undefined
-                                        : Number(draft.partnerUnitCost),
+                                    ...(approvedChanged ? { approvedQuantity: nextApprovedQuantity } : {}),
+                                    ...(supplierChanged ? { supplierUnitCost: nextSupplierUnitCost ?? undefined } : {}),
+                                    ...(partnerChanged ? { partnerUnitCost: nextPartnerUnitCost ?? undefined } : {}),
                                   })
                                 }
                                 disabled={!isDirty || isUpdatingLine}
@@ -449,16 +528,25 @@ export function PurchasingBatchModal({
             {canEdit && statusActions.length > 0 ? (
               <div className="card">
                 <p className="card-label">Actions</p>
+                {pendingLineUpdates.length > 0 ? (
+                  <p className="mt-2 rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">
+                    This request has edited quantity or COGS values. Send the modified request to the partner for agreement before payment.
+                  </p>
+                ) : null}
                 <div className="mt-2 space-y-2">
                   {statusActions.map((action) => (
                     <button
                       key={action.label}
                       type="button"
-                      onClick={() => void onApplyStatus(action.status)}
-                      disabled={isUpdatingStatus}
+                      onClick={() => void handleStatusAction(action.status)}
+                      disabled={isUpdatingStatus || isUpdatingLine}
                       className={getActionClassName(action.tone)}
                     >
-                      {isUpdatingStatus ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : action.label}
+                      {isUpdatingStatus || isUpdatingLine
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : pendingLineUpdates.length > 0 && action.status !== 'CANCELED'
+                          ? 'Send changes to partner'
+                          : action.label}
                     </button>
                   ))}
                 </div>
@@ -491,7 +579,7 @@ export function PurchasingBatchModal({
                 ? formatStatusLabel(batch.status)
                 : batch.invoice.number || batch.invoiceNumber || 'Not assigned'}
             </MetricCard>
-            <MetricCard label={isSelfBuy ? 'Approved Units' : 'Partner Amount'}>
+            <MetricCard label={isSelfBuy ? 'Approved Units' : 'Invoice Amount'}>
               {isSelfBuy
                 ? String(batch.approvedQuantity)
                 : formatMoney(batch.invoice.amount ?? batch.invoiceAmount)}
@@ -685,9 +773,9 @@ function getStatusHelper(status: WmsPurchasingBatchStatus, requestType?: 'PROCUR
 
   switch (status) {
     case 'UNDER_REVIEW':
-      return 'Review the request, then accept it as-is or cancel it. Saving quantity or cost changes sends a revision to the partner.';
+      return 'Review the request, then accept it as-is or cancel it. Saving quantity or COGS changes sends a revision to the partner.';
     case 'REVISION':
-      return 'Updated pricing or quantity was sent back to the partner for confirmation.';
+      return 'Updated COGS or quantity was sent back to the partner for confirmation.';
     case 'PENDING_PAYMENT':
       return 'The partner can now review the invoice and submit payment proof.';
     case 'PAYMENT_REVIEW':

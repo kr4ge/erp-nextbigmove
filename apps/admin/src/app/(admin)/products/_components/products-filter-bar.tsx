@@ -52,6 +52,7 @@ export function ProductsFilterBar({
       </div>
 
       <WmsScopeFilterFields
+        allowAllTenants
         tenantOptions={(filters?.tenants ?? []).map((tenant) => ({
           value: tenant.id,
           label: tenant.label,

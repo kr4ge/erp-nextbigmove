@@ -37,6 +37,11 @@ type ProductProfileRecord = Prisma.WmsProductProfileGetPayload<{
             id: true;
             name: true;
             shopName: true;
+            tenant: {
+              select: {
+                name: true;
+              };
+            };
           };
         };
       };
@@ -61,6 +66,11 @@ type NonStockableProductRecord = Prisma.PosProductGetPayload<{
         id: true;
         name: true;
         shopName: true;
+        tenant: {
+          select: {
+            name: true;
+          };
+        };
       };
     };
   };
@@ -90,8 +100,9 @@ export class WmsProductsService {
 
   async getOverview(query: GetWmsProductsOverviewDto) {
     const scope = await this.resolveTenantScope(query.tenantId);
+    const isAllTenantScope = scope.canAccessAllTenants && !scope.activeTenantId;
 
-    if (!scope.activeTenantId) {
+    if (!scope.activeTenantId && !isAllTenantScope) {
       return {
         tenantReady: false,
         summary: {
@@ -117,14 +128,28 @@ export class WmsProductsService {
       };
     }
 
-    await this.ensureDefaultProfiles(scope.activeTenantId, query.storeId);
+    if (scope.activeTenantId) {
+      await this.ensureDefaultProfiles(scope.activeTenantId, query.storeId);
+    } else if (isAllTenantScope) {
+      for (const tenant of scope.tenants) {
+        await this.ensureDefaultProfiles(tenant.id, query.storeId);
+      }
+    }
+
+    const tenantWhere = scope.activeTenantId ? { tenantId: scope.activeTenantId } : {};
+    const storeTenantWhere = scope.activeTenantId ? { tenantId: scope.activeTenantId } : {};
 
     const stores = await this.prisma.posStore.findMany({
-      where: { tenantId: scope.activeTenantId },
+      where: tenantWhere,
       select: {
         id: true,
         name: true,
         shopName: true,
+        tenant: {
+          select: {
+            name: true,
+          },
+        },
         _count: {
           select: {
             products: true,
@@ -157,7 +182,7 @@ export class WmsProductsService {
         : null;
 
     const where: Prisma.WmsProductProfileWhereInput = {
-      tenantId: scope.activeTenantId,
+      ...tenantWhere,
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activePosWarehouse ? { posWarehouseRef: activePosWarehouse.warehouseId } : {}),
       ...(query.status ? { status: query.status } : {}),
@@ -173,9 +198,7 @@ export class WmsProductsService {
     };
 
     const productCandidateWhere: Prisma.PosProductWhereInput = {
-      store: {
-        tenantId: scope.activeTenantId,
-      },
+      ...(scope.activeTenantId ? { store: storeTenantWhere } : {}),
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activePosWarehouse ? { warehouseId: activePosWarehouse.warehouseId } : {}),
       ...(!query.status && query.search
@@ -212,6 +235,11 @@ export class WmsProductsService {
                     id: true,
                     name: true,
                     shopName: true,
+                    tenant: {
+                      select: {
+                        name: true,
+                      },
+                    },
                   },
                 },
               },
@@ -239,6 +267,11 @@ export class WmsProductsService {
                     id: true,
                     name: true,
                     shopName: true,
+                    tenant: {
+                      select: {
+                        name: true,
+                      },
+                    },
                   },
                 },
               },
@@ -354,8 +387,10 @@ export class WmsProductsService {
     );
 
     const products = [
-      ...profiles.map((profile) => this.mapProfile(profile, warehouseMap, locationMap)),
-      ...nonStockableProducts.map((product) => this.mapNonStockableProduct(product, warehouseMap)),
+      ...profiles.map((profile) => this.mapProfile(profile, warehouseMap, locationMap, isAllTenantScope)),
+      ...nonStockableProducts.map((product) =>
+        this.mapNonStockableProduct(product, warehouseMap, isAllTenantScope),
+      ),
     ].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
 
     return {
@@ -374,7 +409,9 @@ export class WmsProductsService {
         tenants: scope.tenants,
         stores: stores.map((store) => ({
           id: store.id,
-          label: store.shopName || store.name,
+          label: isAllTenantScope
+            ? `${store.tenant.name} · ${store.shopName || store.name}`
+            : store.shopName || store.name,
           productCount: store._count.products,
         })),
         posWarehouses: posWarehouses.map((warehouse) => ({
@@ -707,6 +744,11 @@ export class WmsProductsService {
                 id: true,
                 name: true,
                 shopName: true,
+                tenant: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
           },
@@ -764,6 +806,11 @@ export class WmsProductsService {
                 id: true,
                 name: true,
                 shopName: true,
+                tenant: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
           },
@@ -862,10 +909,11 @@ export class WmsProductsService {
           ? requestedTenantId
           : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
             ? clsTenantId
-          : tenants[0]?.id ?? null;
+            : null;
 
       return {
         activeTenantId,
+        canAccessAllTenants: true,
         tenants: tenants.map((tenant) => ({
           id: tenant.id,
           label: tenant.name,
@@ -878,6 +926,7 @@ export class WmsProductsService {
     if (!clsTenantId) {
       return {
         activeTenantId: null,
+        canAccessAllTenants: false,
         tenants: [],
       };
     }
@@ -898,6 +947,7 @@ export class WmsProductsService {
 
     return {
       activeTenantId: clsTenantId,
+      canAccessAllTenants: false,
       tenants: tenant
         ? [
             {
@@ -1020,6 +1070,7 @@ export class WmsProductsService {
         label: string;
       }
     >,
+    includeTenantInStoreName = false,
   ) {
     const posWarehouse = profile.posWarehouseRef ? warehouseMap.get(profile.posWarehouseRef) ?? null : null;
     const snapshot = profile.posProduct.productSnapshot as
@@ -1036,6 +1087,8 @@ export class WmsProductsService {
         : typeof snapshot?.product?.display_id === 'string'
           ? snapshot.product.display_id
           : null;
+
+    const storeName = profile.posProduct.store.shopName || profile.posProduct.store.name;
 
     return {
       id: profile.id,
@@ -1063,7 +1116,9 @@ export class WmsProductsService {
         : null,
       store: {
         id: profile.posProduct.store.id,
-        name: profile.posProduct.store.shopName || profile.posProduct.store.name,
+        name: includeTenantInStoreName
+          ? `${profile.posProduct.store.tenant.name} · ${storeName}`
+          : storeName,
       },
       preferredLocation: profile.preferredLocationId
         ? locationMap.get(profile.preferredLocationId) ?? null
@@ -1083,6 +1138,7 @@ export class WmsProductsService {
   private mapNonStockableProduct(
     product: NonStockableProductRecord,
     warehouseMap: Map<string, { id: string; warehouseId: string; name: string }>,
+    includeTenantInStoreName = false,
   ) {
     const snapshot = product.productSnapshot as
       | {
@@ -1099,6 +1155,7 @@ export class WmsProductsService {
           ? snapshot.product.display_id
           : null;
     const posWarehouse = product.warehouseId ? warehouseMap.get(product.warehouseId) ?? null : null;
+    const storeName = product.store.shopName || product.store.name;
 
     return {
       id: `non-stockable:${product.id}`,
@@ -1126,7 +1183,9 @@ export class WmsProductsService {
         : null,
       store: {
         id: product.store.id,
-        name: product.store.shopName || product.store.name,
+        name: includeTenantInStoreName
+          ? `${product.store.tenant.name} · ${storeName}`
+          : storeName,
       },
       preferredLocation: null,
       pickLocation: null,

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
 import { getInstalledStoxBuild } from '@/src/shared/config/app-release';
 import { PrimaryButton } from '@/src/shared/components/primary-button';
@@ -7,7 +8,7 @@ import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
 import { fetchActiveStoxRelease, type WmsMobileActiveStoxReleaseResponse } from '../services/home-api';
 import { getDisplayName, resolveEntityName } from '../utils';
-import { SectionLabel, TaskHeader, UtilityPill } from './stox-primitives';
+import { SectionLabel, TaskHeaderIconButton } from './stox-primitives';
 
 type AccountTabProps = {
   bootstrap: BootstrapResponse;
@@ -41,6 +42,7 @@ export function AccountTab({
   );
   const storeName = resolveEntityName(bootstrap.context.stores, bootstrap.context.defaultStoreId);
   const assignment = bootstrap.operations?.taskAssignment;
+  const initials = displayName.slice(0, 2).toUpperCase();
   const installedBuild = useMemo(() => getInstalledStoxBuild(), []);
   const hasTrackedInstalledBuild = installedBuild.buildNumber !== null;
   const installedBuildNumber = installedBuild.buildNumber ?? 0;
@@ -85,44 +87,65 @@ export function AccountTab({
 
   return (
     <>
-      <TaskHeader title="Account" />
+      <View style={styles.profileHeader}>
+        <TaskHeaderIconButton
+          icon="refresh-cw"
+          loading={isSubmitting}
+          onPress={onRefresh}
+        />
+        <Text style={styles.profileHeaderTitle}>Profile</Text>
+        <View style={styles.headerAvatar}>
+          <Text style={styles.headerAvatarText}>{initials}</Text>
+        </View>
+      </View>
 
       <SurfaceCard style={styles.profileCard}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{displayName.slice(0, 2).toUpperCase()}</Text>
+          <Text style={styles.avatarText}>{initials}</Text>
         </View>
         <View style={styles.profileCopy}>
+          <Text style={styles.profileEyebrow}>WMS STAFF</Text>
           <Text style={styles.profileName}>{displayName}</Text>
           <Text style={styles.profileEmail}>{bootstrap.user.email}</Text>
+          <View style={styles.assignmentBadge}>
+            <Feather name="briefcase" size={13} color="#6437F6" />
+            <Text style={styles.assignmentBadgeText}>
+              {assignment ? `${assignment} assigned` : 'No task assignment'}
+            </Text>
+          </View>
         </View>
       </SurfaceCard>
 
-      <View style={styles.metaRow}>
-        <UtilityPill icon="briefcase" label={assignment ? `${assignment} assigned` : 'No task assignment'} />
-        <UtilityPill icon="shopping-bag" label={storeName} tone="accent" />
-        <UtilityPill icon="map-pin" label={warehouseName} />
+      <View style={styles.metaGrid}>
+        <ProfileMetaCard icon="shopping-bag" label="Store" value={storeName} />
+        <ProfileMetaCard icon="map-pin" label="Warehouse" value={warehouseName} />
+        <ProfileMetaCard icon="shield" label="Permissions" value={`${bootstrap.access.permissions.length}`} />
       </View>
 
-      <SectionLabel title="Session" />
+      <SectionLabel title="Session" trailing="STOX · WMS" />
 
       <SurfaceCard style={styles.infoCard}>
-        <InfoRow label="App Version" value={installedBuild.label} />
-        <InfoRow label="Device" value={device?.name ?? 'Not available'} />
-        <InfoRow label="Session ID" value={session.sessionId || 'Unavailable'} />
-        <InfoRow label="Permissions" value={`${bootstrap.access.permissions.length}`} />
-        <InfoRow label="Workspace" value="STOX · WMS" />
+        <InfoRow icon="smartphone" label="Device" value={device?.name ?? 'Not available'} />
+        <InfoRow icon="hash" label="Session ID" value={session.sessionId || 'Unavailable'} />
+        <InfoRow icon="package" label="App Version" value={installedBuild.label} />
+        <InfoRow icon="layers" label="Workspace" value="STOX · WMS" />
       </SurfaceCard>
 
       <SectionLabel title="App Release" />
 
       <SurfaceCard style={styles.releaseCard}>
         <View style={styles.releaseHeader}>
-          <Text style={styles.releaseTitle}>Latest Android release</Text>
-          <Text style={styles.releaseValue}>
-            {releaseState.latest
-              ? `${releaseState.latest.version} (${releaseState.latest.buildNumber})`
-              : 'Unavailable'}
-          </Text>
+          <View style={styles.releaseIcon}>
+            <Feather name="download-cloud" size={16} color="#F55DB8" />
+          </View>
+          <View style={styles.releaseCopy}>
+            <Text style={styles.releaseTitle}>Latest Android release</Text>
+            <Text style={styles.releaseValue}>
+              {releaseState.latest
+                ? `${releaseState.latest.version} (${releaseState.latest.buildNumber})`
+                : 'Unavailable'}
+            </Text>
+          </View>
         </View>
 
         {isUpdateAvailable ? (
@@ -183,132 +206,296 @@ export function AccountTab({
 }
 
 function InfoRow({
+  icon,
   label,
   value,
 }: {
+  icon: keyof typeof Feather.glyphMap;
   label: string;
   value: string;
 }) {
   return (
     <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text numberOfLines={1} style={styles.rowValue}>{value}</Text>
+      <View style={styles.rowIcon}>
+        <Feather name={icon} size={14} color="#6437F6" />
+      </View>
+      <View style={styles.rowCopy}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        <Text numberOfLines={1} style={styles.rowValue}>{value}</Text>
+      </View>
     </View>
   );
 }
 
+function ProfileMetaCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  value: string;
+}) {
+  return (
+    <SurfaceCard style={styles.metaCard}>
+      <View style={styles.metaIcon}>
+        <Feather name={icon} size={15} color="#F55DB8" />
+      </View>
+      <View style={styles.metaCopy}>
+        <Text style={styles.metaLabel}>{label}</Text>
+        <Text numberOfLines={1} style={styles.metaValue}>{value}</Text>
+      </View>
+    </SurfaceCard>
+  );
+}
+
 const styles = StyleSheet.create({
-  profileCard: {
+  profileHeader: {
     alignItems: 'center',
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    marginTop: 2,
+  },
+  profileHeaderTitle: {
+    color: '#24232D',
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    textAlign: 'center',
+  },
+  headerAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#F7E4AF',
+    borderColor: 'rgba(18,54,79,0.12)',
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  headerAvatarText: {
+    color: '#24232D',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  profileCard: {
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderColor: 'transparent',
+    borderRadius: 28,
+    flexDirection: 'row',
     gap: tokens.spacing.md,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
   },
   avatar: {
     alignItems: 'center',
-    backgroundColor: tokens.colors.accent,
-    borderRadius: 28,
-    height: 56,
+    backgroundColor: '#6437F6',
+    borderRadius: 24,
+    height: 58,
     justifyContent: 'center',
-    width: 56,
+    width: 58,
   },
   avatarText: {
-    color: tokens.colors.panel,
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '900',
   },
   profileCopy: {
     flex: 1,
-    gap: 2,
+    gap: 5,
+    minWidth: 0,
+  },
+  profileEyebrow: {
+    color: '#8F8AAB',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.4,
   },
   profileName: {
-    color: tokens.colors.ink,
-    fontSize: 24,
+    color: '#24232D',
+    fontSize: 23,
     fontWeight: '800',
     letterSpacing: -0.8,
   },
   profileEmail: {
-    color: tokens.colors.inkMuted,
+    color: '#7B7791',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  metaRow: {
+  assignmentBadge: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#F4F0FF',
+    borderRadius: 999,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: tokens.spacing.sm,
+    gap: 6,
+    marginTop: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  assignmentBadgeText: {
+    color: '#6437F6',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  metaGrid: {
+    gap: 12,
+  },
+  metaCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: 'transparent',
+    borderRadius: 24,
+    flexDirection: 'row',
+    gap: 14,
+    minHeight: 74,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.07,
+    shadowRadius: 20,
+  },
+  metaIcon: {
+    alignItems: 'center',
+    backgroundColor: '#FFE1F2',
+    borderRadius: 12,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  metaCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  metaLabel: {
+    color: '#8F8AAB',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  metaValue: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '800',
   },
   infoCard: {
-    gap: tokens.spacing.md,
+    backgroundColor: '#FFFFFF',
+    borderColor: 'transparent',
+    borderRadius: 24,
+    gap: 14,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.07,
+    shadowRadius: 20,
   },
   releaseCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'transparent',
+    borderRadius: 24,
     gap: tokens.spacing.md,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.07,
+    shadowRadius: 20,
   },
   releaseHeader: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
+  },
+  releaseIcon: {
+    alignItems: 'center',
+    backgroundColor: '#FFE1F2',
+    borderRadius: 14,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  releaseCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
   releaseTitle: {
-    color: tokens.colors.inkMuted,
+    color: '#8F8AAB',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   releaseValue: {
-    color: tokens.colors.ink,
-    fontSize: 14,
+    color: '#24232D',
+    fontSize: 15,
     fontWeight: '800',
   },
   releaseMuted: {
-    color: tokens.colors.inkMuted,
+    color: '#7B7791',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     lineHeight: 18,
   },
   updateNotice: {
-    backgroundColor: '#FFF6E6',
-    borderColor: '#F2D49B',
-    borderRadius: 16,
+    backgroundColor: '#F4F0FF',
+    borderColor: '#E1D8FF',
+    borderRadius: 18,
     borderWidth: 1,
     gap: 6,
     paddingHorizontal: tokens.spacing.md,
     paddingVertical: tokens.spacing.md,
   },
   updateTitle: {
-    color: '#8A6814',
+    color: '#6437F6',
     fontSize: 14,
     fontWeight: '800',
   },
   updateCopy: {
-    color: '#805F11',
+    color: '#524F66',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     lineHeight: 18,
   },
   updateNotes: {
-    color: '#7A5A0F',
+    color: '#7B7791',
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     lineHeight: 17,
   },
   row: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: tokens.spacing.md,
-    justifyContent: 'space-between',
+    gap: 12,
+  },
+  rowIcon: {
+    alignItems: 'center',
+    backgroundColor: '#F4F0FF',
+    borderRadius: 12,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  rowCopy: {
+    flex: 1,
+    gap: 1,
+    minWidth: 0,
   },
   rowLabel: {
-    color: tokens.colors.inkMuted,
-    fontSize: 13,
-    fontWeight: '700',
+    color: '#8F8AAB',
+    fontSize: 12,
+    fontWeight: '800',
   },
   rowValue: {
-    color: tokens.colors.ink,
-    flex: 1,
+    color: '#24232D',
     fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'right',
+    fontWeight: '800',
   },
   actions: {
-    gap: tokens.spacing.md,
+    gap: 12,
   },
   button: {
     width: '100%',

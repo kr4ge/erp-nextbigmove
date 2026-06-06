@@ -40,6 +40,7 @@ type CartLine = {
   id: string;
   product: WmsPurchasingProductOption;
   quantity: number;
+  unitAmount: number | null;
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -54,7 +55,7 @@ function getUnitAmount(product: WmsPurchasingProductOption, requestType: WmsPurc
   if (requestType === 'PROCUREMENT') {
     return product.inhouseUnitCost ?? 0;
   }
-  return product.inhouseUnitCost ?? 0;
+  return null;
 }
 
 export function useRequestsController() {
@@ -298,13 +299,14 @@ export function useRequestsController() {
             id: `cart-${product.profileId}-${Date.now()}`,
             product,
             quantity: 1,
+            unitAmount: getUnitAmount(product, createRequestType),
           },
         ];
       });
 
       setIsProductPickerOpen(false);
     },
-    [],
+    [createRequestType],
   );
 
   const removeCartLine = useCallback((lineId: string) => {
@@ -318,17 +320,43 @@ export function useRequestsController() {
     );
   }, []);
 
+  const updateCartLineUnitAmount = useCallback((lineId: string, unitAmount: number | null) => {
+    setCartLines((current) =>
+      current.map((line) => (
+        line.id === lineId
+          ? {
+              ...line,
+              unitAmount:
+                unitAmount !== null && Number.isFinite(unitAmount)
+                  ? Math.max(0, unitAmount)
+                  : null,
+            }
+          : line
+      )),
+    );
+  }, []);
+
+  const updateCreateRequestType = useCallback((requestType: WmsPurchasingRequestType) => {
+    setCreateRequestType(requestType);
+    setCartLines((current) =>
+      current.map((line) => ({
+        ...line,
+        unitAmount: getUnitAmount(line.product, requestType),
+      })),
+    );
+  }, []);
+
   const cartTotals = useMemo(() => {
     const totalItems = cartLines.reduce((sum, line) => sum + line.quantity, 0);
     const totalAmount = cartLines.reduce(
-      (sum, line) => sum + getUnitAmount(line.product, createRequestType) * line.quantity,
+      (sum, line) => sum + (line.unitAmount ?? 0) * line.quantity,
       0,
     );
     return {
       totalItems,
       totalAmount,
     };
-  }, [cartLines, createRequestType]);
+  }, [cartLines]);
 
   const submitRequest = useCallback(async () => {
     if (!cartLines.length) {
@@ -342,6 +370,16 @@ export function useRequestsController() {
       return;
     }
 
+    if (createRequestType === 'SELF_BUY') {
+      const missingUnitAmountLine = cartLines.find(
+        (line) => line.unitAmount === null || line.unitAmount <= 0,
+      );
+      if (missingUnitAmountLine) {
+        addToast('error', `Enter actual unit COGS for ${missingUnitAmountLine.product.name}`);
+        return;
+      }
+    }
+
     const payload: CreateWmsPurchasingBatchInput = {
       storeId: requestStoreId,
       requestType: createRequestType,
@@ -351,7 +389,11 @@ export function useRequestsController() {
       sourceStatus: 'UNDER_REVIEW',
       partnerNotes: createPartnerNotes.trim() || undefined,
       lines: cartLines.map((line, index) => {
-        const unitAmount = getUnitAmount(line.product, createRequestType);
+        const unitAmount = line.unitAmount ?? 0;
+        const supplierUnitCost =
+          createRequestType === 'SELF_BUY'
+            ? undefined
+            : line.product.supplierUnitCost ?? undefined;
         return {
           lineNo: index + 1,
           sourceItemId: line.product.posProductId,
@@ -359,7 +401,7 @@ export function useRequestsController() {
             profileId: line.product.profileId,
             storeId: line.product.store.id,
             originalPartnerUnitCost: unitAmount,
-            originalSupplierUnitCost: line.product.supplierUnitCost ?? null,
+            originalSupplierUnitCost: supplierUnitCost ?? null,
             originalApprovedQuantity: line.quantity,
           },
           productId: line.product.productId,
@@ -369,7 +411,7 @@ export function useRequestsController() {
           requestedQuantity: line.quantity,
           uom: 'unit',
           partnerUnitCost: unitAmount,
-          supplierUnitCost: line.product.supplierUnitCost ?? undefined,
+          supplierUnitCost,
           needsProfiling: false,
           resolvedPosProductId: line.product.posProductId,
           resolvedProfileId: line.product.profileId,
@@ -539,10 +581,11 @@ export function useRequestsController() {
     cartTotals,
     isSubmitting,
     setCreateStoreScopeId,
-    setCreateRequestType,
+    setCreateRequestType: updateCreateRequestType,
     setCreatePartnerNotes,
     removeCartLine,
     updateCartLineQuantity,
+    updateCartLineUnitAmount,
     submitRequest,
     isProductPickerOpen,
     productSearchText,

@@ -18,6 +18,14 @@ export const STOX_STOCK_MOVE_PERMISSIONS = [
   'wms.inventory.write',
 ] as const;
 
+export const STOX_INVENTORY_EXECUTE_PERMISSIONS = [
+  ...STOX_STOCK_PUTAWAY_PERMISSIONS,
+  ...STOX_STOCK_MOVE_PERMISSIONS,
+] as const;
+export const STOX_INVENTORY_COUNT_CLOSEOUT_PERMISSIONS = [
+  'wms.inventory.adjust',
+] as const;
+
 export const STOX_PICK_EXECUTE_PERMISSIONS = [
   'wms.fulfillment.write',
   'wms.fulfillment.edit',
@@ -82,7 +90,10 @@ export function canUseStoxTab(bootstrap: BootstrapResponse, tab: StoxTabKey) {
   }
 
   if (tab === 'tasks') {
-    return canUsePickWorkspace(bootstrap) || canUsePackWorkspace(bootstrap);
+    return canUsePickWorkspace(bootstrap)
+      || canUsePackWorkspace(bootstrap)
+      || canUseAssignedInventoryWorkspace(bootstrap)
+      || canUseAssignedRtsWorkspace(bootstrap);
   }
 
   if (tab === 'history') {
@@ -120,12 +131,21 @@ export function canUseStoxStockWorkspace(bootstrap: BootstrapResponse) {
   return hasAnyWmsPermission(bootstrap, STOX_STOCK_READ_PERMISSIONS);
 }
 
+export function canUseInventoryWorkspace(bootstrap: BootstrapResponse) {
+  return canUseStoxStockWorkspace(bootstrap) || canUseStoxRtsWorkspace(bootstrap);
+}
+
 export function canUseStoxScanWorkspace(bootstrap: BootstrapResponse) {
   return hasAnyWmsPermission(bootstrap, STOX_SCAN_READ_PERMISSIONS);
 }
 
 export function canUseStoxRtsWorkspace(bootstrap: BootstrapResponse) {
   return hasAnyWmsPermission(bootstrap, STOX_RTS_READ_PERMISSIONS);
+}
+
+export function canUseAssignedRtsWorkspace(bootstrap: BootstrapResponse) {
+  return canUseStoxRtsWorkspace(bootstrap)
+    && (isPlatformAdmin(bootstrap) || bootstrap.operations?.taskAssignment === 'INVENTORY');
 }
 
 export function canVerifyStoxRts(bootstrap: BootstrapResponse) {
@@ -150,6 +170,15 @@ export function canUsePickWorkspace(bootstrap: BootstrapResponse) {
 export function canUsePackWorkspace(bootstrap: BootstrapResponse) {
   return hasAnyWmsPermission(bootstrap, STOX_PACK_EXECUTE_PERMISSIONS)
     && (hasOperationalSupervisorAccess(bootstrap, 'pack') || bootstrap.operations?.taskAssignment === 'PACK');
+}
+
+export function canUseAssignedInventoryWorkspace(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_INVENTORY_EXECUTE_PERMISSIONS)
+    && (isPlatformAdmin(bootstrap) || bootstrap.operations?.taskAssignment === 'INVENTORY');
+}
+
+export function canSuperviseInventoryCounts(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_INVENTORY_COUNT_CLOSEOUT_PERMISSIONS);
 }
 
 function hasOperationalSupervisorAccess(

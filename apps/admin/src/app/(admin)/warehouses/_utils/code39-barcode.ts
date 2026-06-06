@@ -156,6 +156,7 @@ const CODE128_PATTERNS = [
 ] as const;
 
 const CODE128_START_B = 104;
+const CODE128_START_C = 105;
 const CODE128_STOP = 106;
 
 type RenderCode39SvgOptions = {
@@ -177,6 +178,7 @@ type RenderCode128SvgOptions = {
   barColor?: string;
   backgroundColor?: string;
   showText?: boolean;
+  preserveAspectRatio?: string;
 };
 
 function escapeXml(text: string) {
@@ -203,6 +205,30 @@ export function normalizeBarcodeValue(value: string) {
     .replace(/\s+/g, ' ')
     .trim()
     .toUpperCase();
+}
+
+export function isCode128CCompatible(value: string) {
+  const normalizedValue = normalizeBarcodeValue(value);
+
+  return normalizedValue.length > 0 && normalizedValue.length % 2 === 0 && /^\d+$/.test(normalizedValue);
+}
+
+function normalizeCode128CValue(value: string) {
+  const normalizedValue = normalizeBarcodeValue(value);
+
+  if (!normalizedValue) {
+    throw new Error('Barcode value is required');
+  }
+
+  if (!/^\d+$/.test(normalizedValue)) {
+    throw new Error('Code 128C requires numeric-only barcode values');
+  }
+
+  if (normalizedValue.length % 2 !== 0) {
+    throw new Error('Code 128C requires an even number of digits');
+  }
+
+  return normalizedValue;
 }
 
 function normalizeCode39Value(value: string) {
@@ -300,6 +326,7 @@ export function renderCode128SvgMarkup(value: string, options: RenderCode128SvgO
   const barColor = options.barColor ?? '#0f3040';
   const backgroundColor = options.backgroundColor ?? '#ffffff';
   const showText = options.showText ?? true;
+  const preserveAspectRatio = options.preserveAspectRatio ?? 'xMidYMid meet';
 
   let cursorX = 0;
   const bars: Array<{ x: number; width: number }> = [];
@@ -337,5 +364,61 @@ export function renderCode128SvgMarkup(value: string, options: RenderCode128SvgO
     ? `<text x="${totalWidth / 2}" y="${height + textSize + 2}" text-anchor="middle" font-size="${textSize}" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial" fill="${barColor}" letter-spacing="0.06em">${escapedText}</text>`
     : '';
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" role="img" aria-label="Code128 ${escapedText}" shape-rendering="crispEdges"><rect x="0" y="0" width="${totalWidth}" height="${totalHeight}" fill="${backgroundColor}" />${barRects}${textMarkup}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" preserveAspectRatio="${preserveAspectRatio}" role="img" aria-label="Code128 ${escapedText}" shape-rendering="crispEdges"><rect x="0" y="0" width="${totalWidth}" height="${totalHeight}" fill="${backgroundColor}" />${barRects}${textMarkup}</svg>`;
+}
+
+export function renderCode128CSvgMarkup(value: string, options: RenderCode128SvgOptions = {}) {
+  const normalizedValue = normalizeCode128CValue(value);
+  const dataCodes = normalizedValue.match(/\d{2}/g)?.map((pair) => Number(pair)) ?? [];
+
+  const checksum =
+    (CODE128_START_C + dataCodes.reduce((total, code, index) => total + code * (index + 1), 0)) % 103;
+  const encodedCodes = [CODE128_START_C, ...dataCodes, checksum, CODE128_STOP];
+
+  const height = options.height ?? 96;
+  const moduleWidth = options.moduleWidth ?? 2;
+  const quietZone = options.quietZone ?? Math.max(20, moduleWidth * 10);
+  const textSize = options.textSize ?? 14;
+  const barColor = options.barColor ?? '#0f3040';
+  const backgroundColor = options.backgroundColor ?? '#ffffff';
+  const showText = options.showText ?? true;
+  const preserveAspectRatio = options.preserveAspectRatio ?? 'xMidYMid meet';
+
+  let cursorX = 0;
+  const bars: Array<{ x: number; width: number }> = [];
+
+  encodedCodes.forEach((code) => {
+    const pattern = CODE128_PATTERNS[code];
+
+    if (!pattern) {
+      throw new Error(`Unsupported Code128C code: ${code}`);
+    }
+
+    Array.from(pattern).forEach((widthToken, patternIndex) => {
+      const segmentWidth = Number(widthToken) * moduleWidth;
+      const isBar = patternIndex % 2 === 0;
+
+      if (isBar) {
+        bars.push({ x: cursorX, width: segmentWidth });
+      }
+
+      cursorX += segmentWidth;
+    });
+  });
+
+  const totalWidth = cursorX + (quietZone * 2);
+  const textSpace = showText ? textSize + 12 : 0;
+  const totalHeight = height + textSpace;
+  const barRects = bars
+    .map(
+      (bar) =>
+        `<rect x="${bar.x + quietZone}" y="0" width="${bar.width}" height="${height}" fill="${barColor}" />`,
+    )
+    .join('');
+  const escapedText = escapeXml(normalizedValue);
+  const textMarkup = showText
+    ? `<text x="${totalWidth / 2}" y="${height + textSize + 2}" text-anchor="middle" font-size="${textSize}" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial" fill="${barColor}" letter-spacing="0.06em">${escapedText}</text>`
+    : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" preserveAspectRatio="${preserveAspectRatio}" role="img" aria-label="Code128C ${escapedText}" shape-rendering="crispEdges"><rect x="0" y="0" width="${totalWidth}" height="${totalHeight}" fill="${backgroundColor}" />${barRects}${textMarkup}</svg>`;
 }

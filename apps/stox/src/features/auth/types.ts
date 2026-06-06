@@ -62,7 +62,7 @@ export type BootstrapResponse = {
     }>;
   };
   operations?: {
-    taskAssignment: 'PICK' | 'PACK' | null;
+    taskAssignment: 'PICK' | 'PACK' | 'INVENTORY' | null;
   };
   context: {
     tenantOptions?: TenantOption[];

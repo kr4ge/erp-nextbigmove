@@ -134,16 +134,95 @@ export type WmsMobileBin = {
   id: string;
   code: string;
   name: string;
+  kind?: string;
   label: string;
   warehouse: {
     id: string;
     code: string;
     name: string;
   };
+  section?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
+  rack?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
   capacity: number | null;
   occupiedUnits: number;
   availableUnits: number | null;
   isFull: boolean;
+};
+
+export type WmsMobileStockCountEntry = {
+  id: string;
+  inventoryUnitId: string | null;
+  status: 'PENDING' | 'COUNTED' | 'MISSING' | 'UNEXPECTED';
+  statusLabel: string;
+  unitCode: string;
+  unitBarcode: string | null;
+  productName: string;
+  productCustomId: string | null;
+  scannedCode: string | null;
+  scannedAt: string | null;
+};
+
+export type WmsMobileStockCountSessionSummary = {
+  id: string;
+  status: 'OPEN' | 'SUBMITTED' | 'CLOSED' | 'CANCELED';
+  statusLabel: string;
+  warehouse: {
+    id: string;
+    code: string;
+    name: string;
+  };
+  location: {
+    id: string;
+    code: string;
+    name: string;
+    kind: string;
+    label: string;
+  };
+  notes: string | null;
+  startedAt: string;
+  submittedAt: string | null;
+  closedAt: string | null;
+  startedBy: {
+    name: string;
+    email: string;
+  } | null;
+  submittedBy: {
+    name: string;
+    email: string;
+  } | null;
+  closedBy: {
+    name: string;
+    email: string;
+  } | null;
+  summary: {
+    expectedUnits: number;
+    countedUnits: number;
+    pendingUnits: number;
+    missingUnits: number;
+    unexpectedUnits: number;
+    varianceUnits: number;
+  };
+};
+
+export type WmsMobileStockCountSessionDetail = WmsMobileStockCountSessionSummary & {
+  entries: WmsMobileStockCountEntry[];
+};
+
+export type WmsMobileStockCountSessionsResponse = {
+  tenantReady: boolean;
+  context: {
+    activeTenantId: string | null;
+    activeWarehouseId: string | null;
+  };
+  sessions: WmsMobileStockCountSessionSummary[];
 };
 
 export type WmsMobileStockMovement = {

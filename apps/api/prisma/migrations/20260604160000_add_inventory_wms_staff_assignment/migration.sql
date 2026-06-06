@@ -1,0 +1,2 @@
+ALTER TYPE "WmsStaffAssignmentTaskType"
+ADD VALUE IF NOT EXISTS 'INVENTORY';

@@ -17,6 +17,7 @@ type CartLine = {
   id: string;
   product: WmsPurchasingProductOption;
   quantity: number;
+  unitAmount: number | null;
 };
 
 interface RequestCreatePanelProps {
@@ -47,6 +48,7 @@ interface RequestCreatePanelProps {
   onAddProduct: (product: WmsPurchasingProductOption) => void;
   onRemoveLine: (lineId: string) => void;
   onQuantityChange: (lineId: string, quantity: number) => void;
+  onUnitAmountChange: (lineId: string, unitAmount: number | null) => void;
   onSubmit: () => Promise<void>;
 }
 
@@ -57,13 +59,6 @@ function formatCurrency(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function getLineUnitAmount(product: WmsPurchasingProductOption, requestType: WmsPurchasingRequestType) {
-  if (requestType === 'PROCUREMENT') {
-    return product.inhouseUnitCost ?? 0;
-  }
-  return product.inhouseUnitCost ?? 0;
 }
 
 export function RequestCreatePanel({
@@ -91,6 +86,7 @@ export function RequestCreatePanel({
   onAddProduct,
   onRemoveLine,
   onQuantityChange,
+  onUnitAmountChange,
   onSubmit,
 }: RequestCreatePanelProps) {
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
@@ -114,6 +110,9 @@ export function RequestCreatePanel({
   const effectiveStoreName = effectiveStoreId
     ? stores.find((store) => store.id === effectiveStoreId)?.label ?? 'Selected store'
     : 'All stores';
+  const isSelfBuy = createRequestType === 'SELF_BUY';
+  const hasMissingSelfBuyUnitAmount =
+    isSelfBuy && cartLines.some((line) => line.unitAmount === null || line.unitAmount <= 0);
 
   return (
     <section className="panel panel-content">
@@ -160,7 +159,7 @@ export function RequestCreatePanel({
                 <tr>
                   <th className="px-2.5 py-1.5">Product</th>
                   <th className="px-2.5 py-1.5">Store</th>
-                  <th className="px-2.5 py-1.5">Unit amount</th>
+                  <th className="px-2.5 py-1.5">{isSelfBuy ? 'Actual unit COGS' : 'Inhouse COGS'}</th>
                   <th className="px-2.5 py-1.5">Qty</th>
                   <th className="px-2.5 py-1.5 text-right">Subtotal</th>
                   <th className="px-2.5 py-1.5 text-right">Action</th>
@@ -168,8 +167,8 @@ export function RequestCreatePanel({
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {cartLines.map((line) => {
-                  const unitAmount = getLineUnitAmount(line.product, createRequestType);
-                  const subtotal = unitAmount * line.quantity;
+                  const unitAmount = line.unitAmount;
+                  const subtotal = (unitAmount ?? 0) * line.quantity;
                   return (
                     <tr key={line.id} className="hover:bg-slate-50">
                       <td className="px-2.5 py-2">
@@ -180,7 +179,25 @@ export function RequestCreatePanel({
                       </td>
                       <td className="px-2.5 py-2 text-slate-800">{line.product.store.name}</td>
                       <td className="px-2.5 py-2 font-semibold text-slate-800">
-                        {formatCurrency(unitAmount)}
+                        {isSelfBuy ? (
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={unitAmount ?? ''}
+                            placeholder="Required"
+                            onChange={(event) => {
+                              const nextValue = event.target.value.trim();
+                              onUnitAmountChange(
+                                line.id,
+                                nextValue === '' ? null : Number(nextValue),
+                              );
+                            }}
+                            className="h-8 w-28 rounded-md border border-slate-200 px-2 text-sm font-semibold text-slate-800 outline-none focus:border-slate-300"
+                          />
+                        ) : (
+                          formatCurrency(unitAmount ?? 0)
+                        )}
                       </td>
                       <td className="px-2.5 py-2">
                         <input
@@ -240,6 +257,11 @@ export function RequestCreatePanel({
                 })}
               </tbody>
             </table>
+            {hasMissingSelfBuyUnitAmount ? (
+              <div className="border-t border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                Self-buy requires actual unit COGS for every line before submit.
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -307,10 +329,16 @@ export function RequestCreatePanel({
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-sm font-semibold text-slate-800">
-                            {formatCurrency(getLineUnitAmount(product, createRequestType))}
+                            {isSelfBuy
+                              ? 'Enter after adding'
+                              : formatCurrency(product.inhouseUnitCost ?? 0)}
                           </p>
                           <p className="text-[11px] text-slate-500">
-                            {product.inhouseUnitCost === null ? 'COGS not set' : 'Unit amount'}
+                            {isSelfBuy
+                              ? 'Actual unit COGS required'
+                              : product.inhouseUnitCost === null
+                                ? 'Inhouse COGS not set'
+                                : 'Inhouse COGS'}
                           </p>
                         </div>
                       </button>
@@ -377,7 +405,7 @@ export function RequestCreatePanel({
             size="lg"
             onClick={() => void onSubmit()}
             loading={isSubmitting}
-            disabled={isSubmitting || cartLines.length === 0}
+            disabled={isSubmitting || cartLines.length === 0 || hasMissingSelfBuyUnitAmount}
           >
             Submit request
           </Button>

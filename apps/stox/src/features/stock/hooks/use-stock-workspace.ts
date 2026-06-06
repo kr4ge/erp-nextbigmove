@@ -35,15 +35,17 @@ const initialPages = (): Record<StockMode, number> => ({
 type UseStockWorkspaceParams = {
   bootstrap: BootstrapResponse;
   device: DeviceIdentity | null;
+  initialMode?: StockMode;
   session: StoredSession;
 };
 
 export function useStockWorkspace({
   bootstrap,
   device,
+  initialMode = 'putaway',
   session,
 }: UseStockWorkspaceParams) {
-  const [mode, setMode] = useState<StockMode>('putaway');
+  const [mode, setMode] = useState<StockMode>(initialMode);
   const [stock, setStock] = useState<WmsMobileStockResponse | null>(null);
   const [filters, setFilters] = useState<StockFilters>({
     tenantId: null,

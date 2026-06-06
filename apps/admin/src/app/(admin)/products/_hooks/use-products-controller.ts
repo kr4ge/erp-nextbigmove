@@ -108,6 +108,7 @@ export function useProductsController() {
     setSelectedTenantIdState,
     selectedStoreId,
     setSelectedStoreIdState,
+    allowAllTenants: true,
   });
 
   useEffect(() => {
@@ -190,12 +191,12 @@ export function useProductsController() {
     overview: overviewQuery.data ?? null,
     products: paginatedProducts,
     userRole: user?.role ?? null,
-    canEditProfile: hasAnyAdminPermission(
+    canEditProfile: Boolean(selectedTenantId) && hasAnyAdminPermission(
       user?.role ?? null,
       permissions,
       WMS_PRODUCTS_EDIT_PERMISSIONS,
     ),
-    canSyncStore: hasAnyAdminPermission(
+    canSyncStore: Boolean(selectedTenantId) && hasAnyAdminPermission(
       user?.role ?? null,
       permissions,
       WMS_PRODUCTS_SYNC_PERMISSIONS,
@@ -249,7 +250,12 @@ export function useProductsController() {
     },
     syncSelectedStore: async () => {
       if (!selectedStoreId) {
-        setBanner({ tone: 'error', message: 'Select a store before syncing products' });
+        setBanner({ tone: 'error', message: 'Select a partner and store before syncing products' });
+        return;
+      }
+
+      if (!selectedTenantId) {
+        setBanner({ tone: 'error', message: 'Select a partner before syncing products' });
         return;
       }
 

@@ -133,6 +133,7 @@ export type WmsReceivingBatchDetail = {
     lastLabelPrintedAt: string | null;
     productId: string;
     variationId: string;
+    unitCost: number | null;
     productName: string;
     productCustomId: string | null;
     currentLocation: {

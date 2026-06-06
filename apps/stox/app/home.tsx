@@ -1,26 +1,38 @@
 import { Redirect } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useSession } from '@/src/features/auth/session-context';
 import { AccountTab } from '@/src/features/home/components/account-tab';
 import { HistoryTab } from '@/src/features/home/components/history-tab';
 import { HomeOverviewTab } from '@/src/features/home/components/home-overview-tab';
-import { InventoryTab } from '@/src/features/home/components/inventory-tab';
-import { RtsTab } from '@/src/features/home/components/rts-tab';
+import { InventoryUtilityTab } from '@/src/features/home/components/inventory-utility-tab';
 import { ScanTab } from '@/src/features/home/components/scan-tab';
 import { StoxShell } from '@/src/features/home/components/stox-shell';
 import { TasksTab } from '@/src/features/home/components/tasks-tab';
 import { canEnterStoxWorkspace } from '@/src/features/home/rbac';
-import type { StoxTabKey } from '@/src/features/home/types';
+import type { StoxTabKey, StoxTaskRoute } from '@/src/features/home/types';
 import { getDisplayName, getInitials, resolveHomeContext } from '@/src/features/home/utils';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
 import type { WmsMobileTrackingReturnFlow } from '@/src/features/stock/types';
 
 export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<StoxTabKey>('home');
-  const [homePanel, setHomePanel] = useState<'overview' | 'stock' | 'rts'>('overview');
-  const [rtsSeedTask, setRtsSeedTask] = useState<WmsMobilePickingTask | null>(null);
-  const [rtsSeedReturnFlow, setRtsSeedReturnFlow] = useState<WmsMobileTrackingReturnFlow | null>(null);
+  const [homePanel, setHomePanel] = useState<'overview' | 'inventory-utility'>('overview');
+  const [taskRoute, setTaskRoute] = useState<StoxTaskRoute | null>(null);
   const { bootstrap, device, session, isHydrating, isSubmitting, signOut, refreshBootstrap } = useSession();
+  const openInventoryRts = useCallback((
+    task: WmsMobilePickingTask | null = null,
+    returnFlow: WmsMobileTrackingReturnFlow | null = null,
+  ) => {
+    setTaskRoute({
+      inventoryView: 'rts',
+      key: Date.now(),
+      mode: 'inventory',
+      rtsReturnFlow: returnFlow,
+      rtsTask: task,
+    });
+    setActiveTab('tasks');
+    setHomePanel('overview');
+  }, []);
 
   if (!isHydrating && (!session || !bootstrap || !canEnterStoxWorkspace(bootstrap))) {
     return <Redirect href="/login" />;
@@ -44,6 +56,7 @@ export default function HomeScreen() {
         || activeTab === 'tasks'
         || activeTab === 'scan'
         || activeTab === 'history'
+        || activeTab === 'account'
       }
       onChangeTab={(nextTab) => {
         setActiveTab(nextTab);
@@ -58,35 +71,17 @@ export default function HomeScreen() {
             device={device}
             session={session}
             onChangeTab={setActiveTab}
-            onOpenStock={() => setHomePanel('stock')}
-            onOpenRts={() => {
-              setRtsSeedTask(null);
-              setRtsSeedReturnFlow(null);
-              setHomePanel('rts');
-            }}
-          />
-        ) : homePanel === 'stock' ? (
-          <InventoryTab
-            bootstrap={bootstrap}
-            device={device}
-            onOpenRts={() => {
-              setRtsSeedTask(null);
-              setRtsSeedReturnFlow(null);
-              setHomePanel('rts');
-            }}
-            session={session}
-            onRefresh={refreshBootstrap}
-            onBack={() => setHomePanel('overview')}
+            onOpenStock={() => setHomePanel('inventory-utility')}
+            onOpenRts={() => openInventoryRts()}
           />
         ) : (
-          <RtsTab
+          <InventoryUtilityTab
             bootstrap={bootstrap}
             device={device}
-            initialReturnFlow={rtsSeedReturnFlow}
-            initialTask={rtsSeedTask}
             session={session}
+            onBack={() => setHomePanel('overview')}
             onRefresh={refreshBootstrap}
-            onBack={() => setHomePanel('stock')}
+            onOpenRts={() => openInventoryRts()}
           />
         )
       ) : null}
@@ -96,6 +91,9 @@ export default function HomeScreen() {
           bootstrap={bootstrap}
           device={device}
           session={session}
+          onRefresh={refreshBootstrap}
+          route={taskRoute}
+          onRouteConsumed={() => setTaskRoute(null)}
         />
       ) : null}
 
@@ -107,10 +105,7 @@ export default function HomeScreen() {
           onRefresh={refreshBootstrap}
           onChangeTab={setActiveTab}
           onOpenRtsTask={(task, returnFlow) => {
-            setRtsSeedTask(task);
-            setRtsSeedReturnFlow(returnFlow);
-            setActiveTab('home');
-            setHomePanel('rts');
+            openInventoryRts(task, returnFlow);
           }}
         />
       ) : null}

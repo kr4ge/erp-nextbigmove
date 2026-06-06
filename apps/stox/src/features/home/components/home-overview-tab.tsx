@@ -13,9 +13,11 @@ import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
 import type { StoxTabKey } from '../types';
 import {
+  canUseAssignedRtsWorkspace,
+  canUseAssignedInventoryWorkspace,
+  canUseInventoryWorkspace,
   canUsePackWorkspace,
   canUsePickWorkspace,
-  canUseStoxRtsWorkspace,
 } from '../rbac';
 import {
   fetchMobileHomeInventorySummary,
@@ -39,6 +41,23 @@ type HomeSnapshot = {
   packablePackTasks: number;
   completedPickToday: number;
   completedPackToday: number;
+  pickFilters: {
+    todo: number;
+    partial: number;
+    inProgress: number;
+    picked: number;
+  };
+  packFilters: {
+    awaiting: number;
+    packing: number;
+    noTracking: number;
+    packed: number;
+  };
+  inventoryGroups: {
+    putaway: number;
+    move: number;
+    cycleCount: number;
+  };
   taskGroups: {
     restocking: number;
     packingWithoutTracking: number;
@@ -87,7 +106,9 @@ export function HomeOverviewTab({
   const initials = getInitials(displayName);
   const canLoadPick = canUsePickWorkspace(bootstrap);
   const canLoadPack = canUsePackWorkspace(bootstrap);
-  const canLoadRts = canUseStoxRtsWorkspace(bootstrap);
+  const canLoadInventory = canUseInventoryWorkspace(bootstrap);
+  const canLoadInventoryTask = canUseAssignedInventoryWorkspace(bootstrap);
+  const canLoadRts = canUseAssignedRtsWorkspace(bootstrap);
   const tenantId = bootstrap.tenant?.id ?? null;
   const storeId = bootstrap.context.defaultStoreId ?? null;
   const warehouseId = bootstrap.context.defaultWarehouseId ?? null;
@@ -116,7 +137,7 @@ export function HomeOverviewTab({
           tenantId,
           warehouseId,
         }),
-        canLoadPick || canLoadPack || canLoadRts
+        canLoadPick || canLoadPack || canLoadRts || canLoadInventory || canLoadInventoryTask
           ? fetchMobileHomeTaskSummary({
             accessToken: session.accessToken,
             device,
@@ -138,6 +159,25 @@ export function HomeOverviewTab({
       setSnapshot({
         completedPackToday: completedToday.packed,
         completedPickToday: completedToday.picked,
+        pickFilters: {
+          inProgress: canLoadPick ? taskSummary?.summary.pick.inPicking ?? 0 : 0,
+          partial: canLoadPick ? taskSummary?.summary.pick.partial ?? 0 : 0,
+          picked: canLoadPick
+            ? (taskSummary?.summary.pick.readyForPack ?? 0) + (taskSummary?.summary.pick.picked ?? 0)
+            : 0,
+          todo: canLoadPick ? taskSummary?.summary.pick.ready ?? 0 : 0,
+        },
+        packFilters: {
+          awaiting: canLoadPack ? taskSummary?.summary.pack.picked ?? 0 : 0,
+          packing: canLoadPack ? taskSummary?.summary.pack.packing ?? 0 : 0,
+          noTracking: canLoadPack ? taskSummary?.summary.pack.awaitingTracking ?? 0 : 0,
+          packed: canLoadPack ? taskSummary?.summary.pack.packed ?? 0 : 0,
+        },
+        inventoryGroups: {
+          cycleCount: stock ? stock.summary.unitsOnHand ?? 0 : 0,
+          move: stock ? stock.summary.movableUnits ?? 0 : 0,
+          putaway: stock ? stock.summary.stagedUnits ?? 0 : 0,
+        },
         packablePackTasks: canLoadPack ? taskSummary?.summary.pack.total ?? 0 : 0,
         pickablePickTasks: canLoadPick ? taskSummary?.summary.pick.total ?? 0 : 0,
         stock,
@@ -163,6 +203,8 @@ export function HomeOverviewTab({
       setIsRefreshing(false);
     }
   }, [
+    canLoadInventory,
+    canLoadInventoryTask,
     canLoadPack,
     canLoadPick,
     canLoadRts,
@@ -225,6 +267,10 @@ export function HomeOverviewTab({
       return 'pack';
     }
 
+    if (assignment === 'INVENTORY') {
+      return 'inventory';
+    }
+
     if (canLoadPick && !canLoadPack) {
       return 'pick';
     }
@@ -233,8 +279,16 @@ export function HomeOverviewTab({
       return 'pack';
     }
 
+    if (canLoadInventoryTask && !canLoadPick && !canLoadPack) {
+      return 'inventory';
+    }
+
+    if (canLoadInventory && !canLoadPick && !canLoadPack) {
+      return 'inventory';
+    }
+
     return 'all';
-  }, [bootstrap.operations?.taskAssignment, bootstrap.user.role, canLoadPack, canLoadPick]);
+  }, [bootstrap.operations?.taskAssignment, bootstrap.user.role, canLoadInventory, canLoadInventoryTask, canLoadPack, canLoadPick]);
 
   const heroSummary = useMemo(() => {
     const pickablePickTasks = snapshot?.pickablePickTasks ?? 0;
@@ -276,6 +330,24 @@ export function HomeOverviewTab({
       };
     }
 
+    if (heroIdentity === 'inventory') {
+      const totalUnits = snapshot?.stock?.summary.totalUnits ?? 0;
+      const locatedUnits = snapshot?.stock?.summary.locatedUnits ?? 0;
+      const unitsOnHand = snapshot?.stock?.summary.unitsOnHand ?? 0;
+      const total = totalUnits;
+      const percent = total > 0 ? Math.min(100, Math.round((locatedUnits / total) * 100)) : 100;
+
+      return {
+        badge: 'Inventory',
+        cta: canLoadInventoryTask ? 'View Task' : 'Open Utility',
+        description: `${formatCount(unitsOnHand)} units on hand · ${formatCount(locatedUnits)} located`,
+        percent,
+        title: total > 0
+          ? 'Inventory flow is ready for action!'
+          : 'Inventory queue is clear for now!',
+      };
+    }
+
     const completed = completedPickToday + completedPackToday;
     const total = pickablePickTasks + packablePackTasks + completed;
     const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 100;
@@ -292,13 +364,20 @@ export function HomeOverviewTab({
         : 'Warehouse flow is clear for now!',
     };
   }, [
+    canLoadInventoryTask,
     heroIdentity,
     snapshot?.completedPackToday,
     snapshot?.completedPickToday,
     snapshot?.packablePackTasks,
     snapshot?.pickablePickTasks,
+    snapshot?.stock?.summary.locatedUnits,
+    snapshot?.stock?.summary.totalUnits,
+    snapshot?.stock?.summary.unitsOnHand,
   ]);
-  const taskGroups = useMemo(() => buildTaskGroups(heroIdentity, snapshot), [heroIdentity, snapshot]);
+  const taskGroups = useMemo(
+    () => buildTaskGroups(heroIdentity, snapshot, canLoadRts),
+    [canLoadRts, heroIdentity, snapshot],
+  );
 
   return (
     <View style={styles.root}>
@@ -330,7 +409,19 @@ export function HomeOverviewTab({
             <Text style={styles.heroMeta}>{heroSummary.description}</Text>
           </View>
           <Pressable
-            onPress={() => onChangeTab('tasks')}
+            onPress={() => {
+              if (heroIdentity === 'inventory') {
+                if (canLoadInventoryTask) {
+                  onChangeTab('tasks');
+                  return;
+                }
+
+                onOpenStock();
+                return;
+              }
+
+              onChangeTab('tasks');
+            }}
             style={({ pressed }) => [styles.heroButton, pressed ? styles.pressed : null]}>
             <Text style={styles.heroButtonText}>{heroSummary.cta}</Text>
           </Pressable>
@@ -356,9 +447,10 @@ export function HomeOverviewTab({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.carousel}>
         {inventoryCards.map((card) => (
-          <View
+          <Pressable
             key={card.id}
-            style={styles.inventoryCardPressable}>
+            onPress={onOpenStock}
+            style={({ pressed }) => [styles.inventoryCardPressable, pressed ? styles.pressed : null]}>
             <View style={[styles.inventoryCard, { backgroundColor: card.soft }]}>
               <View style={styles.inventoryCardHeader}>
                 <Text style={styles.inventoryCardLabel}>{card.label}</Text>
@@ -369,7 +461,7 @@ export function HomeOverviewTab({
 
               <Text style={styles.inventoryCardValue}>{card.value}</Text>
             </View>
-          </View>
+          </Pressable>
         ))}
       </ScrollView>
 
@@ -480,12 +572,33 @@ function ProgressRing({ value }: { value: number }) {
   );
 }
 
-function buildTaskGroups(identity: 'all' | 'pick' | 'pack', snapshot: HomeSnapshot | null) {
+function buildTaskGroups(
+  identity: 'all' | 'pick' | 'pack' | 'inventory',
+  snapshot: HomeSnapshot | null,
+  canOpenRts: boolean,
+) {
   const groups = snapshot?.taskGroups ?? {
     delivered: 0,
     packingWithoutTracking: 0,
     restocking: 0,
     rts: 0,
+  };
+  const pickFilters = snapshot?.pickFilters ?? {
+    inProgress: 0,
+    partial: 0,
+    picked: 0,
+    todo: 0,
+  };
+  const packFilters = snapshot?.packFilters ?? {
+    awaiting: 0,
+    noTracking: 0,
+    packed: 0,
+    packing: 0,
+  };
+  const inventoryGroups = snapshot?.inventoryGroups ?? {
+    cycleCount: 0,
+    move: 0,
+    putaway: 0,
   };
   const restocking = {
     accent: '#F66AAE',
@@ -523,16 +636,123 @@ function buildTaskGroups(identity: 'all' | 'pick' | 'pack', snapshot: HomeSnapsh
     soft: '#FFE8D7',
     value: groups.rts,
   };
+  const putaway = {
+    accent: '#F66AAE',
+    caption: 'Staged',
+    icon: 'inbox',
+    id: 'inventory-putaway',
+    label: 'Putaway',
+    soft: '#FFE2F0',
+    value: inventoryGroups.putaway,
+  };
+  const move = {
+    accent: '#8C5CF6',
+    caption: 'Movable',
+    icon: 'repeat',
+    id: 'inventory-move',
+    label: 'Move',
+    soft: '#EDE4FF',
+    value: inventoryGroups.move,
+  };
+  const cycleCount = {
+    accent: '#2CBF7B',
+    caption: 'Units',
+    icon: 'clipboard',
+    id: 'inventory-cycle-count',
+    label: 'Cycle Count',
+    soft: '#DFF8ED',
+    value: inventoryGroups.cycleCount,
+  };
+  const pickTodo = {
+    accent: '#F66AAE',
+    caption: 'Available',
+    icon: 'list',
+    id: 'pick-todo',
+    label: 'To do',
+    soft: '#FFE2F0',
+    value: pickFilters.todo,
+  };
+  const pickPartial = {
+    accent: '#FF8A3D',
+    caption: 'Needs review',
+    icon: 'alert-circle',
+    id: 'pick-partial',
+    label: 'Partial',
+    soft: '#FFE8D7',
+    value: pickFilters.partial,
+  };
+  const pickInProgress = {
+    accent: '#8C5CF6',
+    caption: 'Active',
+    icon: 'activity',
+    id: 'pick-in-progress',
+    label: 'In Progress',
+    soft: '#EDE4FF',
+    value: pickFilters.inProgress,
+  };
+  const pickPicked = {
+    accent: '#2CBF7B',
+    caption: 'Ready for pack',
+    icon: 'check-circle',
+    id: 'pick-picked',
+    label: 'Picked',
+    soft: '#DFF8ED',
+    value: pickFilters.picked,
+  };
+  const awaitingPack = {
+    accent: '#F66AAE',
+    caption: 'Awaiting',
+    icon: 'inbox',
+    id: 'pack-awaiting',
+    label: 'Awaiting',
+    soft: '#FFE2F0',
+    value: packFilters.awaiting,
+  };
+  const packing = {
+    accent: '#8C5CF6',
+    caption: 'Active',
+    icon: 'package',
+    id: 'pack-packing',
+    label: 'Packing',
+    soft: '#EDE4FF',
+    value: packFilters.packing,
+  };
+  const noTracking = {
+    accent: '#FF8A3D',
+    caption: 'Needs tracking',
+    icon: 'file-text',
+    id: 'pack-no-tracking',
+    label: 'No tracking',
+    soft: '#FFE8D7',
+    value: packFilters.noTracking,
+  };
+  const packed = {
+    accent: '#2CBF7B',
+    caption: 'History',
+    icon: 'check-circle',
+    id: 'pack-packed',
+    label: 'Packed',
+    soft: '#DFF8ED',
+    value: packFilters.packed,
+  };
 
   if (identity === 'pick') {
-    return [restocking, delivered, rts];
+    return [pickTodo, pickPartial, pickInProgress, pickPicked, restocking];
   }
 
   if (identity === 'pack') {
-    return [packingWithoutTracking, delivered, rts];
+    return [awaitingPack, packing, noTracking, packed];
   }
 
-  return [restocking, packingWithoutTracking, delivered, rts];
+  if (identity === 'inventory') {
+    return canOpenRts
+      ? [putaway, move, cycleCount, rts, restocking]
+      : [putaway, move, cycleCount, restocking];
+  }
+
+  return canOpenRts
+    ? [restocking, packingWithoutTracking, delivered, rts]
+    : [restocking, packingWithoutTracking, delivered];
 }
 
 function formatCount(value: number) {

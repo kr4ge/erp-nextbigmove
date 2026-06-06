@@ -13,14 +13,18 @@ import {
 } from '@/lib/wms-permissions';
 import {
   createWmsInventoryAdjustment,
+  createWmsInventoryStoreTransfer,
   createWmsInventoryTransfer,
   fetchWmsInventoryOverview,
+  fetchWmsInventoryStoreTransferOptions,
   fetchWmsInventoryUnitMovements,
   fetchWmsInventoryUnitTransferOptions,
+  previewWmsInventoryStoreTransfer,
   recordWmsInventoryUnitLabelPrint,
 } from '../_services/inventory.service';
 import type {
   CreateWmsInventoryAdjustmentInput,
+  CreateWmsInventoryStoreTransferInput,
   CreateWmsInventoryTransferInput,
   WmsInventoryUnitRecord,
   WmsInventoryUnitStatus,
@@ -29,6 +33,14 @@ import type {
 type UnitModalState = {
   open: boolean;
   unit: WmsInventoryUnitRecord | null;
+};
+
+type StoreTransferModalState = {
+  open: boolean;
+  targetStoreId: string;
+  targetProfileId: string;
+  notes: string;
+  errorMessage: string | null;
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -70,6 +82,14 @@ export function useInventoryController() {
   const [unitModal, setUnitModal] = useState<UnitModalState>({
     open: false,
     unit: null,
+  });
+  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
+  const [storeTransferModal, setStoreTransferModal] = useState<StoreTransferModalState>({
+    open: false,
+    targetStoreId: '',
+    targetProfileId: '',
+    notes: '',
+    errorMessage: null,
   });
 
   useEffect(() => {
@@ -131,6 +151,7 @@ export function useInventoryController() {
 
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedUnitIds([]);
   }, [selectedTenantId, selectedStoreId, selectedWarehouseId, selectedStatus, debouncedSearchText]);
 
   const errorMessage = useMemo(() => {
@@ -158,6 +179,14 @@ export function useInventoryController() {
 
     return units.slice(startIndex, startIndex + pageSize);
   }, [currentPage, overviewQuery.data?.units]);
+
+  const selectedUnits = useMemo(() => {
+    const selectedIds = new Set(selectedUnitIds);
+    return (overviewQuery.data?.units ?? []).filter((unit) => selectedIds.has(unit.id));
+  }, [overviewQuery.data?.units, selectedUnitIds]);
+  const selectedSourceProfileId = selectedUnits.length > 0
+    ? selectedUnits[0]?.productProfileId
+    : undefined;
 
   const recordUnitLabelPrintMutation = useMutation({
     mutationFn: (input: { unitId: string; action: 'PRINT' | 'REPRINT' }) =>
@@ -190,6 +219,71 @@ export function useInventoryController() {
     enabled: Boolean(unitModal.open && unitModal.unit?.id),
   });
 
+  const storeTransferOptionsQuery = useQuery({
+    queryKey: [
+      'wms-inventory-store-transfer-options',
+      selectedTenantId ?? 'default-tenant',
+      storeTransferModal.targetStoreId || 'no-target-store',
+      selectedSourceProfileId ?? 'no-source-profile',
+      storeTransferModal.open,
+    ],
+    queryFn: () =>
+      fetchWmsInventoryStoreTransferOptions({
+        tenantId: selectedTenantId,
+        targetStoreId: storeTransferModal.targetStoreId || undefined,
+        sourceProfileId: selectedSourceProfileId,
+      }),
+    enabled: storeTransferModal.open,
+  });
+  const storeTransferPreviewQuery = useQuery({
+    queryKey: [
+      'wms-inventory-store-transfer-preview',
+      selectedTenantId ?? 'default-tenant',
+      selectedUnitIds,
+      storeTransferModal.targetStoreId || 'no-target-store',
+      storeTransferModal.targetProfileId || 'no-target-profile',
+      storeTransferModal.open,
+    ],
+    queryFn: () =>
+      previewWmsInventoryStoreTransfer({
+        unitIds: selectedUnitIds,
+        targetStoreId: storeTransferModal.targetStoreId,
+        targetProfileId: storeTransferModal.targetProfileId,
+      }, selectedTenantId),
+    enabled: Boolean(
+      storeTransferModal.open
+      && selectedUnitIds.length > 0
+      && storeTransferModal.targetStoreId
+      && storeTransferModal.targetProfileId,
+    ),
+  });
+  const suggestedTargetProfileId = storeTransferOptionsQuery.data?.suggestion?.profileId ?? null;
+
+  useEffect(() => {
+    if (
+      !storeTransferModal.open
+      || !storeTransferModal.targetStoreId
+      || storeTransferModal.targetProfileId
+      || !suggestedTargetProfileId
+    ) {
+      return;
+    }
+
+    setStoreTransferModal((current) => (
+      current.targetProfileId
+        ? current
+        : {
+            ...current,
+            targetProfileId: suggestedTargetProfileId,
+          }
+    ));
+  }, [
+    storeTransferModal.open,
+    storeTransferModal.targetStoreId,
+    storeTransferModal.targetProfileId,
+    suggestedTargetProfileId,
+  ]);
+
   const createTransferMutation = useMutation({
     mutationFn: (input: CreateWmsInventoryTransferInput) =>
       createWmsInventoryTransfer(input, selectedTenantId),
@@ -211,6 +305,28 @@ export function useInventoryController() {
         queryClient.invalidateQueries({ queryKey: ['wms-inventory-overview'] }),
         queryClient.invalidateQueries({ queryKey: ['wms-inventory-unit-movements'] }),
         queryClient.invalidateQueries({ queryKey: ['wms-inventory-unit-transfer-options'] }),
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-transfers'] }),
+      ]);
+    },
+  });
+
+  const createStoreTransferMutation = useMutation({
+    mutationFn: (input: CreateWmsInventoryStoreTransferInput) =>
+      createWmsInventoryStoreTransfer(input, selectedTenantId),
+    onSuccess: async () => {
+      setSelectedUnitIds([]);
+      setStoreTransferModal({
+        open: false,
+        targetStoreId: '',
+        targetProfileId: '',
+        notes: '',
+        errorMessage: null,
+      });
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-overview'] }),
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-unit-movements'] }),
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-store-transfer-options'] }),
         queryClient.invalidateQueries({ queryKey: ['wms-inventory-transfers'] }),
       ]);
     },
@@ -266,9 +382,70 @@ export function useInventoryController() {
     }
   }
 
+  function toggleUnitSelection(unitId: string) {
+    setSelectedUnitIds((current) =>
+      current.includes(unitId)
+        ? current.filter((id) => id !== unitId)
+        : [...current, unitId],
+    );
+  }
+
+  function toggleVisibleUnitSelection() {
+    const visibleIds = paginatedUnits.map((unit) => unit.id);
+    const visibleIdSet = new Set(visibleIds);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedUnitIds.includes(id));
+
+    setSelectedUnitIds((current) => {
+      if (allVisibleSelected) {
+        return current.filter((id) => !visibleIdSet.has(id));
+      }
+
+      return Array.from(new Set([...current, ...visibleIds]));
+    });
+  }
+
+  function openStoreTransferModal() {
+    setStoreTransferModal({
+      open: true,
+      targetStoreId: '',
+      targetProfileId: '',
+      notes: '',
+      errorMessage: null,
+    });
+  }
+
+  function closeStoreTransferModal() {
+    setStoreTransferModal({
+      open: false,
+      targetStoreId: '',
+      targetProfileId: '',
+      notes: '',
+      errorMessage: null,
+    });
+  }
+
+  async function submitStoreTransfer() {
+    try {
+      setStoreTransferModal((current) => ({ ...current, errorMessage: null }));
+      await createStoreTransferMutation.mutateAsync({
+        unitIds: selectedUnitIds,
+        targetStoreId: storeTransferModal.targetStoreId,
+        targetProfileId: storeTransferModal.targetProfileId,
+        notes: storeTransferModal.notes.trim() || undefined,
+      });
+    } catch (error) {
+      setStoreTransferModal((current) => ({
+        ...current,
+        errorMessage: getErrorMessage(error),
+      }));
+    }
+  }
+
   return {
     overview: overviewQuery.data ?? null,
     units: paginatedUnits,
+    selectedUnits,
+    selectedUnitIds,
     isLoading: overviewQuery.isLoading,
     isFetching: overviewQuery.isFetching,
     errorMessage,
@@ -280,6 +457,7 @@ export function useInventoryController() {
     totalPages,
     searchText,
     unitModal,
+    storeTransferModal,
     canPrintLabels: hasAnyAdminPermission(
       user?.role ?? null,
       permissions,
@@ -298,10 +476,20 @@ export function useInventoryController() {
     isRecordingUnitLabelPrint: recordUnitLabelPrintMutation.isPending,
     unitMovements: unitMovementsQuery.data?.movements ?? [],
     transferOptions: unitTransferOptionsQuery.data ?? null,
+    storeTransferOptions: storeTransferOptionsQuery.data ?? null,
+    storeTransferPreview: storeTransferPreviewQuery.data ?? null,
+    storeTransferPreviewErrorMessage: storeTransferPreviewQuery.error
+      ? getErrorMessage(storeTransferPreviewQuery.error)
+      : null,
     isLoadingUnitMovements: unitMovementsQuery.isLoading || unitMovementsQuery.isFetching,
     isLoadingUnitTransferOptions:
       unitTransferOptionsQuery.isLoading || unitTransferOptionsQuery.isFetching,
+    isLoadingStoreTransferOptions:
+      storeTransferOptionsQuery.isLoading || storeTransferOptionsQuery.isFetching,
+    isLoadingStoreTransferPreview:
+      storeTransferPreviewQuery.isLoading || storeTransferPreviewQuery.isFetching,
     isTransferringUnit: createTransferMutation.isPending,
+    isTransferringStoreUnits: createStoreTransferMutation.isPending,
     isAdjustingUnit: createAdjustmentMutation.isPending,
     setSelectedTenantId: (tenantId: string | undefined) => {
       setSelectedTenantId(tenantId);
@@ -315,6 +503,30 @@ export function useInventoryController() {
     recordUnitLabelPrint,
     transferUnit,
     adjustUnit,
+    toggleUnitSelection,
+    toggleVisibleUnitSelection,
+    clearUnitSelection: () => setSelectedUnitIds([]),
+    openStoreTransferModal,
+    closeStoreTransferModal,
+    setStoreTransferTargetStoreId: (targetStoreId: string) =>
+      setStoreTransferModal((current) => ({
+        ...current,
+        targetStoreId,
+        targetProfileId: '',
+        errorMessage: null,
+      })),
+    setStoreTransferTargetProfileId: (targetProfileId: string) =>
+      setStoreTransferModal((current) => ({
+        ...current,
+        targetProfileId,
+        errorMessage: null,
+      })),
+    setStoreTransferNotes: (notes: string) =>
+      setStoreTransferModal((current) => ({
+        ...current,
+        notes,
+      })),
+    submitStoreTransfer,
     openUnitModal: (unit: WmsInventoryUnitRecord) => setUnitModal({ open: true, unit }),
     closeUnitModal: () => setUnitModal({ open: false, unit: null }),
   };

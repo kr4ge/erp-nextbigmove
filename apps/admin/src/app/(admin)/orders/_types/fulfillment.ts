@@ -1,4 +1,4 @@
-export type WmsTaskAssignmentType = 'PICK' | 'PACK' | null;
+export type WmsTaskAssignmentType = 'PICK' | 'PACK' | 'INVENTORY' | null;
 
 export type WmsFulfillmentQueueMode = 'pick' | 'pack';
 

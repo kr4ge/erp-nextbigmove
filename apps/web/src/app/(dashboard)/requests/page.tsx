@@ -24,6 +24,7 @@ export default function RequestsPage() {
     cartTotals,
     removeCartLine,
     updateCartLineQuantity,
+    updateCartLineUnitAmount,
     submitRequest,
     isSubmitting,
     isProductPickerOpen,
@@ -121,6 +122,7 @@ export default function RequestsPage() {
         onAddProduct={addProductToCart}
         onRemoveLine={removeCartLine}
         onQuantityChange={updateCartLineQuantity}
+        onUnitAmountChange={updateCartLineUnitAmount}
         onSubmit={submitRequest}
       />
 

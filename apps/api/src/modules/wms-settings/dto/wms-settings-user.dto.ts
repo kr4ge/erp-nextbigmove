@@ -38,7 +38,7 @@ export class CreateWmsSettingsUserDto {
   roleId: string;
 
   @IsOptional()
-  @IsEnum(['PICK', 'PACK'])
+  @IsEnum(['PICK', 'PACK', 'INVENTORY'])
   taskAssignmentType?: string | null;
 
   @IsEnum(['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED'])
@@ -73,7 +73,7 @@ export class UpdateWmsSettingsUserDto {
   roleId?: string;
 
   @IsOptional()
-  @IsEnum(['PICK', 'PACK'])
+  @IsEnum(['PICK', 'PACK', 'INVENTORY'])
   taskAssignmentType?: string | null;
 
   @IsEnum(['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED'])

@@ -6,11 +6,17 @@ import { GetWmsMobileStockDto } from './dto/get-wms-mobile-stock.dto';
 import {
   GetWmsMobileHomeInventorySummaryDto,
   GetWmsMobileRtsTasksDto,
+  GetWmsMobileStockCountSessionsDto,
   GetWmsMobileHomeTaskSummaryDto,
   GetWmsMobileStockScanDto,
   GetWmsMobileStockScopedDto,
   GetWmsMobileTrackingLookupDto,
+  WmsMobileCloseoutStockCountDto,
+  WmsMobileReopenStockCountDto,
+  WmsMobileScanStockCountUnitDto,
+  WmsMobileStartStockCountDto,
   WmsMobileTrackingReturnUnitDto,
+  WmsMobileSubmitStockCountDto,
   WmsMobileStockMoveDto,
 } from './dto/wms-mobile-stock-execution.dto';
 import {
@@ -124,6 +130,74 @@ export class WmsMobileController {
     @Query() query: GetWmsMobileStockScopedDto,
   ) {
     return this.wmsMobileService.getStockBatch(req.user, id, query, req);
+  }
+
+  @Get('stock/counts')
+  @Permissions('wms.inventory.read', 'wms.inventory.write', 'wms.inventory.edit')
+  async getStockCountSessions(
+    @Request() req,
+    @Query() query: GetWmsMobileStockCountSessionsDto,
+  ) {
+    return this.wmsMobileService.getStockCountSessions(req.user, query, req);
+  }
+
+  @Get('stock/counts/:id')
+  @Permissions('wms.inventory.read', 'wms.inventory.write', 'wms.inventory.edit')
+  async getStockCountSession(
+    @Request() req,
+    @Param('id') id: string,
+    @Query() query: GetWmsMobileStockScopedDto,
+  ) {
+    return this.wmsMobileService.getStockCountSession(req.user, id, query, req);
+  }
+
+  @Post('stock/counts/start')
+  @Permissions('wms.inventory.write', 'wms.inventory.edit')
+  async startStockCountSession(
+    @Request() req,
+    @Body() body: WmsMobileStartStockCountDto,
+  ) {
+    return this.wmsMobileService.startStockCountSession(req.user, body, req);
+  }
+
+  @Post('stock/counts/:id/scan-unit')
+  @Permissions('wms.inventory.write', 'wms.inventory.edit')
+  async scanStockCountUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobileScanStockCountUnitDto,
+  ) {
+    return this.wmsMobileService.scanStockCountUnit(req.user, id, body, req);
+  }
+
+  @Post('stock/counts/:id/submit')
+  @Permissions('wms.inventory.write', 'wms.inventory.edit')
+  async submitStockCountSession(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobileSubmitStockCountDto,
+  ) {
+    return this.wmsMobileService.submitStockCountSession(req.user, id, body, req);
+  }
+
+  @Post('stock/counts/:id/reopen')
+  @Permissions('wms.inventory.adjust')
+  async reopenStockCountSession(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobileReopenStockCountDto,
+  ) {
+    return this.wmsMobileService.reopenStockCountSession(req.user, id, body, req);
+  }
+
+  @Post('stock/counts/:id/closeout')
+  @Permissions('wms.inventory.adjust')
+  async closeoutStockCountSession(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobileCloseoutStockCountDto,
+  ) {
+    return this.wmsMobileService.closeoutStockCountSession(req.user, id, body, req);
   }
 
   @Get('tracking/lookup')

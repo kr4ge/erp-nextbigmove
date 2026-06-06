@@ -1,11 +1,15 @@
 import apiClient from '@/lib/api-client';
 import type {
   CreateWmsInventoryAdjustmentInput,
+  CreateWmsInventoryStoreTransferInput,
   CreateWmsInventoryTransferInput,
   GetWmsInventoryOverviewParams,
+  GetWmsInventoryStoreTransferOptionsParams,
   GetWmsInventoryTransfersParams,
   WmsInventoryMovementRecord,
   WmsInventoryOverviewResponse,
+  WmsInventoryStoreTransferPreviewResponse,
+  WmsInventoryStoreTransferOptionsResponse,
   WmsInventoryTransfersResponse,
   WmsInventoryTransferOptionsResponse,
 } from '../_types/inventory';
@@ -60,6 +64,21 @@ export async function fetchWmsInventoryUnitTransferOptions(id: string, tenantId?
   return response.data as WmsInventoryTransferOptionsResponse;
 }
 
+export async function fetchWmsInventoryStoreTransferOptions(
+  params: GetWmsInventoryStoreTransferOptionsParams = {},
+) {
+  const response = await apiClient.get('/wms/inventory/store-transfer/options', {
+    params: {
+      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      ...(params.targetStoreId ? { targetStoreId: params.targetStoreId } : {}),
+      ...(params.sourceProfileId ? { sourceProfileId: params.sourceProfileId } : {}),
+      ...(params.search ? { search: params.search } : {}),
+    },
+  });
+
+  return response.data as WmsInventoryStoreTransferOptionsResponse;
+}
+
 export async function createWmsInventoryTransfer(
   input: CreateWmsInventoryTransferInput,
   tenantId?: string,
@@ -77,6 +96,40 @@ export async function createWmsInventoryTransfer(
     };
     units: WmsInventoryOverviewResponse['units'];
   };
+}
+
+export async function createWmsInventoryStoreTransfer(
+  input: CreateWmsInventoryStoreTransferInput,
+  tenantId?: string,
+) {
+  const response = await apiClient.post('/wms/inventory/store-transfers', input, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as {
+    transfer: {
+      id: string;
+      code: string;
+      itemCount: number;
+      fromStoreId: string;
+      toStoreId: string;
+      targetProfileId: string;
+      notes: string | null;
+      createdAt: string;
+    };
+    units: WmsInventoryOverviewResponse['units'];
+  };
+}
+
+export async function previewWmsInventoryStoreTransfer(
+  input: CreateWmsInventoryStoreTransferInput,
+  tenantId?: string,
+) {
+  const response = await apiClient.post('/wms/inventory/store-transfers/preview', input, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as WmsInventoryStoreTransferPreviewResponse;
 }
 
 export async function fetchWmsInventoryTransfers(params: GetWmsInventoryTransfersParams = {}) {

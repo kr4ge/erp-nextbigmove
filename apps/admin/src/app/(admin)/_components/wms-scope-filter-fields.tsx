@@ -12,6 +12,7 @@ type WmsScopeFilterFieldsProps = {
   warehouseOptions?: WmsSearchableOption[];
   selectedWarehouseId?: string;
   onWarehouseChange?: (value: string | undefined) => void;
+  allowAllTenants?: boolean;
 };
 
 export function WmsScopeFilterFields({
@@ -24,17 +25,19 @@ export function WmsScopeFilterFields({
   warehouseOptions = [],
   selectedWarehouseId,
   onWarehouseChange,
+  allowAllTenants = false,
 }: WmsScopeFilterFieldsProps) {
   return (
     <>
       {onTenantChange ? (
         <WmsSearchableSelect
-          label="Tenant"
+          label="Partner"
           value={selectedTenantId ?? ''}
           onChange={(value) => onTenantChange(value || undefined)}
           options={tenantOptions}
-          placeholder="Search tenants…"
-          allLabel="All tenants"
+          placeholder="Search partners…"
+          allLabel={allowAllTenants ? 'All partners' : 'Select partner'}
+          clearable={allowAllTenants}
           hideInlineLabel={true}
         />
       ) : null}

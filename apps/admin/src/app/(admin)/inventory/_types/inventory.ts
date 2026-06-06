@@ -20,11 +20,14 @@ export type WmsInventoryUnitRecord = {
   labelPrintCount: number;
   firstLabelPrintedAt: string | null;
   lastLabelPrintedAt: string | null;
+  posProductId: string;
+  productProfileId: string;
   productId: string;
   productCustomId: string | null;
   variationId: string;
   variationDisplayId: string | null;
   name: string;
+  unitCost: number | null;
   store: {
     id: string;
     name: string;
@@ -126,6 +129,33 @@ export type WmsInventoryTransferRecord = {
   createdAt: string;
 };
 
+export type WmsInventoryStoreTransferOptionsResponse = {
+  tenantReady: boolean;
+  activeTenantId: string | null;
+  activeTargetStoreId: string | null;
+  stores: Array<{
+    id: string;
+    label: string;
+  }>;
+  products: Array<{
+    id: string;
+    profileId: string;
+    posProductId: string;
+    productId: string;
+    variationId: string;
+    variationDisplayId: string | null;
+    productCustomId: string | null;
+    name: string;
+    label: string;
+  }>;
+  suggestion: {
+    profileId: string;
+    label: string;
+    reason: string;
+    confidence: 'high' | 'medium';
+  } | null;
+};
+
 export type WmsInventoryOverviewResponse = {
   tenantReady: boolean;
   summary: {
@@ -209,6 +239,58 @@ export type CreateWmsInventoryTransferInput = {
   unitIds: string[];
   targetLocationId: string;
   notes?: string;
+};
+
+export type GetWmsInventoryStoreTransferOptionsParams = {
+  tenantId?: string;
+  targetStoreId?: string;
+  sourceProfileId?: string;
+  search?: string;
+};
+
+export type CreateWmsInventoryStoreTransferInput = {
+  unitIds: string[];
+  targetStoreId: string;
+  targetProfileId: string;
+  notes?: string;
+};
+
+export type WmsInventoryStoreTransferPreviewResponse = {
+  valid: boolean;
+  selectedUnits: number;
+  sourceAvailableUnits: number;
+  remainingAvailableUnits: number;
+  activeDemandUnits: number;
+  activeDemandOrders: number;
+  sourceStore: {
+    id: string;
+    name: string;
+  } | null;
+  sourceProduct: {
+    profileId: string;
+    name: string;
+    variationId: string;
+    variationDisplayId: string | null;
+  } | null;
+  targetStore: {
+    id: string;
+    name: string;
+  } | null;
+  targetProduct: {
+    profileId: string;
+    name: string;
+    variationId: string;
+    variationDisplayId: string | null;
+  } | null;
+  blockers: Array<{
+    code: string;
+    message: string;
+  }>;
+  warnings: Array<{
+    code: string;
+    message: string;
+    severity: 'warning' | 'critical';
+  }>;
 };
 
 export type GetWmsInventoryTransfersParams = {

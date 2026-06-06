@@ -1226,6 +1226,10 @@ export class WmsPurchasingService {
         ? providedPaymentProofImageUrl
         : current.paymentProofImageUrl;
     const hasEffectivePaymentProof = Boolean(effectivePaymentProofAssetId || effectivePaymentProofImageUrl);
+    const shouldSyncAcceptedLineProfileCosts =
+      body.status !== current.status
+      && current.requestType === WmsPurchasingRequestType.PROCUREMENT
+      && body.status === WmsPurchasingBatchStatus.PENDING_PAYMENT;
 
     const effectivePaymentSubmittedAt =
       body.paymentSubmittedAt === undefined
@@ -1371,6 +1375,10 @@ export class WmsPurchasingService {
         },
       });
 
+      const productProfileCostsSynced = shouldSyncAcceptedLineProfileCosts
+        ? await this.syncAcceptedLineProfileCosts(tx, current.lines)
+        : false;
+
       const event = await tx.wmsPurchasingEvent.create({
         data: {
           batchId: current.id,
@@ -1389,6 +1397,7 @@ export class WmsPurchasingService {
             paymentProofAssetId: effectivePaymentProofAssetId,
             paymentVerifiedAt: effectivePaymentVerifiedAt,
             sourceStatus: nextSourceStatus,
+            productProfileCostsSynced,
           },
         },
       });
@@ -1427,6 +1436,7 @@ export class WmsPurchasingService {
             id: true,
             tenantId: true,
             storeId: true,
+            requestType: true,
             status: true,
           },
         },
@@ -1450,16 +1460,32 @@ export class WmsPurchasingService {
     const receivedQuantity =
       body.receivedQuantity !== undefined ? body.receivedQuantity : line.receivedQuantity;
     const maxReceivable = approvedQuantity ?? line.requestedQuantity;
+    const currentEffectiveApprovedQuantity = line.approvedQuantity ?? line.requestedQuantity;
+    const nextEffectiveApprovedQuantity = approvedQuantity ?? line.requestedQuantity;
     const nextPartnerUnitCost =
       body.partnerUnitCost === undefined
         ? this.toNumber(line.partnerUnitCost)
         : this.numberOrNull(body.partnerUnitCost);
     const nextSupplierUnitCost =
-      body.supplierUnitCost === undefined
-        ? this.toNumber(line.supplierUnitCost)
-        : this.numberOrNull(body.supplierUnitCost);
+      line.batch.requestType === WmsPurchasingRequestType.SELF_BUY
+        ? null
+        : body.supplierUnitCost === undefined
+          ? this.toNumber(line.supplierUnitCost)
+          : this.numberOrNull(body.supplierUnitCost);
+    const nextResolvedProfileId =
+      body.resolvedProfileId === undefined ? line.resolvedProfileId : body.resolvedProfileId || null;
+    const shouldSyncLineProfileCosts =
+      Boolean(nextResolvedProfileId)
+      && (
+        body.supplierUnitCost !== undefined
+        || body.partnerUnitCost !== undefined
+        || body.resolvedProfileId !== undefined
+      )
+      && line.batch.requestType === WmsPurchasingRequestType.PROCUREMENT
+      && line.batch.status !== WmsPurchasingBatchStatus.UNDER_REVIEW
+      && line.batch.status !== WmsPurchasingBatchStatus.REVISION;
     const didChangeCommercialTerms =
-      approvedQuantity !== line.approvedQuantity
+      nextEffectiveApprovedQuantity !== currentEffectiveApprovedQuantity
       || nextPartnerUnitCost !== this.toNumber(line.partnerUnitCost)
       || nextSupplierUnitCost !== this.toNumber(line.supplierUnitCost);
     const shouldAutoRequestRevision =
@@ -1484,7 +1510,8 @@ export class WmsPurchasingService {
       ...baseSnapshot.raw,
       originalPartnerUnitCost,
       originalSupplierUnitCost,
-      originalApprovedQuantity: baseSnapshot.originalApprovedQuantity ?? line.approvedQuantity,
+      originalApprovedQuantity:
+        baseSnapshot.originalApprovedQuantity ?? currentEffectiveApprovedQuantity,
     };
 
     await this.prisma.$transaction(async (tx) => {
@@ -1501,7 +1528,9 @@ export class WmsPurchasingService {
               ? undefined
               : this.numberOrNull(body.partnerUnitCost),
           supplierUnitCost:
-            body.supplierUnitCost === undefined
+            line.batch.requestType === WmsPurchasingRequestType.SELF_BUY
+              ? null
+              : body.supplierUnitCost === undefined
               ? undefined
               : this.numberOrNull(body.supplierUnitCost),
           needsProfiling:
@@ -1520,6 +1549,16 @@ export class WmsPurchasingService {
           updatedById: actorId,
         },
       });
+
+      if (shouldSyncLineProfileCosts && nextResolvedProfileId) {
+        await tx.wmsProductProfile.update({
+          where: { id: nextResolvedProfileId },
+          data: {
+            ...(nextSupplierUnitCost !== null ? { supplierUnitCost: nextSupplierUnitCost } : {}),
+            ...(nextPartnerUnitCost !== null ? { inhouseUnitCost: nextPartnerUnitCost } : {}),
+          },
+        });
+      }
 
       await tx.wmsPurchasingBatch.update({
         where: { id: line.batchId },
@@ -1570,6 +1609,7 @@ export class WmsPurchasingService {
               partnerUnitCost: nextPartnerUnitCost,
               supplierUnitCost: nextSupplierUnitCost,
             },
+            productProfileCostSynced: shouldSyncLineProfileCosts,
             autoRequestedRevision: shouldAutoRequestRevision,
           },
         },
@@ -1585,6 +1625,46 @@ export class WmsPurchasingService {
     });
 
     return this.getBatchById(batchId, scope.activeTenantId);
+  }
+
+  private async syncAcceptedLineProfileCosts(
+    client: Prisma.TransactionClient,
+    lines: Array<{
+      resolvedProfileId: string | null;
+      partnerUnitCost: Prisma.Decimal | number | null;
+      supplierUnitCost: Prisma.Decimal | number | null;
+    }>,
+  ) {
+    const costsByProfileId = new Map<string, {
+      inhouseUnitCost?: number;
+      supplierUnitCost?: number;
+    }>();
+
+    lines.forEach((line) => {
+      if (!line.resolvedProfileId) {
+        return;
+      }
+
+      const partnerUnitCost = this.toNumber(line.partnerUnitCost);
+      const supplierUnitCost = this.toNumber(line.supplierUnitCost);
+      if (partnerUnitCost === null && supplierUnitCost === null) {
+        return;
+      }
+
+      costsByProfileId.set(line.resolvedProfileId, {
+        ...(partnerUnitCost !== null ? { inhouseUnitCost: partnerUnitCost } : {}),
+        ...(supplierUnitCost !== null ? { supplierUnitCost } : {}),
+      });
+    });
+
+    for (const [profileId, costs] of costsByProfileId) {
+      await client.wmsProductProfile.update({
+        where: { id: profileId },
+        data: costs,
+      });
+    }
+
+    return costsByProfileId.size > 0;
   }
 
   private emitStockRequestUpdate(params: {
@@ -2006,6 +2086,21 @@ export class WmsPurchasingService {
         await this.validateStore(input.tenantId, lineStoreId);
       }
 
+      const partnerUnitCost = this.numberOrNull(line.partnerUnitCost);
+      const supplierUnitCost =
+        input.requestType === WmsPurchasingRequestType.SELF_BUY
+          ? null
+          : this.numberOrNull(line.supplierUnitCost);
+
+      if (
+        input.requestType === WmsPurchasingRequestType.SELF_BUY
+        && (partnerUnitCost === null || partnerUnitCost <= 0)
+      ) {
+        throw new BadRequestException(
+          `Line ${lineNo}: self-buy actual unit COGS is required`,
+        );
+      }
+
       normalized.push({
         tenantId: input.tenantId,
         storeId: lineStoreId,
@@ -2014,10 +2109,8 @@ export class WmsPurchasingService {
         sourceSnapshot: this.toJsonValue({
           ...(line.sourceSnapshot ?? {}),
           storeId: lineStoreId,
-          originalPartnerUnitCost:
-            line.partnerUnitCost === undefined ? null : this.numberOrNull(line.partnerUnitCost),
-          originalSupplierUnitCost:
-            line.supplierUnitCost === undefined ? null : this.numberOrNull(line.supplierUnitCost),
+          originalPartnerUnitCost: partnerUnitCost,
+          originalSupplierUnitCost: supplierUnitCost,
           originalApprovedQuantity: line.approvedQuantity ?? line.requestedQuantity,
         }),
         productId: this.cleanOptionalText(line.productId),
@@ -2026,8 +2119,8 @@ export class WmsPurchasingService {
         uom: this.cleanOptionalText(line.uom),
         requestedQuantity: line.requestedQuantity,
         approvedQuantity: line.approvedQuantity ?? null,
-        partnerUnitCost: this.numberOrNull(line.partnerUnitCost),
-        supplierUnitCost: this.numberOrNull(line.supplierUnitCost),
+        partnerUnitCost,
+        supplierUnitCost,
         needsProfiling:
           line.needsProfiling ?? (input.requestType === WmsPurchasingRequestType.SELF_BUY && !line.resolvedProfileId),
         resolvedPosProductId: line.resolvedPosProductId ?? null,
@@ -2088,6 +2181,7 @@ export class WmsPurchasingService {
       lineNo: number;
       requestedQuantity: number;
       approvedQuantity: number | null;
+      partnerUnitCost?: Prisma.Decimal | number | null;
       needsProfiling: boolean;
       resolvedProfileId: string | null;
     }>;
@@ -2114,6 +2208,16 @@ export class WmsPurchasingService {
       if (unresolved) {
         throw new BadRequestException(
           `Line ${unresolved.lineNo}: self-buy requests must resolve product profiling before receiving handoff`,
+        );
+      }
+
+      const missingUnitCost = input.lines.find((line) => {
+        const partnerUnitCost = this.toNumber(line.partnerUnitCost ?? null);
+        return partnerUnitCost === null || partnerUnitCost <= 0;
+      });
+      if (missingUnitCost) {
+        throw new BadRequestException(
+          `Line ${missingUnitCost.lineNo}: self-buy actual unit COGS is required`,
         );
       }
     }

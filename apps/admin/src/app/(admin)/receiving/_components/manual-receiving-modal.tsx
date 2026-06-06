@@ -9,6 +9,7 @@ type ManualReceivingLine = {
   id: string;
   profileId: string;
   quantity: number;
+  unitCost: number | null;
 };
 
 type ManualReceivingProductOption = {
@@ -17,6 +18,7 @@ type ManualReceivingProductOption = {
   variationLabel: string;
   customId: string | number | null;
   hint: string | number | null;
+  defaultUnitCost: number | null;
 };
 
 type SelectedManualReceivingLine = ManualReceivingLine & {
@@ -51,6 +53,7 @@ type ManualReceivingModalProps = {
   onAddProduct: (profileId: string) => void;
   onRemoveLine: (id: string) => void;
   onQuantityChange: (id: string, quantity: number) => void;
+  onUnitCostChange: (id: string, unitCost: number | null) => void;
   onSubmit: () => Promise<void>;
 };
 
@@ -73,17 +76,20 @@ export function ManualReceivingModal({
   onAddProduct,
   onRemoveLine,
   onQuantityChange,
+  onUnitCostChange,
   onSubmit,
 }: ManualReceivingModalProps) {
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [productSearchText, setProductSearchText] = useState('');
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
+  const [unitCostDrafts, setUnitCostDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) {
       setProductSearchText('');
       setIsProductPickerOpen(false);
       setQuantityDrafts({});
+      setUnitCostDrafts({});
       return;
     }
 
@@ -93,6 +99,11 @@ export function ManualReceivingModal({
 
   useEffect(() => {
     setQuantityDrafts((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([lineId]) => lines.some((line) => line.id === lineId)),
+      ),
+    );
+    setUnitCostDrafts((current) =>
       Object.fromEntries(
         Object.entries(current).filter(([lineId]) => lines.some((line) => line.id === lineId)),
       ),
@@ -181,6 +192,40 @@ export function ManualReceivingModal({
     });
   }
 
+  function handleUnitCostDraftChange(lineId: string, value: string) {
+    setUnitCostDrafts((current) => ({
+      ...current,
+      [lineId]: value,
+    }));
+
+    if (value === '') {
+      onUnitCostChange(lineId, null);
+      return;
+    }
+
+    const nextUnitCost = Number(value);
+
+    if (!Number.isFinite(nextUnitCost)) {
+      return;
+    }
+
+    onUnitCostChange(lineId, nextUnitCost);
+  }
+
+  function handleUnitCostDraftBlur(lineId: string) {
+    setUnitCostDrafts((current) => {
+      const draft = current[lineId];
+
+      if (draft === undefined) {
+        return current;
+      }
+
+      const nextDrafts = { ...current };
+      delete nextDrafts[lineId];
+      return nextDrafts;
+    });
+  }
+
   if (!open) {
     return null;
   }
@@ -237,6 +282,7 @@ export function ManualReceivingModal({
                       <th className="px-4 py-2.5">Product</th>
                       <th className="px-4 py-2.5">Reference</th>
                       <th className="px-4 py-2.5 text-right">Qty</th>
+                      <th className="px-4 py-2.5 text-right">Unit COGS</th>
                       <th className="px-4 py-2.5 text-right">Action</th>
                     </tr>
                   </thead>
@@ -258,6 +304,24 @@ export function ManualReceivingModal({
                             onChange={(event) => handleQuantityDraftChange(line.id, event.target.value)}
                             onBlur={() => handleQuantityDraftBlur(line.id)}
                             className="h-9 w-20 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-primary outline-none transition focus:border-[#96b4c3]"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={
+                              unitCostDrafts[line.id]
+                              ?? (line.unitCost === null ? '' : String(line.unitCost))
+                            }
+                            onChange={(event) => handleUnitCostDraftChange(line.id, event.target.value)}
+                            onBlur={() => handleUnitCostDraftBlur(line.id)}
+                            placeholder={
+                              line.product.defaultUnitCost === null
+                                ? 'Unset'
+                                : String(line.product.defaultUnitCost)
+                            }
+                            className="h-9 w-28 rounded-[12px] border border-[#d7e0e7] bg-white px-3 text-right text-[13px] font-semibold text-primary outline-none transition placeholder:text-[#9aabb6] focus:border-[#96b4c3]"
                           />
                         </td>
                         <td className="px-4 py-3 text-right">

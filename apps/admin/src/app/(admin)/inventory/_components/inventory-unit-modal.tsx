@@ -14,7 +14,11 @@ import type {
 } from '../_types/inventory';
 import { formatInventoryStatusLabel } from '../_utils/inventory-status-presenters';
 import { printUnitLabel } from '../_utils/print-unit-label';
-import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../../warehouses/_utils/code39-barcode';
+import {
+  isCode128CCompatible,
+  normalizeBarcodeValue,
+  renderCode128CSvgMarkup,
+} from '../../warehouses/_utils/code39-barcode';
 
 type InventoryUnitModalProps = {
   open: boolean;
@@ -90,11 +94,15 @@ export function InventoryUnitModal({
       return '';
     }
 
-    return renderCode128SvgMarkup(barcodeValue, {
+    if (!isCode128CCompatible(barcodeValue)) {
+      return '';
+    }
+
+    return renderCode128CSvgMarkup(barcodeValue, {
       height: 112,
-      moduleWidth: 2,
-      quietZone: 24,
-      textSize: 16,
+      moduleWidth: 1.6,
+      quietZone: 16,
+      showText: true,
     });
   }, [barcodeValue]);
 
@@ -137,15 +145,8 @@ export function InventoryUnitModal({
     try {
       setPrintError(null);
       printUnitLabel({
-        code: unit.code,
         barcodeValue,
-        productName: unit.name,
-        variationLabel: unit.variationDisplayId ? `Variation ${unit.variationDisplayId}` : `Variation ${unit.variationId}`,
-        storeName: unit.store.name,
-        warehouseCode: unit.warehouse.code,
-        warehouseName: unit.warehouse.name,
-        locationLabel: unit.currentLocation?.label ?? 'No location assigned',
-        statusLabel: formatInventoryStatusLabel(unit.status),
+        countLabel: 1,
       });
       await onRecordPrint(unit.id, action === 'print' ? 'PRINT' : 'REPRINT');
       setLastPrintAction(action);
@@ -255,15 +256,24 @@ export function InventoryUnitModal({
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
               <div className="card">
                 <div className="card">
-                  <div
-                    className="flex justify-center"
-                    dangerouslySetInnerHTML={{ __html: barcodeMarkup }}
-                  />
+                  {barcodeMarkup ? (
+                    <div
+                      className="flex justify-center"
+                      dangerouslySetInnerHTML={{ __html: barcodeMarkup }}
+                    />
+                  ) : (
+                    <p className="py-8 text-center text-[12px] font-semibold text-amber-700">
+                      Code128C needs a numeric even-length barcode. Run the compact barcode migration for legacy units.
+                    </p>
+                  )}
                 </div>
 
                 <div className="card mt-3">
                   <p className="card-label">Barcode Value</p>
-                  <p className="card-value text-base">{barcodeValue}</p>
+                  <p className="card-value text-base">
+                    {barcodeValue}
+                    <sub className="ml-1 text-[10px] leading-none">01</sub>
+                  </p>
                 </div>
               </div>
 

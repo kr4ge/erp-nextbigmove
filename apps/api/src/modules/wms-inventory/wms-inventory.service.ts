@@ -6,19 +6,25 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  WmsFulfillmentLineStatus,
   WmsFulfillmentOrderStatus,
   WmsStaffActivityOutcome,
   WmsInventoryMovementType,
   WmsInventoryUnitStatus,
   WmsLocationKind,
+  WmsPickReservationStatus,
+  WmsProductProfileStatus,
   WmsTransferStatus,
 } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
 import { CreateWmsInventoryAdjustmentDto } from './dto/create-wms-inventory-adjustment.dto';
+import { CreateWmsInventoryStoreTransferDto } from './dto/create-wms-inventory-store-transfer.dto';
 import { CreateWmsInventoryTransferDto } from './dto/create-wms-inventory-transfer.dto';
 import { GetWmsInventoryOverviewDto } from './dto/get-wms-inventory-overview.dto';
+import { GetWmsInventoryStoreTransferOptionsDto } from './dto/get-wms-inventory-store-transfer-options.dto';
 import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.dto';
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
 
@@ -188,6 +194,20 @@ const TRANSFERABLE_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
 ]);
+
+const STORE_TRANSFERABLE_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
+  WmsInventoryUnitStatus.RECEIVED,
+  WmsInventoryUnitStatus.STAGED,
+  WmsInventoryUnitStatus.PUTAWAY,
+]);
+
+const STORE_TRANSFER_DEMAND_ORDER_STATUSES = [
+  WmsFulfillmentOrderStatus.READY,
+  WmsFulfillmentOrderStatus.PARTIAL,
+  WmsFulfillmentOrderStatus.RESTOCKING,
+  WmsFulfillmentOrderStatus.ISSUE,
+  WmsFulfillmentOrderStatus.IN_PICKING,
+] as const;
 
 const ADJUSTABLE_UNIT_TARGET_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.STAGED,
@@ -795,6 +815,790 @@ export class WmsInventoryService {
         activeWarehouseId,
       },
       transfers: transfers.map((transfer) => this.mapTransfer(transfer)),
+    };
+  }
+
+  async getStoreTransferOptions(query: GetWmsInventoryStoreTransferOptionsDto) {
+    const scope = await this.resolveTenantScope(query.tenantId);
+
+    if (!scope.activeTenantId) {
+      return {
+        tenantReady: false,
+        stores: [],
+        products: [],
+        activeTenantId: null,
+        activeTargetStoreId: null,
+      };
+    }
+
+    const stores = await this.prisma.posStore.findMany({
+      where: {
+        tenantId: scope.activeTenantId,
+      },
+      select: {
+        id: true,
+        name: true,
+        shopName: true,
+      },
+      orderBy: [{ name: 'asc' }],
+    });
+
+    const activeTargetStoreId =
+      query.targetStoreId && stores.some((store) => store.id === query.targetStoreId)
+        ? query.targetStoreId
+        : null;
+
+    const products = activeTargetStoreId
+      ? await this.prisma.wmsProductProfile.findMany({
+          where: {
+            tenantId: scope.activeTenantId,
+            storeId: activeTargetStoreId,
+            status: {
+              not: WmsProductProfileStatus.ARCHIVED,
+            },
+            ...(query.search
+              ? {
+                  OR: [
+                    { productId: { contains: query.search, mode: 'insensitive' } },
+                    { variationId: { contains: query.search, mode: 'insensitive' } },
+                    {
+                      posProduct: {
+                        name: { contains: query.search, mode: 'insensitive' },
+                      },
+                    },
+                    {
+                      posProduct: {
+                        customId: { contains: query.search, mode: 'insensitive' },
+                      },
+                    },
+                  ],
+                }
+              : {}),
+          },
+          include: {
+            posProduct: {
+              select: {
+                id: true,
+                productId: true,
+                variationId: true,
+                customId: true,
+                productSnapshot: true,
+                name: true,
+              },
+            },
+          },
+          orderBy: [{ updatedAt: 'desc' }],
+          take: 200,
+        })
+      : [];
+    const [sourceProfile, savedEquivalence] = await Promise.all([
+      query.sourceProfileId
+        ? this.prisma.wmsProductProfile.findFirst({
+            where: {
+              id: query.sourceProfileId,
+              tenantId: scope.activeTenantId,
+            },
+            include: {
+              posProduct: {
+                select: {
+                  id: true,
+                  productId: true,
+                  variationId: true,
+                  customId: true,
+                  productSnapshot: true,
+                  name: true,
+                },
+              },
+            },
+          })
+        : Promise.resolve(null),
+      query.sourceProfileId && activeTargetStoreId
+        ? this.prisma.wmsProductProfileEquivalence.findFirst({
+            where: {
+              tenantId: scope.activeTenantId,
+              sourceProfileId: query.sourceProfileId,
+              targetStoreId: activeTargetStoreId,
+            },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    const mappedProducts = products
+      .filter((profile) => (
+        this.isStockableVariation(profile.posProduct.productId, profile.posProduct.variationId)
+        && this.isStockableVariation(profile.productId, profile.variationId)
+      ))
+      .map((profile) => this.mapStoreTransferProductOption(profile));
+    const suggestion = this.resolveStoreTransferSuggestion({
+      sourceProfile,
+      products: mappedProducts,
+      savedEquivalence,
+    });
+    const sortedProducts = suggestion
+      ? [
+          ...mappedProducts.filter((product) => product.profileId === suggestion.profileId),
+          ...mappedProducts.filter((product) => product.profileId !== suggestion.profileId),
+        ]
+      : mappedProducts;
+
+    return {
+      tenantReady: true,
+      activeTenantId: scope.activeTenantId,
+      activeTargetStoreId,
+      stores: stores.map((store) => ({
+        id: store.id,
+        label: store.shopName || store.name,
+      })),
+      products: sortedProducts,
+      suggestion,
+    };
+  }
+
+  async previewStoreTransfer(body: CreateWmsInventoryStoreTransferDto, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const uniqueUnitIds = Array.from(new Set(body.unitIds));
+    const blockers: Array<{ code: string; message: string }> = [];
+    const warnings: Array<{ code: string; message: string; severity: 'warning' | 'critical' }> = [];
+
+    if (uniqueUnitIds.length === 0) {
+      blockers.push({
+        code: 'NO_UNITS_SELECTED',
+        message: 'Select at least one stock unit',
+      });
+    }
+
+    const [targetStore, targetProfile] = await Promise.all([
+      this.prisma.posStore.findFirst({
+        where: {
+          id: body.targetStoreId,
+          tenantId: scope.activeTenantId,
+        },
+        select: {
+          id: true,
+          name: true,
+          shopName: true,
+        },
+      }),
+      this.prisma.wmsProductProfile.findFirst({
+        where: {
+          id: body.targetProfileId,
+          tenantId: scope.activeTenantId,
+          storeId: body.targetStoreId,
+          status: {
+            not: WmsProductProfileStatus.ARCHIVED,
+          },
+        },
+        include: {
+          posProduct: {
+            select: {
+              productId: true,
+              variationId: true,
+              customId: true,
+              productSnapshot: true,
+              name: true,
+            },
+          },
+        },
+      }),
+    ]);
+    const units = uniqueUnitIds.length
+      ? await this.prisma.wmsInventoryUnit.findMany({
+          where: {
+            id: {
+              in: uniqueUnitIds,
+            },
+            tenantId: scope.activeTenantId,
+          },
+          include: {
+            store: {
+              select: {
+                id: true,
+                name: true,
+                shopName: true,
+              },
+            },
+            posProduct: {
+              select: {
+                name: true,
+                customId: true,
+                productSnapshot: true,
+              },
+            },
+            pickReservations: {
+              where: {
+                status: {
+                  in: [WmsPickReservationStatus.RESERVED, WmsPickReservationStatus.PICKED],
+                },
+              },
+              select: {
+                id: true,
+              },
+            },
+          },
+        })
+      : [];
+
+    if (!targetStore) {
+      blockers.push({
+        code: 'INVALID_TARGET_STORE',
+        message: 'Target store is not valid for this tenant',
+      });
+    }
+
+    if (!targetProfile) {
+      blockers.push({
+        code: 'INVALID_TARGET_PRODUCT',
+        message: 'Target product profile is not valid for the selected store',
+      });
+    } else {
+      if (!this.isStockableVariation(targetProfile.posProduct.productId, targetProfile.posProduct.variationId)) {
+        blockers.push({
+          code: 'TARGET_PRODUCT_NOT_STOCKABLE',
+          message: `Target product is not stockable: ${this.getStockabilityReason(
+            targetProfile.posProduct.productId,
+            targetProfile.posProduct.variationId,
+          )}`,
+        });
+      }
+
+      if (!this.isStockableVariation(targetProfile.productId, targetProfile.variationId)) {
+        blockers.push({
+          code: 'TARGET_PROFILE_LEGACY_VARIATION',
+          message: 'Target product profile still uses a legacy variation mapping. Sync this product first.',
+        });
+      }
+    }
+
+    if (units.length !== uniqueUnitIds.length) {
+      blockers.push({
+        code: 'MISSING_UNITS',
+        message: 'One or more selected units no longer exist',
+      });
+    }
+
+    const sourceUnit = units[0] ?? null;
+    const sourceStoreId = sourceUnit?.storeId ?? null;
+    const sourceVariationId = sourceUnit?.variationId ?? null;
+    const sourceProfileId = sourceUnit?.productProfileId ?? null;
+
+    if (sourceUnit && targetStore && sourceStoreId === targetStore.id) {
+      blockers.push({
+        code: 'SAME_STORE',
+        message: 'Target store must be different from the source store',
+      });
+    }
+
+    for (const unit of units) {
+      if (sourceStoreId && unit.storeId !== sourceStoreId) {
+        blockers.push({
+          code: 'MIXED_SOURCE_STORE',
+          message: 'Selected units must come from the same source store',
+        });
+        break;
+      }
+    }
+
+    for (const unit of units) {
+      if (
+        sourceVariationId
+        && sourceProfileId
+        && (unit.variationId !== sourceVariationId || unit.productProfileId !== sourceProfileId)
+      ) {
+        blockers.push({
+          code: 'MIXED_SOURCE_PRODUCT',
+          message: 'Selected units must share the same source product and variation',
+        });
+        break;
+      }
+    }
+
+    const invalidStatusUnits = units.filter((unit) => !STORE_TRANSFERABLE_UNIT_STATUSES.has(unit.status));
+    if (invalidStatusUnits.length) {
+      blockers.push({
+        code: 'INVALID_UNIT_STATUS',
+        message: `${invalidStatusUnits.length} selected unit${invalidStatusUnits.length === 1 ? '' : 's'} cannot be transferred from the current status`,
+      });
+    }
+
+    const reservedUnits = units.filter((unit) => unit.pickReservations.length > 0);
+    if (reservedUnits.length) {
+      blockers.push({
+        code: 'RESERVED_UNITS',
+        message: `${reservedUnits.length} selected unit${reservedUnits.length === 1 ? '' : 's'} already reserved for picking`,
+      });
+    }
+
+    const sourceAvailableUnits = sourceStoreId && sourceProfileId && sourceVariationId
+      ? await this.prisma.wmsInventoryUnit.count({
+          where: {
+            tenantId: scope.activeTenantId,
+            storeId: sourceStoreId,
+            productProfileId: sourceProfileId,
+            variationId: sourceVariationId,
+            status: {
+              in: Array.from(STORE_TRANSFERABLE_UNIT_STATUSES),
+            },
+            pickReservations: {
+              none: {
+                status: {
+                  in: [WmsPickReservationStatus.RESERVED, WmsPickReservationStatus.PICKED],
+                },
+              },
+            },
+          },
+        })
+      : 0;
+
+    const demandLines = sourceStoreId && sourceVariationId
+      ? await this.prisma.wmsFulfillmentLine.findMany({
+          where: {
+            tenantId: scope.activeTenantId,
+            variationId: sourceVariationId,
+            status: {
+              not: WmsFulfillmentLineStatus.CANCELED,
+            },
+            quantityRequired: {
+              gt: 0,
+            },
+            fulfillmentOrder: {
+              storeId: sourceStoreId,
+              status: {
+                in: [...STORE_TRANSFER_DEMAND_ORDER_STATUSES],
+              },
+            },
+          },
+          select: {
+            fulfillmentOrderId: true,
+            quantityRequired: true,
+            reservations: {
+              where: {
+                status: {
+                  in: [WmsPickReservationStatus.RESERVED, WmsPickReservationStatus.PICKED],
+                },
+              },
+              select: {
+                id: true,
+              },
+            },
+          },
+        })
+      : [];
+
+    const activeDemandUnits = demandLines.reduce(
+      (sum, line) => sum + Math.max(line.quantityRequired - line.reservations.length, 0),
+      0,
+    );
+    const activeDemandOrders = new Set(
+      demandLines
+        .filter((line) => Math.max(line.quantityRequired - line.reservations.length, 0) > 0)
+        .map((line) => line.fulfillmentOrderId),
+    ).size;
+    const selectedUnits = uniqueUnitIds.length;
+    const remainingAvailableUnits = Math.max(sourceAvailableUnits - selectedUnits, 0);
+
+    if (activeDemandUnits > 0) {
+      warnings.push({
+        code: 'ACTIVE_PICK_DEMAND',
+        severity: 'warning',
+        message: `${sourceUnit?.store.shopName || sourceUnit?.store.name || 'Source store'} has ${activeDemandUnits} active pick demand unit${activeDemandUnits === 1 ? '' : 's'} for this product across ${activeDemandOrders} order${activeDemandOrders === 1 ? '' : 's'}.`,
+      });
+    }
+
+    if (sourceAvailableUnits > 0 && selectedUnits >= sourceAvailableUnits) {
+      warnings.push({
+        code: 'TRANSFER_ALL_AVAILABLE',
+        severity: 'critical',
+        message: `This transfers all ${sourceAvailableUnits} available unit${sourceAvailableUnits === 1 ? '' : 's'} from the source store for this product.`,
+      });
+    }
+
+    if (activeDemandUnits > 0 && remainingAvailableUnits < activeDemandUnits) {
+      warnings.push({
+        code: 'DEMAND_EXCEEDS_REMAINING',
+        severity: 'critical',
+        message: `After transfer, ${remainingAvailableUnits} available unit${remainingAvailableUnits === 1 ? '' : 's'} will remain, below the active demand of ${activeDemandUnits}.`,
+      });
+    }
+
+    return {
+      valid: blockers.length === 0,
+      selectedUnits,
+      sourceAvailableUnits,
+      remainingAvailableUnits,
+      activeDemandUnits,
+      activeDemandOrders,
+      sourceStore: sourceUnit
+        ? {
+            id: sourceUnit.store.id,
+            name: sourceUnit.store.shopName || sourceUnit.store.name,
+          }
+        : null,
+      sourceProduct: sourceUnit
+        ? {
+            profileId: sourceUnit.productProfileId,
+            name: sourceUnit.posProduct.name,
+            variationId: sourceUnit.variationId,
+            variationDisplayId: this.resolveVariationDisplayId(sourceUnit.posProduct.productSnapshot),
+          }
+        : null,
+      targetStore: targetStore
+        ? {
+            id: targetStore.id,
+            name: targetStore.shopName || targetStore.name,
+          }
+        : null,
+      targetProduct: targetProfile
+        ? {
+            profileId: targetProfile.id,
+            name: targetProfile.posProduct.name,
+            variationId: targetProfile.variationId,
+            variationDisplayId: this.resolveVariationDisplayId(targetProfile.posProduct.productSnapshot),
+          }
+        : null,
+      blockers,
+      warnings,
+    };
+  }
+
+  async createStoreTransfer(body: CreateWmsInventoryStoreTransferDto, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const uniqueUnitIds = Array.from(new Set(body.unitIds));
+
+    if (uniqueUnitIds.length === 0) {
+      throw new BadRequestException('Select at least one stock unit');
+    }
+
+    const [targetStore, targetProfile] = await Promise.all([
+      this.prisma.posStore.findFirst({
+        where: {
+          id: body.targetStoreId,
+          tenantId: scope.activeTenantId,
+        },
+        select: {
+          id: true,
+          name: true,
+          shopName: true,
+        },
+      }),
+      this.prisma.wmsProductProfile.findFirst({
+        where: {
+          id: body.targetProfileId,
+          tenantId: scope.activeTenantId,
+          storeId: body.targetStoreId,
+          status: {
+            not: WmsProductProfileStatus.ARCHIVED,
+          },
+        },
+        include: {
+          posProduct: {
+            select: {
+              id: true,
+              productId: true,
+              variationId: true,
+              customId: true,
+              productSnapshot: true,
+              name: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    if (!targetStore) {
+      throw new BadRequestException('Target store is not valid for this tenant');
+    }
+
+    if (!targetProfile) {
+      throw new BadRequestException('Target product profile is not valid for the selected store');
+    }
+
+    if (!this.isStockableVariation(targetProfile.posProduct.productId, targetProfile.posProduct.variationId)) {
+      throw new BadRequestException(
+        `Target product is not stockable: ${this.getStockabilityReason(
+          targetProfile.posProduct.productId,
+          targetProfile.posProduct.variationId,
+        )}`,
+      );
+    }
+
+    if (!this.isStockableVariation(targetProfile.productId, targetProfile.variationId)) {
+      throw new BadRequestException('Target product profile still uses a legacy variation mapping. Sync this product first.');
+    }
+
+    const transferCode = this.buildStoreTransferCode();
+    const notes = this.cleanOptionalText(body.notes);
+    const now = new Date();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const units = await tx.wmsInventoryUnit.findMany({
+        where: {
+          id: {
+            in: uniqueUnitIds,
+          },
+          tenantId: scope.activeTenantId!,
+        },
+        include: {
+          store: {
+            select: {
+              id: true,
+              name: true,
+              shopName: true,
+            },
+          },
+          warehouse: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+          currentLocation: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              kind: true,
+            },
+          },
+          posProduct: {
+            select: {
+              id: true,
+              name: true,
+              customId: true,
+              productSnapshot: true,
+            },
+          },
+          pickReservations: {
+            where: {
+              status: {
+                in: [WmsPickReservationStatus.RESERVED, WmsPickReservationStatus.PICKED],
+              },
+            },
+            select: {
+              id: true,
+            },
+          },
+        },
+      });
+
+      if (units.length !== uniqueUnitIds.length) {
+        throw new BadRequestException('One or more selected units no longer exist');
+      }
+
+      const sourceStoreId = units[0].storeId;
+      const sourceVariationId = units[0].variationId;
+      const sourceProductProfileId = units[0].productProfileId;
+
+      if (sourceStoreId === targetStore.id) {
+        throw new BadRequestException('Target store must be different from the source store');
+      }
+
+      units.forEach((unit) => {
+        if (unit.tenantId !== scope.activeTenantId) {
+          throw new ForbiddenException('One or more selected units are outside your WMS scope');
+        }
+
+        if (unit.storeId !== sourceStoreId) {
+          throw new BadRequestException('Selected units must come from the same source store');
+        }
+
+        if (unit.variationId !== sourceVariationId || unit.productProfileId !== sourceProductProfileId) {
+          throw new BadRequestException('Selected units must share the same source product and variation');
+        }
+
+        if (!STORE_TRANSFERABLE_UNIT_STATUSES.has(unit.status)) {
+          throw new BadRequestException(`Unit ${unit.code} cannot be transferred to another store from status ${unit.status}`);
+        }
+
+        if (unit.pickReservations.length > 0) {
+          throw new BadRequestException(`Unit ${unit.code} is already reserved and cannot be transferred to another store`);
+        }
+      });
+
+      const storeTransfer = await tx.wmsInventoryStoreTransfer.create({
+        data: {
+          code: transferCode,
+          tenantId: scope.activeTenantId!,
+          fromStoreId: sourceStoreId,
+          toStoreId: targetStore.id,
+          targetProfileId: targetProfile.id,
+          notes,
+          createdById: actorId,
+          updatedById: actorId,
+        },
+      });
+
+      await tx.wmsInventoryStoreTransferItem.createMany({
+        data: units.map((unit, index) => ({
+          transferId: storeTransfer.id,
+          inventoryUnitId: unit.id,
+          lineNo: index + 1,
+          fromStoreId: unit.storeId,
+          toStoreId: targetStore.id,
+          fromPosProductId: unit.posProductId,
+          toPosProductId: targetProfile.posProductId,
+          fromProductProfileId: unit.productProfileId,
+          toProductProfileId: targetProfile.id,
+          fromProductId: unit.productId,
+          toProductId: targetProfile.productId,
+          fromVariationId: unit.variationId,
+          toVariationId: targetProfile.variationId,
+          unitCost: unit.unitCost,
+        })),
+      });
+
+      await tx.wmsProductProfileEquivalence.upsert({
+        where: {
+          tenantId_sourceProfileId_targetStoreId: {
+            tenantId: scope.activeTenantId!,
+            sourceProfileId: sourceProductProfileId,
+            targetStoreId: targetStore.id,
+          },
+        },
+        create: {
+          tenantId: scope.activeTenantId!,
+          sourceStoreId,
+          targetStoreId: targetStore.id,
+          sourceProfileId: sourceProductProfileId,
+          targetProfileId: targetProfile.id,
+          sourceVariationId,
+          targetVariationId: targetProfile.variationId,
+          matchSource: 'TRANSFER',
+          transferCount: 1,
+          lastTransferAt: now,
+          createdById: actorId,
+          updatedById: actorId,
+        },
+        update: {
+          targetProfileId: targetProfile.id,
+          targetVariationId: targetProfile.variationId,
+          matchSource: 'TRANSFER',
+          transferCount: {
+            increment: 1,
+          },
+          lastTransferAt: now,
+          updatedById: actorId,
+        },
+      });
+
+      await tx.wmsInventoryMovement.createMany({
+        data: units.map((unit) => ({
+          tenantId: scope.activeTenantId!,
+          inventoryUnitId: unit.id,
+          warehouseId: unit.warehouseId,
+          fromLocationId: unit.currentLocationId,
+          toLocationId: unit.currentLocationId,
+          fromStatus: unit.status,
+          toStatus: unit.status,
+          movementType: WmsInventoryMovementType.ADJUSTMENT,
+          referenceType: 'STORE_TRANSFER',
+          referenceId: storeTransfer.id,
+          referenceCode: storeTransfer.code,
+          notes,
+          actorId,
+          createdAt: now,
+        })),
+      });
+
+      await tx.wmsInventoryUnit.updateMany({
+        where: {
+          id: {
+            in: units.map((unit) => unit.id),
+          },
+        },
+        data: {
+          storeId: targetStore.id,
+          posProductId: targetProfile.posProductId,
+          productProfileId: targetProfile.id,
+          productId: targetProfile.productId,
+          variationId: targetProfile.variationId,
+          posWarehouseRef: targetProfile.posWarehouseRef ?? null,
+          ...(actorId ? { updatedById: actorId } : {}),
+        },
+      });
+
+      const updatedUnits = await tx.wmsInventoryUnit.findMany({
+        where: {
+          id: {
+            in: units.map((unit) => unit.id),
+          },
+        },
+        include: {
+          store: {
+            select: {
+              id: true,
+              name: true,
+              shopName: true,
+            },
+          },
+          warehouse: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+          currentLocation: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              kind: true,
+            },
+          },
+          posProduct: {
+            select: {
+              id: true,
+              name: true,
+              customId: true,
+              productSnapshot: true,
+            },
+          },
+        },
+        orderBy: [{ code: 'asc' }],
+      });
+
+      return {
+        transfer: storeTransfer,
+        units: updatedUnits,
+      };
+    });
+
+    await this.recordInventoryActivity({
+      tenantId: scope.activeTenantId,
+      actionType: 'INVENTORY_STORE_TRANSFER',
+      resourceType: 'WMS_INVENTORY_STORE_TRANSFER',
+      resourceId: result.transfer.id,
+      metadata: {
+        transferCode: result.transfer.code,
+        fromStoreId: result.transfer.fromStoreId,
+        toStoreId: result.transfer.toStoreId,
+        targetProfileId: result.transfer.targetProfileId,
+        unitCount: result.units.length,
+      },
+    });
+
+    return {
+      transfer: {
+        id: result.transfer.id,
+        code: result.transfer.code,
+        itemCount: result.units.length,
+        fromStoreId: result.transfer.fromStoreId,
+        toStoreId: result.transfer.toStoreId,
+        targetProfileId: result.transfer.targetProfileId,
+        notes: result.transfer.notes,
+        createdAt: result.transfer.createdAt,
+      },
+      units: result.units.map((unit) => this.mapUnit(unit)),
     };
   }
 
@@ -1458,11 +2262,14 @@ export class WmsInventoryService {
       labelPrintCount: unit.labelPrintCount,
       firstLabelPrintedAt: unit.firstLabelPrintedAt,
       lastLabelPrintedAt: unit.lastLabelPrintedAt,
+      posProductId: unit.posProductId,
+      productProfileId: unit.productProfileId,
       productId: unit.productId,
       productCustomId: unit.posProduct.customId,
       variationId: unit.variationId,
       variationDisplayId,
       name: unit.posProduct.name,
+      unitCost: unit.unitCost === null ? null : Number(unit.unitCost),
       store: {
         id: unit.store.id,
         name: unit.store.shopName || unit.store.name,
@@ -1618,6 +2425,111 @@ export class WmsInventoryService {
         record.currentLocationId ? [[record.currentLocationId, record._count._all] as const] : [],
       ),
     );
+  }
+
+  async syncPosOrderCogsFromMatchedInventoryUnits(params: {
+    tenantId?: string | null;
+    storeId?: string | null;
+    fulfillmentOrderIds?: string[];
+    posOrderRefs?: Array<{
+      shopId: string;
+      posOrderId: string;
+    }>;
+  }) {
+    const fulfillmentOrderIds = Array.from(new Set(params.fulfillmentOrderIds ?? []));
+    const refs = Array.from(
+      new Map(
+        (params.posOrderRefs ?? [])
+          .filter((ref) => ref.shopId && ref.posOrderId)
+          .map((ref) => [`${ref.shopId}::${ref.posOrderId}`, ref] as const),
+      ).values(),
+    );
+
+    if (fulfillmentOrderIds.length === 0 && !params.tenantId) {
+      return {
+        updatedOrders: 0,
+        skippedOrders: 0,
+      };
+    }
+
+    const orders = await this.prisma.wmsFulfillmentOrder.findMany({
+      where: {
+        ...(fulfillmentOrderIds.length
+          ? { id: { in: fulfillmentOrderIds } }
+          : {
+              ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+              ...(params.storeId ? { storeId: params.storeId } : {}),
+              ...(refs.length > 0
+                ? {
+                    OR: refs.map((ref) => ({
+                      shopId: ref.shopId,
+                      posOrderId: ref.posOrderId,
+                    })),
+                  }
+                : {}),
+            }),
+      },
+      select: {
+        id: true,
+        posOrderDbId: true,
+        totalQuantity: true,
+        reservations: {
+          where: {
+            status: {
+              in: [WmsPickReservationStatus.RESERVED, WmsPickReservationStatus.PICKED],
+            },
+          },
+          select: {
+            inventoryUnit: {
+              select: {
+                unitCost: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let updatedOrders = 0;
+    let skippedOrders = 0;
+
+    for (const order of orders) {
+      if (order.reservations.length === 0) {
+        continue;
+      }
+
+      if (order.totalQuantity > 0 && order.reservations.length < order.totalQuantity) {
+        skippedOrders += 1;
+        continue;
+      }
+
+      const hasMissingUnitCost = order.reservations.some(
+        (reservation) => reservation.inventoryUnit.unitCost === null,
+      );
+      if (hasMissingUnitCost) {
+        skippedOrders += 1;
+        continue;
+      }
+
+      const actualCogs = order.reservations.reduce(
+        (sum, reservation) => sum + Number(reservation.inventoryUnit.unitCost ?? 0),
+        0,
+      );
+
+      await this.prisma.posOrder.update({
+        where: { id: order.posOrderDbId },
+        data: {
+          cogs: new Decimal(actualCogs.toFixed(2)),
+        },
+      });
+
+      updatedOrders += 1;
+    }
+
+    return {
+      updatedOrders,
+      skippedOrders,
+    };
   }
 
   async syncPackedUnitsToDispatchedForPosOrders(params: {
@@ -1782,6 +2694,15 @@ export class WmsInventoryService {
       );
     }
 
+    const cogsSync = dispatchedByOrderId.size > 0
+      ? await this.syncPosOrderCogsFromMatchedInventoryUnits({
+          fulfillmentOrderIds: Array.from(dispatchedByOrderId.keys()),
+        })
+      : {
+          updatedOrders: 0,
+          skippedOrders: 0,
+        };
+
     const deliveredOrders = await this.recordDeliveredOrderHistoryForDispatchedPosOrders({
       tenantId: params.tenantId,
       storeId: params.storeId ?? null,
@@ -1791,6 +2712,7 @@ export class WmsInventoryService {
     return {
       dispatchedUnits,
       deliveredOrders,
+      cogsUpdatedOrders: cogsSync.updatedOrders,
     };
   }
 
@@ -2108,8 +3030,189 @@ export class WmsInventoryService {
     return `TRF-${Date.now().toString(36).toUpperCase()}`;
   }
 
+  private buildStoreTransferCode() {
+    return `STX-${Date.now().toString(36).toUpperCase()}`;
+  }
+
   private buildAdjustmentCode() {
     return `ADJ-${Date.now().toString(36).toUpperCase()}`;
+  }
+
+  private isLegacyVariationMapping(productId: string, variationId: string | null | undefined) {
+    return Boolean(variationId) && variationId === productId;
+  }
+
+  private isStockableVariation(productId: string, variationId: string | null | undefined) {
+    return Boolean(variationId) && !this.isLegacyVariationMapping(productId, variationId);
+  }
+
+  private getStockabilityReason(productId: string, variationId: string | null | undefined) {
+    if (!variationId) {
+      return 'variation ID is missing';
+    }
+
+    if (this.isLegacyVariationMapping(productId, variationId)) {
+      return 'variation ID is still mapped to the parent product ID';
+    }
+
+    return 'product is not stockable';
+  }
+
+  private resolveVariationDisplayId(snapshot: unknown) {
+    const parsed = snapshot as
+      | {
+          display_id?: string | null;
+          product?: {
+            display_id?: string | null;
+          } | null;
+        }
+      | null;
+
+    return typeof parsed?.display_id === 'string'
+      ? parsed.display_id
+      : typeof parsed?.product?.display_id === 'string'
+        ? parsed.product.display_id
+        : null;
+  }
+
+  private mapStoreTransferProductOption(profile: {
+    id: string;
+    posProductId: string;
+    productId: string;
+    variationId: string;
+    posProduct: {
+      customId: string | null;
+      productSnapshot: Prisma.JsonValue | null;
+      name: string;
+    };
+  }) {
+    return {
+      id: profile.id,
+      profileId: profile.id,
+      posProductId: profile.posProductId,
+      productId: profile.productId,
+      variationId: profile.variationId,
+      variationDisplayId: this.resolveVariationDisplayId(profile.posProduct.productSnapshot),
+      productCustomId: profile.posProduct.customId,
+      name: profile.posProduct.name,
+      label: profile.posProduct.name,
+    };
+  }
+
+  private resolveStoreTransferSuggestion(params: {
+    sourceProfile: {
+      id: string;
+      productId: string;
+      variationId: string;
+      posProduct: {
+        customId: string | null;
+        productSnapshot: Prisma.JsonValue | null;
+        name: string;
+      };
+    } | null;
+    products: Array<ReturnType<WmsInventoryService['mapStoreTransferProductOption']>>;
+    savedEquivalence: {
+      targetProfileId: string;
+    } | null;
+  }) {
+    const savedProduct = params.savedEquivalence
+      ? params.products.find((product) => product.profileId === params.savedEquivalence?.targetProfileId) ?? null
+      : null;
+
+    if (savedProduct) {
+      return {
+        profileId: savedProduct.profileId,
+        label: savedProduct.label,
+        reason: 'Saved mapping',
+        confidence: 'high',
+      };
+    }
+
+    if (!params.sourceProfile) {
+      return null;
+    }
+
+    const sourceCustomId = this.normalizeProductMatchValue(params.sourceProfile.posProduct.customId);
+    const sourceDisplayId = this.normalizeProductMatchValue(
+      this.resolveVariationDisplayId(params.sourceProfile.posProduct.productSnapshot),
+    );
+    const sourceProductId = this.normalizeProductMatchValue(params.sourceProfile.productId);
+    const sourceName = this.normalizeProductMatchValue(params.sourceProfile.posProduct.name);
+
+    const exactCustomId = sourceCustomId
+      ? params.products.find((product) => this.normalizeProductMatchValue(product.productCustomId) === sourceCustomId)
+      : null;
+    if (exactCustomId) {
+      return {
+        profileId: exactCustomId.profileId,
+        label: exactCustomId.label,
+        reason: 'Same product custom ID',
+        confidence: 'high',
+      };
+    }
+
+    const exactDisplayId = sourceDisplayId
+      ? params.products.find((product) => this.normalizeProductMatchValue(product.variationDisplayId) === sourceDisplayId)
+      : null;
+    if (exactDisplayId) {
+      return {
+        profileId: exactDisplayId.profileId,
+        label: exactDisplayId.label,
+        reason: 'Same product display ID',
+        confidence: 'high',
+      };
+    }
+
+    const exactProductId = sourceProductId
+      ? params.products.find((product) => this.normalizeProductMatchValue(product.productId) === sourceProductId)
+      : null;
+    if (exactProductId) {
+      return {
+        profileId: exactProductId.profileId,
+        label: exactProductId.label,
+        reason: 'Same product ID',
+        confidence: 'medium',
+      };
+    }
+
+    const exactName = sourceName
+      ? params.products.find((product) => this.normalizeProductMatchValue(product.name) === sourceName)
+      : null;
+    if (exactName) {
+      return {
+        profileId: exactName.profileId,
+        label: exactName.label,
+        reason: 'Same product name',
+        confidence: 'medium',
+      };
+    }
+
+    return null;
+  }
+
+  private normalizeProductMatchValue(value: string | null | undefined) {
+    return value?.trim().replace(/\s+/g, ' ').toLowerCase() || null;
+  }
+
+  private async recordInventoryActivity(params: {
+    tenantId: string;
+    actionType: string;
+    resourceType: string;
+    resourceId: string;
+    metadata?: Prisma.InputJsonValue;
+  }) {
+    await this.wmsStaffActivityService.record({
+      tenantId: params.tenantId,
+      actorId: (this.cls.get('userId') as string | undefined) ?? null,
+      sessionId: (this.cls.get('sessionId') as string | undefined) ?? null,
+      actionType: params.actionType,
+      resourceType: params.resourceType,
+      resourceId: params.resourceId,
+      taskType: 'INVENTORY',
+      taskId: params.resourceId,
+      outcome: WmsStaffActivityOutcome.SUCCESS,
+      metadata: params.metadata,
+    });
   }
 
   private cleanOptionalText(value?: string | null) {
