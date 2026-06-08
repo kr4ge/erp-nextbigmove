@@ -55,6 +55,10 @@ export const WMS_INVENTORY_PRINT_LABELS_PERMISSIONS = [
   'wms.inventory.write',
 ] as const;
 
+export const WMS_INVENTORY_DELETE_PERMISSIONS = [
+  'wms.inventory.delete',
+] as const;
+
 export const WMS_USERS_READ_PERMISSIONS = [
   'wms.users.read',
 ] as const;

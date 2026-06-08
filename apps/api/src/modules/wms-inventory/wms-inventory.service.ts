@@ -27,6 +27,7 @@ import { GetWmsInventoryOverviewDto } from './dto/get-wms-inventory-overview.dto
 import { GetWmsInventoryStoreTransferOptionsDto } from './dto/get-wms-inventory-store-transfer-options.dto';
 import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.dto';
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
+import { VoidWmsInventoryUnitDto } from './dto/void-wms-inventory-unit.dto';
 
 const UNIT_STATUS_ORDER: WmsInventoryUnitStatus[] = [
   WmsInventoryUnitStatus.RECEIVED,
@@ -217,6 +218,30 @@ const ADJUSTABLE_UNIT_TARGET_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.DAMAGED,
   WmsInventoryUnitStatus.LOST,
   WmsInventoryUnitStatus.ARCHIVED,
+]);
+
+const VOIDABLE_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
+  WmsInventoryUnitStatus.RECEIVED,
+  WmsInventoryUnitStatus.STAGED,
+  WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.DEADSTOCK,
+  WmsInventoryUnitStatus.RESERVED,
+  WmsInventoryUnitStatus.RTS,
+  WmsInventoryUnitStatus.DAMAGED,
+  WmsInventoryUnitStatus.LOST,
+]);
+
+const ACTIVE_PICK_RESERVATION_STATUSES = [
+  WmsPickReservationStatus.RESERVED,
+  WmsPickReservationStatus.PICKED,
+] as const;
+
+const VOID_BLOCKED_FULFILLMENT_ORDER_STATUSES = new Set<WmsFulfillmentOrderStatus>([
+  WmsFulfillmentOrderStatus.IN_PICKING,
+  WmsFulfillmentOrderStatus.READY_FOR_PACK,
+  WmsFulfillmentOrderStatus.PICKED,
+  WmsFulfillmentOrderStatus.PACKING,
+  WmsFulfillmentOrderStatus.PACKED,
 ]);
 
 const STRUCTURAL_LOCATION_KINDS = [WmsLocationKind.SECTION, WmsLocationKind.RACK, WmsLocationKind.BIN] as const;
@@ -2079,6 +2104,216 @@ export class WmsInventoryService {
     return result;
   }
 
+  async voidUnit(
+    id: string,
+    body: VoidWmsInventoryUnitDto,
+    requestedTenantId?: string,
+  ) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const reason = body.reason.trim();
+    const notes = this.cleanOptionalText(body.notes);
+    const now = new Date();
+
+    if (!reason) {
+      throw new BadRequestException('Void reason is required');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const unit = await tx.wmsInventoryUnit.findFirst({
+        where: {
+          id,
+          tenantId: scope.activeTenantId!,
+        },
+        include: {
+          store: {
+            select: {
+              id: true,
+              name: true,
+              shopName: true,
+            },
+          },
+          warehouse: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+          currentLocation: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              kind: true,
+            },
+          },
+          posProduct: {
+            select: {
+              id: true,
+              name: true,
+              customId: true,
+              productSnapshot: true,
+            },
+          },
+          pickReservations: {
+            where: {
+              status: {
+                in: [...ACTIVE_PICK_RESERVATION_STATUSES],
+              },
+            },
+            include: {
+              fulfillmentOrder: {
+                select: {
+                  id: true,
+                  status: true,
+                  posOrderId: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!unit) {
+        throw new NotFoundException('Inventory unit was not found');
+      }
+
+      if (!VOIDABLE_UNIT_STATUSES.has(unit.status)) {
+        throw new BadRequestException(`Unit ${unit.code} cannot be voided from status ${unit.status}`);
+      }
+
+      const pickedReservation = unit.pickReservations.find(
+        (reservation) => reservation.status === WmsPickReservationStatus.PICKED,
+      );
+      if (pickedReservation) {
+        throw new BadRequestException(`Unit ${unit.code} is already picked and cannot be voided from inventory`);
+      }
+
+      const blockedReservation = unit.pickReservations.find((reservation) =>
+        VOID_BLOCKED_FULFILLMENT_ORDER_STATUSES.has(reservation.fulfillmentOrder.status),
+      );
+      if (blockedReservation) {
+        throw new BadRequestException(
+          `Unit ${unit.code} is attached to active fulfillment order ${blockedReservation.fulfillmentOrder.posOrderId}`,
+        );
+      }
+
+      const affectedFulfillmentOrderIds = Array.from(new Set(
+        unit.pickReservations.map((reservation) => reservation.fulfillmentOrderId),
+      ));
+      const movementNotes = notes ? `${reason} · ${notes}` : reason;
+
+      if (unit.pickReservations.length > 0) {
+        await tx.wmsPickReservation.updateMany({
+          where: {
+            inventoryUnitId: unit.id,
+            status: WmsPickReservationStatus.RESERVED,
+          },
+          data: {
+            status: WmsPickReservationStatus.RELEASED,
+          },
+        });
+      }
+
+      await tx.wmsInventoryUnit.update({
+        where: { id: unit.id },
+        data: {
+          currentLocationId: null,
+          status: WmsInventoryUnitStatus.ARCHIVED,
+          ...(actorId ? { updatedById: actorId } : {}),
+        },
+      });
+
+      await tx.wmsInventoryMovement.create({
+        data: {
+          tenantId: scope.activeTenantId!,
+          inventoryUnitId: unit.id,
+          warehouseId: unit.warehouseId,
+          fromLocationId: unit.currentLocationId,
+          toLocationId: null,
+          fromStatus: unit.status,
+          toStatus: WmsInventoryUnitStatus.ARCHIVED,
+          movementType: WmsInventoryMovementType.ADJUSTMENT,
+          referenceType: 'VOID_UNIT',
+          referenceId: unit.id,
+          referenceCode: unit.code,
+          notes: movementNotes,
+          actorId,
+          createdAt: now,
+        },
+      });
+
+      for (const fulfillmentOrderId of affectedFulfillmentOrderIds) {
+        await this.refreshFulfillmentOrderStateAfterInventoryVoid(tx, fulfillmentOrderId, now);
+      }
+
+      const updatedUnit = await tx.wmsInventoryUnit.findUniqueOrThrow({
+        where: { id: unit.id },
+        include: {
+          store: {
+            select: {
+              id: true,
+              name: true,
+              shopName: true,
+            },
+          },
+          warehouse: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+          currentLocation: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              kind: true,
+            },
+          },
+          posProduct: {
+            select: {
+              id: true,
+              name: true,
+              customId: true,
+              productSnapshot: true,
+            },
+          },
+        },
+      });
+
+      return {
+        voided: {
+          unitId: unit.id,
+          unitCode: unit.code,
+          releasedReservations: unit.pickReservations.length,
+          reason,
+        },
+        unit: this.mapUnit(updatedUnit),
+      };
+    });
+
+    await this.recordInventoryActivity({
+      tenantId: scope.activeTenantId,
+      actionType: 'VOID_UNIT',
+      resourceType: 'WMS_INVENTORY_UNIT',
+      resourceId: result.voided.unitId,
+      metadata: {
+        unitCode: result.voided.unitCode,
+        reason,
+        releasedReservations: result.voided.releasedReservations,
+      },
+    });
+
+    return result;
+  }
+
   async recordUnitLabelPrint(
     id: string,
     body: RecordWmsInventoryUnitLabelPrintDto,
@@ -3214,6 +3449,179 @@ export class WmsInventoryService {
 
   private normalizeProductMatchValue(value: string | null | undefined) {
     return value?.trim().replace(/\s+/g, ' ').toLowerCase() || null;
+  }
+
+  private async refreshFulfillmentOrderStateAfterInventoryVoid(
+    tx: Prisma.TransactionClient,
+    fulfillmentOrderId: string,
+    now: Date,
+  ) {
+    const order = await tx.wmsFulfillmentOrder.findUnique({
+      where: { id: fulfillmentOrderId },
+      include: {
+        lines: {
+          include: {
+            reservations: {
+              where: {
+                status: {
+                  in: [...ACTIVE_PICK_RESERVATION_STATUSES],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      return;
+    }
+
+    let totalQuantity = 0;
+    let allocatedQuantity = 0;
+    let pickedQuantity = 0;
+    let hasIssue = false;
+
+    for (const line of order.lines) {
+      if (line.status === WmsFulfillmentLineStatus.CANCELED) {
+        if (line.quantityAllocated !== 0 || line.quantityPicked !== 0 || line.issueReason) {
+          await tx.wmsFulfillmentLine.update({
+            where: { id: line.id },
+            data: {
+              quantityAllocated: 0,
+              quantityPicked: 0,
+              issueReason: null,
+            },
+          });
+        }
+        continue;
+      }
+
+      const required = Math.max(line.quantityRequired, 0);
+      const allocated = line.reservations.length;
+      const picked = line.reservations.filter(
+        (reservation) => reservation.status === WmsPickReservationStatus.PICKED,
+      ).length;
+      const nextLineStatus = this.resolveFulfillmentLineStatusAfterInventoryVoid(
+        required,
+        allocated,
+        picked,
+        line.status,
+      );
+
+      totalQuantity += required;
+      allocatedQuantity += Math.min(allocated, required);
+      pickedQuantity += Math.min(picked, required);
+      hasIssue = hasIssue || nextLineStatus === WmsFulfillmentLineStatus.ISSUE;
+
+      await tx.wmsFulfillmentLine.update({
+        where: { id: line.id },
+        data: {
+          quantityAllocated: Math.min(allocated, required),
+          quantityPicked: Math.min(picked, required),
+          status: nextLineStatus,
+          issueReason: nextLineStatus === WmsFulfillmentLineStatus.READY
+            || nextLineStatus === WmsFulfillmentLineStatus.PICKED
+            ? null
+            : line.issueReason,
+        },
+      });
+    }
+
+    const nextOrderStatus = this.resolveFulfillmentOrderStatusAfterInventoryVoid({
+      currentStatus: order.status,
+      claimedById: order.claimedById,
+      totalQuantity,
+      allocatedQuantity,
+      pickedQuantity,
+      hasIssue,
+    });
+
+    await tx.wmsFulfillmentOrder.update({
+      where: { id: order.id },
+      data: {
+        totalQuantity,
+        allocatedQuantity,
+        pickedQuantity,
+        status: nextOrderStatus,
+        completedAt: nextOrderStatus === WmsFulfillmentOrderStatus.READY_FOR_PACK
+          ? order.completedAt ?? now
+          : null,
+        issueReason: totalQuantity === 0 ? order.issueReason ?? 'Order has no pickable variation items' : null,
+      },
+    });
+  }
+
+  private resolveFulfillmentLineStatusAfterInventoryVoid(
+    required: number,
+    allocated: number,
+    picked: number,
+    currentStatus: WmsFulfillmentLineStatus,
+  ) {
+    if (currentStatus === WmsFulfillmentLineStatus.CANCELED) {
+      return WmsFulfillmentLineStatus.CANCELED;
+    }
+
+    if (required <= 0) {
+      return WmsFulfillmentLineStatus.ISSUE;
+    }
+
+    if (picked >= required) {
+      return WmsFulfillmentLineStatus.PICKED;
+    }
+
+    if (allocated >= required) {
+      return WmsFulfillmentLineStatus.READY;
+    }
+
+    if (allocated > 0) {
+      return WmsFulfillmentLineStatus.PARTIAL;
+    }
+
+    return WmsFulfillmentLineStatus.RESTOCKING;
+  }
+
+  private resolveFulfillmentOrderStatusAfterInventoryVoid(params: {
+    currentStatus: WmsFulfillmentOrderStatus;
+    claimedById: string | null;
+    totalQuantity: number;
+    allocatedQuantity: number;
+    pickedQuantity: number;
+    hasIssue: boolean;
+  }) {
+    if (params.currentStatus === WmsFulfillmentOrderStatus.CANCELED) {
+      return WmsFulfillmentOrderStatus.CANCELED;
+    }
+
+    if (params.currentStatus === WmsFulfillmentOrderStatus.PACKED) {
+      return WmsFulfillmentOrderStatus.PACKED;
+    }
+
+    if (params.currentStatus === WmsFulfillmentOrderStatus.PACKING) {
+      return WmsFulfillmentOrderStatus.PACKING;
+    }
+
+    if (params.totalQuantity <= 0 || params.hasIssue) {
+      return WmsFulfillmentOrderStatus.ISSUE;
+    }
+
+    if (params.pickedQuantity >= params.totalQuantity) {
+      return WmsFulfillmentOrderStatus.READY_FOR_PACK;
+    }
+
+    if (params.currentStatus === WmsFulfillmentOrderStatus.IN_PICKING && params.claimedById) {
+      return WmsFulfillmentOrderStatus.IN_PICKING;
+    }
+
+    if (params.allocatedQuantity >= params.totalQuantity) {
+      return WmsFulfillmentOrderStatus.READY;
+    }
+
+    if (params.allocatedQuantity > 0) {
+      return WmsFulfillmentOrderStatus.PARTIAL;
+    }
+
+    return WmsFulfillmentOrderStatus.RESTOCKING;
   }
 
   private async recordInventoryActivity(params: {

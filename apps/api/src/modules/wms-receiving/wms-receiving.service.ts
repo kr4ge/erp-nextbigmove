@@ -1168,21 +1168,7 @@ export class WmsReceivingService {
           receiveQuantity,
           unitCost:
             requestLine?.unitCost
-            ?? (
-              purchasingBatch.requestType === 'SELF_BUY'
-                ? this.toNumber(line.partnerUnitCost)
-                : this.toNumber(line.supplierUnitCost)
-            )
-            ?? (
-              purchasingBatch.requestType === 'SELF_BUY'
-                ? null
-                : this.toNumber(line.partnerUnitCost)
-            )
-            ?? (
-              purchasingBatch.requestType === 'SELF_BUY'
-                ? null
-                : this.toNumber(line.resolvedProfile?.supplierUnitCost)
-            )
+            ?? this.toNumber(line.partnerUnitCost)
             ?? (
               purchasingBatch.requestType === 'SELF_BUY'
                 ? null
@@ -1296,8 +1282,7 @@ export class WmsReceivingService {
         select: { id: true },
       });
 
-      const unitCodePrefix = this.buildUnitCodePrefix(partnerRequestLabel, warehouse.code);
-      let nextUnitNumber = await this.getNextUnitNumber(tx, unitCodePrefix);
+      const unitCodePrefix = this.buildUnitCodePrefix(partnerRequestLabel);
       const unitBarcodes = await this.reserveUnitBarcodes(
         tx,
         selectedLines.reduce((total, entry) => total + entry.receiveQuantity, 0),
@@ -1305,9 +1290,8 @@ export class WmsReceivingService {
       let unitBarcodeIndex = 0;
       const unitRows = selectedLines.flatMap((entry) =>
         Array.from({ length: entry.receiveQuantity }, () => {
-          const unitIdentifier = this.buildUnitIdentifier(unitCodePrefix, nextUnitNumber);
           const unitBarcode = unitBarcodes[unitBarcodeIndex];
-          nextUnitNumber += 1;
+          const unitIdentifier = this.buildUnitIdentifier(unitCodePrefix, unitBarcode);
           unitBarcodeIndex += 1;
 
           return {
@@ -1566,7 +1550,6 @@ export class WmsReceivingService {
         receiveQuantity: Math.max(0, Math.floor(line.receiveQuantity)),
         unitCost:
           line.unitCost
-          ?? this.toNumber(profile.supplierUnitCost)
           ?? this.toNumber(profile.inhouseUnitCost),
         notes: this.cleanOptionalText(line.notes),
       };
@@ -1627,8 +1610,7 @@ export class WmsReceivingService {
         select: { id: true },
       });
 
-      const unitCodePrefix = this.buildUnitCodePrefix(partnerRequestLabel, warehouse.code);
-      let nextUnitNumber = await this.getNextUnitNumber(tx, unitCodePrefix);
+      const unitCodePrefix = this.buildUnitCodePrefix(partnerRequestLabel);
       const unitBarcodes = await this.reserveUnitBarcodes(
         tx,
         selectedLines.reduce((total, entry) => total + entry.receiveQuantity, 0),
@@ -1636,9 +1618,8 @@ export class WmsReceivingService {
       let unitBarcodeIndex = 0;
       const unitRows = selectedLines.flatMap((entry) =>
         Array.from({ length: entry.receiveQuantity }, () => {
-          const unitIdentifier = this.buildUnitIdentifier(unitCodePrefix, nextUnitNumber);
           const unitBarcode = unitBarcodes[unitBarcodeIndex];
-          nextUnitNumber += 1;
+          const unitIdentifier = this.buildUnitIdentifier(unitCodePrefix, unitBarcode);
           unitBarcodeIndex += 1;
 
           return {
@@ -2215,10 +2196,9 @@ export class WmsReceivingService {
     return `RCV-${Date.now().toString(36).toUpperCase()}`;
   }
 
-  private buildUnitCodePrefix(partnerName: string, warehouseCode: string) {
+  private buildUnitCodePrefix(partnerName: string) {
     const partnerInitials = this.buildPartnerInitials(partnerName);
-    const warehouseToken = this.buildWarehouseToken(warehouseCode);
-    return `${partnerInitials}${warehouseToken}`;
+    return partnerInitials;
   }
 
   private resolvePartnerRequestLabel(input: {
@@ -2243,56 +2223,16 @@ export class WmsReceivingService {
   private buildPartnerInitials(partnerName: string) {
     const normalized = partnerName.toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').trim();
     const words = normalized.split(/\s+/).filter(Boolean);
-    const initials = words.map((word) => word[0]).join('').slice(0, 3);
     const compact = normalized.replace(/[^A-Z0-9]/g, '');
+    const initials = words.length > 1
+      ? words.map((word) => word[0]).join('').slice(0, 3)
+      : compact.slice(0, 3);
 
     return (initials || compact || 'PRT').padEnd(3, 'X').slice(0, 3);
   }
 
-  private buildWarehouseToken(warehouseCode: string) {
-    const digits = warehouseCode.replace(/[^0-9]/g, '');
-    if (digits.length >= 2) {
-      return digits.slice(-2);
-    }
-
-    const alphanumeric = warehouseCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    return (digits + alphanumeric).padEnd(2, '0').slice(0, 2);
-  }
-
-  private async getNextUnitNumber(tx: Prisma.TransactionClient, prefix: string) {
-    const latest = await tx.wmsInventoryUnit.findMany({
-      where: {
-        code: {
-          startsWith: prefix,
-        },
-      },
-      select: {
-        code: true,
-      },
-      orderBy: [{ code: 'desc' }],
-      take: 25,
-    });
-
-    const regex = new RegExp(`^${prefix}(\\d{8})$`);
-    const max = latest.reduce((currentMax, row) => {
-      const match = row.code.match(regex);
-      if (!match) {
-        return currentMax;
-      }
-
-      const parsed = Number(match[1]);
-      if (!Number.isFinite(parsed)) {
-        return currentMax;
-      }
-
-      return Math.max(currentMax, parsed);
-    }, 0);
-
-    return max + 1;
-  }
-
-  private buildUnitIdentifier(prefix: string, unitNumber: number) {
-    return `${prefix}${unitNumber.toString().padStart(8, '0')}`;
+  private buildUnitIdentifier(prefix: string, unitBarcode: string) {
+    return `${prefix}${unitBarcode}`;
   }
 
   private async reserveUnitBarcodes(tx: Prisma.TransactionClient, count: number) {

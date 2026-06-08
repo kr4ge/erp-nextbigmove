@@ -8,6 +8,7 @@ import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
 import {
   hasAnyAdminPermission,
   WMS_INVENTORY_ADJUST_PERMISSIONS,
+  WMS_INVENTORY_DELETE_PERMISSIONS,
   WMS_INVENTORY_PRINT_LABELS_PERMISSIONS,
   WMS_INVENTORY_TRANSFER_PERMISSIONS,
 } from '@/lib/wms-permissions';
@@ -21,11 +22,13 @@ import {
   fetchWmsInventoryUnitTransferOptions,
   previewWmsInventoryStoreTransfer,
   recordWmsInventoryUnitLabelPrint,
+  voidWmsInventoryUnit,
 } from '../_services/inventory.service';
 import type {
   CreateWmsInventoryAdjustmentInput,
   CreateWmsInventoryStoreTransferInput,
   CreateWmsInventoryTransferInput,
+  VoidWmsInventoryUnitInput,
   WmsInventoryUnitRecord,
   WmsInventoryUnitStatus,
 } from '../_types/inventory';
@@ -360,6 +363,32 @@ export function useInventoryController() {
     },
   });
 
+  const voidUnitMutation = useMutation({
+    mutationFn: (input: VoidWmsInventoryUnitInput) =>
+      voidWmsInventoryUnit(input, selectedTenantId),
+    onSuccess: async (response) => {
+      setSelectedUnitIds((current) => current.filter((unitId) => unitId !== response.unit.id));
+      setUnitModal((current) => {
+        if (!current.open || !current.unit || current.unit.id !== response.unit.id) {
+          return current;
+        }
+
+        return {
+          open: true,
+          unit: response.unit,
+        };
+      });
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-overview'] }),
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-unit-movements'] }),
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-unit-transfer-options'] }),
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-transfers'] }),
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-store-transfer-options'] }),
+      ]);
+    },
+  });
+
   async function recordUnitLabelPrint(unitId: string, action: 'PRINT' | 'REPRINT') {
     try {
       await recordUnitLabelPrintMutation.mutateAsync({ unitId, action });
@@ -379,6 +408,14 @@ export function useInventoryController() {
   async function adjustUnit(input: CreateWmsInventoryAdjustmentInput) {
     try {
       await createAdjustmentMutation.mutateAsync(input);
+    } catch (error) {
+      throw new Error(getErrorMessage(error));
+    }
+  }
+
+  async function voidUnit(input: VoidWmsInventoryUnitInput) {
+    try {
+      await voidUnitMutation.mutateAsync(input);
     } catch (error) {
       throw new Error(getErrorMessage(error));
     }
@@ -475,6 +512,11 @@ export function useInventoryController() {
       permissions,
       WMS_INVENTORY_ADJUST_PERMISSIONS,
     ),
+    canVoidUnits: hasAnyAdminPermission(
+      user?.role ?? null,
+      permissions,
+      WMS_INVENTORY_DELETE_PERMISSIONS,
+    ),
     isRecordingUnitLabelPrint: recordUnitLabelPrintMutation.isPending,
     unitMovements: unitMovementsQuery.data?.movements ?? [],
     transferOptions: unitTransferOptionsQuery.data ?? null,
@@ -493,6 +535,7 @@ export function useInventoryController() {
     isTransferringUnit: createTransferMutation.isPending,
     isTransferringStoreUnits: createStoreTransferMutation.isPending,
     isAdjustingUnit: createAdjustmentMutation.isPending,
+    isVoidingUnit: voidUnitMutation.isPending,
     setSelectedTenantId: (tenantId: string | undefined) => {
       setSelectedTenantId(tenantId);
       setSelectedStatus(undefined);
@@ -505,6 +548,7 @@ export function useInventoryController() {
     recordUnitLabelPrint,
     transferUnit,
     adjustUnit,
+    voidUnit,
     toggleUnitSelection,
     toggleVisibleUnitSelection,
     clearUnitSelection: () => setSelectedUnitIds([]),

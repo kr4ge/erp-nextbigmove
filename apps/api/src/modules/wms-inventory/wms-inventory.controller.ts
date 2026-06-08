@@ -10,6 +10,7 @@ import { GetWmsInventoryStoreTransferOptionsDto } from './dto/get-wms-inventory-
 import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.dto';
 import { GetWmsInventoryUnitMovementsDto } from './dto/get-wms-inventory-unit-movements.dto';
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
+import { VoidWmsInventoryUnitDto } from './dto/void-wms-inventory-unit.dto';
 import { WmsInventoryService } from './wms-inventory.service';
 
 @Controller('wms/inventory')
@@ -61,6 +62,16 @@ export class WmsInventoryController {
     @Query('tenantId') tenantId?: string,
   ) {
     return this.wmsInventoryService.recordUnitLabelPrint(id, body, tenantId);
+  }
+
+  @Post(':id/void')
+  @Permissions('wms.inventory.delete')
+  async voidUnit(
+    @Param('id') id: string,
+    @Body() body: VoidWmsInventoryUnitDto,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.wmsInventoryService.voidUnit(id, body, tenantId);
   }
 
   @Post('transfers')

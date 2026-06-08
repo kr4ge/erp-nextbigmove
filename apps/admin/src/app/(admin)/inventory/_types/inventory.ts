@@ -74,6 +74,12 @@ export type WmsInventoryMovementRecord = {
   createdAt: string;
 };
 
+export type VoidWmsInventoryUnitInput = {
+  unitId: string;
+  reason: string;
+  notes?: string;
+};
+
 export type WmsInventoryTransferOptionsResponse = {
   unit: {
     id: string;

@@ -485,7 +485,7 @@ export function useReceivingController() {
           variationLabel: product.variationDisplayId ?? product.variationId ?? 'No variation',
           customId: product.productCustomId ?? product.customId ?? null,
           hint: product.productCustomId ?? product.customId ?? null,
-          defaultUnitCost: parseOptionalCost(product.supplierUnitCost) ?? parseOptionalCost(product.inhouseUnitCost),
+          defaultUnitCost: parseOptionalCost(product.inhouseUnitCost),
         })),
     [manualProductsQuery.data?.products],
   );

@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { History, MoveHorizontal, Printer, RefreshCcw, Settings2 } from 'lucide-react';
+import { Archive, History, MoveHorizontal, Printer, RefreshCcw, Settings2 } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import { InventoryUnitAdjustmentPanel } from './inventory-unit-adjustment-panel';
 import type {
   CreateWmsInventoryAdjustmentInput,
   CreateWmsInventoryTransferInput,
+  VoidWmsInventoryUnitInput,
   WmsInventoryMovementRecord,
   WmsInventoryTransferOptionsResponse,
   WmsInventoryUnitRecord,
@@ -28,14 +29,17 @@ type InventoryUnitModalProps = {
   canPrintLabels: boolean;
   canTransferUnits: boolean;
   canAdjustUnits: boolean;
+  canVoidUnits: boolean;
   isRecordingPrint: boolean;
   isLoadingMovements: boolean;
   isLoadingTransferOptions: boolean;
   isTransferringUnit: boolean;
   isAdjustingUnit: boolean;
+  isVoidingUnit: boolean;
   onRecordPrint: (unitId: string, action: 'PRINT' | 'REPRINT') => Promise<void>;
   onTransferUnit: (input: CreateWmsInventoryTransferInput) => Promise<void>;
   onAdjustUnit: (input: CreateWmsInventoryAdjustmentInput) => Promise<void>;
+  onVoidUnit: (input: VoidWmsInventoryUnitInput) => Promise<void>;
   onClose: () => void;
 };
 
@@ -50,14 +54,17 @@ export function InventoryUnitModal({
   canPrintLabels,
   canTransferUnits,
   canAdjustUnits,
+  canVoidUnits,
   isRecordingPrint,
   isLoadingMovements,
   isLoadingTransferOptions,
   isTransferringUnit,
   isAdjustingUnit,
+  isVoidingUnit,
   onRecordPrint,
   onTransferUnit,
   onAdjustUnit,
+  onVoidUnit,
   onClose,
 }: InventoryUnitModalProps) {
   const [activeTab, setActiveTab] = useState<UnitModalTab>('overview');
@@ -70,6 +77,9 @@ export function InventoryUnitModal({
   const [binId, setBinId] = useState('');
   const [operationalLocationId, setOperationalLocationId] = useState('');
   const [transferNotes, setTransferNotes] = useState('');
+  const [voidReason, setVoidReason] = useState('');
+  const [voidNotes, setVoidNotes] = useState('');
+  const [voidError, setVoidError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !unit) {
@@ -85,6 +95,9 @@ export function InventoryUnitModal({
     setBinId('');
     setOperationalLocationId('');
     setTransferNotes('');
+    setVoidReason('');
+    setVoidNotes('');
+    setVoidError(null);
   }, [open, unit]);
 
   const barcodeValue = unit ? normalizeBarcodeValue(unit.barcode) : '';
@@ -176,6 +189,26 @@ export function InventoryUnitModal({
       setActiveTab('movements');
     } catch (error) {
       setTransferError(error instanceof Error ? error.message : 'Unable to transfer unit');
+    }
+  };
+
+  const handleVoid = async () => {
+    if (!unit || !canVoidUnits || !voidReason.trim()) {
+      return;
+    }
+
+    try {
+      setVoidError(null);
+      await onVoidUnit({
+        unitId: unit.id,
+        reason: voidReason.trim(),
+        notes: voidNotes.trim() || undefined,
+      });
+      setVoidReason('');
+      setVoidNotes('');
+      setActiveTab('movements');
+    } catch (error) {
+      setVoidError(error instanceof Error ? error.message : 'Unable to void unit');
     }
   };
 
@@ -290,6 +323,55 @@ export function InventoryUnitModal({
                   value={`${unit.labelPrintCount}x${unit.lastLabelPrintedAt ? ` · Last ${formatDateTime(unit.lastLabelPrintedAt)}` : ''}`}
                 />
                 <MetaItem label="Source" value={unit.source?.label ?? unit.source?.type ?? '—'} />
+                {unit.status === 'ARCHIVED' ? (
+                  <div className="rounded-[18px] border border-[#d7e0e7] bg-[#fbfcfc] px-4 py-3">
+                    <p className="card-label">Void</p>
+                    <p className="mt-1 text-[12px] font-medium text-[#637786]">
+                      This unit is already archived.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-[18px] border border-rose-200 bg-rose-50/70 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Archive className="h-4 w-4 text-rose-700" />
+                      <p className="text-[12px] font-bold uppercase tracking-[0.24em] text-rose-700">
+                        Void Unit
+                      </p>
+                    </div>
+                    <p className="mt-2 text-[12px] text-rose-800">
+                      Archives this unit and frees its location. Reserved units will be released.
+                    </p>
+
+                    <input
+                      value={voidReason}
+                      onChange={(event) => setVoidReason(event.target.value)}
+                      placeholder="Reason required"
+                      className="mt-3 w-full rounded-[12px] border border-rose-200 bg-white px-3 py-2 text-[12px] text-primary outline-none transition placeholder:text-rose-300 focus:border-rose-400"
+                    />
+                    <textarea
+                      value={voidNotes}
+                      onChange={(event) => setVoidNotes(event.target.value)}
+                      rows={2}
+                      placeholder="Optional notes"
+                      className="mt-2 w-full rounded-[12px] border border-rose-200 bg-white px-3 py-2 text-[12px] text-primary outline-none transition placeholder:text-rose-300 focus:border-rose-400"
+                    />
+
+                    {voidError ? (
+                      <div className="mt-2 rounded-[12px] border border-rose-200 bg-white px-3 py-2 text-[12px] text-rose-700">
+                        {voidError}
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => void handleVoid()}
+                      disabled={!canVoidUnits || !voidReason.trim() || isVoidingUnit}
+                      className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-[12px] border border-rose-300 bg-white px-3 text-[12px] font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {canVoidUnits ? (isVoidingUnit ? 'Voiding…' : 'Void unit') : 'Void permission required'}
+                    </button>
+                  </div>
+                )}
               </aside>
             </div>
           ) : null}

@@ -125,14 +125,17 @@ export function InventoryStockScreen() {
         canPrintLabels={inventory.canPrintLabels}
         canTransferUnits={inventory.canTransferUnits}
         canAdjustUnits={inventory.canAdjustUnits}
+        canVoidUnits={inventory.canVoidUnits}
         isRecordingPrint={inventory.isRecordingUnitLabelPrint}
         isLoadingMovements={inventory.isLoadingUnitMovements}
         isLoadingTransferOptions={inventory.isLoadingUnitTransferOptions}
         isTransferringUnit={inventory.isTransferringUnit}
         isAdjustingUnit={inventory.isAdjustingUnit}
+        isVoidingUnit={inventory.isVoidingUnit}
         onRecordPrint={inventory.recordUnitLabelPrint}
         onTransferUnit={inventory.transferUnit}
         onAdjustUnit={inventory.adjustUnit}
+        onVoidUnit={inventory.voidUnit}
         onClose={inventory.closeUnitModal}
       />
 

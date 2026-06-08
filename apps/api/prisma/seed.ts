@@ -188,7 +188,7 @@ const PERMISSIONS: { key: string; description: string }[] = [
   { key: 'wms.inventory.read', description: 'Read WMS inventory units and stock views' },
   { key: 'wms.inventory.write', description: 'Create WMS inventory records' },
   { key: 'wms.inventory.edit', description: 'Edit WMS inventory records' },
-  { key: 'wms.inventory.delete', description: 'Delete WMS inventory records' },
+  { key: 'wms.inventory.delete', description: 'Void WMS inventory units' },
   { key: 'wms.inventory.print_labels', description: 'Print and reprint WMS unit labels' },
   { key: 'wms.inventory.transfer', description: 'Transfer WMS inventory between locations' },
   { key: 'wms.inventory.adjust', description: 'Adjust WMS inventory balances and unit states' },

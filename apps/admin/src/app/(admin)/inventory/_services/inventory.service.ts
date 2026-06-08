@@ -6,6 +6,7 @@ import type {
   GetWmsInventoryOverviewParams,
   GetWmsInventoryStoreTransferOptionsParams,
   GetWmsInventoryTransfersParams,
+  VoidWmsInventoryUnitInput,
   WmsInventoryMovementRecord,
   WmsInventoryOverviewResponse,
   WmsInventoryStoreTransferPreviewResponse,
@@ -162,5 +163,31 @@ export async function createWmsInventoryAdjustment(
       createdAt: string;
     };
     units: WmsInventoryOverviewResponse['units'];
+  };
+}
+
+export async function voidWmsInventoryUnit(
+  input: VoidWmsInventoryUnitInput,
+  tenantId?: string,
+) {
+  const response = await apiClient.post(
+    `/wms/inventory/${input.unitId}/void`,
+    {
+      reason: input.reason,
+      ...(input.notes ? { notes: input.notes } : {}),
+    },
+    {
+      params: tenantId ? { tenantId } : undefined,
+    },
+  );
+
+  return response.data as {
+    voided: {
+      unitId: string;
+      unitCode: string;
+      releasedReservations: number;
+      reason: string;
+    };
+    unit: WmsInventoryOverviewResponse['units'][number];
   };
 }
