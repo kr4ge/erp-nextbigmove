@@ -191,5 +191,6 @@ export type CreateWmsStoxReleaseInput = {
   buildNumber: number;
   releaseNotes?: string | null;
   isActive?: boolean;
-  file: File;
+  file?: File | null;
+  sourceUrl?: string | null;
 };

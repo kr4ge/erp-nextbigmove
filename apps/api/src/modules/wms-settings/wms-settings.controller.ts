@@ -20,7 +20,7 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { CreateWmsSettingsRoleDto, UpdateWmsSettingsRoleDto } from './dto/wms-settings-role.dto';
-import { CreateWmsStoxReleaseDto } from './dto/wms-stox-release.dto';
+import { CreateWmsStoxReleaseDto, ImportWmsStoxReleaseDto } from './dto/wms-stox-release.dto';
 import { CreateWmsSettingsUserDto, UpdateWmsSettingsUserDto } from './dto/wms-settings-user.dto';
 import { WmsSettingsService } from './wms-settings.service';
 import { UploadedBinaryFile, WmsStoxReleasesService } from './wms-stox-releases.service';
@@ -165,6 +165,15 @@ export class WmsSettingsController {
     @UploadedFile() file: UploadedBinaryFile,
   ) {
     return this.wmsStoxReleasesService.createRelease(req.user, body, file);
+  }
+
+  @Post('stox/releases/import-url')
+  @Permissions('wms.stox.write')
+  async importStoxReleaseFromUrl(
+    @Request() req,
+    @Body() body: ImportWmsStoxReleaseDto,
+  ) {
+    return this.wmsStoxReleasesService.importReleaseFromUrl(req.user, body);
   }
 
   @Post('stox/releases/:id/activate')

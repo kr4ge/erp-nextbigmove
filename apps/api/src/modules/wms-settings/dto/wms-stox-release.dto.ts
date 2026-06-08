@@ -55,3 +55,10 @@ export class CreateWmsStoxReleaseDto {
   @IsOptional()
   isActive?: boolean;
 }
+
+export class ImportWmsStoxReleaseDto extends CreateWmsStoxReleaseDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
+  sourceUrl: string;
+}

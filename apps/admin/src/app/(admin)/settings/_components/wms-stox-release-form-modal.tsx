@@ -14,18 +14,22 @@ type WmsStoxReleaseFormModalProps = {
 };
 
 type FormState = {
+  sourceMode: 'url' | 'file';
   version: string;
   buildNumber: string;
   releaseNotes: string;
   isActive: boolean;
+  sourceUrl: string;
   file: File | null;
 };
 
 const EMPTY_FORM: FormState = {
+  sourceMode: 'url',
   version: '',
   buildNumber: '',
   releaseNotes: '',
   isActive: true,
+  sourceUrl: '',
   file: null,
 };
 
@@ -48,11 +52,19 @@ export function WmsStoxReleaseFormModal({
     setLocalError(null);
   }, [open]);
 
-  const setField = (key: keyof Omit<FormState, 'file' | 'isActive'>, value: string) => {
+  const setField = (key: keyof Omit<FormState, 'file' | 'isActive' | 'sourceMode'>, value: string) => {
     setForm((current) => ({
       ...current,
       [key]: value,
     }));
+  };
+
+  const setSourceMode = (sourceMode: FormState['sourceMode']) => {
+    setForm((current) => ({
+      ...current,
+      sourceMode,
+    }));
+    setLocalError(null);
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -70,7 +82,27 @@ export function WmsStoxReleaseFormModal({
 
     const version = form.version.trim();
     const buildNumber = Number(form.buildNumber);
-    if (!form.file) {
+    const sourceUrl = form.sourceUrl.trim();
+
+    if (!version) {
+      setLocalError('Version is required.');
+      return;
+    }
+
+    if (form.sourceMode === 'url') {
+      try {
+        const parsedUrl = new URL(sourceUrl);
+        if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+          setLocalError('APK URL must use HTTPS or HTTP.');
+          return;
+        }
+      } catch {
+        setLocalError('Enter a valid direct APK download URL.');
+        return;
+      }
+    }
+
+    if (form.sourceMode === 'file' && !form.file) {
       setLocalError('Select the STOX Android APK before uploading.');
       return;
     }
@@ -86,14 +118,19 @@ export function WmsStoxReleaseFormModal({
       buildNumber,
       releaseNotes: form.releaseNotes.trim() || null,
       isActive: form.isActive,
-      file: form.file,
+      sourceUrl: form.sourceMode === 'url' ? sourceUrl : null,
+      file: form.sourceMode === 'file' ? form.file : null,
     });
   };
+
+  const hasSource = form.sourceMode === 'url'
+    ? Boolean(form.sourceUrl.trim())
+    : Boolean(form.file);
 
   return (
     <WmsModal
       open={open}
-      title="Upload STOX Android release"
+      title="Publish STOX Android release"
       onClose={onClose}
       panelClassName="max-w-[760px]"
       footer={
@@ -108,10 +145,12 @@ export function WmsStoxReleaseFormModal({
           <button
             type="submit"
             form="wms-stox-release-form"
-            disabled={isSubmitting || !form.file}
+            disabled={isSubmitting || !hasSource}
             className="inline-flex h-10 items-center rounded-[12px] bg-primary px-4 text-[13px] font-semibold text-white transition hover:bg-[#0f3040] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isSubmitting ? 'Uploading...' : 'Upload release'}
+            {isSubmitting
+              ? form.sourceMode === 'url' ? 'Importing...' : 'Uploading...'
+              : form.sourceMode === 'url' ? 'Import release' : 'Upload release'}
           </button>
         </div>
       }
@@ -124,6 +163,31 @@ export function WmsStoxReleaseFormModal({
         ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2 grid gap-2 rounded-[16px] border border-[#dce4ea] bg-[#fbfcfc] p-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setSourceMode('url')}
+              className={`rounded-[12px] px-3 py-2.5 text-left text-[13px] font-semibold transition ${
+                form.sourceMode === 'url'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-primary hover:bg-white'
+              }`}
+            >
+              Import from URL
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceMode('file')}
+              className={`rounded-[12px] px-3 py-2.5 text-left text-[13px] font-semibold transition ${
+                form.sourceMode === 'file'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-primary hover:bg-white'
+              }`}
+            >
+              Upload APK file
+            </button>
+          </div>
+
           <WmsFormField label="Version">
             <input
               required
@@ -157,22 +221,39 @@ export function WmsStoxReleaseFormModal({
           </div>
 
           <div className="sm:col-span-2">
-            <WmsFormField label="Android APK">
-              <div className="space-y-2">
-                <input
-                  required
-                  type="file"
-                  accept=".apk,application/vnd.android.package-archive,application/octet-stream"
-                  onChange={handleFileChange}
-                  className="block w-full rounded-[14px] border border-[#dce4ea] bg-white px-3 py-2.5 text-sm text-primary file:mr-3 file:rounded-[10px] file:border-0 file:bg-[#eff5f8] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
-                />
-                {form.file ? (
+            {form.sourceMode === 'url' ? (
+              <WmsFormField label="Direct APK URL">
+                <div className="space-y-2">
+                  <input
+                    required
+                    value={form.sourceUrl}
+                    onChange={(event) => setField('sourceUrl', event.target.value)}
+                    className="input"
+                    placeholder="https://example.com/stox-release.apk"
+                  />
                   <p className="text-xs text-[#637786]">
-                    {form.file.name} • {Intl.NumberFormat('en-US').format(form.file.size)} bytes
+                    Paste the direct APK download link. Do not use an HTML build details page.
                   </p>
-                ) : null}
-              </div>
-            </WmsFormField>
+                </div>
+              </WmsFormField>
+            ) : (
+              <WmsFormField label="Android APK">
+                <div className="space-y-2">
+                  <input
+                    required
+                    type="file"
+                    accept=".apk,application/vnd.android.package-archive,application/octet-stream"
+                    onChange={handleFileChange}
+                    className="block w-full rounded-[14px] border border-[#dce4ea] bg-white px-3 py-2.5 text-sm text-primary file:mr-3 file:rounded-[10px] file:border-0 file:bg-[#eff5f8] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
+                  />
+                  {form.file ? (
+                    <p className="text-xs text-[#637786]">
+                      {form.file.name} • {Intl.NumberFormat('en-US').format(form.file.size)} bytes
+                    </p>
+                  ) : null}
+                </div>
+              </WmsFormField>
+            )}
           </div>
 
           <label className="sm:col-span-2 flex items-center gap-3 rounded-[14px] border border-[#dce4ea] bg-[#fbfcfc] px-3 py-3 text-sm text-primary">

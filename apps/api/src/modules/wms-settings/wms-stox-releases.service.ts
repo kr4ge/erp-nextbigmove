@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'crypto';
-import { createReadStream } from 'fs';
-import { unlink } from 'fs/promises';
-import { Readable } from 'stream';
+import { createReadStream, createWriteStream } from 'fs';
+import { mkdir, unlink } from 'fs/promises';
+import { join } from 'path';
+import { Readable, Transform } from 'stream';
+import { pipeline } from 'stream/promises';
 import {
   BadRequestException,
   ConflictException,
@@ -15,7 +17,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ObjectStorageService } from '../../common/services/object-storage.service';
-import { CreateWmsStoxReleaseDto } from './dto/wms-stox-release.dto';
+import { CreateWmsStoxReleaseDto, ImportWmsStoxReleaseDto } from './dto/wms-stox-release.dto';
 
 type WmsSettingsActor = {
   id?: string;
@@ -55,6 +57,7 @@ type ReleaseRecord = Prisma.WmsStoxAppReleaseGetPayload<{
 
 const STOX_PLATFORM = WmsStoxAppPlatform.ANDROID;
 const STOX_CHANNEL = WmsStoxReleaseChannel.INTERNAL;
+const APK_TOO_LARGE_ERROR = 'STOX_APK_TOO_LARGE';
 
 @Injectable()
 export class WmsStoxReleasesService {
@@ -264,6 +267,18 @@ export class WmsStoxReleasesService {
     }
   }
 
+  async importReleaseFromUrl(actor: WmsSettingsActor, dto: ImportWmsStoxReleaseDto) {
+    if (!this.objectStorageService.isConfigured()) {
+      throw new BadRequestException('Object storage is not configured');
+    }
+
+    const sourceUrl = this.normalizeApkSourceUrl(dto.sourceUrl);
+    const fallbackFileName = this.buildDownloadFileName(dto.version.trim(), dto.buildNumber);
+    const file = await this.downloadRemoteApkToTempFile(sourceUrl, fallbackFileName);
+
+    return this.createRelease(actor, dto, file);
+  }
+
   async activateRelease(actor: WmsSettingsActor, releaseId: string) {
     const actorId = actor.id ?? actor.userId ?? null;
 
@@ -388,6 +403,114 @@ export class WmsStoxReleasesService {
 
   private buildDownloadFileName(version: string, buildNumber: number) {
     return `stox-${version}-${buildNumber}.apk`;
+  }
+
+  private normalizeApkSourceUrl(value: string) {
+    const trimmed = value.trim();
+    let parsed: URL;
+
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new BadRequestException('Enter a valid APK download URL');
+    }
+
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new BadRequestException('APK download URL must use HTTPS or HTTP');
+    }
+
+    return parsed.toString();
+  }
+
+  private async downloadRemoteApkToTempFile(
+    sourceUrl: string,
+    fallbackFileName: string,
+  ): Promise<UploadedBinaryFile> {
+    let response: Response;
+
+    try {
+      response = await fetch(sourceUrl, { redirect: 'follow' });
+    } catch {
+      throw new BadRequestException('Unable to download STOX APK from URL');
+    }
+
+    if (!response.ok || !response.body) {
+      throw new BadRequestException(`Unable to download STOX APK from URL (${response.status})`);
+    }
+
+    const maxBytes = this.stoxApkMaxFileMb * 1024 * 1024;
+    const contentLength = Number(response.headers.get('content-length') ?? '0');
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      throw new BadRequestException(`STOX Android APK must be ${this.stoxApkMaxFileMb}MB or smaller`);
+    }
+
+    const uploadRoot = await this.ensureStoxUploadRoot();
+    const tempPath = join(uploadRoot, `${Date.now()}-${randomUUID()}.apk`);
+    let downloadedBytes = 0;
+
+    const byteCounter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        downloadedBytes += chunk.length;
+        if (downloadedBytes > maxBytes) {
+          callback(new Error(APK_TOO_LARGE_ERROR));
+          return;
+        }
+
+        callback(null, chunk);
+      },
+    });
+
+    try {
+      await pipeline(
+        Readable.fromWeb(response.body as never),
+        byteCounter,
+        createWriteStream(tempPath),
+      );
+    } catch (error) {
+      await unlink(tempPath).catch(() => undefined);
+      if (error instanceof Error && error.message === APK_TOO_LARGE_ERROR) {
+        throw new BadRequestException(`STOX Android APK must be ${this.stoxApkMaxFileMb}MB or smaller`);
+      }
+
+      throw new BadRequestException('Unable to download STOX APK from URL');
+    }
+
+    if (downloadedBytes <= 0) {
+      await unlink(tempPath).catch(() => undefined);
+      throw new BadRequestException('Downloaded STOX APK is empty');
+    }
+
+    const contentType = response.headers.get('content-type')?.split(';')[0]?.trim()
+      || 'application/vnd.android.package-archive';
+    const originalName = this.resolveRemoteApkFileName(response.url || sourceUrl, fallbackFileName);
+
+    return {
+      path: tempPath,
+      size: downloadedBytes,
+      mimetype: contentType,
+      originalname: originalName,
+    };
+  }
+
+  private resolveRemoteApkFileName(sourceUrl: string, fallbackFileName: string) {
+    try {
+      const pathname = new URL(sourceUrl).pathname;
+      const candidate = decodeURIComponent(pathname.split('/').pop() ?? '').trim();
+      if (candidate.toLowerCase().endsWith('.apk')) {
+        return candidate;
+      }
+    } catch {
+      return fallbackFileName;
+    }
+
+    return fallbackFileName;
+  }
+
+  private async ensureStoxUploadRoot() {
+    const uploadRoot = process.env.STOX_APK_UPLOAD_TMP_DIR
+      || join(process.cwd(), 'tmp', 'wms-stox-releases');
+    await mkdir(uploadRoot, { recursive: true });
+    return uploadRoot;
   }
 
   private buildUploadBody(file: UploadedBinaryFile): Buffer | Readable {

@@ -75,6 +75,22 @@ export async function fetchWmsStoxReleases() {
 }
 
 export async function createWmsStoxRelease(input: CreateWmsStoxReleaseInput) {
+  if (input.sourceUrl?.trim()) {
+    const response = await apiClient.post('/wms/settings/stox/releases/import-url', {
+      version: input.version,
+      buildNumber: input.buildNumber,
+      releaseNotes: input.releaseNotes ?? null,
+      isActive: input.isActive ?? true,
+      sourceUrl: input.sourceUrl.trim(),
+    });
+
+    return response.data;
+  }
+
+  if (!input.file) {
+    throw new Error('STOX Android APK file is required');
+  }
+
   const formData = new FormData();
   formData.append('version', input.version);
   formData.append('buildNumber', `${input.buildNumber}`);
