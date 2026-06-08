@@ -123,6 +123,10 @@ export function BasketLabelModal({ open, warehouse, basket, onClose }: BasketLab
               <MetaItem label="Warehouse" value={`${warehouse.name} (${warehouse.code})`} />
               <MetaItem label="Status" value={formatBasketStatus(basket.status)} />
               <MetaItem
+                label="Order Capacity"
+                value={`${basket.activeFulfillmentOrders ?? 0}/${basket.maxFulfillmentOrders} order slots`}
+              />
+              <MetaItem
                 label="Picker"
                 value={basket.assignedPicker ? `${basket.assignedPicker.name} · ${basket.assignedPicker.email}` : 'Not assigned'}
               />

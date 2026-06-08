@@ -144,6 +144,7 @@ export function useReceivingController() {
     ],
     queryFn: () =>
       fetchWmsReceivingOverview({
+        allTenants: !selectedTenantId,
         tenantId: selectedTenantId,
         storeId: selectedStoreId,
         warehouseId: selectedWarehouseId,
@@ -161,6 +162,7 @@ export function useReceivingController() {
     setSelectedWarehouseIdState,
     includeWarehouse: true,
     autoSelectWarehouseOnStoreChange: true,
+    allowAllTenants: true,
   });
 
   const selectedWarehouseOption = useMemo(

@@ -95,6 +95,8 @@ export type WmsWarehouseBasket = {
   id: string;
   barcode: string;
   status: WmsBasketStatus;
+  maxFulfillmentOrders: number;
+  activeFulfillmentOrders: number;
   warehouseId: string | null;
   assignedPicker: {
     name: string;
@@ -201,9 +203,11 @@ export type UpdateWmsLocationInput = Partial<CreateWmsLocationInput>;
 
 export type CreateWmsBasketInput = {
   barcode?: string;
+  maxFulfillmentOrders?: number;
 };
 
 export type UpdateWmsBasketInput = {
   barcode?: string;
   status?: WmsBasketStatus;
+  maxFulfillmentOrders?: number;
 };

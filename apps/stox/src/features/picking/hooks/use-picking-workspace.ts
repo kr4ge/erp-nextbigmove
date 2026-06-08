@@ -478,11 +478,14 @@ function replacePickingTask(
     ? [nextTask, ...historyWithoutTask].slice(0, 20)
     : historyWithoutTask;
   const heldBaskets = buildHeldBasketCollection(
-    current.heldBaskets.filter((basket) => basket.task?.id !== nextTask.id),
+    current.heldBaskets.filter((basket) => (
+      basket.task?.id !== nextTask.id
+      && basket.id !== nextTask.basket?.id
+    )),
     nextTask,
   );
   const availableBaskets = nextTask.basket
-    ? current.availableBaskets.filter((basket) => basket.id !== nextTask.basket?.id)
+    ? reconcileOpenBasketCollection(current.availableBaskets, nextTask.basket)
     : current.availableBaskets;
   const fullHeldBaskets = heldBaskets.filter((basket) => basket.status === 'FULL_HELD').length;
   const activeLoad = Math.max(
@@ -497,7 +500,7 @@ function replacePickingTask(
     picker: {
       ...current.picker,
       activeLoad,
-      availableSlots: availableBaskets.length,
+      availableSlots: countOpenBasketSlots(availableBaskets),
       heldBaskets: heldBaskets.length,
       fullHeldBaskets,
     },
@@ -506,6 +509,22 @@ function replacePickingTask(
     pickedHistory,
     tasks,
   };
+}
+
+function reconcileOpenBasketCollection(
+  current: WmsMobilePickingResponse['availableBaskets'],
+  basket: WmsMobilePickingTask['basket'],
+) {
+  if (!basket) {
+    return current;
+  }
+
+  const nextBaskets = current.filter((currentBasket) => currentBasket.id !== basket.id);
+  if (!isOpenBasketForPicking(basket)) {
+    return nextBaskets;
+  }
+
+  return [basket, ...nextBaskets];
 }
 
 function buildHeldBasketCollection(
@@ -523,6 +542,25 @@ function buildHeldBasketCollection(
     },
     ...current,
   ];
+}
+
+function isOpenBasketForPicking(basket: WmsMobilePickingTask['basket']) {
+  if (!basket) {
+    return false;
+  }
+
+  return (
+    basket.status === 'AVAILABLE'
+    || basket.status === 'ASSIGNED'
+    || basket.status === 'IN_PICKING'
+  ) && basket.activeFulfillmentOrders < basket.maxFulfillmentOrders;
+}
+
+function countOpenBasketSlots(baskets: WmsMobilePickingResponse['availableBaskets']) {
+  return baskets.reduce(
+    (total, basket) => total + Math.max(basket.maxFulfillmentOrders - basket.activeFulfillmentOrders, 0),
+    0,
+  );
 }
 
 function findTaskById(current: WmsMobilePickingResponse, taskId: string) {

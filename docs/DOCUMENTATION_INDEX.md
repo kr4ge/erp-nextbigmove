@@ -8,6 +8,7 @@ Complete index of all documentation in the ERP System.
 docs/
 ├── README.md                                      # Main documentation hub
 ├── DOCUMENTATION_INDEX.md                         # This file - complete index
+├── WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md # Partner integrations production checklist
 ├── stox/                                          # STOX mobile WMS planning
 │   ├── README.md                                  # STOX documentation hub
 │   ├── STOX_MOBILE_WMS_PLAN.md                    # Mobile architecture and rollout
@@ -36,6 +37,7 @@ docs/
 | [Team Isolation Summary](./team-isolation/TEAM_ISOLATION_SUMMARY.md) | Architecture and benefits | Tech leads, Architects |
 | [STOX Mobile WMS Plan](./stox/STOX_MOBILE_WMS_PLAN.md) | Mobile WMS architecture, modules, and rollout | Product, Engineering |
 | [STOX Picking Algorithm Plan](./stox/STOX_PICKING_ALGORITHM_PLAN.md) | Reservation-first picking and packing handoff | Product, WMS Engineering |
+| [WMS Partner Integrations Production Validation](./WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md) | Deployment and role-based validation checklist | QA, WMS Engineering |
 
 ### 🔧 Technical Documentation
 | Document | Description | For Who |
@@ -50,11 +52,13 @@ docs/
 2. **Need to understand the code?** → [Technical Implementation](./team-isolation/TEAM_ISOLATION_IMPLEMENTATION.md)
 3. **Want to test?** → [Testing Guide](./team-isolation/TESTING_GUIDE.md)
 4. **Need overview?** → [Implementation Complete](./team-isolation/IMPLEMENTATION_COMPLETE.md)
+5. **Deploying Partner integrations?** → [WMS Partner Integrations Production Validation](./WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md)
 
 ### For QA/Testers
 1. **Start here** → [Quick Start](./team-isolation/QUICK_START.md)
 2. **Full test scenarios** → [Testing Guide](./team-isolation/TESTING_GUIDE.md)
 3. **Expected behavior** → [Team Isolation Summary](./team-isolation/TEAM_ISOLATION_SUMMARY.md)
+4. **WMS Partner integrations** → [WMS Partner Integrations Production Validation](./WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md)
 
 ### For Project Managers
 1. **What was delivered?** → [Implementation Complete](./team-isolation/IMPLEMENTATION_COMPLETE.md)
@@ -68,6 +72,7 @@ docs/
 3. **Status & next steps** → [Implementation Complete](./team-isolation/IMPLEMENTATION_COMPLETE.md)
 4. **STOX mobile architecture** → [STOX Mobile WMS Plan](./stox/STOX_MOBILE_WMS_PLAN.md)
 5. **STOX picking logic** → [STOX Picking Algorithm Plan](./stox/STOX_PICKING_ALGORITHM_PLAN.md)
+6. **Partner integration deployment checks** → [WMS Partner Integrations Production Validation](./WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md)
 
 ## 🔍 Documentation by Task
 
@@ -94,6 +99,9 @@ docs/
 ### "I need to understand the future mobile WMS architecture"
 1. [STOX Mobile WMS Plan](./stox/STOX_MOBILE_WMS_PLAN.md) - Mobile architecture and workflow ownership
 2. [STOX Picking Algorithm Plan](./stox/STOX_PICKING_ALGORITHM_PLAN.md) - Picking task design and exception rules
+
+### "I need to validate WMS Partner integrations before production"
+1. [WMS Partner Integrations Production Validation](./WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md) - Deployment, permissions, POS store, webhook, and relay checklist
 
 ## 📊 Feature Coverage Matrix
 

@@ -13,7 +13,7 @@ import { RtsTab } from '@/src/features/home/components/rts-tab';
 import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
-import { SectionLabel, TaskHeaderIconButton } from '@/src/features/home/components/stox-primitives';
+import { TaskHeaderIconButton } from '@/src/features/home/components/stox-primitives';
 import { useStockWorkspace } from '../hooks/use-stock-workspace';
 import { StockCountWorkspace } from './stock-count-workspace';
 import { StockExecutionPanel } from './stock-execution-panel';
@@ -38,6 +38,7 @@ type StockWorkspaceProps = {
   rtsInitialTask?: WmsMobilePickingTask | null;
   rtsInitialReturnFlow?: WmsMobileTrackingReturnFlow | null;
   session: StoredSession;
+  onBack?: () => void;
   onRefresh: () => Promise<void>;
   variant?: 'task' | 'utility';
 };
@@ -90,6 +91,7 @@ export function StockWorkspace({
   rtsInitialReturnFlow = null,
   rtsInitialTask = null,
   session,
+  onBack,
   onRefresh,
   variant = 'task',
 }: StockWorkspaceProps) {
@@ -134,18 +136,14 @@ export function StockWorkspace({
   const queueSummary = useMemo(() => {
     if (!workspace.stock) {
       return {
-        onHand: '--',
         pending: '--',
-        queued: '--',
       };
     }
 
     return {
-      onHand: formatStockCount(workspace.stock.summary.unitsOnHand),
       pending: formatStockCount(workspace.pendingActionCount),
-      queued: formatStockCount(workspace.activeTotal),
     };
-  }, [workspace.activeTotal, workspace.pendingActionCount, workspace.stock]);
+  }, [workspace.pendingActionCount, workspace.stock]);
 
   useEffect(() => {
     if (!stockModes.some((item) => item.mode === workspaceMode)) {
@@ -182,15 +180,13 @@ export function StockWorkspace({
     variant === 'task'
     && inventoryView === 'stock'
     && (workspace.mode === 'putaway' || workspace.mode === 'move');
-  const recordSectionTitle = variant === 'task'
-    ? `${modeLabel} Queue`
-    : modeLabel;
   const taskModeSwitcher = variant === 'task' ? (
-    <InventoryTaskCarousel>
+    <InventoryTaskCarousel compact>
       {stockModes.map((item) => (
         <InventoryModeCard
           key={item.mode}
           active={inventoryView === 'stock' && workspace.mode === item.mode}
+          compact
           disabled={
             (item.mode === 'putaway' && !canPutaway)
             || (item.mode === 'move' && !canMove)
@@ -205,6 +201,7 @@ export function StockWorkspace({
       ))}
       <InventoryModeCard
         active={inventoryView === 'count'}
+        compact
         label="Cycle Count"
         value="Audit"
         onPress={() => {
@@ -214,6 +211,7 @@ export function StockWorkspace({
       {canUseRts ? (
         <InventoryModeCard
           active={inventoryView === 'rts'}
+          compact
           label="RTS"
           value="Returns"
           onPress={() => {
@@ -243,16 +241,21 @@ export function StockWorkspace({
   return (
     <View style={styles.root}>
       <View style={styles.taskQueueHeader}>
-        <TaskHeaderIconButton
-          icon="refresh-cw"
-          loading={workspace.isRefreshing}
-          onPress={async () => {
-            await workspace.refreshStock();
-            await onRefresh();
-          }}
-        />
+        <View style={styles.headerActionGroup}>
+          {variant === 'utility' && onBack ? (
+            <TaskHeaderIconButton icon="chevron-left" onPress={onBack} />
+          ) : null}
+          <TaskHeaderIconButton
+            icon="refresh-cw"
+            loading={workspace.isRefreshing}
+            onPress={async () => {
+              await workspace.refreshStock();
+              await onRefresh();
+            }}
+          />
+        </View>
         <Text style={styles.taskQueueHeaderTitle}>
-          {variant === 'task' ? 'Inventory Tasks' : 'Inventory Utility'}
+          {variant === 'task' ? 'Inventory Tasks' : 'Inventory'}
         </Text>
         {variant === 'utility' && workspace.pendingActionCount > 0 ? (
           <TaskHeaderIconButton
@@ -291,34 +294,13 @@ export function StockWorkspace({
         />
       </View>
 
-      {variant === 'utility' ? (
-        <View style={styles.summaryGrid}>
-          <InventorySummaryCard
-            icon="box"
-            title="Units on Hand"
-            value={queueSummary.onHand}
-          />
-          <InventorySummaryCard
-            icon="activity"
-            title="Active Queue"
-            value={`${queueSummary.queued} item${workspace.activeTotal === 1 ? '' : 's'}`}
-          />
-          <InventorySummaryCard
-            actionLabel={workspace.pendingActionCount > 0 ? 'Sync' : undefined}
-            icon="wifi-off"
-            title="Pending Sync"
-            value={`${queueSummary.pending} action${workspace.pendingActionCount === 1 ? '' : 's'}`}
-            onPress={workspace.pendingActionCount > 0 ? workspace.syncPendingActions : undefined}
-          />
-        </View>
-      ) : null}
-
       {variant === 'task' ? taskModeSwitcher : (
-        <InventoryTaskCarousel>
+        <InventoryTaskCarousel compact>
           {stockModes.map((item) => (
             <InventoryModeCard
               key={item.mode}
               active={inventoryView === 'stock' && workspace.mode === item.mode}
+              compact
               label={item.label}
               value={item.readValue(workspace)}
               onPress={() => {
@@ -339,12 +321,12 @@ export function StockWorkspace({
             <View style={styles.syncCopyWrap}>
               <Text style={styles.syncTitle}>Pending sync</Text>
               <Text style={styles.syncCopy}>
-                {queueSummary.pending} action{workspace.pendingActionCount === 1 ? '' : 's'} waiting to sync back to WMS.
+                {queueSummary.pending} action{workspace.pendingActionCount === 1 ? '' : 's'}
               </Text>
             </View>
           </View>
           <PrimaryButton
-            label={workspace.isSyncingQueue ? 'Syncing…' : 'Resync inventory actions'}
+            label={workspace.isSyncingQueue ? 'Syncing…' : 'Sync now'}
             loading={workspace.isSyncingQueue}
             onPress={workspace.syncPendingActions}
             style={styles.syncButton}
@@ -374,25 +356,18 @@ export function StockWorkspace({
         />
       ) : null}
 
-      {inventoryView === 'stock' ? (
-        <SectionLabel
-          title={recordSectionTitle}
-          trailing={variant === 'task' ? `${workspace.activeCount}/${workspace.activeTotal}` : undefined}
-        />
-      ) : null}
-
       {inventoryView === 'stock' && workspace.error ? (
         <SurfaceCard style={styles.stateCard}>
-          <Text style={styles.stateTitle}>Inventory needs attention</Text>
+          <Text style={styles.stateTitle}>Inventory error</Text>
           <Text style={styles.stateCopy}>{workspace.error}</Text>
         </SurfaceCard>
       ) : null}
 
       {inventoryView === 'stock' && workspace.isCachedSnapshot ? (
         <SurfaceCard style={styles.stateCard}>
-          <Text style={styles.stateTitle}>Using cached snapshot</Text>
+          <Text style={styles.stateTitle}>Offline snapshot</Text>
           <Text style={styles.stateCopy}>
-            Last cached at {workspace.lastCachedAt ? formatStockDate(workspace.lastCachedAt) : 'unknown'} while the live stock sync catches up.
+            Last cached {workspace.lastCachedAt ? formatStockDate(workspace.lastCachedAt) : 'unknown'}.
           </Text>
         </SurfaceCard>
       ) : null}
@@ -405,7 +380,7 @@ export function StockWorkspace({
 
       {inventoryView === 'stock' && workspace.hasMore ? (
         <PrimaryButton
-          label={workspace.isLoadingMore ? 'Loading more…' : `Load more ${modeLabel.toLowerCase()}`}
+          label={workspace.isLoadingMore ? 'Loading…' : 'Load more'}
           loading={workspace.isLoadingMore}
           variant="secondary"
           onPress={workspace.loadMore}
@@ -474,12 +449,12 @@ function InventoryScopeDropdownCard({
   );
 }
 
-function InventoryTaskCarousel({ children }: { children: ReactNode }) {
+function InventoryTaskCarousel({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.dateCarousel}>
+      contentContainerStyle={[styles.dateCarousel, compact ? styles.compactModeCarousel : null]}>
       {children}
     </ScrollView>
   );
@@ -487,12 +462,14 @@ function InventoryTaskCarousel({ children }: { children: ReactNode }) {
 
 function InventoryModeCard({
   active,
+  compact = false,
   disabled = false,
   label,
   value,
   onPress,
 }: {
   active: boolean;
+  compact?: boolean;
   disabled?: boolean;
   label: string;
   value: string;
@@ -504,13 +481,14 @@ function InventoryModeCard({
       onPress={onPress}
       style={({ pressed }) => [
         styles.dateCard,
+        compact ? styles.compactModeCard : null,
         active ? styles.dateCardActive : null,
         pressed ? styles.dateCardPressed : null,
         disabled ? styles.dateCardDisabled : null,
-        label === 'Cycle Count' ? styles.dateCardWide : null,
+        !compact && label === 'Cycle Count' ? styles.dateCardWide : null,
       ]}>
-      <Text style={[styles.inventoryLaneTitle, active ? styles.dateCardDayActive : null]}>{label}</Text>
-      <Text style={[styles.inventoryLaneMeta, active ? styles.dateCardWeekdayActive : null]}>{value}</Text>
+      <Text numberOfLines={1} style={[styles.inventoryLaneTitle, compact ? styles.compactModeTitle : null, active ? styles.dateCardDayActive : null]}>{label}</Text>
+      <Text numberOfLines={1} style={[styles.inventoryLaneMeta, compact ? styles.compactModeMeta : null, active ? styles.dateCardWeekdayActive : null]}>{value}</Text>
     </Pressable>
   );
 }
@@ -525,7 +503,6 @@ function renderModeRecords(
       return (
         <SurfaceCard style={styles.stateCard}>
           <Text style={styles.stateTitle}>Loading inventory</Text>
-          <Text style={styles.stateCopy}>Fetching the latest {modeLabel.toLowerCase()} data from WMS.</Text>
         </SurfaceCard>
       );
     }
@@ -537,8 +514,8 @@ function renderModeRecords(
     if (workspace.stock.putawayQueue.length === 0) {
       return (
         <SurfaceCard style={variant === 'task' ? styles.emptyCard : styles.stateCard}>
-          <Text style={variant === 'task' ? styles.emptyTitle : styles.stateTitle}>No putaway batches</Text>
-          <Text style={variant === 'task' ? styles.emptyCopy : styles.stateCopy}>Inbound units waiting for putaway will appear here.</Text>
+          <Text style={variant === 'task' ? styles.emptyTitle : styles.stateTitle}>No putaway</Text>
+          <Text style={variant === 'task' ? styles.emptyCopy : styles.stateCopy}>No staged units.</Text>
         </SurfaceCard>
       );
     }
@@ -578,8 +555,8 @@ function renderModeRecords(
     if (workspace.stock.movableUnits.length === 0) {
       return (
         <SurfaceCard style={variant === 'task' ? styles.emptyCard : styles.stateCard}>
-          <Text style={variant === 'task' ? styles.emptyTitle : styles.stateTitle}>No movable units</Text>
-          <Text style={variant === 'task' ? styles.emptyCopy : styles.stateCopy}>Units eligible for rack and bin moves will appear here.</Text>
+          <Text style={variant === 'task' ? styles.emptyTitle : styles.stateTitle}>No moves</Text>
+          <Text style={variant === 'task' ? styles.emptyCopy : styles.stateCopy}>No movable units.</Text>
         </SurfaceCard>
       );
     }
@@ -619,8 +596,7 @@ function renderModeRecords(
     if (workspace.stock.bins.length === 0) {
       return (
         <SurfaceCard style={styles.stateCard}>
-          <Text style={styles.stateTitle}>No bins found</Text>
-          <Text style={styles.stateCopy}>Warehouse bins and rack locations will appear here.</Text>
+          <Text style={styles.stateTitle}>No bins</Text>
         </SurfaceCard>
       );
     }
@@ -652,8 +628,7 @@ function renderModeRecords(
   if (workspace.stock.recentTransfers.length === 0) {
     return (
       <SurfaceCard style={styles.stateCard}>
-        <Text style={styles.stateTitle}>No recent transfers</Text>
-        <Text style={styles.stateCopy}>Inventory movements will appear here after the first stock action.</Text>
+        <Text style={styles.stateTitle}>No recent moves</Text>
       </SurfaceCard>
     );
   }
@@ -762,37 +737,6 @@ function normalizeLocationLabel(value: string) {
   return value.trim().toLowerCase().replace(/[\s_-]+/g, '');
 }
 
-function InventorySummaryCard({
-  actionLabel,
-  icon,
-  onPress,
-  title,
-  value,
-}: {
-  actionLabel?: string;
-  icon: ComponentProps<typeof Feather>['name'];
-  onPress?: () => void;
-  title: string;
-  value: string;
-}) {
-  return (
-    <SurfaceCard style={styles.utilitySummaryCard}>
-      <View style={styles.utilitySummaryIcon}>
-        <Feather name={icon} size={16} color="#6437F6" />
-      </View>
-      <View style={styles.utilitySummaryCopy}>
-        <Text numberOfLines={1} style={styles.utilitySummaryTitle}>{title}</Text>
-        <Text numberOfLines={2} style={styles.utilitySummaryValue}>{value}</Text>
-      </View>
-      {actionLabel && onPress ? (
-        <Pressable onPress={onPress} style={({ pressed }) => [styles.utilitySummaryAction, pressed ? styles.pressed : null]}>
-          <Text style={styles.utilitySummaryActionText}>{actionLabel}</Text>
-        </Pressable>
-      ) : null}
-    </SurfaceCard>
-  );
-}
-
 function InventoryTaskRecordCard({
   accent,
   accentSoft,
@@ -864,6 +808,11 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
     textAlign: 'center',
   },
+  headerActionGroup: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
   queueBellButton: {
     alignItems: 'center',
     height: 44,
@@ -929,64 +878,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 2,
   },
-  summaryGrid: {
-    gap: 12,
-  },
-  utilitySummaryCard: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    flexDirection: 'row',
-    gap: 14,
-    minHeight: 78,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    shadowColor: '#A38BFF',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.07,
-    shadowRadius: 20,
-  },
-  utilitySummaryIcon: {
-    alignItems: 'center',
-    backgroundColor: '#F1E9FF',
-    borderRadius: 12,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
-  },
-  utilitySummaryCopy: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
-  },
-  utilitySummaryTitle: {
-    color: '#24232D',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  utilitySummaryValue: {
-    color: '#7B7791',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  utilitySummaryAction: {
-    alignItems: 'center',
-    backgroundColor: '#F4F0FF',
-    borderRadius: 999,
-    justifyContent: 'center',
-    minHeight: 30,
-    paddingHorizontal: 12,
-  },
-  utilitySummaryActionText: {
-    color: '#6437F6',
-    fontSize: 12,
-    fontWeight: '900',
-  },
   dateCarousel: {
     gap: 8,
     paddingBottom: 4,
+  },
+  compactModeCarousel: {
+    paddingBottom: 0,
   },
   dateCard: {
     alignItems: 'center',
@@ -1002,6 +899,15 @@ const styles = StyleSheet.create({
   },
   dateCardWide: {
     width: 96,
+  },
+  compactModeCard: {
+    backgroundColor: '#EEE9FF',
+    borderRadius: 14,
+    borderWidth: 0,
+    height: 54,
+    paddingHorizontal: 16,
+    shadowOpacity: 0,
+    width: 116,
   },
   dateCardActive: {
     backgroundColor: '#6437F6',
@@ -1027,6 +933,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
     textAlign: 'center',
+  },
+  compactModeTitle: {
+    color: '#6F5BCB',
+    fontSize: 14,
+    marginTop: 0,
+  },
+  compactModeMeta: {
+    color: '#6F5BCB',
+    fontSize: 10,
   },
   dateCardDayActive: {
     color: '#FFFFFF',
@@ -1118,9 +1033,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     lineHeight: 18,
-  },
-  pressed: {
-    opacity: 0.84,
   },
   compactTaskCard: {
     backgroundColor: '#FFFFFF',

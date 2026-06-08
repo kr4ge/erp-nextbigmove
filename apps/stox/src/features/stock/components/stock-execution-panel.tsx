@@ -5,11 +5,10 @@ import type { DeviceIdentity, StoredSession } from '@/src/features/auth/types';
 import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
-import { SectionLabel } from '../../home/components/stox-primitives';
-import { useStockExecution, type StockScanTarget } from '../hooks/use-stock-execution';
+import { useStockExecution } from '../hooks/use-stock-execution';
 import type { QueuedStockAction } from '../services/stock-offline-store';
-import type { StockFilters, WmsMobileStockMovement } from '../types';
-import { formatStockDate, joinStockMeta } from '../utils/stock-formatters';
+import type { StockFilters } from '../types';
+import { joinStockMeta } from '../utils/stock-formatters';
 
 type StockExecutionPanelProps = {
   canMove?: boolean;
@@ -82,18 +81,13 @@ export function StockExecutionPanel({
 
   return (
     <SurfaceCard style={styles.card}>
-      <SectionLabel
-        title="Scan"
-        trailing={execution.isScanning ? 'Checking' : scanTargetCopy[execution.scanTarget]}
-      />
-
       <View style={styles.inputRow}>
         <TextInput
           ref={lookupInputRef}
           autoCapitalize="characters"
           autoCorrect={false}
           blurOnSubmit={false}
-          placeholder="Unit, bin, or batch"
+          placeholder={execution.scanTarget === 'target' ? 'Target bin' : 'Scan unit, bin, batch'}
           placeholderTextColor={tokens.colors.inkSoft}
           returnKeyType="search"
           selectTextOnFocus
@@ -198,6 +192,11 @@ function UnitExecutionCard({
 
       <Text numberOfLines={2} style={styles.productName}>{unit.name}</Text>
 
+      <View style={styles.factStack}>
+        <FactRow label="Location" value={unit.currentLocation?.code ?? 'No bin'} />
+        <FactRow label="Warehouse" value={unit.warehouse.code} />
+      </View>
+
       {hasVisibleAction ? (
         <>
           <TextInput
@@ -239,27 +238,18 @@ function UnitExecutionCard({
       ) : null}
 
       {!hasStateAction ? (
-        <Text style={styles.blockedActionText}>No mobile stock action is available for this unit.</Text>
+        <Text style={styles.blockedActionText}>No action available.</Text>
       ) : null}
       {hasStateAction && !hasVisibleAction ? (
-        <Text style={styles.blockedActionText}>Your WMS role can scan this unit but cannot execute this stock action.</Text>
+        <Text style={styles.blockedActionText}>View only.</Text>
       ) : null}
 
       <Pressable
         onPress={onScanAnother}
         style={({ pressed }) => [styles.scanAnother, pressed ? styles.pressed : null]}>
         <Feather name="rotate-ccw" size={14} color={tokens.colors.panel} />
-        <Text style={styles.scanAnotherText}>Scan another unit</Text>
+        <Text style={styles.scanAnotherText}>Scan again</Text>
       </Pressable>
-
-      {unit.movements.length > 0 ? (
-        <View style={styles.timeline}>
-          <Text style={styles.timelineTitle}>History</Text>
-          {unit.movements.slice(0, 4).map((movement) => (
-            <MovementRow key={movement.id} movement={movement} />
-          ))}
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -289,8 +279,13 @@ function BinResultCard({
         </View>
       </View>
 
+      <View style={styles.factStack}>
+        <FactRow label="Units" value={`${bin.occupiedUnits}/${bin.capacity ?? '-'}`} />
+        <FactRow label="Warehouse" value={bin.warehouse.code} />
+      </View>
+
       <View style={styles.compactList}>
-        {bin.units.length === 0 ? <Text style={styles.emptyText}>No units in this location.</Text> : null}
+        {bin.units.length === 0 ? <Text style={styles.emptyText}>Empty bin</Text> : null}
         {bin.units.slice(0, 8).map((unit) => (
           <Pressable
             key={unit.id}
@@ -328,8 +323,13 @@ function BatchResultCard({
         </View>
       </View>
 
+      <View style={styles.factStack}>
+        <FactRow label="Store" value={batch.store.name} />
+        <FactRow label="Location" value={batch.stagingLocation?.code ?? 'No bin'} />
+      </View>
+
       <View style={styles.compactList}>
-        {batch.units.length === 0 ? <Text style={styles.emptyText}>No units in this batch.</Text> : null}
+        {batch.units.length === 0 ? <Text style={styles.emptyText}>Empty batch</Text> : null}
         {batch.units.slice(0, 10).map((unit) => (
           <Pressable
             key={unit.id}
@@ -346,26 +346,18 @@ function BatchResultCard({
   );
 }
 
-function MovementRow({ movement }: { movement: WmsMobileStockMovement }) {
+function FactRow({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.movementRow}>
-      <Text numberOfLines={1} style={styles.movementTitle}>
-        {movement.movementType}
-      </Text>
-      <Text numberOfLines={2} style={styles.movementMeta}>
-        {joinStockMeta([
-          `${movement.fromLocation?.code ?? 'Origin'} > ${movement.toLocation?.code ?? 'Target'}`,
-          movement.actor?.name ?? 'System',
-          formatStockDate(movement.createdAt),
-        ])}
-      </Text>
+    <View style={styles.factRow}>
+      <Text style={styles.factLabel}>{label}</Text>
+      <Text numberOfLines={1} style={styles.factValue}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    gap: tokens.spacing.md,
+    gap: tokens.spacing.sm,
   },
   inputRow: {
     alignItems: 'center',
@@ -415,7 +407,7 @@ const styles = StyleSheet.create({
     borderColor: tokens.colors.border,
     borderRadius: tokens.radius.lg,
     borderWidth: 1,
-    gap: tokens.spacing.md,
+    gap: tokens.spacing.sm,
     padding: tokens.spacing.md,
   },
   resultHeader: {
@@ -454,6 +446,32 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 19,
   },
+  factStack: {
+    gap: 6,
+  },
+  factRow: {
+    alignItems: 'center',
+    backgroundColor: tokens.colors.surface,
+    borderRadius: tokens.radius.md,
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    justifyContent: 'space-between',
+    minHeight: 38,
+    paddingHorizontal: tokens.spacing.sm,
+  },
+  factLabel: {
+    color: tokens.colors.inkMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  factValue: {
+    color: tokens.colors.ink,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
   targetInput: {
     backgroundColor: tokens.colors.surface,
     borderColor: tokens.colors.border,
@@ -491,33 +509,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
   },
-  timeline: {
-    gap: tokens.spacing.sm,
-  },
-  timelineTitle: {
-    color: tokens.colors.ink,
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  movementRow: {
-    backgroundColor: tokens.colors.surface,
-    borderRadius: tokens.radius.md,
-    gap: 2,
-    padding: tokens.spacing.sm,
-  },
-  movementTitle: {
-    color: tokens.colors.ink,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  movementMeta: {
-    color: tokens.colors.inkMuted,
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
   compactList: {
-    gap: tokens.spacing.sm,
+    gap: 8,
   },
   compactRow: {
     backgroundColor: tokens.colors.surface,
@@ -542,8 +535,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-
-const scanTargetCopy: Record<StockScanTarget, string> = {
-  lookup: 'Scan item',
-  target: 'Scan target',
-};

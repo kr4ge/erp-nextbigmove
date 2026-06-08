@@ -99,7 +99,7 @@ export class WmsProductsService {
   ) {}
 
   async getOverview(query: GetWmsProductsOverviewDto) {
-    const scope = await this.resolveTenantScope(query.tenantId);
+    const scope = await this.resolveTenantScope(query.tenantId, query.allTenants === true);
     const isAllTenantScope = scope.canAccessAllTenants && !scope.activeTenantId;
 
     if (!scope.activeTenantId && !isAllTenantScope) {
@@ -887,7 +887,7 @@ export class WmsProductsService {
     return value;
   }
 
-  private async resolveTenantScope(requestedTenantId?: string) {
+  private async resolveTenantScope(requestedTenantId?: string, forceAllTenants = false) {
     const clsTenantId = this.cls.get('tenantId') as string | undefined;
     const userRole = this.cls.get('userRole') as string | undefined;
     const isPlatformUser = userRole === 'SUPER_ADMIN';
@@ -907,9 +907,11 @@ export class WmsProductsService {
       const activeTenantId =
         requestedTenantId && tenants.some((tenant) => tenant.id === requestedTenantId)
           ? requestedTenantId
-          : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
-            ? clsTenantId
-            : null;
+          : forceAllTenants
+            ? null
+            : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
+              ? clsTenantId
+              : null;
 
       return {
         activeTenantId,

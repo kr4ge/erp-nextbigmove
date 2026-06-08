@@ -3,7 +3,6 @@ import { Feather } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -11,7 +10,7 @@ import {
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
-import type { StoxTabKey } from '../types';
+import type { InventoryTaskView, StoxTabKey, StoxTaskMode } from '../types';
 import {
   canUseAssignedRtsWorkspace,
   canUseAssignedInventoryWorkspace,
@@ -32,6 +31,7 @@ type HomeOverviewTabProps = {
   session: StoredSession;
   onChangeTab: (tab: StoxTabKey) => void;
   onOpenStock: () => void;
+  onOpenTaskRoute: (route: { inventoryView?: InventoryTaskView; mode: StoxTaskMode }) => void;
   onOpenRts: () => void;
 };
 
@@ -66,28 +66,31 @@ type HomeSnapshot = {
   };
 };
 
-const NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
-const HOME_RING_SEGMENTS = 28;
-const HOME_RING_SWEEP_DEGREES = 344;
-const HOME_RING_START_DEGREES = -86;
+type HomeIdentity = 'all' | 'pick' | 'pack' | 'inventory';
+type HomeActionTarget =
+  | 'inventory-count'
+  | 'inventory-tasks'
+  | 'inventory-utility'
+  | 'pack-tasks'
+  | 'pick-tasks'
+  | 'rts';
+type HomeActionCard = {
+  accent: string;
+  icon: keyof typeof Feather.glyphMap;
+  id: string;
+  label: string;
+  soft: string;
+  target: HomeActionTarget;
+  value: number;
+};
+type HomePrimarySummary = {
+  badge: string;
+  label: string;
+  target: HomeActionTarget;
+  value: number;
+};
 
-const IN_PROGRESS_CARD_META = {
-  units: {
-    accent: '#3B82F6',
-    icon: 'archive',
-    soft: '#EAF3FF',
-  },
-  dispatch: {
-    accent: '#FF8250',
-    icon: 'truck',
-    soft: '#FFF0E8',
-  },
-  capacity: {
-    accent: '#7B4DFF',
-    icon: 'database',
-    soft: '#F1EAFF',
-  },
-} as const;
+const NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
 
 export function HomeOverviewTab({
   bootstrap,
@@ -95,6 +98,7 @@ export function HomeOverviewTab({
   session,
   onChangeTab,
   onOpenStock,
+  onOpenTaskRoute,
   onOpenRts,
 }: HomeOverviewTabProps) {
   const [snapshot, setSnapshot] = useState<HomeSnapshot | null>(null);
@@ -219,39 +223,7 @@ export function HomeOverviewTab({
     void loadHome('initial');
   }, [loadHome]);
 
-  const inventoryCards = useMemo(() => {
-    const stock = snapshot?.stock;
-    const summary = stock?.summary;
-
-    return [
-      {
-        accent: IN_PROGRESS_CARD_META.units.accent,
-        icon: IN_PROGRESS_CARD_META.units.icon,
-        id: 'units',
-        label: 'Units on Hand',
-        soft: IN_PROGRESS_CARD_META.units.soft,
-        value: stock ? formatCount(summary?.unitsOnHand ?? 0) : '--',
-      },
-      {
-        accent: IN_PROGRESS_CARD_META.dispatch.accent,
-        icon: IN_PROGRESS_CARD_META.dispatch.icon,
-        id: 'dispatch',
-        label: 'Dispatch Units',
-        soft: IN_PROGRESS_CARD_META.dispatch.soft,
-        value: stock ? formatCount(summary?.dispatchedUnits ?? 0) : '--',
-      },
-      {
-        accent: IN_PROGRESS_CARD_META.capacity.accent,
-        icon: IN_PROGRESS_CARD_META.capacity.icon,
-        id: 'capacity',
-        label: 'Warehouse Capacity',
-        soft: IN_PROGRESS_CARD_META.capacity.soft,
-        value: stock ? `${summary?.warehouseCapacity.utilizationPercent ?? 0}%` : '--',
-      },
-    ];
-  }, [snapshot]);
-
-  const heroIdentity = useMemo(() => {
+  const homeIdentity = useMemo(() => {
     const assignment = bootstrap.operations?.taskAssignment;
     const isSuperAdmin = bootstrap.user.role === 'SUPER_ADMIN';
 
@@ -290,94 +262,60 @@ export function HomeOverviewTab({
     return 'all';
   }, [bootstrap.operations?.taskAssignment, bootstrap.user.role, canLoadInventory, canLoadInventoryTask, canLoadPack, canLoadPick]);
 
-  const heroSummary = useMemo(() => {
-    const pickablePickTasks = snapshot?.pickablePickTasks ?? 0;
-    const packablePackTasks = snapshot?.packablePackTasks ?? 0;
-    const completedPickToday = snapshot?.completedPickToday ?? 0;
-    const completedPackToday = snapshot?.completedPackToday ?? 0;
-
-    if (heroIdentity === 'pick') {
-      const total = pickablePickTasks + completedPickToday;
-      const percent = total > 0 ? Math.min(100, Math.round((completedPickToday / total) * 100)) : 100;
-
-      return {
-        badge: 'Picker',
-        cta: 'View Task',
-        description: `${formatCount(completedPickToday)} of ${formatCount(total)} pickable tasks`,
-        percent,
-        title: total > 0
-          ? percent >= 75
-            ? 'Your pick queue is almost done!'
-            : 'Your pick queue is moving well!'
-          : 'Your pick queue is clear for now!',
-      };
-    }
-
-    if (heroIdentity === 'pack') {
-      const total = packablePackTasks + completedPackToday;
-      const percent = total > 0 ? Math.min(100, Math.round((completedPackToday / total) * 100)) : 100;
-
-      return {
-        badge: 'Packer',
-        cta: 'View Task',
-        description: `${formatCount(completedPackToday)} of ${formatCount(total)} packable tasks`,
-        percent,
-        title: total > 0
-          ? percent >= 75
-            ? 'Your pack queue is almost done!'
-            : 'Your pack queue is moving well!'
-          : 'Your pack queue is clear for now!',
-      };
-    }
-
-    if (heroIdentity === 'inventory') {
-      const totalUnits = snapshot?.stock?.summary.totalUnits ?? 0;
-      const locatedUnits = snapshot?.stock?.summary.locatedUnits ?? 0;
-      const unitsOnHand = snapshot?.stock?.summary.unitsOnHand ?? 0;
-      const total = totalUnits;
-      const percent = total > 0 ? Math.min(100, Math.round((locatedUnits / total) * 100)) : 100;
-
-      return {
-        badge: 'Inventory',
-        cta: canLoadInventoryTask ? 'View Task' : 'Open Utility',
-        description: `${formatCount(unitsOnHand)} units on hand · ${formatCount(locatedUnits)} located`,
-        percent,
-        title: total > 0
-          ? 'Inventory flow is ready for action!'
-          : 'Inventory queue is clear for now!',
-      };
-    }
-
-    const completed = completedPickToday + completedPackToday;
-    const total = pickablePickTasks + packablePackTasks + completed;
-    const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 100;
-
-    return {
-      badge: 'All Staff',
-      cta: 'View Task',
-      description: `${formatCount(completed)} of ${formatCount(total)} warehouse tasks`,
-      percent,
-      title: total > 0
-        ? percent >= 75
-          ? "Today's warehouse flow is on track!"
-          : "Today's warehouse flow is moving!"
-        : 'Warehouse flow is clear for now!',
-    };
-  }, [
-    canLoadInventoryTask,
-    heroIdentity,
-    snapshot?.completedPackToday,
-    snapshot?.completedPickToday,
-    snapshot?.packablePackTasks,
-    snapshot?.pickablePickTasks,
-    snapshot?.stock?.summary.locatedUnits,
-    snapshot?.stock?.summary.totalUnits,
-    snapshot?.stock?.summary.unitsOnHand,
-  ]);
-  const taskGroups = useMemo(
-    () => buildTaskGroups(heroIdentity, snapshot, canLoadRts),
-    [canLoadRts, heroIdentity, snapshot],
+  const primarySummary = useMemo(
+    () => buildPrimarySummary(homeIdentity, snapshot, {
+      canLoadInventory,
+      canLoadInventoryTask,
+      canLoadPack,
+      canLoadPick,
+      canLoadRts,
+    }),
+    [canLoadInventory, canLoadInventoryTask, canLoadPack, canLoadPick, canLoadRts, homeIdentity, snapshot],
   );
+  const actionCards = useMemo(
+    () => buildHomeActionCards(homeIdentity, snapshot, {
+      canLoadInventory,
+      canLoadInventoryTask,
+      canLoadPack,
+      canLoadPick,
+      canLoadRts,
+    }),
+    [canLoadInventory, canLoadInventoryTask, canLoadPack, canLoadPick, canLoadRts, homeIdentity, snapshot],
+  );
+
+  const openHomeTarget = useCallback((target: HomeActionTarget) => {
+    if (target === 'inventory-utility') {
+      onOpenStock();
+      return;
+    }
+
+    if (target === 'inventory-tasks') {
+      onOpenTaskRoute({ inventoryView: 'stock', mode: 'inventory' });
+      return;
+    }
+
+    if (target === 'inventory-count') {
+      onOpenTaskRoute({ inventoryView: 'count', mode: 'inventory' });
+      return;
+    }
+
+    if (target === 'rts') {
+      onOpenRts();
+      return;
+    }
+
+    if (target === 'pack-tasks') {
+      onOpenTaskRoute({ mode: 'pack' });
+      return;
+    }
+
+    if (target === 'pick-tasks') {
+      onOpenTaskRoute({ mode: 'pick' });
+      return;
+    }
+
+    onChangeTab('tasks');
+  }, [onChangeTab, onOpenRts, onOpenStock, onOpenTaskRoute]);
 
   return (
     <View style={styles.root}>
@@ -388,7 +326,7 @@ export function HomeOverviewTab({
           </View>
 
           <View style={styles.headerCopy}>
-            <Text style={styles.greeting}>Hello!</Text>
+            <Text style={styles.greeting}>{primarySummary.badge}</Text>
             <Text numberOfLines={1} style={styles.displayName}>{displayName}</Text>
           </View>
         </View>
@@ -399,101 +337,32 @@ export function HomeOverviewTab({
         </Pressable>
       </View>
 
-      <SurfaceCard style={styles.heroCard}>
-        <View style={styles.heroCopyBlock}>
-          <View style={styles.heroTopBlock}>
-            <View style={styles.heroBadge}>
-              <Text style={styles.heroBadgeText}>{heroSummary.badge}</Text>
-            </View>
-            <Text style={styles.heroTitle}>{heroSummary.title}</Text>
-            <Text style={styles.heroMeta}>{heroSummary.description}</Text>
-          </View>
-          <Pressable
-            onPress={() => {
-              if (heroIdentity === 'inventory') {
-                if (canLoadInventoryTask) {
-                  onChangeTab('tasks');
-                  return;
-                }
-
-                onOpenStock();
-                return;
-              }
-
-              onChangeTab('tasks');
-            }}
-            style={({ pressed }) => [styles.heroButton, pressed ? styles.pressed : null]}>
-            <Text style={styles.heroButtonText}>{heroSummary.cta}</Text>
-          </Pressable>
+      <SurfaceCard style={styles.statusCard}>
+        <View style={styles.statusCopy}>
+          <Text style={styles.statusBadge}>{primarySummary.badge}</Text>
+          <Text style={styles.statusValue}>{formatCount(primarySummary.value)}</Text>
+          <Text style={styles.statusLabel}>{primarySummary.label}</Text>
         </View>
-
-        <View style={styles.heroRight}>
-          <Pressable
-            onPress={onOpenStock}
-            style={({ pressed }) => [styles.heroMenuButton, pressed ? styles.heroMenuButtonPressed : null]}>
-            <Feather name="more-horizontal" size={16} color="#FFFFFF" />
-          </Pressable>
-          <ProgressRing value={heroSummary.percent} />
-        </View>
+        <Pressable
+          onPress={() => openHomeTarget(primarySummary.target)}
+          style={({ pressed }) => [styles.statusButton, pressed ? styles.pressed : null]}>
+          <Text style={styles.statusButtonText}>Open</Text>
+          <Feather name="arrow-right" size={15} color="#FFFFFF" />
+        </Pressable>
       </SurfaceCard>
 
-      <View style={styles.sectionRow}>
-        <Text style={styles.sectionTitle}>Inventory</Text>
-        <Text style={styles.sectionCount}>3</Text>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.carousel}>
-        {inventoryCards.map((card) => (
+      <View style={styles.actionGrid}>
+        {actionCards.map((card) => (
           <Pressable
             key={card.id}
-            onPress={onOpenStock}
-            style={({ pressed }) => [styles.inventoryCardPressable, pressed ? styles.pressed : null]}>
-            <View style={[styles.inventoryCard, { backgroundColor: card.soft }]}>
-              <View style={styles.inventoryCardHeader}>
-                <Text style={styles.inventoryCardLabel}>{card.label}</Text>
-                <View style={[styles.inventoryCardIcon, { backgroundColor: applyAlpha(card.accent, 0.18) }]}>
-                  <Feather name={card.icon as never} size={15} color={card.accent} />
-                </View>
+            onPress={() => openHomeTarget(card.target)}
+            style={({ pressed }) => [styles.actionCardPressable, pressed ? styles.pressed : null]}>
+            <SurfaceCard style={styles.actionCard}>
+              <View style={[styles.actionIcon, { backgroundColor: card.soft }]}>
+                <Feather name={card.icon} size={18} color={card.accent} />
               </View>
-
-              <Text style={styles.inventoryCardValue}>{card.value}</Text>
-            </View>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      <View style={styles.sectionRow}>
-        <Text style={styles.sectionTitle}>Task Groups</Text>
-        <Text style={styles.sectionCount}>{taskGroups.length}</Text>
-      </View>
-
-      <View style={styles.taskGroupList}>
-        {taskGroups.map((group) => (
-          <Pressable
-            key={group.id}
-            onPress={() => {
-              if (group.id === 'rts') {
-                onOpenRts();
-                return;
-              }
-
-              onChangeTab('tasks');
-            }}
-            style={({ pressed }) => [styles.taskGroupPressable, pressed ? styles.pressed : null]}>
-            <SurfaceCard style={styles.taskGroupCard}>
-              <View style={[styles.taskGroupIcon, { backgroundColor: group.soft }]}>
-                <Feather name={group.icon as never} size={20} color={group.accent} />
-              </View>
-              <View style={styles.taskGroupCopy}>
-                <Text style={styles.taskGroupTitle}>{group.label}</Text>
-                <Text style={styles.taskGroupMeta}>{group.caption}</Text>
-              </View>
-              <View style={[styles.taskGroupMetric, { backgroundColor: group.soft }]}>
-                <Text style={styles.taskGroupMetricValue}>{formatCount(group.value)}</Text>
-              </View>
+              <Text style={styles.actionValue}>{formatCount(card.value)}</Text>
+              <Text numberOfLines={1} style={styles.actionLabel}>{card.label}</Text>
             </SurfaceCard>
           </Pressable>
         ))}
@@ -509,7 +378,7 @@ export function HomeOverviewTab({
       {isLoading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator color="#6B3EF6" size="small" />
-          <Text style={styles.loadingText}>Loading live warehouse view…</Text>
+          <Text style={styles.loadingText}>Loading...</Text>
         </View>
       ) : null}
 
@@ -530,53 +399,77 @@ export function HomeOverviewTab({
   );
 }
 
-function ProgressRing({ value }: { value: number }) {
-  const size = 104;
-  const progress = Math.max(0, Math.min(100, value));
-  const strokeWidth = 8;
-  const segmentLength = 12;
-  const segmentWidth = 6;
-  const segmentRadius = (size / 2) - segmentLength / 2 - strokeWidth;
-  const activeSegmentCount = Math.round((progress / 100) * HOME_RING_SEGMENTS);
+function buildPrimarySummary(
+  identity: HomeIdentity,
+  snapshot: HomeSnapshot | null,
+  access: {
+    canLoadInventory: boolean;
+    canLoadInventoryTask: boolean;
+    canLoadPack: boolean;
+    canLoadPick: boolean;
+    canLoadRts: boolean;
+  },
+): HomePrimarySummary {
+  if (identity === 'pick') {
+    return {
+      badge: 'Picker',
+      label: 'Pick tasks',
+      target: 'pick-tasks',
+      value: snapshot?.pickablePickTasks ?? 0,
+    };
+  }
 
-  return (
-    <View style={[styles.ringWrap, { height: size, width: size }]}>
-      <View style={styles.ringTrack} />
-      {Array.from({ length: HOME_RING_SEGMENTS }, (_, index) => {
-        const angle = HOME_RING_START_DEGREES + ((HOME_RING_SWEEP_DEGREES / HOME_RING_SEGMENTS) * index);
-        const radians = (angle * Math.PI) / 180;
-        const isActive = index < activeSegmentCount;
-        const centerOffset = size / 2;
-        const x = centerOffset + (segmentRadius * Math.cos(radians)) - (segmentWidth / 2);
-        const y = centerOffset + (segmentRadius * Math.sin(radians)) - (segmentLength / 2);
+  if (identity === 'pack') {
+    return {
+      badge: 'Packer',
+      label: 'Pack tasks',
+      target: 'pack-tasks',
+      value: snapshot?.packablePackTasks ?? 0,
+    };
+  }
 
-        return (
-          <View
-            key={angle}
-            style={[
-              styles.ringSegment,
-              {
-                backgroundColor: isActive ? '#F7F1FF' : 'rgba(255,255,255,0.24)',
-                height: segmentLength,
-                left: x,
-                top: y,
-                transform: [{ rotate: `${angle + 90}deg` }],
-                width: segmentWidth,
-              },
-            ]}
-          />
-        );
-      })}
-      <Text style={styles.ringValue}>{Math.max(0, Math.min(100, value))}%</Text>
-    </View>
-  );
+  if (identity === 'inventory') {
+    return {
+      badge: 'Inventory',
+      label: access.canLoadInventoryTask ? 'Inventory tasks' : 'Units on hand',
+      target: access.canLoadInventoryTask ? 'inventory-tasks' : 'inventory-utility',
+      value: access.canLoadInventoryTask
+        ? (snapshot?.inventoryGroups.putaway ?? 0) + (snapshot?.taskGroups.rts ?? 0) + (snapshot?.taskGroups.restocking ?? 0)
+        : snapshot?.stock?.summary.unitsOnHand ?? 0,
+    };
+  }
+
+  const adminTarget: HomeActionTarget = access.canLoadPick
+    ? 'pick-tasks'
+    : access.canLoadPack
+      ? 'pack-tasks'
+      : access.canLoadInventoryTask
+        ? 'inventory-tasks'
+        : access.canLoadInventory
+          ? 'inventory-utility'
+          : access.canLoadRts
+            ? 'rts'
+            : 'pick-tasks';
+
+  return {
+    badge: 'Admin',
+    label: 'Open work',
+    target: adminTarget,
+    value: (snapshot?.pickablePickTasks ?? 0) + (snapshot?.packablePackTasks ?? 0) + (snapshot?.taskGroups.rts ?? 0),
+  };
 }
 
-function buildTaskGroups(
-  identity: 'all' | 'pick' | 'pack' | 'inventory',
+function buildHomeActionCards(
+  identity: HomeIdentity,
   snapshot: HomeSnapshot | null,
-  canOpenRts: boolean,
-) {
+  access: {
+    canLoadInventory: boolean;
+    canLoadInventoryTask: boolean;
+    canLoadPack: boolean;
+    canLoadPick: boolean;
+    canLoadRts: boolean;
+  },
+): HomeActionCard[] {
   const groups = snapshot?.taskGroups ?? {
     delivered: 0,
     packingWithoutTracking: 0,
@@ -600,139 +493,139 @@ function buildTaskGroups(
     move: 0,
     putaway: 0,
   };
-  const restocking = {
+  const restocking: HomeActionCard = {
     accent: '#F66AAE',
-    caption: 'Count',
     icon: 'refresh-cw',
     id: 'restocking',
     label: 'Restocking',
     soft: '#FFE2F0',
+    target: 'pick-tasks',
     value: groups.restocking,
   };
-  const packingWithoutTracking = {
+  const packingWithoutTracking: HomeActionCard = {
     accent: '#8C5CF6',
-    caption: 'Count',
     icon: 'file-text',
     id: 'packing-without-tracking',
-    label: 'Packing w/o tracking',
+    label: 'No tracking',
     soft: '#EDE4FF',
+    target: 'pack-tasks',
     value: groups.packingWithoutTracking,
   };
-  const delivered = {
-    accent: '#2CBF7B',
-    caption: 'Count',
-    icon: 'check-circle',
-    id: 'delivered',
-    label: 'Delivered',
-    soft: '#DFF8ED',
-    value: groups.delivered,
-  };
-  const rts = {
+  const rts: HomeActionCard = {
     accent: '#FF8A3D',
-    caption: 'Count',
     icon: 'corner-up-left',
     id: 'rts',
     label: 'RTS',
     soft: '#FFE8D7',
+    target: 'rts',
     value: groups.rts,
   };
-  const putaway = {
+  const putaway: HomeActionCard = {
     accent: '#F66AAE',
-    caption: 'Staged',
     icon: 'inbox',
     id: 'inventory-putaway',
     label: 'Putaway',
     soft: '#FFE2F0',
+    target: 'inventory-tasks',
     value: inventoryGroups.putaway,
   };
-  const move = {
+  const move: HomeActionCard = {
     accent: '#8C5CF6',
-    caption: 'Movable',
     icon: 'repeat',
     id: 'inventory-move',
     label: 'Move',
     soft: '#EDE4FF',
+    target: 'inventory-tasks',
     value: inventoryGroups.move,
   };
-  const cycleCount = {
+  const cycleCount: HomeActionCard = {
     accent: '#2CBF7B',
-    caption: 'Units',
     icon: 'clipboard',
     id: 'inventory-cycle-count',
-    label: 'Cycle Count',
+    label: 'Stock count',
     soft: '#DFF8ED',
+    target: 'inventory-count',
     value: inventoryGroups.cycleCount,
   };
-  const pickTodo = {
+  const unitsOnHand: HomeActionCard = {
+    accent: '#3B82F6',
+    icon: 'archive',
+    id: 'inventory-units',
+    label: 'Units',
+    soft: '#EAF3FF',
+    target: 'inventory-utility',
+    value: snapshot?.stock?.summary.unitsOnHand ?? 0,
+  };
+  const pickTodo: HomeActionCard = {
     accent: '#F66AAE',
-    caption: 'Available',
     icon: 'list',
     id: 'pick-todo',
     label: 'To do',
     soft: '#FFE2F0',
+    target: 'pick-tasks',
     value: pickFilters.todo,
   };
-  const pickPartial = {
+  const pickPartial: HomeActionCard = {
     accent: '#FF8A3D',
-    caption: 'Needs review',
     icon: 'alert-circle',
     id: 'pick-partial',
     label: 'Partial',
     soft: '#FFE8D7',
+    target: 'pick-tasks',
     value: pickFilters.partial,
   };
-  const pickInProgress = {
+  const pickInProgress: HomeActionCard = {
     accent: '#8C5CF6',
-    caption: 'Active',
     icon: 'activity',
     id: 'pick-in-progress',
-    label: 'In Progress',
+    label: 'Picking',
     soft: '#EDE4FF',
+    target: 'pick-tasks',
     value: pickFilters.inProgress,
   };
-  const pickPicked = {
+  const pickPicked: HomeActionCard = {
     accent: '#2CBF7B',
-    caption: 'Ready for pack',
     icon: 'check-circle',
     id: 'pick-picked',
     label: 'Picked',
     soft: '#DFF8ED',
+    target: 'pick-tasks',
     value: pickFilters.picked,
   };
-  const awaitingPack = {
+  const awaitingPack: HomeActionCard = {
     accent: '#F66AAE',
-    caption: 'Awaiting',
     icon: 'inbox',
     id: 'pack-awaiting',
     label: 'Awaiting',
     soft: '#FFE2F0',
+    target: 'pack-tasks',
     value: packFilters.awaiting,
   };
-  const packing = {
+  const packing: HomeActionCard = {
     accent: '#8C5CF6',
-    caption: 'Active',
     icon: 'package',
     id: 'pack-packing',
     label: 'Packing',
     soft: '#EDE4FF',
+    target: 'pack-tasks',
     value: packFilters.packing,
   };
-  const noTracking = {
+  const noTracking: HomeActionCard = {
     accent: '#FF8A3D',
-    caption: 'Needs tracking',
     icon: 'file-text',
     id: 'pack-no-tracking',
     label: 'No tracking',
     soft: '#FFE8D7',
+    target: 'pack-tasks',
     value: packFilters.noTracking,
   };
-  const packed = {
+  const packed: HomeActionCard = {
     accent: '#2CBF7B',
-    caption: 'History',
     icon: 'check-circle',
     id: 'pack-packed',
     label: 'Packed',
     soft: '#DFF8ED',
+    target: 'pack-tasks',
     value: packFilters.packed,
   };
 
@@ -745,28 +638,54 @@ function buildTaskGroups(
   }
 
   if (identity === 'inventory') {
-    return canOpenRts
-      ? [putaway, move, cycleCount, rts, restocking]
+    return access.canLoadRts
+      ? [putaway, move, cycleCount, rts]
       : [putaway, move, cycleCount, restocking];
   }
 
-  return canOpenRts
-    ? [restocking, packingWithoutTracking, delivered, rts]
-    : [restocking, packingWithoutTracking, delivered];
+  const adminCards: HomeActionCard[] = [];
+
+  if (access.canLoadPick) {
+    adminCards.push({
+      accent: '#F66AAE',
+      icon: 'shopping-bag',
+      id: 'admin-pick',
+      label: 'Pick',
+      soft: '#FFE2F0',
+      target: 'pick-tasks',
+      value: snapshot?.pickablePickTasks ?? 0,
+    });
+  }
+
+  if (access.canLoadPack) {
+    adminCards.push({
+      accent: '#8C5CF6',
+      icon: 'package',
+      id: 'admin-pack',
+      label: 'Pack',
+      soft: '#EDE4FF',
+      target: 'pack-tasks',
+      value: snapshot?.packablePackTasks ?? 0,
+    });
+  }
+
+  if (access.canLoadInventory || access.canLoadInventoryTask) {
+    adminCards.push(unitsOnHand);
+  }
+
+  if (access.canLoadRts) {
+    adminCards.push(rts);
+  }
+
+  if (adminCards.length > 0) {
+    return adminCards;
+  }
+
+  return [restocking, packingWithoutTracking];
 }
 
 function formatCount(value: number) {
   return NUMBER_FORMATTER.format(value);
-}
-
-function applyAlpha(hex: string, alpha: number) {
-  const normalized = hex.replace('#', '');
-  const value = normalized.length === 3
-    ? normalized.split('').map((char) => `${char}${char}`).join('')
-    : normalized;
-  const numericAlpha = Math.round(alpha * 255).toString(16).padStart(2, '0');
-
-  return `#${value}${numericAlpha}`;
 }
 
 const styles = StyleSheet.create({
@@ -833,236 +752,89 @@ const styles = StyleSheet.create({
     top: 2,
     width: 10,
   },
-  heroCard: {
-    alignItems: 'stretch',
-    backgroundColor: '#6B3EF6',
-    borderColor: '#6B3EF6',
-    borderRadius: 24,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 146,
-    overflow: 'hidden',
-    paddingHorizontal: 22,
-    paddingVertical: 18,
-    shadowColor: 'rgba(82, 41, 219, 0.34)',
-    shadowOffset: {
-      width: 0,
-      height: 18,
-    },
-    shadowOpacity: 1,
-    shadowRadius: 28,
-  },
-  heroCopyBlock: {
-    flex: 1,
-    justifyContent: 'space-between',
-    maxWidth: 150,
-    paddingVertical: 6,
-  },
-  heroTopBlock: {
-    gap: 8,
-  },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  heroBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  heroTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: -0.3,
-    lineHeight: 22,
-  },
-  heroMeta: {
-    color: 'rgba(255,255,255,0.84)',
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 16,
-  },
-  heroButton: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#F3EDFF',
-    borderRadius: 14,
-    minWidth: 122,
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-  },
-  heroButtonText: {
-    color: '#6B3EF6',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  heroRight: {
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    marginLeft: 14,
-  },
-  heroMenuButton: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    borderRadius: 12,
-    height: 30,
-    justifyContent: 'center',
-    width: 30,
-  },
-  heroMenuButtonPressed: {
-    opacity: 0.84,
-  },
-  ringWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  ringTrack: {
-    borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 52,
-    borderWidth: 8,
-    height: 104,
-    position: 'absolute',
-    width: 104,
-  },
-  ringSegment: {
-    borderRadius: 999,
-    position: 'absolute',
-  },
-  ringValue: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-  },
-  sectionRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  sectionTitle: {
-    color: '#262B35',
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  sectionCount: {
-    backgroundColor: '#EEE9FF',
-    borderRadius: 999,
-    color: '#6B3EF6',
-    fontSize: 12,
-    fontWeight: '700',
-    overflow: 'hidden',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  carousel: {
-    gap: 14,
-    paddingRight: 2,
-  },
-  inventoryCardPressable: {
-    width: 276,
-  },
-  inventoryCard: {
-    borderRadius: 22,
-    minHeight: 118,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-  },
-  inventoryCardHeader: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  inventoryCardLabel: {
-    color: '#6B7280',
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '500',
-    lineHeight: 18,
-    paddingRight: 12,
-  },
-  inventoryCardIcon: {
-    alignItems: 'center',
-    borderRadius: 12,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  inventoryCardValue: {
-    color: '#202431',
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.8,
-    marginTop: 12,
-  },
-  taskGroupList: {
-    gap: 14,
-  },
-  taskGroupPressable: {
-    borderRadius: 15,
-  },
-  taskGroupCard: {
+  statusCard: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderColor: 'rgba(244, 239, 252, 0.9)',
-    borderRadius: 15,
-    borderWidth: 1,
+    borderColor: '#EEE7FA',
+    borderRadius: 22,
     flexDirection: 'row',
-    gap: 16,
-    height: 66,
-    paddingHorizontal: 15,
-    paddingVertical: 0,
-    shadowColor: 'rgba(103, 81, 134, 0.12)',
-    shadowOffset: {
-      width: 0,
-      height: 12,
-    },
-    shadowOpacity: 1,
-    shadowRadius: 24,
-    width: '100%',
+    justifyContent: 'space-between',
+    minHeight: 118,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
   },
-  taskGroupIcon: {
-    alignItems: 'center',
-    borderRadius: 13,
-    height: 42,
-    justifyContent: 'center',
-    width: 42,
-  },
-  taskGroupCopy: {
+  statusCopy: {
     flex: 1,
+    gap: 2,
     minWidth: 0,
   },
-  taskGroupTitle: {
-    color: '#262B35',
-    fontSize: 17,
+  statusBadge: {
+    color: '#8A6FFF',
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: -0.3,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
-  taskGroupMeta: {
+  statusValue: {
+    color: '#262B35',
+    fontSize: 42,
+    fontWeight: '900',
+    letterSpacing: -1.4,
+  },
+  statusLabel: {
+    color: '#766F86',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  statusButton: {
+    alignItems: 'center',
+    backgroundColor: '#6B3EF6',
+    borderRadius: tokens.radius.pill,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: 18,
+  },
+  statusButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  actionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  actionCardPressable: {
+    flexBasis: '47%',
+    flexGrow: 1,
+  },
+  actionCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#EEE7FA',
+    borderRadius: 18,
+    gap: 8,
+    minHeight: 126,
+    padding: 14,
+  },
+  actionIcon: {
+    alignItems: 'center',
+    borderRadius: 13,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  actionValue: {
+    color: '#262B35',
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+  },
+  actionLabel: {
     color: '#766F86',
     fontSize: 13,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  taskGroupMetric: {
-    alignItems: 'center',
-    borderRadius: 18,
-    justifyContent: 'center',
-    minWidth: 54,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  taskGroupMetricValue: {
-    color: '#262B35',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: -0.2,
+    fontWeight: '800',
   },
   errorCard: {
     gap: 8,

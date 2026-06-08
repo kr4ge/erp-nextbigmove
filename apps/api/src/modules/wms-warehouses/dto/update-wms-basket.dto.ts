@@ -1,5 +1,6 @@
 import { WmsBasketStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class UpdateWmsBasketDto {
   @IsOptional()
@@ -14,5 +15,11 @@ export class UpdateWmsBasketDto {
   @IsOptional()
   @IsEnum(WmsBasketStatus)
   status?: WmsBasketStatus;
-}
 
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  maxFulfillmentOrders?: number;
+}

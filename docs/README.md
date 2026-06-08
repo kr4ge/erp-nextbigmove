@@ -22,6 +22,12 @@ Planning and architecture context for the STOX mobile warehouse execution app.
 - [Picking Algorithm Plan](./stox/STOX_PICKING_ALGORITHM_PLAN.md) - Reservation-first picking design
 - [STOX README](./stox/README.md) - STOX documentation hub
 
+### 🏬 WMS Partner Integrations
+Production validation and deployment readiness for Partner-managed POS integrations and webhooks.
+
+**Quick Links:**
+- [Production Validation Checklist](./WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md) - Deployment and role-based testing checklist
+
 ## 🚀 Quick Start
 
 If you're looking for the team isolation feature:
@@ -34,6 +40,7 @@ If you're looking for the team isolation feature:
 ```
 docs/
 ├── README.md                          # This file
+├── WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md # Partner integrations validation
 ├── stox/                              # STOX mobile WMS planning
 │   ├── README.md                      # STOX documentation hub
 │   ├── STOX_MOBILE_WMS_PLAN.md        # Mobile architecture and rollout
@@ -69,6 +76,7 @@ docs/
 - Run comprehensive tests → [team-isolation/TESTING_GUIDE.md](./team-isolation/TESTING_GUIDE.md)
 - Review STOX mobile architecture → [stox/STOX_MOBILE_WMS_PLAN.md](./stox/STOX_MOBILE_WMS_PLAN.md)
 - Review STOX picking logic → [stox/STOX_PICKING_ALGORITHM_PLAN.md](./stox/STOX_PICKING_ALGORITHM_PLAN.md)
+- Validate WMS Partner integrations → [WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md](./WMS_PARTNER_INTEGRATIONS_PRODUCTION_VALIDATION.md)
 
 ## 🆘 Getting Help
 

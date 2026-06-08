@@ -1,7 +1,11 @@
 import { WmsInventoryUnitStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class GetWmsInventoryOverviewDto {
+  @IsOptional()
+  @IsBoolean()
+  allTenants?: boolean;
+
   @IsOptional()
   @IsUUID()
   tenantId?: string;

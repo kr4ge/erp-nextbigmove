@@ -7,6 +7,7 @@ import {
 import {
   Prisma,
   WmsBasketStatus,
+  WmsFulfillmentOrderStatus,
   WmsLocationKind,
   WmsInventoryUnitStatus,
   WmsWarehouseStatus,
@@ -52,6 +53,12 @@ const RESETTABLE_BASKET_STATUSES: readonly WmsBasketStatus[] = [
   WmsBasketStatus.DAMAGED,
   WmsBasketStatus.RETIRED,
 ];
+const ACTIVE_BASKET_ORDER_STATUSES = [
+  WmsFulfillmentOrderStatus.IN_PICKING,
+  WmsFulfillmentOrderStatus.READY_FOR_PACK,
+  WmsFulfillmentOrderStatus.PICKED,
+  WmsFulfillmentOrderStatus.PACKING,
+] as const;
 
 function isStructuralKind(kind: WmsLocationKind) {
   return STRUCTURAL_KINDS.includes(kind as (typeof STRUCTURAL_KINDS)[number]);
@@ -99,7 +106,7 @@ type WarehouseOverviewRecord = Prisma.WmsWarehouseGetPayload<{
             email: true;
           };
         };
-        fulfillmentOrder: {
+        fulfillmentOrders: {
           select: {
             id: true;
             posOrderId: true;
@@ -179,13 +186,22 @@ export class WmsWarehousesService {
                 email: true,
               },
             },
-            fulfillmentOrder: {
+            fulfillmentOrders: {
+              where: {
+                status: {
+                  in: [...ACTIVE_BASKET_ORDER_STATUSES],
+                },
+              },
               select: {
                 id: true,
                 posOrderId: true,
                 customerName: true,
                 status: true,
               },
+              orderBy: [
+                { updatedAt: 'desc' },
+                { createdAt: 'desc' },
+              ],
             },
           },
           orderBy: [{ status: 'asc' }, { barcode: 'asc' }],
@@ -622,6 +638,7 @@ export class WmsWarehousesService {
           warehouseId: warehouse.id,
           barcode,
           status: WmsBasketStatus.AVAILABLE,
+          maxFulfillmentOrders: body.maxFulfillmentOrders ?? 1,
         },
       });
     } catch (error) {
@@ -635,10 +652,16 @@ export class WmsWarehousesService {
     const basket = await this.prisma.wmsBasket.findFirst({
       where: { id },
       include: {
-        fulfillmentOrder: {
+        fulfillmentOrders: {
+          where: {
+            status: {
+              in: [...ACTIVE_BASKET_ORDER_STATUSES],
+            },
+          },
           select: {
             id: true,
             posOrderId: true,
+            status: true,
           },
         },
       },
@@ -652,17 +675,26 @@ export class WmsWarehousesService {
       ? this.normalizeBasketBarcode(body.barcode)
       : basket.barcode;
     const nextStatus = body.status ?? basket.status;
+    const nextMaxFulfillmentOrders = body.maxFulfillmentOrders ?? basket.maxFulfillmentOrders;
+    const activeFulfillmentOrderCount = basket.fulfillmentOrders.length;
+    const firstActiveFulfillmentOrder = basket.fulfillmentOrders[0] ?? null;
 
     if (nextBarcode !== basket.barcode) {
       await this.ensureBasketBarcodeAvailable(nextBarcode, basket.id);
     }
 
     if (
-      basket.fulfillmentOrderId
+      activeFulfillmentOrderCount > 0
       && RESETTABLE_BASKET_STATUSES.includes(nextStatus)
     ) {
       throw new ConflictException(
-        `Basket is assigned to order ${basket.fulfillmentOrder?.posOrderId ?? basket.fulfillmentOrderId}`,
+        `Basket is assigned to order ${firstActiveFulfillmentOrder?.posOrderId ?? 'active fulfillment'}`,
+      );
+    }
+
+    if (activeFulfillmentOrderCount > 0 && nextMaxFulfillmentOrders !== basket.maxFulfillmentOrders) {
+      throw new ConflictException(
+        `Basket capacity cannot be changed while assigned to order ${firstActiveFulfillmentOrder?.posOrderId ?? 'active fulfillment'}`,
       );
     }
 
@@ -672,6 +704,7 @@ export class WmsWarehousesService {
         data: {
           barcode: nextBarcode,
           status: nextStatus,
+          maxFulfillmentOrders: nextMaxFulfillmentOrders,
           ...(nextStatus === WmsBasketStatus.AVAILABLE
             ? {
                 tenantId: null,
@@ -1290,10 +1323,15 @@ export class WmsWarehousesService {
   }
 
   private mapBasket(basket: WarehouseOverviewRecord['baskets'][number]) {
+    const activeFulfillmentOrders = basket.fulfillmentOrders ?? [];
+    const firstActiveFulfillmentOrder = activeFulfillmentOrders[0] ?? null;
+
     return {
       id: basket.id,
       barcode: basket.barcode,
       status: basket.status,
+      maxFulfillmentOrders: basket.maxFulfillmentOrders,
+      activeFulfillmentOrders: activeFulfillmentOrders.length,
       warehouseId: basket.warehouseId,
       assignedPicker: basket.assignedPicker
         ? {
@@ -1307,12 +1345,12 @@ export class WmsWarehousesService {
             email: basket.assignedPacker.email,
           }
         : null,
-      fulfillmentOrder: basket.fulfillmentOrder
+      fulfillmentOrder: firstActiveFulfillmentOrder
         ? {
-            id: basket.fulfillmentOrder.id,
-            posOrderId: basket.fulfillmentOrder.posOrderId,
-            customerName: basket.fulfillmentOrder.customerName,
-            status: basket.fulfillmentOrder.status,
+            id: firstActiveFulfillmentOrder.id,
+            posOrderId: firstActiveFulfillmentOrder.posOrderId,
+            customerName: firstActiveFulfillmentOrder.customerName,
+            status: firstActiveFulfillmentOrder.status,
           }
         : null,
       claimedAt: basket.claimedAt,

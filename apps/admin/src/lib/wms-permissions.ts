@@ -84,6 +84,30 @@ export const WMS_STOX_WRITE_PERMISSIONS = [
   'wms.stox.write',
 ] as const;
 
+export const WMS_INTEGRATIONS_READ_PERMISSIONS = [
+  'wms.integrations.read',
+] as const;
+
+export const WMS_INTEGRATIONS_WRITE_PERMISSIONS = [
+  'wms.integrations.write',
+] as const;
+
+export const WMS_INTEGRATIONS_EDIT_PERMISSIONS = [
+  'wms.integrations.edit',
+] as const;
+
+export const WMS_INTEGRATIONS_SYNC_PERMISSIONS = [
+  'wms.integrations.sync',
+] as const;
+
+export const WMS_INTEGRATIONS_WEBHOOK_UPDATE_PERMISSIONS = [
+  'wms.integrations.webhook.update',
+] as const;
+
+export const WMS_INTEGRATIONS_WEBHOOK_ROTATE_PERMISSIONS = [
+  'wms.integrations.webhook.rotate',
+] as const;
+
 function normalizeAdminRole(role: string | null | undefined) {
   return typeof role === 'string'
     ? role.trim().toUpperCase()

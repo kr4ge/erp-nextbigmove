@@ -101,6 +101,7 @@ export type WmsProductsOverviewResponse = {
 };
 
 export type GetWmsProductsOverviewParams = {
+  allTenants?: boolean;
   tenantId?: string;
   storeId?: string;
   posWarehouseId?: string;

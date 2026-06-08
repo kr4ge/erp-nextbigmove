@@ -178,6 +178,12 @@ const PACK_LIST_ORDER_STATUSES = [
   ...PACK_QUEUE_ORDER_STATUSES,
   WmsFulfillmentOrderStatus.PACKED,
 ] as const;
+const ACTIVE_BASKET_ORDER_STATUSES = [
+  WmsFulfillmentOrderStatus.IN_PICKING,
+  WmsFulfillmentOrderStatus.READY_FOR_PACK,
+  WmsFulfillmentOrderStatus.PICKED,
+  WmsFulfillmentOrderStatus.PACKING,
+] as const;
 const PICK_ASSIGNMENT_PERMISSIONS = [
   'wms.fulfillment.write',
   'wms.fulfillment.edit',
@@ -2609,18 +2615,45 @@ export class WmsMobileService {
       },
       ...(tenantId ? { tenantId } : {}),
       ...(activeStore ? {
-        fulfillmentOrder: {
-          is: {
+        fulfillmentOrders: {
+          some: {
             storeId: activeStore.id,
+            status: {
+              in: [...ACTIVE_BASKET_ORDER_STATUSES],
+            },
           },
         },
       } : {}),
     };
-    const availableBasketWhere: Prisma.WmsBasketWhereInput = {
-      status: WmsBasketStatus.AVAILABLE,
+    const openBasketWhere: Prisma.WmsBasketWhereInput = {
       warehouseId: {
         not: null,
       },
+      OR: [
+        {
+          status: WmsBasketStatus.AVAILABLE,
+        },
+        {
+          assignedPickerId: userId,
+          status: {
+            in: [
+              WmsBasketStatus.ASSIGNED,
+              WmsBasketStatus.IN_PICKING,
+            ],
+          },
+          ...(tenantId ? { tenantId } : {}),
+          ...(activeStore ? {
+            fulfillmentOrders: {
+              some: {
+                storeId: activeStore.id,
+                status: {
+                  in: [...ACTIVE_BASKET_ORDER_STATUSES],
+                },
+              },
+            },
+          } : {}),
+        },
+      ],
     };
     const registeredBasketWhere: Prisma.WmsBasketWhereInput = {
       status: {
@@ -2637,9 +2670,12 @@ export class WmsMobileService {
       },
       ...(tenantId ? { tenantId } : {}),
       ...(activeStore ? {
-        fulfillmentOrder: {
-          is: {
+        fulfillmentOrders: {
+          some: {
             storeId: activeStore.id,
+            status: {
+              in: [...ACTIVE_BASKET_ORDER_STATUSES],
+            },
           },
         },
       } : {}),
@@ -2664,7 +2700,7 @@ export class WmsMobileService {
       status: statusFilter,
     };
 
-    const [total, statusGroups, tasks, heldBaskets, pickedHistory, activeLoad, availableBasketCount, registeredBasketCount, availableBaskets, packerOptions] = await Promise.all([
+    const [total, statusGroups, tasks, heldBaskets, pickedHistory, activeLoad, registeredBasketCount, openBasketCandidates, packerOptions] = await Promise.all([
       this.prisma.wmsFulfillmentOrder.count({ where: taskWhere }),
       this.prisma.wmsFulfillmentOrder.groupBy({
         by: ['status'],
@@ -2690,8 +2726,17 @@ export class WmsMobileService {
       this.prisma.wmsBasket.findMany({
         where: heldBasketWhere,
         include: {
-          fulfillmentOrder: {
+          fulfillmentOrders: {
+            where: {
+              status: {
+                in: [...ACTIVE_BASKET_ORDER_STATUSES],
+              },
+            },
             include: this.pickingTaskInclude(),
+            orderBy: [
+              { updatedAt: 'desc' },
+              { createdAt: 'desc' },
+            ],
           },
         },
         orderBy: [
@@ -2711,19 +2756,26 @@ export class WmsMobileService {
         take: 20,
       }),
       this.prisma.wmsBasket.count({ where: activeBasketWhere }),
-      this.prisma.wmsBasket.count({ where: availableBasketWhere }),
       this.prisma.wmsBasket.count({ where: registeredBasketWhere }),
       this.prisma.wmsBasket.findMany({
-        where: availableBasketWhere,
+        where: openBasketWhere,
         include: this.mobileBasketInclude(),
         orderBy: [
+          { status: 'asc' },
           { warehouse: { name: 'asc' } },
           { barcode: 'asc' },
         ],
-        take: 40,
+        take: 80,
       }),
       this.listPackingHandoffCandidates(),
     ]);
+    const openBaskets = openBasketCandidates
+      .filter((basket) => this.getOpenBasketSlotCount(basket) > 0)
+      .slice(0, 40);
+    const openBasketSlotCount = openBaskets.reduce(
+      (totalSlots, basket) => totalSlots + this.getOpenBasketSlotCount(basket),
+      0,
+    );
 
     await this.wmsStaffActivityService.recordFromRequest({
       request,
@@ -2771,11 +2823,11 @@ export class WmsMobileService {
       picker: {
         registeredBaskets: registeredBasketCount,
         activeLoad,
-        availableSlots: availableBasketCount,
+        availableSlots: openBasketSlotCount,
         heldBaskets: heldBaskets.length,
         fullHeldBaskets: heldBaskets.filter((basket) => basket.status === WmsBasketStatus.FULL_HELD).length,
       },
-      availableBaskets: availableBaskets.map((basket) => this.mapMobilePickBasket(basket)),
+      availableBaskets: openBaskets.map((basket) => this.mapMobilePickBasket(basket)),
       heldBaskets: heldBaskets.map((basket) => this.mapMobileHeldBasket(basket)),
       pickedHistory: pickedHistory.map((task) => this.mapMobilePickingTask(task)),
       tasks: tasks.map((task) => this.mapMobilePickingTask(task)),
@@ -3177,8 +3229,8 @@ export class WmsMobileService {
       ...(isPackSupervisor
         ? { assignedPackerId: { not: null } }
         : { assignedPackerId: userId }),
-      fulfillmentOrder: {
-        is: {
+      fulfillmentOrders: {
+        some: {
           ...scopedWhere,
           ...searchWhere,
           status: {
@@ -3597,6 +3649,22 @@ export class WmsMobileService {
         throw new NotFoundException('Scanned unit was not found');
       }
 
+      const basket = order.basket;
+      if (!basket) {
+        throw new BadRequestException(`Order ${order.posOrderId} has no basket assigned for packing`);
+      }
+
+      const siblingReservation = await this.findSiblingBasketReservationForPackingUnit(
+        scannedUnit.id,
+        basket.id,
+        order.id,
+      );
+      if (siblingReservation?.fulfillmentOrder) {
+        throw new BadRequestException(
+          `Unit ${scannedUnit.code} belongs to order ${siblingReservation.fulfillmentOrder.posOrderId} in basket ${basket.barcode}. Open that order before packing it.`,
+        );
+      }
+
       const requiredVariationIds = new Set(order.lines.map((line: any) => line.variationId));
       if (requiredVariationIds.has(scannedUnit.variationId)) {
         throw new BadRequestException(`Unit ${scannedUnit.code} is not reserved for this order`);
@@ -3742,22 +3810,11 @@ export class WmsMobileService {
           status: WmsFulfillmentOrderStatus.PACKED,
           packedById: (user.userId || user.id) ?? null,
           completedAt: now,
+          basketId: null,
         },
       });
 
-      await tx.wmsBasket.update({
-        where: { id: basketId },
-        data: {
-          tenantId: null,
-          status: WmsBasketStatus.AVAILABLE,
-          assignedPickerId: null,
-          assignedPackerId: null,
-          fulfillmentOrderId: null,
-          claimedAt: null,
-          fullAt: null,
-          readyForPackAt: null,
-        },
-      });
+      await this.refreshBasketState(tx, basketId, now);
 
       return tx.wmsFulfillmentOrder.findUniqueOrThrow({
         where: { id: scopedOrder.id },
@@ -3914,23 +3971,12 @@ export class WmsMobileService {
           allocatedQuantity: 0,
           pickedQuantity: 0,
           completedAt: now,
+          basketId: null,
         },
       });
 
       if (scopedOrder.basket?.id) {
-        await tx.wmsBasket.update({
-          where: { id: scopedOrder.basket.id },
-          data: {
-            tenantId: null,
-            status: WmsBasketStatus.AVAILABLE,
-            assignedPickerId: null,
-            assignedPackerId: null,
-            fulfillmentOrderId: null,
-            claimedAt: null,
-            fullAt: null,
-            readyForPackAt: null,
-          },
-        });
+        await this.refreshBasketState(tx, scopedOrder.basket.id, now);
       }
 
       return tx.wmsFulfillmentOrder.findUniqueOrThrow({
@@ -4045,7 +4091,7 @@ export class WmsMobileService {
     }
 
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
-      await this.assertAvailableBasketForClaim(order, tx);
+      await this.assertAvailableBasketForClaim(order, tx, userId);
 
       const claimResult = await tx.wmsFulfillmentOrder.updateMany({
         where: {
@@ -4169,22 +4215,17 @@ export class WmsMobileService {
           throw new ConflictException(`Order ${scopedOrder.posOrderId} is already assigned to basket ${scopedOrder.basket.barcode}`);
         }
 
-        await tx.wmsBasket.update({
-          where: { id: scopedOrder.basket.id },
+        const previousBasketId = scopedOrder.basket.id;
+        await tx.wmsFulfillmentOrder.update({
+          where: { id: scopedOrder.id },
           data: {
-            tenantId: null,
-            status: WmsBasketStatus.AVAILABLE,
-            assignedPickerId: null,
-            assignedPackerId: null,
-            fulfillmentOrderId: null,
-            claimedAt: null,
-            fullAt: null,
-            readyForPackAt: null,
+            basketId: null,
           },
         });
+        await this.refreshBasketState(tx, previousBasketId, now);
       }
 
-      const existingBasket = await tx.wmsBasket.findUnique({
+      let existingBasket = await tx.wmsBasket.findUnique({
         where: { barcode: basketCode },
         include: this.mobileBasketInclude(),
       });
@@ -4197,13 +4238,64 @@ export class WmsMobileService {
         throw new ConflictException(`Basket ${existingBasket.barcode} is ${this.formatEnumLabel(existingBasket.status)} and cannot be used`);
       }
 
-      if (existingBasket.status !== WmsBasketStatus.AVAILABLE && existingBasket.fulfillmentOrderId !== scopedOrder.id) {
-        throw new ConflictException(`Basket ${existingBasket.barcode} is ${this.formatEnumLabel(existingBasket.status)} and not available`);
+      await this.lockBasketForUpdate(tx, existingBasket.id);
+      existingBasket = await tx.wmsBasket.findUnique({
+        where: { id: existingBasket.id },
+        include: this.mobileBasketInclude(),
+      });
+
+      if (!existingBasket) {
+        throw new NotFoundException(`Basket ${basketCode} is not registered. Add it in WMS Warehouses first.`);
       }
 
-      if (existingBasket.fulfillmentOrderId && existingBasket.fulfillmentOrderId !== scopedOrder.id) {
+      if (BLOCKED_PICK_BASKET_STATUSES.includes(existingBasket.status as (typeof BLOCKED_PICK_BASKET_STATUSES)[number])) {
+        throw new ConflictException(`Basket ${existingBasket.barcode} is ${this.formatEnumLabel(existingBasket.status)} and cannot be used`);
+      }
+
+      const activeBasketOrders = await tx.wmsFulfillmentOrder.findMany({
+        where: {
+          basketId: existingBasket.id,
+          status: {
+            in: [...ACTIVE_BASKET_ORDER_STATUSES],
+          },
+        },
+        select: {
+          id: true,
+          posOrderId: true,
+          status: true,
+          pickedQuantity: true,
+        },
+        orderBy: [
+          { updatedAt: 'desc' },
+          { createdAt: 'desc' },
+        ],
+      });
+
+      if (activeBasketOrders.some((activeOrder) => activeOrder.id === scopedOrder.id)) {
+        await tx.wmsFulfillmentOrder.update({
+          where: { id: scopedOrder.id },
+          data: {
+            status: WmsFulfillmentOrderStatus.IN_PICKING,
+          },
+        });
+
+        return tx.wmsFulfillmentOrder.findUniqueOrThrow({
+          where: { id: scopedOrder.id },
+          include: this.pickingTaskInclude(),
+        });
+      }
+
+      if (
+        existingBasket.status !== WmsBasketStatus.AVAILABLE
+        && existingBasket.status !== WmsBasketStatus.ASSIGNED
+        && existingBasket.status !== WmsBasketStatus.IN_PICKING
+      ) {
+        throw new ConflictException(`Basket ${existingBasket.barcode} is ${this.formatEnumLabel(existingBasket.status)} and not available for new pick orders`);
+      }
+
+      if (activeBasketOrders.length >= (existingBasket.maxFulfillmentOrders ?? 1)) {
         throw new ConflictException(
-          `Basket ${existingBasket.barcode} already contains order ${existingBasket.fulfillmentOrder?.posOrderId ?? existingBasket.fulfillmentOrderId}`,
+          `Basket ${existingBasket.barcode} already has ${activeBasketOrders.length}/${existingBasket.maxFulfillmentOrders ?? 1} active orders`,
         );
       }
 
@@ -4215,33 +4307,31 @@ export class WmsMobileService {
         throw new ConflictException(`Basket ${existingBasket.barcode} belongs to ${existingBasket.warehouse?.name ?? 'another warehouse'}`);
       }
 
-      const assignResult = await tx.wmsBasket.updateMany({
-        where: {
-          id: existingBasket.id,
-          status: WmsBasketStatus.AVAILABLE,
-          fulfillmentOrderId: null,
-          assignedPickerId: null,
-        },
+      if (existingBasket.tenantId && existingBasket.tenantId !== scopedOrder.tenantId) {
+        throw new ConflictException(`Basket ${existingBasket.barcode} is assigned to another partner`);
+      }
+
+      await tx.wmsBasket.update({
+        where: { id: existingBasket.id },
         data: {
           tenantId: scopedOrder.tenantId,
-          status: WmsBasketStatus.ASSIGNED,
+          status: existingBasket.status === WmsBasketStatus.AVAILABLE
+            ? WmsBasketStatus.ASSIGNED
+            : existingBasket.status,
           assignedPickerId: userId,
           assignedPackerId: null,
-          fulfillmentOrderId: scopedOrder.id,
-          claimedAt: now,
+          fulfillmentOrderId: existingBasket.fulfillmentOrderId ?? scopedOrder.id,
+          claimedAt: existingBasket.claimedAt ?? now,
           fullAt: null,
           readyForPackAt: null,
         },
       });
 
-      if (assignResult.count !== 1) {
-        throw new ConflictException(`Basket ${existingBasket.barcode} is no longer available`);
-      }
-
       await tx.wmsFulfillmentOrder.update({
         where: { id: scopedOrder.id },
         data: {
           status: WmsFulfillmentOrderStatus.IN_PICKING,
+          basketId: existingBasket.id,
         },
       });
 
@@ -4392,14 +4482,17 @@ export class WmsMobileService {
     const scopedBasket = basket && tenantContext.tenantId && basket.tenantId && basket.tenantId !== tenantContext.tenantId
       ? null
       : basket;
+    const scopedBasketOrder = Array.isArray(scopedBasket?.fulfillmentOrders)
+      ? scopedBasket.fulfillmentOrders[0] ?? null
+      : null;
 
     await this.recordStockActivity(user, request, {
       tenantId: scopedBasket?.tenantId ?? tenantContext.tenantId,
       actionType: 'PICKING_BASKET_LOOKUP',
       resourceType: 'WMS_BASKET',
       resourceId: scopedBasket?.id ?? null,
-      storeId: scopedBasket?.fulfillmentOrder?.storeId ?? null,
-      warehouseId: scopedBasket?.warehouseId ?? scopedBasket?.fulfillmentOrder?.warehouseId ?? null,
+      storeId: scopedBasketOrder?.storeId ?? null,
+      warehouseId: scopedBasket?.warehouseId ?? scopedBasketOrder?.warehouseId ?? null,
       metadata: {
         basketCode,
         found: Boolean(scopedBasket),
@@ -4510,6 +4603,24 @@ export class WmsMobileService {
         throw new BadRequestException(`Order ${scopedOrder.posOrderId} is ${this.formatEnumLabel(scopedOrder.status)} and cannot be handed off yet`);
       }
 
+      const unfinishedBasketOrders = await tx.wmsFulfillmentOrder.count({
+        where: {
+          basketId: scopedOrder.basket.id,
+          id: {
+            not: scopedOrder.id,
+          },
+          status: {
+            in: [
+              WmsFulfillmentOrderStatus.IN_PICKING,
+            ],
+          },
+        },
+      });
+
+      if (unfinishedBasketOrders > 0) {
+        throw new ConflictException(`Basket ${scopedOrder.basket.barcode} still has ${unfinishedBasketOrders} order${unfinishedBasketOrders === 1 ? '' : 's'} in picking`);
+      }
+
       await tx.wmsBasket.update({
         where: { id: scopedOrder.basket.id },
         data: {
@@ -4519,11 +4630,14 @@ export class WmsMobileService {
         },
       });
 
-      await tx.wmsFulfillmentOrder.update({
-        where: { id: scopedOrder.id },
+      await tx.wmsFulfillmentOrder.updateMany({
+        where: {
+          basketId: scopedOrder.basket.id,
+          status: WmsFulfillmentOrderStatus.READY_FOR_PACK,
+        },
         data: {
           status: WmsFulfillmentOrderStatus.PICKED,
-          completedAt: scopedOrder.completedAt ?? now,
+          completedAt: now,
         },
       });
 
@@ -5175,44 +5289,113 @@ export class WmsMobileService {
     const order = await tx.wmsFulfillmentOrder.findUnique({
       where: { id: fulfillmentOrderId },
       select: {
+        basketId: true,
+      },
+    });
+
+    if (!order?.basketId) {
+      return;
+    }
+
+    await this.refreshBasketState(tx, order.basketId, now);
+  }
+
+  private async refreshBasketState(
+    tx: Prisma.TransactionClient,
+    basketId: string,
+    now: Date,
+  ) {
+    await this.lockBasketForUpdate(tx, basketId);
+
+    const basket = await tx.wmsBasket.findUnique({
+      where: { id: basketId },
+      select: {
+        id: true,
         status: true,
-        pickedQuantity: true,
-        basket: {
+        assignedPackerId: true,
+        fullAt: true,
+        readyForPackAt: true,
+        fulfillmentOrders: {
+          where: {
+            status: {
+              in: [...ACTIVE_BASKET_ORDER_STATUSES],
+            },
+          },
           select: {
             id: true,
             status: true,
-            fullAt: true,
-            readyForPackAt: true,
+            pickedQuantity: true,
+            tenantId: true,
+            claimedById: true,
           },
+          orderBy: [
+            { updatedAt: 'desc' },
+            { createdAt: 'desc' },
+          ],
         },
       },
     });
 
-    if (!order?.basket) {
+    if (!basket) {
       return;
     }
 
-    const nextStatus = order.status === WmsFulfillmentOrderStatus.READY_FOR_PACK
-      || order.status === WmsFulfillmentOrderStatus.PICKED
-      ? WmsBasketStatus.FULL_HELD
-      : order.status === WmsFulfillmentOrderStatus.PACKING
-        ? WmsBasketStatus.PACKING
-      : order.pickedQuantity > 0
-        ? WmsBasketStatus.IN_PICKING
-        : WmsBasketStatus.ASSIGNED;
+    const activeOrders = basket.fulfillmentOrders;
+    if (activeOrders.length === 0) {
+      await tx.wmsBasket.update({
+        where: { id: basket.id },
+        data: {
+          tenantId: null,
+          status: WmsBasketStatus.AVAILABLE,
+          assignedPickerId: null,
+          assignedPackerId: null,
+          fulfillmentOrderId: null,
+          claimedAt: null,
+          fullAt: null,
+          readyForPackAt: null,
+        },
+      });
+      return;
+    }
+
+    const hasPackingOrder = activeOrders.some((activeOrder) => activeOrder.status === WmsFulfillmentOrderStatus.PACKING);
+    const allReadyForPack = activeOrders.every((activeOrder) => (
+      activeOrder.status === WmsFulfillmentOrderStatus.READY_FOR_PACK
+      || activeOrder.status === WmsFulfillmentOrderStatus.PICKED
+    ));
+    const hasPickedWork = activeOrders.some((activeOrder) => (
+      activeOrder.pickedQuantity > 0
+      || activeOrder.status === WmsFulfillmentOrderStatus.IN_PICKING
+    ));
+    const nextStatus = hasPackingOrder
+      ? WmsBasketStatus.PACKING
+      : allReadyForPack
+        ? WmsBasketStatus.FULL_HELD
+        : hasPickedWork
+          ? WmsBasketStatus.IN_PICKING
+          : WmsBasketStatus.ASSIGNED;
 
     await tx.wmsBasket.update({
-      where: { id: order.basket.id },
+      where: { id: basket.id },
       data: {
         status: nextStatus,
-        fullAt: nextStatus === WmsBasketStatus.FULL_HELD
-          ? order.basket.fullAt ?? now
+        tenantId: activeOrders[0]?.tenantId ?? null,
+        assignedPickerId: activeOrders[0]?.claimedById ?? null,
+        assignedPackerId: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
+          ? basket.assignedPackerId
           : null,
-        readyForPackAt: nextStatus === WmsBasketStatus.FULL_HELD
-          ? order.basket.readyForPackAt ?? now
+        fullAt: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
+          ? basket.fullAt ?? now
+          : null,
+        readyForPackAt: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
+          ? basket.readyForPackAt ?? now
           : null,
       },
     });
+  }
+
+  private async lockBasketForUpdate(tx: Prisma.TransactionClient, basketId: string) {
+    await tx.$queryRaw`SELECT "id" FROM "wms_baskets" WHERE "id" = ${basketId}::uuid FOR UPDATE`;
   }
 
   private async backfillPackedOrderActors(params: {
@@ -5304,20 +5487,52 @@ export class WmsMobileService {
   private async assertAvailableBasketForClaim(
     order: { warehouseId: string | null; posOrderId: string },
     client: Prisma.TransactionClient,
+    userId: string,
   ) {
-    const availableBasket = await client.wmsBasket.findFirst({
+    const candidateBaskets = await client.wmsBasket.findMany({
       where: {
-        status: WmsBasketStatus.AVAILABLE,
         warehouseId: order.warehouseId
           ? order.warehouseId
           : { not: null },
+        OR: [
+          {
+            status: WmsBasketStatus.AVAILABLE,
+          },
+          {
+            status: {
+              in: [
+                WmsBasketStatus.ASSIGNED,
+                WmsBasketStatus.IN_PICKING,
+              ],
+            },
+            assignedPickerId: userId,
+          },
+        ],
       },
       select: {
         id: true,
+        status: true,
+        maxFulfillmentOrders: true,
+        fulfillmentOrders: {
+          where: {
+            status: {
+              in: [...ACTIVE_BASKET_ORDER_STATUSES],
+            },
+          },
+          select: {
+            id: true,
+          },
+        },
       },
+      take: 20,
     });
 
-    if (!availableBasket) {
+    const hasBasketCapacity = candidateBaskets.some((basket) => (
+      basket.status === WmsBasketStatus.AVAILABLE
+      || basket.fulfillmentOrders.length < basket.maxFulfillmentOrders
+    ));
+
+    if (!hasBasketCapacity) {
       throw new ConflictException(
         `No available picking baskets for order ${order.posOrderId}. Release a full basket to packing or register another basket before claiming.`,
       );
@@ -5702,6 +5917,40 @@ export class WmsMobileService {
     return reservation?.fulfillmentOrder ?? null;
   }
 
+  private async findSiblingBasketReservationForPackingUnit(
+    unitId: string,
+    basketId: string,
+    currentOrderId: string,
+  ) {
+    return this.prisma.wmsPickReservation.findFirst({
+      where: {
+        inventoryUnitId: unitId,
+        status: WmsPickReservationStatus.PICKED,
+        fulfillmentOrderId: {
+          not: currentOrderId,
+        },
+        fulfillmentOrder: {
+          is: {
+            basketId,
+            status: {
+              in: [...ACTIVE_BASKET_ORDER_STATUSES],
+            },
+          },
+        },
+      },
+      include: {
+        fulfillmentOrder: {
+          select: {
+            id: true,
+            posOrderId: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: [{ pickedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
   private assertPackingTaskReadyToStart(order: any) {
     if (order.status !== WmsFulfillmentOrderStatus.PICKED && order.status !== WmsFulfillmentOrderStatus.PACKING) {
       throw new BadRequestException(`Order ${order.posOrderId} is ${this.formatEnumLabel(order.status)} and cannot start packing`);
@@ -6044,11 +6293,40 @@ export class WmsMobileService {
           id: true,
           barcode: true,
           status: true,
+          maxFulfillmentOrders: true,
           warehouseId: true,
           assignedPackerId: true,
           claimedAt: true,
           fullAt: true,
           readyForPackAt: true,
+          fulfillmentOrders: {
+            where: {
+              status: {
+                in: [...ACTIVE_BASKET_ORDER_STATUSES],
+              },
+            },
+            select: {
+              id: true,
+              posOrderId: true,
+              status: true,
+              customerName: true,
+              totalQuantity: true,
+              pickedQuantity: true,
+              store: {
+                select: {
+                  id: true,
+                  name: true,
+                  shopName: true,
+                  tenantId: true,
+                  tenant: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
           assignedPacker: {
             select: {
               firstName: true,
@@ -6136,8 +6414,17 @@ export class WmsMobileService {
           email: true,
         },
       },
-      fulfillmentOrder: {
+      fulfillmentOrders: {
+        where: {
+          status: {
+            in: [...ACTIVE_BASKET_ORDER_STATUSES],
+          },
+        },
         include: this.pickingTaskInclude(),
+        orderBy: [
+          { updatedAt: 'desc' },
+          { createdAt: 'desc' },
+        ],
       },
     } satisfies Prisma.WmsBasketInclude;
   }
@@ -6219,11 +6506,20 @@ export class WmsMobileService {
   }
 
   private mapMobilePickBasket(basket: any) {
+    const activeFulfillmentOrders = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders
+      : basket.fulfillmentOrder
+        ? [basket.fulfillmentOrder]
+        : [];
+
     return {
       id: basket.id,
       barcode: basket.barcode,
       status: basket.status,
       statusLabel: this.formatEnumLabel(basket.status),
+      maxFulfillmentOrders: basket.maxFulfillmentOrders ?? 1,
+      activeFulfillmentOrders: activeFulfillmentOrders.length,
+      orders: this.mapMobileBasketOrders(activeFulfillmentOrders),
       warehouse: basket.warehouse
         ? {
             id: basket.warehouse.id,
@@ -6243,17 +6539,65 @@ export class WmsMobileService {
     };
   }
 
+  private mapMobileBasketOrders(orders: any[]) {
+    return orders.map((order) => ({
+      id: order.id,
+      posOrderId: order.posOrderId ?? null,
+      status: order.status ?? null,
+      statusLabel: order.status ? this.formatEnumLabel(order.status) : null,
+      customerName: order.customerName ?? null,
+      totals: {
+        required: order.totalQuantity ?? 0,
+        picked: order.pickedQuantity ?? 0,
+      },
+      store: order.store
+        ? {
+            id: order.store.id,
+            tenantId: order.store.tenantId ?? null,
+            name: order.store.shopName || order.store.name,
+            tenantName: order.store.tenant?.name ?? null,
+          }
+        : null,
+    }));
+  }
+
+  private getOpenBasketSlotCount(basket: any) {
+    if (
+      basket.status !== WmsBasketStatus.AVAILABLE
+      && basket.status !== WmsBasketStatus.ASSIGNED
+      && basket.status !== WmsBasketStatus.IN_PICKING
+    ) {
+      return 0;
+    }
+
+    const activeFulfillmentOrderCount = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders.length
+      : basket.fulfillmentOrder
+        ? 1
+        : 0;
+
+    return Math.max((basket.maxFulfillmentOrders ?? 1) - activeFulfillmentOrderCount, 0);
+  }
+
   private mapMobileHeldBasket(basket: any) {
+    const activeTask = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders[0] ?? null
+      : basket.fulfillmentOrder ?? null;
+
     return {
       ...this.mapMobilePickBasket(basket),
-      task: basket.fulfillmentOrder ? this.mapMobilePickingTask(basket.fulfillmentOrder) : null,
+      task: activeTask ? this.mapMobilePickingTask(activeTask) : null,
     };
   }
 
   private mapMobileBasketLookup(basket: any) {
+    const activeTask = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders[0] ?? null
+      : basket.fulfillmentOrder ?? null;
+
     return {
       ...this.mapMobilePickBasket(basket),
-      task: basket.fulfillmentOrder ? this.mapMobilePickingTask(basket.fulfillmentOrder) : null,
+      task: activeTask ? this.mapMobilePickingTask(activeTask) : null,
     };
   }
 

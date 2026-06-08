@@ -191,6 +191,7 @@ export type WmsReceivingOverviewResponse = {
 };
 
 export type GetWmsReceivingOverviewParams = {
+  allTenants?: boolean;
   tenantId?: string;
   storeId?: string;
   warehouseId?: string;

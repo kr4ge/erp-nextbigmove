@@ -228,6 +228,7 @@ export type WmsInventoryTransfersResponse = {
 };
 
 export type GetWmsInventoryOverviewParams = {
+  allTenants?: boolean;
   tenantId?: string;
   storeId?: string;
   warehouseId?: string;

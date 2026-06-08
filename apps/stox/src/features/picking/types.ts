@@ -123,6 +123,9 @@ export type WmsMobilePickBasket = {
   barcode: string;
   status: string;
   statusLabel: string;
+  maxFulfillmentOrders: number;
+  activeFulfillmentOrders: number;
+  orders: WmsMobileBasketOrder[];
   warehouse: {
     id: string;
     code: string;
@@ -139,6 +142,24 @@ export type WmsMobilePickBasket = {
   claimedAt: string | null;
   fullAt: string | null;
   readyForPackAt: string | null;
+};
+
+export type WmsMobileBasketOrder = {
+  id: string;
+  posOrderId: string | null;
+  status: PickingStatus | null;
+  statusLabel: string | null;
+  customerName: string | null;
+  totals: {
+    required: number;
+    picked: number;
+  };
+  store: {
+    id: string;
+    tenantId: string | null;
+    name: string;
+    tenantName: string | null;
+  } | null;
 };
 
 export type WmsMobilePickingPackerOption = {

@@ -1774,13 +1774,15 @@ model WmsFulfillmentOrder {
   claimedBy         User?                     @relation("WmsFulfillmentOrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
   packedById        String?                   @db.Uuid
   packedBy          User?                     @relation("WmsFulfillmentOrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
+  basketId          String?                   @db.Uuid
+  basket            WmsBasket?                @relation("WmsBasketFulfillmentOrders", fields: [basketId], references: [id], onDelete: SetNull)
   claimedAt         DateTime?
   completedAt       DateTime?
   lastSyncedAt      DateTime                  @default(now())
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
 
-  basket       WmsBasket?
+  legacyBasket WmsBasket? @relation("WmsBasketLegacyFulfillmentOrder")
   lines        WmsFulfillmentLine[]
   reservations WmsPickReservation[]
 
@@ -1790,6 +1792,7 @@ model WmsFulfillmentOrder {
   @@index([storeId, status])
   @@index([claimedById, status])
   @@index([packedById, status])
+  @@index([basketId, status])
   @@index([posWarehouseRef])
   @@map("wms_fulfillment_orders")
 }
@@ -1807,12 +1810,15 @@ model WmsBasket {
   assignedPackerId   String?              @db.Uuid
   assignedPacker     User?                @relation("WmsBasketAssignedPacker", fields: [assignedPackerId], references: [id], onDelete: SetNull)
   fulfillmentOrderId String?              @unique @db.Uuid
-  fulfillmentOrder   WmsFulfillmentOrder? @relation(fields: [fulfillmentOrderId], references: [id], onDelete: SetNull)
+  fulfillmentOrder   WmsFulfillmentOrder? @relation("WmsBasketLegacyFulfillmentOrder", fields: [fulfillmentOrderId], references: [id], onDelete: SetNull)
+  maxFulfillmentOrders Int                @default(1)
   claimedAt          DateTime?
   fullAt             DateTime?
   readyForPackAt     DateTime?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
+
+  fulfillmentOrders WmsFulfillmentOrder[] @relation("WmsBasketFulfillmentOrders")
 
   @@index([tenantId, status])
   @@index([warehouseId, status])

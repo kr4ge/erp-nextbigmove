@@ -1,4 +1,5 @@
-import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateWmsBasketDto {
   @IsOptional()
@@ -14,5 +15,11 @@ export class CreateWmsBasketDto {
   @IsString()
   @MaxLength(160)
   notes?: string;
-}
 
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  maxFulfillmentOrders?: number;
+}

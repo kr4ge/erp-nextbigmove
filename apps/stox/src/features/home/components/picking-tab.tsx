@@ -487,28 +487,92 @@ function TaskCollectionSection({
 }
 
 function AvailableBasketSection({ baskets }: { baskets: WmsMobilePickBasket[] }) {
+  const openSlots = baskets.reduce(
+    (total, basket) => total + Math.max(basket.maxFulfillmentOrders - basket.activeFulfillmentOrders, 0),
+    0,
+  );
+
   return (
     <>
-      <SectionLabel title="Available Baskets" trailing={`${baskets.length}`} />
+      <SectionLabel title="Open Basket Slots" trailing={`${openSlots}`} />
 
       {baskets.length === 0 ? (
         <SurfaceCard style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>No baskets free</Text>
-          <Text style={styles.emptyCopy}>Register or release baskets in WMS Warehouses before picking.</Text>
+          <Text style={styles.emptyTitle}>No basket slots open</Text>
+          <Text style={styles.emptyCopy}>Finish or hand off active baskets, or register another basket in WMS Warehouses.</Text>
         </SurfaceCard>
       ) : (
         <View style={styles.availableBasketGrid}>
-          {baskets.slice(0, 8).map((basket) => (
-            <SurfaceCard key={basket.id} tone="muted" style={styles.availableBasketCard}>
-              <Text numberOfLines={1} style={styles.availableBasketCode}>{basket.barcode}</Text>
-              <Text numberOfLines={1} style={styles.availableBasketMeta}>
-                {basket.warehouse?.code ?? 'Warehouse'}
-              </Text>
-            </SurfaceCard>
-          ))}
+          {baskets.slice(0, 8).map((basket) => {
+            const usedOrders = Math.min(basket.activeFulfillmentOrders, basket.maxFulfillmentOrders);
+            const openOrderSlots = Math.max(basket.maxFulfillmentOrders - usedOrders, 0);
+            const fillPercent = `${Math.max((usedOrders / Math.max(basket.maxFulfillmentOrders, 1)) * 100, 4)}%` as `${number}%`;
+
+            return (
+              <SurfaceCard key={basket.id} tone="muted" style={styles.availableBasketCard}>
+                <View style={styles.availableBasketTopRow}>
+                  <Text numberOfLines={1} style={styles.availableBasketCode}>{basket.barcode}</Text>
+                  <Text style={styles.availableBasketSlotText}>{openOrderSlots}</Text>
+                </View>
+                <Text numberOfLines={1} style={styles.availableBasketMeta}>
+                  {basket.warehouse?.code ?? 'Warehouse'} · {usedOrders}/{basket.maxFulfillmentOrders} orders
+                </Text>
+                <Text numberOfLines={2} style={styles.availableBasketOrders}>
+                  {formatBasketOrderSummary(basket.orders)}
+                </Text>
+                <View style={styles.availableBasketSlotTrack}>
+                  <View style={[styles.availableBasketSlotFill, { width: fillPercent }]} />
+                </View>
+              </SurfaceCard>
+            );
+          })}
         </View>
       )}
     </>
+  );
+}
+
+function BasketOrderList({
+  basket,
+  currentTaskId,
+}: {
+  basket: WmsMobilePickBasket;
+  currentTaskId: string;
+}) {
+  const orders = basket.orders ?? [];
+
+  if (!orders.length) {
+    return null;
+  }
+
+  return (
+    <View style={styles.basketOrderPanel}>
+      <View style={styles.basketOrderHeader}>
+        <Text style={styles.basketOrderTitle}>Basket orders</Text>
+        <Text style={styles.basketOrderMeta}>
+          {orders.length}/{basket.maxFulfillmentOrders}
+        </Text>
+      </View>
+      {orders.map((order) => {
+        const active = order.id === currentTaskId;
+        return (
+          <View key={order.id} style={[styles.basketOrderRow, active ? styles.basketOrderRowActive : null]}>
+            <View style={styles.basketOrderDot} />
+            <View style={styles.basketOrderCopy}>
+              <Text numberOfLines={1} style={styles.basketOrderCode}>
+                {order.posOrderId ? `#${order.posOrderId}` : 'Order'}
+              </Text>
+              <Text numberOfLines={1} style={styles.basketOrderSubcopy}>
+                {order.store?.name ?? order.customerName ?? order.statusLabel ?? 'Queued order'}
+              </Text>
+            </View>
+            <Text style={styles.basketOrderQty}>
+              {order.totals.picked}/{order.totals.required}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -693,7 +757,8 @@ function PickExecutionCard({
   const hasBasket = Boolean(task.basket);
   const isBlocked = task.status === 'PARTIAL' || task.status === 'RESTOCKING' || task.status === 'ISSUE';
   const isPicked = task.status === 'READY_FOR_PACK' || task.status === 'PICKED';
-  const canHandoff = isPicked && isClaimedByMe && Boolean(task.basket);
+  const basketReadyForHandoff = task.basket?.status === 'FULL_HELD' || task.basket?.status === 'PACKING';
+  const canHandoff = isPicked && isClaimedByMe && Boolean(task.basket) && basketReadyForHandoff;
   const handoffOptions: StockScopeOption[] = packerOptions.map((packer) => ({
     label: packer.name,
     value: packer.id,
@@ -816,9 +881,14 @@ function PickExecutionCard({
             <Text style={styles.basketLabel}>Basket {task.basket.barcode}</Text>
             <Text style={styles.historyMeta}>
               {task.basket.statusLabel}
+              {` · ${task.basket.activeFulfillmentOrders}/${task.basket.maxFulfillmentOrders} orders`}
               {task.basket.fullAt ? ` · full ${formatPickOrderDate(task.basket.fullAt)}` : ''}
             </Text>
           </View>
+        ) : null}
+
+        {task.basket ? (
+          <BasketOrderList basket={task.basket} currentTaskId={task.id} />
         ) : null}
 
         {canClaim ? (
@@ -882,7 +952,9 @@ function PickExecutionCard({
             <Text style={styles.doneTitle}>{task.status === 'READY_FOR_PACK' ? 'Ready for Pack' : 'Picked'}</Text>
             {task.basket ? (
               <Text style={styles.doneCopy}>
-                Basket {task.basket.barcode} is now held for pack handoff.
+                {basketReadyForHandoff
+                  ? `Basket ${task.basket.barcode} is now held for pack handoff.`
+                  : `Basket ${task.basket.barcode} is still collecting orders (${task.basket.activeFulfillmentOrders}/${task.basket.maxFulfillmentOrders}).`}
               </Text>
             ) : null}
             {task.basket?.assignedPacker ? (
@@ -1271,6 +1343,21 @@ function formatPickQueueDate(value: string) {
   });
 }
 
+function formatBasketOrderSummary(orders: WmsMobilePickBasket['orders'] | undefined) {
+  const basketOrders = orders ?? [];
+
+  if (!basketOrders.length) {
+    return 'Ready for first order';
+  }
+
+  const visibleOrders = basketOrders
+    .slice(0, 3)
+    .map((order) => order.posOrderId ? `#${order.posOrderId}` : 'Order');
+  const extraCount = Math.max(basketOrders.length - visibleOrders.length, 0);
+
+  return `${visibleOrders.join(' · ')}${extraCount > 0 ? ` +${extraCount}` : ''}`;
+}
+
 function mapPickCardStatus(status: PickingStatus, fallback: string) {
   if (status === 'READY') {
     return 'To do';
@@ -1570,22 +1657,58 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     flexBasis: '47%',
     flexGrow: 1,
-    gap: 4,
+    gap: 7,
     paddingVertical: 18,
     shadowColor: '#9C83FF',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.07,
     shadowRadius: 18,
   },
+  availableBasketTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
   availableBasketCode: {
     color: '#24232D',
+    flex: 1,
     fontSize: 14,
     fontWeight: '800',
+  },
+  availableBasketSlotText: {
+    backgroundColor: '#EAF8F3',
+    borderRadius: 999,
+    color: '#17B57C',
+    fontSize: 11,
+    fontWeight: '900',
+    minWidth: 26,
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    textAlign: 'center',
   },
   availableBasketMeta: {
     color: '#8F8AAB',
     fontSize: 11,
     fontWeight: '700',
+  },
+  availableBasketOrders: {
+    color: tokens.colors.ink,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
+  availableBasketSlotTrack: {
+    backgroundColor: '#F1EFF8',
+    borderRadius: 999,
+    height: 7,
+    overflow: 'hidden',
+  },
+  availableBasketSlotFill: {
+    backgroundColor: '#6437F6',
+    borderRadius: 999,
+    height: '100%',
   },
   taskList: {
     gap: 18,
@@ -1877,6 +2000,70 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 4,
     padding: tokens.spacing.md,
+  },
+  basketOrderPanel: {
+    backgroundColor: tokens.colors.surfaceMuted,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.lg,
+    borderWidth: 1,
+    gap: tokens.spacing.sm,
+    padding: tokens.spacing.md,
+  },
+  basketOrderHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  basketOrderTitle: {
+    color: tokens.colors.inkSoft,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  basketOrderMeta: {
+    color: tokens.colors.inkMuted,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  basketOrderRow: {
+    alignItems: 'center',
+    backgroundColor: tokens.colors.surface,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: 10,
+  },
+  basketOrderRowActive: {
+    borderColor: tokens.colors.panel,
+  },
+  basketOrderDot: {
+    backgroundColor: tokens.colors.panel,
+    borderRadius: tokens.radius.pill,
+    height: 8,
+    width: 8,
+  },
+  basketOrderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  basketOrderCode: {
+    color: tokens.colors.ink,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  basketOrderSubcopy: {
+    color: tokens.colors.inkMuted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  basketOrderQty: {
+    color: tokens.colors.panel,
+    fontSize: 12,
+    fontWeight: '900',
   },
   taskProgressRow: {
     alignItems: 'center',

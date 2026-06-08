@@ -29,6 +29,7 @@ import { WmsInventoryModule } from './modules/wms-inventory/wms-inventory.module
 import { WmsReceivingModule } from './modules/wms-receiving/wms-receiving.module';
 import { WmsMobileModule } from './modules/wms-mobile/wms-mobile.module';
 import { WmsSettingsModule } from './modules/wms-settings/wms-settings.module';
+import { WmsIntegrationsModule } from './modules/wms-integrations/wms-integrations.module';
 
 @Module({
   imports: [
@@ -112,6 +113,7 @@ import { WmsSettingsModule } from './modules/wms-settings/wms-settings.module';
     WmsInventoryModule,
     WmsMobileModule,
     WmsSettingsModule,
+    WmsIntegrationsModule,
   ],
   controllers: [],
   providers: [],

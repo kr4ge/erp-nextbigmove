@@ -76,11 +76,13 @@ export class WmsAccessGuard implements CanActivate {
     headers?: Record<string, unknown>;
     query?: Record<string, unknown>;
     body?: Record<string, unknown>;
+    params?: Record<string, unknown>;
   }) {
     const raw =
       request.headers?.['x-tenant-id']
       ?? request.query?.tenantId
       ?? request.body?.tenantId
+      ?? request.params?.tenantId
       ?? null;
     const tenantId = Array.isArray(raw) ? raw[0] : raw;
 

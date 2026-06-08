@@ -9,6 +9,7 @@ import type {
 export async function fetchWmsProductsOverview(params: GetWmsProductsOverviewParams = {}) {
   const response = await apiClient.get('/wms/products/overview', {
     params: {
+      ...(params.allTenants ? { allTenants: true } : {}),
       ...(params.tenantId ? { tenantId: params.tenantId } : {}),
       ...(params.storeId ? { storeId: params.storeId } : {}),
       ...(params.posWarehouseId ? { posWarehouseId: params.posWarehouseId } : {}),

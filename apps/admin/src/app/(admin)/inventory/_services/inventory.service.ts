@@ -17,6 +17,7 @@ import type {
 export async function fetchWmsInventoryOverview(params: GetWmsInventoryOverviewParams = {}) {
   const response = await apiClient.get('/wms/inventory/overview', {
     params: {
+      ...(params.allTenants ? { allTenants: true } : {}),
       ...(params.tenantId ? { tenantId: params.tenantId } : {}),
       ...(params.storeId ? { storeId: params.storeId } : {}),
       ...(params.warehouseId ? { warehouseId: params.warehouseId } : {}),

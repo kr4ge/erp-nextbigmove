@@ -7,7 +7,7 @@ import {
 } from '@/src/features/home/rbac';
 import { StockWorkspace } from '@/src/features/stock/components/stock-workspace';
 import { tokens } from '@/src/shared/theme/tokens';
-import { BlockedTaskState, TaskHeaderIconButton } from './stox-primitives';
+import { BlockedTaskState } from './stox-primitives';
 
 export function InventoryUtilityTab({
   bootstrap,
@@ -29,12 +29,6 @@ export function InventoryUtilityTab({
 
   return (
     <View style={styles.root}>
-      <View style={styles.shellHeader}>
-        <TaskHeaderIconButton icon="chevron-left" onPress={onBack} />
-        <Text style={styles.shellTitle}>Inventory</Text>
-        <View style={styles.shellHeaderSpacer} />
-      </View>
-
       {!canUseInventory ? (
         <BlockedTaskState copy="This account needs WMS inventory, receiving, or RTS read access to inspect inventory utility views." />
       ) : null}
@@ -61,6 +55,7 @@ export function InventoryUtilityTab({
           bootstrap={bootstrap}
           device={device}
           session={session}
+          onBack={onBack}
           onRefresh={onRefresh}
           variant="utility"
         />
@@ -72,24 +67,6 @@ export function InventoryUtilityTab({
 const styles = StyleSheet.create({
   root: {
     gap: tokens.spacing.lg,
-  },
-  shellHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 2,
-    marginTop: 2,
-  },
-  shellTitle: {
-    color: '#24232D',
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    textAlign: 'center',
-  },
-  shellHeaderSpacer: {
-    width: 44,
   },
   rtsButton: {
     alignItems: 'center',

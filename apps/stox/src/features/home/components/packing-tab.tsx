@@ -408,6 +408,12 @@ function PackTaskCard({
           {summary || `${task.totals.required} required unit${task.totals.required === 1 ? '' : 's'}`}
         </Text>
 
+        {task.basket ? (
+          <Text numberOfLines={1} style={styles.compactBasketText}>
+            Basket {task.basket.barcode} · {task.basket.activeFulfillmentOrders}/{task.basket.maxFulfillmentOrders} orders
+          </Text>
+        ) : null}
+
         <View style={styles.compactFooterRow}>
           <View style={styles.compactDateMeta}>
             <Feather name="clock" size={13} color="#9C83FF" />
@@ -596,6 +602,8 @@ function PackExecutionCard({
           </Text>
         </View>
 
+        <PackBasketOrderList task={task} />
+
         {isAwaitingTracking ? (
           <View style={styles.blockedPanel}>
             <Text style={styles.blockedTitle}>Awaiting tracking</Text>
@@ -664,7 +672,7 @@ function PackExecutionCard({
                 placeholder="Scan picked unit"
                 value={unitCode}
                 disabled={isSubmitting}
-                helper="Each scanned unit is verified against the handed-off order."
+                helper="Only units reserved for this order are accepted. Open sibling basket orders separately."
                 onChangeText={setUnitCode}
                 onSubmit={submitUnit}
               />
@@ -776,6 +784,48 @@ function PackExecutionCard({
         </View>
       </Modal>
     </>
+  );
+}
+
+function PackBasketOrderList({ task }: { task: WmsMobilePickingTask }) {
+  const basket = task.basket;
+  const orders = basket?.orders ?? [];
+
+  if (!basket || !orders.length) {
+    return null;
+  }
+
+  return (
+    <View style={styles.basketOrderPanel}>
+      <View style={styles.basketOrderHeader}>
+        <View>
+          <Text style={styles.basketOrderTitle}>Basket orders</Text>
+          <Text style={styles.basketOrderHint}>Pack the selected order only.</Text>
+        </View>
+        <Text style={styles.basketOrderMeta}>
+          {orders.length}/{basket.maxFulfillmentOrders}
+        </Text>
+      </View>
+      {orders.map((order) => {
+        const active = order.id === task.id;
+        return (
+          <View key={order.id} style={[styles.basketOrderRow, active ? styles.basketOrderRowActive : null]}>
+            <View style={[styles.basketOrderDot, active ? styles.basketOrderDotActive : null]} />
+            <View style={styles.basketOrderCopy}>
+              <Text numberOfLines={1} style={styles.basketOrderCode}>
+                {order.posOrderId ? `#${order.posOrderId}` : 'Order'}
+              </Text>
+              <Text numberOfLines={1} style={styles.basketOrderSubcopy}>
+                {active ? 'Current pack order' : order.store?.name ?? order.customerName ?? order.statusLabel ?? 'Same basket'}
+              </Text>
+            </View>
+            <Text style={styles.basketOrderQty}>
+              {order.totals.picked}/{order.totals.required}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -1358,6 +1408,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 20,
   },
+  compactBasketText: {
+    color: '#7D7697',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   compactFooterRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1421,6 +1476,79 @@ const styles = StyleSheet.create({
   },
   basketSummary: {
     gap: 4,
+  },
+  basketOrderPanel: {
+    backgroundColor: tokens.colors.surfaceMuted,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.lg,
+    borderWidth: 1,
+    gap: tokens.spacing.sm,
+    padding: tokens.spacing.md,
+  },
+  basketOrderHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  basketOrderTitle: {
+    color: tokens.colors.inkSoft,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  basketOrderHint: {
+    color: tokens.colors.inkMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  basketOrderMeta: {
+    color: '#6437F6',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  basketOrderRow: {
+    alignItems: 'center',
+    backgroundColor: tokens.colors.surface,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: 10,
+  },
+  basketOrderRowActive: {
+    borderColor: '#6437F6',
+  },
+  basketOrderDot: {
+    backgroundColor: tokens.colors.border,
+    borderRadius: tokens.radius.pill,
+    height: 8,
+    width: 8,
+  },
+  basketOrderDotActive: {
+    backgroundColor: '#6437F6',
+  },
+  basketOrderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  basketOrderCode: {
+    color: tokens.colors.ink,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  basketOrderSubcopy: {
+    color: tokens.colors.inkMuted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  basketOrderQty: {
+    color: tokens.colors.ink,
+    fontSize: 12,
+    fontWeight: '900',
   },
   basketLabel: {
     color: tokens.colors.ink,

@@ -9,7 +9,7 @@ import { ScanTab } from '@/src/features/home/components/scan-tab';
 import { StoxShell } from '@/src/features/home/components/stox-shell';
 import { TasksTab } from '@/src/features/home/components/tasks-tab';
 import { canEnterStoxWorkspace } from '@/src/features/home/rbac';
-import type { StoxTabKey, StoxTaskRoute } from '@/src/features/home/types';
+import type { InventoryTaskView, StoxTabKey, StoxTaskMode, StoxTaskRoute } from '@/src/features/home/types';
 import { getDisplayName, getInitials, resolveHomeContext } from '@/src/features/home/utils';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
 import type { WmsMobileTrackingReturnFlow } from '@/src/features/stock/types';
@@ -29,6 +29,15 @@ export default function HomeScreen() {
       mode: 'inventory',
       rtsReturnFlow: returnFlow,
       rtsTask: task,
+    });
+    setActiveTab('tasks');
+    setHomePanel('overview');
+  }, []);
+  const openTaskRoute = useCallback((route: { inventoryView?: InventoryTaskView; mode: StoxTaskMode }) => {
+    setTaskRoute({
+      inventoryView: route.inventoryView,
+      key: Date.now(),
+      mode: route.mode,
     });
     setActiveTab('tasks');
     setHomePanel('overview');
@@ -72,6 +81,7 @@ export default function HomeScreen() {
             session={session}
             onChangeTab={setActiveTab}
             onOpenStock={() => setHomePanel('inventory-utility')}
+            onOpenTaskRoute={openTaskRoute}
             onOpenRts={() => openInventoryRts()}
           />
         ) : (

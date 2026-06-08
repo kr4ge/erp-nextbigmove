@@ -323,6 +323,15 @@ export class IntegrationService {
     return `${cleanBase}/api/v1/webhooks/pancake/${tenantId}`;
   }
 
+  private async getPancakeWebhookContext(tenantIdOverride?: string) {
+    const context = await this.teamContext.getContext();
+
+    return {
+      tenantId: tenantIdOverride ?? context.tenantId,
+      userId: context.userId,
+    };
+  }
+
   private hashWebhookApiKey(apiKey: string): string {
     return createHash('sha256').update(apiKey).digest('hex');
   }
@@ -1716,8 +1725,8 @@ export class IntegrationService {
     }
   }
 
-  async getPancakeWebhookConfig(baseUrl: string) {
-    const { tenantId } = await this.teamContext.getContext();
+  async getPancakeWebhookConfig(baseUrl: string, tenantIdOverride?: string) {
+    const { tenantId } = await this.getPancakeWebhookContext(tenantIdOverride);
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, settings: true, encryptionKey: true },
@@ -1926,8 +1935,8 @@ export class IntegrationService {
     };
   }
 
-  async rotatePancakeWebhookApiKey(baseUrl: string) {
-    const { tenantId, userId } = await this.teamContext.getContext();
+  async rotatePancakeWebhookApiKey(baseUrl: string, tenantIdOverride?: string) {
+    const { tenantId, userId } = await this.getPancakeWebhookContext(tenantIdOverride);
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, settings: true, encryptionKey: true },
@@ -1995,8 +2004,12 @@ export class IntegrationService {
     };
   }
 
-  async updatePancakeWebhookEnabled(dto: UpdatePancakeWebhookDto, baseUrl: string) {
-    const { tenantId } = await this.teamContext.getContext();
+  async updatePancakeWebhookEnabled(
+    dto: UpdatePancakeWebhookDto,
+    baseUrl: string,
+    tenantIdOverride?: string,
+  ) {
+    const { tenantId } = await this.getPancakeWebhookContext(tenantIdOverride);
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, settings: true, encryptionKey: true },
@@ -2088,8 +2101,9 @@ export class IntegrationService {
   async updatePancakeWebhookRelayConfig(
     dto: UpdatePancakeWebhookRelayDto,
     baseUrl: string,
+    tenantIdOverride?: string,
   ) {
-    const { tenantId, userId } = await this.teamContext.getContext();
+    const { tenantId, userId } = await this.getPancakeWebhookContext(tenantIdOverride);
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, settings: true, encryptionKey: true },
@@ -2701,8 +2715,9 @@ export class IntegrationService {
    * Bulk import POS integrations from a list of API keys.
    * For each key, discovers shops via Pancake API, creates integration + store, and auto-fetches products.
    */
-  async bulkCreatePosIntegrations(dto: BulkCreatePosIntegrationDto) {
-    const { tenantId } = await this.teamContext.getContext();
+  async bulkCreatePosIntegrations(dto: BulkCreatePosIntegrationDto, tenantIdOverride?: string) {
+    const context = tenantIdOverride ? null : await this.teamContext.getContext();
+    const tenantId = tenantIdOverride ?? context!.tenantId;
 
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -2713,11 +2728,13 @@ export class IntegrationService {
       throw new NotFoundException('Tenant not found');
     }
 
-    const effectiveTeamId = await this.teamContext.validateAndGetTeamId(dto.teamId);
+    const effectiveTeamId = tenantIdOverride
+      ? null
+      : await this.teamContext.validateAndGetTeamId(dto.teamId);
 
     // Validate shared team ids
     const validSharedIds =
-      Array.isArray(dto.sharedTeamIds) && dto.sharedTeamIds.length > 0
+      !tenantIdOverride && Array.isArray(dto.sharedTeamIds) && dto.sharedTeamIds.length > 0
         ? (
             await this.prisma.team.findMany({
               where: { tenantId, id: { in: dto.sharedTeamIds } },
@@ -2835,9 +2852,9 @@ export class IntegrationService {
 
           // Auto-fetch products (best-effort)
           try {
-            await this.fetchPancakeProductsByIntegrationId(integration.id);
-            await this.syncPancakeTagsByStoreId(createdStore.id);
-            await this.syncPancakeWarehousesByStoreId(createdStore.id);
+            await this.syncPancakeProductsByStoreId(createdStore.id, tenantId);
+            await this.syncPancakeTagsByStoreId(createdStore.id, tenantId);
+            await this.syncPancakeWarehousesByStoreId(createdStore.id, tenantId);
           } catch (fetchError) {
             this.logger.warn(
               `Bulk import: product/tag/warehouse fetch failed for integration ${integration.id}: ${fetchError.message}`,
@@ -3387,9 +3404,20 @@ export class IntegrationService {
     };
   }
 
-  async syncPancakeTagsByStoreId(storeId: string) {
-    const store = await this.getPosStore(storeId); // validates access including shared integrations
-    const { tenantId } = await this.teamContext.getContext();
+  async syncPancakeTagsByStoreId(storeId: string, tenantIdOverride?: string) {
+    const store = tenantIdOverride
+      ? await this.prisma.posStore.findFirst({
+          where: {
+            id: storeId,
+            tenantId: tenantIdOverride,
+          },
+        })
+      : await this.getPosStore(storeId); // validates access including shared integrations
+    const tenantId = tenantIdOverride ?? (await this.teamContext.getContext()).tenantId;
+
+    if (!store) {
+      throw new NotFoundException(`Store with ID ${storeId} not found`);
+    }
 
     const apiKey = await this.resolveStoreApiKeyForWebhook(tenantId, {
       id: store.id,
@@ -3419,9 +3447,20 @@ export class IntegrationService {
     };
   }
 
-  async syncPancakeWarehousesByStoreId(storeId: string) {
-    const store = await this.getPosStore(storeId); // validates access including shared integrations
-    const { tenantId } = await this.teamContext.getContext();
+  async syncPancakeWarehousesByStoreId(storeId: string, tenantIdOverride?: string) {
+    const store = tenantIdOverride
+      ? await this.prisma.posStore.findFirst({
+          where: {
+            id: storeId,
+            tenantId: tenantIdOverride,
+          },
+        })
+      : await this.getPosStore(storeId); // validates access including shared integrations
+    const tenantId = tenantIdOverride ?? (await this.teamContext.getContext()).tenantId;
+
+    if (!store) {
+      throw new NotFoundException(`Store with ID ${storeId} not found`);
+    }
 
     const apiKey = await this.resolveStoreApiKeyForWebhook(tenantId, {
       id: store.id,

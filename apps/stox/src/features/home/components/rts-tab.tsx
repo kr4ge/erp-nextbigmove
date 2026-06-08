@@ -16,7 +16,7 @@ import { normalizeScannedCode } from '@/src/features/stock/hooks/use-stock-execu
 import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
-import { BlockedTaskState, SectionLabel, TaskHeader, TaskHeaderIconButton, UtilityPill } from './stox-primitives';
+import { BlockedTaskState, TaskHeader, TaskHeaderIconButton } from './stox-primitives';
 
 type RtsTabProps = {
   bootstrap: BootstrapResponse;
@@ -99,7 +99,6 @@ function RtsWorkspaceTab({
   const [queue, setQueue] = useState<RtsQueueEntry[]>([]);
   const [queueStores, setQueueStores] = useState<WmsMobileRtsTasksResponse['context']['stores']>([]);
   const [queuePage, setQueuePage] = useState(1);
-  const [queueTotal, setQueueTotal] = useState(0);
   const [queueHasMore, setQueueHasMore] = useState(false);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
   const [isLoadingMoreQueue, setIsLoadingMoreQueue] = useState(false);
@@ -153,7 +152,6 @@ function RtsWorkspaceTab({
           ...response.tasks.filter((entry) => !seen.has(entry.task.id)),
         ];
       });
-      setQueueTotal(response.pagination.total);
       setQueuePage(response.pagination.page);
       setQueueHasMore(response.pagination.hasMore);
       setQueueStores(response.context.stores);
@@ -266,16 +264,16 @@ function RtsWorkspaceTab({
       setReturnFlow(response.returnFlow);
 
       if (!response.returnFlow?.eligible) {
-        setMessage('This waybill is traceable, but the order is not yet in POS Returning or Returned status.');
+        setMessage('Not ready for RTS.');
         return;
       }
 
       if (response.returnFlow.state === 'RETURNING') {
-        setMessage('This order is already returning. Wait until POS marks it Returned before warehouse verification.');
+        setMessage('Still returning.');
         return;
       }
 
-      setMessage('RTS task loaded. Continue verification below.');
+      setMessage(null);
       void loadQueue('replace');
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Unable to load the RTS task.');
@@ -341,7 +339,7 @@ function RtsWorkspaceTab({
       }
       setReturnFlow(response.returnFlow);
       setReturnCode('');
-      setMessage(`Unit ${response.unit.code} is now in RTS review.`);
+      setMessage(`Verified ${response.unit.code}.`);
       void loadQueue('replace');
       return true;
     } catch (requestError) {
@@ -398,7 +396,7 @@ function RtsWorkspaceTab({
     setReturnFlow(entry.returnFlow);
     setReturnCode('');
     setError(null);
-    setMessage('RTS task loaded from the open returns queue.');
+    setMessage(null);
   }, []);
 
   return (
@@ -497,10 +495,8 @@ function RtsWorkspaceTab({
             activeTaskId={null}
             hasMore={queueHasMore}
             isLoadingMore={isLoadingMoreQueue}
-            loadedCount={queue.length}
             scopeLabel={storeId ? activeStoreName : 'All stores'}
             tasks={filteredQueue}
-            total={queueTotal}
             onLoadMore={() => void loadQueue('append')}
             onSelect={(entry) => openQueueTask(entry)}
           />
@@ -513,25 +509,19 @@ function RtsWorkspaceTab({
             <View style={styles.taskProgressRow}>
               <View>
                 <Text style={styles.bigProgress}>{returnFlow.verifiedUnits.length}/{returnFlow.expectedUnits}</Text>
-                <Text style={styles.progressLabel}>units verified</Text>
+                <Text style={styles.progressLabel}>verified</Text>
               </View>
-              <UtilityPill icon="truck" label={returnFlow.posStatusLabel ?? task.delivery?.label ?? 'Unknown'} />
+              <RtsStateBadge state={returnFlow.state} label={returnFlow.posStatusLabel ?? task.delivery?.label ?? 'RTS'} compact />
             </View>
 
-            <View style={styles.basketSummary}>
-              <Text style={styles.basketLabel}>Picked {task.claimedBy?.name ?? 'Unknown'}</Text>
-              <Text style={styles.historyMeta}>Packed {task.packedBy?.name ?? 'Unknown'}</Text>
-            </View>
-
-            <View style={styles.executionMetaStack}>
+            <View style={styles.rtsFactGrid}>
+              <RtsFact label="Picked" value={task.claimedBy?.name ?? 'Unknown'} />
+              <RtsFact label="Packed" value={task.packedBy?.name ?? 'Unknown'} />
               {task.tracking ? (
-                <Text style={styles.historyMeta}>Waybill {task.tracking}</Text>
+                <RtsFact label="Waybill" value={task.tracking} />
               ) : null}
               {returnFlow.lastVerifiedAt ? (
-                <Text style={styles.historyMeta}>
-                  {formatRtsDateTime(returnFlow.lastVerifiedAt)}
-                  {returnFlow.lastVerifiedBy ? ` · ${returnFlow.lastVerifiedBy.name}` : ''}
-                </Text>
+                <RtsFact label="Last scan" value={formatRtsDateTime(returnFlow.lastVerifiedAt)} />
               ) : null}
             </View>
 
@@ -591,7 +581,7 @@ function RtsWorkspaceTab({
                   </View>
 
                   <PrimaryButton
-                    label={isVerifying ? 'Checking' : 'Mark RTS'}
+                    label={isVerifying ? 'Checking…' : 'Verify'}
                     loading={isVerifying}
                     onPress={() => void verifyReturnUnit()}
                   />
@@ -604,34 +594,20 @@ function RtsWorkspaceTab({
             ) : null}
           </SurfaceCard>
 
-          <SectionLabel title="Pending units" trailing={`${returnFlow.pendingUnits.length}`} />
-          <View style={styles.itemList}>
-            {returnFlow.pendingUnits.map((unit) => (
-              <SurfaceCard key={unit.id} tone="muted" style={styles.itemCard}>
-                <View style={styles.itemHeader}>
-                  <Text numberOfLines={1} style={styles.itemName}>{unit.code}</Text>
-                  <RtsStateBadge state="READY_TO_VERIFY" label={unit.statusLabel} compact />
-                </View>
-                <Text numberOfLines={1} style={styles.itemMeta}>{unit.name}</Text>
-              </SurfaceCard>
-            ))}
-          </View>
+          <RtsUnitSection
+            state="READY_TO_VERIFY"
+            title="Pending"
+            units={returnFlow.pendingUnits}
+          />
 
-          <SectionLabel title="Verified units" trailing={`${returnFlow.verifiedUnits.length}`} />
-          <View style={styles.itemList}>
-            {returnFlow.verifiedUnits.map((unit) => (
-              <SurfaceCard key={unit.id} tone="muted" style={styles.itemCard}>
-                <View style={styles.itemHeader}>
-                  <Text numberOfLines={1} style={styles.itemName}>{unit.code}</Text>
-                  <RtsStateBadge state="VERIFIED" label={unit.statusLabel} compact />
-                </View>
-                <Text numberOfLines={1} style={styles.itemMeta}>{unit.name}</Text>
-              </SurfaceCard>
-            ))}
-          </View>
+          <RtsUnitSection
+            state="VERIFIED"
+            title="Verified"
+            units={returnFlow.verifiedUnits}
+          />
 
           <PrimaryButton
-            label="Back to RTS queue"
+            label="Back"
             onPress={resetTask}
             variant="secondary"
           />
@@ -658,100 +634,25 @@ function RtsTaskList({
   activeTaskId,
   hasMore,
   isLoadingMore,
-  loadedCount,
   scopeLabel,
   tasks,
-  total,
   onLoadMore,
   onSelect,
 }: {
   activeTaskId: string | null;
   hasMore: boolean;
   isLoadingMore: boolean;
-  loadedCount: number;
   scopeLabel: string;
   tasks: RtsQueueEntry[];
-  total: number;
   onLoadMore: () => void;
   onSelect: (entry: RtsQueueEntry) => void;
 }) {
-  const remaining = Math.max(total - loadedCount, 0);
-
   return (
     <>
-      <RtsTaskCollectionSection
-        activeTaskId={activeTaskId}
-        emptyMeta={scopeLabel}
-        emptyTitle="No RTS tasks"
-        tasks={tasks}
-        title="Returns"
-        trailing={`${tasks.length}/${total}`}
-        onSelect={onSelect}
-      />
-
-      {(loadedCount > 0 || hasMore) ? (
-        <SurfaceCard style={styles.paginationCard}>
-          <View style={styles.paginationTopRow}>
-            <View style={styles.paginationIconWrap}>
-              <Feather name="layers" size={16} color="#6437F6" />
-            </View>
-            <View style={styles.paginationCopyWrap}>
-              <Text style={styles.paginationTitle}>
-                {loadedCount >= total && total > 0
-                  ? `All ${total} RTS tasks are loaded`
-                  : `${loadedCount} of ${total} RTS tasks loaded`}
-              </Text>
-              <Text style={styles.paginationCopy}>
-                {tasks.length} visible in the current view
-              </Text>
-            </View>
-          </View>
-
-          {hasMore ? (
-            <PrimaryButton
-              label={`Load ${Math.min(10, remaining)} more task${Math.min(10, remaining) === 1 ? '' : 's'}`}
-              loading={isLoadingMore}
-              onPress={onLoadMore}
-              style={styles.paginationButton}
-              variant="secondary"
-            />
-          ) : (
-            <View style={styles.paginationDoneRow}>
-              <Feather name="check-circle" size={15} color="#2DAA73" />
-              <Text style={styles.paginationDoneText}>You have reached the end of the RTS queue.</Text>
-            </View>
-          )}
-        </SurfaceCard>
-      ) : null}
-    </>
-  );
-}
-
-function RtsTaskCollectionSection({
-  activeTaskId,
-  emptyMeta,
-  emptyTitle,
-  tasks,
-  title,
-  trailing,
-  onSelect,
-}: {
-  activeTaskId: string | null;
-  emptyMeta: string;
-  emptyTitle: string;
-  tasks: RtsQueueEntry[];
-  title: string;
-  trailing?: string;
-  onSelect: (entry: RtsQueueEntry) => void;
-}) {
-  return (
-    <>
-      <SectionLabel title={title} trailing={trailing} />
-
       {tasks.length === 0 ? (
         <SurfaceCard style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>{emptyTitle}</Text>
-          <Text style={styles.emptyMeta}>{emptyMeta}</Text>
+          <Text style={styles.emptyTitle}>No RTS tasks</Text>
+          <Text style={styles.emptyMeta}>{scopeLabel}</Text>
         </SurfaceCard>
       ) : null}
 
@@ -765,6 +666,15 @@ function RtsTaskCollectionSection({
           />
         ))}
       </View>
+
+      {hasMore ? (
+        <PrimaryButton
+          label={isLoadingMore ? 'Loading…' : 'Load more'}
+          loading={isLoadingMore}
+          onPress={onLoadMore}
+          variant="secondary"
+        />
+      ) : null}
     </>
   );
 }
@@ -795,6 +705,49 @@ function RtsStatusFilterRow({
         );
       })}
     </ScrollView>
+  );
+}
+
+function RtsFact({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.rtsFact}>
+      <Text style={styles.rtsFactLabel}>{label}</Text>
+      <Text numberOfLines={1} style={styles.rtsFactValue}>{value}</Text>
+    </View>
+  );
+}
+
+function RtsUnitSection({
+  state,
+  title,
+  units,
+}: {
+  state: RtsQueueState;
+  title: string;
+  units: WmsMobileTrackingReturnFlow['pendingUnits'];
+}) {
+  if (units.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.unitSection}>
+      <View style={styles.unitSectionHeader}>
+        <Text style={styles.unitSectionTitle}>{title}</Text>
+        <Text style={styles.unitSectionCount}>{units.length}</Text>
+      </View>
+      <View style={styles.itemList}>
+        {units.map((unit) => (
+          <SurfaceCard key={unit.id} tone="muted" style={styles.itemCard}>
+            <View style={styles.itemHeader}>
+              <Text numberOfLines={1} style={styles.itemName}>{unit.code}</Text>
+              <RtsStateBadge state={state} label={unit.statusLabel} compact />
+            </View>
+            <Text numberOfLines={1} style={styles.itemMeta}>{unit.name}</Text>
+          </SurfaceCard>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -841,11 +794,11 @@ function RtsTaskCard({
 }) {
   const { task, returnFlow } = entry;
   const pendingCount = Math.max(returnFlow.expectedUnits - returnFlow.verifiedUnits.length, 0);
-  const summary = `${returnFlow.verifiedUnits.length}/${returnFlow.expectedUnits} verified`;
+  const summary = `${returnFlow.verifiedUnits.length}/${returnFlow.expectedUnits}`;
   const issue = returnFlow.state === 'RETURNING'
-    ? 'Waiting for POS Returned status before verification.'
+    ? 'Returning'
     : returnFlow.state === 'PARTIAL'
-      ? `${pendingCount} unit${pendingCount === 1 ? '' : 's'} still pending review.`
+      ? `${pendingCount} pending`
       : null;
 
   return (
@@ -1129,47 +1082,6 @@ const styles = StyleSheet.create({
   statusFilterTextActive: {
     color: '#FFFFFF',
   },
-  scanPanelCard: {
-    gap: tokens.spacing.md,
-    padding: tokens.spacing.lg,
-  },
-  scanPanelHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  scanPanelTitle: {
-    color: tokens.colors.ink,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  scanPanelMeta: {
-    color: '#8C83B3',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  lookupRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
-  lookupInput: {
-    backgroundColor: '#FFFDF8',
-    borderColor: '#E6DDF6',
-    borderRadius: 20,
-    borderWidth: 1,
-    color: tokens.colors.ink,
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '700',
-    minHeight: 56,
-    paddingHorizontal: 16,
-  },
-  lookupButton: {
-    minHeight: 56,
-    minWidth: 110,
-    paddingHorizontal: 14,
-  },
   noticeCard: {
     gap: tokens.spacing.xs,
     padding: tokens.spacing.md,
@@ -1220,67 +1132,6 @@ const styles = StyleSheet.create({
   },
   taskList: {
     gap: 18,
-  },
-  paginationCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    gap: 14,
-    marginTop: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    shadowColor: '#9C83FF',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-  },
-  paginationTopRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  paginationIconWrap: {
-    alignItems: 'center',
-    backgroundColor: '#EEE9FF',
-    borderRadius: 14,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  paginationCopyWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  paginationTitle: {
-    color: '#24232D',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  paginationCopy: {
-    color: '#7B7791',
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 18,
-    marginTop: 2,
-  },
-  paginationButton: {
-    minHeight: 52,
-  },
-  paginationDoneRow: {
-    alignItems: 'center',
-    backgroundColor: '#EEF9F3',
-    borderRadius: 16,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    minHeight: 46,
-    paddingHorizontal: 14,
-  },
-  paginationDoneText: {
-    color: '#227E56',
-    fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'center',
   },
   taskPressable: {
     borderRadius: 24,
@@ -1443,26 +1294,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  basketSummary: {
+  rtsFactGrid: {
+    gap: 8,
+  },
+  rtsFact: {
+    alignItems: 'center',
     backgroundColor: tokens.colors.surfaceMuted,
     borderColor: tokens.colors.border,
-    borderRadius: tokens.radius.lg,
+    borderRadius: tokens.radius.md,
     borderWidth: 1,
-    gap: 2,
-    padding: tokens.spacing.md,
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    justifyContent: 'space-between',
+    minHeight: 38,
+    paddingHorizontal: tokens.spacing.sm,
   },
-  executionMetaStack: {
-    gap: 4,
-  },
-  basketLabel: {
-    color: tokens.colors.panel,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  historyMeta: {
+  rtsFactLabel: {
     color: tokens.colors.inkMuted,
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  rtsFactValue: {
+    color: tokens.colors.ink,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'right',
   },
   blockedPanel: {
     alignItems: 'flex-start',
@@ -1549,6 +1407,24 @@ const styles = StyleSheet.create({
   },
   itemList: {
     gap: tokens.spacing.sm,
+  },
+  unitSection: {
+    gap: tokens.spacing.sm,
+  },
+  unitSectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  unitSectionTitle: {
+    color: tokens.colors.ink,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  unitSectionCount: {
+    color: '#6F5BCB',
+    fontSize: 12,
+    fontWeight: '900',
   },
   itemCard: {
     gap: 6,

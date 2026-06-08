@@ -6,7 +6,6 @@ import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
 import {
-  MetricTile,
   SectionLabel,
   TaskHeaderIconButton,
 } from '@/src/features/home/components/stox-primitives';
@@ -72,11 +71,6 @@ export function StockCountWorkspace({
         />
         <View style={styles.queueHeaderCopy}>
           <Text style={styles.queueHeaderTitle}>Cycle Count</Text>
-          <Text style={styles.queueHeaderMeta}>
-            {workspace.activeSession
-              ? 'Verify every serialized unit in the bin before you submit for supervisor review.'
-              : 'Start a controlled bin count, then resume or review recent sessions from the same task lane.'}
-          </Text>
         </View>
         <View style={styles.queueHeaderBadge}>
           <Text style={styles.queueHeaderBadgeText}>
@@ -102,13 +96,13 @@ export function StockCountWorkspace({
       {!workspace.activeSession ? (
         <>
           <SurfaceCard style={styles.panelCard}>
-            <SectionLabel title="Start count" trailing={filters.warehouseId ? 'Warehouse scoped' : 'Bin-prefixed scan required'} />
+            <Text style={styles.panelTitle}>Start count</Text>
 
             <TextInput
               autoCapitalize="characters"
               autoCorrect={false}
               blurOnSubmit={false}
-              placeholder="Bin code or warehouse-prefixed barcode"
+              placeholder="Scan bin"
               placeholderTextColor={tokens.colors.inkSoft}
               returnKeyType="go"
               selectTextOnFocus
@@ -124,7 +118,7 @@ export function StockCountWorkspace({
             <TextInput
               multiline
               numberOfLines={3}
-              placeholder="Optional count note"
+              placeholder="Note (optional)"
               placeholderTextColor={tokens.colors.inkSoft}
               style={[styles.input, styles.textArea]}
               value={workspace.sessionNotes}
@@ -143,12 +137,10 @@ export function StockCountWorkspace({
           {workspace.isLoading ? (
             <SurfaceCard style={styles.noticeCard}>
               <Text style={styles.noticeTitle}>Loading cycle counts</Text>
-              <Text style={styles.noticeCopy}>Fetching recent count sessions from WMS.</Text>
             </SurfaceCard>
           ) : workspace.sessions.length === 0 ? (
             <SurfaceCard style={styles.noticeCard}>
-              <Text style={styles.noticeTitle}>No cycle counts yet</Text>
-              <Text style={styles.noticeCopy}>Start a bin count to create the first EOD inventory session.</Text>
+              <Text style={styles.noticeTitle}>No counts</Text>
             </SurfaceCard>
           ) : (
             <View style={styles.entryList}>
@@ -189,57 +181,41 @@ export function StockCountWorkspace({
                 `Started ${formatStockDate(workspace.activeSession.startedAt)}`,
               ])}
             </Text>
-            {workspace.activeSession.submittedAt ? (
-              <Text style={styles.noticeCopy}>
-                Submitted {formatStockDate(workspace.activeSession.submittedAt)} by {workspace.activeSession.submittedBy?.name ?? 'Unknown reviewer'}
-              </Text>
-            ) : null}
-            {workspace.activeSession.closedAt ? (
-              <Text style={styles.noticeCopy}>
-                Closed {formatStockDate(workspace.activeSession.closedAt)} by {workspace.activeSession.closedBy?.name ?? 'Unknown supervisor'}
-              </Text>
-            ) : null}
             {workspace.activeSession.notes ? (
               <Text style={styles.sessionNote}>{workspace.activeSession.notes}</Text>
             ) : null}
           </SurfaceCard>
 
           <View style={styles.summaryGrid}>
-            <MetricTile
-              icon="check-circle"
+            <CountStatPill
               label="Counted"
-              note="Scanned"
               value={formatStockCount(workspace.activeSession.summary.countedUnits)}
             />
-            <MetricTile
-              icon="clock"
+            <CountStatPill
               label="Pending"
-              note="Remaining"
               value={formatStockCount(workspace.activeSession.summary.pendingUnits)}
             />
-            <MetricTile
-              icon="alert-triangle"
+            <CountStatPill
               label="Missing"
-              note="Variance"
               value={formatStockCount(workspace.activeSession.summary.missingUnits)}
             />
-            <MetricTile
-              icon="plus-circle"
-              label="Unexpected"
-              note="Found"
+            <CountStatPill
+              label="Extra"
               value={formatStockCount(workspace.activeSession.summary.unexpectedUnits)}
             />
           </View>
 
           {workspace.activeSession.status === 'OPEN' ? (
             <SurfaceCard style={styles.panelCard}>
-              <SectionLabel title="Scan unit" trailing={`${formatStockCount(workspace.activeSession.summary.expectedUnits)} expected`} />
+              <Text style={styles.panelTitle}>
+                Scan unit · {formatStockCount(workspace.activeSession.summary.expectedUnits)}
+              </Text>
               <TextInput
                 ref={scanInputRef}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 blurOnSubmit={false}
-                placeholder="Unit barcode or unit code"
+                placeholder="Scan unit"
                 placeholderTextColor={tokens.colors.inkSoft}
                 returnKeyType="done"
                 selectTextOnFocus
@@ -254,13 +230,13 @@ export function StockCountWorkspace({
 
               <View style={styles.actionRow}>
                 <PrimaryButton
-                  label={workspace.isScanning ? 'Counting…' : 'Count unit'}
+                  label={workspace.isScanning ? 'Counting…' : 'Count'}
                   loading={workspace.isScanning}
                   onPress={workspace.scanUnit}
                   style={styles.actionButton}
                 />
                 <PrimaryButton
-                  label={workspace.isSubmitting ? 'Submitting…' : 'Submit count'}
+                  label={workspace.isSubmitting ? 'Submitting…' : 'Submit'}
                   loading={workspace.isSubmitting}
                   variant="secondary"
                   onPress={workspace.submitSession}
@@ -270,24 +246,19 @@ export function StockCountWorkspace({
             </SurfaceCard>
           ) : workspace.activeSession.status === 'SUBMITTED' ? (
             <SurfaceCard style={styles.noticeCard}>
-              <Text style={styles.noticeTitle}>Awaiting supervisor closeout</Text>
-              <Text style={styles.noticeCopy}>
-                This count is locked after submission. Review missing and unexpected units, then close it out or reopen it for recount.
-              </Text>
+              <Text style={styles.noticeTitle}>Awaiting review</Text>
+              <Text style={styles.noticeCopy}>Locked.</Text>
             </SurfaceCard>
           ) : (
             <SurfaceCard style={styles.noticeCard}>
-              <Text style={styles.noticeTitle}>Count closed out</Text>
-              <Text style={styles.noticeCopy}>
-                Supervisor review is complete. Reopen only if the bin needs another controlled recount.
-              </Text>
+              <Text style={styles.noticeTitle}>Closed</Text>
             </SurfaceCard>
           )}
 
           <View style={styles.actionRow}>
             {canCloseout && workspace.activeSession.status !== 'OPEN' ? (
               <PrimaryButton
-                label={workspace.isReopening ? 'Reopening…' : 'Reopen for recount'}
+                label={workspace.isReopening ? 'Reopening…' : 'Reopen'}
                 loading={workspace.isReopening}
                 variant="secondary"
                 onPress={workspace.reopenSession}
@@ -296,14 +267,14 @@ export function StockCountWorkspace({
             ) : null}
             {canCloseout && workspace.activeSession.status === 'SUBMITTED' ? (
               <PrimaryButton
-                label={workspace.isClosingOut ? 'Closing out…' : 'Close out count'}
+                label={workspace.isClosingOut ? 'Closing…' : 'Close'}
                 loading={workspace.isClosingOut}
                 onPress={workspace.closeoutSession}
                 style={styles.actionButton}
               />
             ) : null}
             <PrimaryButton
-              label="Open another count"
+              label="Another count"
               variant="secondary"
               onPress={workspace.clearActiveSession}
               style={styles.actionButton}
@@ -314,28 +285,37 @@ export function StockCountWorkspace({
             icon="clock"
             title="Pending units"
             entries={groupedEntries.pending}
-            emptyCopy="All expected units have been scanned."
+            emptyCopy="Done."
           />
           <EntrySection
             icon="check-circle"
             title="Counted units"
             entries={groupedEntries.counted}
-            emptyCopy="No units counted yet."
+            emptyCopy="None counted."
           />
           <EntrySection
             icon="alert-triangle"
             title="Missing units"
             entries={groupedEntries.missing}
-            emptyCopy="No missing units."
+            emptyCopy="None."
           />
           <EntrySection
             icon="plus-circle"
             title="Unexpected units"
             entries={groupedEntries.unexpected}
-            emptyCopy="No unexpected units."
+            emptyCopy="None."
           />
         </>
       )}
+    </View>
+  );
+}
+
+function CountStatPill({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.countStatPill}>
+      <Text style={styles.countStatValue}>{value}</Text>
+      <Text style={styles.countStatLabel}>{label}</Text>
     </View>
   );
 }
@@ -382,7 +362,7 @@ function EntrySection({
           ))}
           {hiddenCount > 0 ? (
             <SurfaceCard style={styles.noticeCard}>
-              <Text style={styles.noticeCopy}>{formatStockCount(hiddenCount)} more unit{hiddenCount === 1 ? '' : 's'} not shown in this phase.</Text>
+              <Text style={styles.noticeCopy}>{formatStockCount(hiddenCount)} more</Text>
             </SurfaceCard>
           ) : null}
         </View>
@@ -411,12 +391,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.6,
   },
-  queueHeaderMeta: {
-    color: tokens.colors.inkMuted,
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-  },
   queueHeaderBadge: {
     alignItems: 'center',
     backgroundColor: tokens.colors.surfaceMuted,
@@ -433,7 +407,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   panelCard: {
-    gap: tokens.spacing.md,
+    gap: tokens.spacing.sm,
+  },
+  panelTitle: {
+    color: tokens.colors.ink,
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: -0.2,
   },
   noticeCard: {
     gap: tokens.spacing.xs,
@@ -480,6 +460,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: tokens.spacing.sm,
+  },
+  countStatPill: {
+    alignItems: 'center',
+    backgroundColor: '#EEE9FF',
+    borderRadius: 14,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 54,
+    minWidth: 74,
+    paddingHorizontal: 10,
+  },
+  countStatValue: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  countStatLabel: {
+    color: '#6F5BCB',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 2,
   },
   actionRow: {
     flexDirection: 'row',

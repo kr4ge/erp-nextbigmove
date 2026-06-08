@@ -237,9 +237,10 @@ export class WmsInventoryService {
   ) {}
 
   async getOverview(query: GetWmsInventoryOverviewDto) {
-    const scope = await this.resolveTenantScope(query.tenantId);
+    const scope = await this.resolveTenantScope(query.tenantId, query.allTenants === true);
+    const isAllTenantScope = scope.canAccessAllTenants && !scope.activeTenantId;
 
-    if (!scope.activeTenantId) {
+    if (!scope.activeTenantId && !isAllTenantScope) {
       return {
         tenantReady: false,
         summary: {
@@ -273,12 +274,24 @@ export class WmsInventoryService {
       };
     }
 
+    const unitTenantWhere: Prisma.WmsInventoryUnitWhereInput = scope.activeTenantId
+      ? { tenantId: scope.activeTenantId }
+      : {};
+    const storeTenantWhere: Prisma.PosStoreWhereInput = scope.activeTenantId
+      ? { tenantId: scope.activeTenantId }
+      : {};
+
     const stores = await this.prisma.posStore.findMany({
-      where: { tenantId: scope.activeTenantId },
+      where: storeTenantWhere,
       select: {
         id: true,
         name: true,
         shopName: true,
+        tenant: {
+          select: {
+            name: true,
+          },
+        },
         _count: {
           select: {
             wmsInventoryUnits: true,
@@ -294,7 +307,7 @@ export class WmsInventoryService {
         : null;
 
     const warehouseCountScope: Prisma.WmsInventoryUnitWhereInput = {
-      tenantId: scope.activeTenantId,
+      ...unitTenantWhere,
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
     };
 
@@ -321,14 +334,16 @@ export class WmsInventoryService {
         ? query.warehouseId
         : null;
 
-    // Repair any shipped/delivered packed units before computing inventory totals.
-    await this.syncPackedUnitsToDispatchedForPosOrders({
-      tenantId: scope.activeTenantId,
-      storeId: activeStoreId,
-    });
+    if (scope.activeTenantId) {
+      // Repair any shipped/delivered packed units before computing tenant-scoped inventory totals.
+      await this.syncPackedUnitsToDispatchedForPosOrders({
+        tenantId: scope.activeTenantId,
+        storeId: activeStoreId,
+      });
+    }
 
     const where: Prisma.WmsInventoryUnitWhereInput = {
-      tenantId: scope.activeTenantId,
+      ...unitTenantWhere,
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
       ...(query.status ? { status: query.status } : {}),
@@ -346,7 +361,7 @@ export class WmsInventoryService {
     };
 
     const statusCountScope: Prisma.WmsInventoryUnitWhereInput = {
-      tenantId: scope.activeTenantId,
+      ...unitTenantWhere,
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
     };
@@ -467,7 +482,9 @@ export class WmsInventoryService {
         tenants: scope.tenants,
         stores: stores.map((store) => ({
           id: store.id,
-          label: store.shopName || store.name,
+          label: isAllTenantScope
+            ? `${store.tenant.name} · ${store.shopName || store.name}`
+            : store.shopName || store.name,
           unitCount: store._count.wmsInventoryUnits,
         })),
         warehouses: warehouses.map((warehouse) => ({
@@ -2167,7 +2184,7 @@ export class WmsInventoryService {
     };
   }
 
-  private async resolveTenantScope(requestedTenantId?: string) {
+  private async resolveTenantScope(requestedTenantId?: string, forceAllTenants = false) {
     const clsTenantId = this.cls.get('tenantId') as string | undefined;
     const userRole = this.cls.get('userRole') as string | undefined;
     const isPlatformUser = userRole === 'SUPER_ADMIN';
@@ -2187,12 +2204,15 @@ export class WmsInventoryService {
       const activeTenantId =
         requestedTenantId && tenants.some((tenant) => tenant.id === requestedTenantId)
           ? requestedTenantId
-          : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
-            ? clsTenantId
-          : tenants[0]?.id ?? null;
+          : forceAllTenants
+            ? null
+            : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
+              ? clsTenantId
+              : null;
 
       return {
         activeTenantId,
+        canAccessAllTenants: true,
         tenants: tenants.map((tenant) => ({
           id: tenant.id,
           label: tenant.name,
@@ -2205,6 +2225,7 @@ export class WmsInventoryService {
     if (!clsTenantId) {
       return {
         activeTenantId: null,
+        canAccessAllTenants: false,
         tenants: [],
       };
     }
@@ -2225,6 +2246,7 @@ export class WmsInventoryService {
 
     return {
       activeTenantId: clsTenantId,
+      canAccessAllTenants: false,
       tenants: tenant
         ? [
             {
@@ -2860,7 +2882,7 @@ export class WmsInventoryService {
   }
 
   private async getWarehouseCapacitySummary(params: {
-    tenantId: string;
+    tenantId: string | null;
     storeId: string | null;
     warehouseId: string | null;
   }) {
@@ -2888,7 +2910,7 @@ export class WmsInventoryService {
 
     const usedUnits = await this.prisma.wmsInventoryUnit.count({
       where: {
-        tenantId: params.tenantId,
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
         ...(params.storeId ? { storeId: params.storeId } : {}),
         ...(params.warehouseId ? { warehouseId: params.warehouseId } : {}),
         currentLocationId: {

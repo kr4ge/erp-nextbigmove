@@ -94,6 +94,7 @@ export function useProductsController() {
     ],
     queryFn: () =>
       fetchWmsProductsOverview({
+        allTenants: !selectedTenantId,
         tenantId: selectedTenantId,
         storeId: selectedStoreId,
         posWarehouseId: selectedPosWarehouseId,

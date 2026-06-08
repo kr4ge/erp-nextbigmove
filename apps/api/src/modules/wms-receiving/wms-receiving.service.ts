@@ -218,9 +218,10 @@ export class WmsReceivingService {
   ) {}
 
   async getOverview(query: GetWmsReceivingOverviewDto) {
-    const scope = await this.resolveTenantScope(query.tenantId);
+    const scope = await this.resolveTenantScope(query.tenantId, query.allTenants === true);
+    const isAllTenantScope = scope.canAccessAllTenants && !scope.activeTenantId;
 
-    if (!scope.activeTenantId) {
+    if (!scope.activeTenantId && !isAllTenantScope) {
       return {
         tenantReady: false,
         summary: {
@@ -243,12 +244,28 @@ export class WmsReceivingService {
       };
     }
 
+    const tenantWhere = scope.activeTenantId ? { tenantId: scope.activeTenantId } : {};
+    const purchasingTenantWhere: Prisma.WmsPurchasingBatchWhereInput = scope.activeTenantId
+      ? { tenantId: scope.activeTenantId }
+      : {};
+    const receivingTenantWhere: Prisma.WmsReceivingBatchWhereInput = scope.activeTenantId
+      ? { tenantId: scope.activeTenantId }
+      : {};
+    const unitTenantWhere: Prisma.WmsInventoryUnitWhereInput = scope.activeTenantId
+      ? { tenantId: scope.activeTenantId }
+      : {};
+
     const stores = await this.prisma.posStore.findMany({
-      where: { tenantId: scope.activeTenantId },
+      where: tenantWhere,
       select: {
         id: true,
         name: true,
         shopName: true,
+        tenant: {
+          select: {
+            name: true,
+          },
+        },
       },
       orderBy: [{ name: 'asc' }],
     });
@@ -356,7 +373,7 @@ export class WmsReceivingService {
     }
 
     const receivableWhere: Prisma.WmsPurchasingBatchWhereInput = {
-      tenantId: scope.activeTenantId,
+      ...purchasingTenantWhere,
       status: {
         in: [
           WmsPurchasingBatchStatus.RECEIVING_READY,
@@ -368,7 +385,7 @@ export class WmsReceivingService {
     };
 
     const receivingWhere: Prisma.WmsReceivingBatchWhereInput = {
-      tenantId: scope.activeTenantId,
+      ...receivingTenantWhere,
       ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
       ...(receivingAnd.length ? { AND: receivingAnd } : {}),
     };
@@ -463,7 +480,7 @@ export class WmsReceivingService {
         this.prisma.wmsReceivingBatch.count({ where: receivingWhere }),
         this.prisma.wmsReceivingBatch.count({
           where: {
-            tenantId: scope.activeTenantId,
+            ...receivingTenantWhere,
             status: {
               in: [
                 WmsReceivingBatchStatus.ARRIVED,
@@ -478,7 +495,7 @@ export class WmsReceivingService {
         }),
         this.prisma.wmsInventoryUnit.count({
           where: {
-            tenantId: scope.activeTenantId,
+            ...unitTenantWhere,
             status: WmsInventoryUnitStatus.STAGED,
             ...(activeStoreId ? { storeId: activeStoreId } : {}),
             ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
@@ -498,7 +515,9 @@ export class WmsReceivingService {
         tenants: scope.tenants,
         stores: stores.map((store) => ({
           id: store.id,
-          label: store.shopName || store.name,
+          label: isAllTenantScope
+            ? `${store.tenant.name} · ${store.shopName || store.name}`
+            : store.shopName || store.name,
         })),
         warehouses: warehouses.map((warehouse) => ({
           id: warehouse.id,
@@ -2350,7 +2369,7 @@ export class WmsReceivingService {
     }
   }
 
-  private async resolveTenantScope(requestedTenantId?: string) {
+  private async resolveTenantScope(requestedTenantId?: string, forceAllTenants = false) {
     const clsTenantId = this.cls.get('tenantId') as string | undefined;
     const userRole = this.cls.get('userRole') as string | undefined;
     const isPlatformUser = userRole === 'SUPER_ADMIN';
@@ -2370,12 +2389,15 @@ export class WmsReceivingService {
       const activeTenantId =
         requestedTenantId && tenants.some((tenant) => tenant.id === requestedTenantId)
           ? requestedTenantId
-          : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
-            ? clsTenantId
-          : tenants[0]?.id ?? null;
+          : forceAllTenants
+            ? null
+            : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
+              ? clsTenantId
+              : null;
 
       return {
         activeTenantId,
+        canAccessAllTenants: true,
         tenants: tenants.map((tenant) => ({
           id: tenant.id,
           label: tenant.name,
@@ -2388,6 +2410,7 @@ export class WmsReceivingService {
     if (!clsTenantId) {
       return {
         activeTenantId: null,
+        canAccessAllTenants: false,
         tenants: [],
       };
     }
@@ -2408,6 +2431,7 @@ export class WmsReceivingService {
 
     return {
       activeTenantId: clsTenantId,
+      canAccessAllTenants: false,
       tenants: tenant
         ? [
             {

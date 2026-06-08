@@ -13,6 +13,7 @@ import type {
 } from '../_types/warehouse';
 
 const EDITABLE_STATUSES: WmsBasketStatus[] = ['AVAILABLE', 'DAMAGED', 'RETIRED'];
+const BASKET_CAPACITY_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 
 type BasketRegistryPanelProps = {
   warehouse: WmsWarehouseDetail | null;
@@ -28,6 +29,7 @@ export function BasketRegistryPanel({
   onUpdate,
 }: BasketRegistryPanelProps) {
   const [barcode, setBarcode] = useState('');
+  const [maxFulfillmentOrders, setMaxFulfillmentOrders] = useState('1');
   const [selectedBasket, setSelectedBasket] = useState<WmsWarehouseBasket | null>(null);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -36,8 +38,12 @@ export function BasketRegistryPanel({
       return;
     }
 
-    await onCreate({ barcode: barcode.trim() || undefined });
+    await onCreate({
+      barcode: barcode.trim() || undefined,
+      maxFulfillmentOrders: Number(maxFulfillmentOrders) || 1,
+    });
     setBarcode('');
+    setMaxFulfillmentOrders('1');
   };
 
   const baskets = warehouse?.baskets ?? [];
@@ -58,6 +64,19 @@ export function BasketRegistryPanel({
             placeholder="Auto or scan barcode"
             className="input"
           />
+          <select
+            value={maxFulfillmentOrders}
+            onChange={(event) => setMaxFulfillmentOrders(event.target.value)}
+            className="h-12 w-24 rounded-[14px] border border-[#d7e0e7] bg-white px-3 text-[12px] font-bold text-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+            aria-label="Basket order capacity"
+            title="Basket order capacity"
+          >
+            {BASKET_CAPACITY_OPTIONS.map((capacity) => (
+              <option key={capacity} value={capacity}>
+                {capacity} order{capacity === 1 ? '' : 's'}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             disabled={isSaving || !warehouse}
@@ -67,6 +86,10 @@ export function BasketRegistryPanel({
             <Plus className="h-4 w-4" />
           </button>
         </form>
+
+        <p className="text-[11px] leading-5 text-[#7b8e9c]">
+          Order capacity is prepared for multi-order baskets. Current picking assignment still uses one order per basket until the next phase.
+        </p>
 
         {baskets.length ? (
           <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
@@ -119,7 +142,8 @@ function BasketRow({
   onUpdate: (id: string, input: UpdateWmsBasketInput) => Promise<void>;
   onOpen: (basket: WmsWarehouseBasket) => void;
 }) {
-  const isLocked = Boolean(basket.fulfillmentOrder);
+  const activeFulfillmentOrders = basket.activeFulfillmentOrders ?? (basket.fulfillmentOrder ? 1 : 0);
+  const isLocked = activeFulfillmentOrders > 0;
 
   return (
     <div
@@ -144,27 +168,50 @@ function BasketRow({
                 ? basket.assignedPicker.name
                 : 'Ready for picking'}
           </p>
+          <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8a9aa6]">
+            {activeFulfillmentOrders}/{basket.maxFulfillmentOrders} order slot{basket.maxFulfillmentOrders === 1 ? '' : 's'}
+          </p>
         </div>
 
-        <select
-          value={basket.status}
-          disabled={isSaving || isLocked}
-          onClick={(event) => event.stopPropagation()}
-          onChange={(event) => {
-            void onUpdate(basket.id, { status: event.target.value as WmsBasketStatus });
-          }}
-          className="h-9 rounded-[12px] border border-[#d7e0e7] bg-white px-2 text-[11px] font-bold text-primary disabled:cursor-not-allowed disabled:bg-[#f3f6f8] disabled:text-[#8a9aa6]"
-        >
-          {isLocked ? (
-            <option value={basket.status}>{formatBasketStatus(basket.status)}</option>
-          ) : (
-            EDITABLE_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {formatBasketStatus(status)}
+        <div className="flex shrink-0 items-center gap-2">
+          <select
+            value={basket.maxFulfillmentOrders}
+            disabled={isSaving || isLocked}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => {
+              void onUpdate(basket.id, { maxFulfillmentOrders: Number(event.target.value) || 1 });
+            }}
+            className="h-9 rounded-[12px] border border-[#d7e0e7] bg-white px-2 text-[11px] font-bold text-primary disabled:cursor-not-allowed disabled:bg-[#f3f6f8] disabled:text-[#8a9aa6]"
+            aria-label={`Order capacity for ${basket.barcode}`}
+            title="Order capacity"
+          >
+            {BASKET_CAPACITY_OPTIONS.map((capacity) => (
+              <option key={capacity} value={capacity}>
+                {capacity}
               </option>
-            ))
-          )}
-        </select>
+            ))}
+          </select>
+
+          <select
+            value={basket.status}
+            disabled={isSaving || isLocked}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => {
+              void onUpdate(basket.id, { status: event.target.value as WmsBasketStatus });
+            }}
+            className="h-9 rounded-[12px] border border-[#d7e0e7] bg-white px-2 text-[11px] font-bold text-primary disabled:cursor-not-allowed disabled:bg-[#f3f6f8] disabled:text-[#8a9aa6]"
+          >
+            {isLocked ? (
+              <option value={basket.status}>{formatBasketStatus(basket.status)}</option>
+            ) : (
+              EDITABLE_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {formatBasketStatus(status)}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
       </div>
     </div>
   );

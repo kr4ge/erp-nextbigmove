@@ -113,6 +113,7 @@ export function useInventoryController() {
     ],
     queryFn: () =>
       fetchWmsInventoryOverview({
+        allTenants: !selectedTenantId,
         tenantId: selectedTenantId,
         storeId: selectedStoreId,
         warehouseId: selectedWarehouseId,
@@ -130,6 +131,7 @@ export function useInventoryController() {
     selectedWarehouseId,
     setSelectedWarehouseIdState,
     includeWarehouse: true,
+    allowAllTenants: true,
   });
 
   useEffect(() => {
