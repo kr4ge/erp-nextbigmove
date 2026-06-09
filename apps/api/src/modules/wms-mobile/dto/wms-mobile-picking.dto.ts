@@ -1,5 +1,19 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export const WMS_MOBILE_PICKING_STATUSES = [
   'READY',
@@ -74,6 +88,24 @@ export class WmsMobilePickScanDto extends WmsMobilePickScopedDto {
   @MinLength(1)
   @MaxLength(120)
   code!: string;
+}
+
+export class WmsMobilePickBasketUnitScanDto extends WmsMobilePickScanDto {
+  @IsUUID()
+  binId!: string;
+}
+
+export class WmsMobilePickBasketBatchAssignDto extends WmsMobilePickScopedDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  basketCode!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(10)
+  @IsUUID('4', { each: true })
+  taskIds!: string[];
 }
 
 export class WmsMobilePickHandoffDto extends WmsMobilePickScopedDto {

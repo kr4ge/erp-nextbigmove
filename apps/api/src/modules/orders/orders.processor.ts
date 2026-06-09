@@ -21,8 +21,10 @@ export class OrdersQueueProcessor {
       tenantId,
       shopId,
       posOrderId,
+      source,
       targetStatus,
       targetTags,
+      targetItems,
       targetNote,
       targetNotePrint,
       targetShippingAddress,
@@ -35,13 +37,14 @@ export class OrdersQueueProcessor {
       !!targetShippingAddress &&
       typeof targetShippingAddress === 'object' &&
       !Array.isArray(targetShippingAddress);
+    const targetItemsCount = Array.isArray(targetItems) ? targetItems.length : 0;
     const targetLabel =
       typeof targetStatus === 'number'
-        ? `status=${targetStatus} tags=${Array.isArray(targetTags) ? targetTags.length : 0} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0} shipping_address=${hasShippingAddressUpdate ? 1 : 0} shipping_fee=${typeof targetShippingFee === 'number' ? 1 : 0} total_discount=${typeof targetTotalDiscount === 'number' ? 1 : 0} bank_payments=${typeof targetBankPayments !== 'undefined' ? 1 : 0} surcharge=${typeof targetSurcharge === 'number' ? 1 : 0}`
-        : `status=n/a tags=${Array.isArray(targetTags) ? targetTags.length : 0} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0} shipping_address=${hasShippingAddressUpdate ? 1 : 0} shipping_fee=${typeof targetShippingFee === 'number' ? 1 : 0} total_discount=${typeof targetTotalDiscount === 'number' ? 1 : 0} bank_payments=${typeof targetBankPayments !== 'undefined' ? 1 : 0} surcharge=${typeof targetSurcharge === 'number' ? 1 : 0}`;
+        ? `status=${targetStatus} tags=${Array.isArray(targetTags) ? targetTags.length : 0} items=${targetItemsCount} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0} shipping_address=${hasShippingAddressUpdate ? 1 : 0} shipping_fee=${typeof targetShippingFee === 'number' ? 1 : 0} total_discount=${typeof targetTotalDiscount === 'number' ? 1 : 0} bank_payments=${typeof targetBankPayments !== 'undefined' ? 1 : 0} surcharge=${typeof targetSurcharge === 'number' ? 1 : 0}`
+        : `status=n/a tags=${Array.isArray(targetTags) ? targetTags.length : 0} items=${targetItemsCount} note=${typeof targetNote === 'string' ? 1 : 0} note_print=${typeof targetNotePrint === 'string' ? 1 : 0} shipping_address=${hasShippingAddressUpdate ? 1 : 0} shipping_fee=${typeof targetShippingFee === 'number' ? 1 : 0} total_discount=${typeof targetTotalDiscount === 'number' ? 1 : 0} bank_payments=${typeof targetBankPayments !== 'undefined' ? 1 : 0} surcharge=${typeof targetSurcharge === 'number' ? 1 : 0}`;
 
     this.logger.debug(
-      `Processing confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel}`,
+      `Processing confirmation update job=${job.id} source=${source || 'confirmation'} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel}`,
     );
 
     const result = await this.ordersService.processQueuedConfirmationOrderStatusUpdate(job.data);
@@ -49,11 +52,11 @@ export class OrdersQueueProcessor {
 
     if (result.success) {
       this.logger.log(
-        `Processed confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel} durationMs=${durationMs}`,
+        `Processed confirmation update job=${job.id} source=${source || 'confirmation'} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel} durationMs=${durationMs}`,
       );
     } else {
       this.logger.warn(
-        `Skipped confirmation update job=${job.id} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel} reason=${result.reason} durationMs=${durationMs}`,
+        `Skipped confirmation update job=${job.id} source=${source || 'confirmation'} tenant=${tenantId} shop=${shopId} order=${posOrderId} ${targetLabel} reason=${result.reason} durationMs=${durationMs}`,
       );
     }
 
@@ -71,7 +74,7 @@ export class OrdersQueueProcessor {
     const isTerminal = attemptsMade >= configuredAttempts;
 
     this.logger.error(
-      `Confirmation update job failed job=${job?.id} tenant=${data?.tenantId || 'n/a'} shop=${data?.shopId || 'n/a'} order=${data?.posOrderId || 'n/a'} attempts=${attemptsMade}/${configuredAttempts} terminal=${isTerminal ? 1 : 0}: ${error?.message || 'Unknown error'}`,
+      `Confirmation update job failed job=${job?.id} source=${data?.source || 'confirmation'} tenant=${data?.tenantId || 'n/a'} shop=${data?.shopId || 'n/a'} order=${data?.posOrderId || 'n/a'} attempts=${attemptsMade}/${configuredAttempts} terminal=${isTerminal ? 1 : 0}: ${error?.message || 'Unknown error'}`,
       error?.stack,
     );
 

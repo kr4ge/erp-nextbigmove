@@ -171,6 +171,7 @@ export type WmsMobilePickingPackerOption = {
 
 export type WmsMobileHeldBasket = WmsMobilePickBasket & {
   task: WmsMobilePickingTask | null;
+  tasks: WmsMobilePickingTask[];
 };
 
 export type WmsMobilePickingLine = {
@@ -238,9 +239,101 @@ export type WmsMobilePickingBinScanResult = {
   pendingUnits: WmsMobilePickReservation[];
 };
 
+export type WmsMobileBasketPickUnit = {
+  reservation: WmsMobilePickReservation;
+  order: {
+    id: string;
+    posOrderId: string;
+    storeName: string | null;
+    tenantName: string | null;
+  };
+  line: {
+    id: string;
+    productName: string;
+    productDisplayId: string | null;
+    variationId: string;
+  };
+};
+
+export type WmsMobileBasketPickPlan = {
+  basketId: string;
+  basketCode: string;
+  status: string;
+  statusLabel: string;
+  totalOrders: number;
+  totalRequiredUnits: number;
+  totalPickedUnits: number;
+  totalPendingUnits: number;
+  totalPickedReservations: number;
+  unbinnedPendingUnits: number;
+  currentBin: WmsMobilePickReservation['unit']['currentLocation'];
+  bins: Array<{
+    bin: NonNullable<WmsMobilePickReservation['unit']['currentLocation']>;
+    pendingUnits: number;
+    orderCount: number;
+    orders: Array<{
+      id: string;
+      posOrderId: string;
+      storeName: string | null;
+      tenantName: string | null;
+      pendingUnits: number;
+    }>;
+    units: WmsMobileBasketPickUnit[];
+  }>;
+};
+
+export type WmsMobileBasketPickPlanResponse = {
+  success: boolean;
+  basket: WmsMobilePickBasket;
+  tasks: WmsMobilePickingTask[];
+  plan: WmsMobileBasketPickPlan;
+};
+
+export type WmsMobileBasketBinScanResult = {
+  success: boolean;
+  bin: WmsMobilePickingBinScanResult['bin'];
+  pendingUnits: WmsMobilePickReservation[];
+  units: WmsMobileBasketPickUnit[];
+  plan: WmsMobileBasketPickPlan;
+};
+
+export type WmsMobileBasketUnitScanResult = {
+  success: boolean;
+  basket: WmsMobilePickBasket;
+  task: WmsMobilePickingTask | null;
+  tasks: WmsMobilePickingTask[];
+  pickedUnit: WmsMobilePickReservation;
+  plan: WmsMobileBasketPickPlan;
+};
+
 export type WmsMobileBasketLookupResponse = {
   found: boolean;
   basket: (WmsMobilePickBasket & {
     task: WmsMobilePickingTask | null;
+    tasks: WmsMobilePickingTask[];
   }) | null;
+};
+
+export type WmsMobilePickingBatchAssignResponse = {
+  success: boolean;
+  assignedCount: number;
+  basket: WmsMobilePickBasket;
+  tasks: WmsMobilePickingTask[];
+};
+
+export type WmsMobilePickingHandoffResponse = {
+  success: boolean;
+  task: WmsMobilePickingTask;
+  posStatusUpdate?: {
+    targetStatus: number;
+    queued: number;
+    skipped: number;
+    failed: number;
+    results: Array<{
+      posOrderId: string;
+      outcome: 'queued' | 'skipped' | 'failed';
+      reason: string;
+      currentStatus?: number | null;
+    }>;
+  };
 };

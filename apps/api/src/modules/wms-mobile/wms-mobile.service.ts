@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
@@ -31,6 +32,7 @@ import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EffectiveAccessService } from '../../common/services/effective-access.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
+import { OrdersService } from '../orders/orders.service';
 import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
 import { WmsStoxReleasesService } from '../wms-settings/wms-stox-releases.service';
@@ -57,6 +59,8 @@ import {
 import {
   GetWmsMobilePickBasketLookupDto,
   GetWmsMobilePickingTasksDto,
+  WmsMobilePickBasketBatchAssignDto,
+  WmsMobilePickBasketUnitScanDto,
   WmsMobilePickHandoffDto,
   WmsMobilePickReallocateDto,
   WmsMobilePickResyncDto,
@@ -141,6 +145,7 @@ const DEFAULT_PICKING_PAGE_SIZE = 10;
 const DEFAULT_PACKING_PAGE_SIZE = 10;
 const DEFAULT_RTS_PAGE_SIZE = 10;
 const CONFIRMED_POS_ORDER_STATUS = 1;
+const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
 const PICKING_SYNC_ORDER_LIMIT = 80;
 const ACTIVE_PICKING_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.READY,
@@ -217,6 +222,9 @@ const HISTORY_PICK_ACTION_TYPES = [
   'PICKING_CLAIM',
   'PICKING_BIN_SCAN',
   'PICKING_BASKET_SCAN',
+  'PICKING_BASKET_BATCH_ASSIGN',
+  'PICKING_BASKET_BIN_SCAN',
+  'PICKING_BASKET_UNIT_SCAN',
   'PICKING_UNIT_SCAN',
   'PICKING_BASKET_LOOKUP',
   'PICKING_COMPLETE',
@@ -267,8 +275,23 @@ type FulfillmentLineDraft = {
   lineSnapshot: Prisma.InputJsonValue;
 };
 
+type PickedOrderPosStatusUpdateSummary = {
+  targetStatus: number;
+  queued: number;
+  skipped: number;
+  failed: number;
+  results: Array<{
+    posOrderId: string;
+    outcome: 'queued' | 'skipped' | 'failed';
+    reason: string;
+    currentStatus?: number | null;
+  }>;
+};
+
 @Injectable()
 export class WmsMobileService {
+  private readonly logger = new Logger(WmsMobileService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
@@ -277,6 +300,7 @@ export class WmsMobileService {
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
     private readonly wmsInventoryService: WmsInventoryService,
     private readonly wmsStoxReleasesService: WmsStoxReleasesService,
+    private readonly ordersService: OrdersService,
   ) {}
 
   async getActiveStoxRelease(user: BootstrapUser) {
@@ -4361,6 +4385,269 @@ export class WmsMobileService {
     };
   }
 
+  async assignPickingTasksToBasket(
+    user: BootstrapUser,
+    body: WmsMobilePickBasketBatchAssignDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    if (!userId) {
+      throw new ForbiddenException('Missing WMS user context');
+    }
+
+    const taskIds = [...new Set(body.taskIds)];
+    if (taskIds.length !== body.taskIds.length) {
+      throw new BadRequestException('Selected pick tasks must be unique');
+    }
+
+    const tenantContext = await this.resolveMobileStockContext(
+      user,
+      { tenantId: body.tenantId } as GetWmsMobileStockDto,
+      request,
+    );
+
+    const [access, taskAssignment] = await Promise.all([
+      this.effectiveAccessService.resolveUserAccess({
+        userId,
+        basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+        workspace: 'wms',
+      }),
+      this.getWmsTaskAssignment(userId),
+    ]);
+    this.assertPickExecutionAccess(user, access.permissions, taskAssignment);
+
+    const scopedTenantIds = this.resolvePickTaskSelectionTenantIds(
+      tenantContext.tenantId,
+      tenantContext.tenantOptions,
+    );
+    const basketCode = this.normalizeScannedCode(body.basketCode);
+    const now = new Date();
+    const fulfillmentGoLiveFilters = await this.buildTenantGoLiveFulfillmentOrderFilters(scopedTenantIds);
+    const pickSelectionWhere: Prisma.WmsFulfillmentOrderWhereInput = fulfillmentGoLiveFilters.length > 0
+      ? { OR: fulfillmentGoLiveFilters }
+      : { tenantId: { in: scopedTenantIds } };
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const orders = await tx.wmsFulfillmentOrder.findMany({
+        where: {
+          id: {
+            in: taskIds,
+          },
+          ...pickSelectionWhere,
+        },
+        include: this.pickingTaskInclude(),
+      });
+      const orderById = new Map(orders.map((order) => [order.id, order]));
+      const orderedTasks = taskIds
+        .map((taskId) => orderById.get(taskId))
+        .filter((order): order is (typeof orders)[number] => Boolean(order));
+
+      if (orderedTasks.length !== taskIds.length) {
+        throw new NotFoundException('One or more selected pick tasks were not found');
+      }
+
+      const firstOrder = orderedTasks[0];
+      if (!firstOrder) {
+        throw new BadRequestException('Select at least one pick task');
+      }
+
+      if (!firstOrder.warehouseId) {
+        throw new BadRequestException(`Order ${firstOrder.posOrderId} has no warehouse assigned`);
+      }
+
+      for (const order of orderedTasks) {
+        if (order.status !== WmsFulfillmentOrderStatus.READY) {
+          throw new BadRequestException(`Order ${order.posOrderId} is ${this.formatEnumLabel(order.status)} and cannot be batch assigned`);
+        }
+
+        if (order.basketId) {
+          throw new ConflictException(`Order ${order.posOrderId} already has a basket`);
+        }
+
+        if (order.claimedById && order.claimedById !== userId) {
+          throw new ForbiddenException(`Order ${order.posOrderId} is assigned to another picker`);
+        }
+
+        if (order.warehouseId !== firstOrder.warehouseId) {
+          throw new ConflictException('Selected pick tasks must belong to the same warehouse');
+        }
+      }
+
+      let basket = await tx.wmsBasket.findUnique({
+        where: { barcode: basketCode },
+        include: this.mobileBasketInclude(),
+      });
+
+      if (!basket) {
+        throw new NotFoundException(`Basket ${basketCode} is not registered. Add it in WMS Warehouses first.`);
+      }
+
+      if (BLOCKED_PICK_BASKET_STATUSES.includes(basket.status as (typeof BLOCKED_PICK_BASKET_STATUSES)[number])) {
+        throw new ConflictException(`Basket ${basket.barcode} is ${this.formatEnumLabel(basket.status)} and cannot be used`);
+      }
+
+      await this.lockBasketForUpdate(tx, basket.id);
+      basket = await tx.wmsBasket.findUnique({
+        where: { id: basket.id },
+        include: this.mobileBasketInclude(),
+      });
+
+      if (!basket) {
+        throw new NotFoundException(`Basket ${basketCode} is not registered. Add it in WMS Warehouses first.`);
+      }
+
+      if (
+        basket.status !== WmsBasketStatus.AVAILABLE
+        && basket.status !== WmsBasketStatus.ASSIGNED
+        && basket.status !== WmsBasketStatus.IN_PICKING
+      ) {
+        throw new ConflictException(`Basket ${basket.barcode} is ${this.formatEnumLabel(basket.status)} and not available for new pick orders`);
+      }
+
+      if (basket.assignedPickerId && basket.assignedPickerId !== userId) {
+        throw new ConflictException(`Basket ${basket.barcode} is currently assigned to another picker`);
+      }
+
+      if (basket.warehouseId && basket.warehouseId !== firstOrder.warehouseId) {
+        throw new ConflictException(`Basket ${basket.barcode} belongs to ${basket.warehouse?.name ?? 'another warehouse'}`);
+      }
+
+      const activeBasketOrders = basket.fulfillmentOrders ?? [];
+      for (const activeOrder of activeBasketOrders) {
+        if (activeOrder.warehouseId !== firstOrder.warehouseId) {
+          throw new ConflictException(`Basket ${basket.barcode} already contains another warehouse's order`);
+        }
+      }
+
+      const maxFulfillmentOrders = basket.maxFulfillmentOrders ?? 1;
+      if (activeBasketOrders.length + orderedTasks.length > maxFulfillmentOrders) {
+        throw new ConflictException(
+          `Basket ${basket.barcode} has ${Math.max(maxFulfillmentOrders - activeBasketOrders.length, 0)} open slot${Math.max(maxFulfillmentOrders - activeBasketOrders.length, 0) === 1 ? '' : 's'}`,
+        );
+      }
+      const nextBasketTenantIds = Array.from(new Set([
+        ...activeBasketOrders.map((order) => order.tenantId),
+        ...orderedTasks.map((order) => order.tenantId),
+      ]));
+      const nextBasketStoreIds = Array.from(new Set([
+        ...activeBasketOrders.map((order) => order.storeId),
+        ...orderedTasks.map((order) => order.storeId),
+      ]));
+
+      await tx.wmsBasket.update({
+        where: { id: basket.id },
+        data: {
+          tenantId: nextBasketTenantIds.length === 1 ? nextBasketTenantIds[0] : null,
+          warehouseId: basket.warehouseId ?? firstOrder.warehouseId,
+          status: basket.status === WmsBasketStatus.AVAILABLE
+            ? WmsBasketStatus.ASSIGNED
+            : basket.status,
+          assignedPickerId: userId,
+          assignedPackerId: null,
+          fulfillmentOrderId: basket.fulfillmentOrderId ?? firstOrder.id,
+          claimedAt: basket.claimedAt ?? now,
+          fullAt: null,
+          readyForPackAt: null,
+        },
+      });
+
+      const assignResult = await tx.wmsFulfillmentOrder.updateMany({
+        where: {
+          id: {
+            in: taskIds,
+          },
+          status: WmsFulfillmentOrderStatus.READY,
+          basketId: null,
+          AND: [
+            pickSelectionWhere,
+            {
+              OR: [
+                { claimedById: null },
+                { claimedById: userId },
+              ],
+            },
+          ],
+        },
+        data: {
+          claimedById: userId,
+          claimedAt: now,
+          status: WmsFulfillmentOrderStatus.IN_PICKING,
+          basketId: basket.id,
+        },
+      });
+
+      if (assignResult.count !== taskIds.length) {
+        throw new ConflictException('One or more selected pick tasks changed before basket assignment');
+      }
+
+      await this.refreshBasketState(tx, basket.id, now);
+
+      const [updatedBasket, updatedTasks] = await Promise.all([
+        tx.wmsBasket.findUniqueOrThrow({
+          where: { id: basket.id },
+          include: this.mobileBasketInclude(),
+        }),
+        tx.wmsFulfillmentOrder.findMany({
+          where: {
+            id: {
+              in: taskIds,
+            },
+          },
+          include: this.pickingTaskInclude(),
+        }),
+      ]);
+      const updatedTaskById = new Map(updatedTasks.map((task) => [task.id, task]));
+
+      return {
+        basket: updatedBasket,
+        tasks: taskIds.map((taskId) => updatedTaskById.get(taskId)).filter(Boolean),
+        tenantId: nextBasketTenantIds.length === 1 ? nextBasketTenantIds[0] : null,
+        storeId: nextBasketStoreIds.length === 1 ? nextBasketStoreIds[0] : null,
+        warehouseId: firstOrder.warehouseId,
+        posOrderIds: orderedTasks.map((order) => order.posOrderId),
+      };
+    });
+
+    await this.recordStockActivity(user, request, {
+      tenantId: result.tenantId,
+      actionType: 'PICKING_BASKET_BATCH_ASSIGN',
+      resourceType: 'WMS_BASKET',
+      resourceId: result.basket.id,
+      taskType: 'PICK',
+      storeId: result.storeId,
+      warehouseId: result.warehouseId,
+      metadata: {
+        basketCode: result.basket.barcode,
+        taskIds,
+        posOrderIds: result.posOrderIds,
+        assignedCount: result.tasks.length,
+      },
+    });
+
+    return {
+      success: true,
+      assignedCount: result.tasks.length,
+      basket: this.mapMobilePickBasket(result.basket),
+      tasks: result.tasks.map((task) => this.mapMobilePickingTask(task)),
+    };
+  }
+
+  private resolvePickTaskSelectionTenantIds(
+    selectedTenantId: string | null,
+    tenantOptions: MobileTenantOption[],
+  ) {
+    if (selectedTenantId) {
+      return [selectedTenantId];
+    }
+
+    const availableTenantIds = Array.from(new Set(tenantOptions.map((tenant) => tenant.id)));
+    if (availableTenantIds.length === 0) {
+      throw new ForbiddenException('No partner is available for STOX picking');
+    }
+
+    return availableTenantIds;
+  }
+
   async scanPickingUnit(
     user: BootstrapUser,
     id: string,
@@ -4465,6 +4752,228 @@ export class WmsMobileService {
     return {
       success: true,
       task: this.mapMobilePickingTask(updatedOrder),
+    };
+  }
+
+  async getPickingBasketPlan(
+    user: BootstrapUser,
+    id: string,
+    body: WmsMobilePickScopedDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    const basket = await this.findPickingBasketForAction(user, id, body.tenantId, request);
+    this.assertPickingBasketAssignedToUser(basket, userId, { allowFullHeld: true });
+
+    return {
+      success: true,
+      basket: this.mapMobilePickBasket(basket),
+      tasks: this.mapMobileBasketTasks(basket),
+      plan: this.buildMobileBasketPickPlan(basket),
+    };
+  }
+
+  async scanPickingBasketBin(
+    user: BootstrapUser,
+    id: string,
+    body: WmsMobilePickScanDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    const basket = await this.findPickingBasketForAction(user, id, body.tenantId, request);
+    this.assertPickingBasketAssignedToUser(basket, userId);
+
+    const location = await this.findLocationByCode(body.code, {
+      warehouseId: basket.warehouseId ?? null,
+      warehouseMismatchMessage: `Scanned bin belongs to another warehouse, not basket ${basket.barcode}`,
+    });
+    if (!location || location.kind !== WmsLocationKind.BIN) {
+      throw new NotFoundException('Scanned code is not a WMS bin');
+    }
+
+    const plan = this.buildMobileBasketPickPlan(basket);
+    const binGroup = plan.bins.find((group: any) => group.bin.id === location.id);
+    if (!binGroup) {
+      throw new BadRequestException(`Bin ${location.code} has no reserved units in basket ${basket.barcode}`);
+    }
+
+    await this.recordStockActivity(user, request, {
+      tenantId: basket.tenantId ?? null,
+      actionType: 'PICKING_BASKET_BIN_SCAN',
+      resourceType: 'WMS_LOCATION',
+      resourceId: location.id,
+      taskType: 'PICK',
+      warehouseId: location.warehouse.id,
+      metadata: {
+        basketId: basket.id,
+        basketCode: basket.barcode,
+        pendingUnits: binGroup.pendingUnits,
+        orderCount: binGroup.orderCount,
+      },
+    });
+
+    return {
+      success: true,
+      bin: {
+        id: location.id,
+        code: location.code,
+        name: location.name,
+        kind: location.kind,
+        warehouse: location.warehouse,
+      },
+      pendingUnits: binGroup.units.map((unit: any) => unit.reservation),
+      units: binGroup.units,
+      plan,
+    };
+  }
+
+  async scanPickingBasketUnit(
+    user: BootstrapUser,
+    id: string,
+    body: WmsMobilePickBasketUnitScanDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    const basket = await this.findPickingBasketForAction(user, id, body.tenantId, request);
+    this.assertPickingBasketAssignedToUser(basket, userId);
+
+    const activeBin = await this.prisma.wmsLocation.findFirst({
+      where: {
+        id: body.binId,
+        kind: WmsLocationKind.BIN,
+        isActive: true,
+        ...(basket.warehouseId ? { warehouseId: basket.warehouseId } : {}),
+      },
+      include: {
+        warehouse: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+        },
+      },
+    });
+    if (!activeBin) {
+      throw new NotFoundException('Active basket bin was not found');
+    }
+
+    const scannedCode = this.normalizeScannedCode(body.code);
+    const contexts = this.getBasketPickReservationContexts(basket);
+    const matchingContext = contexts.find(({ reservation }) => (
+      reservation.inventoryUnit.code === scannedCode
+      || reservation.inventoryUnit.barcode === scannedCode
+      || reservation.inventoryUnit.id === scannedCode
+    ));
+
+    if (!matchingContext) {
+      const scannedUnit = await this.findUnitByCode(scannedCode, null);
+      if (!scannedUnit) {
+        throw new NotFoundException('Scanned unit was not found');
+      }
+
+      throw new BadRequestException(`Unit ${scannedUnit.code} is not reserved in basket ${basket.barcode}`);
+    }
+
+    const { order, reservation } = matchingContext;
+    if (reservation.status === WmsPickReservationStatus.PICKED) {
+      throw new ConflictException(`Unit ${reservation.inventoryUnit.code} was already picked for order ${order.posOrderId}`);
+    }
+
+    if (reservation.status !== WmsPickReservationStatus.RESERVED) {
+      throw new BadRequestException(`Unit ${reservation.inventoryUnit.code} is not active for picking`);
+    }
+
+    if (reservation.inventoryUnit.currentLocationId !== activeBin.id) {
+      throw new BadRequestException(
+        `Unit ${reservation.inventoryUnit.code} is reserved in ${reservation.inventoryUnit.currentLocation?.code ?? 'another bin'}, not ${activeBin.code}`,
+      );
+    }
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      const reservationResult = await tx.wmsPickReservation.updateMany({
+        where: {
+          id: reservation.id,
+          status: WmsPickReservationStatus.RESERVED,
+        },
+        data: {
+          status: WmsPickReservationStatus.PICKED,
+          pickedById: userId,
+          pickedAt: now,
+        },
+      });
+
+      if (reservationResult.count !== 1) {
+        throw new ConflictException(`Unit ${reservation.inventoryUnit.code} was already picked or changed before scan`);
+      }
+
+      await tx.wmsInventoryUnit.update({
+        where: { id: reservation.inventoryUnitId },
+        data: {
+          status: WmsInventoryUnitStatus.PICKED,
+          currentLocationId: null,
+          updatedById: userId || undefined,
+        },
+      });
+
+      await tx.wmsInventoryMovement.create({
+        data: {
+          tenantId: order.tenantId,
+          inventoryUnitId: reservation.inventoryUnitId,
+          warehouseId: reservation.inventoryUnit.warehouseId,
+          fromLocationId: reservation.inventoryUnit.currentLocationId,
+          toLocationId: null,
+          fromStatus: reservation.inventoryUnit.status,
+          toStatus: WmsInventoryUnitStatus.PICKED,
+          movementType: WmsInventoryMovementType.PICK,
+          referenceType: 'WMS_FULFILLMENT_ORDER',
+          referenceId: order.id,
+          referenceCode: order.posOrderId,
+          notes: `STOX basket ${basket.barcode} picked for order ${order.posOrderId}`,
+          actorId: userId,
+          createdAt: now,
+        },
+      });
+
+      await this.refreshFulfillmentOrderState(tx, order.id, now);
+      await this.refreshFulfillmentBasketState(tx, order.id, now);
+    });
+
+    const updatedBasket = await this.findPickingBasketForAction(user, id, body.tenantId, request);
+    const updatedTasks = this.mapMobileBasketTasks(updatedBasket);
+    const updatedTask = updatedTasks.find((task: any) => task.id === order.id) ?? updatedTasks[0] ?? null;
+
+    await this.recordStockActivity(user, request, {
+      tenantId: order.tenantId,
+      actionType: 'PICKING_BASKET_UNIT_SCAN',
+      resourceType: 'WMS_INVENTORY_UNIT',
+      resourceId: reservation.inventoryUnitId,
+      taskType: 'PICK',
+      storeId: order.storeId,
+      warehouseId: reservation.inventoryUnit.warehouseId,
+      metadata: {
+        basketId: basket.id,
+        basketCode: basket.barcode,
+        binCode: activeBin.code,
+        fulfillmentOrderId: order.id,
+        fulfillmentLineId: reservation.fulfillmentLineId,
+        posOrderId: order.posOrderId,
+        unitCode: reservation.inventoryUnit.code,
+      },
+    });
+
+    return {
+      success: true,
+      basket: this.mapMobilePickBasket(updatedBasket),
+      task: updatedTask,
+      tasks: updatedTasks,
+      pickedUnit: this.mapMobilePickReservation({
+        ...reservation,
+        status: WmsPickReservationStatus.PICKED,
+        pickedAt: now,
+      }),
+      plan: this.buildMobileBasketPickPlan(updatedBasket),
     };
   }
 
@@ -4586,7 +5095,7 @@ export class WmsMobileService {
     }
 
     const now = new Date();
-    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+    const handoffResult = await this.prisma.$transaction(async (tx) => {
       const scopedOrder = await tx.wmsFulfillmentOrder.findUnique({
         where: { id: order.id },
         include: this.pickingTaskInclude(),
@@ -4603,22 +5112,23 @@ export class WmsMobileService {
         throw new BadRequestException(`Order ${scopedOrder.posOrderId} is ${this.formatEnumLabel(scopedOrder.status)} and cannot be handed off yet`);
       }
 
-      const unfinishedBasketOrders = await tx.wmsFulfillmentOrder.count({
+      const blockedBasketOrders = await tx.wmsFulfillmentOrder.count({
         where: {
           basketId: scopedOrder.basket.id,
           id: {
             not: scopedOrder.id,
           },
           status: {
-            in: [
-              WmsFulfillmentOrderStatus.IN_PICKING,
+            notIn: [
+              WmsFulfillmentOrderStatus.READY_FOR_PACK,
+              WmsFulfillmentOrderStatus.PICKED,
             ],
           },
         },
       });
 
-      if (unfinishedBasketOrders > 0) {
-        throw new ConflictException(`Basket ${scopedOrder.basket.barcode} still has ${unfinishedBasketOrders} order${unfinishedBasketOrders === 1 ? '' : 's'} in picking`);
+      if (blockedBasketOrders > 0) {
+        throw new ConflictException(`Basket ${scopedOrder.basket.barcode} still has ${blockedBasketOrders} order${blockedBasketOrders === 1 ? '' : 's'} not ready for pack`);
       }
 
       await tx.wmsBasket.update({
@@ -4641,11 +5151,35 @@ export class WmsMobileService {
         },
       });
 
-      return tx.wmsFulfillmentOrder.findUniqueOrThrow({
-        where: { id: scopedOrder.id },
-        include: this.pickingTaskInclude(),
-      });
+      const [updatedOrder, posStatusOrders] = await Promise.all([
+        tx.wmsFulfillmentOrder.findUniqueOrThrow({
+          where: { id: scopedOrder.id },
+          include: this.pickingTaskInclude(),
+        }),
+        tx.wmsFulfillmentOrder.findMany({
+          where: {
+            basketId: scopedOrder.basket.id,
+            status: WmsFulfillmentOrderStatus.PICKED,
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            storeId: true,
+            posOrderDbId: true,
+            shopId: true,
+            posOrderId: true,
+            warehouseId: true,
+          },
+        }),
+      ]);
+
+      return {
+        order: updatedOrder,
+        posStatusOrders,
+      };
     });
+    const updatedOrder = handoffResult.order;
+    const posStatusUpdate = await this.enqueuePickedOrdersWaitingForPrintingStatus(handoffResult.posStatusOrders);
 
     await this.recordStockActivity(user, request, {
       tenantId: updatedOrder.tenantId,
@@ -4660,13 +5194,103 @@ export class WmsMobileService {
         basketCode: updatedOrder.basket?.barcode ?? null,
         packerId: packerCandidate.id,
         packerEmail: packerCandidate.email,
+        posStatusTarget: posStatusUpdate.targetStatus,
+        posStatusQueued: posStatusUpdate.queued,
+        posStatusSkipped: posStatusUpdate.skipped,
+        posStatusFailed: posStatusUpdate.failed,
+        posStatusResults: posStatusUpdate.results,
       },
     });
 
     return {
       success: true,
       task: this.mapMobilePickingTask(updatedOrder),
+      posStatusUpdate,
     };
+  }
+
+  private async enqueuePickedOrdersWaitingForPrintingStatus(
+    orders: Array<{
+      id: string;
+      tenantId: string;
+      storeId: string;
+      posOrderDbId: string;
+      shopId: string;
+      posOrderId: string;
+      warehouseId: string | null;
+    }>,
+  ): Promise<PickedOrderPosStatusUpdateSummary> {
+    const summary: PickedOrderPosStatusUpdateSummary = {
+      targetStatus: WAITING_FOR_PRINTING_POS_ORDER_STATUS,
+      queued: 0,
+      skipped: 0,
+      failed: 0,
+      results: [],
+    };
+
+    if (orders.length === 0) {
+      return summary;
+    }
+
+    const results = await Promise.all(orders.map(async (order): Promise<PickedOrderPosStatusUpdateSummary['results'][number]> => {
+      try {
+        const result = await this.ordersService.enqueueSystemPosOrderStatusUpdate({
+          tenantId: order.tenantId,
+          orderRowId: order.posOrderDbId,
+          shopId: order.shopId,
+          posOrderId: order.posOrderId,
+          targetStatus: WAITING_FOR_PRINTING_POS_ORDER_STATUS,
+          allowedCurrentStatuses: [CONFIRMED_POS_ORDER_STATUS],
+          source: 'wms_picking',
+        });
+
+        if (result.skipped) {
+          this.logger.warn(
+            `Skipped WMS POS status update order=${order.posOrderId} target=${WAITING_FOR_PRINTING_POS_ORDER_STATUS} reason=${result.reason} current=${result.currentStatus ?? 'n/a'}`,
+          );
+          return {
+            posOrderId: order.posOrderId,
+            outcome: 'skipped',
+            reason: result.reason,
+            currentStatus: result.currentStatus,
+          };
+        }
+
+        this.logger.log(
+          `Queued WMS POS status update order=${order.posOrderId} target=${WAITING_FOR_PRINTING_POS_ORDER_STATUS} reason=${result.reason}`,
+        );
+        return {
+          posOrderId: order.posOrderId,
+          outcome: 'queued',
+          reason: result.reason,
+          currentStatus: result.currentStatus,
+        };
+      } catch (error: any) {
+        const reason = error?.message || 'Unknown error';
+        this.logger.error(
+          `Failed to queue WMS POS status update order=${order.posOrderId} target=${WAITING_FOR_PRINTING_POS_ORDER_STATUS}: ${reason}`,
+          error?.stack,
+        );
+        return {
+          posOrderId: order.posOrderId,
+          outcome: 'failed',
+          reason,
+        };
+      }
+    }));
+
+    for (const result of results) {
+      summary.results.push(result);
+      if (result.outcome === 'queued') {
+        summary.queued += 1;
+      } else if (result.outcome === 'skipped') {
+        summary.skipped += 1;
+      } else {
+        summary.failed += 1;
+      }
+    }
+
+    return summary;
   }
 
   private async syncConfirmedPickingOrders(params: {
@@ -5326,6 +5950,7 @@ export class WmsMobileService {
             status: true,
             pickedQuantity: true,
             tenantId: true,
+            storeId: true,
             claimedById: true,
           },
           orderBy: [
@@ -5367,6 +5992,7 @@ export class WmsMobileService {
       activeOrder.pickedQuantity > 0
       || activeOrder.status === WmsFulfillmentOrderStatus.IN_PICKING
     ));
+    const activeTenantIds = Array.from(new Set(activeOrders.map((activeOrder) => activeOrder.tenantId)));
     const nextStatus = hasPackingOrder
       ? WmsBasketStatus.PACKING
       : allReadyForPack
@@ -5379,7 +6005,7 @@ export class WmsMobileService {
       where: { id: basket.id },
       data: {
         status: nextStatus,
-        tenantId: activeOrders[0]?.tenantId ?? null,
+        tenantId: activeTenantIds.length === 1 ? activeTenantIds[0] : null,
         assignedPickerId: activeOrders[0]?.claimedById ?? null,
         assignedPackerId: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
           ? basket.assignedPackerId
@@ -5828,6 +6454,63 @@ export class WmsMobileService {
     return order;
   }
 
+  private async findPickingBasketForAction(
+    user: BootstrapUser,
+    id: string,
+    requestedTenantId?: string | null,
+    request?: Request,
+  ) {
+    const tenantContext = await this.resolveMobileStockContext(
+      user,
+      { tenantId: requestedTenantId ?? undefined } as GetWmsMobileStockDto,
+      request,
+    );
+    const fulfillmentGoLiveWhere = this.buildFulfillmentGoLiveWhere(
+      await this.getFulfillmentGoLiveAt(tenantContext.tenantId),
+    );
+    const tenantScopeWhere: Prisma.WmsBasketWhereInput = tenantContext.tenantId
+      ? {
+          OR: [
+            { tenantId: tenantContext.tenantId },
+            {
+              fulfillmentOrders: {
+                some: {
+                  tenantId: tenantContext.tenantId,
+                  ...fulfillmentGoLiveWhere,
+                },
+              },
+            },
+          ],
+        }
+      : {};
+    const basket = await this.prisma.wmsBasket.findFirst({
+      where: {
+        id,
+        ...tenantScopeWhere,
+      },
+      include: this.mobileBasketInclude(),
+    });
+
+    if (!basket) {
+      throw new NotFoundException('Pick basket was not found');
+    }
+
+    const userId = user.userId || user.id || null;
+    if (userId) {
+      const [access, taskAssignment] = await Promise.all([
+        this.effectiveAccessService.resolveUserAccess({
+          userId,
+          basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+          workspace: 'wms',
+        }),
+        this.getWmsTaskAssignment(userId),
+      ]);
+      this.assertPickExecutionAccess(user, access.permissions, taskAssignment);
+    }
+
+    return basket;
+  }
+
   private async findPackingOrderForAction(
     user: BootstrapUser,
     id: string,
@@ -6224,8 +6907,47 @@ export class WmsMobileService {
     }
   }
 
+  private assertPickingBasketAssignedToUser(
+    basket: any,
+    userId: string | null,
+    options: { allowFullHeld?: boolean } = {},
+  ) {
+    if (!userId) {
+      throw new ForbiddenException('Missing WMS user context');
+    }
+
+    const allowedStatuses = options.allowFullHeld
+      ? [...ACTIVE_PICK_BASKET_STATUSES]
+      : [...PICKER_ACTIVE_BASKET_STATUSES];
+    if (!allowedStatuses.includes(basket.status)) {
+      throw new BadRequestException(`Basket ${basket.barcode} is ${this.formatEnumLabel(basket.status)} and cannot be picked`);
+    }
+
+    if (basket.assignedPickerId !== userId) {
+      throw new ForbiddenException(`Basket ${basket.barcode} is assigned to another picker`);
+    }
+  }
+
   private getAllPickReservations(order: any) {
     return order.lines.flatMap((line: any) => line.reservations);
+  }
+
+  private getBasketPickReservationContexts(basket: any) {
+    const orders = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders
+      : basket.fulfillmentOrder
+        ? [basket.fulfillmentOrder]
+        : [];
+
+    return orders.flatMap((order: any) => (
+      (order.lines ?? []).flatMap((line: any) => (
+        (line.reservations ?? []).map((reservation: any) => ({
+          order,
+          line,
+          reservation,
+        }))
+      ))
+    ));
   }
 
   private getPendingPickReservations(order: any) {
@@ -6579,25 +7301,158 @@ export class WmsMobileService {
     return Math.max((basket.maxFulfillmentOrders ?? 1) - activeFulfillmentOrderCount, 0);
   }
 
+  private mapMobileBasketTasks(basket: any) {
+    const activeTasks = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders
+      : basket.fulfillmentOrder
+        ? [basket.fulfillmentOrder]
+        : [];
+
+    return activeTasks.map((task: any) => this.mapMobilePickingTask(task));
+  }
+
+  private buildMobileBasketPickPlan(basket: any) {
+    const activeOrders = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders
+      : basket.fulfillmentOrder
+        ? [basket.fulfillmentOrder]
+        : [];
+    const contexts = this.getBasketPickReservationContexts(basket);
+    const pendingContexts = contexts.filter(({ reservation }) => (
+      reservation.status === WmsPickReservationStatus.RESERVED
+    ));
+    const pickedContexts = contexts.filter(({ reservation }) => (
+      reservation.status === WmsPickReservationStatus.PICKED
+    ));
+    const groupByLocationId = new Map<string, {
+      bin: any;
+      contexts: Array<{ order: any; line: any; reservation: any }>;
+    }>();
+    let unbinnedPendingUnits = 0;
+
+    for (const context of pendingContexts) {
+      const location = context.reservation.inventoryUnit.currentLocation;
+      if (!location || location.kind !== WmsLocationKind.BIN) {
+        unbinnedPendingUnits += 1;
+        continue;
+      }
+
+      const existing = groupByLocationId.get(location.id);
+      if (existing) {
+        existing.contexts.push(context);
+      } else {
+        groupByLocationId.set(location.id, {
+          bin: this.mapLocation(location),
+          contexts: [context],
+        });
+      }
+    }
+
+    const bins = Array.from(groupByLocationId.values())
+      .map((group) => {
+        const orderCounts = new Map<string, {
+          id: string;
+          posOrderId: string;
+          storeName: string | null;
+          tenantName: string | null;
+          pendingUnits: number;
+        }>();
+
+        for (const context of group.contexts) {
+          const existing = orderCounts.get(context.order.id);
+          if (existing) {
+            existing.pendingUnits += 1;
+          } else {
+            orderCounts.set(context.order.id, {
+              id: context.order.id,
+              posOrderId: context.order.posOrderId,
+              storeName: context.order.store?.shopName || context.order.store?.name || null,
+              tenantName: context.order.store?.tenant?.name ?? null,
+              pendingUnits: 1,
+            });
+          }
+        }
+
+        return {
+          bin: group.bin,
+          pendingUnits: group.contexts.length,
+          orderCount: orderCounts.size,
+          orders: Array.from(orderCounts.values())
+            .sort((left, right) => right.pendingUnits - left.pendingUnits || left.posOrderId.localeCompare(right.posOrderId)),
+          units: group.contexts
+            .sort((left, right) => (
+              left.reservation.sequence - right.reservation.sequence
+              || left.order.posOrderId.localeCompare(right.order.posOrderId)
+            ))
+            .map((context) => this.mapMobileBasketPickUnit(context)),
+        };
+      })
+      .sort((left, right) => (
+        right.pendingUnits - left.pendingUnits
+        || left.bin.code.localeCompare(right.bin.code)
+      ));
+
+    return {
+      basketId: basket.id,
+      basketCode: basket.barcode,
+      status: basket.status,
+      statusLabel: this.formatEnumLabel(basket.status),
+      totalOrders: activeOrders.length,
+      totalRequiredUnits: activeOrders.reduce((total: number, order: any) => total + Math.max(order.totalQuantity ?? 0, 0), 0),
+      totalPickedUnits: activeOrders.reduce((total: number, order: any) => total + Math.max(order.pickedQuantity ?? 0, 0), 0),
+      totalPendingUnits: pendingContexts.length,
+      totalPickedReservations: pickedContexts.length,
+      unbinnedPendingUnits,
+      currentBin: bins[0]?.bin ?? null,
+      bins,
+    };
+  }
+
+  private mapMobileBasketPickUnit(context: { order: any; line: any; reservation: any }) {
+    return {
+      reservation: this.mapMobilePickReservation(context.reservation),
+      order: {
+        id: context.order.id,
+        posOrderId: context.order.posOrderId,
+        storeName: context.order.store?.shopName || context.order.store?.name || null,
+        tenantName: context.order.store?.tenant?.name ?? null,
+      },
+      line: {
+        id: context.line.id,
+        productName: context.line.productName,
+        productDisplayId: context.line.productDisplayId ?? null,
+        variationId: context.line.variationId,
+      },
+    };
+  }
+
   private mapMobileHeldBasket(basket: any) {
-    const activeTask = Array.isArray(basket.fulfillmentOrders)
-      ? basket.fulfillmentOrders[0] ?? null
-      : basket.fulfillmentOrder ?? null;
+    const activeTasks = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders
+      : basket.fulfillmentOrder
+        ? [basket.fulfillmentOrder]
+        : [];
+    const activeTask = activeTasks[0] ?? null;
 
     return {
       ...this.mapMobilePickBasket(basket),
       task: activeTask ? this.mapMobilePickingTask(activeTask) : null,
+      tasks: activeTasks.map((task: any) => this.mapMobilePickingTask(task)),
     };
   }
 
   private mapMobileBasketLookup(basket: any) {
-    const activeTask = Array.isArray(basket.fulfillmentOrders)
-      ? basket.fulfillmentOrders[0] ?? null
-      : basket.fulfillmentOrder ?? null;
+    const activeTasks = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders
+      : basket.fulfillmentOrder
+        ? [basket.fulfillmentOrder]
+        : [];
+    const activeTask = activeTasks[0] ?? null;
 
     return {
       ...this.mapMobilePickBasket(basket),
       task: activeTask ? this.mapMobilePickingTask(activeTask) : null,
+      tasks: activeTasks.map((task: any) => this.mapMobilePickingTask(task)),
     };
   }
 
@@ -6812,6 +7667,52 @@ export class WmsMobileService {
             tenantId,
             insertedAt: {
               gte: goLiveAt,
+            },
+          }
+        : {
+            tenantId,
+          };
+    });
+  }
+
+  private async buildTenantGoLiveFulfillmentOrderFilters(tenantIds: string[]): Promise<Prisma.WmsFulfillmentOrderWhereInput[]> {
+    const uniqueTenantIds = Array.from(new Set(
+      tenantIds
+        .map((tenantId) => tenantId?.trim())
+        .filter((tenantId): tenantId is string => Boolean(tenantId)),
+    ));
+
+    if (uniqueTenantIds.length === 0) {
+      return [];
+    }
+
+    const tenants = await this.prisma.tenant.findMany({
+      where: {
+        id: {
+          in: uniqueTenantIds,
+        },
+      },
+      select: {
+        id: true,
+        wmsFulfillmentGoLiveAt: true,
+      },
+    });
+    const goLiveByTenantId = new Map(
+      tenants.map((tenant) => [tenant.id, tenant.wmsFulfillmentGoLiveAt] as const),
+    );
+
+    return uniqueTenantIds.map((tenantId) => {
+      const goLiveAt = goLiveByTenantId.get(tenantId) ?? null;
+
+      return goLiveAt
+        ? {
+            tenantId,
+            posOrder: {
+              is: {
+                insertedAt: {
+                  gte: goLiveAt,
+                },
+              },
             },
           }
         : {
@@ -7130,6 +8031,8 @@ export class WmsMobileService {
         return 'Scanned pick location';
       case 'PICKING_BASKET_SCAN':
         return 'Assigned picking basket';
+      case 'PICKING_BASKET_BATCH_ASSIGN':
+        return 'Assigned basket batch';
       case 'PICKING_UNIT_SCAN':
         return 'Picked unit';
       case 'PICKING_BASKET_LOOKUP':
@@ -7289,6 +8192,7 @@ export class WmsMobileService {
     const source = this.readHistoryMetadataString(metadata, 'source');
     const deliveryState = this.readHistoryMetadataString(metadata, 'deliveryState');
     const unitCount = this.readHistoryMetadataNumber(metadata, 'unitCount');
+    const assignedCount = this.readHistoryMetadataNumber(metadata, 'assignedCount');
     const mode = this.readHistoryMetadataString(metadata, 'mode');
     const found = this.readHistoryMetadataBoolean(metadata, 'found');
 
@@ -7302,6 +8206,10 @@ export class WmsMobileService {
 
     if (basketCode) {
       parts.push(`Basket ${basketCode}`);
+    }
+
+    if (typeof assignedCount === 'number' && actionType === 'PICKING_BASKET_BATCH_ASSIGN') {
+      parts.push(`${assignedCount} order${assignedCount === 1 ? '' : 's'}`);
     }
 
     if (targetCode && actionType === 'STOCK_MOVE') {

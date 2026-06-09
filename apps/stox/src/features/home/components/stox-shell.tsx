@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StoxTabKey } from '@/src/features/home/types';
 import { tokens } from '@/src/shared/theme/tokens';
 import { StoxBottomNav } from './stox-bottom-nav';
@@ -16,6 +16,14 @@ type StoxShellProps = {
   children: ReactNode;
 };
 
+type StoxShellOverlaySetter = (overlay: ReactNode | null) => void;
+
+const StoxShellOverlayContext = createContext<StoxShellOverlaySetter | null>(null);
+
+export function useStoxShellOverlay() {
+  return useContext(StoxShellOverlayContext);
+}
+
 export function StoxShell({
   contextLabel,
   displayName,
@@ -25,43 +33,64 @@ export function StoxShell({
   hideHeader = false,
   children,
 }: StoxShellProps) {
+  const insets = useSafeAreaInsets();
+  const [overlay, setOverlay] = useState<ReactNode | null>(null);
+  const updateOverlay = useCallback<StoxShellOverlaySetter>((nextOverlay) => {
+    setOverlay(nextOverlay);
+  }, []);
+
+  useEffect(() => {
+    setOverlay(null);
+  }, [activeTab]);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <View style={styles.root}>
-        <View style={styles.topGlow} />
-        <View style={styles.bottomGlow} />
+      <StoxShellOverlayContext.Provider value={updateOverlay}>
+        <View style={styles.root}>
+          <View style={styles.topGlow} />
+          <View style={styles.bottomGlow} />
 
-        <ScrollView
-          style={styles.scroll}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.content}>
-          {!hideHeader ? (
-            <View style={styles.header}>
-              <View style={styles.copy}>
-                <Text style={styles.brand}>STOX</Text>
-                <Text numberOfLines={1} style={styles.title}>{displayName}</Text>
-                {contextLabel ? <Text numberOfLines={1} style={styles.context}>{contextLabel}</Text> : null}
-              </View>
-
-              <View style={styles.headerActions}>
-                <View style={styles.iconButton}>
-                  <Feather name="bell" size={18} color={tokens.colors.panel} />
+          <ScrollView
+            style={styles.scroll}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.content,
+              overlay ? { paddingBottom: insets.bottom + 216 } : null,
+            ]}>
+            {!hideHeader ? (
+              <View style={styles.header}>
+                <View style={styles.copy}>
+                  <Text style={styles.brand}>STOX</Text>
+                  <Text numberOfLines={1} style={styles.title}>{displayName}</Text>
+                  {contextLabel ? <Text numberOfLines={1} style={styles.context}>{contextLabel}</Text> : null}
                 </View>
 
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{profileInitials}</Text>
+                <View style={styles.headerActions}>
+                  <View style={styles.iconButton}>
+                    <Feather name="bell" size={18} color={tokens.colors.panel} />
+                  </View>
+
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>{profileInitials}</Text>
+                  </View>
                 </View>
               </View>
+            ) : null}
+
+            {children}
+          </ScrollView>
+
+          {overlay ? (
+            <View pointerEvents="box-none" style={[styles.overlayDock, { bottom: insets.bottom + 108 }]}>
+              {overlay}
             </View>
           ) : null}
 
-          {children}
-        </ScrollView>
-
-        <SafeAreaView style={styles.navDock} edges={['bottom']}>
-          <StoxBottomNav activeTab={activeTab} onChange={onChangeTab} />
-        </SafeAreaView>
-      </View>
+          <SafeAreaView style={styles.navDock} edges={['bottom']}>
+            <StoxBottomNav activeTab={activeTab} onChange={onChangeTab} />
+          </SafeAreaView>
+        </View>
+      </StoxShellOverlayContext.Provider>
     </SafeAreaView>
   );
 }
@@ -103,6 +132,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: tokens.spacing.lg,
     paddingTop: tokens.spacing.sm,
     paddingBottom: 112,
+  },
+  overlayDock: {
+    alignItems: 'center',
+    left: 0,
+    paddingHorizontal: tokens.spacing.lg,
+    position: 'absolute',
+    right: 0,
+    zIndex: 20,
+    elevation: 20,
   },
   header: {
     alignItems: 'center',

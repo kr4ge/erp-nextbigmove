@@ -95,6 +95,17 @@ type ConfirmationOrderTag = {
   name: string;
 };
 
+type SystemPosOrderStatusUpdateParams = {
+  tenantId: string;
+  orderRowId: string;
+  shopId: string;
+  posOrderId: string;
+  targetStatus: number;
+  allowedCurrentStatuses: number[];
+  source: NonNullable<ConfirmationUpdateStatusJobData['source']>;
+  requestId?: string | null;
+};
+
 const STATIC_ASSIGNING_SELLER_PAYLOAD: AssigningSellerPayload = {
   avatar_url: null,
   email: 'wetradejaysonquiatchon@gmail.com',
@@ -113,6 +124,7 @@ export class OrdersService {
     6: 'Cancel',
     7: 'Delete',
     11: 'Restocking',
+    12: 'Waiting for printing',
   };
 
   constructor(
@@ -455,6 +467,222 @@ export class OrdersService {
       jobId: `confirmation-update:${data.tenantId}:${data.shopId}:${data.posOrderId}`,
       ...this.getConfirmationUpdateQueueJobOptions(),
     });
+  }
+
+  async enqueueSystemPosOrderStatusUpdate(params: SystemPosOrderStatusUpdateParams): Promise<{
+    queued: boolean;
+    skipped: boolean;
+    reason: string;
+    processing?: boolean;
+    currentStatus?: number | null;
+    targetStatus: number;
+  }> {
+    const targetStatus = Number.isInteger(params.targetStatus) ? params.targetStatus : null;
+    const allowedCurrentStatuses = Array.from(new Set(
+      params.allowedCurrentStatuses.filter((status) => Number.isInteger(status)),
+    ));
+
+    if (targetStatus === null) {
+      throw new BadRequestException('Target POS status must be an integer');
+    }
+
+    if (allowedCurrentStatuses.length === 0) {
+      throw new BadRequestException('At least one allowed current POS status is required');
+    }
+
+    const order = await this.withDbRetry(
+      () =>
+        this.prisma.posOrder.findFirst({
+          where: {
+            id: params.orderRowId,
+            tenantId: params.tenantId,
+          },
+          select: {
+            id: true,
+            shopId: true,
+            posOrderId: true,
+            status: true,
+            confirmationUpdateRequestedAt: true,
+            confirmationUpdateTargetStatus: true,
+          },
+        }),
+      'read-system-pos-order-status-update',
+    );
+
+    if (!order) {
+      return {
+        queued: false,
+        skipped: true,
+        reason: 'ORDER_NOT_FOUND',
+        targetStatus,
+      };
+    }
+
+    if (order.shopId !== params.shopId || order.posOrderId !== params.posOrderId) {
+      return {
+        queued: false,
+        skipped: true,
+        reason: 'ORDER_MISMATCH',
+        currentStatus: order.status,
+        targetStatus,
+      };
+    }
+
+    if (order.status === targetStatus) {
+      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+      return {
+        queued: false,
+        skipped: true,
+        reason: 'STATUS_ALREADY_TARGET',
+        currentStatus: order.status,
+        targetStatus,
+      };
+    }
+
+    if (!allowedCurrentStatuses.includes(order.status ?? Number.NaN)) {
+      return {
+        queued: false,
+        skipped: true,
+        reason: `STATUS_${order.status ?? 'NULL'}_NOT_ALLOWED`,
+        currentStatus: order.status,
+        targetStatus,
+      };
+    }
+
+    const processingCutoff = this.getConfirmationUpdateProcessingCutoff();
+    const processingRequestedAt = new Date();
+    const lockResult = await this.withDbRetry(
+      () =>
+        this.prisma.posOrder.updateMany({
+          where: {
+            id: order.id,
+            tenantId: params.tenantId,
+            status: {
+              in: allowedCurrentStatuses,
+            },
+            OR: [
+              { confirmationUpdateRequestedAt: null },
+              { confirmationUpdateRequestedAt: { lt: processingCutoff } },
+            ],
+          },
+          data: {
+            confirmationUpdateRequestedAt: processingRequestedAt,
+            confirmationUpdateTargetStatus: targetStatus,
+          },
+        }),
+      'lock-system-pos-order-status-update',
+    );
+
+    if (lockResult.count === 0) {
+      const latest = await this.withDbRetry(
+        () =>
+          this.prisma.posOrder.findUnique({
+            where: { id: order.id },
+            select: {
+              status: true,
+              confirmationUpdateRequestedAt: true,
+              confirmationUpdateTargetStatus: true,
+            },
+          }),
+        'read-system-pos-order-status-update-after-lock',
+      );
+
+      if (!latest) {
+        return {
+          queued: false,
+          skipped: true,
+          reason: 'ORDER_NOT_FOUND',
+          targetStatus,
+        };
+      }
+
+      if (latest.status === targetStatus) {
+        await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+        return {
+          queued: false,
+          skipped: true,
+          reason: 'STATUS_ALREADY_TARGET',
+          currentStatus: latest.status,
+          targetStatus,
+        };
+      }
+
+      if (!allowedCurrentStatuses.includes(latest.status ?? Number.NaN)) {
+        return {
+          queued: false,
+          skipped: true,
+          reason: `STATUS_${latest.status ?? 'NULL'}_NOT_ALLOWED`,
+          currentStatus: latest.status,
+          targetStatus,
+        };
+      }
+
+      const inFlight =
+        latest.confirmationUpdateRequestedAt &&
+        latest.confirmationUpdateRequestedAt >= processingCutoff;
+      if (inFlight) {
+        const inflightTarget =
+          typeof latest.confirmationUpdateTargetStatus === 'number'
+            ? latest.confirmationUpdateTargetStatus
+            : null;
+
+        return {
+          queued: inflightTarget === targetStatus,
+          skipped: inflightTarget !== targetStatus,
+          processing: true,
+          reason: inflightTarget === targetStatus
+            ? 'STATUS_UPDATE_ALREADY_IN_PROGRESS'
+            : `STATUS_UPDATE_IN_PROGRESS_${inflightTarget ?? 'UNKNOWN'}`,
+          currentStatus: latest.status,
+          targetStatus,
+        };
+      }
+
+      return {
+        queued: false,
+        skipped: true,
+        reason: 'LOCK_NOT_ACQUIRED',
+        currentStatus: latest.status,
+        targetStatus,
+      };
+    }
+
+    try {
+      await this.enqueueConfirmationStatusUpdate({
+        tenantId: params.tenantId,
+        orderRowId: order.id,
+        shopId: order.shopId,
+        posOrderId: order.posOrderId,
+        targetStatus,
+        requestId: params.requestId ?? undefined,
+        source: params.source,
+        allowedCurrentStatuses,
+      });
+    } catch (error: any) {
+      const message = (error?.message || '').toString().toLowerCase();
+      if (message.includes('job') && message.includes('exist')) {
+        return {
+          queued: true,
+          skipped: false,
+          processing: true,
+          reason: 'STATUS_UPDATE_ALREADY_QUEUED',
+          currentStatus: order.status,
+          targetStatus,
+        };
+      }
+
+      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+      throw error;
+    }
+
+    return {
+      queued: true,
+      skipped: false,
+      processing: true,
+      reason: 'QUEUED',
+      currentStatus: order.status,
+      targetStatus,
+    };
   }
 
   private getConfirmationStatusLabel(status: number | null | undefined): string {
@@ -1543,6 +1771,12 @@ export class OrdersService {
     const hasTotalDiscountUpdate = typeof jobData.targetTotalDiscount === 'number';
     const hasBankPaymentsUpdate = typeof jobData.targetBankPayments !== 'undefined';
     const hasSurchargeUpdate = typeof jobData.targetSurcharge === 'number';
+    const allowedCurrentStatuses = Array.from(new Set(
+      (Array.isArray(jobData.allowedCurrentStatuses) && jobData.allowedCurrentStatuses.length > 0
+        ? jobData.allowedCurrentStatuses
+        : [0]
+      ).filter((status) => Number.isInteger(status)),
+    ));
 
     if (
       !hasStatusUpdate &&
@@ -1578,14 +1812,24 @@ export class OrdersService {
       return { success: false, reason: 'ORDER_NOT_FOUND' };
     }
 
-    if (order.status !== 0) {
-      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
-      return { success: false, reason: 'STATUS_NOT_NEW' };
-    }
-
     if (order.shopId !== jobData.shopId || order.posOrderId !== jobData.posOrderId) {
       await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
       return { success: false, reason: 'ORDER_MISMATCH' };
+    }
+
+    if (hasStatusUpdate && order.status === jobData.targetStatus) {
+      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+      return { success: true, reason: 'STATUS_ALREADY_TARGET' };
+    }
+
+    if (!allowedCurrentStatuses.includes(order.status ?? Number.NaN)) {
+      await this.clearConfirmationUpdateInFlight(order.id).catch(() => undefined);
+      return {
+        success: false,
+        reason: allowedCurrentStatuses.length === 1 && allowedCurrentStatuses[0] === 0
+          ? 'STATUS_NOT_NEW'
+          : `STATUS_${order.status ?? 'NULL'}_NOT_ALLOWED`,
+      };
     }
 
     const store = await this.prisma.posStore.findFirst({

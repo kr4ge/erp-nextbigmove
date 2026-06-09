@@ -27,4 +27,6 @@ export interface ConfirmationUpdateStatusJobData {
   targetBankPayments?: unknown;
   targetSurcharge?: number | null;
   requestId?: string;
+  source?: 'confirmation' | 'wms_picking';
+  allowedCurrentStatuses?: number[];
 }

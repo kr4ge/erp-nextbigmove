@@ -19,5 +19,6 @@ import { OrdersQueueProcessor } from './orders.processor';
   ],
   controllers: [OrdersController],
   providers: [OrdersService, OrdersQueueProcessor],
+  exports: [OrdersService],
 })
 export class OrdersModule {}

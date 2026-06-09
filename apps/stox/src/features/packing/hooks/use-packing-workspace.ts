@@ -221,6 +221,10 @@ export function usePackingWorkspace({
       setPacking((current) => current ? replacePackingTask(current, result.task) : current);
       setActiveTaskId(null);
       setError(null);
+      await loadPackingPage({
+        loadingKind: 'refresh',
+        page: 1,
+      });
       return true;
     } catch (requestError) {
       setError(resolvePackingError(requestError));
@@ -228,7 +232,7 @@ export function usePackingWorkspace({
     } finally {
       setIsSubmitting(false);
     }
-  }, [device, filters.tenantId, session.accessToken]);
+  }, [device, filters.tenantId, loadPackingPage, session.accessToken]);
 
   const voidTask = useCallback(async ({
     taskId,
@@ -260,6 +264,10 @@ export function usePackingWorkspace({
       setPacking((current) => current ? replacePackingTask(current, result.task) : current);
       setActiveTaskId(null);
       setError(null);
+      await loadPackingPage({
+        loadingKind: 'refresh',
+        page: 1,
+      });
       return true;
     } catch (requestError) {
       setError(resolvePackingError(requestError));
@@ -267,7 +275,7 @@ export function usePackingWorkspace({
     } finally {
       setIsSubmitting(false);
     }
-  }, [device, filters.tenantId, session.accessToken]);
+  }, [device, filters.tenantId, loadPackingPage, session.accessToken]);
 
   useEffect(() => {
     let isMounted = true;

@@ -2,9 +2,14 @@ import type { DeviceIdentity } from '@/src/features/auth/types';
 import { apiRequest } from '@/src/shared/services/http';
 import type {
   WmsMobileBasketLookupResponse,
+  WmsMobileBasketBinScanResult,
+  WmsMobileBasketPickPlanResponse,
+  WmsMobileBasketUnitScanResult,
   PickingFilters,
   PickingStatus,
   WmsMobilePickingBinScanResult,
+  WmsMobilePickingBatchAssignResponse,
+  WmsMobilePickingHandoffResponse,
   WmsMobilePickingResponse,
   WmsMobilePickingTask,
 } from '../types';
@@ -78,6 +83,25 @@ export function scanMobilePickingBasket(params: PickingRequestParams & {
   );
 }
 
+export function assignMobilePickingTasksToBasket(params: PickingRequestParams & {
+  basketCode: string;
+  taskIds: string[];
+}) {
+  return apiRequest<WmsMobilePickingBatchAssignResponse>(
+    '/wms/mobile/picking/tasks/batch-assign-basket',
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        basketCode: params.basketCode,
+        taskIds: params.taskIds,
+      },
+    },
+  );
+}
+
 export function scanMobilePickingUnit(params: PickingRequestParams & {
   taskId: string;
   code: string;
@@ -114,7 +138,7 @@ export function handoffMobilePickingTask(params: PickingRequestParams & {
   taskId: string;
   packerId: string;
 }) {
-  return apiRequest<{ success: boolean; task: WmsMobilePickingTask }>(
+  return apiRequest<WmsMobilePickingHandoffResponse>(
     `/wms/mobile/picking/tasks/${params.taskId}/handoff`,
     {
       method: 'POST',
@@ -143,6 +167,63 @@ export function lookupMobilePickingBasket(params: PickingRequestParams & {
       method: 'GET',
       token: params.accessToken,
       device: params.device,
+    },
+  );
+}
+
+export function fetchMobilePickingBasketPlan(params: PickingRequestParams & {
+  basketId: string;
+}) {
+  const query: string[] = [];
+
+  if (params.tenantId) {
+    query.push(`tenantId=${encodeURIComponent(params.tenantId)}`);
+  }
+
+  return apiRequest<WmsMobileBasketPickPlanResponse>(
+    `/wms/mobile/picking/baskets/${params.basketId}/plan${query.length ? `?${query.join('&')}` : ''}`,
+    {
+      method: 'GET',
+      token: params.accessToken,
+      device: params.device,
+    },
+  );
+}
+
+export function scanMobilePickingBasketBin(params: PickingRequestParams & {
+  basketId: string;
+  code: string;
+}) {
+  return apiRequest<WmsMobileBasketBinScanResult>(
+    `/wms/mobile/picking/baskets/${params.basketId}/scan-bin`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        code: params.code,
+      },
+    },
+  );
+}
+
+export function scanMobilePickingBasketUnit(params: PickingRequestParams & {
+  basketId: string;
+  binId: string;
+  code: string;
+}) {
+  return apiRequest<WmsMobileBasketUnitScanResult>(
+    `/wms/mobile/picking/baskets/${params.basketId}/scan-unit`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        binId: params.binId,
+        code: params.code,
+      },
     },
   );
 }

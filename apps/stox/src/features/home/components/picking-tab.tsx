@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   ActivityIndicator,
@@ -15,6 +15,8 @@ import { usePickingWorkspace } from '@/src/features/picking/hooks/use-picking-wo
 import type {
   PickingFilters,
   PickingStatus,
+  WmsMobileBasketPickPlan,
+  WmsMobileHeldBasket,
   WmsMobilePickBasket,
   WmsMobilePickingPackerOption,
   WmsMobilePickingTask,
@@ -27,6 +29,7 @@ import {
 } from '@/src/features/stock/components/stock-scope-filter';
 import type { StockScopeOption } from '@/src/features/stock/utils/stock-scope';
 import { BlockedTaskState, SectionLabel, TaskHeader, TaskHeaderIconButton, UtilityPill } from './stox-primitives';
+import { useStoxShellOverlay } from './stox-shell';
 
 type PickingTabProps = {
   bootstrap: BootstrapResponse;
@@ -46,10 +49,10 @@ const PICK_TABS: Array<{ key: PickTabKey; label: string }> = [
 const PICK_STATUS_FILTERS: Array<{ label: string; value: PickingStatus | null }> = [
   { label: 'All', value: null },
   { label: 'To do', value: 'READY' },
+  { label: 'In Progress', value: 'IN_PICKING' },
   { label: 'Partial', value: 'PARTIAL' },
   { label: 'Restocking', value: 'RESTOCKING' },
   { label: 'Issues', value: 'ISSUE' },
-  { label: 'In Progress', value: 'IN_PICKING' },
 ];
 const PICK_LIST_PAGE_SIZE = 10;
 
@@ -70,12 +73,17 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
   const [activeFilter, setActiveFilter] = useState<PickingFilterKey | null>(null);
   const [activeTab, setActiveTab] = useState<PickTabKey>('list');
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [selectedPickTaskIds, setSelectedPickTaskIds] = useState<string[]>([]);
+  const [claimReviewTaskIds, setClaimReviewTaskIds] = useState<string[]>([]);
+  const [activeBatchTaskIds, setActiveBatchTaskIds] = useState<string[]>([]);
   const {
     activeBin,
     activeTask,
     activeTaskId,
     claimTask,
+    basketPlans,
     error,
+    fetchBasketPlan,
     filters,
     handoffTask,
     isLoading,
@@ -86,6 +94,8 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     picking,
     refreshPicking,
     retryAllocation,
+    scanBasketBin,
+    scanBasketUnit,
     scanBasket,
     scanBin,
     scanUnit,
@@ -93,6 +103,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     setActiveTaskId,
     setFilters,
     setStatusFilter,
+    assignTasksToBasket,
     statusFilter,
   } = usePickingWorkspace({ bootstrap, device, session });
 
@@ -123,6 +134,194 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     return taskPool.filter((task) => getPickTaskDateKey(task) === selectedDateKey);
   }, [activeTab, selectedDateKey, taskPool]);
   const hiddenTaskCount = Math.max(taskPool.length - filteredTaskPool.length, 0);
+  const currentUserEmail = bootstrap.user.email;
+  const selectedPickTaskIdSet = useMemo(() => new Set(selectedPickTaskIds), [selectedPickTaskIds]);
+  const selectedPickTasks = useMemo(
+    () => filteredTaskPool.filter((task) => selectedPickTaskIdSet.has(task.id)),
+    [filteredTaskPool, selectedPickTaskIdSet],
+  );
+  const pickTaskById = useMemo(() => {
+    const entries = new Map<string, WmsMobilePickingTask>();
+
+    for (const task of picking?.tasks ?? []) {
+      entries.set(task.id, task);
+    }
+
+    for (const task of picking?.pickedHistory ?? []) {
+      entries.set(task.id, task);
+    }
+
+    for (const basket of picking?.heldBaskets ?? []) {
+      for (const task of basket.tasks ?? []) {
+        entries.set(task.id, task);
+      }
+
+      if (basket.task) {
+        entries.set(basket.task.id, basket.task);
+      }
+
+      for (const order of basket.orders ?? []) {
+        const existing = entries.get(order.id);
+        if (existing) {
+          entries.set(order.id, existing);
+        }
+      }
+    }
+
+    if (activeTask) {
+      entries.set(activeTask.id, activeTask);
+    }
+
+    return entries;
+  }, [activeTask, picking?.heldBaskets, picking?.pickedHistory, picking?.tasks]);
+  const activeBatchTasks = useMemo(
+    () => activeBatchTaskIds
+      .map((taskId) => pickTaskById.get(taskId))
+      .filter((task): task is WmsMobilePickingTask => Boolean(task)),
+    [activeBatchTaskIds, pickTaskById],
+  );
+  const activeBasketTasks = useMemo(() => {
+    if (!activeTask?.basket?.orders?.length) {
+      return [];
+    }
+
+    return activeTask.basket.orders
+      .map((order) => pickTaskById.get(order.id))
+      .filter((task): task is WmsMobilePickingTask => Boolean(task));
+  }, [activeTask?.basket?.orders, pickTaskById]);
+  const claimReviewTasks = useMemo(
+    () => claimReviewTaskIds
+      .map((taskId) => pickTaskById.get(taskId))
+      .filter((task): task is WmsMobilePickingTask => Boolean(task)),
+    [claimReviewTaskIds, pickTaskById],
+  );
+  const executionTasks = activeBatchTasks.length > 0
+    ? activeBatchTasks
+    : activeBasketTasks.length > 1
+      ? activeBasketTasks
+      : activeTask
+        ? [activeTask]
+        : [];
+  const showClaimReview = executionTasks.length === 0 && claimReviewTasks.length > 0;
+  const showQueueChrome = executionTasks.length === 0 && !showClaimReview;
+
+  useEffect(() => {
+    setSelectedPickTaskIds([]);
+    setClaimReviewTaskIds([]);
+    setActiveBatchTaskIds([]);
+  }, [activeTab, filters.storeId, filters.tenantId, selectedDateKey, statusFilter]);
+
+  useEffect(() => {
+    setActiveBatchTaskIds((current) => current.filter((taskId) => pickTaskById.has(taskId)));
+    setClaimReviewTaskIds((current) => current.filter((taskId) => pickTaskById.has(taskId)));
+  }, [pickTaskById]);
+
+  useEffect(() => {
+    if (executionTasks.length <= 1 || !activeTask) {
+      return;
+    }
+
+    if (activeTask.status !== 'READY_FOR_PACK' && activeTask.status !== 'PICKED') {
+      return;
+    }
+
+    const nextOpenTask = executionTasks.find((task) => (
+      task.id !== activeTask.id
+      && task.status !== 'READY_FOR_PACK'
+      && task.status !== 'PICKED'
+      && task.status !== 'PACKED'
+      && task.status !== 'CANCELED'
+    ));
+
+    if (nextOpenTask) {
+      const basketId = activeTask.basket?.id ?? nextOpenTask.basket?.id ?? null;
+      const activeBinStillPending = Boolean(
+        activeBin
+        && basketId
+        && basketPlans[basketId]?.bins.some((group) => group.bin.id === activeBin.id),
+      );
+
+      setActiveTaskId(nextOpenTask.id);
+      if (!activeBinStillPending) {
+        setActiveBin(null);
+      }
+    }
+  }, [activeBin, activeTask, basketPlans, executionTasks, setActiveBin, setActiveTaskId]);
+
+  useEffect(() => {
+    setSelectedPickTaskIds((current) => current.filter((taskId) => {
+      const task = filteredTaskPool.find((candidate) => candidate.id === taskId);
+      return task ? isPickTaskSelectable(task, currentUserEmail) : false;
+    }));
+  }, [currentUserEmail, filteredTaskPool]);
+
+  const togglePickTaskSelection = (task: WmsMobilePickingTask) => {
+    if (!isPickTaskSelectable(task, currentUserEmail)) {
+      return;
+    }
+
+    setSelectedPickTaskIds((current) => (
+      current.includes(task.id)
+        ? current.filter((taskId) => taskId !== task.id)
+        : current.length >= 10
+          ? current
+        : [...current, task.id]
+    ));
+  };
+  const clearPickTaskSelection = useCallback(() => {
+    setSelectedPickTaskIds([]);
+    setClaimReviewTaskIds([]);
+  }, []);
+
+  const openPickClaimReview = useCallback(() => {
+    if (selectedPickTaskIds.length === 0) {
+      return;
+    }
+
+    setClaimReviewTaskIds(selectedPickTaskIds);
+  }, [selectedPickTaskIds]);
+
+  const assignSelectedPickTasksToBasket = useCallback(async (basketCode: string) => {
+    const taskIds = claimReviewTaskIds.length > 0 ? claimReviewTaskIds : selectedPickTaskIds;
+    if (taskIds.length === 0) {
+      return false;
+    }
+
+    const result = await assignTasksToBasket(taskIds, basketCode);
+    if (result) {
+      const assignedTaskIds = result.tasks.map((task) => task.id);
+      setSelectedPickTaskIds([]);
+      setClaimReviewTaskIds([]);
+      setActiveBatchTaskIds(assignedTaskIds);
+      setActiveTaskId(assignedTaskIds[0] ?? null);
+      setActiveBin(null);
+    }
+
+    return Boolean(result);
+  }, [assignTasksToBasket, claimReviewTaskIds, selectedPickTaskIds, setActiveBin, setActiveTaskId]);
+
+  const openHeldBasket = useCallback((basket: WmsMobileHeldBasket) => {
+    const tasks = basket.tasks.length > 0
+      ? basket.tasks
+      : basket.task
+        ? [basket.task]
+        : [];
+    if (tasks.length === 0) {
+      return;
+    }
+
+    const nextTask = tasks.find((task) => (
+      task.status !== 'READY_FOR_PACK'
+      && task.status !== 'PICKED'
+      && task.status !== 'PACKED'
+      && task.status !== 'CANCELED'
+    )) ?? tasks[0];
+
+    setActiveBatchTaskIds(tasks.map((task) => task.id));
+    setActiveTaskId(nextTask.id);
+    setActiveBin(null);
+    void fetchBasketPlan(basket.id);
+  }, [fetchBasketPlan, setActiveBin, setActiveTaskId]);
 
   useEffect(() => {
     if (activeTab === 'baskets') {
@@ -176,7 +375,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
 
   return (
     <>
-      {!activeTask ? (
+      {showQueueChrome ? (
         <>
           <View style={styles.queueHeader}>
             <TaskHeaderIconButton
@@ -226,44 +425,75 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
         </SurfaceCard>
       ) : null}
 
-      {!activeTask ? <PickTabSwitcher activeTab={activeTab} onChange={setActiveTab} /> : null}
+      {showQueueChrome ? <PickTabSwitcher activeTab={activeTab} onChange={setActiveTab} /> : null}
 
-      {activeTask ? (
-        <PickExecutionCard
+      {activeTask && executionTasks.length > 0 ? (
+        <PickExecutionStack
           activeBin={activeBin}
+          activeTask={activeTask}
           currentUserEmail={bootstrap.user.email}
           isSubmitting={isSubmitting}
-          task={activeTask}
+          tasks={executionTasks}
           onBack={() => {
             setActiveTaskId(null);
             setActiveBin(null);
+            setActiveBatchTaskIds([]);
           }}
           onClaim={claimTask}
           onRefresh={refreshPicking}
           onRetryAllocation={retryAllocation}
+          basketPlan={activeTask.basket ? basketPlans[activeTask.basket.id] ?? null : null}
+          onFetchBasketPlan={fetchBasketPlan}
           onHandoff={handoffTask}
           packerOptions={picking?.context.packerOptions ?? []}
+          onScanBasketBin={scanBasketBin}
+          onScanBasketUnit={scanBasketUnit}
           onScanBasket={scanBasket}
           onScanBin={scanBin}
           onScanUnit={scanUnit}
+        />
+      ) : showClaimReview ? (
+        <PickBatchClaimReviewScreen
+          isSubmitting={isSubmitting}
+          tasks={claimReviewTasks}
+          onAssignBasket={assignSelectedPickTasksToBasket}
+          onBack={() => setClaimReviewTaskIds([])}
         />
       ) : (
         <>
           {activeTab === 'list' ? (
             <>
               <PickStatusFilterRow value={statusFilter} onChange={setStatusFilter} />
-              <PickTaskList
-                activeTaskId={activeTaskId}
-                hiddenCount={hiddenTaskCount}
-                hasMore={Boolean(picking?.pagination.hasMore)}
-                isLoadingMore={isLoadingMore}
-                loadedCount={taskPool.length}
-                onClearDateFilter={() => setSelectedDateKey(null)}
-                tasks={filteredTaskPool}
-                total={totalPickTasks}
-                onLoadMore={loadMore}
-                onSelect={setActiveTaskId}
-              />
+              {statusFilter === 'IN_PICKING' ? (
+                <HeldBasketTaskList
+                  baskets={picking?.heldBaskets ?? []}
+                  onSelect={openHeldBasket}
+                />
+              ) : (
+                <>
+                  <PickTaskList
+                    activeTaskId={activeTaskId}
+                    currentUserEmail={currentUserEmail}
+                    hiddenCount={hiddenTaskCount}
+                    hasMore={Boolean(picking?.pagination.hasMore)}
+                    isLoadingMore={isLoadingMore}
+                    loadedCount={taskPool.length}
+                    onClearDateFilter={() => setSelectedDateKey(null)}
+                    tasks={filteredTaskPool}
+                    total={totalPickTasks}
+                    onLoadMore={loadMore}
+                    onSelect={setActiveTaskId}
+                    onToggleSelection={togglePickTaskSelection}
+                    selectedTaskIds={selectedPickTaskIdSet}
+                  />
+                  <PickSelectionFloatingActions
+                    isSubmitting={isSubmitting}
+                    selectedCount={selectedPickTasks.length}
+                    onClaim={openPickClaimReview}
+                    onClear={clearPickTaskSelection}
+                  />
+                </>
+              )}
             </>
           ) : null}
 
@@ -299,6 +529,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
 
 function PickTaskList({
   activeTaskId,
+  currentUserEmail,
   hiddenCount,
   hasMore,
   isLoadingMore,
@@ -308,8 +539,11 @@ function PickTaskList({
   total,
   onLoadMore,
   onSelect,
+  onToggleSelection,
+  selectedTaskIds,
 }: {
   activeTaskId: string | null;
+  currentUserEmail: string;
   hiddenCount: number;
   hasMore: boolean;
   isLoadingMore: boolean;
@@ -319,6 +553,8 @@ function PickTaskList({
   total: number;
   onLoadMore: () => void | Promise<void>;
   onSelect: (taskId: string) => void;
+  onToggleSelection: (task: WmsMobilePickingTask) => void;
+  selectedTaskIds: Set<string>;
 }) {
   const remaining = Math.max(total - loadedCount, 0);
 
@@ -331,10 +567,15 @@ function PickTaskList({
           : 'Confirmed orders will show here after sync.'}
         emptyTitle={hiddenCount > 0 ? 'No tasks on this date' : 'No pick tasks'}
         showHeader={false}
+        currentUserEmail={currentUserEmail}
+        selectionEnabled
+        selectionModeActive={selectedTaskIds.size > 0}
+        selectedTaskIds={selectedTaskIds}
         tasks={tasks}
         title="Orders"
         trailing={`${tasks.length}/${total}`}
         onSelect={onSelect}
+        onToggleSelection={onToggleSelection}
       />
 
       {(loadedCount > 0 || hasMore) ? (
@@ -380,6 +621,269 @@ function PickTaskList({
           )}
         </SurfaceCard>
       ) : null}
+    </>
+  );
+}
+
+function HeldBasketTaskList({
+  baskets,
+  onSelect,
+}: {
+  baskets: WmsMobileHeldBasket[];
+  onSelect: (basket: WmsMobileHeldBasket) => void;
+}) {
+  const activeBaskets = baskets.filter((basket) => (
+    basket.status === 'ASSIGNED'
+    || basket.status === 'IN_PICKING'
+  ));
+
+  if (activeBaskets.length === 0) {
+    return (
+      <SurfaceCard style={styles.emptyCard}>
+        <Text style={styles.emptyTitle}>No active baskets</Text>
+        <Text style={styles.emptyCopy}>Claim ready orders into a basket to start picking.</Text>
+      </SurfaceCard>
+    );
+  }
+
+  return (
+    <View style={styles.taskList}>
+      {activeBaskets.map((basket) => {
+        const tasks = basket.tasks.length > 0
+          ? basket.tasks
+          : basket.task
+            ? [basket.task]
+            : [];
+        const required = tasks.reduce((total, task) => total + task.totals.required, 0);
+        const picked = tasks.reduce((total, task) => total + task.totals.picked, 0);
+        const nextBin = tasks
+          .map((task) => task.nextPick?.unit.currentLocation?.code ?? null)
+          .find(Boolean);
+
+        return (
+          <Pressable
+            key={basket.id}
+            onPress={() => onSelect(basket)}
+            style={({ pressed }) => [styles.taskPressable, pressed ? styles.pressed : null]}>
+            <SurfaceCard style={styles.heldBasketCard}>
+              <View style={styles.heldBasketTopRow}>
+                <View style={styles.heldBasketIcon}>
+                  <Feather name="shopping-bag" size={16} color="#6437F6" />
+                </View>
+                <View style={styles.heldBasketCopy}>
+                  <Text numberOfLines={1} style={styles.heldBasketTitle}>Basket {basket.barcode}</Text>
+                  <Text numberOfLines={1} style={styles.heldBasketMeta}>
+                    {tasks.length} order{tasks.length === 1 ? '' : 's'} · {picked}/{required} units
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color="#9C83FF" />
+              </View>
+
+              <View style={styles.heldBasketFooter}>
+                <StatusBadge status={basket.status} label={basket.statusLabel} />
+                <Text numberOfLines={1} style={styles.heldBasketNextBin}>
+                  {nextBin ? `Next bin ${nextBin}` : 'Ready'}
+                </Text>
+              </View>
+            </SurfaceCard>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function PickSelectionFloatingActions({
+  isSubmitting,
+  selectedCount,
+  onClaim,
+  onClear,
+}: {
+  isSubmitting: boolean;
+  selectedCount: number;
+  onClaim: () => void;
+  onClear: () => void;
+}) {
+  const setShellOverlay = useStoxShellOverlay();
+
+  const dock = useMemo(() => (
+    <PickSelectionDock
+      isSubmitting={isSubmitting}
+      selectedCount={selectedCount}
+      onClaim={onClaim}
+      onClear={onClear}
+    />
+  ), [isSubmitting, onClaim, onClear, selectedCount]);
+
+  useEffect(() => {
+    if (!setShellOverlay) {
+      return;
+    }
+
+    if (selectedCount === 0) {
+      setShellOverlay(null);
+      return;
+    }
+
+    setShellOverlay(dock);
+  }, [dock, selectedCount, setShellOverlay]);
+
+  useEffect(() => {
+    if (!setShellOverlay) {
+      return undefined;
+    }
+
+    return () => {
+      setShellOverlay(null);
+    };
+  }, [setShellOverlay]);
+
+  if (setShellOverlay) {
+    return null;
+  }
+
+  if (selectedCount === 0) {
+    return null;
+  }
+
+  return dock;
+}
+
+function PickSelectionDock({
+  isSubmitting,
+  selectedCount,
+  onClaim,
+  onClear,
+}: {
+  isSubmitting: boolean;
+  selectedCount: number;
+  onClaim: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <View style={styles.selectionFloatingDock}>
+      <Pressable onPress={onClear} style={styles.selectionClearFab}>
+        <Feather name="x" size={20} color="#6437F6" />
+      </Pressable>
+      <PrimaryButton
+        label={`Claim order · ${selectedCount}`}
+        loading={isSubmitting}
+        onPress={onClaim}
+        style={styles.selectionFloatingAssignButton}
+      />
+    </View>
+  );
+}
+
+function PickBatchClaimReviewScreen({
+  isSubmitting,
+  onAssignBasket,
+  onBack,
+  tasks,
+}: {
+  isSubmitting: boolean;
+  onAssignBasket: (basketCode: string) => Promise<boolean>;
+  onBack: () => void;
+  tasks: WmsMobilePickingTask[];
+}) {
+  const [basketCode, setBasketCode] = useState('');
+  const basketInputRef = useRef<TextInput>(null);
+  const submitInFlightRef = useRef(false);
+  const totalUnits = tasks.reduce((total, task) => total + task.totals.required, 0);
+  const storeCount = new Set(tasks.map((task) => task.store?.id ?? task.store?.name ?? 'UNKNOWN_STORE')).size;
+  const partnerCount = new Set(tasks.map((task) => task.store?.tenantId ?? task.store?.tenantName ?? 'UNKNOWN_PARTNER')).size;
+
+  useEffect(() => {
+    const timer = setTimeout(() => basketInputRef.current?.focus(), 150);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const submitBasketAssignment = useCallback(async () => {
+    if (submitInFlightRef.current || isSubmitting) {
+      return;
+    }
+
+    const code = basketCode.trim();
+    if (!code) {
+      basketInputRef.current?.focus();
+      return;
+    }
+
+    submitInFlightRef.current = true;
+    try {
+      const ok = await onAssignBasket(code);
+      if (ok) {
+        setBasketCode('');
+      }
+    } finally {
+      submitInFlightRef.current = false;
+    }
+  }, [basketCode, isSubmitting, onAssignBasket]);
+
+  return (
+    <>
+      <View style={styles.executionHeader}>
+        <Pressable onPress={onBack} style={styles.backButton}>
+          <Feather name="chevron-left" size={20} color={tokens.colors.ink} />
+        </Pressable>
+        <View style={styles.executionTitleGroup}>
+          <Text numberOfLines={1} style={styles.executionTitle}>Claim order</Text>
+          <Text numberOfLines={1} style={styles.executionMeta}>
+            {tasks.length} order{tasks.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'}
+          </Text>
+        </View>
+        <View style={styles.claimReviewCountBadge}>
+          <Text style={styles.claimReviewCountText}>{tasks.length}</Text>
+        </View>
+      </View>
+
+      <SurfaceCard style={styles.claimReviewCard}>
+        <View style={styles.claimReviewStatsRow}>
+          <View style={styles.claimReviewStatPill}>
+            <Text style={styles.claimReviewStatText}>{partnerCount} partner{partnerCount === 1 ? '' : 's'}</Text>
+          </View>
+          <View style={styles.claimReviewStatPill}>
+            <Text style={styles.claimReviewStatText}>{storeCount} store{storeCount === 1 ? '' : 's'}</Text>
+          </View>
+          <View style={styles.claimReviewStatPill}>
+            <Text style={styles.claimReviewStatText}>{totalUnits} units</Text>
+          </View>
+        </View>
+
+        <View style={styles.claimReviewList}>
+          {tasks.map((task, index) => (
+            <View key={task.id} style={styles.claimReviewOrderRow}>
+              <Text style={styles.claimReviewOrderIndex}>{index + 1}</Text>
+              <View style={styles.claimReviewOrderCopy}>
+                <Text numberOfLines={1} style={styles.claimReviewOrderId}>#{task.posOrderId}</Text>
+                <Text numberOfLines={1} style={styles.claimReviewOrderMeta}>
+                  {[task.store?.tenantName, task.store?.name].filter(Boolean).join(' · ') || 'Store'}
+                </Text>
+              </View>
+              <Text style={styles.claimReviewOrderQty}>{task.totals.required}</Text>
+            </View>
+          ))}
+        </View>
+      </SurfaceCard>
+
+      <SurfaceCard style={styles.claimReviewScanCard}>
+        <ScannerInput
+          autoSubmit
+          inputRef={basketInputRef}
+          label="Basket"
+          placeholder="Scan basket"
+          value={basketCode}
+          disabled={isSubmitting}
+          onChangeText={setBasketCode}
+          onSubmit={submitBasketAssignment}
+        />
+        <PrimaryButton
+          disabled={!basketCode.trim()}
+          label="Claim"
+          loading={isSubmitting}
+          onPress={submitBasketAssignment}
+        />
+      </SurfaceCard>
     </>
   );
 }
@@ -444,22 +948,32 @@ function PickStatusFilterRow({
 
 function TaskCollectionSection({
   activeTaskId,
+  currentUserEmail,
   emptyCopy,
   emptyTitle,
+  selectionEnabled = false,
+  selectionModeActive = false,
+  selectedTaskIds,
   showHeader,
   tasks,
   title,
   trailing,
   onSelect,
+  onToggleSelection,
 }: {
   activeTaskId: string | null;
+  currentUserEmail?: string;
   emptyCopy: string;
   emptyTitle: string;
+  selectionEnabled?: boolean;
+  selectionModeActive?: boolean;
+  selectedTaskIds?: Set<string>;
   showHeader?: boolean;
   tasks: WmsMobilePickingTask[];
   title: string;
   trailing?: string;
   onSelect: (taskId: string) => void;
+  onToggleSelection?: (task: WmsMobilePickingTask) => void;
 }) {
   return (
     <>
@@ -473,14 +987,30 @@ function TaskCollectionSection({
       ) : null}
 
       <View style={styles.taskList}>
-        {tasks.map((task) => (
-          <PickTaskCard
-            key={task.id}
-            active={activeTaskId === task.id}
-            task={task}
-            onPress={() => onSelect(task.id)}
-          />
-        ))}
+        {tasks.map((task) => {
+          const selectable = selectionEnabled && isPickTaskSelectable(task, currentUserEmail ?? '');
+          return (
+            <PickTaskCard
+              key={task.id}
+              active={activeTaskId === task.id}
+              selectable={selectable}
+              selected={Boolean(selectedTaskIds?.has(task.id))}
+              selectionEnabled={selectionEnabled}
+              task={task}
+              onPress={() => {
+                if (selectionModeActive) {
+                  if (selectable) {
+                    onToggleSelection?.(task);
+                  }
+                  return;
+                }
+
+                onSelect(task.id);
+              }}
+              onToggleSelection={() => onToggleSelection?.(task)}
+            />
+          );
+        })}
       </View>
     </>
   );
@@ -652,12 +1182,20 @@ function TaskDateCarousel({
 
 function PickTaskCard({
   active,
+  selectable = false,
+  selected = false,
+  selectionEnabled = false,
   task,
   onPress,
+  onToggleSelection,
 }: {
   active: boolean;
+  selectable?: boolean;
+  selected?: boolean;
+  selectionEnabled?: boolean;
   task: WmsMobilePickingTask;
   onPress: () => void;
+  onToggleSelection?: () => void;
 }) {
   const visibleLines = getVisiblePickLines(task.lines);
   const shortageNote = visibleLines.find((line) => line.issueReason)?.issueReason ?? null;
@@ -676,6 +1214,26 @@ function PickTaskCard({
       ]}>
       <SurfaceCard style={styles.compactTaskCard}>
         <View style={styles.compactTopRow}>
+          {selectionEnabled ? (
+            <Pressable
+              onPress={(event) => {
+                event.stopPropagation?.();
+                if (selectable) {
+                  onToggleSelection?.();
+                }
+              }}
+              hitSlop={8}
+              style={styles.pickSelectionHitBox}>
+              <View
+                style={[
+                  styles.pickSelectionBox,
+                  selected ? styles.pickSelectionBoxSelected : null,
+                  !selectable ? styles.pickSelectionBoxDisabled : null,
+                ]}>
+                {selected ? <Feather name="check" size={15} color="#FFFFFF" /> : null}
+              </View>
+            </Pressable>
+          ) : null}
           <Text numberOfLines={1} style={styles.compactStoreLabel}>
             {task.store?.name ?? 'Store'}
           </Text>
@@ -708,6 +1266,358 @@ function PickTaskCard({
   );
 }
 
+function PickExecutionStack({
+  activeBin,
+  activeTask,
+  basketPlan,
+  currentUserEmail,
+  isSubmitting,
+  onBack,
+  onClaim,
+  onFetchBasketPlan,
+  onHandoff,
+  onRefresh,
+  onRetryAllocation,
+  onScanBasketBin,
+  onScanBasketUnit,
+  onScanBasket,
+  onScanBin,
+  onScanUnit,
+  packerOptions,
+  tasks,
+}: {
+  activeBin: { id: string; code: string; name: string } | null;
+  activeTask: WmsMobilePickingTask;
+  basketPlan: WmsMobileBasketPickPlan | null;
+  currentUserEmail: string;
+  isSubmitting: boolean;
+  onBack: () => void;
+  onClaim: (taskId: string) => Promise<void>;
+  onFetchBasketPlan: (basketId: string) => Promise<unknown>;
+  onHandoff: (taskId: string, packerId: string) => Promise<boolean>;
+  onRefresh: () => Promise<void>;
+  onRetryAllocation: (taskId: string) => Promise<boolean>;
+  onScanBasketBin: (basketId: string, code: string) => Promise<boolean>;
+  onScanBasketUnit: (basketId: string, binId: string, code: string) => Promise<boolean>;
+  onScanBasket: (taskId: string, code: string) => Promise<boolean>;
+  onScanBin: (taskId: string, code: string) => Promise<boolean>;
+  onScanUnit: (taskId: string, code: string) => Promise<boolean>;
+  packerOptions: WmsMobilePickingPackerOption[];
+  tasks: WmsMobilePickingTask[];
+}) {
+  const required = tasks.reduce((total, task) => total + task.totals.required, 0);
+  const picked = tasks.reduce((total, task) => total + task.totals.picked, 0);
+  const basket = activeTask.basket ?? tasks.find((task) => task.basket)?.basket ?? null;
+  const title = tasks.length > 1
+    ? basket
+      ? `Basket ${basket.barcode}`
+      : `${tasks.length} orders`
+    : `#${activeTask.posOrderId}`;
+  const meta = tasks.length > 1
+    ? `${picked}/${required} units · ${tasks.length} orders`
+    : activeTask.customer.name ?? activeTask.store?.name ?? 'Pick task';
+  const useBasketPicking = tasks.length > 1 && Boolean(basket);
+
+  return (
+    <>
+      <View style={styles.executionHeader}>
+        <Pressable onPress={onBack} style={styles.backButton}>
+          <Feather name="chevron-left" size={20} color={tokens.colors.ink} />
+        </Pressable>
+        <View style={styles.executionTitleGroup}>
+          <Text numberOfLines={1} style={styles.executionTitle}>{title}</Text>
+          <Text numberOfLines={1} style={styles.executionMeta}>{meta}</Text>
+        </View>
+        <StatusBadge status={activeTask.status} label={mapPickCardStatus(activeTask.status, activeTask.statusLabel)} />
+      </View>
+
+      {useBasketPicking && basket ? (
+        <BasketPickExecutionCard
+          activeBin={activeBin}
+          activeTask={activeTask}
+          basket={basket}
+          isSubmitting={isSubmitting}
+          packerOptions={packerOptions}
+          plan={basketPlan}
+          onFetchPlan={onFetchBasketPlan}
+          onHandoff={onHandoff}
+          onScanBin={onScanBasketBin}
+          onScanUnit={onScanBasketUnit}
+        />
+      ) : (
+        <PickExecutionCard
+          activeBin={activeBin}
+          currentUserEmail={currentUserEmail}
+          isSubmitting={isSubmitting}
+          showHeader={false}
+          task={activeTask}
+          onBack={onBack}
+          onClaim={onClaim}
+          onRefresh={onRefresh}
+          onRetryAllocation={onRetryAllocation}
+          onHandoff={onHandoff}
+          packerOptions={packerOptions}
+          onScanBasket={onScanBasket}
+          onScanBin={onScanBin}
+          onScanUnit={onScanUnit}
+        />
+      )}
+    </>
+  );
+}
+
+function BasketPickExecutionCard({
+  activeBin,
+  activeTask,
+  basket,
+  isSubmitting,
+  onFetchPlan,
+  onHandoff,
+  onScanBin,
+  onScanUnit,
+  packerOptions,
+  plan,
+}: {
+  activeBin: { id: string; code: string; name: string } | null;
+  activeTask: WmsMobilePickingTask;
+  basket: WmsMobilePickBasket;
+  isSubmitting: boolean;
+  onFetchPlan: (basketId: string) => Promise<unknown>;
+  onHandoff: (taskId: string, packerId: string) => Promise<boolean>;
+  onScanBin: (basketId: string, code: string) => Promise<boolean>;
+  onScanUnit: (basketId: string, binId: string, code: string) => Promise<boolean>;
+  packerOptions: WmsMobilePickingPackerOption[];
+  plan: WmsMobileBasketPickPlan | null;
+}) {
+  const [binCode, setBinCode] = useState('');
+  const [unitCode, setUnitCode] = useState('');
+  const [handoffVisible, setHandoffVisible] = useState(false);
+  const binInputRef = useRef<TextInput>(null);
+  const unitInputRef = useRef<TextInput>(null);
+  const binSubmitInFlightRef = useRef(false);
+  const unitSubmitInFlightRef = useRef(false);
+  const currentGroup = activeBin
+    ? plan?.bins.find((group) => group.bin.id === activeBin.id) ?? plan?.bins[0] ?? null
+    : plan?.bins[0] ?? null;
+  const activeBinMatches = Boolean(activeBin && currentGroup && activeBin.id === currentGroup.bin.id);
+  const hasPendingUnits = Boolean(plan && plan.totalPendingUnits > 0);
+  const handoffOptions: StockScopeOption[] = packerOptions.map((packer) => ({
+    label: packer.name,
+    value: packer.id,
+    meta: packer.employeeId ? `${packer.email} · ${packer.employeeId}` : packer.email,
+  }));
+
+  useEffect(() => {
+    if (!plan) {
+      void onFetchPlan(basket.id);
+    }
+  }, [basket.id, onFetchPlan, plan]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!hasPendingUnits) {
+        return;
+      }
+
+      if (activeBinMatches) {
+        unitInputRef.current?.focus();
+      } else {
+        binInputRef.current?.focus();
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [activeBinMatches, hasPendingUnits]);
+
+  const submitBin = async () => {
+    if (binSubmitInFlightRef.current || isSubmitting) {
+      return;
+    }
+
+    const code = binCode.trim();
+    if (!code) {
+      binInputRef.current?.focus();
+      return;
+    }
+
+    binSubmitInFlightRef.current = true;
+    try {
+      const ok = await onScanBin(basket.id, code);
+      setBinCode('');
+      if (ok) {
+        setTimeout(() => unitInputRef.current?.focus(), 80);
+      } else {
+        setTimeout(() => binInputRef.current?.focus(), 80);
+      }
+    } finally {
+      binSubmitInFlightRef.current = false;
+    }
+  };
+
+  const submitUnit = async () => {
+    if (unitSubmitInFlightRef.current || isSubmitting || !activeBin) {
+      return;
+    }
+
+    const code = unitCode.trim();
+    if (!code) {
+      unitInputRef.current?.focus();
+      return;
+    }
+
+    unitSubmitInFlightRef.current = true;
+    try {
+      await onScanUnit(basket.id, activeBin.id, code);
+      setUnitCode('');
+      setTimeout(() => unitInputRef.current?.focus(), 80);
+    } finally {
+      unitSubmitInFlightRef.current = false;
+    }
+  };
+
+  return (
+    <>
+      <SurfaceCard style={styles.executionCard}>
+        <View style={styles.taskProgressRow}>
+          <View>
+            <Text style={styles.bigProgress}>
+              {plan ? `${plan.totalPickedUnits}/${plan.totalRequiredUnits}` : '...'}
+            </Text>
+            <Text style={styles.progressLabel}>basket units</Text>
+          </View>
+          <UtilityPill icon="shopping-bag" label={`${basket.activeFulfillmentOrders} orders`} />
+        </View>
+
+        {plan && plan.bins.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.multiPickRail}>
+            {plan.bins.slice(0, 8).map((group) => {
+              const active = currentGroup?.bin.id === group.bin.id;
+              return (
+                <View key={group.bin.id} style={[styles.multiPickChip, active ? styles.multiPickChipActive : null]}>
+                  <Text numberOfLines={1} style={[styles.multiPickChipTitle, active ? styles.multiPickChipTitleActive : null]}>
+                    {group.bin.code}
+                  </Text>
+                  <Text numberOfLines={1} style={[styles.multiPickChipMeta, active ? styles.multiPickChipMetaActive : null]}>
+                    {group.pendingUnits} units · {group.orderCount} orders
+                  </Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+        ) : null}
+
+        {plan && !hasPendingUnits ? (
+          <View style={styles.donePanel}>
+            <Feather name="check-circle" size={28} color={tokens.colors.success} />
+            <Text style={styles.doneTitle}>Basket picked</Text>
+            <Text style={styles.doneCopy}>Basket {basket.barcode} is ready for pack handoff.</Text>
+            <PrimaryButton
+              disabled={handoffOptions.length === 0}
+              label={basket.assignedPacker ? 'Change packer' : 'Assign packer'}
+              loading={isSubmitting}
+              onPress={() => setHandoffVisible(true)}
+              variant="secondary"
+            />
+          </View>
+        ) : null}
+
+        {currentGroup && hasPendingUnits ? (
+          <View style={styles.scanPanel}>
+            <View style={styles.nextUnitCard}>
+              <Text style={styles.scanLabel}>Bin</Text>
+              <Text numberOfLines={1} style={styles.nextUnitCode}>{currentGroup.bin.code}</Text>
+              <Text numberOfLines={1} style={styles.nextUnitName}>
+                {currentGroup.pendingUnits} unit{currentGroup.pendingUnits === 1 ? '' : 's'} · {currentGroup.orderCount} order{currentGroup.orderCount === 1 ? '' : 's'}
+              </Text>
+            </View>
+
+            {!activeBinMatches ? (
+              <ScannerInput
+                autoSubmit
+                inputRef={binInputRef}
+                label="Bin"
+                placeholder={currentGroup.bin.code}
+                value={binCode}
+                disabled={isSubmitting}
+                onChangeText={setBinCode}
+                onSubmit={submitBin}
+              />
+            ) : (
+              <>
+                <BasketPendingUnitList units={currentGroup.units} />
+                <ScannerInput
+                  autoSubmit
+                  inputRef={unitInputRef}
+                  label="Unit"
+                  placeholder="Scan unit"
+                  value={unitCode}
+                  disabled={isSubmitting}
+                  onChangeText={setUnitCode}
+                  onSubmit={submitUnit}
+                />
+              </>
+            )}
+          </View>
+        ) : null}
+      </SurfaceCard>
+
+      <StockScopeFilterModal
+        options={handoffOptions}
+        title="Assign packer"
+        visible={handoffVisible}
+        onClose={() => setHandoffVisible(false)}
+        onSelect={(value) => {
+          if (!value) {
+            setHandoffVisible(false);
+            return;
+          }
+
+          void onHandoff(activeTask.id, value).then((ok) => {
+            if (ok) {
+              setHandoffVisible(false);
+            }
+          });
+        }}
+      />
+    </>
+  );
+}
+
+function BasketPendingUnitList({ units }: { units: WmsMobileBasketPickPlan['bins'][number]['units'] }) {
+  if (units.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.basketUnitQueue}>
+      <View style={styles.basketUnitQueueHeader}>
+        <Text style={styles.basketUnitQueueTitle}>To scan</Text>
+        <Text style={styles.basketUnitQueueCount}>{units.length}</Text>
+      </View>
+      <View style={styles.basketUnitList}>
+        {units.map((unit) => (
+          <View key={unit.reservation.id} style={styles.basketUnitRow}>
+            <View style={styles.basketUnitCopy}>
+              <Text numberOfLines={1} style={styles.basketUnitCode}>
+                {unit.reservation.unit.code}
+              </Text>
+              <Text numberOfLines={1} style={styles.basketUnitName}>
+                {unit.line.productName}
+              </Text>
+            </View>
+            <Text numberOfLines={1} style={styles.basketUnitOrder}>
+              {unit.order.posOrderId}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function PickExecutionCard({
   activeBin,
   currentUserEmail,
@@ -722,6 +1632,7 @@ function PickExecutionCard({
   onScanBasket,
   onScanBin,
   onScanUnit,
+  showHeader = true,
 }: {
   activeBin: { id: string; code: string; name: string } | null;
   currentUserEmail: string;
@@ -736,6 +1647,7 @@ function PickExecutionCard({
   onScanBasket: (taskId: string, code: string) => Promise<boolean>;
   onScanBin: (taskId: string, code: string) => Promise<boolean>;
   onScanUnit: (taskId: string, code: string) => Promise<boolean>;
+  showHeader?: boolean;
 }) {
   const [basketCode, setBasketCode] = useState('');
   const [binCode, setBinCode] = useState('');
@@ -797,9 +1709,11 @@ function PickExecutionCard({
     basketSubmitInFlightRef.current = true;
     try {
       const ok = await onScanBasket(task.id, code);
+      setBasketCode('');
       if (ok) {
-        setBasketCode('');
         setTimeout(() => binInputRef.current?.focus(), 80);
+      } else {
+        setTimeout(() => basketInputRef.current?.focus(), 80);
       }
     } finally {
       basketSubmitInFlightRef.current = false;
@@ -820,9 +1734,11 @@ function PickExecutionCard({
     binSubmitInFlightRef.current = true;
     try {
       const ok = await onScanBin(task.id, code);
+      setBinCode('');
       if (ok) {
-        setBinCode('');
         setTimeout(() => unitInputRef.current?.focus(), 80);
+      } else {
+        setTimeout(() => binInputRef.current?.focus(), 80);
       }
     } finally {
       binSubmitInFlightRef.current = false;
@@ -842,11 +1758,9 @@ function PickExecutionCard({
 
     unitSubmitInFlightRef.current = true;
     try {
-      const ok = await onScanUnit(task.id, code);
-      if (ok) {
-        setUnitCode('');
-        setTimeout(() => unitInputRef.current?.focus(), 80);
-      }
+      await onScanUnit(task.id, code);
+      setUnitCode('');
+      setTimeout(() => unitInputRef.current?.focus(), 80);
     } finally {
       unitSubmitInFlightRef.current = false;
     }
@@ -854,18 +1768,20 @@ function PickExecutionCard({
 
   return (
     <>
-      <View style={styles.executionHeader}>
-        <Pressable onPress={onBack} style={styles.backButton}>
-          <Feather name="chevron-left" size={20} color={tokens.colors.ink} />
-        </Pressable>
-        <View style={styles.executionTitleGroup}>
-          <Text numberOfLines={1} style={styles.executionTitle}>#{task.posOrderId}</Text>
-          <Text numberOfLines={1} style={styles.executionMeta}>
-            {task.customer.name ?? task.store?.name ?? 'Pick task'}
-          </Text>
+      {showHeader ? (
+        <View style={styles.executionHeader}>
+          <Pressable onPress={onBack} style={styles.backButton}>
+            <Feather name="chevron-left" size={20} color={tokens.colors.ink} />
+          </Pressable>
+          <View style={styles.executionTitleGroup}>
+            <Text numberOfLines={1} style={styles.executionTitle}>#{task.posOrderId}</Text>
+            <Text numberOfLines={1} style={styles.executionMeta}>
+              {task.customer.name ?? task.store?.name ?? 'Pick task'}
+            </Text>
+          </View>
+          <StatusBadge status={task.status} label={task.statusLabel} />
         </View>
-        <StatusBadge status={task.status} label={task.statusLabel} />
-      </View>
+      ) : null}
 
       <SurfaceCard style={styles.executionCard}>
         <View style={styles.taskProgressRow}>
@@ -908,7 +1824,6 @@ function PickExecutionCard({
               placeholder="Scan basket barcode"
               value={basketCode}
               disabled={isSubmitting}
-              helper="Scan an available basket to start picking this order."
               onChangeText={setBasketCode}
               onSubmit={submitBasket}
             />
@@ -990,7 +1905,6 @@ function PickExecutionCard({
               placeholder="Scan basket barcode"
               value={basketCode}
               disabled={isSubmitting}
-              helper="Scan a registered available basket before bin and unit scans."
               onChangeText={setBasketCode}
               onSubmit={submitBasket}
             />
@@ -1023,10 +1937,9 @@ function PickExecutionCard({
               autoSubmit
               inputRef={unitInputRef}
               label="Unit"
-              placeholder="Scan unit"
+              placeholder={activeBin ? 'Scan unit' : 'Scan bin first'}
               value={unitCode}
               disabled={isSubmitting || !activeBin}
-              helper={activeBin ? `Bin ${activeBin.code}` : 'Scan the bin first'}
               onChangeText={setUnitCode}
               onSubmit={submitUnit}
             />
@@ -1073,6 +1986,19 @@ function PickExecutionCard({
 
 function getVisiblePickLines(lines: WmsMobilePickingTask['lines']) {
   return lines.filter((line) => line.status !== 'CANCELED' && line.required > 0);
+}
+
+function isPickTaskSelectable(task: WmsMobilePickingTask, currentUserEmail: string) {
+  if (task.status !== 'READY' || task.basket) {
+    return false;
+  }
+
+  const claimedByEmail = task.claimedBy?.email?.trim().toLowerCase() ?? null;
+  if (!claimedByEmail) {
+    return true;
+  }
+
+  return claimedByEmail === currentUserEmail.trim().toLowerCase();
 }
 
 function ScannerInput({
@@ -1444,6 +2370,151 @@ const styles = StyleSheet.create({
   statusFilterTextActive: {
     color: '#FFFFFF',
   },
+  selectionFloatingDock: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderColor: '#E8E3FF',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: -4,
+    padding: 8,
+    shadowColor: '#6B4DFF',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 6,
+  },
+  selectionFloatingDockEntry: {
+    alignSelf: 'stretch',
+  },
+  selectionClearFab: {
+    alignItems: 'center',
+    backgroundColor: '#F2EEFF',
+    borderRadius: 999,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  selectionBasketInputWrap: {
+    backgroundColor: '#F8F5FF',
+    borderColor: '#E3DCFF',
+    borderRadius: 999,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: 16,
+  },
+  selectionBasketInput: {
+    color: '#24232D',
+    fontSize: 15,
+    fontWeight: '800',
+    padding: 0,
+  },
+  selectionFloatingAssignButton: {
+    minHeight: 48,
+    minWidth: 112,
+    paddingHorizontal: 18,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  claimReviewCountBadge: {
+    alignItems: 'center',
+    backgroundColor: '#EEE9FF',
+    borderRadius: 999,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  claimReviewCountText: {
+    color: '#6437F6',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  claimReviewCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    shadowColor: '#9C83FF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+  },
+  claimReviewStatsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  claimReviewStatPill: {
+    backgroundColor: '#F5F2FF',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  claimReviewStatText: {
+    color: '#6437F6',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  claimReviewList: {
+    gap: 10,
+  },
+  claimReviewOrderRow: {
+    alignItems: 'center',
+    backgroundColor: '#FBFAFF',
+    borderColor: '#ECE6FF',
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  claimReviewOrderIndex: {
+    color: '#9C83FF',
+    fontSize: 13,
+    fontWeight: '900',
+    minWidth: 22,
+    textAlign: 'center',
+  },
+  claimReviewOrderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  claimReviewOrderId: {
+    color: '#24232D',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  claimReviewOrderMeta: {
+    color: '#7B7791',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  claimReviewOrderQty: {
+    color: '#6437F6',
+    fontSize: 15,
+    fontWeight: '900',
+    minWidth: 28,
+    textAlign: 'right',
+  },
+  claimReviewScanCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    shadowColor: '#9C83FF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+  },
   queueHeader: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1713,6 +2784,58 @@ const styles = StyleSheet.create({
   taskList: {
     gap: 18,
   },
+  heldBasketCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    gap: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
+  },
+  heldBasketTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  heldBasketIcon: {
+    alignItems: 'center',
+    backgroundColor: '#EEE9FF',
+    borderRadius: 14,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  heldBasketCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  heldBasketTitle: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  heldBasketMeta: {
+    color: '#7B7791',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  heldBasketFooter: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  heldBasketNextBin: {
+    color: '#9C83FF',
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    marginLeft: 10,
+    textAlign: 'right',
+  },
   paginationCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -1824,6 +2947,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  pickSelectionHitBox: {
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    marginRight: 4,
+    width: 48,
+  },
+  pickSelectionBox: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CFC5FF',
+    borderRadius: 9,
+    borderWidth: 2,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  pickSelectionBoxSelected: {
+    backgroundColor: '#6437F6',
+    borderColor: '#6437F6',
+  },
+  pickSelectionBoxDisabled: {
+    backgroundColor: '#F3F1F8',
+    borderColor: '#E2DDEC',
+    opacity: 0.62,
   },
   compactStoreLabel: {
     color: '#7B7791',
@@ -1983,6 +3132,49 @@ const styles = StyleSheet.create({
     color: tokens.colors.inkMuted,
     fontSize: 13,
     fontWeight: '700',
+  },
+  multiPickRailCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    shadowColor: '#9C83FF',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+  },
+  multiPickRail: {
+    gap: 10,
+  },
+  multiPickChip: {
+    backgroundColor: '#F5F2FF',
+    borderColor: '#ECE6FF',
+    borderRadius: 16,
+    borderWidth: 1,
+    minWidth: 118,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  multiPickChipActive: {
+    backgroundColor: '#6437F6',
+    borderColor: '#6437F6',
+  },
+  multiPickChipTitle: {
+    color: '#24232D',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  multiPickChipTitleActive: {
+    color: '#FFFFFF',
+  },
+  multiPickChipMeta: {
+    color: '#7B7791',
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  multiPickChipMetaActive: {
+    color: '#F3EEFF',
   },
   executionCard: {
     gap: tokens.spacing.lg,
@@ -2147,6 +3339,71 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.78)',
     fontSize: 13,
     fontWeight: '700',
+  },
+  basketUnitQueue: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#ECE6FF',
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  basketUnitQueueHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  basketUnitQueueTitle: {
+    color: '#24232D',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+  },
+  basketUnitQueueCount: {
+    backgroundColor: '#F5F2FF',
+    borderRadius: 999,
+    color: '#6437F6',
+    fontSize: 12,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  basketUnitList: {
+    gap: 8,
+  },
+  basketUnitRow: {
+    alignItems: 'center',
+    backgroundColor: '#FBFAFF',
+    borderRadius: 16,
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  basketUnitCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  basketUnitCode: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  basketUnitName: {
+    color: '#7B7791',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  basketUnitOrder: {
+    color: '#6437F6',
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '900',
+    maxWidth: 116,
   },
   nextUnitBin: {
     color: tokens.colors.accent,

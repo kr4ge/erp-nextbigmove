@@ -2,15 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction 
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
 import { ApiError } from '@/src/shared/services/http';
 import {
+  assignMobilePickingTasksToBasket,
   claimMobilePickingTask,
+  fetchMobilePickingBasketPlan,
   fetchMobilePickingTasks,
   handoffMobilePickingTask,
   retryMobilePickingAllocation,
+  scanMobilePickingBasketBin,
+  scanMobilePickingBasketUnit,
   scanMobilePickingBasket,
   scanMobilePickingBin,
   scanMobilePickingUnit,
 } from '../services/picking-api';
 import type {
+  WmsMobileBasketPickPlan,
   PickingFilters,
   PickingStatus,
   WmsMobilePickingBinScanResult,
@@ -38,6 +43,7 @@ export function usePickingWorkspace({
   const [picking, setPicking] = useState<WmsMobilePickingResponse | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [activeBin, setActiveBin] = useState<WmsMobilePickingBinScanResult['bin'] | null>(null);
+  const [basketPlans, setBasketPlans] = useState<Record<string, WmsMobileBasketPickPlan>>({});
   const [statusFilter, setStatusFilterState] = useState<PickingStatus | null>(null);
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -143,6 +149,7 @@ export function usePickingWorkspace({
     setPicking(null);
     setActiveTaskId(null);
     setActiveBin(null);
+    setBasketPlans({});
     setPage(1);
     setError(null);
     setFilters(nextFilters);
@@ -152,6 +159,7 @@ export function usePickingWorkspace({
     setPicking(null);
     setActiveTaskId(null);
     setActiveBin(null);
+    setBasketPlans({});
     setPage(1);
     setError(null);
     setStatusFilterState(nextStatus);
@@ -224,6 +232,125 @@ export function usePickingWorkspace({
       });
       setPicking((current) => current ? replacePickingTask(current, result.task) : current);
       setActiveTaskId(result.task.id);
+      setError(null);
+      return true;
+    } catch (requestError) {
+      setError(resolvePickingError(requestError));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
+  const assignTasksToBasket = useCallback(async (taskIds: string[], basketCode: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return false;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await assignMobilePickingTasksToBasket({
+        accessToken: session.accessToken,
+        device,
+        tenantId: filters.tenantId,
+        taskIds,
+        basketCode,
+      });
+      setPicking((current) => current ? replacePickingTasks(current, result.tasks) : current);
+      setError(null);
+      return result;
+    } catch (requestError) {
+      setError(resolvePickingError(requestError));
+      return null;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
+  const fetchBasketPlan = useCallback(async (basketId: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return null;
+    }
+
+    try {
+      const result = await fetchMobilePickingBasketPlan({
+        accessToken: session.accessToken,
+        device,
+        tenantId: filters.tenantId,
+        basketId,
+      });
+      setPicking((current) => current ? replacePickingTasks(current, result.tasks) : current);
+      setBasketPlans((current) => ({
+        ...current,
+        [basketId]: result.plan,
+      }));
+      setError(null);
+      return result;
+    } catch (requestError) {
+      setError(resolvePickingError(requestError));
+      return null;
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
+  const scanBasketBin = useCallback(async (basketId: string, code: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return false;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await scanMobilePickingBasketBin({
+        accessToken: session.accessToken,
+        device,
+        tenantId: filters.tenantId,
+        basketId,
+        code,
+      });
+      setActiveBin(result.bin);
+      setBasketPlans((current) => ({
+        ...current,
+        [basketId]: result.plan,
+      }));
+      setError(null);
+      return true;
+    } catch (requestError) {
+      setError(resolvePickingError(requestError));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
+  const scanBasketUnit = useCallback(async (basketId: string, binId: string, code: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return false;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await scanMobilePickingBasketUnit({
+        accessToken: session.accessToken,
+        device,
+        tenantId: filters.tenantId,
+        basketId,
+        binId,
+        code,
+      });
+      setPicking((current) => current ? replacePickingTasks(current, result.tasks) : current);
+      setBasketPlans((current) => ({
+        ...current,
+        [basketId]: result.plan,
+      }));
+      if (!result.plan.bins.some((group) => group.bin.id === binId)) {
+        setActiveBin(null);
+      }
+      if (result.task) {
+        setActiveTaskId(result.task.id);
+      }
       setError(null);
       return true;
     } catch (requestError) {
@@ -370,6 +497,10 @@ export function usePickingWorkspace({
     }
 
     for (const basket of picking.heldBaskets) {
+      for (const task of basket.tasks ?? []) {
+        entries.set(task.id, task);
+      }
+
       if (basket.task) {
         entries.set(basket.task.id, basket.task);
       }
@@ -394,8 +525,11 @@ export function usePickingWorkspace({
     activeBin,
     activeTask,
     activeTaskId,
+    assignTasksToBasket,
+    basketPlans,
     claimTask,
     error,
+    fetchBasketPlan,
     filters,
     isLoading,
     isLoadingMore,
@@ -406,6 +540,8 @@ export function usePickingWorkspace({
     picking,
     refreshPicking,
     retryAllocation,
+    scanBasketBin,
+    scanBasketUnit,
     scanBasket,
     scanBin,
     scanUnit,
@@ -464,6 +600,16 @@ function mergePickingTaskRecords(taskGroups: WmsMobilePickingTask[][]) {
   });
 }
 
+function replacePickingTasks(
+  current: WmsMobilePickingResponse,
+  nextTasks: WmsMobilePickingTask[],
+) {
+  return nextTasks.reduce(
+    (nextPicking, nextTask) => replacePickingTask(nextPicking, nextTask),
+    current,
+  );
+}
+
 function replacePickingTask(
   current: WmsMobilePickingResponse,
   nextTask: WmsMobilePickingTask,
@@ -477,13 +623,7 @@ function replacePickingTask(
   const pickedHistory = completeStatuses.has(nextTask.status)
     ? [nextTask, ...historyWithoutTask].slice(0, 20)
     : historyWithoutTask;
-  const heldBaskets = buildHeldBasketCollection(
-    current.heldBaskets.filter((basket) => (
-      basket.task?.id !== nextTask.id
-      && basket.id !== nextTask.basket?.id
-    )),
-    nextTask,
-  );
+  const heldBaskets = buildHeldBasketCollection(current.heldBaskets, nextTask);
   const availableBaskets = nextTask.basket
     ? reconcileOpenBasketCollection(current.availableBaskets, nextTask.basket)
     : current.availableBaskets;
@@ -535,12 +675,26 @@ function buildHeldBasketCollection(
     return current;
   }
 
+  const currentBasket = current.find((basket) => basket.id === nextTask.basket?.id) ?? null;
+  const taskById = new Map<string, WmsMobilePickingTask>();
+
+  for (const task of currentBasket?.tasks ?? []) {
+    taskById.set(task.id, task);
+  }
+
+  if (currentBasket?.task) {
+    taskById.set(currentBasket.task.id, currentBasket.task);
+  }
+
+  taskById.set(nextTask.id, nextTask);
+
   return [
     {
       ...nextTask.basket,
       task: nextTask,
+      tasks: Array.from(taskById.values()),
     },
-    ...current,
+    ...current.filter((basket) => basket.id !== nextTask.basket?.id),
   ];
 }
 
@@ -566,6 +720,7 @@ function countOpenBasketSlots(baskets: WmsMobilePickingResponse['availableBasket
 function findTaskById(current: WmsMobilePickingResponse, taskId: string) {
   return current.tasks.find((task) => task.id === taskId)
     ?? current.pickedHistory.find((task) => task.id === taskId)
+    ?? current.heldBaskets.flatMap((basket) => basket.tasks ?? []).find((task) => task.id === taskId)
     ?? current.heldBaskets.find((basket) => basket.task?.id === taskId)?.task
     ?? null;
 }

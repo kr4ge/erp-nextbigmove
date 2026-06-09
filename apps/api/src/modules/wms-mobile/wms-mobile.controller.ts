@@ -21,7 +21,9 @@ import {
 } from './dto/wms-mobile-stock-execution.dto';
 import {
   GetWmsMobilePickBasketLookupDto,
+  WmsMobilePickBasketBatchAssignDto,
   WmsMobilePickHandoffDto,
+  WmsMobilePickBasketUnitScanDto,
   WmsMobilePickReallocateDto,
   GetWmsMobilePickingTasksDto,
   WmsMobilePickResyncDto,
@@ -276,6 +278,15 @@ export class WmsMobileController {
     return this.wmsMobileService.reallocatePickingTasks(req.user, body, req);
   }
 
+  @Post('picking/tasks/batch-assign-basket')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit', 'wms.fulfillment.override')
+  async assignPickingTasksToBasket(
+    @Request() req,
+    @Body() body: WmsMobilePickBasketBatchAssignDto,
+  ) {
+    return this.wmsMobileService.assignPickingTasksToBasket(req.user, body, req);
+  }
+
   @Post('picking/tasks/:id/claim')
   @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
   async claimPickingTask(
@@ -314,6 +325,36 @@ export class WmsMobileController {
     @Body() body: WmsMobilePickScanDto,
   ) {
     return this.wmsMobileService.scanPickingUnit(req.user, id, body, req);
+  }
+
+  @Get('picking/baskets/:id/plan')
+  @Permissions('wms.fulfillment.read', 'wms.fulfillment.write', 'wms.fulfillment.edit')
+  async getPickingBasketPlan(
+    @Request() req,
+    @Param('id') id: string,
+    @Query() query: WmsMobilePickScopedDto,
+  ) {
+    return this.wmsMobileService.getPickingBasketPlan(req.user, id, query, req);
+  }
+
+  @Post('picking/baskets/:id/scan-bin')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  async scanPickingBasketBin(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickScanDto,
+  ) {
+    return this.wmsMobileService.scanPickingBasketBin(req.user, id, body, req);
+  }
+
+  @Post('picking/baskets/:id/scan-unit')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  async scanPickingBasketUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickBasketUnitScanDto,
+  ) {
+    return this.wmsMobileService.scanPickingBasketUnit(req.user, id, body, req);
   }
 
   @Post('picking/tasks/:id/retry-allocation')
