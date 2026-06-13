@@ -226,6 +226,7 @@ const ARCHIVABLE_ADJUSTMENT_SOURCE_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
   WmsInventoryUnitStatus.DEADSTOCK,
+  WmsInventoryUnitStatus.RESERVED,
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
   WmsInventoryUnitStatus.LOST,
@@ -1935,8 +1936,14 @@ export class WmsInventoryService {
               in: [...ACTIVE_PICK_RESERVATION_STATUSES],
             },
           },
-          select: {
-            id: true,
+          include: {
+            fulfillmentOrder: {
+              select: {
+                id: true,
+                status: true,
+                posOrderId: true,
+              },
+            },
           },
         },
       },
@@ -1969,10 +1976,26 @@ export class WmsInventoryService {
         );
       }
 
-      const reservedUnit = units.find((unit) => unit.pickReservations.length > 0);
-      if (reservedUnit) {
+      const pickedReservationUnit = units.find((unit) => (
+        unit.pickReservations.some((reservation) => reservation.status === WmsPickReservationStatus.PICKED)
+      ));
+      if (pickedReservationUnit) {
         throw new BadRequestException(
-          `Unit ${reservedUnit.code} is attached to active fulfillment work and cannot be archived with bulk action`,
+          `Unit ${pickedReservationUnit.code} is already picked and cannot be archived from inventory`,
+        );
+      }
+
+      const blockedReservationUnit = units.find((unit) => (
+        unit.pickReservations.some((reservation) => (
+          VOID_BLOCKED_FULFILLMENT_ORDER_STATUSES.has(reservation.fulfillmentOrder.status)
+        ))
+      ));
+      if (blockedReservationUnit) {
+        const blockedReservation = blockedReservationUnit.pickReservations.find((reservation) => (
+          VOID_BLOCKED_FULFILLMENT_ORDER_STATUSES.has(reservation.fulfillmentOrder.status)
+        ));
+        throw new BadRequestException(
+          `Unit ${blockedReservationUnit.code} is attached to active fulfillment order ${blockedReservation?.fulfillmentOrder.posOrderId ?? blockedReservation?.fulfillmentOrder.id} and cannot be archived with bulk action`,
         );
       }
     }
@@ -2034,6 +2057,11 @@ export class WmsInventoryService {
 
     const adjustmentCode = this.buildAdjustmentCode();
     const now = new Date();
+    const affectedFulfillmentOrderIds = body.targetStatus === WmsInventoryUnitStatus.ARCHIVED
+      ? Array.from(new Set(
+          units.flatMap((unit) => unit.pickReservations.map((reservation) => reservation.fulfillmentOrderId)),
+        ))
+      : [];
 
     const result = await this.prisma.$transaction(async (tx) => {
       if (targetLocation?.kind === WmsLocationKind.BIN) {
@@ -2052,6 +2080,18 @@ export class WmsInventoryService {
       }
 
       for (const unit of units) {
+        if (body.targetStatus === WmsInventoryUnitStatus.ARCHIVED && unit.pickReservations.length > 0) {
+          await tx.wmsPickReservation.updateMany({
+            where: {
+              inventoryUnitId: unit.id,
+              status: WmsPickReservationStatus.RESERVED,
+            },
+            data: {
+              status: WmsPickReservationStatus.RELEASED,
+            },
+          });
+        }
+
         await tx.wmsInventoryUnit.update({
           where: { id: unit.id },
           data: {
@@ -2079,6 +2119,12 @@ export class WmsInventoryService {
           createdAt: now,
         })),
       });
+
+      if (body.targetStatus === WmsInventoryUnitStatus.ARCHIVED) {
+        for (const fulfillmentOrderId of affectedFulfillmentOrderIds) {
+          await this.refreshFulfillmentOrderStateAfterInventoryVoid(tx, fulfillmentOrderId, now);
+        }
+      }
 
       const updatedUnits = await tx.wmsInventoryUnit.findMany({
         where: {

@@ -93,7 +93,7 @@ export function InventoryBulkArchiveModal({
             {statusSummary || 'No units selected'}
           </p>
           <p className="mt-2 text-[12px] text-[#637786]">
-            Archiving removes the selected units from active stock and clears their current location.
+            Archiving removes the selected units from active stock and clears their current location. Reserved units will release their safe reservations automatically.
           </p>
         </div>
 

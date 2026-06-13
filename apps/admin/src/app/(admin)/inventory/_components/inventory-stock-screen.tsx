@@ -20,6 +20,7 @@ const BULK_ARCHIVABLE_STATUSES = new Set<WmsInventoryUnitStatus>([
   'STAGED',
   'PUTAWAY',
   'DEADSTOCK',
+  'RESERVED',
   'RTS',
   'DAMAGED',
   'LOST',
