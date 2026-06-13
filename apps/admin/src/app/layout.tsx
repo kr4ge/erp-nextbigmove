@@ -14,7 +14,7 @@ export default function RootLayout({
   children: ReactNode;
 }) {
   return (
-    <html lang="en" className='text-base'>
+    <html lang="en" className="text-base" suppressHydrationWarning>
       <body className="wms-density-default">
         <Providers>{children}</Providers>
       </body>

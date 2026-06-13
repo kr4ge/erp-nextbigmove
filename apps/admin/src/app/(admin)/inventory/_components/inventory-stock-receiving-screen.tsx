@@ -120,6 +120,7 @@ export function InventoryStockReceivingScreen() {
         isLoading={receiving.isLoadingLabelsBatch}
         isRecordingPrint={receiving.isRecordingBatchLabelPrint}
         batch={receiving.labelsModal.batch}
+        errorMessage={receiving.labelsErrorMessage}
         canPrintLabels={receiving.canPrintLabels}
         canOpenTransfer={receiving.canPutAway}
         onRecordPrint={receiving.recordBatchLabelPrint}

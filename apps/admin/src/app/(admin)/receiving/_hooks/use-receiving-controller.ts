@@ -17,6 +17,7 @@ import {
   assignWmsReceivingPutaway,
   createWmsReceivingBatch,
   fetchWmsReceivingBatch,
+  fetchWmsReceivingBatchLabels,
   fetchWmsReceivingOverview,
   fetchWmsReceivingPutawayOptions,
   recordWmsReceivingBatchLabelPrint,
@@ -24,6 +25,7 @@ import {
 import type {
   AssignWmsReceivingPutawayInput,
   CreateWmsReceivingBatchInput,
+  WmsReceivingBatchLabels,
   WmsReceivingBatchRow,
   WmsReceivablePurchasingBatch,
 } from '../_types/receiving';
@@ -41,6 +43,7 @@ type ReceiveModalState = {
 type LabelsModalState = {
   open: boolean;
   batchId: string | null;
+  tenantId: string | null;
 };
 
 type ManualReceiveLineState = {
@@ -56,6 +59,7 @@ type ManualReceiveModalState = {
 
 type TransferWorkspaceState = {
   batchId: string | null;
+  tenantId: string | null;
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -108,12 +112,14 @@ export function useReceivingController() {
   const [labelsModalState, setLabelsModalState] = useState<LabelsModalState>({
     open: false,
     batchId: null,
+    tenantId: null,
   });
   const [manualReceiveModal, setManualReceiveModal] = useState<ManualReceiveModalState>({
     open: false,
   });
   const [transferWorkspaceState, setTransferWorkspaceState] = useState<TransferWorkspaceState>({
     batchId: null,
+    tenantId: null,
   });
   const [receiveWarehouseId, setReceiveWarehouseId] = useState('');
   const [receiveStagingLocationId, setReceiveStagingLocationId] = useState('');
@@ -276,12 +282,19 @@ export function useReceivingController() {
 
   const recordBatchLabelPrintMutation = useMutation({
     mutationFn: (input: { batchId: string; action: 'PRINT' | 'REPRINT' }) =>
-      recordWmsReceivingBatchLabelPrint(input.batchId, { action: input.action }, selectedTenantId),
+      recordWmsReceivingBatchLabelPrint(
+        input.batchId,
+        { action: input.action },
+        labelsModalState.tenantId ?? selectedTenantId,
+      ),
     onSuccess: async (_, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['wms-receiving-overview'] }),
         queryClient.invalidateQueries({
           queryKey: ['wms-receiving-batch', variables.batchId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['wms-receiving-batch-labels', variables.batchId],
         }),
         queryClient.invalidateQueries({ queryKey: ['wms-inventory-overview'] }),
       ]);
@@ -289,26 +302,30 @@ export function useReceivingController() {
   });
 
   const labelsBatchQuery = useQuery({
-    queryKey: ['wms-receiving-batch', labelsModalState.batchId, selectedTenantId ?? 'default-tenant'],
-    queryFn: () => fetchWmsReceivingBatch(labelsModalState.batchId!, selectedTenantId),
+    queryKey: ['wms-receiving-batch-labels', labelsModalState.batchId, labelsModalState.tenantId ?? selectedTenantId ?? 'default-tenant'],
+    queryFn: () => fetchWmsReceivingBatchLabels(labelsModalState.batchId!, labelsModalState.tenantId ?? selectedTenantId),
     enabled: Boolean(labelsModalState.open && labelsModalState.batchId),
   });
 
   const transferBatchQuery = useQuery({
-    queryKey: ['wms-receiving-transfer-batch', transferWorkspaceState.batchId, selectedTenantId ?? 'default-tenant'],
-    queryFn: () => fetchWmsReceivingBatch(transferWorkspaceState.batchId!, selectedTenantId),
+    queryKey: ['wms-receiving-transfer-batch', transferWorkspaceState.batchId, transferWorkspaceState.tenantId ?? selectedTenantId ?? 'default-tenant'],
+    queryFn: () => fetchWmsReceivingBatch(transferWorkspaceState.batchId!, transferWorkspaceState.tenantId ?? selectedTenantId),
     enabled: Boolean(transferWorkspaceState.batchId),
   });
 
   const putawayOptionsQuery = useQuery({
-    queryKey: ['wms-receiving-putaway-options', transferWorkspaceState.batchId, selectedTenantId ?? 'default-tenant'],
-    queryFn: () => fetchWmsReceivingPutawayOptions(transferWorkspaceState.batchId!, selectedTenantId),
+    queryKey: ['wms-receiving-putaway-options', transferWorkspaceState.batchId, transferWorkspaceState.tenantId ?? selectedTenantId ?? 'default-tenant'],
+    queryFn: () => fetchWmsReceivingPutawayOptions(transferWorkspaceState.batchId!, transferWorkspaceState.tenantId ?? selectedTenantId),
     enabled: Boolean(transferWorkspaceState.batchId),
   });
 
   const assignPutawayMutation = useMutation({
     mutationFn: (input: { batchId: string; payload: AssignWmsReceivingPutawayInput }) =>
-      assignWmsReceivingPutaway(input.batchId, input.payload, selectedTenantId),
+      assignWmsReceivingPutaway(
+        input.batchId,
+        input.payload,
+        transferWorkspaceState.tenantId ?? selectedTenantId,
+      ),
     onSuccess: async (_, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['wms-receiving-overview'] }),
@@ -377,6 +394,7 @@ export function useReceivingController() {
     setLabelsModalState({
       open: true,
       batchId: batch.id,
+      tenantId: batch.tenantId,
     });
   }, []);
 
@@ -384,12 +402,14 @@ export function useReceivingController() {
     setLabelsModalState({
       open: false,
       batchId: null,
+      tenantId: null,
     });
   }, []);
 
   const selectTransferBatch = useCallback((batch: WmsReceivingBatchRow | null) => {
     setTransferWorkspaceState({
       batchId: batch?.id ?? null,
+      tenantId: batch?.tenantId ?? null,
     });
   }, []);
 
@@ -612,6 +632,7 @@ export function useReceivingController() {
       batch: labelsBatchQuery.data?.batch ?? null,
     },
     isLoadingLabelsBatch: labelsBatchQuery.isLoading || labelsBatchQuery.isFetching,
+    labelsErrorMessage: labelsBatchQuery.error ? getErrorMessage(labelsBatchQuery.error) : null,
     isRecordingBatchLabelPrint: recordBatchLabelPrintMutation.isPending,
     transferWorkspace: {
       selectedBatchId: transferWorkspaceState.batchId,

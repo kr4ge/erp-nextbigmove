@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   ActivityIndicator,
@@ -14,6 +14,8 @@ import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/fea
 import { canUsePackWorkspace } from '@/src/features/home/rbac';
 import { usePackingWorkspace } from '@/src/features/packing/hooks/use-packing-workspace';
 import type {
+  WmsMobileBasketPackPlan,
+  WmsMobileBasketPackPlanOrder,
   PackingFilters,
   PackingStatusFilter,
   WmsMobilePackingResponse,
@@ -28,6 +30,7 @@ import {
 } from '@/src/features/stock/components/stock-scope-filter';
 import type { StockScopeOption } from '@/src/features/stock/utils/stock-scope';
 import { BlockedTaskState, SectionLabel, TaskHeader, TaskHeaderIconButton, UtilityPill } from './stox-primitives';
+import { useStoxShellOverlay } from './stox-shell';
 
 type PackingTabProps = {
   bootstrap: BootstrapResponse;
@@ -36,6 +39,22 @@ type PackingTabProps = {
 };
 
 type PackingFilterKey = 'tenant' | 'store';
+
+type PackQueueEntry =
+  | {
+      key: string;
+      kind: 'basket';
+      basket: NonNullable<WmsMobilePickingTask['basket']>;
+      primaryTask: WmsMobilePickingTask;
+      tasks: WmsMobilePickingTask[];
+    }
+  | {
+      key: string;
+      kind: 'task';
+      basket: WmsMobilePickingTask['basket'];
+      primaryTask: WmsMobilePickingTask;
+      tasks: [WmsMobilePickingTask];
+    };
 
 const PACK_STATUS_FILTERS: Array<{ label: string; value: PackingStatusFilter | null }> = [
   { label: 'All', value: null },
@@ -61,11 +80,14 @@ export function PackingTab({ bootstrap, device, session }: PackingTabProps) {
 function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
   const [activeFilter, setActiveFilter] = useState<PackingFilterKey | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [activeBasketId, setActiveBasketId] = useState<string | null>(null);
   const {
     activeTask,
     activeTaskId,
+    basketViews,
     completeTask,
     error,
+    fetchBasketPlan,
     filters,
     isLoading,
     isLoadingMore,
@@ -74,6 +96,8 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
     loadMore,
     packing,
     refreshPacking,
+    scanBasketOrderUnit,
+    scanBasketWaybill,
     scanUnit,
     setActiveTaskId,
     setFilters,
@@ -96,6 +120,14 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
   const activeStoreName = resolveActiveStoreName(packing, bootstrap, filters.storeId);
   const taskPool = packing?.tasks ?? [];
   const isPackedHistoryView = statusFilter === 'PACKED';
+  const activeBasketView = activeBasketId ? basketViews[activeBasketId] ?? null : null;
+  const isDemandExecutionLoading = Boolean(
+    activeBasketId
+    && activeTask
+    && activeTask.assignmentMode === 'BASKET_DEMAND'
+    && activeTask.basket?.id === activeBasketId
+    && !activeBasketView,
+  );
   const dateOptions = useMemo(() => buildPackDateOptions(taskPool), [taskPool]);
   const filteredTasks = useMemo(() => {
     if (isPackedHistoryView || !selectedDateKey) {
@@ -104,6 +136,10 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
 
     return taskPool.filter((task) => getPackTaskDateKey(task) === selectedDateKey);
   }, [isPackedHistoryView, selectedDateKey, taskPool]);
+  const queueEntries = useMemo(
+    () => buildPackQueueEntries(filteredTasks, { groupBaskets: !isPackedHistoryView }),
+    [filteredTasks, isPackedHistoryView],
+  );
 
   useEffect(() => {
     if (isPackedHistoryView) {
@@ -128,6 +164,10 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
     setSelectedDateKey(preferred);
   }, [dateOptions, isPackedHistoryView, selectedDateKey]);
 
+  useEffect(() => {
+    setActiveBasketId(null);
+  }, [filters.storeId, filters.tenantId, statusFilter]);
+
   const updateFilter = (value: string | null) => {
     setFilters((current) => {
       if (activeFilter === 'tenant') {
@@ -145,6 +185,42 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
     setActiveFilter(null);
   };
 
+  const openTask = useCallback((task: WmsMobilePickingTask) => {
+    if (task.assignmentMode === 'BASKET_DEMAND' && task.basket?.id) {
+      setActiveBasketId(task.basket.id);
+      setActiveTaskId(task.id);
+      void fetchBasketPlan(task.basket.id).then((result) => {
+        if (!result) {
+          setActiveBasketId(null);
+          setActiveTaskId(null);
+          return;
+        }
+
+        setActiveTaskId(result.plan.activeOrder?.id ?? task.id);
+      });
+      return;
+    }
+
+    setActiveBasketId(null);
+    setActiveTaskId(task.id);
+  }, [fetchBasketPlan, setActiveTaskId]);
+
+  const handleDemandWaybill = useCallback(async (basketId: string, code: string) => {
+    const result = await scanBasketWaybill(basketId, code);
+    if (result) {
+      setActiveTaskId(result.activeOrderId);
+    }
+    return Boolean(result);
+  }, [scanBasketWaybill, setActiveTaskId]);
+
+  const handleDemandUnit = useCallback(async (basketId: string, orderId: string, code: string) => {
+    const result = await scanBasketOrderUnit(basketId, orderId, code);
+    if (result) {
+      setActiveTaskId(result.activeOrderId);
+    }
+    return Boolean(result);
+  }, [scanBasketOrderUnit, setActiveTaskId]);
+
   if (isLoading && !packing) {
     return (
       <SurfaceCard style={styles.loadingCard}>
@@ -156,7 +232,7 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
 
   return (
     <>
-      {!activeTask ? (
+      {!activeTask && !activeBasketView ? (
         <>
           <View style={styles.queueHeader}>
             <TaskHeaderIconButton
@@ -208,24 +284,51 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
         </SurfaceCard>
       ) : null}
 
-      {activeTask ? (
-        <PackExecutionCard
+      {isDemandExecutionLoading ? (
+        <SurfaceCard style={styles.loadingCard}>
+          <ActivityIndicator color={tokens.colors.panel} />
+          <Text style={styles.loadingText}>Loading basket</Text>
+        </SurfaceCard>
+      ) : (activeBasketView || activeTask) ? (
+        activeBasketView?.plan.mode === 'BASKET_DEMAND' ? (
+          <DemandPackExecutionCard
+            basket={activeBasketView.basket}
+            isSubmitting={isSubmitting}
+            onBack={() => {
+              setActiveBasketId(null);
+              setActiveTaskId(null);
+            }}
+            onRefresh={async () => {
+              if (activeBasketView.basket.id) {
+                await fetchBasketPlan(activeBasketView.basket.id);
+              }
+            }}
+            onScanUnit={handleDemandUnit}
+            onScanWaybill={handleDemandWaybill}
+            plan={activeBasketView.plan}
+          />
+        ) : activeTask ? (
+          <PackExecutionCard
           canDirectVoid={canDirectVoid}
           isSubmitting={isSubmitting}
           task={activeTask}
-          onBack={() => setActiveTaskId(null)}
+          onBack={() => {
+            setActiveBasketId(null);
+            setActiveTaskId(null);
+          }}
           onComplete={completeTask}
           onRefresh={refreshPacking}
           onScanUnit={scanUnit}
           onStart={startTask}
           onVerifyTracking={verifyTracking}
           onVoid={voidTask}
-        />
+          />
+        ) : null
       ) : (
         <>
           <PackStatusFilterRow value={statusFilter} onChange={setStatusFilter} />
 
-          {!filteredTasks.length ? (
+          {!queueEntries.length ? (
             <SurfaceCard style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>No pack tasks</Text>
               <Text style={styles.emptyCopy}>
@@ -235,12 +338,12 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
           ) : null}
 
           <View style={styles.taskList}>
-            {filteredTasks.map((task) => (
-              <PackTaskCard
-                key={task.id}
-                active={activeTaskId === task.id}
-                task={task}
-                onPress={() => setActiveTaskId(task.id)}
+            {queueEntries.map((entry) => (
+              <PackQueueCard
+                key={entry.key}
+                active={isPackQueueEntryActive(entry, activeTaskId, activeBasketId)}
+                entry={entry}
+                onPress={() => openTask(entry.primaryTask)}
               />
             ))}
           </View>
@@ -360,6 +463,35 @@ function TaskDateCarousel({
   );
 }
 
+function PackQueueCard({
+  active,
+  entry,
+  onPress,
+}: {
+  active: boolean;
+  entry: PackQueueEntry;
+  onPress: () => void;
+}) {
+  if (entry.kind === 'basket') {
+    return (
+      <PackBasketCard
+        active={active}
+        basket={entry.basket}
+        tasks={entry.tasks}
+        onPress={onPress}
+      />
+    );
+  }
+
+  return (
+    <PackTaskCard
+      active={active}
+      task={entry.primaryTask}
+      onPress={onPress}
+    />
+  );
+}
+
 function PackTaskCard({
   active,
   task,
@@ -418,13 +550,302 @@ function PackTaskCard({
           <View style={styles.compactDateMeta}>
             <Feather name="clock" size={13} color="#9C83FF" />
             <Text style={styles.compactDateValue}>
-              {formatPackQueueDate(task.orderDateLocal ?? task.orderDate)}
+              {formatPackQueueDate(getPackTaskQueueDateValue(task))}
             </Text>
           </View>
           <PackStateBadge status={basketStatus} label={mapPackCardStatus(task, basketStatusLabel, tracking)} />
         </View>
       </SurfaceCard>
     </Pressable>
+  );
+}
+
+function PackBasketCard({
+  active,
+  basket,
+  tasks,
+  onPress,
+}: {
+  active: boolean;
+  basket: NonNullable<WmsMobilePickingTask['basket']>;
+  tasks: WmsMobilePickingTask[];
+  onPress: () => void;
+}) {
+  const primaryTask = pickPrimaryPackTask(tasks);
+  const totalRequired = tasks.reduce((sum, task) => sum + task.totals.required, 0);
+  const totalPacked = tasks.reduce((sum, task) => sum + task.totals.packed, 0);
+  const storeLabel = formatPackBasketStoreLabel(tasks);
+  const trackingLabel = formatPackBasketTrackingLabel(tasks);
+  const basketStatusLabel = mapPackBasketStatusLabel(tasks);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.taskPressable,
+        pressed ? styles.pressed : null,
+        active ? styles.activeTaskPressable : null,
+      ]}>
+      <SurfaceCard style={styles.compactTaskCard}>
+        <View style={styles.compactTopRow}>
+          <Text numberOfLines={1} style={styles.compactStoreLabel}>
+            {storeLabel}
+          </Text>
+          <View style={styles.compactIconBadge}>
+            <Feather name="archive" size={14} color="#9C83FF" />
+          </View>
+        </View>
+
+        <Text numberOfLines={1} style={styles.compactOrderTitle}>Basket {basket.barcode}</Text>
+
+        <Text numberOfLines={1} style={styles.compactSummary}>
+          {trackingLabel}
+        </Text>
+
+        <Text numberOfLines={2} style={styles.compactMetaText}>
+          {formatPackBasketUnitSummary(totalPacked, totalRequired)}
+        </Text>
+
+        <Text numberOfLines={1} style={styles.compactBasketText}>
+          {formatPackBasketSlotSummary(basket)}
+        </Text>
+
+        <View style={styles.compactFooterRow}>
+          <View style={styles.compactDateMeta}>
+            <Feather name="clock" size={13} color="#9C83FF" />
+            <Text style={styles.compactDateValue}>
+              {formatPackQueueDate(getPackTaskQueueDateValue(primaryTask))}
+            </Text>
+          </View>
+          <PackStateBadge status={basket.status} label={basketStatusLabel} />
+        </View>
+      </SurfaceCard>
+    </Pressable>
+  );
+}
+
+function DemandPackExecutionCard({
+  basket,
+  isSubmitting,
+  onBack,
+  onRefresh,
+  onScanUnit,
+  onScanWaybill,
+  plan,
+}: {
+  basket: WmsMobilePickingTask['basket'];
+  isSubmitting: boolean;
+  onBack: () => void;
+  onRefresh: () => void | Promise<void>;
+  onScanUnit: (basketId: string, orderId: string, code: string) => Promise<boolean>;
+  onScanWaybill: (basketId: string, code: string) => Promise<boolean>;
+  plan: WmsMobileBasketPackPlan;
+}) {
+  const [waybillCode, setWaybillCode] = useState('');
+  const [unitCode, setUnitCode] = useState('');
+  const waybillInputRef = useRef<TextInput>(null);
+  const unitInputRef = useRef<TextInput>(null);
+  const waybillSubmitInFlightRef = useRef(false);
+  const unitSubmitInFlightRef = useRef(false);
+  const selectedOrder = plan.activeOrder;
+  const basketLabel = basket?.barcode ?? plan.basketCode;
+  const remainingOrders = plan.orderProgress.remaining;
+  const availableUnitCount = plan.availableUnits.reduce((total, unit) => total + unit.unitCount, 0);
+  const isComplete = plan.totals.remaining === 0 && plan.orderProgress.remaining === 0;
+
+  useEffect(() => {
+    setWaybillCode('');
+    setUnitCode('');
+  }, [plan.basketId]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (selectedOrder) {
+        unitInputRef.current?.focus();
+        return;
+      }
+
+      if (!isComplete) {
+        waybillInputRef.current?.focus();
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [isComplete, selectedOrder?.id]);
+
+  const submitWaybill = async () => {
+    if (!basket?.id || waybillSubmitInFlightRef.current || isSubmitting || isComplete) {
+      return;
+    }
+
+    const code = waybillCode.trim();
+    if (!code) {
+      waybillInputRef.current?.focus();
+      return;
+    }
+
+    waybillSubmitInFlightRef.current = true;
+    try {
+      const ok = await onScanWaybill(basket.id, code);
+      setWaybillCode('');
+      setTimeout(() => {
+        if (ok) {
+          unitInputRef.current?.focus();
+          return;
+        }
+
+        waybillInputRef.current?.focus();
+      }, 80);
+    } finally {
+      waybillSubmitInFlightRef.current = false;
+    }
+  };
+
+  const submitUnit = async () => {
+    if (!basket?.id || !selectedOrder || unitSubmitInFlightRef.current || isSubmitting) {
+      return;
+    }
+
+    const code = unitCode.trim();
+    if (!code) {
+      unitInputRef.current?.focus();
+      return;
+    }
+
+    unitSubmitInFlightRef.current = true;
+    try {
+      await onScanUnit(basket.id, selectedOrder.id, code);
+      setUnitCode('');
+      setTimeout(() => unitInputRef.current?.focus(), 80);
+    } finally {
+      unitSubmitInFlightRef.current = false;
+    }
+  };
+
+  return (
+    <>
+      <View style={styles.executionHeader}>
+        <Pressable onPress={onBack} style={styles.backButton}>
+          <Feather name="chevron-left" size={20} color={tokens.colors.ink} />
+        </Pressable>
+        <View style={styles.executionTitleGroup}>
+          <Text numberOfLines={1} style={styles.executionTitle}>Basket {basketLabel}</Text>
+          <Text numberOfLines={1} style={styles.executionMeta}>
+            {basket?.warehouse?.name ?? 'Warehouse'} · {remainingOrders} open
+          </Text>
+        </View>
+        <TaskHeaderIconButton
+          icon="refresh-cw"
+          loading={isSubmitting}
+          onPress={onRefresh}
+        />
+        <PackStateBadge
+          status={basket?.status ?? plan.status}
+          label={selectedOrder ? 'Packing' : isComplete ? 'Packed' : 'Awaiting pack'}
+        />
+      </View>
+
+      <DemandPackFloatingCounter plan={plan} />
+
+      <SurfaceCard style={styles.executionCard}>
+        <View style={styles.taskProgressRow}>
+          <View>
+            <Text style={styles.bigProgress}>{plan.totals.packed}/{plan.totals.required}</Text>
+            <Text style={styles.progressLabel}>basket units packed</Text>
+          </View>
+          <UtilityPill icon="shopping-bag" label={`${plan.orderProgress.total} orders`} />
+        </View>
+
+        <View style={styles.basketSummary}>
+          <Text style={styles.basketLabel}>Basket {basketLabel}</Text>
+          <Text style={styles.historyMeta}>
+            {availableUnitCount} ready · {plan.totals.remaining} left
+          </Text>
+        </View>
+
+        <DemandPackOrderList
+          activeOrderId={selectedOrder?.id ?? null}
+          orders={plan.orders}
+        />
+
+        {isComplete ? (
+          <View style={styles.donePanelCompact}>
+            <Feather name="check-circle" size={24} color={tokens.colors.success} />
+            <Text style={styles.doneTitle}>Basket complete</Text>
+            <Text style={styles.doneCopy}>All basket orders are packed.</Text>
+          </View>
+        ) : (
+          <View style={styles.scanPanel}>
+            <ScannerInput
+              autoSubmit
+              inputRef={waybillInputRef}
+              label="Waybill"
+              placeholder="Scan waybill"
+              value={waybillCode}
+              disabled={isSubmitting}
+              onChangeText={setWaybillCode}
+              onSubmit={submitWaybill}
+            />
+
+            {selectedOrder ? (
+              <>
+                <View style={styles.demandActiveOrderCard}>
+                  <View style={styles.demandActiveOrderHeader}>
+                    <View style={styles.demandActiveOrderCopy}>
+                      <Text numberOfLines={1} style={styles.demandActiveOrderCode}>#{selectedOrder.posOrderId}</Text>
+                      <Text numberOfLines={1} style={styles.demandActiveOrderMeta}>
+                        {selectedOrder.customerName ?? selectedOrder.tracking ?? 'Selected order'}
+                      </Text>
+                    </View>
+                    <Text style={styles.demandActiveOrderQty}>
+                      {selectedOrder.totals.packed}/{selectedOrder.totals.required}
+                    </Text>
+                  </View>
+                </View>
+
+                <ScannerInput
+                  autoSubmit
+                  inputRef={unitInputRef}
+                  label="Unit"
+                  placeholder="Scan basket unit"
+                  value={unitCode}
+                  disabled={isSubmitting}
+                  onChangeText={setUnitCode}
+                  onSubmit={submitUnit}
+                />
+              </>
+            ) : null}
+          </View>
+        )}
+      </SurfaceCard>
+
+      <SectionLabel title={selectedOrder ? 'Order items' : 'Basket items'} />
+      <View style={styles.itemList}>
+        {selectedOrder
+          ? selectedOrder.lines.map((line) => (
+              <SurfaceCard key={line.id} tone="muted" style={styles.itemCard}>
+                <View style={styles.itemHeader}>
+                  <Text numberOfLines={1} style={styles.itemName}>{line.productName}</Text>
+                  <Text style={styles.itemQty}>{line.packed}/{line.required}</Text>
+                </View>
+                <Text numberOfLines={1} style={styles.itemMeta}>
+                  {line.remaining} left
+                </Text>
+              </SurfaceCard>
+            ))
+          : plan.availableUnits.map((unit) => (
+              <SurfaceCard key={`${unit.variationId}:${unit.productId ?? ''}`} tone="muted" style={styles.itemCard}>
+                <View style={styles.itemHeader}>
+                  <Text numberOfLines={1} style={styles.itemName}>{unit.productName}</Text>
+                  <Text style={styles.itemQty}>{unit.unitCount}</Text>
+                </View>
+                <Text numberOfLines={1} style={styles.itemMeta}>
+                  {unit.productDisplayId ?? unit.variationId}
+                </Text>
+              </SurfaceCard>
+            ))}
+      </View>
+    </>
   );
 }
 
@@ -800,7 +1221,7 @@ function PackBasketOrderList({ task }: { task: WmsMobilePickingTask }) {
       <View style={styles.basketOrderHeader}>
         <View>
           <Text style={styles.basketOrderTitle}>Basket orders</Text>
-          <Text style={styles.basketOrderHint}>Pack the selected order only.</Text>
+          <Text style={styles.basketOrderHint}>Selected order stays highlighted.</Text>
         </View>
         <Text style={styles.basketOrderMeta}>
           {orders.length}/{basket.maxFulfillmentOrders}
@@ -827,6 +1248,91 @@ function PackBasketOrderList({ task }: { task: WmsMobilePickingTask }) {
       })}
     </View>
   );
+}
+
+function DemandPackOrderList({
+  activeOrderId,
+  orders,
+}: {
+  activeOrderId: string | null;
+  orders: WmsMobileBasketPackPlan['orders'];
+}) {
+  if (!orders.length) {
+    return null;
+  }
+
+  return (
+    <View style={styles.basketOrderPanel}>
+      <View style={styles.basketOrderHeader}>
+        <View>
+          <Text style={styles.basketOrderTitle}>Basket orders</Text>
+        </View>
+        <Text style={styles.basketOrderMeta}>{orders.length}</Text>
+      </View>
+      {orders.map((order) => {
+        const active = order.id === activeOrderId;
+        return (
+          <View key={order.id} style={[styles.basketOrderRow, active ? styles.basketOrderRowActive : null]}>
+            <View style={[styles.basketOrderDot, active ? styles.basketOrderDotActive : null]} />
+            <View style={styles.basketOrderCopy}>
+              <Text numberOfLines={1} style={styles.basketOrderCode}>
+                #{order.posOrderId}
+              </Text>
+              <Text numberOfLines={1} style={styles.basketOrderSubcopy}>
+                {order.trackingReady ? (order.tracking ?? 'Waybill ready') : 'No tracking'}
+              </Text>
+            </View>
+            <Text style={styles.basketOrderQty}>
+              {order.totals.packed}/{order.totals.required}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function DemandPackFloatingCounter({ plan }: { plan: WmsMobileBasketPackPlan }) {
+  const setShellOverlay = useStoxShellOverlay();
+  const primaryLabel = plan.activeOrder ? 'Order' : 'Orders';
+  const primaryPacked = plan.activeOrder?.totals.packed ?? plan.orderProgress.packed;
+  const primaryRequired = plan.activeOrder?.totals.required ?? plan.orderProgress.total;
+  const dock = useMemo(() => (
+    <View style={styles.demandCounterDock}>
+      <View style={styles.demandCounterPillPrimary}>
+        <Text style={styles.demandCounterLabel}>{primaryLabel}</Text>
+        <Text style={styles.demandCounterValue}>{primaryPacked}/{primaryRequired}</Text>
+      </View>
+      <View style={styles.demandCounterPill}>
+        <Text style={styles.demandCounterLabelSoft}>Basket left</Text>
+        <Text style={styles.demandCounterValueSoft}>{plan.totals.remaining}</Text>
+      </View>
+    </View>
+  ), [plan.totals.remaining, primaryLabel, primaryPacked, primaryRequired]);
+
+  useEffect(() => {
+    if (!setShellOverlay) {
+      return;
+    }
+
+    setShellOverlay(dock);
+  }, [dock, setShellOverlay]);
+
+  useEffect(() => {
+    if (!setShellOverlay) {
+      return undefined;
+    }
+
+    return () => {
+      setShellOverlay(null);
+    };
+  }, [setShellOverlay]);
+
+  if (setShellOverlay) {
+    return null;
+  }
+
+  return dock;
 }
 
 function ScannerInput({
@@ -894,11 +1400,14 @@ function ScannerInput({
           autoCapitalize="characters"
           autoCorrect={false}
           blurOnSubmit={false}
+          caretHidden
+          contextMenuHidden
           editable={!disabled}
           placeholder={placeholder}
           placeholderTextColor={tokens.colors.inkSoft}
           returnKeyType="done"
-          selectTextOnFocus
+          selectTextOnFocus={false}
+          showSoftInputOnFocus={false}
           value={value}
           onChangeText={onChangeText}
           onSubmitEditing={() => {
@@ -1038,12 +1547,178 @@ function resolveActiveStoreName(
   return stores.find((store) => store.id === storeId)?.name ?? 'Store';
 }
 
+function buildPackQueueEntries(
+  tasks: WmsMobilePickingTask[],
+  options: { groupBaskets: boolean },
+): PackQueueEntry[] {
+  if (!options.groupBaskets) {
+    return tasks.map((task) => ({
+      key: `task:${task.id}`,
+      kind: 'task',
+      basket: task.basket,
+      primaryTask: task,
+      tasks: [task],
+    }));
+  }
+
+  const entries: PackQueueEntry[] = [];
+  const seenBaskets = new Set<string>();
+
+  for (const task of tasks) {
+    const basket = task.basket;
+    if (!basket?.orders?.length) {
+      entries.push({
+        key: `task:${task.id}`,
+        kind: 'task',
+        basket,
+        primaryTask: task,
+        tasks: [task],
+      });
+      continue;
+    }
+
+    if (seenBaskets.has(basket.id)) {
+      continue;
+    }
+
+    seenBaskets.add(basket.id);
+    const basketTasks = tasks.filter((candidate) => candidate.basket?.id === basket.id);
+    entries.push({
+      key: `basket:${basket.id}`,
+      kind: 'basket',
+      basket,
+      primaryTask: pickPrimaryPackTask(basketTasks),
+      tasks: basketTasks,
+    });
+  }
+
+  return entries;
+}
+
+function isPackQueueEntryActive(
+  entry: PackQueueEntry,
+  activeTaskId: string | null,
+  activeBasketId: string | null,
+) {
+  if (entry.kind === 'basket') {
+    if (activeBasketId && entry.basket.id === activeBasketId) {
+      return true;
+    }
+
+    return entry.tasks.some((task) => task.id === activeTaskId);
+  }
+
+  return activeTaskId === entry.primaryTask.id
+    || (activeBasketId !== null && activeBasketId === entry.primaryTask.basket?.id);
+}
+
+function pickPrimaryPackTask(tasks: WmsMobilePickingTask[]) {
+  return [...tasks].sort((left, right) => {
+    const rankDelta = getPackTaskPriority(left) - getPackTaskPriority(right);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+
+    const rightTime = parsePackDate(getPackTaskQueueDateValue(right))?.getTime() ?? 0;
+    const leftTime = parsePackDate(getPackTaskQueueDateValue(left))?.getTime() ?? 0;
+    return rightTime - leftTime;
+  })[0] ?? tasks[0];
+}
+
+function getPackTaskPriority(task: WmsMobilePickingTask) {
+  if (task.status === 'PACKING') {
+    return 0;
+  }
+
+  if (!task.tracking?.trim() && task.status !== 'PACKED') {
+    return 1;
+  }
+
+  if (task.status === 'PICKED') {
+    return 2;
+  }
+
+  return 3;
+}
+
+function formatPackBasketStoreLabel(tasks: WmsMobilePickingTask[]) {
+  const uniqueStoreNames = Array.from(new Set(
+    tasks.map((task) => task.store?.name).filter((value): value is string => Boolean(value)),
+  ));
+
+  if (uniqueStoreNames.length === 0) {
+    return 'Assigned basket';
+  }
+
+  if (uniqueStoreNames.length === 1) {
+    return uniqueStoreNames[0];
+  }
+
+  return `${uniqueStoreNames.length} stores`;
+}
+
+function formatPackBasketTrackingLabel(tasks: WmsMobilePickingTask[]) {
+  const missingTrackingCount = tasks.filter((task) => !task.tracking?.trim()).length;
+  const readyTrackingCount = tasks.length - missingTrackingCount;
+
+  if (missingTrackingCount > 0 && readyTrackingCount > 0) {
+    return `${readyTrackingCount} with tracking · ${missingTrackingCount} waiting`;
+  }
+
+  if (missingTrackingCount > 0) {
+    return `${missingTrackingCount} order${missingTrackingCount === 1 ? '' : 's'} waiting for tracking`;
+  }
+
+  return `${readyTrackingCount} order${readyTrackingCount === 1 ? '' : 's'} with tracking`;
+}
+
+function mapPackBasketStatusLabel(tasks: WmsMobilePickingTask[]) {
+  if (tasks.some((task) => task.status === 'PACKING')) {
+    return 'Packing';
+  }
+
+  if (tasks.some((task) => !task.tracking?.trim() && task.status !== 'PACKED')) {
+    return 'No tracking';
+  }
+
+  if (tasks.every((task) => task.status === 'PACKED')) {
+    return 'Packed';
+  }
+
+  return 'Awaiting pack';
+}
+
+function formatPackBasketUnitSummary(totalPacked: number, totalRequired: number) {
+  return `${totalPacked}/${totalRequired} units packed`;
+}
+
+function formatPackBasketSlotSummary(
+  basket: NonNullable<WmsMobilePickingTask['basket']>,
+) {
+  const openSlots = Math.max(basket.maxFulfillmentOrders - basket.activeFulfillmentOrders, 0);
+  if (openSlots === 0) {
+    return `${basket.activeFulfillmentOrders} orders in basket · full`;
+  }
+
+  return `${basket.activeFulfillmentOrders} orders in basket · ${openSlots} slot${openSlots === 1 ? '' : 's'} open`;
+}
+
+function getPackTaskQueueDateValue(task: WmsMobilePickingTask) {
+  return task.basket?.readyForPackAt
+    ?? task.basket?.fullAt
+    ?? task.completedAt
+    ?? task.claimedAt
+    ?? task.orderDateLocal
+    ?? task.orderDate
+    ?? task.createdAt;
+}
+
 function buildPackDateOptions(tasks: WmsMobilePickingTask[]) {
   const seen = new Map<string, { key: string; month: string; day: string; weekday: string; isToday: boolean; sort: number }>();
   const todayKey = buildDateKey(new Date());
 
   for (const task of tasks) {
-    const parsed = parsePackDate(task.orderDateLocal ?? task.orderDate);
+    const parsed = parsePackDate(getPackTaskQueueDateValue(task));
     if (!parsed) {
       continue;
     }
@@ -1069,7 +1744,7 @@ function buildPackDateOptions(tasks: WmsMobilePickingTask[]) {
 }
 
 function getPackTaskDateKey(task: WmsMobilePickingTask) {
-  const parsed = parsePackDate(task.orderDateLocal ?? task.orderDate);
+  const parsed = parsePackDate(getPackTaskQueueDateValue(task));
   return parsed ? buildDateKey(parsed) : null;
 }
 
@@ -1478,12 +2153,10 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   basketOrderPanel: {
-    backgroundColor: tokens.colors.surfaceMuted,
-    borderColor: tokens.colors.border,
-    borderRadius: tokens.radius.lg,
-    borderWidth: 1,
+    borderTopColor: '#ECE7FA',
+    borderTopWidth: 1,
     gap: tokens.spacing.sm,
-    padding: tokens.spacing.md,
+    paddingTop: tokens.spacing.sm,
   },
   basketOrderHeader: {
     alignItems: 'center',
@@ -1510,23 +2183,21 @@ const styles = StyleSheet.create({
   },
   basketOrderRow: {
     alignItems: 'center',
-    backgroundColor: tokens.colors.surface,
-    borderColor: tokens.colors.border,
-    borderRadius: tokens.radius.md,
-    borderWidth: 1,
+    borderBottomColor: '#F0EDF7',
+    borderBottomWidth: 1,
     flexDirection: 'row',
     gap: tokens.spacing.sm,
-    paddingHorizontal: tokens.spacing.sm,
+    paddingHorizontal: 2,
     paddingVertical: 10,
   },
   basketOrderRowActive: {
-    borderColor: '#6437F6',
+    backgroundColor: '#FAF8FF',
   },
   basketOrderDot: {
-    backgroundColor: tokens.colors.border,
+    backgroundColor: '#D8D2EA',
     borderRadius: tokens.radius.pill,
-    height: 8,
-    width: 8,
+    height: 6,
+    width: 6,
   },
   basketOrderDotActive: {
     backgroundColor: '#6437F6',
@@ -1537,17 +2208,68 @@ const styles = StyleSheet.create({
   },
   basketOrderCode: {
     color: tokens.colors.ink,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '900',
   },
   basketOrderSubcopy: {
     color: tokens.colors.inkMuted,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
   },
   basketOrderQty: {
     color: tokens.colors.ink,
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  demandCounterDock: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    justifyContent: 'center',
+    marginTop: -4,
+  },
+  demandCounterPillPrimary: {
+    alignItems: 'center',
+    backgroundColor: tokens.colors.panel,
+    borderRadius: tokens.radius.pill,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  demandCounterPill: {
+    alignItems: 'center',
+    backgroundColor: tokens.colors.surface,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  demandCounterLabel: {
+    color: '#E9E1FF',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  demandCounterLabelSoft: {
+    color: tokens.colors.inkMuted,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  demandCounterValue: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  demandCounterValueSoft: {
+    color: tokens.colors.ink,
+    fontSize: 14,
     fontWeight: '900',
   },
   basketLabel: {
@@ -1581,6 +2303,39 @@ const styles = StyleSheet.create({
   },
   scanPanel: {
     gap: tokens.spacing.md,
+  },
+  demandActiveOrderCard: {
+    backgroundColor: tokens.colors.surfaceMuted,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.lg,
+    borderWidth: 1,
+    padding: tokens.spacing.md,
+  },
+  demandActiveOrderHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    justifyContent: 'space-between',
+  },
+  demandActiveOrderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  demandActiveOrderCode: {
+    color: tokens.colors.ink,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  demandActiveOrderMeta: {
+    color: tokens.colors.inkMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  demandActiveOrderQty: {
+    color: tokens.colors.panel,
+    fontSize: 14,
+    fontWeight: '900',
   },
   nextUnitCard: {
     backgroundColor: tokens.colors.surfaceMuted,

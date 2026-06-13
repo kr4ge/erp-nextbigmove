@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  WmsBasketUnitStatus,
   WmsFulfillmentLineStatus,
   WmsFulfillmentOrderStatus,
   WmsStaffActivityOutcome,
@@ -218,6 +219,16 @@ const ADJUSTABLE_UNIT_TARGET_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.DAMAGED,
   WmsInventoryUnitStatus.LOST,
   WmsInventoryUnitStatus.ARCHIVED,
+]);
+
+const ARCHIVABLE_ADJUSTMENT_SOURCE_STATUSES = new Set<WmsInventoryUnitStatus>([
+  WmsInventoryUnitStatus.RECEIVED,
+  WmsInventoryUnitStatus.STAGED,
+  WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.DEADSTOCK,
+  WmsInventoryUnitStatus.RTS,
+  WmsInventoryUnitStatus.DAMAGED,
+  WmsInventoryUnitStatus.LOST,
 ]);
 
 const VOIDABLE_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
@@ -1918,6 +1929,16 @@ export class WmsInventoryService {
             productSnapshot: true,
           },
         },
+        pickReservations: {
+          where: {
+            status: {
+              in: [...ACTIVE_PICK_RESERVATION_STATUSES],
+            },
+          },
+          select: {
+            id: true,
+          },
+        },
       },
     });
 
@@ -1933,8 +1954,27 @@ export class WmsInventoryService {
 
     const warehouseId = units[0].warehouseId;
 
-    if (units.some((unit) => unit.warehouseId !== warehouseId)) {
+    if (
+      body.targetStatus !== WmsInventoryUnitStatus.ARCHIVED
+      && units.some((unit) => unit.warehouseId !== warehouseId)
+    ) {
       throw new BadRequestException('Selected units must belong to the same warehouse');
+    }
+
+    if (body.targetStatus === WmsInventoryUnitStatus.ARCHIVED) {
+      const invalidSourceUnit = units.find((unit) => !ARCHIVABLE_ADJUSTMENT_SOURCE_STATUSES.has(unit.status));
+      if (invalidSourceUnit) {
+        throw new BadRequestException(
+          `Unit ${invalidSourceUnit.code} cannot be archived from status ${invalidSourceUnit.status}`,
+        );
+      }
+
+      const reservedUnit = units.find((unit) => unit.pickReservations.length > 0);
+      if (reservedUnit) {
+        throw new BadRequestException(
+          `Unit ${reservedUnit.code} is attached to active fulfillment work and cannot be archived with bulk action`,
+        );
+      }
     }
 
     const targetLocationKind = this.getRequiredAdjustmentLocationKind(body.targetStatus);
@@ -2728,12 +2768,27 @@ export class WmsInventoryService {
       },
       select: {
         id: true,
+        assignmentMode: true,
         posOrderDbId: true,
         totalQuantity: true,
         reservations: {
           where: {
             status: {
               in: [WmsPickReservationStatus.RESERVED, WmsPickReservationStatus.PICKED],
+            },
+          },
+          select: {
+            inventoryUnit: {
+              select: {
+                unitCost: true,
+              },
+            },
+          },
+        },
+        basketUnits: {
+          where: {
+            status: {
+              in: [WmsBasketUnitStatus.PICKED, WmsBasketUnitStatus.PACKED],
             },
           },
           select: {
@@ -2751,25 +2806,29 @@ export class WmsInventoryService {
     let skippedOrders = 0;
 
     for (const order of orders) {
-      if (order.reservations.length === 0) {
+      const matchedUnits = order.assignmentMode === 'BASKET_DEMAND'
+        ? order.basketUnits
+        : order.reservations;
+
+      if (matchedUnits.length === 0) {
         continue;
       }
 
-      if (order.totalQuantity > 0 && order.reservations.length < order.totalQuantity) {
+      if (order.totalQuantity > 0 && matchedUnits.length < order.totalQuantity) {
         skippedOrders += 1;
         continue;
       }
 
-      const hasMissingUnitCost = order.reservations.some(
-        (reservation) => reservation.inventoryUnit.unitCost === null,
+      const hasMissingUnitCost = matchedUnits.some(
+        (matchedUnit) => matchedUnit.inventoryUnit.unitCost === null,
       );
       if (hasMissingUnitCost) {
         skippedOrders += 1;
         continue;
       }
 
-      const actualCogs = order.reservations.reduce(
-        (sum, reservation) => sum + Number(reservation.inventoryUnit.unitCost ?? 0),
+      const actualCogs = matchedUnits.reduce(
+        (sum, matchedUnit) => sum + Number(matchedUnit.inventoryUnit.unitCost ?? 0),
         0,
       );
 
@@ -2805,71 +2864,117 @@ export class WmsInventoryService {
       ).values(),
     );
 
-    const reservations = await this.prisma.wmsPickReservation.findMany({
-      where: {
-        inventoryUnit: {
-          status: WmsInventoryUnitStatus.PACKED,
-        },
-        fulfillmentOrder: {
-          tenantId: params.tenantId,
-          ...(params.storeId ? { storeId: params.storeId } : {}),
-          status: WmsFulfillmentOrderStatus.PACKED,
-          posOrder: {
-            is: {
-              status: {
-                in: [2, 3],
-              },
-            },
-          },
-          ...(refs.length > 0
-            ? {
-                OR: refs.map((ref) => ({
-                  shopId: ref.shopId,
-                  posOrderId: ref.posOrderId,
-                })),
-              }
-            : {}),
-        },
-      },
-      select: {
-        inventoryUnitId: true,
-        inventoryUnit: {
-          select: {
-            id: true,
-            code: true,
-            currentLocationId: true,
-            status: true,
-            warehouseId: true,
-          },
-        },
-        fulfillmentOrder: {
-          select: {
-            id: true,
-            posOrderId: true,
-            tenantId: true,
-            storeId: true,
-            warehouseId: true,
-            posOrder: {
-              select: {
-                status: true,
-                tracking: true,
-              },
-            },
+    const orderScope = {
+      tenantId: params.tenantId,
+      ...(params.storeId ? { storeId: params.storeId } : {}),
+      status: WmsFulfillmentOrderStatus.PACKED,
+      posOrder: {
+        is: {
+          status: {
+            in: [2, 3],
           },
         },
       },
-    });
+      ...(refs.length > 0
+        ? {
+            OR: refs.map((ref) => ({
+              shopId: ref.shopId,
+              posOrderId: ref.posOrderId,
+            })),
+          }
+        : {}),
+    } satisfies Prisma.WmsFulfillmentOrderWhereInput;
 
-    const uniqueReservations = Array.from(
-      new Map(reservations.map((reservation) => [reservation.inventoryUnitId, reservation])).values(),
+    const [reservations, basketUnits] = await Promise.all([
+      this.prisma.wmsPickReservation.findMany({
+        where: {
+          inventoryUnit: {
+            status: WmsInventoryUnitStatus.PACKED,
+          },
+          fulfillmentOrder: orderScope,
+        },
+        select: {
+          inventoryUnitId: true,
+          inventoryUnit: {
+            select: {
+              id: true,
+              code: true,
+              currentLocationId: true,
+              status: true,
+              warehouseId: true,
+            },
+          },
+          fulfillmentOrder: {
+            select: {
+              id: true,
+              posOrderId: true,
+              tenantId: true,
+              storeId: true,
+              warehouseId: true,
+              posOrder: {
+                select: {
+                  status: true,
+                  tracking: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.wmsBasketUnit.findMany({
+        where: {
+          status: WmsBasketUnitStatus.PACKED,
+          inventoryUnit: {
+            status: WmsInventoryUnitStatus.PACKED,
+          },
+          fulfillmentOrder: orderScope,
+        },
+        select: {
+          inventoryUnitId: true,
+          inventoryUnit: {
+            select: {
+              id: true,
+              code: true,
+              currentLocationId: true,
+              status: true,
+              warehouseId: true,
+            },
+          },
+          fulfillmentOrder: {
+            select: {
+              id: true,
+              posOrderId: true,
+              tenantId: true,
+              storeId: true,
+              warehouseId: true,
+              posOrder: {
+                select: {
+                  status: true,
+                  tracking: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const matchedUnits = Array.from(
+      new Map(
+        [...reservations, ...basketUnits].map((record) => [record.inventoryUnitId, record] as const),
+      ).values(),
     );
     const now = new Date();
     let dispatchedUnits = 0;
-    const dispatchedByOrderId = new Map<string, Array<typeof uniqueReservations[number]>>();
+    const dispatchedByOrderId = new Map<string, Array<typeof matchedUnits[number]>>();
 
-    if (uniqueReservations.length > 0) {
+    if (matchedUnits.length > 0) {
       await this.prisma.$transaction(async (tx) => {
-        for (const reservation of uniqueReservations) {
+        for (const reservation of matchedUnits) {
+          if (!reservation.fulfillmentOrder) {
+            continue;
+          }
+
           const updateResult = await tx.wmsInventoryUnit.updateMany({
             where: {
               id: reservation.inventoryUnitId,
@@ -2920,6 +3025,10 @@ export class WmsInventoryService {
       await Promise.all(
         Array.from(dispatchedByOrderId.entries()).map(async ([orderId, orderReservations]) => {
           const sample = orderReservations[0];
+          if (!sample?.fulfillmentOrder) {
+            return;
+          }
+
           const posStatus = sample.fulfillmentOrder.posOrder?.status ?? null;
           const deliveryState = posStatus === 3 ? 'DELIVERED' : 'SHIPPED';
 

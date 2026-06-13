@@ -111,7 +111,6 @@ export function FulfillmentPackScreen() {
               isRefreshing={pack.isRefreshing}
               isSubmitting={pack.isSubmitting}
               task={pack.activeTask}
-              onBack={() => pack.setActiveTaskId(null)}
               onRefresh={pack.refresh}
               onStart={pack.startTask}
               onScanUnit={pack.scanUnit}

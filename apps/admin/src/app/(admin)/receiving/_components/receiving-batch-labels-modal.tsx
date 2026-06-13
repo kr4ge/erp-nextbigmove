@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Printer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Printer } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
-import type { WmsReceivingBatchDetail } from '../_types/receiving';
+import type { WmsReceivingBatchLabels } from '../_types/receiving';
 import { printReceivingBatchLabels } from '../_utils/print-receiving-batch-labels';
 import {
   isCode128CCompatible,
@@ -11,11 +11,14 @@ import {
   renderCode128CSvgMarkup,
 } from '../../warehouses/_utils/code39-barcode';
 
+const LABEL_PREVIEW_PAGE_SIZE = 24;
+
 type ReceivingBatchLabelsModalProps = {
   open: boolean;
   isLoading: boolean;
   isRecordingPrint: boolean;
-  batch: WmsReceivingBatchDetail | null;
+  batch: WmsReceivingBatchLabels | null;
+  errorMessage?: string | null;
   canPrintLabels?: boolean;
   canOpenTransfer?: boolean;
   onRecordPrint: (batchId: string, action: 'PRINT' | 'REPRINT') => Promise<void>;
@@ -28,6 +31,7 @@ export function ReceivingBatchLabelsModal({
   isLoading,
   isRecordingPrint,
   batch,
+  errorMessage = null,
   canPrintLabels = true,
   canOpenTransfer = true,
   onRecordPrint,
@@ -36,16 +40,24 @@ export function ReceivingBatchLabelsModal({
 }: ReceivingBatchLabelsModalProps) {
   const [printError, setPrintError] = useState<string | null>(null);
   const [didPrintInSession, setDidPrintInSession] = useState(false);
+  const [previewPage, setPreviewPage] = useState(1);
 
   const transferEnabled = Boolean(batch && batch.units.length > 0 && (batch.labelPrintCount > 0 || didPrintInSession));
+  const totalPreviewPages = Math.max(1, Math.ceil((batch?.units.length ?? 0) / LABEL_PREVIEW_PAGE_SIZE));
+  const previewStartIndex = (previewPage - 1) * LABEL_PREVIEW_PAGE_SIZE;
+  const previewEndIndex = previewStartIndex + LABEL_PREVIEW_PAGE_SIZE;
+  const previewUnits = useMemo(
+    () => batch?.units.slice(previewStartIndex, previewEndIndex) ?? [],
+    [batch?.units, previewEndIndex, previewStartIndex],
+  );
 
   const unitsWithMarkup = useMemo(
     () =>
-      (batch?.units ?? []).map((unit, index) => ({
+      previewUnits.map((unit, index) => ({
         ...unit,
         barcodeValue: normalizeBarcodeValue(unit.barcode),
-        sequence: index + 1,
-        sequenceLabel: String(index + 1).padStart(2, '0'),
+        sequence: previewStartIndex + index + 1,
+        sequenceLabel: String(previewStartIndex + index + 1).padStart(2, '0'),
         barcodeMarkup: isCode128CCompatible(unit.barcode)
           ? renderCode128CSvgMarkup(unit.barcode, {
               height: 30,
@@ -55,7 +67,7 @@ export function ReceivingBatchLabelsModal({
             })
           : '',
       })),
-    [batch?.units],
+    [previewStartIndex, previewUnits],
   );
 
   useEffect(() => {
@@ -66,7 +78,16 @@ export function ReceivingBatchLabelsModal({
 
   useEffect(() => {
     setDidPrintInSession(false);
+    setPreviewPage(1);
   }, [batch?.id]);
+
+  useEffect(() => {
+    if (previewPage <= totalPreviewPages) {
+      return;
+    }
+
+    setPreviewPage(totalPreviewPages);
+  }, [previewPage, totalPreviewPages]);
 
   const handlePrintBatch = async () => {
     if (!batch || !canPrintLabels) {
@@ -141,10 +162,16 @@ export function ReceivingBatchLabelsModal({
       )}
     >
       {isLoading || !batch ? (
-        <div className="flex h-56 items-center justify-center text-sm text-[#718797]">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Loading label sheet…
-        </div>
+        errorMessage && !isLoading ? (
+          <div className="rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+            {errorMessage}
+          </div>
+        ) : (
+          <div className="flex h-56 items-center justify-center text-sm text-[#718797]">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Loading label sheet…
+          </div>
+        )
       ) : (
         <div className="space-y-3">
           <div className="card">
@@ -157,6 +184,35 @@ export function ReceivingBatchLabelsModal({
               {batch.stagingLocation ? ` · ${batch.stagingLocation.code} · ${batch.stagingLocation.name}` : ''}
             </p>
           </div>
+
+          {batch.units.length > LABEL_PREVIEW_PAGE_SIZE ? (
+            <div className="flex items-center justify-between gap-3 rounded-[16px] border border-[#dce4ea] bg-white px-3 py-2">
+              <p className="text-[12px] text-[#5f7483]">
+                Showing {previewStartIndex + 1}-{Math.min(previewEndIndex, batch.units.length)} of {batch.units.length} labels
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviewPage((current) => Math.max(1, current - 1))}
+                  disabled={previewPage === 1}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3 py-1 text-[11px] font-semibold text-primary">
+                  {previewPage} / {totalPreviewPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPage((current) => Math.min(totalPreviewPages, current + 1))}
+                  disabled={previewPage === totalPreviewPages}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="max-h-[560px] space-y-3 overflow-y-auto rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] p-3">
             {unitsWithMarkup.length === 0 ? (

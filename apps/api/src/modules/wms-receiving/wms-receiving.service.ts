@@ -190,6 +190,71 @@ type ReceivingBatchDetailRecord = Prisma.WmsReceivingBatchGetPayload<{
   };
 }>;
 
+type ReceivingBatchLabelsRecord = Prisma.WmsReceivingBatchGetPayload<{
+  select: {
+    id: true;
+    tenantId: true;
+    code: true;
+    status: true;
+    labelPrintCount: true;
+    firstLabelPrintedAt: true;
+    lastLabelPrintedAt: true;
+    purchasingBatch: {
+      select: {
+        sourceRequestId: true;
+        requestTitle: true;
+      };
+    };
+    warehouse: {
+      select: {
+        id: true;
+        code: true;
+        name: true;
+      };
+    };
+    stagingLocation: {
+      select: {
+        id: true;
+        code: true;
+        name: true;
+      };
+    };
+    inventoryUnits: {
+      orderBy: {
+        createdAt: 'asc';
+      };
+      select: {
+        id: true;
+        code: true;
+        barcode: true;
+        status: true;
+        productId: true;
+        variationId: true;
+        labelPrintCount: true;
+        firstLabelPrintedAt: true;
+        lastLabelPrintedAt: true;
+        unitCost: true;
+        createdAt: true;
+        currentLocation: {
+          select: {
+            id: true;
+            code: true;
+            name: true;
+            kind: true;
+          };
+        };
+        posProduct: {
+          select: {
+            id: true;
+            name: true;
+            customId: true;
+          };
+        };
+      };
+    };
+  };
+}>;
+
 type StructuralLocationRecord = {
   id: string;
   warehouseId: string;
@@ -640,6 +705,87 @@ export class WmsReceivingService {
 
     return {
       batch: this.mapReceivingBatchDetail(batch),
+    };
+  }
+
+  async getBatchLabelsById(id: string, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const batch = await this.prisma.wmsReceivingBatch.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        tenantId: true,
+        code: true,
+        status: true,
+        labelPrintCount: true,
+        firstLabelPrintedAt: true,
+        lastLabelPrintedAt: true,
+        purchasingBatch: {
+          select: {
+            sourceRequestId: true,
+            requestTitle: true,
+          },
+        },
+        warehouse: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+        },
+        stagingLocation: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+        },
+        inventoryUnits: {
+          orderBy: [{ createdAt: 'asc' }],
+          select: {
+            id: true,
+            code: true,
+            barcode: true,
+            status: true,
+            productId: true,
+            variationId: true,
+            labelPrintCount: true,
+            firstLabelPrintedAt: true,
+            lastLabelPrintedAt: true,
+            unitCost: true,
+            createdAt: true,
+            currentLocation: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                kind: true,
+              },
+            },
+            posProduct: {
+              select: {
+                id: true,
+                name: true,
+                customId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!batch) {
+      throw new NotFoundException('Receiving batch was not found');
+    }
+
+    this.assertTenantScope(batch.tenantId, scope.activeTenantId);
+
+    return {
+      batch: this.mapReceivingBatchLabels(batch),
     };
   }
 
@@ -2076,6 +2222,7 @@ export class WmsReceivingService {
   private mapReceivingBatchRow(batch: ReceivingBatchRecord) {
     return {
       id: batch.id,
+      tenantId: batch.tenantId,
       code: batch.code,
       status: batch.status,
       sourceRequestId: batch.purchasingBatch?.sourceRequestId ?? null,
@@ -2105,6 +2252,55 @@ export class WmsReceivingService {
       lastLabelPrintedAt: batch.lastLabelPrintedAt,
       createdAt: batch.createdAt,
       updatedAt: batch.updatedAt,
+    };
+  }
+
+  private mapReceivingBatchLabels(batch: ReceivingBatchLabelsRecord) {
+    return {
+      id: batch.id,
+      tenantId: batch.tenantId,
+      code: batch.code,
+      status: batch.status,
+      labelPrintCount: batch.labelPrintCount,
+      firstLabelPrintedAt: batch.firstLabelPrintedAt,
+      lastLabelPrintedAt: batch.lastLabelPrintedAt,
+      sourceRequestId: batch.purchasingBatch?.sourceRequestId ?? null,
+      requestTitle: batch.purchasingBatch?.requestTitle ?? null,
+      warehouse: {
+        id: batch.warehouse.id,
+        code: batch.warehouse.code,
+        name: batch.warehouse.name,
+      },
+      stagingLocation: batch.stagingLocation
+        ? {
+            id: batch.stagingLocation.id,
+            code: batch.stagingLocation.code,
+            name: batch.stagingLocation.name,
+          }
+        : null,
+      units: batch.inventoryUnits.map((unit) => ({
+        id: unit.id,
+        code: unit.code,
+        barcode: unit.barcode,
+        status: unit.status,
+        labelPrintCount: unit.labelPrintCount,
+        firstLabelPrintedAt: unit.firstLabelPrintedAt,
+        lastLabelPrintedAt: unit.lastLabelPrintedAt,
+        productId: unit.productId,
+        variationId: unit.variationId,
+        unitCost: this.toNumber(unit.unitCost),
+        productName: unit.posProduct.name,
+        productCustomId: unit.posProduct.customId,
+        currentLocation: unit.currentLocation
+          ? {
+              id: unit.currentLocation.id,
+              code: unit.currentLocation.code,
+              name: unit.currentLocation.name,
+              kind: unit.currentLocation.kind,
+            }
+          : null,
+        createdAt: unit.createdAt,
+      })),
     };
   }
 

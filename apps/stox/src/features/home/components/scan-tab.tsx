@@ -137,10 +137,12 @@ function ScanWorkspaceTab({
             autoCapitalize="characters"
             autoCorrect={false}
             blurOnSubmit={false}
+            caretHidden
+            contextMenuHidden
             placeholder="Scan barcode"
             placeholderTextColor="#8C83B3"
             returnKeyType="search"
-            selectTextOnFocus
+            selectTextOnFocus={false}
             showSoftInputOnFocus={false}
             value={scan.code}
             onChangeText={scan.setCode}

@@ -73,6 +73,25 @@ export type WmsFulfillmentQueueTask = {
     barcode: string;
     status: string;
     statusLabel: string;
+    maxFulfillmentOrders: number;
+    activeFulfillmentOrders: number;
+    orders: Array<{
+      id: string;
+      posOrderId: string | null;
+      status: string | null;
+      statusLabel: string | null;
+      customerName: string | null;
+      totals: {
+        required: number;
+        picked: number;
+      };
+      store: {
+        id: string;
+        tenantId: string | null;
+        name: string;
+        tenantName: string | null;
+      } | null;
+    }>;
     warehouse: {
       id: string;
       code: string;

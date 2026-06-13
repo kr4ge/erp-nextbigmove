@@ -1,6 +1,13 @@
 import type { DeviceIdentity } from '@/src/features/auth/types';
 import { apiRequest } from '@/src/shared/services/http';
-import type { PackingFilters, PackingStatusFilter, WmsMobilePackingResponse } from '../types';
+import type {
+  PackingFilters,
+  PackingStatusFilter,
+  WmsMobileBasketPackPlanResponse,
+  WmsMobileBasketPackUnitResponse,
+  WmsMobileBasketPackWaybillResponse,
+  WmsMobilePackingResponse,
+} from '../types';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
 
 type PackingRequestParams = {
@@ -113,6 +120,60 @@ export function voidMobilePackingTask(params: PackingRequestParams & {
         reason: params.reason,
         supervisorIdentifier: params.supervisorIdentifier,
         supervisorPassword: params.supervisorPassword,
+      },
+    },
+  );
+}
+
+export function fetchMobilePackingBasketPlan(params: PackingRequestParams & {
+  basketId: string;
+  tenantId?: string | null;
+}) {
+  const query = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  return apiRequest<WmsMobileBasketPackPlanResponse>(
+    `/wms/mobile/packing/baskets/${params.basketId}/plan${query}`,
+    {
+      method: 'GET',
+      token: params.accessToken,
+      device: params.device,
+    },
+  );
+}
+
+export function scanMobilePackingBasketWaybill(params: PackingRequestParams & {
+  basketId: string;
+  tenantId?: string | null;
+  code: string;
+}) {
+  return apiRequest<WmsMobileBasketPackWaybillResponse>(
+    `/wms/mobile/packing/baskets/${params.basketId}/scan-waybill`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        code: params.code,
+      },
+    },
+  );
+}
+
+export function scanMobilePackingBasketOrderUnit(params: PackingRequestParams & {
+  basketId: string;
+  orderId: string;
+  tenantId?: string | null;
+  code: string;
+}) {
+  return apiRequest<WmsMobileBasketPackUnitResponse>(
+    `/wms/mobile/packing/baskets/${params.basketId}/orders/${params.orderId}/scan-unit`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        code: params.code,
       },
     },
   );

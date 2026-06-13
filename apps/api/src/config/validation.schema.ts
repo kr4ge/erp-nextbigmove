@@ -45,4 +45,8 @@ export default Joi.object({
   OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS: Joi.number().integer().min(60).default(900),
   OBJECT_STORAGE_PAYMENT_PROOF_MAX_FILE_MB: Joi.number().integer().min(1).default(8),
   OBJECT_STORAGE_STOX_APK_MAX_FILE_MB: Joi.number().integer().min(1).default(150),
+
+  // WMS feature rollout
+  WMS_BASKET_DEMAND_PICKING_ENABLED: Joi.string().valid('true', 'false').default('true'),
+  WMS_STOX_LEGACY_RESERVED_ENABLED: Joi.string().valid('true', 'false').default('false'),
 });

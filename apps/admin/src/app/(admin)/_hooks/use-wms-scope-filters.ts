@@ -71,8 +71,15 @@ export function useWmsScopeFilters({
         return;
       }
 
+      const tenantChanged = selectedTenantId !== activeTenantId;
       syncTenantScopeStorage(activeTenantId);
       setSelectedTenantIdState(activeTenantId);
+      if (tenantChanged) {
+        setSelectedStoreIdState(undefined);
+        if (includeWarehouse) {
+          setSelectedWarehouseIdState?.(undefined);
+        }
+      }
       tenantSelectionInitializedRef.current = true;
       return;
     }
@@ -84,8 +91,11 @@ export function useWmsScopeFilters({
     allowAllTenants,
     filters?.activeTenantId,
     filters?.tenants,
+    includeWarehouse,
     selectedTenantId,
+    setSelectedStoreIdState,
     setSelectedTenantIdState,
+    setSelectedWarehouseIdState,
   ]);
 
   useEffect(() => {

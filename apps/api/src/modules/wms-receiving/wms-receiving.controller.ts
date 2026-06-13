@@ -19,6 +19,12 @@ export class WmsReceivingController {
     return this.wmsReceivingService.getOverview(query);
   }
 
+  @Get(':id/labels')
+  @Permissions('wms.receiving.read')
+  async getBatchLabels(@Param('id') id: string, @Query('tenantId') tenantId?: string) {
+    return this.wmsReceivingService.getBatchLabelsById(id, tenantId);
+  }
+
   @Get(':id')
   @Permissions('wms.receiving.read')
   async getBatchById(@Param('id') id: string, @Query('tenantId') tenantId?: string) {

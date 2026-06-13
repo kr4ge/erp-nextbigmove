@@ -15,6 +15,10 @@ export type PickingStatus =
   | 'PACKED'
   | 'CANCELED';
 
+export type PickingAssignmentMode =
+  | 'SERIAL_RESERVED'
+  | 'BASKET_DEMAND';
+
 export type WmsMobilePickingResponse = {
   tenantReady: boolean;
   serverTime: string;
@@ -69,6 +73,7 @@ export type WmsMobilePickingTask = {
   posOrderId: string;
   shopId: string;
   status: PickingStatus;
+  assignmentMode: PickingAssignmentMode;
   statusLabel: string;
   issueReason: string | null;
   customer: {
@@ -240,7 +245,14 @@ export type WmsMobilePickingBinScanResult = {
 };
 
 export type WmsMobileBasketPickUnit = {
-  reservation: WmsMobilePickReservation;
+  id: string;
+  mode: PickingAssignmentMode;
+  displayCode: string;
+  displayLabel: string;
+  remainingUnits: number;
+  pickedUnits: number;
+  requiredUnits: number;
+  reservation: WmsMobilePickReservation | null;
   order: {
     id: string;
     posOrderId: string;
@@ -258,6 +270,7 @@ export type WmsMobileBasketPickUnit = {
 export type WmsMobileBasketPickPlan = {
   basketId: string;
   basketCode: string;
+  mode: PickingAssignmentMode;
   status: string;
   statusLabel: string;
   totalOrders: number;
@@ -270,6 +283,8 @@ export type WmsMobileBasketPickPlan = {
   bins: Array<{
     bin: NonNullable<WmsMobilePickReservation['unit']['currentLocation']>;
     pendingUnits: number;
+    pickedUnits: number;
+    requiredUnits: number;
     orderCount: number;
     orders: Array<{
       id: string;
@@ -292,7 +307,7 @@ export type WmsMobileBasketPickPlanResponse = {
 export type WmsMobileBasketBinScanResult = {
   success: boolean;
   bin: WmsMobilePickingBinScanResult['bin'];
-  pendingUnits: WmsMobilePickReservation[];
+  pendingUnits: WmsMobileBasketPickUnit[];
   units: WmsMobileBasketPickUnit[];
   plan: WmsMobileBasketPickPlan;
 };
@@ -302,7 +317,7 @@ export type WmsMobileBasketUnitScanResult = {
   basket: WmsMobilePickBasket;
   task: WmsMobilePickingTask | null;
   tasks: WmsMobilePickingTask[];
-  pickedUnit: WmsMobilePickReservation;
+  pickedUnit: WmsMobileBasketPickUnit;
   plan: WmsMobileBasketPickPlan;
 };
 

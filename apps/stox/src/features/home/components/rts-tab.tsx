@@ -553,10 +553,12 @@ function RtsWorkspaceTab({
                         autoCapitalize="characters"
                         autoCorrect={false}
                         blurOnSubmit={false}
+                        caretHidden
+                        contextMenuHidden
                         placeholder="Scan returned unit"
                         placeholderTextColor={tokens.colors.inkSoft}
                         returnKeyType="done"
-                        selectTextOnFocus
+                        selectTextOnFocus={false}
                         showSoftInputOnFocus={false}
                         value={returnCode}
                         onChangeText={(value) => setReturnCode(normalizeScannedCode(value))}

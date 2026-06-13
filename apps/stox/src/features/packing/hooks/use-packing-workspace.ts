@@ -4,13 +4,24 @@ import { ApiError } from '@/src/shared/services/http';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
 import {
   completeMobilePackingTask,
+  fetchMobilePackingBasketPlan,
   fetchMobilePackingTasks,
+  scanMobilePackingBasketOrderUnit,
+  scanMobilePackingBasketWaybill,
   scanMobilePackingUnit,
   startMobilePackingTask,
   verifyMobilePackingTracking,
   voidMobilePackingTask,
 } from '../services/packing-api';
-import type { PackingFilters, PackingStatusFilter, WmsMobilePackingResponse } from '../types';
+import type {
+  PackingFilters,
+  PackingStatusFilter,
+  WmsMobileBasketPackPlan,
+  WmsMobileBasketPackPlanResponse,
+  WmsMobileBasketPackUnitResponse,
+  WmsMobileBasketPackWaybillResponse,
+  WmsMobilePackingResponse,
+} from '../types';
 
 const PACKING_PAGE_SIZE = 10;
 
@@ -18,6 +29,12 @@ type UsePackingWorkspaceParams = {
   bootstrap: BootstrapResponse;
   device: DeviceIdentity | null;
   session: StoredSession;
+};
+
+type BasketPackView = {
+  basket: WmsMobileBasketPackPlanResponse['basket'];
+  tasks: WmsMobilePickingTask[];
+  plan: WmsMobileBasketPackPlan;
 };
 
 export function usePackingWorkspace({
@@ -32,6 +49,7 @@ export function usePackingWorkspace({
   const [packing, setPacking] = useState<WmsMobilePackingResponse | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [statusFilter, setStatusFilterState] = useState<PackingStatusFilter | null>(null);
+  const [basketViews, setBasketViews] = useState<Record<string, BasketPackView>>({});
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -109,6 +127,7 @@ export function usePackingWorkspace({
 
   const updateFilters = useCallback((nextFilters: SetStateAction<PackingFilters>) => {
     setPacking(null);
+    setBasketViews({});
     setActiveTaskId(null);
     setPage(1);
     setError(null);
@@ -117,6 +136,7 @@ export function usePackingWorkspace({
 
   const setStatusFilter = useCallback((nextStatus: PackingStatusFilter | null) => {
     setPacking(null);
+    setBasketViews({});
     setActiveTaskId(null);
     setPage(1);
     setError(null);
@@ -144,6 +164,110 @@ export function usePackingWorkspace({
     } catch (requestError) {
       setError(resolvePackingError(requestError));
       return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
+  const fetchBasketPlan = useCallback(async (basketId: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return null;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await fetchMobilePackingBasketPlan({
+        accessToken: session.accessToken,
+        device,
+        basketId,
+        tenantId: filters.tenantId,
+      });
+      setBasketViews((current) => ({
+        ...current,
+        [basketId]: {
+          basket: result.basket,
+          tasks: result.tasks,
+          plan: result.plan,
+        },
+      }));
+      setPacking((current) => current ? replacePackingTasksForBasket(current, basketId, result.tasks) : current);
+      setError(null);
+      return result;
+    } catch (requestError) {
+      setError(resolvePackingError(requestError));
+      return null;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
+  const scanBasketWaybill = useCallback(async (basketId: string, code: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return null;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await scanMobilePackingBasketWaybill({
+        accessToken: session.accessToken,
+        device,
+        basketId,
+        tenantId: filters.tenantId,
+        code,
+      });
+      setBasketViews((current) => ({
+        ...current,
+        [basketId]: {
+          basket: result.basket,
+          tasks: result.tasks,
+          plan: result.plan,
+        },
+      }));
+      setPacking((current) => current ? replacePackingTasksForBasket(current, basketId, result.tasks) : current);
+      setActiveTaskId(result.activeOrderId);
+      setError(null);
+      return result;
+    } catch (requestError) {
+      setError(resolvePackingError(requestError));
+      return null;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
+  const scanBasketOrderUnit = useCallback(async (basketId: string, orderId: string, code: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return null;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await scanMobilePackingBasketOrderUnit({
+        accessToken: session.accessToken,
+        device,
+        basketId,
+        orderId,
+        tenantId: filters.tenantId,
+        code,
+      });
+      setBasketViews((current) => ({
+        ...current,
+        [basketId]: {
+          basket: result.basket,
+          tasks: result.tasks,
+          plan: result.plan,
+        },
+      }));
+      setPacking((current) => current ? replacePackingTasksForBasket(current, basketId, result.tasks) : current);
+      setActiveTaskId(result.activeOrderId);
+      setError(null);
+      return result;
+    } catch (requestError) {
+      setError(resolvePackingError(requestError));
+      return null;
     } finally {
       setIsSubmitting(false);
     }
@@ -333,8 +457,10 @@ export function usePackingWorkspace({
   return {
     activeTask,
     activeTaskId,
+    basketViews,
     completeTask,
     error,
+    fetchBasketPlan,
     filters,
     isLoading,
     isLoadingMore,
@@ -343,6 +469,8 @@ export function usePackingWorkspace({
     loadMore,
     packing,
     refreshPacking,
+    scanBasketOrderUnit,
+    scanBasketWaybill,
     scanUnit,
     setFilters: updateFilters,
     setActiveTaskId,
@@ -383,6 +511,19 @@ function replacePackingTask(
   return {
     ...current,
     tasks: nextTask.status === 'PACKED' || nextTask.status === 'CANCELED' ? tasks : [nextTask, ...tasks],
+  };
+}
+
+function replacePackingTasksForBasket(
+  current: WmsMobilePackingResponse,
+  basketId: string,
+  nextTasks: WmsMobilePickingTask[],
+): WmsMobilePackingResponse {
+  const retainedTasks = current.tasks.filter((task) => task.basket?.id !== basketId);
+
+  return {
+    ...current,
+    tasks: [...nextTasks, ...retainedTasks],
   };
 }
 

@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { ArrowLeft, CheckCircle2, CornerDownLeft, PackageOpen, RefreshCcw, ShieldAlert, Slash } from 'lucide-react';
+import { CheckCircle2, CornerDownLeft, PackageOpen, RefreshCcw, ShieldAlert, Slash } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
-import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsModal } from '../../_components/wms-modal';
 import type { WmsFulfillmentQueueReservation, WmsFulfillmentQueueTask } from '../_types/fulfillment';
 
@@ -13,7 +12,6 @@ type FulfillmentPackExecutionPanelProps = {
   isRefreshing: boolean;
   isSubmitting: boolean;
   task: WmsFulfillmentQueueTask | null;
-  onBack: () => void;
   onRefresh: () => void;
   onStart: (task: WmsFulfillmentQueueTask) => Promise<boolean>;
   onScanUnit: (task: WmsFulfillmentQueueTask, code: string) => Promise<boolean>;
@@ -33,7 +31,6 @@ export function FulfillmentPackExecutionPanel({
   isRefreshing,
   isSubmitting,
   task,
-  onBack,
   onRefresh,
   onStart,
   onScanUnit,
@@ -83,8 +80,8 @@ export function FulfillmentPackExecutionPanel({
   const nextUnit = task ? getNextPackReservation(task) : null;
   const canStart = Boolean(task && task.status === 'PICKED' && tracking && canExecute);
   const isPacking = task?.status === 'PACKING';
-  const isAwaitingTracking = Boolean(task && !tracking);
   const isPacked = task?.status === 'PACKED';
+  const packAssignedAt = task ? resolvePackAssignedAt(task) : null;
 
   const items = useMemo(() => (task ? getVisiblePackLines(task.lines) : []), [task]);
 
@@ -124,7 +121,11 @@ export function FulfillmentPackExecutionPanel({
               <MetricTile label="Packed" value={`${task.totals.packed}/${task.totals.required}`} note="Units verified" />
             </div>
             <div className="md:flex-1">
-              <MetricTile label="Basket" value={task.basket?.barcode ?? 'None'} note={task.basket?.statusLabel ?? 'No basket'} />
+              <MetricTile
+                label="Basket"
+                value={task.basket?.barcode ?? 'None'}
+                note={task.basket ? formatPackBasketSlotNote(task.basket) : 'No basket'}
+              />
             </div>
             <div className="md:flex-1">
               <MetricTile label="Tracking" value={tracking ?? 'Missing'} note={tracking ? 'Waybill ready' : 'Awaiting print'} />
@@ -139,8 +140,21 @@ export function FulfillmentPackExecutionPanel({
                   <KeyValue label="Picker" value={task.claimedBy?.name ?? task.claimedBy?.email ?? 'Unknown'} />
                   <KeyValue label="Packer" value={task.basket?.assignedPacker?.name ?? task.packedBy?.name ?? 'Assigned queue'} />
                   <KeyValue label="Customer" value={task.customer.name ?? 'Unavailable'} />
-                  <KeyValue label="Order date" value={task.orderDateLocal ?? task.orderDate} />
+                  <KeyValue label="Pack assigned" value={packAssignedAt ?? 'Waiting for handoff'} />
                 </div>
+              </div>
+
+              <div className="card mt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Basket orders</p>
+                    <p className="mt-1 text-[12px] text-[#6f8290]">Current order stays highlighted.</p>
+                  </div>
+                  <span className="text-[12px] font-semibold text-[#6b4eff]">
+                    {task.basket?.orders?.length ?? 0}
+                  </span>
+                </div>
+                <PackBasketOrderList task={task} />
               </div>
             </div>
 
@@ -483,6 +497,45 @@ function KeyValue({ label, value }: { label: string; value: string }) {
   );
 }
 
+function PackBasketOrderList({ task }: { task: WmsFulfillmentQueueTask }) {
+  const orders = task.basket?.orders ?? [];
+
+  if (!orders.length) {
+    return <p className="mt-3 text-[13px] text-[#6f8290]">No active basket orders.</p>;
+  }
+
+  return (
+    <div className="mt-3 border-t border-[#ece6fa]">
+      {orders.map((order) => {
+        const active = order.id === task.id;
+        return (
+          <div
+            key={order.id}
+            className={`flex items-center gap-3 border-b px-1 py-3 ${
+              active
+                ? 'border-[#ece6fa] bg-[#faf8ff]'
+                : 'border-[#f1edf7] bg-transparent'
+            }`}
+          >
+            <div className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-[#6b4eff]' : 'bg-[#d6dde3]'}`} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12px] font-semibold text-primary">
+                {order.posOrderId ? `#${order.posOrderId}` : 'Order'}
+              </p>
+              <p className="truncate text-[10px] text-[#6f8290]">
+                {active ? 'Current pack order' : order.store?.name ?? order.customerName ?? order.statusLabel ?? 'Same basket'}
+              </p>
+            </div>
+            <span className="text-[11px] font-semibold text-primary">
+              {order.totals.picked}/{order.totals.required}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ActionButton({
   disabled,
   icon,
@@ -533,6 +586,47 @@ function getNextPackReservation(task: WmsFulfillmentQueueTask): WmsFulfillmentQu
   }
 
   return null;
+}
+
+function resolvePackAssignedAt(task: WmsFulfillmentQueueTask) {
+  return formatPackDateTime(
+    task.basket?.readyForPackAt
+    ?? task.basket?.fullAt
+    ?? task.completedAt
+    ?? task.claimedAt
+    ?? task.orderDateLocal
+    ?? task.orderDate,
+  );
+}
+
+function formatPackBasketSlotNote(
+  basket: NonNullable<WmsFulfillmentQueueTask['basket']>,
+) {
+  const openSlots = Math.max(basket.maxFulfillmentOrders - basket.activeFulfillmentOrders, 0);
+  if (openSlots === 0) {
+    return `${basket.activeFulfillmentOrders} orders in basket · full`;
+  }
+
+  return `${basket.activeFulfillmentOrders} orders in basket · ${openSlots} slot${openSlots === 1 ? '' : 's'} open`;
+}
+
+function formatPackDateTime(value: string) {
+  const trimmed = value.trim();
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  const parsed = dateOnlyMatch
+    ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+    : new Date(trimmed);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return trimmed;
+  }
+
+  return parsed.toLocaleString('en-PH', {
+    month: 'short',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 function resolvePackStateLabel(task: WmsFulfillmentQueueTask, tracking: string | null) {

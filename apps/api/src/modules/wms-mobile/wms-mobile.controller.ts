@@ -399,6 +399,37 @@ export class WmsMobileController {
     return this.wmsMobileService.getPackingTasks(req.user, query, req);
   }
 
+  @Get('packing/baskets/:id/plan')
+  @Permissions('wms.dispatch.read', 'wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async getPackingBasketPlan(
+    @Request() req,
+    @Param('id') id: string,
+    @Query() query: WmsMobilePackScopedDto,
+  ) {
+    return this.wmsMobileService.getPackingBasketPlan(req.user, id, query, req);
+  }
+
+  @Post('packing/baskets/:id/scan-waybill')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async scanPackingBasketWaybill(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePackScanDto,
+  ) {
+    return this.wmsMobileService.scanPackingBasketWaybill(req.user, id, body, req);
+  }
+
+  @Post('packing/baskets/:id/orders/:orderId/scan-unit')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async scanPackingBasketOrderUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Param('orderId') orderId: string,
+    @Body() body: WmsMobilePackScanDto,
+  ) {
+    return this.wmsMobileService.scanPackingBasketOrderUnit(req.user, id, orderId, body, req);
+  }
+
   @Get('history/feed')
   @Permissions(
     'wms.history.read_all',

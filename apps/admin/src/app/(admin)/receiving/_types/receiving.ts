@@ -45,6 +45,7 @@ export type WmsReceivablePurchasingBatch = {
 
 export type WmsReceivingBatchRow = {
   id: string;
+  tenantId: string;
   code: string;
   status: WmsReceivingBatchStatus;
   sourceRequestId: string | null;
@@ -72,6 +73,49 @@ export type WmsReceivingBatchRow = {
   lastLabelPrintedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type WmsReceivingBatchLabels = {
+  id: string;
+  tenantId: string;
+  code: string;
+  status: WmsReceivingBatchStatus;
+  labelPrintCount: number;
+  firstLabelPrintedAt: string | null;
+  lastLabelPrintedAt: string | null;
+  sourceRequestId: string | null;
+  requestTitle: string | null;
+  warehouse: {
+    id: string;
+    code: string;
+    name: string;
+  };
+  stagingLocation: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
+  units: Array<{
+    id: string;
+    code: string;
+    barcode: string;
+    status: string;
+    labelPrintCount: number;
+    firstLabelPrintedAt: string | null;
+    lastLabelPrintedAt: string | null;
+    productId: string;
+    variationId: string;
+    unitCost: number | null;
+    productName: string;
+    productCustomId: string | null;
+    currentLocation: {
+      id: string;
+      code: string;
+      name: string;
+      kind: string;
+    } | null;
+    createdAt: string;
+  }>;
 };
 
 export type WmsReceivingBatchDetail = {

@@ -4,6 +4,7 @@ import type {
   CreateWmsReceivingBatchInput,
   GetWmsReceivingOverviewParams,
   WmsReceivingBatchDetail,
+  WmsReceivingBatchLabels,
   WmsReceivingPutawayOptionsResponse,
   WmsReceivingOverviewResponse,
 } from '../_types/receiving';
@@ -39,6 +40,14 @@ export async function fetchWmsReceivingBatch(id: string, tenantId?: string) {
   });
 
   return response.data as { batch: WmsReceivingBatchDetail };
+}
+
+export async function fetchWmsReceivingBatchLabels(id: string, tenantId?: string) {
+  const response = await apiClient.get(`/wms/receiving/${id}/labels`, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as { batch: WmsReceivingBatchLabels };
 }
 
 export async function recordWmsReceivingBatchLabelPrint(

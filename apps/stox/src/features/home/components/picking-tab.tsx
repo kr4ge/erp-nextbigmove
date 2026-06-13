@@ -1313,10 +1313,13 @@ function PickExecutionStack({
       ? `Basket ${basket.barcode}`
       : `${tasks.length} orders`
     : `#${activeTask.posOrderId}`;
-  const meta = tasks.length > 1
-    ? `${picked}/${required} units · ${tasks.length} orders`
+  const useBasketPicking = Boolean(basket) && (
+    tasks.length > 1
+    || activeTask.assignmentMode === 'BASKET_DEMAND'
+  );
+  const meta = useBasketPicking
+    ? `${picked}/${required} units · ${tasks.length} order${tasks.length === 1 ? '' : 's'}`
     : activeTask.customer.name ?? activeTask.store?.name ?? 'Pick task';
-  const useBasketPicking = tasks.length > 1 && Boolean(basket);
 
   return (
     <>
@@ -1399,6 +1402,7 @@ function BasketPickExecutionCard({
   const currentGroup = activeBin
     ? plan?.bins.find((group) => group.bin.id === activeBin.id) ?? plan?.bins[0] ?? null
     : plan?.bins[0] ?? null;
+  const isDemandMode = plan?.mode === 'BASKET_DEMAND' || activeTask.assignmentMode === 'BASKET_DEMAND';
   const activeBinMatches = Boolean(activeBin && currentGroup && activeBin.id === currentGroup.bin.id);
   const hasPendingUnits = Boolean(plan && plan.totalPendingUnits > 0);
   const handoffOptions: StockScopeOption[] = packerOptions.map((packer) => ({
@@ -1474,9 +1478,38 @@ function BasketPickExecutionCard({
       unitSubmitInFlightRef.current = false;
     }
   };
+  const scannerTarget = !hasPendingUnits || handoffVisible || !currentGroup
+    ? null
+    : activeBinMatches
+      ? {
+          value: unitCode,
+          onChangeText: setUnitCode,
+          onSubmit: submitUnit,
+        }
+      : {
+          value: binCode,
+          onChangeText: setBinCode,
+          onSubmit: submitBin,
+        };
 
   return (
     <>
+      <HiddenScannerCapture
+        enabled={Boolean(scannerTarget)}
+        value={scannerTarget?.value ?? ''}
+        onChangeText={scannerTarget?.onChangeText ?? noopScannerChange}
+        onSubmit={scannerTarget?.onSubmit ?? noopScannerSubmit}
+      />
+
+      {isDemandMode && plan ? (
+        <DemandPickFloatingCounter
+          currentGroup={currentGroup}
+          totalPickedUnits={plan.totalPickedUnits}
+          totalRequiredUnits={plan.totalRequiredUnits}
+          visible={hasPendingUnits}
+        />
+      ) : null}
+
       <SurfaceCard style={styles.executionCard}>
         <View style={styles.taskProgressRow}>
           <View>
@@ -1501,7 +1534,9 @@ function BasketPickExecutionCard({
                     {group.bin.code}
                   </Text>
                   <Text numberOfLines={1} style={[styles.multiPickChipMeta, active ? styles.multiPickChipMetaActive : null]}>
-                    {group.pendingUnits} units · {group.orderCount} orders
+                    {isDemandMode
+                      ? `${group.pendingUnits} left · ${group.requiredUnits} total`
+                      : `${group.pendingUnits} units · ${group.orderCount} orders`}
                   </Text>
                 </View>
               );
@@ -1527,32 +1562,38 @@ function BasketPickExecutionCard({
         {currentGroup && hasPendingUnits ? (
           <View style={styles.scanPanel}>
             <View style={styles.nextUnitCard}>
-              <Text style={styles.scanLabel}>Bin</Text>
+              <Text style={styles.scanLabel}>{isDemandMode ? 'Next bin' : 'Bin'}</Text>
               <Text numberOfLines={1} style={styles.nextUnitCode}>{currentGroup.bin.code}</Text>
               <Text numberOfLines={1} style={styles.nextUnitName}>
-                {currentGroup.pendingUnits} unit{currentGroup.pendingUnits === 1 ? '' : 's'} · {currentGroup.orderCount} order{currentGroup.orderCount === 1 ? '' : 's'}
+                {isDemandMode
+                  ? `${currentGroup.pendingUnits} left · ${countDemandDisplayItems(currentGroup.units)} item${countDemandDisplayItems(currentGroup.units) === 1 ? '' : 's'}`
+                  : `${currentGroup.pendingUnits} unit${currentGroup.pendingUnits === 1 ? '' : 's'} · ${currentGroup.orderCount} order${currentGroup.orderCount === 1 ? '' : 's'}`}
               </Text>
             </View>
 
             {!activeBinMatches ? (
-              <ScannerInput
-                autoSubmit
-                inputRef={binInputRef}
-                label="Bin"
-                placeholder={currentGroup.bin.code}
-                value={binCode}
-                disabled={isSubmitting}
-                onChangeText={setBinCode}
-                onSubmit={submitBin}
-              />
+            <ScannerInput
+              autoSubmit
+              inputRef={binInputRef}
+              label="Bin"
+              placeholder={currentGroup.bin.code}
+              suppressKeyboard
+              value={binCode}
+              disabled={isSubmitting}
+              onChangeText={setBinCode}
+              onSubmit={submitBin}
+            />
             ) : (
               <>
-                <BasketPendingUnitList units={currentGroup.units} />
+                <BasketPendingUnitList isDemandMode={isDemandMode} units={currentGroup.units} />
                 <ScannerInput
                   autoSubmit
                   inputRef={unitInputRef}
-                  label="Unit"
-                  placeholder="Scan unit"
+                  keepFocused
+                  scannerOnly
+                  label={isDemandMode ? 'Item' : 'Unit'}
+                  placeholder={isDemandMode ? 'Scan matching unit' : 'Scan unit'}
+                  suppressKeyboard
                   value={unitCode}
                   disabled={isSubmitting}
                   onChangeText={setUnitCode}
@@ -1586,36 +1627,154 @@ function BasketPickExecutionCard({
   );
 }
 
-function BasketPendingUnitList({ units }: { units: WmsMobileBasketPickPlan['bins'][number]['units'] }) {
+function BasketPendingUnitList({
+  isDemandMode,
+  units,
+}: {
+  isDemandMode: boolean;
+  units: WmsMobileBasketPickPlan['bins'][number]['units'];
+}) {
   if (units.length === 0) {
     return null;
   }
 
+  const totalRemainingUnits = units.reduce((total, unit) => total + Math.max(unit.remainingUnits, 0), 0);
+  const groupedDemandUnits = isDemandMode ? summarizeDemandBinUnits(units) : [];
+
   return (
     <View style={styles.basketUnitQueue}>
       <View style={styles.basketUnitQueueHeader}>
-        <Text style={styles.basketUnitQueueTitle}>To scan</Text>
-        <Text style={styles.basketUnitQueueCount}>{units.length}</Text>
+        <Text style={styles.basketUnitQueueTitle}>{isDemandMode ? 'Items' : 'To scan'}</Text>
+        <Text style={styles.basketUnitQueueCount}>{totalRemainingUnits}</Text>
       </View>
       <View style={styles.basketUnitList}>
-        {units.map((unit) => (
-          <View key={unit.reservation.id} style={styles.basketUnitRow}>
-            <View style={styles.basketUnitCopy}>
-              <Text numberOfLines={1} style={styles.basketUnitCode}>
-                {unit.reservation.unit.code}
-              </Text>
-              <Text numberOfLines={1} style={styles.basketUnitName}>
-                {unit.line.productName}
-              </Text>
-            </View>
-            <Text numberOfLines={1} style={styles.basketUnitOrder}>
-              {unit.order.posOrderId}
-            </Text>
-          </View>
-        ))}
+        {isDemandMode
+          ? groupedDemandUnits.map((unit) => (
+              <View key={unit.key} style={styles.basketUnitRow}>
+                <View style={styles.basketUnitCopy}>
+                  <Text numberOfLines={1} style={styles.basketUnitCode}>
+                    {unit.displayCode}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.basketUnitName}>
+                    {unit.displayLabel}
+                  </Text>
+                </View>
+                <Text numberOfLines={1} style={styles.basketUnitOrder}>
+                  {unit.remainingUnits}
+                </Text>
+              </View>
+            ))
+          : units.map((unit) => (
+              <View key={unit.id} style={styles.basketUnitRow}>
+                <View style={styles.basketUnitCopy}>
+                  <Text numberOfLines={1} style={styles.basketUnitCode}>
+                    {unit.displayCode}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.basketUnitName}>
+                    {unit.displayLabel}
+                  </Text>
+                </View>
+                <Text numberOfLines={1} style={styles.basketUnitOrder}>
+                  {unit.order.posOrderId} · {unit.remainingUnits}
+                </Text>
+              </View>
+            ))}
       </View>
     </View>
   );
+}
+
+function DemandPickFloatingCounter({
+  currentGroup,
+  totalPickedUnits,
+  totalRequiredUnits,
+  visible,
+}: {
+  currentGroup: WmsMobileBasketPickPlan['bins'][number] | null;
+  totalPickedUnits: number;
+  totalRequiredUnits: number;
+  visible: boolean;
+}) {
+  const setShellOverlay = useStoxShellOverlay();
+  const dock = useMemo(() => {
+    if (!visible || !currentGroup) {
+      return null;
+    }
+
+    return (
+      <View style={styles.demandCounterDock}>
+        <View style={styles.demandCounterPillPrimary}>
+          <Text style={styles.demandCounterLabel}>Bin</Text>
+          <Text style={styles.demandCounterValue}>
+            {currentGroup.pickedUnits}/{currentGroup.requiredUnits}
+          </Text>
+        </View>
+        <View style={styles.demandCounterPill}>
+          <Text style={styles.demandCounterLabelSoft}>Basket</Text>
+          <Text style={styles.demandCounterValueSoft}>
+            {totalPickedUnits}/{totalRequiredUnits}
+          </Text>
+        </View>
+      </View>
+    );
+  }, [currentGroup, totalPickedUnits, totalRequiredUnits, visible]);
+
+  useEffect(() => {
+    if (!setShellOverlay) {
+      return;
+    }
+
+    setShellOverlay(dock);
+  }, [dock, setShellOverlay]);
+
+  useEffect(() => {
+    if (!setShellOverlay) {
+      return undefined;
+    }
+
+    return () => {
+      setShellOverlay(null);
+    };
+  }, [setShellOverlay]);
+
+  if (setShellOverlay || !dock) {
+    return null;
+  }
+
+  return dock;
+}
+
+function summarizeDemandBinUnits(units: WmsMobileBasketPickPlan['bins'][number]['units']) {
+  const grouped = new Map<string, {
+    key: string;
+    displayCode: string;
+    displayLabel: string;
+    remainingUnits: number;
+  }>();
+
+  for (const unit of units) {
+    const key = `${unit.displayCode}:${unit.displayLabel}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.remainingUnits += unit.remainingUnits;
+    } else {
+      grouped.set(key, {
+        key,
+        displayCode: unit.displayCode,
+        displayLabel: unit.displayLabel,
+        remainingUnits: unit.remainingUnits,
+      });
+    }
+  }
+
+  return Array.from(grouped.values()).sort((left, right) => (
+    right.remainingUnits - left.remainingUnits
+    || left.displayLabel.localeCompare(right.displayLabel)
+  ));
+}
+
+function countDemandDisplayItems(units: WmsMobileBasketPickPlan['bins'][number]['units']) {
+  return summarizeDemandBinUnits(units).length;
 }
 
 function PickExecutionCard({
@@ -1765,9 +1924,37 @@ function PickExecutionCard({
       unitSubmitInFlightRef.current = false;
     }
   };
+  const scannerTarget = handoffVisible
+    ? null
+    : canScanBasket || (canScan && !task.basket)
+      ? {
+          value: basketCode,
+          onChangeText: setBasketCode,
+          onSubmit: submitBasket,
+        }
+      : canScan && nextPick && task.basket
+        ? activeBin
+          ? {
+              value: unitCode,
+              onChangeText: setUnitCode,
+              onSubmit: submitUnit,
+            }
+          : {
+              value: binCode,
+              onChangeText: setBinCode,
+              onSubmit: submitBin,
+            }
+        : null;
 
   return (
     <>
+      <HiddenScannerCapture
+        enabled={Boolean(scannerTarget)}
+        value={scannerTarget?.value ?? ''}
+        onChangeText={scannerTarget?.onChangeText ?? noopScannerChange}
+        onSubmit={scannerTarget?.onSubmit ?? noopScannerSubmit}
+      />
+
       {showHeader ? (
         <View style={styles.executionHeader}>
           <Pressable onPress={onBack} style={styles.backButton}>
@@ -1820,8 +2007,10 @@ function PickExecutionCard({
             <ScannerInput
               autoSubmit
               inputRef={basketInputRef}
+              scannerOnly
               label="Basket"
               placeholder="Scan basket barcode"
+              suppressKeyboard
               value={basketCode}
               disabled={isSubmitting}
               onChangeText={setBasketCode}
@@ -1901,8 +2090,10 @@ function PickExecutionCard({
             <ScannerInput
               autoSubmit
               inputRef={basketInputRef}
+              scannerOnly
               label="Basket"
               placeholder="Scan basket barcode"
+              suppressKeyboard
               value={basketCode}
               disabled={isSubmitting}
               onChangeText={setBasketCode}
@@ -1925,8 +2116,10 @@ function PickExecutionCard({
             <ScannerInput
               autoSubmit
               inputRef={binInputRef}
+              scannerOnly
               label="Bin"
               placeholder={nextPick.unit.currentLocation?.code ?? 'Scan bin'}
+              suppressKeyboard
               value={binCode}
               disabled={isSubmitting}
               onChangeText={setBinCode}
@@ -1936,8 +2129,11 @@ function PickExecutionCard({
             <ScannerInput
               autoSubmit
               inputRef={unitInputRef}
+              keepFocused
+              scannerOnly
               label="Unit"
               placeholder={activeBin ? 'Scan unit' : 'Scan bin first'}
+              suppressKeyboard
               value={unitCode}
               disabled={isSubmitting || !activeBin}
               onChangeText={setUnitCode}
@@ -2006,6 +2202,9 @@ function ScannerInput({
   autoSubmitDelayMs = 120,
   autoSubmitMinLength = 3,
   disabled,
+  keepFocused = false,
+  scannerOnly = false,
+  suppressKeyboard = false,
   helper,
   inputRef,
   label,
@@ -2018,6 +2217,9 @@ function ScannerInput({
   autoSubmitDelayMs?: number;
   autoSubmitMinLength?: number;
   disabled?: boolean;
+  keepFocused?: boolean;
+  scannerOnly?: boolean;
+  suppressKeyboard?: boolean;
   helper?: string;
   inputRef: RefObject<TextInput | null>;
   label: string;
@@ -2032,6 +2234,18 @@ function ScannerInput({
   useEffect(() => {
     submitRef.current = onSubmit;
   }, [onSubmit]);
+
+  useEffect(() => {
+    if (!keepFocused || disabled || value.trim().length > 0) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 40);
+
+    return () => clearTimeout(timer);
+  }, [disabled, inputRef, keepFocused, value]);
 
   useEffect(() => {
     const cleaned = value.trim();
@@ -2066,13 +2280,25 @@ function ScannerInput({
           autoCapitalize="characters"
           autoCorrect={false}
           blurOnSubmit={false}
-          editable={!disabled}
+          caretHidden={suppressKeyboard}
+          contextMenuHidden={suppressKeyboard}
+          editable={!disabled && !scannerOnly}
           placeholder={placeholder}
           placeholderTextColor={tokens.colors.inkSoft}
           returnKeyType="done"
-          selectTextOnFocus
+          selectTextOnFocus={!suppressKeyboard && !scannerOnly}
+          showSoftInputOnFocus={!suppressKeyboard}
           value={value}
           onChangeText={onChangeText}
+          onBlur={() => {
+            if (!keepFocused || disabled) {
+              return;
+            }
+
+            setTimeout(() => {
+              inputRef.current?.focus();
+            }, 40);
+          }}
           onSubmitEditing={() => {
             void onSubmit();
           }}
@@ -2091,6 +2317,98 @@ function ScannerInput({
     </View>
   );
 }
+
+function HiddenScannerCapture({
+  enabled,
+  value,
+  onChangeText,
+  onSubmit,
+  autoSubmitDelayMs = 120,
+  autoSubmitMinLength = 3,
+}: {
+  enabled: boolean;
+  value: string;
+  onChangeText: (value: string) => void;
+  onSubmit: () => void | Promise<void>;
+  autoSubmitDelayMs?: number;
+  autoSubmitMinLength?: number;
+}) {
+  const inputRef = useRef<TextInput>(null);
+  const submitRef = useRef(onSubmit);
+  const lastAutoSubmittedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    submitRef.current = onSubmit;
+  }, [onSubmit]);
+
+  useEffect(() => {
+    if (!enabled) {
+      lastAutoSubmittedRef.current = null;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 30);
+
+    return () => clearTimeout(timer);
+  }, [enabled, value]);
+
+  useEffect(() => {
+    if (!enabled) {
+      lastAutoSubmittedRef.current = null;
+      return;
+    }
+
+    const cleaned = value.trim();
+    if (!cleaned) {
+      lastAutoSubmittedRef.current = null;
+      return;
+    }
+
+    if (cleaned.length < autoSubmitMinLength || lastAutoSubmittedRef.current === cleaned) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      lastAutoSubmittedRef.current = cleaned;
+      void submitRef.current();
+    }, autoSubmitDelayMs);
+
+    return () => clearTimeout(timer);
+  }, [autoSubmitDelayMs, autoSubmitMinLength, enabled, value]);
+
+  return (
+    <TextInput
+      ref={inputRef}
+      autoCapitalize="characters"
+      autoCorrect={false}
+      blurOnSubmit={false}
+      caretHidden
+      contextMenuHidden
+      onBlur={() => {
+        if (!enabled) {
+          return;
+        }
+
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 30);
+      }}
+      onChangeText={onChangeText}
+      onSubmitEditing={() => {
+        void onSubmit();
+      }}
+      showSoftInputOnFocus={false}
+      style={styles.hiddenScannerInput}
+      value={value}
+    />
+  );
+}
+
+function noopScannerChange(_value: string) {}
+
+function noopScannerSubmit() {}
 
 function StatusBadge({ status, label }: { status: string; label: string }) {
   const tone = getStatusTone(status);
@@ -3176,6 +3494,63 @@ const styles = StyleSheet.create({
   multiPickChipMetaActive: {
     color: '#F3EEFF',
   },
+  demandCounterDock: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderColor: '#E6E0FF',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    shadowColor: '#6437F6',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  demandCounterPillPrimary: {
+    backgroundColor: '#6437F6',
+    borderRadius: 999,
+    gap: 2,
+    minWidth: 92,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  demandCounterPill: {
+    backgroundColor: '#F5F2FF',
+    borderRadius: 999,
+    gap: 2,
+    minWidth: 92,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  demandCounterLabel: {
+    color: '#F3EEFF',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  demandCounterLabelSoft: {
+    color: '#7B7791',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  demandCounterValue: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  demandCounterValueSoft: {
+    color: '#24232D',
+    fontSize: 16,
+    fontWeight: '900',
+  },
   executionCard: {
     gap: tokens.spacing.lg,
   },
@@ -3316,6 +3691,14 @@ const styles = StyleSheet.create({
   },
   scanPanel: {
     gap: tokens.spacing.md,
+  },
+  hiddenScannerInput: {
+    height: 1,
+    left: -9999,
+    opacity: 0,
+    position: 'absolute',
+    top: 0,
+    width: 1,
   },
   nextUnitCard: {
     backgroundColor: tokens.colors.panel,

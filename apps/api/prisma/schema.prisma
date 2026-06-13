@@ -30,8 +30,8 @@ model Tenant {
   encryptionKey String // Per-tenant encryption key
 
   // Billing
-  planType     String  @default("trial")
-  billingEmail String?
+  planType               String    @default("trial")
+  billingEmail           String?
   wmsFulfillmentGoLiveAt DateTime?
 
   // Timestamps
@@ -67,6 +67,9 @@ model Tenant {
   wmsFulfillmentLines                 WmsFulfillmentLine[]
   wmsBaskets                          WmsBasket[]
   wmsPickReservations                 WmsPickReservation[]
+  wmsBasketPickDemands                WmsBasketPickDemand[]
+  wmsBasketPickDemandBins             WmsBasketPickDemandBin[]
+  wmsBasketUnits                      WmsBasketUnit[]
   wmsTransfers                        WmsTransfer[]
   wmsInventoryMovements               WmsInventoryMovement[]
   wmsLabelPrintLogs                   WmsLabelPrintLog[]
@@ -288,14 +291,14 @@ model UserPermissionAssignment {
 // USER MODEL (Tenant-scoped)
 // ============================================================================
 model User {
-  id         String  @id @default(uuid()) @db.Uuid
-  email      String
-  password   String
-  firstName  String?
-  lastName   String?
-  avatar     String?
-  employeeId String?
-  wmsBasketCapacity Int @default(4)
+  id                String  @id @default(uuid()) @db.Uuid
+  email             String
+  password          String
+  firstName         String?
+  lastName          String?
+  avatar            String?
+  employeeId        String?
+  wmsBasketCapacity Int     @default(4)
 
   // Tenant (Row-level isolation) - Optional for SUPER_ADMIN
   tenantId String? @db.Uuid
@@ -321,7 +324,7 @@ model User {
   teamMemberships                           TeamMembership[]
   userRoleAssignments                       UserRoleAssignment[]
   userPermissionAssignments                 UserPermissionAssignment[]
-  wmsStaffAssignment                        WmsStaffAssignment?       @relation("WmsStaffAssignmentUser")
+  wmsStaffAssignment                        WmsStaffAssignment?        @relation("WmsStaffAssignmentUser")
   wmsPurchasingBatchesCreated               WmsPurchasingBatch[]       @relation("WmsPurchasingBatchCreatedBy")
   wmsPurchasingBatchesSubmitted             WmsPurchasingBatch[]       @relation("WmsPurchasingBatchSubmittedBy")
   wmsPurchasingBatchesReviewed              WmsPurchasingBatch[]       @relation("WmsPurchasingBatchReviewedBy")
@@ -354,6 +357,9 @@ model User {
   wmsBasketsAssignedForPacking              WmsBasket[]                @relation("WmsBasketAssignedPacker")
   wmsPickReservationsReserved               WmsPickReservation[]       @relation("WmsPickReservationReservedBy")
   wmsPickReservationsPicked                 WmsPickReservation[]       @relation("WmsPickReservationPickedBy")
+  wmsBasketUnitsPicked                      WmsBasketUnit[]            @relation("WmsBasketUnitPickedBy")
+  wmsBasketUnitsPacked                      WmsBasketUnit[]            @relation("WmsBasketUnitPackedBy")
+  wmsBasketUnitsRemoved                     WmsBasketUnit[]            @relation("WmsBasketUnitRemovedBy")
   wmsStaffAssignmentsManaged                WmsStaffAssignment[]       @relation("WmsStaffAssignmentAssignedBy")
   readNotificationStates                    NotificationState[]        @relation("NotificationStateReadBy")
 
@@ -490,6 +496,8 @@ model PosStore {
   wmsProductProfiles      WmsProductProfile[]
   wmsInventoryUnits       WmsInventoryUnit[]
   wmsFulfillmentOrders    WmsFulfillmentOrder[]
+  wmsBasketPickDemands    WmsBasketPickDemand[]
+  wmsBasketUnits          WmsBasketUnit[]
 
   @@index([tenantId])
   @@index([tenantId, teamId])
@@ -712,6 +720,11 @@ enum WmsFulfillmentOrderStatus {
   CANCELED
 }
 
+enum WmsFulfillmentAssignmentMode {
+  SERIAL_RESERVED
+  BASKET_DEMAND
+}
+
 enum WmsFulfillmentLineStatus {
   READY
   PARTIAL
@@ -726,6 +739,12 @@ enum WmsPickReservationStatus {
   PICKED
   RELEASED
   CANCELED
+}
+
+enum WmsBasketUnitStatus {
+  PICKED
+  PACKED
+  REMOVED
 }
 
 enum WmsTransferStatus {
@@ -1275,28 +1294,30 @@ model WmsWarehouse {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
-  locations          WmsLocation[]
-  inventoryUnits     WmsInventoryUnit[]
-  receivingBatches   WmsReceivingBatch[]
-  fulfillmentOrders  WmsFulfillmentOrder[]
-  baskets            WmsBasket[]
-  transfers          WmsTransfer[]
-  inventoryMovements WmsInventoryMovement[]
-  inventoryCounts    WmsInventoryCountSession[]
+  locations            WmsLocation[]
+  inventoryUnits       WmsInventoryUnit[]
+  receivingBatches     WmsReceivingBatch[]
+  fulfillmentOrders    WmsFulfillmentOrder[]
+  baskets              WmsBasket[]
+  basketPickDemandBins WmsBasketPickDemandBin[]
+  basketUnits          WmsBasketUnit[]
+  transfers            WmsTransfer[]
+  inventoryMovements   WmsInventoryMovement[]
+  inventoryCounts      WmsInventoryCountSession[]
 
   @@index([status])
   @@map("wms_warehouses")
 }
 
 model WmsStaffAssignment {
-  id           String                      @id @default(uuid()) @db.Uuid
-  userId       String                      @unique @db.Uuid
-  user         User                        @relation("WmsStaffAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  id           String                     @id @default(uuid()) @db.Uuid
+  userId       String                     @unique @db.Uuid
+  user         User                       @relation("WmsStaffAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
   taskType     WmsStaffAssignmentTaskType
-  assignedById String?                     @db.Uuid
-  assignedBy   User?                       @relation("WmsStaffAssignmentAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
-  createdAt    DateTime                    @default(now())
-  updatedAt    DateTime                    @updatedAt
+  assignedById String?                    @db.Uuid
+  assignedBy   User?                      @relation("WmsStaffAssignmentAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
 
   @@index([taskType])
   @@index([assignedById])
@@ -1304,29 +1325,31 @@ model WmsStaffAssignment {
 }
 
 model WmsLocation {
-  id                     String                 @id @default(uuid()) @db.Uuid
-  warehouseId            String                 @db.Uuid
-  warehouse              WmsWarehouse           @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  parentId               String?                @db.Uuid
-  parent                 WmsLocation?           @relation("WmsLocationTree", fields: [parentId], references: [id], onDelete: Cascade)
-  children               WmsLocation[]          @relation("WmsLocationTree")
+  id                     String                     @id @default(uuid()) @db.Uuid
+  warehouseId            String                     @db.Uuid
+  warehouse              WmsWarehouse               @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  parentId               String?                    @db.Uuid
+  parent                 WmsLocation?               @relation("WmsLocationTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children               WmsLocation[]              @relation("WmsLocationTree")
   kind                   WmsLocationKind
   code                   String
   name                   String
   barcode                String
   description            String?
-  isActive               Boolean                @default(true)
-  sortOrder              Int                    @default(0)
+  isActive               Boolean                    @default(true)
+  sortOrder              Int                        @default(0)
   capacity               Int?
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
   inventoryUnits         WmsInventoryUnit[]
-  receivingBatchesStaged WmsReceivingBatch[]    @relation("WmsReceivingBatchStagingLocation")
-  transferSources        WmsTransfer[]          @relation("WmsTransferFromLocation")
-  transferDestinations   WmsTransfer[]          @relation("WmsTransferToLocation")
-  movementSources        WmsInventoryMovement[] @relation("WmsInventoryMovementFromLocation")
-  movementDestinations   WmsInventoryMovement[] @relation("WmsInventoryMovementToLocation")
+  receivingBatchesStaged WmsReceivingBatch[]        @relation("WmsReceivingBatchStagingLocation")
+  transferSources        WmsTransfer[]              @relation("WmsTransferFromLocation")
+  transferDestinations   WmsTransfer[]              @relation("WmsTransferToLocation")
+  movementSources        WmsInventoryMovement[]     @relation("WmsInventoryMovementFromLocation")
+  movementDestinations   WmsInventoryMovement[]     @relation("WmsInventoryMovementToLocation")
   countSessions          WmsInventoryCountSession[]
+  basketPickDemandBins   WmsBasketPickDemandBin[]
+  sourceBasketUnits      WmsBasketUnit[]            @relation("WmsBasketUnitSourceLocation")
 
   @@unique([barcode])
   @@unique([warehouseId, code])
@@ -1641,46 +1664,47 @@ model WmsReceivingLine {
 }
 
 model WmsInventoryUnit {
-  id                  String                      @id @default(uuid()) @db.Uuid
-  tenantId            String                      @db.Uuid
-  tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeId             String                      @db.Uuid
-  store               PosStore                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  posProductId        String                      @db.Uuid
-  posProduct          PosProduct                  @relation(fields: [posProductId], references: [id], onDelete: Restrict)
-  productProfileId    String                      @db.Uuid
-  productProfile      WmsProductProfile           @relation(fields: [productProfileId], references: [id], onDelete: Restrict)
-  warehouseId         String                      @db.Uuid
-  warehouse           WmsWarehouse                @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  receivingBatchId    String?                     @db.Uuid
-  receivingBatch      WmsReceivingBatch?          @relation(fields: [receivingBatchId], references: [id], onDelete: SetNull)
-  currentLocationId   String?                     @db.Uuid
-  currentLocation     WmsLocation?                @relation(fields: [currentLocationId], references: [id], onDelete: SetNull)
+  id                  String                          @id @default(uuid()) @db.Uuid
+  tenantId            String                          @db.Uuid
+  tenant              Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId             String                          @db.Uuid
+  store               PosStore                        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  posProductId        String                          @db.Uuid
+  posProduct          PosProduct                      @relation(fields: [posProductId], references: [id], onDelete: Restrict)
+  productProfileId    String                          @db.Uuid
+  productProfile      WmsProductProfile               @relation(fields: [productProfileId], references: [id], onDelete: Restrict)
+  warehouseId         String                          @db.Uuid
+  warehouse           WmsWarehouse                    @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  receivingBatchId    String?                         @db.Uuid
+  receivingBatch      WmsReceivingBatch?              @relation(fields: [receivingBatchId], references: [id], onDelete: SetNull)
+  currentLocationId   String?                         @db.Uuid
+  currentLocation     WmsLocation?                    @relation(fields: [currentLocationId], references: [id], onDelete: SetNull)
   productId           String
   variationId         String
   posWarehouseRef     String?
-  code                String                      @unique
-  barcode             String                      @unique
-  status              WmsInventoryUnitStatus      @default(STAGED)
-  labelPrintCount     Int                         @default(0)
+  code                String                          @unique
+  barcode             String                          @unique
+  status              WmsInventoryUnitStatus          @default(STAGED)
+  labelPrintCount     Int                             @default(0)
   firstLabelPrintedAt DateTime?
   lastLabelPrintedAt  DateTime?
   sourceType          WmsInventoryUnitSourceType?
   sourceRefId         String?
   sourceRefLabel      String?
-  unitCost            Decimal?                    @db.Decimal(14, 2)
+  unitCost            Decimal?                        @db.Decimal(14, 2)
   notes               String?
-  createdById         String?                     @db.Uuid
-  createdBy           User?                       @relation("WmsInventoryUnitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById         String?                     @db.Uuid
-  updatedBy           User?                       @relation("WmsInventoryUnitUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt           DateTime                    @default(now())
-  updatedAt           DateTime                    @updatedAt
-  labelPrintLogs      WmsLabelPrintLog[]          @relation("WmsLabelPrintLogUnit")
+  createdById         String?                         @db.Uuid
+  createdBy           User?                           @relation("WmsInventoryUnitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById         String?                         @db.Uuid
+  updatedBy           User?                           @relation("WmsInventoryUnitUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt           DateTime                        @default(now())
+  updatedAt           DateTime                        @updatedAt
+  labelPrintLogs      WmsLabelPrintLog[]              @relation("WmsLabelPrintLogUnit")
   movements           WmsInventoryMovement[]
   transferItems       WmsTransferItem[]
   storeTransferItems  WmsInventoryStoreTransferItem[]
   pickReservations    WmsPickReservation[]
+  basketUnits         WmsBasketUnit[]
   countEntries        WmsInventoryCountEntry[]
 
   @@index([tenantId, storeId])
@@ -1694,31 +1718,31 @@ model WmsInventoryUnit {
 }
 
 model WmsInventoryCountSession {
-  id                String                         @id @default(uuid()) @db.Uuid
-  tenantId          String                         @db.Uuid
-  tenant            Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  warehouseId       String                         @db.Uuid
-  warehouse         WmsWarehouse                   @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  locationId        String                         @db.Uuid
-  location          WmsLocation                    @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  status            WmsInventoryCountSessionStatus @default(OPEN)
-  expectedUnitCount Int                            @default(0)
-  countedUnitCount  Int                            @default(0)
-  missingUnitCount  Int                            @default(0)
-  unexpectedUnitCount Int                          @default(0)
-  startedById       String?                        @db.Uuid
-  startedBy         User?                          @relation("WmsInventoryCountSessionStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
-  submittedById     String?                        @db.Uuid
-  submittedBy       User?                          @relation("WmsInventoryCountSessionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  closedById        String?                        @db.Uuid
-  closedBy          User?                          @relation("WmsInventoryCountSessionClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
-  notes             String?
-  startedAt         DateTime                       @default(now())
-  submittedAt       DateTime?
-  closedAt          DateTime?
-  createdAt         DateTime                       @default(now())
-  updatedAt         DateTime                       @updatedAt
-  entries           WmsInventoryCountEntry[]
+  id                  String                         @id @default(uuid()) @db.Uuid
+  tenantId            String                         @db.Uuid
+  tenant              Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  warehouseId         String                         @db.Uuid
+  warehouse           WmsWarehouse                   @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  locationId          String                         @db.Uuid
+  location            WmsLocation                    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  status              WmsInventoryCountSessionStatus @default(OPEN)
+  expectedUnitCount   Int                            @default(0)
+  countedUnitCount    Int                            @default(0)
+  missingUnitCount    Int                            @default(0)
+  unexpectedUnitCount Int                            @default(0)
+  startedById         String?                        @db.Uuid
+  startedBy           User?                          @relation("WmsInventoryCountSessionStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+  submittedById       String?                        @db.Uuid
+  submittedBy         User?                          @relation("WmsInventoryCountSessionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  closedById          String?                        @db.Uuid
+  closedBy            User?                          @relation("WmsInventoryCountSessionClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  notes               String?
+  startedAt           DateTime                       @default(now())
+  submittedAt         DateTime?
+  closedAt            DateTime?
+  createdAt           DateTime                       @default(now())
+  updatedAt           DateTime                       @updatedAt
+  entries             WmsInventoryCountEntry[]
 
   @@index([tenantId, warehouseId, status, createdAt])
   @@index([locationId, status])
@@ -1729,20 +1753,20 @@ model WmsInventoryCountSession {
 }
 
 model WmsInventoryCountEntry {
-  id               String                       @id @default(uuid()) @db.Uuid
-  sessionId        String                       @db.Uuid
-  session          WmsInventoryCountSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  inventoryUnitId  String?                      @db.Uuid
-  inventoryUnit    WmsInventoryUnit?            @relation(fields: [inventoryUnitId], references: [id], onDelete: SetNull)
-  status           WmsInventoryCountEntryStatus @default(PENDING)
-  unitCode         String
-  unitBarcode      String?
-  productName      String
-  productCustomId  String?
-  scannedCode      String?
-  scannedAt        DateTime?
-  createdAt        DateTime                     @default(now())
-  updatedAt        DateTime                     @updatedAt
+  id              String                       @id @default(uuid()) @db.Uuid
+  sessionId       String                       @db.Uuid
+  session         WmsInventoryCountSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  inventoryUnitId String?                      @db.Uuid
+  inventoryUnit   WmsInventoryUnit?            @relation(fields: [inventoryUnitId], references: [id], onDelete: SetNull)
+  status          WmsInventoryCountEntryStatus @default(PENDING)
+  unitCode        String
+  unitBarcode     String?
+  productName     String
+  productCustomId String?
+  scannedCode     String?
+  scannedAt       DateTime?
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
 
   @@unique([sessionId, unitCode])
   @@index([sessionId, status])
@@ -1751,44 +1775,48 @@ model WmsInventoryCountEntry {
 }
 
 model WmsFulfillmentOrder {
-  id                String                    @id @default(uuid()) @db.Uuid
-  tenantId          String                    @db.Uuid
-  tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeId           String                    @db.Uuid
-  store             PosStore                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  posOrderDbId      String                    @db.Uuid
-  posOrder          PosOrder                  @relation(fields: [posOrderDbId], references: [id], onDelete: Cascade)
+  id                String                       @id @default(uuid()) @db.Uuid
+  tenantId          String                       @db.Uuid
+  tenant            Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId           String                       @db.Uuid
+  store             PosStore                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  posOrderDbId      String                       @db.Uuid
+  posOrder          PosOrder                     @relation(fields: [posOrderDbId], references: [id], onDelete: Cascade)
   shopId            String
   posOrderId        String
   posWarehouseRef   String?
-  warehouseId       String?                   @db.Uuid
-  warehouse         WmsWarehouse?             @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  warehouseId       String?                      @db.Uuid
+  warehouse         WmsWarehouse?                @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   customerName      String?
   customerPhone     String?
-  status            WmsFulfillmentOrderStatus @default(RESTOCKING)
+  status            WmsFulfillmentOrderStatus    @default(RESTOCKING)
+  assignmentMode    WmsFulfillmentAssignmentMode @default(SERIAL_RESERVED)
   issueReason       String?
-  totalQuantity     Int                       @default(0)
-  allocatedQuantity Int                       @default(0)
-  pickedQuantity    Int                       @default(0)
-  claimedById       String?                   @db.Uuid
-  claimedBy         User?                     @relation("WmsFulfillmentOrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
-  packedById        String?                   @db.Uuid
-  packedBy          User?                     @relation("WmsFulfillmentOrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
-  basketId          String?                   @db.Uuid
-  basket            WmsBasket?                @relation("WmsBasketFulfillmentOrders", fields: [basketId], references: [id], onDelete: SetNull)
+  totalQuantity     Int                          @default(0)
+  allocatedQuantity Int                          @default(0)
+  pickedQuantity    Int                          @default(0)
+  claimedById       String?                      @db.Uuid
+  claimedBy         User?                        @relation("WmsFulfillmentOrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
+  packedById        String?                      @db.Uuid
+  packedBy          User?                        @relation("WmsFulfillmentOrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
+  basketId          String?                      @db.Uuid
+  basket            WmsBasket?                   @relation("WmsBasketFulfillmentOrders", fields: [basketId], references: [id], onDelete: SetNull)
   claimedAt         DateTime?
   completedAt       DateTime?
-  lastSyncedAt      DateTime                  @default(now())
-  createdAt         DateTime                  @default(now())
-  updatedAt         DateTime                  @updatedAt
+  lastSyncedAt      DateTime                     @default(now())
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
 
-  legacyBasket WmsBasket? @relation("WmsBasketLegacyFulfillmentOrder")
-  lines        WmsFulfillmentLine[]
-  reservations WmsPickReservation[]
+  legacyBasket      WmsBasket?            @relation("WmsBasketLegacyFulfillmentOrder")
+  lines             WmsFulfillmentLine[]
+  reservations      WmsPickReservation[]
+  basketPickDemands WmsBasketPickDemand[]
+  basketUnits       WmsBasketUnit[]
 
   @@unique([tenantId, shopId, posOrderId])
   @@unique([posOrderDbId])
   @@index([tenantId, status, createdAt])
+  @@index([tenantId, assignmentMode, status])
   @@index([storeId, status])
   @@index([claimedById, status])
   @@index([packedById, status])
@@ -1798,27 +1826,30 @@ model WmsFulfillmentOrder {
 }
 
 model WmsBasket {
-  id                 String               @id @default(uuid()) @db.Uuid
-  tenantId           String?              @db.Uuid
-  tenant             Tenant?              @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  warehouseId        String?              @db.Uuid
-  warehouse          WmsWarehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  barcode            String               @unique
-  status             WmsBasketStatus      @default(AVAILABLE)
-  assignedPickerId   String?              @db.Uuid
-  assignedPicker     User?                @relation("WmsBasketAssignedPicker", fields: [assignedPickerId], references: [id], onDelete: SetNull)
-  assignedPackerId   String?              @db.Uuid
-  assignedPacker     User?                @relation("WmsBasketAssignedPacker", fields: [assignedPackerId], references: [id], onDelete: SetNull)
-  fulfillmentOrderId String?              @unique @db.Uuid
-  fulfillmentOrder   WmsFulfillmentOrder? @relation("WmsBasketLegacyFulfillmentOrder", fields: [fulfillmentOrderId], references: [id], onDelete: SetNull)
-  maxFulfillmentOrders Int                @default(1)
-  claimedAt          DateTime?
-  fullAt             DateTime?
-  readyForPackAt     DateTime?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  id                   String               @id @default(uuid()) @db.Uuid
+  tenantId             String?              @db.Uuid
+  tenant               Tenant?              @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  warehouseId          String?              @db.Uuid
+  warehouse            WmsWarehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  barcode              String               @unique
+  status               WmsBasketStatus      @default(AVAILABLE)
+  assignedPickerId     String?              @db.Uuid
+  assignedPicker       User?                @relation("WmsBasketAssignedPicker", fields: [assignedPickerId], references: [id], onDelete: SetNull)
+  assignedPackerId     String?              @db.Uuid
+  assignedPacker       User?                @relation("WmsBasketAssignedPacker", fields: [assignedPackerId], references: [id], onDelete: SetNull)
+  fulfillmentOrderId   String?              @unique @db.Uuid
+  fulfillmentOrder     WmsFulfillmentOrder? @relation("WmsBasketLegacyFulfillmentOrder", fields: [fulfillmentOrderId], references: [id], onDelete: SetNull)
+  maxFulfillmentOrders Int                  @default(1)
+  claimedAt            DateTime?
+  fullAt               DateTime?
+  readyForPackAt       DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 
-  fulfillmentOrders WmsFulfillmentOrder[] @relation("WmsBasketFulfillmentOrders")
+  fulfillmentOrders WmsFulfillmentOrder[]    @relation("WmsBasketFulfillmentOrders")
+  pickDemands       WmsBasketPickDemand[]
+  pickDemandBins    WmsBasketPickDemandBin[]
+  basketUnits       WmsBasketUnit[]
 
   @@index([tenantId, status])
   @@index([warehouseId, status])
@@ -1846,12 +1877,115 @@ model WmsFulfillmentLine {
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
 
-  reservations WmsPickReservation[]
+  reservations      WmsPickReservation[]
+  basketPickDemands WmsBasketPickDemand[]
+  basketUnits       WmsBasketUnit[]
 
   @@unique([fulfillmentOrderId, variationId])
   @@index([tenantId, variationId, status])
   @@index([fulfillmentOrderId, status])
   @@map("wms_fulfillment_lines")
+}
+
+model WmsBasketPickDemand {
+  id                 String              @id @default(uuid()) @db.Uuid
+  tenantId           String              @db.Uuid
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId            String              @db.Uuid
+  store              PosStore            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  basketId           String              @db.Uuid
+  basket             WmsBasket           @relation(fields: [basketId], references: [id], onDelete: Cascade)
+  fulfillmentOrderId String              @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  fulfillmentLineId  String              @db.Uuid
+  fulfillmentLine    WmsFulfillmentLine  @relation(fields: [fulfillmentLineId], references: [id], onDelete: Cascade)
+  productId          String?
+  variationId        String
+  productName        String
+  productDisplayId   String?
+  quantityRequired   Int
+  quantityPicked     Int                 @default(0)
+  quantityPacked     Int                 @default(0)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  bins WmsBasketPickDemandBin[]
+
+  @@unique([basketId, fulfillmentLineId])
+  @@index([tenantId, variationId])
+  @@index([storeId, variationId])
+  @@index([fulfillmentOrderId])
+  @@index([fulfillmentLineId])
+  @@map("wms_basket_pick_demands")
+}
+
+model WmsBasketPickDemandBin {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @db.Uuid
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  basketId       String              @db.Uuid
+  basket         WmsBasket           @relation(fields: [basketId], references: [id], onDelete: Cascade)
+  demandId       String              @db.Uuid
+  demand         WmsBasketPickDemand @relation(fields: [demandId], references: [id], onDelete: Cascade)
+  warehouseId    String              @db.Uuid
+  warehouse      WmsWarehouse        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  locationId     String              @db.Uuid
+  location       WmsLocation         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  variationId    String
+  quantityTarget Int
+  quantityPicked Int                 @default(0)
+  routeSequence  Int                 @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@unique([demandId, locationId])
+  @@index([basketId, routeSequence])
+  @@index([locationId])
+  @@index([warehouseId])
+  @@index([tenantId, variationId])
+  @@map("wms_basket_pick_demand_bins")
+}
+
+model WmsBasketUnit {
+  id                 String               @id @default(uuid()) @db.Uuid
+  tenantId           String               @db.Uuid
+  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId            String               @db.Uuid
+  store              PosStore             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  basketId           String               @db.Uuid
+  basket             WmsBasket            @relation(fields: [basketId], references: [id], onDelete: Cascade)
+  inventoryUnitId    String               @db.Uuid
+  inventoryUnit      WmsInventoryUnit     @relation(fields: [inventoryUnitId], references: [id], onDelete: Restrict)
+  warehouseId        String               @db.Uuid
+  warehouse          WmsWarehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  sourceLocationId   String?              @db.Uuid
+  sourceLocation     WmsLocation?         @relation("WmsBasketUnitSourceLocation", fields: [sourceLocationId], references: [id], onDelete: SetNull)
+  productId          String
+  variationId        String
+  status             WmsBasketUnitStatus  @default(PICKED)
+  fulfillmentOrderId String?              @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder? @relation(fields: [fulfillmentOrderId], references: [id], onDelete: SetNull)
+  fulfillmentLineId  String?              @db.Uuid
+  fulfillmentLine    WmsFulfillmentLine?  @relation(fields: [fulfillmentLineId], references: [id], onDelete: SetNull)
+  pickedById         String?              @db.Uuid
+  pickedBy           User?                @relation("WmsBasketUnitPickedBy", fields: [pickedById], references: [id], onDelete: SetNull)
+  packedById         String?              @db.Uuid
+  packedBy           User?                @relation("WmsBasketUnitPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
+  removedById        String?              @db.Uuid
+  removedBy          User?                @relation("WmsBasketUnitRemovedBy", fields: [removedById], references: [id], onDelete: SetNull)
+  pickedAt           DateTime             @default(now())
+  packedAt           DateTime?
+  removedAt          DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@index([basketId, status])
+  @@index([inventoryUnitId, status])
+  @@index([tenantId, variationId, status])
+  @@index([fulfillmentOrderId, status])
+  @@index([fulfillmentLineId, status])
+  @@index([sourceLocationId])
+  @@map("wms_basket_units")
 }
 
 model WmsPickReservation {
@@ -1974,21 +2108,21 @@ model WmsInventoryStoreTransferItem {
 }
 
 model WmsProductProfileEquivalence {
-  id                String   @id @default(uuid()) @db.Uuid
-  tenantId          String   @db.Uuid
-  sourceStoreId     String   @db.Uuid
-  targetStoreId     String   @db.Uuid
-  sourceProfileId   String   @db.Uuid
-  targetProfileId   String   @db.Uuid
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @db.Uuid
+  sourceStoreId     String    @db.Uuid
+  targetStoreId     String    @db.Uuid
+  sourceProfileId   String    @db.Uuid
+  targetProfileId   String    @db.Uuid
   sourceVariationId String
   targetVariationId String
-  matchSource       String   @default("TRANSFER")
-  transferCount     Int      @default(0)
+  matchSource       String    @default("TRANSFER")
+  transferCount     Int       @default(0)
   lastTransferAt    DateTime?
-  createdById       String?  @db.Uuid
-  updatedById       String?  @db.Uuid
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdById       String?   @db.Uuid
+  updatedById       String?   @db.Uuid
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@unique([tenantId, sourceProfileId, targetStoreId])
   @@index([tenantId, targetStoreId])

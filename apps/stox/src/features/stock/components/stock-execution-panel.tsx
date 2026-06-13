@@ -87,10 +87,12 @@ export function StockExecutionPanel({
           autoCapitalize="characters"
           autoCorrect={false}
           blurOnSubmit={false}
+          caretHidden
+          contextMenuHidden
           placeholder={execution.scanTarget === 'target' ? 'Target bin' : 'Scan unit, bin, batch'}
           placeholderTextColor={tokens.colors.inkSoft}
           returnKeyType="search"
-          selectTextOnFocus
+          selectTextOnFocus={false}
           showSoftInputOnFocus={false}
           value={execution.scanCode}
           onChangeText={execution.setScanCode}
@@ -204,9 +206,11 @@ function UnitExecutionCard({
             autoCapitalize="characters"
             autoCorrect={false}
             blurOnSubmit={false}
+            caretHidden
+            contextMenuHidden
             placeholder="Target bin/location"
             placeholderTextColor={tokens.colors.inkSoft}
-            selectTextOnFocus
+            selectTextOnFocus={false}
             showSoftInputOnFocus={false}
             value={targetCode}
             onChangeText={onChangeTargetCode}

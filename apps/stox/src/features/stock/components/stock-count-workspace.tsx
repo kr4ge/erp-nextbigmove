@@ -102,10 +102,12 @@ export function StockCountWorkspace({
               autoCapitalize="characters"
               autoCorrect={false}
               blurOnSubmit={false}
+              caretHidden
+              contextMenuHidden
               placeholder="Scan bin"
               placeholderTextColor={tokens.colors.inkSoft}
               returnKeyType="go"
-              selectTextOnFocus
+              selectTextOnFocus={false}
               showSoftInputOnFocus={false}
               style={styles.input}
               value={workspace.startCode}
@@ -215,10 +217,12 @@ export function StockCountWorkspace({
                 autoCapitalize="characters"
                 autoCorrect={false}
                 blurOnSubmit={false}
+                caretHidden
+                contextMenuHidden
                 placeholder="Scan unit"
                 placeholderTextColor={tokens.colors.inkSoft}
                 returnKeyType="done"
-                selectTextOnFocus
+                selectTextOnFocus={false}
                 showSoftInputOnFocus={false}
                 style={styles.input}
                 value={workspace.scanCode}
