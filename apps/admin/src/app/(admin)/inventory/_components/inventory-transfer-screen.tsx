@@ -62,6 +62,7 @@ export function InventoryTransferScreen() {
               isLoadingBatches={receiving.isLoading}
               isLoadingPutawayOptions={receiving.isLoadingPutawayOptions}
               isAssigningPutaway={receiving.isAssigningPutaway}
+              isResettingPutaway={receiving.isResettingPutaway}
               canPutAway={receiving.canPutAway}
               onSelectBatch={receiving.selectTransferBatch}
               onOpenLabels={(batch) => {
@@ -69,6 +70,7 @@ export function InventoryTransferScreen() {
               }}
               onAssignPutawayUnits={receiving.assignPutawayUnits}
               onAssignPutawayUnit={receiving.assignPutawayUnit}
+              onResetPutawayUnits={receiving.resetPutawayUnits}
             />
           </>
         ) : (

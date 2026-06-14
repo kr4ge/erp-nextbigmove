@@ -325,3 +325,7 @@ export type AssignWmsReceivingPutawayInput = {
     binId: string;
   }>;
 };
+
+export type ResetWmsReceivingPutawayInput = {
+  unitIds: string[];
+};

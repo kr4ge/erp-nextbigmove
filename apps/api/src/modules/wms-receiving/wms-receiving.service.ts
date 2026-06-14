@@ -13,6 +13,7 @@ import {
   WmsProductProfileStatus,
   WmsPurchasingBatchStatus,
   WmsReceivingBatchStatus,
+  WmsTransferStatus,
   WmsWarehouseStatus,
 } from '@prisma/client';
 import { ClsService } from 'nestjs-cls';
@@ -24,6 +25,7 @@ import { AssignWmsReceivingPutawayDto } from './dto/assign-wms-receiving-putaway
 import { CreateWmsReceivingBatchDto } from './dto/create-wms-receiving-batch.dto';
 import { GetWmsReceivingOverviewDto } from './dto/get-wms-receiving-overview.dto';
 import { RecordWmsReceivingBatchLabelPrintDto } from './dto/record-wms-receiving-batch-label-print.dto';
+import { ResetWmsReceivingPutawayDto } from './dto/reset-wms-receiving-putaway.dto';
 
 type ReceivablePurchasingBatchRecord = Prisma.WmsPurchasingBatchGetPayload<{
   include: {
@@ -1151,50 +1153,14 @@ export class WmsReceivingService {
         })),
       });
 
-      const [totalUnits, putAwayUnits] = await Promise.all([
-        tx.wmsInventoryUnit.count({
-          where: {
-            receivingBatchId: batch.id,
-          },
-        }),
-        tx.wmsInventoryUnit.count({
-          where: {
-            receivingBatchId: batch.id,
-            status: WmsInventoryUnitStatus.PUTAWAY,
-            currentLocation: {
-              is: {
-                kind: WmsLocationKind.BIN,
-              },
-            },
-          },
-        }),
-      ]);
-
-      const nextStatus =
-        totalUnits > 0 && putAwayUnits === totalUnits
-          ? WmsReceivingBatchStatus.COMPLETED
-          : WmsReceivingBatchStatus.PUTAWAY_PENDING;
-
-      const nextBatch = await tx.wmsReceivingBatch.update({
-        where: { id: batch.id },
-        data: {
-          status: nextStatus,
-          completedAt: nextStatus === WmsReceivingBatchStatus.COMPLETED ? now : null,
-          ...(actorId ? { updatedById: actorId } : {}),
-        },
-        select: {
-          id: true,
-          code: true,
-          status: true,
-          completedAt: true,
-          updatedAt: true,
-        },
+      const nextBatch = await this.syncReceivingBatchPutawayStateTx(tx, {
+        actorId,
+        batchId: batch.id,
+        now,
       });
 
       return {
         ...nextBatch,
-        totalUnits,
-        putAwayUnits,
       };
     });
 
@@ -1223,6 +1189,212 @@ export class WmsReceivingService {
 
     return {
       updatedUnitCount: validatedAssignments.length,
+      batch: result,
+    };
+  }
+
+  async resetPutawayToStage(id: string, body: ResetWmsReceivingPutawayDto, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    if (!body.unitIds.length) {
+      throw new BadRequestException('Select at least one unit to return to stage');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const batch = await this.prisma.wmsReceivingBatch.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        code: true,
+        tenantId: true,
+        warehouseId: true,
+        stagingLocationId: true,
+        stagingLocation: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            kind: true,
+            warehouseId: true,
+          },
+        },
+        inventoryUnits: {
+          select: {
+            id: true,
+            code: true,
+            storeId: true,
+            variationId: true,
+            currentLocationId: true,
+            status: true,
+            currentLocation: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                kind: true,
+                warehouseId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!batch) {
+      throw new NotFoundException('Receiving batch was not found');
+    }
+
+    this.assertTenantScope(batch.tenantId, scope.activeTenantId);
+
+    if (!batch.stagingLocationId || !batch.stagingLocation) {
+      throw new BadRequestException('Receiving batch is missing its staging location');
+    }
+
+    if (batch.stagingLocation.kind !== WmsLocationKind.RECEIVING_STAGING) {
+      throw new BadRequestException('Receiving batch staging location is not a receiving staging area');
+    }
+
+    const stagingLocation = batch.stagingLocation;
+    const stagingLocationId = batch.stagingLocationId;
+
+    const unitMap = new Map(batch.inventoryUnits.map((unit) => [unit.id, unit]));
+    const seenUnitIds = new Set<string>();
+    const validatedUnits = body.unitIds.map((unitId) => {
+      if (seenUnitIds.has(unitId)) {
+        throw new BadRequestException('Each inventory unit can only be selected once per submit');
+      }
+
+      seenUnitIds.add(unitId);
+      const unit = unitMap.get(unitId);
+      if (!unit) {
+        throw new BadRequestException('One or more units are outside the selected receiving batch');
+      }
+
+      if (unit.status !== WmsInventoryUnitStatus.PUTAWAY) {
+        throw new BadRequestException(`Unit ${unit.code} is not eligible for return to stage`);
+      }
+
+      if (!unit.currentLocationId || !unit.currentLocation || unit.currentLocation.kind !== WmsLocationKind.BIN) {
+        throw new BadRequestException(`Unit ${unit.code} is no longer stored in a bin`);
+      }
+
+      if (unit.currentLocation.warehouseId !== batch.warehouseId) {
+        throw new BadRequestException(`Unit ${unit.code} is outside the receiving warehouse`);
+      }
+
+      if (unit.currentLocationId === batch.stagingLocationId) {
+        throw new BadRequestException(`Unit ${unit.code} is already in staging`);
+      }
+
+      return unit;
+    });
+
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      const unitsBySourceLocation = validatedUnits.reduce((groups, unit) => {
+        const current = groups.get(unit.currentLocationId!);
+        if (current) {
+          current.push(unit);
+          return groups;
+        }
+
+        groups.set(unit.currentLocationId!, [unit]);
+        return groups;
+      }, new Map<string, typeof validatedUnits>());
+
+      for (const [sourceLocationId, units] of unitsBySourceLocation) {
+        const sourceLocation = units[0]?.currentLocation;
+        if (!sourceLocation) {
+          throw new BadRequestException('One or more selected units are missing their current bin');
+        }
+
+        const transferCode = this.buildTransferCode();
+        const transfer = await tx.wmsTransfer.create({
+          data: {
+            code: transferCode,
+            tenantId: scope.activeTenantId!,
+            warehouseId: batch.warehouseId,
+            fromLocationId: sourceLocationId,
+            toLocationId: stagingLocationId,
+            status: WmsTransferStatus.COMPLETED,
+            notes: `Returned to staging for receiving batch ${batch.code}`,
+            createdById: actorId,
+            updatedById: actorId,
+          },
+        });
+
+        await tx.wmsTransferItem.createMany({
+          data: units.map((unit, index) => ({
+            transferId: transfer.id,
+            inventoryUnitId: unit.id,
+            lineNo: index + 1,
+          })),
+        });
+
+        for (const unit of units) {
+          await tx.wmsInventoryUnit.update({
+            where: { id: unit.id },
+            data: {
+              currentLocationId: stagingLocationId,
+              status: WmsInventoryUnitStatus.STAGED,
+              ...(actorId ? { updatedById: actorId } : {}),
+            },
+          });
+        }
+
+        await tx.wmsInventoryMovement.createMany({
+          data: units.map((unit) => ({
+            tenantId: scope.activeTenantId!,
+            inventoryUnitId: unit.id,
+            warehouseId: batch.warehouseId,
+            fromLocationId: unit.currentLocationId,
+            toLocationId: stagingLocationId,
+            fromStatus: unit.status,
+            toStatus: WmsInventoryUnitStatus.STAGED,
+            movementType: WmsInventoryMovementType.TRANSFER,
+            referenceType: 'TRANSFER',
+            referenceId: transfer.id,
+            referenceCode: transfer.code,
+            notes: `Returned to staging ${stagingLocation.code} for receiving batch ${batch.code}`,
+            actorId,
+            createdAt: now,
+          })),
+        });
+      }
+
+      return this.syncReceivingBatchPutawayStateTx(tx, {
+        actorId,
+        batchId: batch.id,
+        now,
+      });
+    });
+
+    const refreshGroups = Array.from(
+      validatedUnits.reduce((groups, unit) => {
+        const current = groups.get(unit.storeId);
+        if (current) {
+          current.add(unit.variationId);
+          return groups;
+        }
+
+        groups.set(unit.storeId, new Set([unit.variationId]));
+        return groups;
+      }, new Map<string, Set<string>>()),
+    );
+
+    for (const [storeId, variationIds] of refreshGroups) {
+      await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
+        tenantId: batch.tenantId,
+        storeId,
+        variationIds: Array.from(variationIds),
+      });
+    }
+
+    return {
+      updatedUnitCount: validatedUnits.length,
       batch: result,
     };
   }
@@ -2560,6 +2732,78 @@ export class WmsReceivingService {
     }
 
     return 'is not stockable.';
+  }
+
+  private async syncReceivingBatchPutawayStateTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      actorId: string | null;
+      batchId: string;
+      now: Date;
+    },
+  ) {
+    const [totalUnits, putAwayUnits, stagedUnits] = await Promise.all([
+      tx.wmsInventoryUnit.count({
+        where: {
+          receivingBatchId: params.batchId,
+        },
+      }),
+      tx.wmsInventoryUnit.count({
+        where: {
+          receivingBatchId: params.batchId,
+          status: WmsInventoryUnitStatus.PUTAWAY,
+          currentLocation: {
+            is: {
+              kind: WmsLocationKind.BIN,
+            },
+          },
+        },
+      }),
+      tx.wmsInventoryUnit.count({
+        where: {
+          receivingBatchId: params.batchId,
+          status: WmsInventoryUnitStatus.STAGED,
+          currentLocation: {
+            is: {
+              kind: WmsLocationKind.RECEIVING_STAGING,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const nextStatus =
+      totalUnits > 0 && putAwayUnits === totalUnits
+        ? WmsReceivingBatchStatus.COMPLETED
+        : totalUnits > 0 && stagedUnits === totalUnits
+          ? WmsReceivingBatchStatus.STAGED
+          : WmsReceivingBatchStatus.PUTAWAY_PENDING;
+
+    const nextBatch = await tx.wmsReceivingBatch.update({
+      where: { id: params.batchId },
+      data: {
+        status: nextStatus,
+        completedAt: nextStatus === WmsReceivingBatchStatus.COMPLETED ? params.now : null,
+        ...(params.actorId ? { updatedById: params.actorId } : {}),
+      },
+      select: {
+        id: true,
+        code: true,
+        status: true,
+        completedAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      ...nextBatch,
+      totalUnits,
+      putAwayUnits,
+    };
+  }
+
+  private buildTransferCode() {
+    return `TRF-${Date.now().toString(36).toUpperCase()}`;
   }
 
   private cleanOptionalText(value?: string | null) {

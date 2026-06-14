@@ -3,6 +3,7 @@ import type {
   AssignWmsReceivingPutawayInput,
   CreateWmsReceivingBatchInput,
   GetWmsReceivingOverviewParams,
+  ResetWmsReceivingPutawayInput,
   WmsReceivingBatchDetail,
   WmsReceivingBatchLabels,
   WmsReceivingPutawayOptionsResponse,
@@ -88,6 +89,29 @@ export async function assignWmsReceivingPutaway(
   tenantId?: string,
 ) {
   const response = await apiClient.post(`/wms/receiving/${id}/putaway/assign`, input, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as {
+    updatedUnitCount: number;
+    batch: {
+      id: string;
+      code: string;
+      status: string;
+      completedAt: string | null;
+      updatedAt: string;
+      totalUnits: number;
+      putAwayUnits: number;
+    };
+  };
+}
+
+export async function resetWmsReceivingPutaway(
+  id: string,
+  input: ResetWmsReceivingPutawayInput,
+  tenantId?: string,
+) {
+  const response = await apiClient.post(`/wms/receiving/${id}/putaway/reset`, input, {
     params: tenantId ? { tenantId } : undefined,
   });
 

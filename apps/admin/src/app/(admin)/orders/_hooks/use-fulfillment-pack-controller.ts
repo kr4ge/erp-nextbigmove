@@ -104,7 +104,7 @@ export function useFulfillmentPackController() {
       });
 
       setData(nextData);
-      setCurrentPage(page);
+      setCurrentPage(nextData.pagination.page);
     } catch (error) {
       setErrorMessage(resolveQueueError(error));
     } finally {
@@ -114,8 +114,11 @@ export function useFulfillmentPackController() {
   }, [selectedStatus, selectedStoreIdState, selectedTenantIdState]);
 
   useEffect(() => {
-    void loadQueue({ mode: 'initial', page: 1 });
-  }, [loadQueue]);
+    void loadQueue({
+      mode: currentPage === 1 ? 'initial' : 'refresh',
+      page: currentPage,
+    });
+  }, [currentPage, loadQueue]);
 
   useEffect(() => {
     const timer = setInterval(() => {

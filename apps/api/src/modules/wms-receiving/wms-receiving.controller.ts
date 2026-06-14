@@ -6,6 +6,7 @@ import { AssignWmsReceivingPutawayDto } from './dto/assign-wms-receiving-putaway
 import { CreateWmsReceivingBatchDto } from './dto/create-wms-receiving-batch.dto';
 import { GetWmsReceivingOverviewDto } from './dto/get-wms-receiving-overview.dto';
 import { RecordWmsReceivingBatchLabelPrintDto } from './dto/record-wms-receiving-batch-label-print.dto';
+import { ResetWmsReceivingPutawayDto } from './dto/reset-wms-receiving-putaway.dto';
 import { WmsReceivingService } from './wms-receiving.service';
 
 @Controller('wms/receiving')
@@ -64,5 +65,15 @@ export class WmsReceivingController {
     @Query('tenantId') tenantId?: string,
   ) {
     return this.wmsReceivingService.assignPutaway(id, body, tenantId);
+  }
+
+  @Post(':id/putaway/reset')
+  @Permissions('wms.inventory.transfer', 'wms.receiving.edit', 'wms.receiving.write')
+  async resetPutaway(
+    @Param('id') id: string,
+    @Body() body: ResetWmsReceivingPutawayDto,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.wmsReceivingService.resetPutawayToStage(id, body, tenantId);
   }
 }

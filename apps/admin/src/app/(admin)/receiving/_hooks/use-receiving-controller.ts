@@ -21,10 +21,12 @@ import {
   fetchWmsReceivingOverview,
   fetchWmsReceivingPutawayOptions,
   recordWmsReceivingBatchLabelPrint,
+  resetWmsReceivingPutaway,
 } from '../_services/receiving.service';
 import type {
   AssignWmsReceivingPutawayInput,
   CreateWmsReceivingBatchInput,
+  ResetWmsReceivingPutawayInput,
   WmsReceivingBatchLabels,
   WmsReceivingBatchRow,
   WmsReceivablePurchasingBatch,
@@ -343,6 +345,30 @@ export function useReceivingController() {
     },
   });
 
+  const resetPutawayMutation = useMutation({
+    mutationFn: (input: { batchId: string; payload: ResetWmsReceivingPutawayInput }) =>
+      resetWmsReceivingPutaway(
+        input.batchId,
+        input.payload,
+        transferWorkspaceState.tenantId ?? selectedTenantId,
+      ),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['wms-receiving-overview'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['wms-receiving-batch', variables.batchId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['wms-receiving-putaway-options', variables.batchId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['wms-receiving-transfer-batch', variables.batchId],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-overview'] }),
+      ]);
+    },
+  });
+
   const errorMessage = useMemo(() => {
     if (!overviewQuery.error) {
       return null;
@@ -479,6 +505,19 @@ export function useReceivingController() {
     assignment: AssignWmsReceivingPutawayInput['assignments'][number],
   ) {
     await assignPutawayUnits(batchId, [assignment]);
+  }
+
+  async function resetPutawayUnits(batchId: string, unitIds: string[]) {
+    try {
+      await resetPutawayMutation.mutateAsync({
+        batchId,
+        payload: {
+          unitIds,
+        },
+      });
+    } catch (error) {
+      throw new Error(getErrorMessage(error));
+    }
   }
 
   const modalTotalUnits = useMemo(() => {
@@ -643,12 +682,14 @@ export function useReceivingController() {
     putawayOptions: putawayOptionsQuery.data ?? null,
     isLoadingPutawayOptions: putawayOptionsQuery.isLoading || putawayOptionsQuery.isFetching,
     isAssigningPutaway: assignPutawayMutation.isPending,
+    isResettingPutaway: resetPutawayMutation.isPending,
     openLabelsModal,
     closeLabelsModal,
     selectTransferBatch,
     recordBatchLabelPrint,
     assignPutawayUnits,
     assignPutawayUnit,
+    resetPutawayUnits,
     submitReceive,
     submitManualReceive,
     isSubmitting: createBatchMutation.isPending,

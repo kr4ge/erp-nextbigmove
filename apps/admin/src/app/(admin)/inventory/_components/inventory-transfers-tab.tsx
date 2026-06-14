@@ -59,6 +59,7 @@ type InventoryTransfersTabProps = {
   isLoadingBatches: boolean;
   isLoadingPutawayOptions: boolean;
   isAssigningPutaway: boolean;
+  isResettingPutaway: boolean;
   canPutAway: boolean;
   onSelectBatch: (batch: WmsReceivingBatchRow) => void;
   onOpenLabels: (batch: WmsReceivingBatchRow) => void;
@@ -80,6 +81,7 @@ type InventoryTransfersTabProps = {
       binId: string;
     }>,
   ) => Promise<void>;
+  onResetPutawayUnits: (batchId: string, unitIds: string[]) => Promise<void>;
 };
 
 export function InventoryTransfersTab({
@@ -91,11 +93,13 @@ export function InventoryTransfersTab({
   isLoadingBatches,
   isLoadingPutawayOptions,
   isAssigningPutaway,
+  isResettingPutaway,
   canPutAway,
   onSelectBatch,
   onOpenLabels,
   onAssignPutawayUnit,
   onAssignPutawayUnits,
+  onResetPutawayUnits,
 }: InventoryTransfersTabProps) {
   const [groupDrafts, setGroupDrafts] = useState<Record<string, PutawayDraft>>({});
   const [putawayError, setPutawayError] = useState<string | null>(null);
@@ -118,11 +122,11 @@ export function InventoryTransfersTab({
     const allUnits = putawayOptions?.units ?? [];
 
     if (unitFilter === 'pending') {
-      return allUnits.filter((unit) => !isTransferCompleted(unit));
+      return allUnits.filter(isPutawayPending);
     }
 
     if (unitFilter === 'done') {
-      return allUnits.filter((unit) => isTransferCompleted(unit));
+      return allUnits.filter(isTransferCompleted);
     }
 
     return allUnits;
@@ -142,9 +146,21 @@ export function InventoryTransfersTab({
   );
   const activeGroup = groups.find((group) => group.key === activeGroupKey) ?? groups[0] ?? null;
   const activeGroupUnits = activeGroup?.units ?? EMPTY_TRANSFER_UNITS;
+  const isPendingTab = unitFilter === 'pending';
+  const isTransferredTab = unitFilter === 'done';
   const actionableUnits = useMemo(
-    () => activeGroupUnits.filter((unit) => !isTransferCompleted(unit)),
-    [activeGroupUnits],
+    () => {
+      if (isPendingTab) {
+        return activeGroupUnits.filter(isPutawayPending);
+      }
+
+      if (isTransferredTab) {
+        return activeGroupUnits.filter(isReturnToStageEligible);
+      }
+
+      return EMPTY_TRANSFER_UNITS;
+    },
+    [activeGroupUnits, isPendingTab, isTransferredTab],
   );
   const actionableUnitIds = useMemo(
     () => actionableUnits.map((unit) => unit.id),
@@ -232,6 +248,7 @@ export function InventoryTransfersTab({
   const allActionableSelected =
     actionableUnitIds.length > 0 && actionableUnitIds.every((unitId) => selectedUnitIds.includes(unitId));
   const assignmentGridClassName = 'grid items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3';
+  const isMutatingTransfer = isAssigningPutaway || isResettingPutaway;
 
   const updateActiveGroupDraft = (update: Partial<PutawayDraft>) => {
     if (!activeGroup) {
@@ -269,7 +286,7 @@ export function InventoryTransfersTab({
   };
 
   const handleAssignSelected = async () => {
-    if (!selectedBatchId || !selectedActionableCount) {
+    if (!isPendingTab || !selectedBatchId || !selectedActionableCount) {
       return;
     }
 
@@ -320,6 +337,26 @@ export function InventoryTransfersTab({
         : `Assigned ${assignments.length} unit${assignments.length === 1 ? '' : 's'} to ${selectedBin?.label ?? 'selected bin'}.`);
     } catch (error) {
       setPutawayError(error instanceof Error ? error.message : 'Unable to save transfer');
+    }
+  };
+
+  const handleReturnSelectedToStage = async () => {
+    if (!isTransferredTab || !selectedBatchId || !selectedActionableCount) {
+      return;
+    }
+
+    try {
+      setPutawayError(null);
+      await onResetPutawayUnits(selectedBatchId, orderedSelectedUnits.map((unit) => unit.id));
+      setSelectedUnitIds([]);
+      const stagingLabel = batchDetail?.stagingLocation
+        ? `${batchDetail.stagingLocation.code} · ${batchDetail.stagingLocation.name}`
+        : 'receiving staging';
+      setLastSavedMessage(
+        `Returned ${selectedActionableCount} unit${selectedActionableCount === 1 ? '' : 's'} to ${stagingLabel}.`,
+      );
+    } catch (error) {
+      setPutawayError(error instanceof Error ? error.message : 'Unable to return units to stage');
     }
   };
 
@@ -527,7 +564,7 @@ export function InventoryTransfersTab({
               ) : (
                 <>
 
-                  {activeGroup ? (
+                  {activeGroup && isPendingTab ? (
                     <div className="rounded-[18px] border border-[#dce4ea] bg-[#fbfcfc] p-3">
                       <div className="flex flex-wrap items-start gap-3">
                         <div>
@@ -653,7 +690,7 @@ export function InventoryTransfersTab({
                             onClick={() => void handleAssignSelected()}
                             disabled={
                               !canPutAway
-                              || isAssigningPutaway
+                              || isMutatingTransfer
                               || !selectedUnitIds.length
                               || !activeDraft.sectionId
                               || !activeDraft.rackId
@@ -670,6 +707,33 @@ export function InventoryTransfersTab({
                                   ? `Assign ${assignableSelectedCount} ${assignableSelectedCount === 1 ? 'unit' : 'units'}`
                                   : `Assign ${selectedActionableCount} ${selectedActionableCount === 1 ? 'unit' : 'units'}`
                                 : 'Assign selected'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {activeGroup && isTransferredTab ? (
+                    <div className="rounded-[18px] border border-[#dce4ea] bg-[#fbfcfc] p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="form-label">{activeGroup.label}</p>
+                          <p className="mt-1.5 text-[11px] font-medium text-primary">
+                            {selectedActionableCount} selected / {actionableUnits.length} returnable
+                          </p>
+                        </div>
+                        <div className="flex min-w-[220px] flex-1 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => void handleReturnSelectedToStage()}
+                            disabled={!canPutAway || isMutatingTransfer || !selectedUnitIds.length}
+                            className="btn btn-md btn-secondary w-full sm:w-auto"
+                          >
+                            {isResettingPutaway
+                              ? 'Returning…'
+                              : selectedActionableCount > 0
+                                ? `Return ${selectedActionableCount} ${selectedActionableCount === 1 ? 'unit' : 'units'} to stage`
+                                : 'Return selected to stage'}
                           </button>
                         </div>
                       </div>
@@ -701,6 +765,11 @@ export function InventoryTransfersTab({
                           {activeGroupUnits.map((unit) => {
                             const isCompleted = isTransferCompleted(unit);
                             const isSelected = selectedUnitIds.includes(unit.id);
+                            const isSelectable = isPendingTab
+                              ? isPutawayPending(unit)
+                              : isTransferredTab
+                                ? isReturnToStageEligible(unit)
+                                : false;
 
                             return (
                               <tr
@@ -714,7 +783,7 @@ export function InventoryTransfersTab({
                                     type="checkbox"
                                     checked={isSelected}
                                     onChange={() => toggleUnitSelection(unit.id)}
-                                    disabled={!canPutAway || isCompleted}
+                                    disabled={!canPutAway || !isSelectable}
                                     className="h-4 w-4 rounded border-[#c5d1d9] text-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-45"
                                   />
                                 </BodyCell>
@@ -890,8 +959,16 @@ function buildTransferGroups(units: TransferUnit[]): TransferGroup[] {
 function isTransferCompleted(unit: TransferUnit) {
   return (
     unit.currentLocation?.kind === 'BIN'
-    && (unit.status === 'PUTAWAY' || unit.status === 'RESERVED')
+    && unit.status === 'PUTAWAY'
   );
+}
+
+function isPutawayPending(unit: TransferUnit) {
+  return unit.status === 'STAGED';
+}
+
+function isReturnToStageEligible(unit: TransferUnit) {
+  return isTransferCompleted(unit);
 }
 
 function formatBinOptionLabel(bin: WmsReceivingPutawayOptionsResponse['sections'][number]['racks'][number]['bins'][number]) {
