@@ -186,6 +186,8 @@ export type WmsInventoryOverviewResponse = {
     }>;
     stores: Array<{
       id: string;
+      tenantId: string;
+      name: string;
       label: string;
       unitCount: number;
     }>;

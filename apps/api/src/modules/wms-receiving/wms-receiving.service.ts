@@ -342,6 +342,7 @@ export class WmsReceivingService {
         shopName: true,
         tenant: {
           select: {
+            id: true,
             name: true,
           },
         },
@@ -600,6 +601,8 @@ export class WmsReceivingService {
         tenants: scope.tenants,
         stores: stores.map((store) => ({
           id: store.id,
+          tenantId: store.tenant.id,
+          name: store.shopName || store.name,
           label: isAllTenantScope
             ? `${store.tenant.name} · ${store.shopName || store.name}`
             : store.shopName || store.name,

@@ -147,6 +147,7 @@ export class WmsProductsService {
         shopName: true,
         tenant: {
           select: {
+            id: true,
             name: true,
           },
         },
@@ -409,6 +410,8 @@ export class WmsProductsService {
         tenants: scope.tenants,
         stores: stores.map((store) => ({
           id: store.id,
+          tenantId: store.tenant.id,
+          name: store.shopName || store.name,
           label: isAllTenantScope
             ? `${store.tenant.name} · ${store.shopName || store.name}`
             : store.shopName || store.name,

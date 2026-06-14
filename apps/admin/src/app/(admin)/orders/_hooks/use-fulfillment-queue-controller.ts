@@ -72,7 +72,10 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     filters: data?.context
       ? {
         tenants: data.context.tenantOptions?.map((tenant) => ({ id: tenant.id })) ?? [],
-        stores: data.context.stores.map((store) => ({ id: store.id })),
+        stores: data.context.stores.map((store) => ({
+          id: store.id,
+          tenantId: store.tenantId ?? null,
+        })),
         activeTenantId: data.context.activeTenantId,
         activeStoreId: data.context.activeStoreId,
       }

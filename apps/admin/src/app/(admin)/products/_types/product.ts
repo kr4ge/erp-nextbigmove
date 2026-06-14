@@ -72,6 +72,8 @@ export type WmsProductsOverviewResponse = {
     }>;
     stores: Array<{
       id: string;
+      tenantId: string;
+      name: string;
       label: string;
       productCount: number;
     }>;

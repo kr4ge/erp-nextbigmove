@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react';
 
 type ScopeOption = {
   id: string;
+  tenantId?: string | null;
 };
 
 type ScopeFilters = {
@@ -203,12 +204,29 @@ export function useWmsScopeFilters({
 
   const setSelectedStoreId = useCallback(
     (storeId: string | undefined) => {
+      if (storeId) {
+        const matchingStore = filters?.stores?.find((store) => store.id === storeId);
+        const nextTenantId = matchingStore?.tenantId ?? undefined;
+
+        if (nextTenantId && nextTenantId !== selectedTenantId) {
+          syncTenantScopeStorage(nextTenantId);
+          setSelectedTenantIdState(nextTenantId);
+        }
+      }
+
       setSelectedStoreIdState(storeId);
       if (includeWarehouse) {
         setSelectedWarehouseIdState?.(undefined);
       }
     },
-    [includeWarehouse, setSelectedStoreIdState, setSelectedWarehouseIdState],
+    [
+      filters?.stores,
+      includeWarehouse,
+      selectedTenantId,
+      setSelectedStoreIdState,
+      setSelectedTenantIdState,
+      setSelectedWarehouseIdState,
+    ],
   );
 
   const setSelectedWarehouseId = useCallback(

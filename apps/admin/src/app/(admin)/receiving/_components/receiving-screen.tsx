@@ -27,6 +27,7 @@ export function ReceivingScreen() {
             storeOptions={(controller.overview?.filters.stores ?? []).map((store) => ({
               value: store.id,
               label: store.label,
+              selectedLabel: store.name,
             }))}
             selectedStoreId={controller.selectedStoreId}
             onStoreChange={controller.setSelectedStoreId}

@@ -326,6 +326,7 @@ export class WmsInventoryService {
         shopName: true,
         tenant: {
           select: {
+            id: true,
             name: true,
           },
         },
@@ -519,6 +520,8 @@ export class WmsInventoryService {
         tenants: scope.tenants,
         stores: stores.map((store) => ({
           id: store.id,
+          tenantId: store.tenant.id,
+          name: store.shopName || store.name,
           label: isAllTenantScope
             ? `${store.tenant.name} · ${store.shopName || store.name}`
             : store.shopName || store.name,

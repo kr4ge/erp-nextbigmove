@@ -211,6 +211,8 @@ export type WmsReceivingOverviewResponse = {
     }>;
     stores: Array<{
       id: string;
+      tenantId: string;
+      name: string;
       label: string;
     }>;
     warehouses: Array<{

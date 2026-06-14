@@ -66,6 +66,7 @@ export function InventoryFilterBar({
         storeOptions={(filters?.stores ?? []).map((store) => ({
           value: store.id,
           label: store.label,
+          selectedLabel: store.name,
           hint: store.unitCount,
         }))}
         selectedStoreId={selectedStoreId}

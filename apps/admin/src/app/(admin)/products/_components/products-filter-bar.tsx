@@ -62,6 +62,7 @@ export function ProductsFilterBar({
         storeOptions={(filters?.stores ?? []).map((store) => ({
           value: store.id,
           label: store.label,
+          selectedLabel: store.name,
           hint: store.productCount,
         }))}
         selectedStoreId={selectedStoreId}

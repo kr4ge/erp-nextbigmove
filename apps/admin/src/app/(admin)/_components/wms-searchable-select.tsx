@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom';
 export type WmsSearchableOption = {
   value: string;
   label: string;
+  selectedLabel?: string;
   hint?: string | number;
 };
 
@@ -179,7 +180,7 @@ export function WmsSearchableSelect({
           <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">{label}</span>
         ) : null}
         <span className={`max-w-[180px] truncate text-[12.5px] font-semibold text-primary ${valueClassName}`}>
-          {selected?.label ?? allLabel}
+          {selected?.selectedLabel ?? selected?.label ?? allLabel}
         </span>
         <ChevronDown
           className={`h-4 w-4 text-[#8193a0] transition ${open ? 'rotate-180' : ''}`}

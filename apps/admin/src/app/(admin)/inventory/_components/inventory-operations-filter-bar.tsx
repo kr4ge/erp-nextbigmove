@@ -12,6 +12,7 @@ type InventoryOperationsFilterBarProps = {
         }>;
         stores: Array<{
           id: string;
+          name?: string;
           label: string;
         }>;
         warehouses: Array<{
@@ -77,6 +78,7 @@ export function InventoryOperationsFilterBar({
         storeOptions={(filters?.stores ?? []).map((store) => ({
           value: store.id,
           label: store.label,
+          selectedLabel: store.name ?? store.label,
         }))}
         selectedStoreId={selectedStoreId}
         onStoreChange={onStoreChange}
