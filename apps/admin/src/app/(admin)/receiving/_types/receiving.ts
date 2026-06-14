@@ -99,6 +99,7 @@ export type WmsReceivingBatchLabels = {
     id: string;
     code: string;
     barcode: string;
+    receivingSequence: number | null;
     status: string;
     labelPrintCount: number;
     firstLabelPrintedAt: string | null;
@@ -171,6 +172,7 @@ export type WmsReceivingBatchDetail = {
     id: string;
     code: string;
     barcode: string;
+    receivingSequence: number | null;
     status: string;
     labelPrintCount: number;
     firstLabelPrintedAt: string | null;
@@ -295,6 +297,7 @@ export type WmsReceivingPutawayOptionsResponse = {
     id: string;
     code: string;
     barcode: string;
+    receivingSequence: number | null;
     status: string;
     productName: string;
     productCustomId: string | null;

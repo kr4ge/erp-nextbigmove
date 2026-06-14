@@ -227,6 +227,7 @@ type ReceivingBatchLabelsRecord = Prisma.WmsReceivingBatchGetPayload<{
         id: true;
         code: true;
         barcode: true;
+        receivingSequence: true;
         status: true;
         productId: true;
         variationId: true;
@@ -703,8 +704,13 @@ export class WmsReceivingService {
 
     this.assertTenantScope(batch.tenantId, scope.activeTenantId);
 
+    const sortedBatch = {
+      ...batch,
+      inventoryUnits: this.sortReceivingBatchUnits(batch.inventoryUnits),
+    };
+
     return {
-      batch: this.mapReceivingBatchDetail(batch),
+      batch: this.mapReceivingBatchDetail(sortedBatch),
     };
   }
 
@@ -750,6 +756,7 @@ export class WmsReceivingService {
             id: true,
             code: true,
             barcode: true,
+            receivingSequence: true,
             status: true,
             productId: true,
             variationId: true,
@@ -784,8 +791,13 @@ export class WmsReceivingService {
 
     this.assertTenantScope(batch.tenantId, scope.activeTenantId);
 
+    const sortedBatch = {
+      ...batch,
+      inventoryUnits: this.sortReceivingBatchUnits(batch.inventoryUnits),
+    };
+
     return {
-      batch: this.mapReceivingBatchLabels(batch),
+      batch: this.mapReceivingBatchLabels(sortedBatch),
     };
   }
 
@@ -815,6 +827,7 @@ export class WmsReceivingService {
             id: true,
             code: true,
             barcode: true,
+            receivingSequence: true,
             status: true,
             currentLocation: {
               select: {
@@ -846,6 +859,8 @@ export class WmsReceivingService {
     }
 
     this.assertTenantScope(batch.tenantId, scope.activeTenantId);
+
+    const sortedUnits = this.sortReceivingBatchUnits(batch.inventoryUnits);
 
     const structuralLocations = await this.getActiveStructuralLocationsByWarehouse(batch.warehouse.id);
     const structure = this.buildPutawayStructureMaps(structuralLocations);
@@ -898,10 +913,10 @@ export class WmsReceivingService {
         code: batch.code,
         status: batch.status,
         warehouse: batch.warehouse,
-        unitCount: batch.inventoryUnits.length,
+        unitCount: sortedUnits.length,
       },
       sections,
-      units: batch.inventoryUnits.map((unit) => {
+      units: sortedUnits.map((unit) => {
         const defaultSectionId = this.resolveSectionIdFromLocation(
           structure.locationMap,
           unit.productProfile.preferredLocationId,
@@ -915,6 +930,7 @@ export class WmsReceivingService {
           id: unit.id,
           code: unit.code,
           barcode: unit.barcode,
+          receivingSequence: unit.receivingSequence ?? null,
           status: unit.status,
           productName: unit.posProduct.name,
           productCustomId: unit.posProduct.customId,
@@ -1438,6 +1454,7 @@ export class WmsReceivingService {
         Array.from({ length: entry.receiveQuantity }, () => {
           const unitBarcode = unitBarcodes[unitBarcodeIndex];
           const unitIdentifier = this.buildUnitIdentifier(unitCodePrefix, unitBarcode);
+          const receivingSequence = unitBarcodeIndex + 1;
           unitBarcodeIndex += 1;
 
           return {
@@ -1453,6 +1470,7 @@ export class WmsReceivingService {
             posWarehouseRef: entry.purchasingLine.resolvedProfile?.posWarehouseRef ?? null,
             code: unitIdentifier,
             barcode: unitBarcode,
+            receivingSequence,
             status: WmsInventoryUnitStatus.STAGED,
             sourceType: WmsInventoryUnitSourceType.RECEIVING,
             sourceRefId: receivingBatch.id,
@@ -1766,6 +1784,7 @@ export class WmsReceivingService {
         Array.from({ length: entry.receiveQuantity }, () => {
           const unitBarcode = unitBarcodes[unitBarcodeIndex];
           const unitIdentifier = this.buildUnitIdentifier(unitCodePrefix, unitBarcode);
+          const receivingSequence = unitBarcodeIndex + 1;
           unitBarcodeIndex += 1;
 
           return {
@@ -1781,6 +1800,7 @@ export class WmsReceivingService {
             posWarehouseRef: entry.profile.posWarehouseRef ?? null,
             code: unitIdentifier,
             barcode: unitBarcode,
+            receivingSequence,
             status: WmsInventoryUnitStatus.STAGED,
             sourceType: WmsInventoryUnitSourceType.MANUAL_INPUT,
             sourceRefId: receivingBatch.id,
@@ -2282,6 +2302,7 @@ export class WmsReceivingService {
         id: unit.id,
         code: unit.code,
         barcode: unit.barcode,
+        receivingSequence: unit.receivingSequence ?? null,
         status: unit.status,
         labelPrintCount: unit.labelPrintCount,
         firstLabelPrintedAt: unit.firstLabelPrintedAt,
@@ -2364,6 +2385,7 @@ export class WmsReceivingService {
         id: unit.id,
         code: unit.code,
         barcode: unit.barcode,
+        receivingSequence: unit.receivingSequence ?? null,
         status: unit.status,
         labelPrintCount: unit.labelPrintCount,
         firstLabelPrintedAt: unit.firstLabelPrintedAt,
@@ -2390,6 +2412,68 @@ export class WmsReceivingService {
 
   private buildReceivingCode() {
     return `RCV-${Date.now().toString(36).toUpperCase()}`;
+  }
+
+  private sortReceivingBatchUnits<
+    TUnit extends {
+      receivingSequence?: number | null;
+      barcode?: string | null;
+      code?: string | null;
+      createdAt?: Date | string | null;
+    },
+  >(units: TUnit[]) {
+    return [...units].sort((left, right) => {
+      const leftSequence = typeof left.receivingSequence === 'number' ? left.receivingSequence : null;
+      const rightSequence = typeof right.receivingSequence === 'number' ? right.receivingSequence : null;
+
+      if (leftSequence !== null || rightSequence !== null) {
+        if (leftSequence === null) {
+          return 1;
+        }
+        if (rightSequence === null) {
+          return -1;
+        }
+        if (leftSequence !== rightSequence) {
+          return leftSequence - rightSequence;
+        }
+      }
+
+      const leftBarcode = this.parseNumericBarcode(left.barcode ?? null);
+      const rightBarcode = this.parseNumericBarcode(right.barcode ?? null);
+      if (leftBarcode !== null && rightBarcode !== null && leftBarcode !== rightBarcode) {
+        return leftBarcode - rightBarcode;
+      }
+
+      const leftCreatedAt = this.parseTimestamp(left.createdAt ?? null);
+      const rightCreatedAt = this.parseTimestamp(right.createdAt ?? null);
+      if (leftCreatedAt !== rightCreatedAt) {
+        return leftCreatedAt - rightCreatedAt;
+      }
+
+      return (left.code ?? '').localeCompare(right.code ?? '');
+    });
+  }
+
+  private parseNumericBarcode(barcode: string | null) {
+    if (!barcode || !/^\d+$/.test(barcode)) {
+      return null;
+    }
+
+    const parsed = Number.parseInt(barcode, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private parseTimestamp(value: Date | string | null) {
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
   }
 
   private buildUnitCodePrefix(partnerName: string) {

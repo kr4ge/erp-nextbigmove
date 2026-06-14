@@ -216,13 +216,21 @@ export function InventoryTransfersTab({
   const binOptions = selectedRack?.bins ?? [];
   const selectedBin = binOptions.find((bin) => bin.id === activeDraft.binId) ?? null;
   const selectedBinAvailableUnits = selectedBin?.availableUnits ?? null;
-  const selectedBinHasCapacityConflict =
-    selectedBinAvailableUnits !== null
-    && selectedUnitIds.length > 0
-    && selectedUnitIds.length > selectedBinAvailableUnits;
+  const orderedSelectedUnits = useMemo(
+    () => actionableUnits.filter((unit) => selectedUnitIds.includes(unit.id)),
+    [actionableUnits, selectedUnitIds],
+  );
+  const selectedActionableCount = orderedSelectedUnits.length;
+  const assignableSelectedCount = useMemo(() => {
+    if (!selectedBin || selectedBin.isFull || selectedBin.capacity === null || selectedBinAvailableUnits === null) {
+      return selectedActionableCount;
+    }
+
+    return Math.min(selectedActionableCount, Math.max(selectedBinAvailableUnits, 0));
+  }, [selectedActionableCount, selectedBin, selectedBinAvailableUnits]);
+  const remainingSelectedCount = Math.max(selectedActionableCount - assignableSelectedCount, 0);
   const allActionableSelected =
     actionableUnitIds.length > 0 && actionableUnitIds.every((unitId) => selectedUnitIds.includes(unitId));
-  const selectedActionableCount = selectedUnitIds.length;
   const assignmentGridClassName = 'grid items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3';
 
   const updateActiveGroupDraft = (update: Partial<PutawayDraft>) => {
@@ -261,7 +269,7 @@ export function InventoryTransfersTab({
   };
 
   const handleAssignSelected = async () => {
-    if (!selectedBatchId || !selectedUnitIds.length) {
+    if (!selectedBatchId || !selectedActionableCount) {
       return;
     }
 
@@ -279,14 +287,15 @@ export function InventoryTransfersTab({
       return;
     }
 
-    if (selectedBinHasCapacityConflict) {
-      setPutawayError(
-        `Bin ${selectedBin?.code} has space for ${selectedBinAvailableUnits} more unit${selectedBinAvailableUnits === 1 ? '' : 's'}. Reduce the selection or choose another bin.`,
-      );
+    const orderedSelectedIds = orderedSelectedUnits.map((unit) => unit.id);
+    const assignableUnitIds = orderedSelectedIds.slice(0, Math.max(selectedBinAvailableUnits, 0));
+
+    if (!assignableUnitIds.length) {
+      setPutawayError(`Bin ${selectedBin?.code} has no free slots right now. Choose another bin.`);
       return;
     }
 
-    const assignments = selectedUnitIds.map((unitId) => ({
+    const assignments = assignableUnitIds.map((unitId) => ({
       unitId,
       sectionId: activeDraft.sectionId,
       rackId: activeDraft.rackId,
@@ -304,10 +313,11 @@ export function InventoryTransfersTab({
         );
       }
 
-      setSelectedUnitIds([]);
-      setLastSavedMessage(
-        `Assigned ${assignments.length} unit${assignments.length > 1 ? 's' : ''} to ${selectedBin?.label ?? 'selected bin'}.`,
-      );
+      const remainingUnitIds = orderedSelectedIds.slice(assignments.length);
+      setSelectedUnitIds(remainingUnitIds);
+      setLastSavedMessage(remainingUnitIds.length > 0
+        ? `Assigned ${assignments.length} unit${assignments.length === 1 ? '' : 's'} to ${selectedBin?.label ?? 'selected bin'}. ${remainingUnitIds.length} unit${remainingUnitIds.length === 1 ? '' : 's'} remain selected for the next bin.`
+        : `Assigned ${assignments.length} unit${assignments.length === 1 ? '' : 's'} to ${selectedBin?.label ?? 'selected bin'}.`);
     } catch (error) {
       setPutawayError(error instanceof Error ? error.message : 'Unable to save transfer');
     }
@@ -628,7 +638,9 @@ export function InventoryTransfersTab({
                                 ? `Full · ${selectedBin.occupiedUnits}/${selectedBin.capacity ?? 0} stored`
                                 : selectedBin.capacity === null
                                   ? 'Capacity is not configured for this bin.'
-                                  : `${selectedBin.availableUnits} free of ${selectedBin.capacity}`
+                                  : remainingSelectedCount > 0
+                                    ? `${assignableSelectedCount} of ${selectedActionableCount} selected units fit here. ${remainingSelectedCount} will remain selected.`
+                                    : `${selectedBin.availableUnits} free of ${selectedBin.capacity}`
                               : 'Only bins with available space can accept new units.'}
                           </p>
                         </label>
@@ -646,7 +658,6 @@ export function InventoryTransfersTab({
                               || !activeDraft.sectionId
                               || !activeDraft.rackId
                               || !activeDraft.binId
-                              || selectedBinHasCapacityConflict
                               || !!selectedBin?.isFull
                               || selectedBin?.capacity === null
                             }
@@ -654,8 +665,10 @@ export function InventoryTransfersTab({
                           >
                             {isAssigningPutaway
                               ? 'Saving…'
-                              : selectedUnitIds.length > 0
-                                ? `Assign ${selectedUnitIds.length} ${selectedUnitIds.length === 1 ? 'unit' : 'units'}`
+                              : selectedActionableCount > 0
+                                ? remainingSelectedCount > 0
+                                  ? `Assign ${assignableSelectedCount} ${assignableSelectedCount === 1 ? 'unit' : 'units'}`
+                                  : `Assign ${selectedActionableCount} ${selectedActionableCount === 1 ? 'unit' : 'units'}`
                                 : 'Assign selected'}
                           </button>
                         </div>

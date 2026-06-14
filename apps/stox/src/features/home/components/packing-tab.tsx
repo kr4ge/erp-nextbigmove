@@ -722,8 +722,29 @@ function DemandPackExecutionCard({
     }
   };
 
+  const scannerTarget = isComplete
+    ? null
+    : selectedOrder
+      ? {
+          value: unitCode,
+          onChangeText: setUnitCode,
+          onSubmit: submitUnit,
+        }
+      : {
+          value: waybillCode,
+          onChangeText: setWaybillCode,
+          onSubmit: submitWaybill,
+        };
+
   return (
     <>
+      <HiddenScannerCapture
+        enabled={Boolean(scannerTarget)}
+        value={scannerTarget?.value ?? ''}
+        onChangeText={scannerTarget?.onChangeText ?? noopScannerChange}
+        onSubmit={scannerTarget?.onSubmit ?? noopScannerSubmit}
+      />
+
       <View style={styles.executionHeader}>
         <Pressable onPress={onBack} style={styles.backButton}>
           <Feather name="chevron-left" size={20} color={tokens.colors.ink} />
@@ -989,8 +1010,32 @@ function PackExecutionCard({
     }
   };
 
+  const scannerTarget = isPacking
+    ? !packedAll
+      ? {
+          value: unitCode,
+          onChangeText: setUnitCode,
+          onSubmit: submitUnit,
+        }
+      : {
+          value: trackingCode,
+          onChangeText: (value: string) => {
+            setTrackingCode(value);
+            setVerifiedTracking(null);
+          },
+          onSubmit: submitTracking,
+        }
+    : null;
+
   return (
     <>
+      <HiddenScannerCapture
+        enabled={Boolean(scannerTarget)}
+        value={scannerTarget?.value ?? ''}
+        onChangeText={scannerTarget?.onChangeText ?? noopScannerChange}
+        onSubmit={scannerTarget?.onSubmit ?? noopScannerSubmit}
+      />
+
       <View style={styles.executionHeader}>
         <Pressable onPress={onBack} style={styles.backButton}>
           <Feather name="chevron-left" size={20} color={tokens.colors.ink} />
@@ -1428,6 +1473,98 @@ function ScannerInput({
     </View>
   );
 }
+
+function HiddenScannerCapture({
+  enabled,
+  value,
+  onChangeText,
+  onSubmit,
+  autoSubmitDelayMs = 120,
+  autoSubmitMinLength = 3,
+}: {
+  enabled: boolean;
+  value: string;
+  onChangeText: (value: string) => void;
+  onSubmit: () => void | Promise<void>;
+  autoSubmitDelayMs?: number;
+  autoSubmitMinLength?: number;
+}) {
+  const inputRef = useRef<TextInput>(null);
+  const submitRef = useRef(onSubmit);
+  const lastAutoSubmittedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    submitRef.current = onSubmit;
+  }, [onSubmit]);
+
+  useEffect(() => {
+    if (!enabled) {
+      lastAutoSubmittedRef.current = null;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 30);
+
+    return () => clearTimeout(timer);
+  }, [enabled, value]);
+
+  useEffect(() => {
+    if (!enabled) {
+      lastAutoSubmittedRef.current = null;
+      return;
+    }
+
+    const cleaned = value.trim();
+    if (!cleaned) {
+      lastAutoSubmittedRef.current = null;
+      return;
+    }
+
+    if (cleaned.length < autoSubmitMinLength || lastAutoSubmittedRef.current === cleaned) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      lastAutoSubmittedRef.current = cleaned;
+      void submitRef.current();
+    }, autoSubmitDelayMs);
+
+    return () => clearTimeout(timer);
+  }, [autoSubmitDelayMs, autoSubmitMinLength, enabled, value]);
+
+  return (
+    <TextInput
+      ref={inputRef}
+      autoCapitalize="characters"
+      autoCorrect={false}
+      blurOnSubmit={false}
+      caretHidden
+      contextMenuHidden
+      onBlur={() => {
+        if (!enabled) {
+          return;
+        }
+
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 30);
+      }}
+      onChangeText={onChangeText}
+      onSubmitEditing={() => {
+        void onSubmit();
+      }}
+      showSoftInputOnFocus={false}
+      style={styles.hiddenScannerInput}
+      value={value}
+    />
+  );
+}
+
+function noopScannerChange(_value: string) {}
+
+function noopScannerSubmit() {}
 
 function PackStateBadge({
   label,
@@ -2303,6 +2440,14 @@ const styles = StyleSheet.create({
   },
   scanPanel: {
     gap: tokens.spacing.md,
+  },
+  hiddenScannerInput: {
+    height: 1,
+    left: -9999,
+    opacity: 0,
+    position: 'absolute',
+    top: 0,
+    width: 1,
   },
   demandActiveOrderCard: {
     backgroundColor: tokens.colors.surfaceMuted,
