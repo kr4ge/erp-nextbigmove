@@ -37,6 +37,11 @@ import { WmsStaffActivityService } from '../../common/services/wms-staff-activit
 import { OrdersService } from '../orders/orders.service';
 import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
+import {
+  deriveReceivingBatchStatus,
+  RECEIVING_BATCH_COMPLETED_BIN_UNIT_STATUSES,
+  RECEIVING_BATCH_COMPLETED_NON_BIN_UNIT_STATUSES,
+} from '../wms-receiving/wms-receiving-batch-status.util';
 import { WmsStoxReleasesService } from '../wms-settings/wms-stox-releases.service';
 import {
   GetWmsMobileStockDto,
@@ -10954,7 +10959,7 @@ export class WmsMobileService {
     actorId: string | null,
     now: Date,
   ) {
-    const [totalUnits, putAwayUnits] = await Promise.all([
+    const [totalUnits, completedUnits, stagedUnits] = await Promise.all([
       tx.wmsInventoryUnit.count({
         where: {
           receivingBatchId,
@@ -10963,20 +10968,43 @@ export class WmsMobileService {
       tx.wmsInventoryUnit.count({
         where: {
           receivingBatchId,
-          status: WmsInventoryUnitStatus.PUTAWAY,
+          OR: [
+            {
+              status: {
+                in: [...RECEIVING_BATCH_COMPLETED_BIN_UNIT_STATUSES],
+              },
+              currentLocation: {
+                is: {
+                  kind: WmsLocationKind.BIN,
+                },
+              },
+            },
+            {
+              status: {
+                in: [...RECEIVING_BATCH_COMPLETED_NON_BIN_UNIT_STATUSES],
+              },
+            },
+          ],
+        },
+      }),
+      tx.wmsInventoryUnit.count({
+        where: {
+          receivingBatchId,
+          status: WmsInventoryUnitStatus.STAGED,
           currentLocation: {
             is: {
-              kind: WmsLocationKind.BIN,
+              kind: WmsLocationKind.RECEIVING_STAGING,
             },
           },
         },
       }),
     ]);
 
-    const nextStatus =
-      totalUnits > 0 && putAwayUnits === totalUnits
-        ? WmsReceivingBatchStatus.COMPLETED
-        : WmsReceivingBatchStatus.PUTAWAY_PENDING;
+    const nextStatus = deriveReceivingBatchStatus({
+      totalUnits,
+      stagedUnits,
+      completedUnits,
+    });
 
     await tx.wmsReceivingBatch.update({
       where: { id: receivingBatchId },

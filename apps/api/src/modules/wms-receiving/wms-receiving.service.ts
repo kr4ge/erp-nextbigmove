@@ -21,6 +21,11 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { NotificationStateService } from '../../common/services/notification-state.service';
 import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
 import { WorkflowExecutionGateway } from '../workflows/gateways/workflow-execution.gateway';
+import {
+  deriveReceivingBatchStatus,
+  RECEIVING_BATCH_COMPLETED_BIN_UNIT_STATUSES,
+  RECEIVING_BATCH_COMPLETED_NON_BIN_UNIT_STATUSES,
+} from './wms-receiving-batch-status.util';
 import { AssignWmsReceivingPutawayDto } from './dto/assign-wms-receiving-putaway.dto';
 import { CreateWmsReceivingBatchDto } from './dto/create-wms-receiving-batch.dto';
 import { GetWmsReceivingOverviewDto } from './dto/get-wms-receiving-overview.dto';
@@ -105,6 +110,12 @@ type ReceivingBatchRecord = Prisma.WmsReceivingBatchGetPayload<{
     inventoryUnits: {
       select: {
         id: true;
+        status: true;
+        currentLocation: {
+          select: {
+            kind: true;
+          };
+        };
       };
     };
   };
@@ -538,6 +549,12 @@ export class WmsReceivingService {
             inventoryUnits: {
               select: {
                 id: true,
+                status: true,
+                currentLocation: {
+                  select: {
+                    kind: true,
+                  },
+                },
               },
             },
           },
@@ -2412,11 +2429,13 @@ export class WmsReceivingService {
   }
 
   private mapReceivingBatchRow(batch: ReceivingBatchRecord) {
+    const status = this.deriveReceivingBatchStatusFromUnits(batch.inventoryUnits, batch.status);
+
     return {
       id: batch.id,
       tenantId: batch.tenantId,
       code: batch.code,
-      status: batch.status,
+      status,
       sourceRequestId: batch.purchasingBatch?.sourceRequestId ?? null,
       requestTitle: batch.purchasingBatch?.requestTitle ?? null,
       store: {
@@ -2448,11 +2467,13 @@ export class WmsReceivingService {
   }
 
   private mapReceivingBatchLabels(batch: ReceivingBatchLabelsRecord) {
+    const status = this.deriveReceivingBatchStatusFromUnits(batch.inventoryUnits, batch.status);
+
     return {
       id: batch.id,
       tenantId: batch.tenantId,
       code: batch.code,
-      status: batch.status,
+      status,
       labelPrintCount: batch.labelPrintCount,
       firstLabelPrintedAt: batch.firstLabelPrintedAt,
       lastLabelPrintedAt: batch.lastLabelPrintedAt,
@@ -2498,10 +2519,12 @@ export class WmsReceivingService {
   }
 
   private mapReceivingBatchDetail(batch: ReceivingBatchDetailRecord) {
+    const status = this.deriveReceivingBatchStatusFromUnits(batch.inventoryUnits, batch.status);
+
     return {
       id: batch.id,
       code: batch.code,
-      status: batch.status,
+      status,
       notes: batch.notes,
       labelPrintCount: batch.labelPrintCount,
       firstLabelPrintedAt: batch.firstLabelPrintedAt,
@@ -2742,7 +2765,7 @@ export class WmsReceivingService {
       now: Date;
     },
   ) {
-    const [totalUnits, putAwayUnits, stagedUnits] = await Promise.all([
+    const [totalUnits, putAwayUnits, completedUnits, stagedUnits] = await Promise.all([
       tx.wmsInventoryUnit.count({
         where: {
           receivingBatchId: params.batchId,
@@ -2762,6 +2785,28 @@ export class WmsReceivingService {
       tx.wmsInventoryUnit.count({
         where: {
           receivingBatchId: params.batchId,
+          OR: [
+            {
+              status: {
+                in: [...RECEIVING_BATCH_COMPLETED_BIN_UNIT_STATUSES],
+              },
+              currentLocation: {
+                is: {
+                  kind: WmsLocationKind.BIN,
+                },
+              },
+            },
+            {
+              status: {
+                in: [...RECEIVING_BATCH_COMPLETED_NON_BIN_UNIT_STATUSES],
+              },
+            },
+          ],
+        },
+      }),
+      tx.wmsInventoryUnit.count({
+        where: {
+          receivingBatchId: params.batchId,
           status: WmsInventoryUnitStatus.STAGED,
           currentLocation: {
             is: {
@@ -2772,12 +2817,11 @@ export class WmsReceivingService {
       }),
     ]);
 
-    const nextStatus =
-      totalUnits > 0 && putAwayUnits === totalUnits
-        ? WmsReceivingBatchStatus.COMPLETED
-        : totalUnits > 0 && stagedUnits === totalUnits
-          ? WmsReceivingBatchStatus.STAGED
-          : WmsReceivingBatchStatus.PUTAWAY_PENDING;
+    const nextStatus = deriveReceivingBatchStatus({
+      totalUnits,
+      stagedUnits,
+      completedUnits,
+    });
 
     const nextBatch = await tx.wmsReceivingBatch.update({
       where: { id: params.batchId },
@@ -2809,6 +2853,50 @@ export class WmsReceivingService {
   private cleanOptionalText(value?: string | null) {
     const normalized = value?.trim() ?? null;
     return normalized ? normalized : null;
+  }
+
+  private deriveReceivingBatchStatusFromUnits(
+    units: Array<{
+      status: WmsInventoryUnitStatus;
+      currentLocation?: { kind: WmsLocationKind } | null;
+    }>,
+    fallbackStatus: WmsReceivingBatchStatus,
+  ) {
+    if (units.length === 0) {
+      return fallbackStatus;
+    }
+
+    const completedUnits = units.filter((unit) => this.isReceivingBatchCompletedUnit(unit)).length;
+    const stagedUnits = units.filter(
+      (unit) => unit.status === WmsInventoryUnitStatus.STAGED
+        && unit.currentLocation?.kind === WmsLocationKind.RECEIVING_STAGING,
+    ).length;
+
+    return deriveReceivingBatchStatus({
+      totalUnits: units.length,
+      stagedUnits,
+      completedUnits,
+    });
+  }
+
+  private isReceivingBatchCompletedUnit(unit: {
+    status: WmsInventoryUnitStatus;
+    currentLocation?: { kind: WmsLocationKind } | null;
+  }) {
+    if (
+      (RECEIVING_BATCH_COMPLETED_NON_BIN_UNIT_STATUSES as readonly WmsInventoryUnitStatus[]).includes(
+        unit.status,
+      )
+    ) {
+      return true;
+    }
+
+    return (
+      (RECEIVING_BATCH_COMPLETED_BIN_UNIT_STATUSES as readonly WmsInventoryUnitStatus[]).includes(
+        unit.status,
+      )
+      && unit.currentLocation?.kind === WmsLocationKind.BIN
+    );
   }
 
   private toNumber(value: Prisma.Decimal | number | null | undefined) {
