@@ -13,7 +13,7 @@ import type {
 } from '../_types/warehouse';
 
 const EDITABLE_STATUSES: WmsBasketStatus[] = ['AVAILABLE', 'DAMAGED', 'RETIRED'];
-const BASKET_CAPACITY_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
+const BASKET_CAPACITY_OPTIONS = Array.from({ length: 20 }, (_, index) => index + 1);
 
 type BasketRegistryPanelProps = {
   warehouse: WmsWarehouseDetail | null;
@@ -88,7 +88,7 @@ export function BasketRegistryPanel({
         </form>
 
         <p className="text-[11px] leading-5 text-[#7b8e9c]">
-          Order capacity is prepared for multi-order baskets. Current picking assignment still uses one order per basket until the next phase.
+          Order capacity controls how many active fulfillment orders a basket can carry at once.
         </p>
 
         {baskets.length ? (

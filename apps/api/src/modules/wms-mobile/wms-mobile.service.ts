@@ -8516,6 +8516,11 @@ export class WmsMobileService {
               customerName: true,
               totalQuantity: true,
               pickedQuantity: true,
+              posOrder: {
+                select: {
+                  tracking: true,
+                },
+              },
               store: {
                 select: {
                   id: true,
@@ -8895,6 +8900,9 @@ export class WmsMobileService {
     return orders.map((order) => ({
       id: order.id,
       posOrderId: order.posOrderId ?? null,
+      tracking: typeof order.posOrder?.tracking === 'string' && order.posOrder.tracking.trim().length > 0
+        ? order.posOrder.tracking.trim()
+        : null,
       status: order.status ?? null,
       statusLabel: order.status ? this.formatEnumLabel(order.status) : null,
       customerName: order.customerName ?? null,

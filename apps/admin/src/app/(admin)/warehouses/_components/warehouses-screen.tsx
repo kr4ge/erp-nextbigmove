@@ -384,7 +384,9 @@ export function WarehousesScreen() {
       <BinSerializationModal
         open={!!binModalTarget}
         target={binModalTarget}
+        isSavingCapacity={controller.isSavingLocation}
         onClose={() => setBinModalTarget(null)}
+        onUpdateCapacity={controller.updateLocationById}
       />
     </div>
   );

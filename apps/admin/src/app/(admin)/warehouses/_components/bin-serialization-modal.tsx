@@ -5,7 +5,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2, Printer, RefreshCcw } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
 import { fetchWmsBinDetail } from '../_services/warehouses.service';
-import type { WmsLocationTreeNode, WmsWarehouseBinDetailResponse } from '../_types/warehouse';
+import type {
+  UpdateWmsLocationInput,
+  WmsLocationTreeNode,
+  WmsWarehouseBinDetailResponse,
+} from '../_types/warehouse';
 import { normalizeBarcodeValue, renderCode128SvgMarkup } from '../_utils/code39-barcode';
 import { printBinLabel } from '../_utils/print-bin-label';
 
@@ -20,7 +24,9 @@ export type BinSerializationTarget = {
 type BinSerializationModalProps = {
   open: boolean;
   target: BinSerializationTarget | null;
+  isSavingCapacity: boolean;
   onClose: () => void;
+  onUpdateCapacity: (id: string, input: UpdateWmsLocationInput) => Promise<void>;
 };
 
 type BinDetailTab = 'overview' | 'units' | 'label';
@@ -31,10 +37,18 @@ const TAB_OPTIONS: Array<{ value: BinDetailTab; label: string }> = [
   { value: 'label', label: 'Label' },
 ];
 
-export function BinSerializationModal({ open, target, onClose }: BinSerializationModalProps) {
+export function BinSerializationModal({
+  open,
+  target,
+  isSavingCapacity,
+  onClose,
+  onUpdateCapacity,
+}: BinSerializationModalProps) {
   const [activeTab, setActiveTab] = useState<BinDetailTab>('overview');
   const [printError, setPrintError] = useState<string | null>(null);
   const [lastPrintAction, setLastPrintAction] = useState<'print' | 'reprint' | null>(null);
+  const [capacityDraft, setCapacityDraft] = useState('');
+  const [capacityError, setCapacityError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -44,6 +58,7 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
     setActiveTab('overview');
     setPrintError(null);
     setLastPrintAction(null);
+    setCapacityError(null);
   }, [open, target?.bin.id]);
 
   const detailQuery = useQuery({
@@ -71,6 +86,46 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
   const occupiedUnits = detail?.bin.occupiedUnits ?? 0;
   const availableUnits =
     detail?.bin.availableUnits ?? (capacity === null ? null : Math.max(capacity - occupiedUnits, 0));
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setCapacityDraft(capacity === null ? '' : String(capacity));
+  }, [capacity, open, target?.bin.id]);
+
+  const canSaveCapacity =
+    capacityDraft.trim().length > 0
+    && Number.isFinite(Number(capacityDraft))
+    && Number(capacityDraft) >= occupiedUnits
+    && Number(capacityDraft) !== capacity
+    && !isSavingCapacity;
+
+  const handleSaveCapacity = async () => {
+    if (!target) {
+      return;
+    }
+
+    const nextCapacity = Number(capacityDraft);
+    if (!Number.isFinite(nextCapacity) || nextCapacity < 1) {
+      setCapacityError('Slot capacity must be at least 1 unit.');
+      return;
+    }
+
+    if (nextCapacity < occupiedUnits) {
+      setCapacityError(`Slot capacity cannot be lower than ${occupiedUnits} occupied unit${occupiedUnits === 1 ? '' : 's'}.`);
+      return;
+    }
+
+    try {
+      setCapacityError(null);
+      await onUpdateCapacity(target.bin.id, { capacity: nextCapacity });
+      await detailQuery.refetch();
+    } catch {
+      // The shared warehouse controller already raises the banner with the API error.
+    }
+  };
 
   const handlePrint = (action: 'print' | 'reprint') => {
     if (!target) {
@@ -213,6 +268,46 @@ export function BinSerializationModal({ open, target, onClose }: BinSerializatio
                   <MetaItem label="Section" value={`${detail.bin.section.code} · ${detail.bin.section.name}`} />
                   <MetaItem label="Rack" value={`${detail.bin.rack.code} · ${detail.bin.rack.name}`} />
                   <MetaItem label="Slot" value={`${detail.bin.code} · ${detail.bin.name}`} />
+                </div>
+
+                <div className="rounded-[18px] border border-[#dce4ea] bg-white p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#6c8190]">Slot Capacity</p>
+                      <p className="mt-1 text-sm text-[#637786]">Update how many serialized units this slot can hold.</p>
+                      <input
+                        type="number"
+                        min={Math.max(1, occupiedUnits)}
+                        max={1000000}
+                        value={capacityDraft}
+                        onChange={(event) => {
+                          setCapacityDraft(event.target.value);
+                          setCapacityError(null);
+                        }}
+                        className="input mt-3 w-full sm:max-w-[220px]"
+                        placeholder="Capacity"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={!canSaveCapacity}
+                      onClick={() => {
+                        void handleSaveCapacity();
+                      }}
+                      className="btn btn-md btn-primary sm:min-w-[150px] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isSavingCapacity ? 'Saving...' : 'Update capacity'}
+                    </button>
+                  </div>
+
+                  {capacityError ? (
+                    <p className="mt-2 text-sm text-rose-700">{capacityError}</p>
+                  ) : (
+                    <p className="mt-2 text-xs text-[#637786]">
+                      Minimum allowed right now: {Math.max(1, occupiedUnits)} unit{Math.max(1, occupiedUnits) === 1 ? '' : 's'}.
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (

@@ -294,6 +294,9 @@ export function useWarehousesController() {
     updateBasket: async (id: string, input: UpdateWmsBasketInput) => {
       await updateBasketMutation.mutateAsync({ id, input });
     },
+    updateLocationById: async (id: string, input: UpdateWmsLocationInput) => {
+      await updateLocationMutation.mutateAsync({ id, input });
+    },
     isSavingWarehouse: createWarehouseMutation.isPending || updateWarehouseMutation.isPending,
     isSavingLocation: createLocationMutation.isPending || updateLocationMutation.isPending,
     isSavingBasket: createBasketMutation.isPending || updateBasketMutation.isPending,

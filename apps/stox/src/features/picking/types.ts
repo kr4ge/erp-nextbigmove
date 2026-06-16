@@ -152,6 +152,7 @@ export type WmsMobilePickBasket = {
 export type WmsMobileBasketOrder = {
   id: string;
   posOrderId: string | null;
+  tracking: string | null;
   status: PickingStatus | null;
   statusLabel: string | null;
   customerName: string | null;

@@ -252,6 +252,7 @@ function ScanResultCard({
   let primaryLabel: string | undefined;
   let onPrimaryPress: (() => void) | undefined;
   const facts: Array<{ label: string; value: string | null | undefined }> = [];
+  const detailSections: Array<{ label: string; values: string[] }> = [];
 
   if (result.kind === 'unit') {
     icon = 'hash';
@@ -280,6 +281,14 @@ function ScanResultCard({
       { label: 'Units', value: `${result.task.totals.packed}/${result.task.totals.required}` },
       { label: 'RTS', value: result.returnFlow?.label ?? 'None' },
     );
+    if (result.task.basket) {
+      detailSections.push({
+        label: 'Basket',
+        values: [
+          `${result.task.basket.barcode}${result.task.basket.statusLabel ? ` · ${result.task.basket.statusLabel}` : ''}`,
+        ],
+      });
+    }
     primaryLabel = hasReturnWorkflow ? 'Open RTS' : 'Open task';
     onPrimaryPress = hasReturnWorkflow
       ? () => onOpenRtsTask?.(result.task, result.returnFlow ?? null)
@@ -296,6 +305,19 @@ function ScanResultCard({
       { label: 'Packer', value: result.basket?.assignedPacker?.name ?? 'None' },
       { label: 'Order', value: result.basket?.task?.posOrderId ?? basketOrders[0]?.posOrderId ?? 'None' },
     );
+    const basketTrackingValues = basketOrders.map((order) => {
+      if (order.tracking) {
+        return order.posOrderId ? `${order.tracking} · ${order.posOrderId}` : order.tracking;
+      }
+
+      return order.posOrderId ? `${order.posOrderId} · Awaiting tracking` : 'Awaiting tracking';
+    });
+    if (basketTrackingValues.length > 0) {
+      detailSections.push({
+        label: 'Tracking in basket',
+        values: basketTrackingValues,
+      });
+    }
     if (result.basket?.task) {
       primaryLabel = 'Open task';
       onPrimaryPress = () => onChangeTab?.('tasks');
@@ -336,6 +358,10 @@ function ScanResultCard({
         ))}
       </View>
 
+      {detailSections.map((section) => (
+        <ResultDetailSection key={section.label} label={section.label} values={section.values} />
+      ))}
+
       <ResultActionRow
         primaryLabel={primaryLabel}
         onPrimaryPress={onPrimaryPress}
@@ -373,6 +399,32 @@ function FactRow({
     <View style={styles.factRow}>
       <Text style={styles.factLabel}>{label}</Text>
       <Text numberOfLines={1} style={styles.factValue}>{value}</Text>
+    </View>
+  );
+}
+
+function ResultDetailSection({
+  label,
+  values,
+}: {
+  label: string;
+  values: string[];
+}) {
+  return (
+    <View style={styles.detailSection}>
+      <Text style={styles.detailSectionLabel}>{label}</Text>
+      <View style={styles.detailSectionList}>
+        {values.map((value, index) => (
+          <View
+            key={`${label}-${value}-${index}`}
+            style={[
+              styles.detailSectionRow,
+              index === values.length - 1 ? styles.detailSectionRowLast : null,
+            ]}>
+            <Text selectable style={styles.detailSectionValue}>{value}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -567,6 +619,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     textAlign: 'right',
+  },
+  detailSection: {
+    gap: 8,
+  },
+  detailSectionLabel: {
+    color: '#8A6FFF',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  detailSectionList: {
+    borderColor: '#ECE4FA',
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  detailSectionRow: {
+    backgroundColor: '#FFFDF8',
+    borderBottomColor: '#F0EAF8',
+    borderBottomWidth: 1,
+    minHeight: 46,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  detailSectionRowLast: {
+    borderBottomWidth: 0,
+  },
+  detailSectionValue: {
+    color: tokens.colors.ink,
+    fontSize: 13,
+    fontWeight: '800',
   },
   resultActionRow: {
     flexDirection: 'row',

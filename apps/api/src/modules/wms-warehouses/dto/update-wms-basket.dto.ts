@@ -20,6 +20,6 @@ export class UpdateWmsBasketDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(10)
+  @Max(20)
   maxFulfillmentOrders?: number;
 }
