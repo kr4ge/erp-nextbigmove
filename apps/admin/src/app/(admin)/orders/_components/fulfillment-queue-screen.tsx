@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, PackageCheck, RefreshCcw } from 'lucide-react';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsPageShell } from '../../_components/wms-page-shell';
@@ -13,18 +14,44 @@ type FulfillmentQueueScreenProps = {
   mode: WmsFulfillmentQueueMode;
 };
 
+type PickQueueView = 'orders' | 'baskets';
+
 export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
   const queue = useFulfillmentQueueController(mode);
+  const [pickView, setPickView] = useState<PickQueueView>('orders');
   const isPick = mode === 'pick';
+  const showStatusFilter = !isPick || pickView === 'orders';
   const title = isPick ? 'Pick Queue' : 'Pack Queue';
   const scopeLabel = queue.queueScope === 'own' ? 'My queue' : 'All queues';
   const canBulkReallocate = queue.queueScope === 'all';
-  const paginationTotal = queue.data?.pagination.total ?? 0;
-  const paginationPageSize = queue.data?.pagination.pageSize ?? queue.tasks.length;
+  const basketCount = queue.heldBaskets.length;
+  const paginationTotal = pickView === 'baskets' && isPick ? basketCount : (queue.data?.pagination.total ?? 0);
+  const paginationPageSize = pickView === 'baskets' && isPick
+    ? basketCount
+    : (queue.data?.pagination.pageSize ?? queue.tasks.length);
   const paginationStart = paginationTotal === 0 ? 0 : ((queue.currentPage - 1) * paginationPageSize) + 1;
   const paginationEnd = paginationTotal === 0
     ? 0
-    : Math.min(paginationTotal, paginationStart + queue.tasks.length - 1);
+    : Math.min(paginationTotal, paginationStart + (pickView === 'baskets' && isPick ? basketCount : queue.tasks.length) - 1);
+  const { currentPage, selectedStatus, setCurrentPage, setSelectedStatus } = queue;
+
+  useEffect(() => {
+    if (!isPick && pickView !== 'orders') {
+      setPickView('orders');
+    }
+  }, [isPick, pickView]);
+
+  useEffect(() => {
+    if (isPick && pickView === 'baskets' && selectedStatus) {
+      setSelectedStatus('');
+    }
+  }, [isPick, pickView, selectedStatus, setSelectedStatus]);
+
+  useEffect(() => {
+    if (isPick && pickView === 'baskets' && currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  }, [currentPage, isPick, pickView, setCurrentPage]);
 
   return (
     <div className="space-y-5">
@@ -115,60 +142,115 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
           title={title}
           icon={<PackageCheck className='panel-icon' />}
           filters={(
-            <FulfillmentQueueFilterBar
-              searchText={queue.searchText}
-              onSearchTextChange={queue.setSearchText}
-              tenantOptions={queue.tenantOptions}
-              selectedTenantId={queue.selectedTenantId}
-              onTenantChange={queue.setSelectedTenantId}
-              storeOptions={queue.storeOptions}
-              selectedStoreId={queue.selectedStoreId}
-              onStoreChange={queue.setSelectedStoreId}
-              selectedStatus={queue.selectedStatus}
-              onStatusChange={queue.setSelectedStatus}
-              statusOptions={queue.statusOptions}
-            />
+            <div className="space-y-3">
+              {isPick ? (
+                <div className="border-b border-[#dce4ea]">
+                  <div className="flex items-end gap-8">
+                    <PickQueueTab
+                      active={pickView === 'orders'}
+                      onClick={() => setPickView('orders')}
+                    >
+                      Orders
+                    </PickQueueTab>
+                    <PickQueueTab
+                      active={pickView === 'baskets'}
+                      onClick={() => setPickView('baskets')}
+                    >
+                      Baskets
+                    </PickQueueTab>
+                  </div>
+                </div>
+              ) : null}
+
+              <FulfillmentQueueFilterBar
+                searchText={queue.searchText}
+                onSearchTextChange={queue.setSearchText}
+                tenantOptions={queue.tenantOptions}
+                selectedTenantId={queue.selectedTenantId}
+                onTenantChange={queue.setSelectedTenantId}
+                storeOptions={queue.storeOptions}
+                selectedStoreId={queue.selectedStoreId}
+                onStoreChange={queue.setSelectedStoreId}
+                selectedStatus={queue.selectedStatus}
+                onStatusChange={queue.setSelectedStatus}
+                statusOptions={queue.statusOptions}
+                showStatusFilter={showStatusFilter}
+              />
+            </div>
           )}
           footer={(
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-slate-600">
-                Showing {paginationStart}-{paginationEnd} of {paginationTotal}
+                {pickView === 'baskets' && isPick
+                  ? `${basketCount} active basket${basketCount === 1 ? '' : 's'}`
+                  : `Showing ${paginationStart}-${paginationEnd} of ${paginationTotal}`}
               </p>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => queue.setCurrentPage(queue.currentPage - 1)}
-                  disabled={queue.currentPage === 1}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
+              {pickView === 'baskets' && isPick ? null : (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => queue.setCurrentPage(queue.currentPage - 1)}
+                    disabled={queue.currentPage === 1}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
 
-                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-[#12384b]">
-                  {queue.currentPage} / {queue.totalPages}
-                </span>
+                  <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-[#12384b]">
+                    {queue.currentPage} / {queue.totalPages}
+                  </span>
 
-                <button
-                  type="button"
-                  onClick={() => queue.setCurrentPage(queue.currentPage + 1)}
-                  disabled={queue.currentPage >= queue.totalPages}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => queue.setCurrentPage(queue.currentPage + 1)}
+                    disabled={queue.currentPage >= queue.totalPages}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-[#12384b] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         >
           <FulfillmentQueueTable
             mode={mode}
             tasks={queue.tasks}
+            heldBaskets={queue.heldBaskets}
             isLoading={queue.isLoading}
             tenantReady={queue.tenantReady}
+            pickView={pickView}
+            canVoidPickBaskets={isPick && queue.queueScope === 'all'}
+            isVoidingPickBasket={queue.isVoidingBasket}
+            onVoidPickBasket={queue.voidPickBasket}
           />
         </WmsWorkspaceCard>
       </WmsPageShell>
     </div>
+  );
+}
+
+function PickQueueTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative -mb-px border-b-[3px] px-0 pb-4 text-[14px] font-semibold transition ${
+        active
+          ? 'border-orange-500 text-primary'
+          : 'border-transparent text-[#526879] hover:text-primary'
+      }`}
+    >
+      {children}
+    </button>
   );
 }

@@ -113,6 +113,11 @@ export type WmsFulfillmentQueueTask = {
   nextPick: WmsFulfillmentQueueReservation | null;
 };
 
+export type WmsFulfillmentHeldBasket = NonNullable<WmsFulfillmentQueueTask['basket']> & {
+  task: WmsFulfillmentQueueTask | null;
+  tasks: WmsFulfillmentQueueTask[];
+};
+
 export type WmsFulfillmentQueueLine = {
   id: string;
   variationId: string;
@@ -190,5 +195,6 @@ export type WmsFulfillmentQueueResponse = {
     }>;
   };
   summary: Record<string, number>;
+  heldBaskets?: WmsFulfillmentHeldBasket[];
   tasks: WmsFulfillmentQueueTask[];
 };

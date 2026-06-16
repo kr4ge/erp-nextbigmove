@@ -1,6 +1,5 @@
 import { Transform, Type } from 'class-transformer';
 import {
-  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -103,7 +102,6 @@ export class WmsMobilePickBasketBatchAssignDto extends WmsMobilePickScopedDto {
 
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(10)
   @IsUUID('4', { each: true })
   taskIds!: string[];
 }
@@ -112,6 +110,8 @@ export class WmsMobilePickHandoffDto extends WmsMobilePickScopedDto {
   @IsUUID()
   packerId!: string;
 }
+
+export class WmsMobilePickBasketVoidDto extends WmsMobilePickScopedDto {}
 
 export class GetWmsMobilePickBasketLookupDto extends WmsMobilePickScopedDto {
   @IsString()

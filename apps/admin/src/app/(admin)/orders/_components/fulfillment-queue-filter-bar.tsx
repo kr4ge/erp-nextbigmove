@@ -19,6 +19,7 @@ type FulfillmentQueueFilterBarProps = {
     value: string;
     label: string;
   }>;
+  showStatusFilter?: boolean;
 };
 
 export function FulfillmentQueueFilterBar({
@@ -33,6 +34,7 @@ export function FulfillmentQueueFilterBar({
   selectedStatus,
   onStatusChange,
   statusOptions,
+  showStatusFilter = true,
 }: FulfillmentQueueFilterBarProps) {
   return (
     <div className="flex w-full min-w-0 flex-nowrap items-center gap-2.5">
@@ -66,17 +68,19 @@ export function FulfillmentQueueFilterBar({
           onStoreChange={onStoreChange}
         />
       </div>
-      <select
-        value={selectedStatus}
-        onChange={(event) => onStatusChange(event.target.value)}
-        className="h-12 w-[180px] shrink-0 rounded-2xl border border-[#d7e0e7] bg-white px-3.5 text-[13px] font-semibold text-[#12384b] outline-none transition focus:border-[#96b4c3] focus:shadow-[0_0_0_4px_rgba(18,56,75,0.08)]"
-      >
-        {statusOptions.map((option) => (
-          <option key={option.value || 'all'} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {showStatusFilter ? (
+        <select
+          value={selectedStatus}
+          onChange={(event) => onStatusChange(event.target.value)}
+          className="h-12 w-[180px] shrink-0 rounded-2xl border border-[#d7e0e7] bg-white px-3.5 text-[13px] font-semibold text-[#12384b] outline-none transition focus:border-[#96b4c3] focus:shadow-[0_0_0_4px_rgba(18,56,75,0.08)]"
+        >
+          {statusOptions.map((option) => (
+            <option key={option.value || 'all'} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : null}
     </div>
   );
 }

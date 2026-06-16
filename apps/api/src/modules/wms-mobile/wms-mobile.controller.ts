@@ -24,6 +24,7 @@ import {
   WmsMobilePickBasketBatchAssignDto,
   WmsMobilePickHandoffDto,
   WmsMobilePickBasketUnitScanDto,
+  WmsMobilePickBasketVoidDto,
   WmsMobilePickReallocateDto,
   GetWmsMobilePickingTasksDto,
   WmsMobilePickResyncDto,
@@ -356,6 +357,16 @@ export class WmsMobileController {
     @Body() body: WmsMobilePickBasketUnitScanDto,
   ) {
     return this.wmsMobileService.scanPickingBasketUnit(req.user, id, body, req);
+  }
+
+  @Post('picking/baskets/:id/void')
+  @Permissions('wms.fulfillment.override')
+  async voidPickingBasket(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePickBasketVoidDto,
+  ) {
+    return this.wmsMobileService.voidPickingBasket(req.user, id, body, req);
   }
 
   @Post('picking/tasks/:id/retry-allocation')

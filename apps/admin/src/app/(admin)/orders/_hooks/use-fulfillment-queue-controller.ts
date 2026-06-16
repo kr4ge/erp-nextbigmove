@@ -8,6 +8,7 @@ import {
   fetchWmsPickQueue,
   reallocateWmsPickQueue,
   resyncWmsPickQueue,
+  voidWmsPickBasket,
 } from '../_services/fulfillment.service';
 import type {
   WmsFulfillmentPackStatus,
@@ -47,6 +48,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isResyncing, setIsResyncing] = useState(false);
   const [isReallocating, setIsReallocating] = useState(false);
+  const [isVoidingBasket, setIsVoidingBasket] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedTenantIdState, setSelectedTenantIdState] = useState<string | undefined>(undefined);
   const [selectedStoreIdState, setSelectedStoreIdState] = useState<string | undefined>(undefined);
@@ -209,6 +211,44 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     }
   }, [fetchQueue, mode, selectedStoreIdState, selectedTenantIdState]);
 
+  const voidPickBasket = useCallback(async (basketId: string) => {
+    if (mode !== 'pick') {
+      return false;
+    }
+
+    setIsVoidingBasket(true);
+    setErrorMessage(null);
+    setNotice(null);
+
+    try {
+      const result = await voidWmsPickBasket({
+        basketId,
+        tenantId: selectedTenantIdState ?? null,
+      });
+
+      await fetchQueue(true);
+
+      const detailParts = [
+        `${result.releasedUnits} unit${result.releasedUnits === 1 ? '' : 's'} returned to bin`,
+        `${result.resetOrders} order${result.resetOrders === 1 ? '' : 's'} reset`,
+      ];
+      if (result.canceledOrders > 0) {
+        detailParts.push(`${result.canceledOrders} order${result.canceledOrders === 1 ? '' : 's'} removed from queue`);
+      }
+
+      setNotice({
+        tone: 'success',
+        message: `Basket ${result.basket.barcode} was voided. ${detailParts.join(' · ')}.`,
+      });
+      return true;
+    } catch (error) {
+      setErrorMessage(resolveQueueError(error));
+      return false;
+    } finally {
+      setIsVoidingBasket(false);
+    }
+  }, [fetchQueue, mode, selectedTenantIdState]);
+
   useEffect(() => {
     if (mode !== 'pick' || ownedOnly || !data?.context) {
       return;
@@ -271,6 +311,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     isReallocating,
     isRefreshing,
     isResyncing,
+    isVoidingBasket,
     mode,
     notice,
     queueScope,
@@ -301,6 +342,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     statusOptions,
     storeOptions,
     summaryItems,
+    heldBaskets: data?.heldBaskets ?? [],
     tasks: data?.tasks ?? [],
     tenantOptions,
     tenantReady: data?.tenantReady ?? false,
@@ -308,6 +350,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     refresh: () => fetchQueue(true),
     reallocatePickQueue,
     resyncPickQueue,
+    voidPickBasket,
   };
 }
 

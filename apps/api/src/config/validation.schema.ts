@@ -46,6 +46,13 @@ export default Joi.object({
   OBJECT_STORAGE_PAYMENT_PROOF_MAX_FILE_MB: Joi.number().integer().min(1).default(8),
   OBJECT_STORAGE_STOX_APK_MAX_FILE_MB: Joi.number().integer().min(1).default(150),
 
+  // Queue tuning
+  CONFIRMATION_UPDATE_QUEUE_CONCURRENCY: Joi.number().integer().min(1).default(4),
+  WMS_PICKING_HANDOFF_QUEUE_CONCURRENCY: Joi.number().integer().min(1).default(4),
+  WMS_PICKING_HANDOFF_QUEUE_ATTEMPTS: Joi.number().integer().min(1).default(4),
+  WMS_PICKING_HANDOFF_QUEUE_BACKOFF_MS: Joi.number().integer().min(100).default(3000),
+  WMS_PICKING_HANDOFF_QUEUE_TIMEOUT_MS: Joi.number().integer().min(1000).default(45000),
+
   // WMS feature rollout
   WMS_BASKET_DEMAND_PICKING_ENABLED: Joi.string().valid('true', 'false').default('true'),
   WMS_STOX_LEGACY_RESERVED_ENABLED: Joi.string().valid('true', 'false').default('false'),

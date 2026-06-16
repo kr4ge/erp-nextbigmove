@@ -1,3 +1,4 @@
+import { InjectQueue } from '@nestjs/bull';
 import {
   BadRequestException,
   ConflictException,
@@ -7,6 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { Queue } from 'bull';
 import {
   IntegrationStatus,
   Prisma,
@@ -35,6 +37,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { EffectiveAccessService } from '../../common/services/effective-access.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
 import { OrdersService } from '../orders/orders.service';
+import { WmsFulfillmentOpsService } from '../wms-fulfillment/wms-fulfillment-ops.service';
 import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
 import {
@@ -68,6 +71,7 @@ import {
   GetWmsMobilePickingTasksDto,
   WmsMobilePickBasketBatchAssignDto,
   WmsMobilePickBasketUnitScanDto,
+  WmsMobilePickBasketVoidDto,
   WmsMobilePickHandoffDto,
   WmsMobilePickReallocateDto,
   WmsMobilePickResyncDto,
@@ -86,6 +90,11 @@ import {
   GetWmsMobileHistoryFeedDto,
   type WmsMobileHistoryTypeFilter,
 } from './dto/wms-mobile-history.dto';
+import {
+  WMS_PICKING_HANDOFF_QUEUE,
+  WMS_PICKING_HANDOFF_WAITING_FOR_PRINTING_JOB,
+  type WmsPickingHandoffWaitingForPrintingJobData,
+} from './wms-mobile.constants';
 
 type BootstrapUser = {
   userId?: string;
@@ -309,11 +318,37 @@ export class WmsMobileService {
     private readonly cls: ClsService,
     private readonly effectiveAccessService: EffectiveAccessService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
+    private readonly wmsFulfillmentOpsService: WmsFulfillmentOpsService,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
     private readonly wmsInventoryService: WmsInventoryService,
     private readonly wmsStoxReleasesService: WmsStoxReleasesService,
     private readonly ordersService: OrdersService,
+    @InjectQueue(WMS_PICKING_HANDOFF_QUEUE)
+    private readonly pickingHandoffQueue: Queue<WmsPickingHandoffWaitingForPrintingJobData>,
   ) {}
+
+  private getPickingHandoffQueueJobOptions() {
+    const attempts = Math.max(
+      1,
+      Number(process.env.WMS_PICKING_HANDOFF_QUEUE_ATTEMPTS || 4),
+    );
+    const backoffDelay = Math.max(
+      1000,
+      Number(process.env.WMS_PICKING_HANDOFF_QUEUE_BACKOFF_MS || 3000),
+    );
+    const timeout = Math.max(
+      10000,
+      Number(process.env.WMS_PICKING_HANDOFF_QUEUE_TIMEOUT_MS || 45000),
+    );
+
+    return {
+      attempts,
+      backoff: { type: 'exponential' as const, delay: backoffDelay },
+      timeout,
+      removeOnComplete: true,
+      removeOnFail: 1000,
+    };
+  }
 
   async getActiveStoxRelease(user: BootstrapUser) {
     return this.wmsStoxReleasesService.getLatestActiveRelease(user);
@@ -2649,7 +2684,11 @@ export class WmsMobileService {
       ? { claimedById: userId }
       : {};
     const heldBasketWhere: Prisma.WmsBasketWhereInput = {
-      assignedPickerId: userId,
+      ...(pickQueueAccess.canViewAll
+        ? {}
+        : userId
+          ? { assignedPickerId: userId }
+          : { assignedPickerId: '__missing_user__' }),
       status: {
         in: [...ACTIVE_PICK_BASKET_STATUSES],
       },
@@ -2704,7 +2743,11 @@ export class WmsMobileService {
       },
     };
     const activeBasketWhere: Prisma.WmsBasketWhereInput = {
-      assignedPickerId: userId,
+      ...(pickQueueAccess.canViewAll
+        ? {}
+        : userId
+          ? { assignedPickerId: userId }
+          : { assignedPickerId: '__missing_user__' }),
       status: {
         in: [...PICKER_ACTIVE_BASKET_STATUSES],
       },
@@ -6359,7 +6402,24 @@ export class WmsMobileService {
       };
     });
     const updatedOrder = handoffResult.order;
-    const posStatusUpdate = await this.enqueuePickedOrdersWaitingForPrintingStatus(handoffResult.posStatusOrders);
+    let posStatusDispatchMode: 'ASYNC_QUEUE' | 'INLINE_FALLBACK' = 'ASYNC_QUEUE';
+    let posStatusUpdate: PickedOrderPosStatusUpdateSummary;
+
+    try {
+      posStatusUpdate = await this.enqueuePickedOrdersWaitingForPrintingFanout({
+        basketId: updatedOrder.basket?.id ?? order.basket.id,
+        basketCode: updatedOrder.basket?.barcode ?? order.basket.barcode ?? null,
+        requestedAt: now,
+        orders: handoffResult.posStatusOrders,
+      });
+    } catch (error: any) {
+      posStatusDispatchMode = 'INLINE_FALLBACK';
+      this.logger.error(
+        `Failed to queue WMS picking handoff fanout basket=${updatedOrder.basket?.barcode ?? order.basket.barcode ?? order.basket.id}: ${error?.message || 'Unknown error'}. Falling back to inline status queueing.`,
+        error?.stack,
+      );
+      posStatusUpdate = await this.enqueuePickedOrdersWaitingForPrintingStatus(handoffResult.posStatusOrders);
+    }
 
     await this.recordStockActivity(user, request, {
       tenantId: updatedOrder.tenantId,
@@ -6374,6 +6434,7 @@ export class WmsMobileService {
         basketCode: updatedOrder.basket?.barcode ?? null,
         packerId: packerCandidate.id,
         packerEmail: packerCandidate.email,
+        posStatusDispatchMode,
         posStatusTarget: posStatusUpdate.targetStatus,
         posStatusQueued: posStatusUpdate.queued,
         posStatusSkipped: posStatusUpdate.skipped,
@@ -6387,6 +6448,90 @@ export class WmsMobileService {
       success: true,
       task: this.mapMobilePickingTask(updatedOrder),
       posStatusUpdate,
+    };
+  }
+
+  async processPickingHandoffWaitingForPrintingJob(
+    data: WmsPickingHandoffWaitingForPrintingJobData,
+  ): Promise<PickedOrderPosStatusUpdateSummary> {
+    const summary = await this.enqueuePickedOrdersWaitingForPrintingStatus(data.orders);
+
+    this.logger.log(
+      `Processed WMS picking handoff status fanout basket=${data.basketCode ?? data.basketId} target=${summary.targetStatus} queued=${summary.queued} skipped=${summary.skipped} failed=${summary.failed}`,
+    );
+
+    return summary;
+  }
+
+  async voidPickingBasket(
+    user: BootstrapUser,
+    id: string,
+    body: WmsMobilePickBasketVoidDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    if (!userId) {
+      throw new ForbiddenException('Missing WMS user context');
+    }
+
+    const basket = await this.findPickingBasketForRepairAction(user, id, body.tenantId, request);
+    this.assertDemandPickBasketVoidable(basket);
+
+    const activeOrders = this.getMobileBasketOrders(basket);
+    const releaseResult = await this.wmsFulfillmentOpsService.releaseAbandonedDemandBaskets(
+      user,
+      { basketId: basket.id },
+      request,
+    );
+    const basketResult = releaseResult.results[0];
+
+    if (!basketResult) {
+      throw new BadRequestException(`Basket ${basket.barcode} could not be released`);
+    }
+
+    if (basketResult.status === 'error') {
+      throw new BadRequestException(basketResult.reason ?? `Basket ${basket.barcode} could not be released`);
+    }
+
+    if (basketResult.status === 'skipped') {
+      throw new ConflictException(basketResult.reason ?? `Basket ${basket.barcode} could not be released`);
+    }
+
+    const repairSummary = await this.wmsFulfillmentSyncService.repairReleasedDemandOrders({
+      orderIds: activeOrders.map((order: any) => order.id),
+      actorId: userId,
+      reason: `Pick basket ${basket.barcode} was voided from WMS.`,
+    });
+
+    await this.recordStockActivity(user, request, {
+      tenantId: basket.tenantId ?? activeOrders[0]?.tenantId ?? null,
+      actionType: 'PICKING_VOID',
+      resourceType: 'WMS_BASKET',
+      resourceId: basket.id,
+      storeId: activeOrders.length === 1 ? activeOrders[0]?.storeId ?? null : null,
+      warehouseId: basket.warehouseId ?? activeOrders[0]?.warehouseId ?? null,
+      metadata: {
+        basketCode: basket.barcode,
+        releasedOrders: basketResult.releasedOrders ?? activeOrders.length,
+        releasedUnits: basketResult.releasedUnits ?? 0,
+        resetOrders: repairSummary.resetOrders,
+        canceledOrders: repairSummary.canceledOrders,
+        refreshedScopes: repairSummary.refreshedScopes,
+        mode: 'BASKET_DEMAND',
+      },
+    });
+
+    return {
+      success: true,
+      basket: {
+        id: basket.id,
+        barcode: basket.barcode,
+      },
+      releasedOrders: basketResult.releasedOrders ?? activeOrders.length,
+      releasedUnits: basketResult.releasedUnits ?? 0,
+      resetOrders: repairSummary.resetOrders,
+      canceledOrders: repairSummary.canceledOrders,
+      refreshedScopes: repairSummary.refreshedScopes,
     };
   }
 
@@ -6472,6 +6617,73 @@ export class WmsMobileService {
     }
 
     return summary;
+  }
+
+  private buildDeferredPickedOrdersWaitingForPrintingSummary(
+    orders: Array<{
+      posOrderId: string;
+    }>,
+  ): PickedOrderPosStatusUpdateSummary {
+    return {
+      targetStatus: WAITING_FOR_PRINTING_POS_ORDER_STATUS,
+      queued: orders.length,
+      skipped: 0,
+      failed: 0,
+      results: orders.map((order) => ({
+        posOrderId: order.posOrderId,
+        outcome: 'queued',
+        reason: 'HANDOFF_FANOUT_QUEUED',
+      })),
+    };
+  }
+
+  private async enqueuePickedOrdersWaitingForPrintingFanout(params: {
+    basketId: string;
+    basketCode: string | null;
+    requestedAt: Date;
+    orders: Array<{
+      id: string;
+      tenantId: string;
+      storeId: string;
+      posOrderDbId: string;
+      shopId: string;
+      posOrderId: string;
+      warehouseId: string | null;
+    }>;
+  }): Promise<PickedOrderPosStatusUpdateSummary> {
+    if (params.orders.length === 0) {
+      return this.buildDeferredPickedOrdersWaitingForPrintingSummary([]);
+    }
+
+    const jobData: WmsPickingHandoffWaitingForPrintingJobData = {
+      basketId: params.basketId,
+      basketCode: params.basketCode,
+      requestedAt: params.requestedAt.toISOString(),
+      orders: params.orders.map((order) => ({
+        id: order.id,
+        tenantId: order.tenantId,
+        storeId: order.storeId,
+        posOrderDbId: order.posOrderDbId,
+        shopId: order.shopId,
+        posOrderId: order.posOrderId,
+        warehouseId: order.warehouseId,
+      })),
+    };
+
+    await this.pickingHandoffQueue.add(
+      WMS_PICKING_HANDOFF_WAITING_FOR_PRINTING_JOB,
+      jobData,
+      {
+        jobId: `wms-picking-handoff:${params.basketId}:waiting-for-printing`,
+        ...this.getPickingHandoffQueueJobOptions(),
+      },
+    );
+
+    this.logger.log(
+      `Queued WMS picking handoff status fanout basket=${params.basketCode ?? params.basketId} orders=${params.orders.length}`,
+    );
+
+    return this.buildDeferredPickedOrdersWaitingForPrintingSummary(params.orders);
   }
 
   private async syncConfirmedPickingOrders(params: {
@@ -7831,6 +8043,53 @@ export class WmsMobileService {
     return basket;
   }
 
+  private async findPickingBasketForRepairAction(
+    user: BootstrapUser,
+    id: string,
+    requestedTenantId?: string | null,
+    request?: Request,
+  ) {
+    const tenantContext = await this.resolveMobileStockContext(
+      user,
+      { tenantId: requestedTenantId ?? undefined } as GetWmsMobileStockDto,
+      request,
+    );
+    const fulfillmentGoLiveWhere = this.buildFulfillmentGoLiveWhere(
+      await this.getFulfillmentGoLiveAt(tenantContext.tenantId),
+    );
+    const tenantScopeWhere: Prisma.WmsBasketWhereInput = tenantContext.tenantId
+      ? {
+          OR: [
+            { tenantId: tenantContext.tenantId },
+            {
+              fulfillmentOrders: {
+                some: {
+                  tenantId: tenantContext.tenantId,
+                  ...fulfillmentGoLiveWhere,
+                },
+              },
+            },
+          ],
+        }
+      : {};
+    const basket = await this.prisma.wmsBasket.findFirst({
+      where: {
+        id,
+        ...tenantScopeWhere,
+      },
+      include: this.mobileBasketInclude(),
+    });
+
+    if (!basket) {
+      throw new NotFoundException('Pick basket was not found');
+    }
+
+    this.assertLegacyReservedStoxAccessAllowedForBasket(basket);
+    await this.assertPickSupervisorAccess(user);
+
+    return basket;
+  }
+
   private async findPackingBasketForAction(
     user: BootstrapUser,
     id: string,
@@ -8068,6 +8327,21 @@ export class WmsMobileService {
     }
   }
 
+  private assertDemandPickBasketVoidable(basket: any) {
+    if (!this.isDemandPickingBasket(basket)) {
+      throw new BadRequestException(`Basket ${basket.barcode} still uses legacy reserved picking`);
+    }
+
+    if (
+      basket.status !== WmsBasketStatus.ASSIGNED
+      && basket.status !== WmsBasketStatus.IN_PICKING
+      && basket.status !== WmsBasketStatus.FULL_HELD
+      && basket.status !== WmsBasketStatus.PACKING
+    ) {
+      throw new BadRequestException(`Basket ${basket.barcode} is ${this.formatEnumLabel(basket.status)} and cannot be voided`);
+    }
+  }
+
   private assertNoOtherDemandPackOrderInProgress(basket: any, allowedOrderId: string) {
     const activeOrder = this.getMobileBasketOrders(basket).find((order: any) => (
       order.status === WmsFulfillmentOrderStatus.PACKING
@@ -8120,6 +8394,29 @@ export class WmsMobileService {
       allowed: user.role === 'SUPER_ADMIN' || this.hasAnyRequiredPermission(access.permissions, PACK_VOID_DIRECT_PERMISSIONS),
       permissions: access.permissions,
     };
+  }
+
+  private async assertPickSupervisorAccess(user: BootstrapUser) {
+    const userId = user.userId || user.id || null;
+    if (!userId) {
+      throw new ForbiddenException('Missing WMS user context');
+    }
+
+    if (user.role === 'SUPER_ADMIN') {
+      return;
+    }
+
+    const access = await this.effectiveAccessService.resolveUserAccess({
+      userId,
+      basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+      workspace: 'wms',
+    });
+
+    if (this.hasAnyRequiredPermission(access.permissions, PICK_SUPERVISOR_PERMISSIONS)) {
+      return;
+    }
+
+    throw new ForbiddenException('This account does not have WMS pick override access');
   }
 
   private async resolvePackVoidSupervisorApproval(params: {

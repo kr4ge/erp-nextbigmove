@@ -68,6 +68,28 @@ export async function reallocateWmsPickQueue(params: {
   };
 }
 
+export async function voidWmsPickBasket(params: {
+  basketId: string;
+  tenantId?: string | null;
+}) {
+  const response = await apiClient.post(`/wms/mobile/picking/baskets/${params.basketId}/void`, {
+    tenantId: params.tenantId,
+  });
+
+  return response.data as {
+    success: boolean;
+    basket: {
+      id: string;
+      barcode: string;
+    };
+    releasedOrders: number;
+    releasedUnits: number;
+    resetOrders: number;
+    canceledOrders: number;
+    refreshedScopes: number;
+  };
+}
+
 export async function fetchWmsPackQueue(params: {
   tenantId?: string;
   storeId?: string;

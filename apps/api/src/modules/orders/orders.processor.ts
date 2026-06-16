@@ -8,13 +8,18 @@ import {
   ConfirmationUpdateStatusJobData,
 } from './orders.constants';
 
+const CONFIRMATION_UPDATE_QUEUE_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.CONFIRMATION_UPDATE_QUEUE_CONCURRENCY || 4),
+);
+
 @Processor(CONFIRMATION_UPDATE_QUEUE)
 export class OrdersQueueProcessor {
   private readonly logger = new Logger(OrdersQueueProcessor.name);
 
   constructor(private readonly ordersService: OrdersService) {}
 
-  @Process(CONFIRMATION_UPDATE_STATUS_JOB)
+  @Process({ name: CONFIRMATION_UPDATE_STATUS_JOB, concurrency: CONFIRMATION_UPDATE_QUEUE_CONCURRENCY })
   async handleUpdateStatus(job: Job<ConfirmationUpdateStatusJobData>) {
     const startedAt = Date.now();
     const {

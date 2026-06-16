@@ -786,6 +786,118 @@ export class WmsFulfillmentSyncService {
     await this.refreshDemandFulfillmentQueue(params);
   }
 
+  async repairReleasedDemandOrders(params: {
+    orderIds: string[];
+    actorId: string | null;
+    reason?: string | null;
+  }) {
+    const orderIds = Array.from(new Set(
+      params.orderIds
+        .map((orderId) => orderId?.trim())
+        .filter((orderId): orderId is string => Boolean(orderId)),
+    ));
+    if (orderIds.length === 0) {
+      return {
+        repairedOrders: 0,
+        resetOrders: 0,
+        canceledOrders: 0,
+        refreshedScopes: 0,
+      };
+    }
+
+    const reason = params.reason?.trim() || 'Pick basket was voided from WMS.';
+    const now = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const orders = await tx.wmsFulfillmentOrder.findMany({
+        where: {
+          id: {
+            in: orderIds,
+          },
+        },
+        include: {
+          posOrder: {
+            select: {
+              status: true,
+              isVoid: true,
+            },
+          },
+          lines: true,
+        },
+      });
+
+      const demandOrders = orders.filter((order) => (
+        order.assignmentMode === WmsFulfillmentAssignmentMode.BASKET_DEMAND
+        && order.status !== WmsFulfillmentOrderStatus.PACKED
+        && order.status !== WmsFulfillmentOrderStatus.CANCELED
+      ));
+      const scopeKeys = new Set(demandOrders.map((order) => `${order.tenantId}::${order.storeId}`));
+      let resetOrders = 0;
+      let canceledOrders = 0;
+
+      for (const order of demandOrders) {
+        const isConfirmed = order.posOrder.status === CONFIRMED_POS_ORDER_STATUS && !order.posOrder.isVoid;
+
+        await tx.wmsFulfillmentLine.updateMany({
+          where: {
+            fulfillmentOrderId: order.id,
+            status: {
+              not: WmsFulfillmentLineStatus.CANCELED,
+            },
+          },
+          data: {
+            quantityAllocated: 0,
+            quantityPicked: 0,
+            status: isConfirmed ? WmsFulfillmentLineStatus.RESTOCKING : WmsFulfillmentLineStatus.CANCELED,
+            issueReason: isConfirmed ? null : reason,
+          },
+        });
+
+        await tx.wmsFulfillmentOrder.update({
+          where: { id: order.id },
+          data: {
+            warehouseId: null,
+            status: isConfirmed ? WmsFulfillmentOrderStatus.RESTOCKING : WmsFulfillmentOrderStatus.CANCELED,
+            issueReason: isConfirmed ? null : reason,
+            allocatedQuantity: 0,
+            pickedQuantity: 0,
+            claimedById: null,
+            claimedAt: null,
+            packedById: null,
+            basketId: null,
+            completedAt: isConfirmed ? null : now,
+            lastSyncedAt: now,
+          },
+        });
+
+        if (isConfirmed) {
+          resetOrders += 1;
+        } else {
+          canceledOrders += 1;
+        }
+      }
+
+      for (const scopeKey of scopeKeys) {
+        const [tenantId, storeId] = scopeKey.split('::');
+        if (!tenantId || !storeId) {
+          continue;
+        }
+
+        await this.refreshDemandFulfillmentQueueTx(tx, {
+          tenantId,
+          storeId,
+        }, now);
+      }
+
+      return {
+        repairedOrders: demandOrders.length,
+        resetOrders,
+        canceledOrders,
+        refreshedScopes: scopeKeys.size,
+      };
+    });
+  }
+
   private async refreshDemandFulfillmentQueue(params: {
     tenantId: string | null;
     storeId: string;

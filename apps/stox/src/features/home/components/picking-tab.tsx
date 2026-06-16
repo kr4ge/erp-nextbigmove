@@ -195,6 +195,19 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
       .filter((task): task is WmsMobilePickingTask => Boolean(task)),
     [claimReviewTaskIds, pickTaskById],
   );
+  const claimReviewBaskets = useMemo(() => {
+    const baskets = new Map<string, WmsMobilePickBasket>();
+
+    for (const basket of picking?.availableBaskets ?? []) {
+      baskets.set(basket.id, basket);
+    }
+
+    for (const basket of picking?.heldBaskets ?? []) {
+      baskets.set(basket.id, basket);
+    }
+
+    return Array.from(baskets.values());
+  }, [picking?.availableBaskets, picking?.heldBaskets]);
   const executionTasks = activeBatchTasks.length > 0
     ? activeBatchTasks
     : activeBasketTasks.length > 1
@@ -263,8 +276,6 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     setSelectedPickTaskIds((current) => (
       current.includes(task.id)
         ? current.filter((taskId) => taskId !== task.id)
-        : current.length >= 10
-          ? current
         : [...current, task.id]
     ));
   };
@@ -454,6 +465,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
         />
       ) : showClaimReview ? (
         <PickBatchClaimReviewScreen
+          baskets={claimReviewBaskets}
           isSubmitting={isSubmitting}
           tasks={claimReviewTasks}
           onAssignBasket={assignSelectedPickTasksToBasket}
@@ -776,11 +788,13 @@ function PickSelectionDock({
 }
 
 function PickBatchClaimReviewScreen({
+  baskets,
   isSubmitting,
   onAssignBasket,
   onBack,
   tasks,
 }: {
+  baskets: WmsMobilePickBasket[];
   isSubmitting: boolean;
   onAssignBasket: (basketCode: string) => Promise<boolean>;
   onBack: () => void;
@@ -792,6 +806,15 @@ function PickBatchClaimReviewScreen({
   const totalUnits = tasks.reduce((total, task) => total + task.totals.required, 0);
   const storeCount = new Set(tasks.map((task) => task.store?.id ?? task.store?.name ?? 'UNKNOWN_STORE')).size;
   const partnerCount = new Set(tasks.map((task) => task.store?.tenantId ?? task.store?.tenantName ?? 'UNKNOWN_PARTNER')).size;
+  const normalizedBasketCode = basketCode.trim().toUpperCase();
+  const matchedBasket = useMemo(
+    () => baskets.find((basket) => basket.barcode.trim().toUpperCase() === normalizedBasketCode) ?? null,
+    [baskets, normalizedBasketCode],
+  );
+  const matchedBasketOpenSlots = matchedBasket
+    ? Math.max(matchedBasket.maxFulfillmentOrders - matchedBasket.activeFulfillmentOrders, 0)
+    : null;
+  const exceedsMatchedBasketCapacity = matchedBasketOpenSlots !== null && tasks.length > matchedBasketOpenSlots;
 
   useEffect(() => {
     const timer = setTimeout(() => basketInputRef.current?.focus(), 150);
@@ -805,6 +828,11 @@ function PickBatchClaimReviewScreen({
 
     const code = basketCode.trim();
     if (!code) {
+      basketInputRef.current?.focus();
+      return;
+    }
+
+    if (exceedsMatchedBasketCapacity) {
       basketInputRef.current?.focus();
       return;
     }
@@ -867,6 +895,23 @@ function PickBatchClaimReviewScreen({
       </SurfaceCard>
 
       <SurfaceCard style={styles.claimReviewScanCard}>
+        {matchedBasket ? (
+          <View style={styles.claimReviewBasketMetaRow}>
+            <View style={styles.claimReviewStatPill}>
+              <Text style={styles.claimReviewStatText}>{matchedBasket.barcode}</Text>
+            </View>
+            <View style={styles.claimReviewStatPill}>
+              <Text style={styles.claimReviewStatText}>
+                {matchedBasket.activeFulfillmentOrders}/{matchedBasket.maxFulfillmentOrders} filled
+              </Text>
+            </View>
+            <View style={styles.claimReviewStatPill}>
+              <Text style={styles.claimReviewStatText}>
+                {matchedBasketOpenSlots} open slot{matchedBasketOpenSlots === 1 ? '' : 's'}
+              </Text>
+            </View>
+          </View>
+        ) : null}
         <ScannerInput
           autoSubmit
           inputRef={basketInputRef}
@@ -877,8 +922,13 @@ function PickBatchClaimReviewScreen({
           onChangeText={setBasketCode}
           onSubmit={submitBasketAssignment}
         />
+        {exceedsMatchedBasketCapacity ? (
+          <Text style={styles.claimReviewCapacityError}>
+            Basket {matchedBasket?.barcode} has only {matchedBasketOpenSlots} open slot{matchedBasketOpenSlots === 1 ? '' : 's'} for {tasks.length} selected order{tasks.length === 1 ? '' : 's'}.
+          </Text>
+        ) : null}
         <PrimaryButton
-          disabled={!basketCode.trim()}
+          disabled={!basketCode.trim() || exceedsMatchedBasketCapacity}
           label="Claim"
           loading={isSubmitting}
           onPress={submitBasketAssignment}
@@ -2832,6 +2882,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.08,
     shadowRadius: 20,
+  },
+  claimReviewBasketMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  claimReviewCapacityError: {
+    color: tokens.colors.danger,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 18,
   },
   queueHeader: {
     alignItems: 'center',
