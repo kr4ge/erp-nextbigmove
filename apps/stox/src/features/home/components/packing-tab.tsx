@@ -85,6 +85,7 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
     activeTask,
     activeTaskId,
     basketViews,
+    completeBasketOrder,
     completeTask,
     error,
     fetchBasketPlan,
@@ -221,6 +222,10 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
     return Boolean(result);
   }, [scanBasketOrderUnit, setActiveTaskId]);
 
+  const handleDemandComplete = useCallback(async (basketId: string, orderId: string) => {
+    return completeBasketOrder(basketId, orderId);
+  }, [completeBasketOrder]);
+
   if (isLoading && !packing) {
     return (
       <SurfaceCard style={styles.loadingCard}>
@@ -299,10 +304,19 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
               setActiveTaskId(null);
             }}
             onRefresh={async () => {
+              if (
+                activeBasketView.plan.totals.remaining === 0
+                && activeBasketView.plan.orderProgress.remaining === 0
+              ) {
+                await refreshPacking();
+                return;
+              }
+
               if (activeBasketView.basket.id) {
                 await fetchBasketPlan(activeBasketView.basket.id);
               }
             }}
+            onCompleteOrder={handleDemandComplete}
             onScanUnit={handleDemandUnit}
             onScanWaybill={handleDemandWaybill}
             plan={activeBasketView.plan}
@@ -628,6 +642,7 @@ function DemandPackExecutionCard({
   basket,
   isSubmitting,
   onBack,
+  onCompleteOrder,
   onRefresh,
   onScanUnit,
   onScanWaybill,
@@ -636,6 +651,7 @@ function DemandPackExecutionCard({
   basket: WmsMobilePickingTask['basket'];
   isSubmitting: boolean;
   onBack: () => void;
+  onCompleteOrder: (basketId: string, orderId: string) => Promise<boolean>;
   onRefresh: () => void | Promise<void>;
   onScanUnit: (basketId: string, orderId: string, code: string) => Promise<boolean>;
   onScanWaybill: (basketId: string, code: string) => Promise<boolean>;
@@ -652,6 +668,11 @@ function DemandPackExecutionCard({
   const remainingOrders = plan.orderProgress.remaining;
   const availableUnitCount = plan.availableUnits.reduce((total, unit) => total + unit.unitCount, 0);
   const isComplete = plan.totals.remaining === 0 && plan.orderProgress.remaining === 0;
+  const activeOrderReadyToComplete = Boolean(
+    selectedOrder
+    && selectedOrder.totals.required > 0
+    && selectedOrder.totals.remaining === 0,
+  );
 
   useEffect(() => {
     setWaybillCode('');
@@ -660,18 +681,18 @@ function DemandPackExecutionCard({
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (selectedOrder) {
+      if (selectedOrder && !activeOrderReadyToComplete) {
         unitInputRef.current?.focus();
         return;
       }
 
-      if (!isComplete) {
+      if (!selectedOrder && !isComplete) {
         waybillInputRef.current?.focus();
       }
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [isComplete, selectedOrder?.id]);
+  }, [activeOrderReadyToComplete, isComplete, selectedOrder?.id]);
 
   const submitWaybill = async () => {
     if (!basket?.id || waybillSubmitInFlightRef.current || isSubmitting || isComplete) {
@@ -702,7 +723,13 @@ function DemandPackExecutionCard({
   };
 
   const submitUnit = async () => {
-    if (!basket?.id || !selectedOrder || unitSubmitInFlightRef.current || isSubmitting) {
+    if (
+      !basket?.id
+      || !selectedOrder
+      || activeOrderReadyToComplete
+      || unitSubmitInFlightRef.current
+      || isSubmitting
+    ) {
       return;
     }
 
@@ -725,11 +752,13 @@ function DemandPackExecutionCard({
   const scannerTarget = isComplete
     ? null
     : selectedOrder
-      ? {
-          value: unitCode,
-          onChangeText: setUnitCode,
-          onSubmit: submitUnit,
-        }
+      ? activeOrderReadyToComplete
+        ? null
+        : {
+            value: unitCode,
+            onChangeText: setUnitCode,
+            onSubmit: submitUnit,
+          }
       : {
           value: waybillCode,
           onChangeText: setWaybillCode,
@@ -766,7 +795,15 @@ function DemandPackExecutionCard({
         />
       </View>
 
-      <DemandPackFloatingCounter plan={plan} />
+      <DemandPackFloatingCounter
+        isSubmitting={isSubmitting}
+        onCompleteOrder={
+          basket?.id && selectedOrder && activeOrderReadyToComplete
+            ? () => onCompleteOrder(basket.id, selectedOrder.id)
+            : null
+        }
+        plan={plan}
+      />
 
       <SurfaceCard style={styles.executionCard}>
         <View style={styles.taskProgressRow}>
@@ -797,17 +834,6 @@ function DemandPackExecutionCard({
           </View>
         ) : (
           <View style={styles.scanPanel}>
-            <ScannerInput
-              autoSubmit
-              inputRef={waybillInputRef}
-              label="Waybill"
-              placeholder="Scan waybill"
-              value={waybillCode}
-              disabled={isSubmitting}
-              onChangeText={setWaybillCode}
-              onSubmit={submitWaybill}
-            />
-
             {selectedOrder ? (
               <>
                 <View style={styles.demandActiveOrderCard}>
@@ -824,18 +850,37 @@ function DemandPackExecutionCard({
                   </View>
                 </View>
 
-                <ScannerInput
-                  autoSubmit
-                  inputRef={unitInputRef}
-                  label="Unit"
-                  placeholder="Scan basket unit"
-                  value={unitCode}
-                  disabled={isSubmitting}
-                  onChangeText={setUnitCode}
-                  onSubmit={submitUnit}
-                />
+                {activeOrderReadyToComplete ? (
+                  <View style={styles.donePanelCompact}>
+                    <Feather name="check-circle" size={24} color={tokens.colors.success} />
+                    <Text style={styles.doneTitle}>Ready to close</Text>
+                    <Text style={styles.doneCopy}>Done packing will finish this waybill.</Text>
+                  </View>
+                ) : (
+                  <ScannerInput
+                    autoSubmit
+                    inputRef={unitInputRef}
+                    label="Unit"
+                    placeholder="Scan basket unit"
+                    value={unitCode}
+                    disabled={isSubmitting}
+                    onChangeText={setUnitCode}
+                    onSubmit={submitUnit}
+                  />
+                )}
               </>
-            ) : null}
+            ) : (
+              <ScannerInput
+                autoSubmit
+                inputRef={waybillInputRef}
+                label="Waybill"
+                placeholder="Scan waybill"
+                value={waybillCode}
+                disabled={isSubmitting}
+                onChangeText={setWaybillCode}
+                onSubmit={submitWaybill}
+              />
+            )}
           </View>
         )}
       </SurfaceCard>
@@ -1337,23 +1382,43 @@ function DemandPackOrderList({
   );
 }
 
-function DemandPackFloatingCounter({ plan }: { plan: WmsMobileBasketPackPlan }) {
+function DemandPackFloatingCounter({
+  isSubmitting,
+  onCompleteOrder,
+  plan,
+}: {
+  isSubmitting: boolean;
+  onCompleteOrder: (() => Promise<boolean>) | null;
+  plan: WmsMobileBasketPackPlan;
+}) {
   const setShellOverlay = useStoxShellOverlay();
   const primaryLabel = plan.activeOrder ? 'Order' : 'Orders';
   const primaryPacked = plan.activeOrder?.totals.packed ?? plan.orderProgress.packed;
   const primaryRequired = plan.activeOrder?.totals.required ?? plan.orderProgress.total;
   const dock = useMemo(() => (
     <View style={styles.demandCounterDock}>
-      <View style={styles.demandCounterPillPrimary}>
-        <Text style={styles.demandCounterLabel}>{primaryLabel}</Text>
-        <Text style={styles.demandCounterValue}>{primaryPacked}/{primaryRequired}</Text>
+      <View style={styles.demandCounterRow}>
+        <View style={styles.demandCounterPillPrimary}>
+          <Text style={styles.demandCounterLabel}>{primaryLabel}</Text>
+          <Text style={styles.demandCounterValue}>{primaryPacked}/{primaryRequired}</Text>
+        </View>
+        <View style={styles.demandCounterPill}>
+          <Text style={styles.demandCounterLabelSoft}>Basket left</Text>
+          <Text style={styles.demandCounterValueSoft}>{plan.totals.remaining}</Text>
+        </View>
       </View>
-      <View style={styles.demandCounterPill}>
-        <Text style={styles.demandCounterLabelSoft}>Basket left</Text>
-        <Text style={styles.demandCounterValueSoft}>{plan.totals.remaining}</Text>
-      </View>
+      {onCompleteOrder ? (
+        <PrimaryButton
+          label="Done packing"
+          loading={isSubmitting}
+          onPress={() => {
+            void onCompleteOrder();
+          }}
+          style={styles.demandCounterActionButton}
+        />
+      ) : null}
     </View>
-  ), [plan.totals.remaining, primaryLabel, primaryPacked, primaryRequired]);
+  ), [isSubmitting, onCompleteOrder, plan.totals.remaining, primaryLabel, primaryPacked, primaryRequired]);
 
   useEffect(() => {
     if (!setShellOverlay) {
@@ -2360,10 +2425,22 @@ const styles = StyleSheet.create({
   },
   demandCounterDock: {
     alignItems: 'center',
-    flexDirection: 'row',
+    alignSelf: 'stretch',
     gap: tokens.spacing.sm,
     justifyContent: 'center',
     marginTop: -4,
+  },
+  demandCounterRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    justifyContent: 'center',
+  },
+  demandCounterActionButton: {
+    alignSelf: 'stretch',
+    minHeight: 52,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   demandCounterPillPrimary: {
     alignItems: 'center',

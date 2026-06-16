@@ -66,6 +66,8 @@ export class WmsMobilePackScanDto extends WmsMobilePackScopedDto {
   code!: string;
 }
 
+export class WmsMobilePackBasketOrderCompleteDto extends WmsMobilePackScopedDto {}
+
 export class WmsMobilePackCompleteDto extends WmsMobilePackScopedDto {
   @IsString()
   @MinLength(1)

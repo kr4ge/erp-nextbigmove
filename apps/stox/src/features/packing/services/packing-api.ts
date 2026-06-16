@@ -1,6 +1,7 @@
 import type { DeviceIdentity } from '@/src/features/auth/types';
 import { apiRequest } from '@/src/shared/services/http';
 import type {
+  WmsMobileBasketPackCompleteResponse,
   PackingFilters,
   PackingStatusFilter,
   WmsMobileBasketPackPlanResponse,
@@ -174,6 +175,24 @@ export function scanMobilePackingBasketOrderUnit(params: PackingRequestParams & 
       body: {
         tenantId: params.tenantId,
         code: params.code,
+      },
+    },
+  );
+}
+
+export function completeMobilePackingBasketOrder(params: PackingRequestParams & {
+  basketId: string;
+  orderId: string;
+  tenantId?: string | null;
+}) {
+  return apiRequest<WmsMobileBasketPackCompleteResponse>(
+    `/wms/mobile/packing/baskets/${params.basketId}/orders/${params.orderId}/complete`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
       },
     },
   );

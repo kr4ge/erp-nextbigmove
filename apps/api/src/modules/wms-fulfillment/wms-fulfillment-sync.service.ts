@@ -474,7 +474,10 @@ export class WmsFulfillmentSyncService {
       select: {
         id: true,
       },
-      orderBy: [{ createdAt: 'asc' }],
+      orderBy: [
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
       take: PUTAWAY_REALLOCATION_ORDER_LIMIT,
     });
 
@@ -516,7 +519,10 @@ export class WmsFulfillmentSyncService {
       select: {
         id: true,
       },
-      orderBy: [{ createdAt: 'asc' }],
+      orderBy: [
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
       take: PUTAWAY_REALLOCATION_ORDER_LIMIT,
     });
 
@@ -653,7 +659,10 @@ export class WmsFulfillmentSyncService {
           },
         },
       },
-      orderBy: [{ createdAt: 'asc' }],
+      orderBy: [
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
       take: params.limit === null ? undefined : (params.limit ?? MANUAL_REALLOCATION_ORDER_LIMIT),
     });
 
@@ -725,7 +734,10 @@ export class WmsFulfillmentSyncService {
           },
         },
       },
-      orderBy: [{ createdAt: 'asc' }],
+      orderBy: [
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
       take: params.limit === null ? undefined : (params.limit ?? MANUAL_REALLOCATION_ORDER_LIMIT),
     });
 
@@ -846,20 +858,6 @@ export class WmsFulfillmentSyncService {
     });
 
     const orderedQueue = queueOrders.sort((left, right) => {
-      const leftClaimRank = left.claimedAt ? 0 : 1;
-      const rightClaimRank = right.claimedAt ? 0 : 1;
-      if (leftClaimRank !== rightClaimRank) {
-        return leftClaimRank - rightClaimRank;
-      }
-
-      const leftPriorityAt = left.claimedAt ?? left.createdAt;
-      const rightPriorityAt = right.claimedAt ?? right.createdAt;
-      const leftPriorityMs = leftPriorityAt.getTime();
-      const rightPriorityMs = rightPriorityAt.getTime();
-      if (leftPriorityMs !== rightPriorityMs) {
-        return leftPriorityMs - rightPriorityMs;
-      }
-
       const leftCreatedMs = left.createdAt.getTime();
       const rightCreatedMs = right.createdAt.getTime();
       if (leftCreatedMs !== rightCreatedMs) {

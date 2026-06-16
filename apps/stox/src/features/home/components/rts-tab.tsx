@@ -90,6 +90,12 @@ function RtsWorkspaceTab({
   const [storeId, setStoreId] = useState<string | null>(initialTask?.store?.id ?? null);
   const [activeFilter, setActiveFilter] = useState<RtsFilterKey | null>(null);
   const [queueStateFilter, setQueueStateFilter] = useState<RtsQueueFilter>('ALL');
+  const [waybillCode, setWaybillCode] = useState('');
+  const [verifiedWaybillCode, setVerifiedWaybillCode] = useState<string | null>(
+    initialTask?.tracking && initialReturnFlow?.eligible
+      ? normalizeScannedCode(initialTask.tracking)
+      : null,
+  );
   const [returnCode, setReturnCode] = useState('');
   const [task, setTask] = useState<WmsMobilePickingTask | null>(initialTask ?? null);
   const [returnFlow, setReturnFlow] = useState<WmsMobileTrackingReturnFlow | null>(initialReturnFlow ?? null);
@@ -104,18 +110,32 @@ function RtsWorkspaceTab({
   const [isLoadingMoreQueue, setIsLoadingMoreQueue] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const waybillInputRef = useRef<TextInput>(null);
   const returnInputRef = useRef<TextInput>(null);
+  const lastWaybillSubmitRef = useRef<string | null>(null);
   const lastReturnSubmitRef = useRef<string | null>(null);
   const canVerify = canVerifyStoxRts(bootstrap);
+  const isWaybillVerifiedForTask = Boolean(
+    task?.tracking
+    && verifiedWaybillCode
+    && normalizeScannedCode(task.tracking) === verifiedWaybillCode,
+  );
 
   useEffect(() => {
     setTask(initialTask ?? null);
     setReturnFlow(initialReturnFlow ?? null);
     setTenantId(initialTask?.store?.tenantId ?? bootstrap.tenant?.id ?? null);
     setStoreId(initialTask?.store?.id ?? null);
+    setWaybillCode('');
+    setVerifiedWaybillCode(
+      initialTask?.tracking && initialReturnFlow?.eligible
+        ? normalizeScannedCode(initialTask.tracking)
+        : null,
+    );
     setReturnCode('');
     setError(null);
     setMessage(null);
+    lastWaybillSubmitRef.current = null;
     lastReturnSubmitRef.current = null;
   }, [bootstrap.tenant?.id, initialReturnFlow, initialTask]);
 
@@ -173,11 +193,16 @@ function RtsWorkspaceTab({
     }
 
     const timer = setTimeout(() => {
+      if (!isWaybillVerifiedForTask) {
+        waybillInputRef.current?.focus();
+        return;
+      }
+
       returnInputRef.current?.focus();
     }, 120);
 
     return () => clearTimeout(timer);
-  }, [returnFlow?.canVerify, task]);
+  }, [isWaybillVerifiedForTask, returnFlow?.canVerify, task]);
 
   const filterOptions = useMemo(
     () => buildRtsFilterOptions(activeFilter, queueStores, bootstrap, bootstrap.user.role === 'SUPER_ADMIN'),
@@ -229,7 +254,7 @@ function RtsWorkspaceTab({
     resetTask();
   };
 
-  const lookupWaybill = useCallback(async (code: string) => {
+  const lookupWaybill = useCallback(async (code: string, options?: { markVerified?: boolean }) => {
     const normalized = normalizeScannedCode(code);
     if (!device) {
       setError('Device is not ready.');
@@ -256,12 +281,18 @@ function RtsWorkspaceTab({
       if (!response.found || !response.task) {
         setTask(null);
         setReturnFlow(null);
+        setVerifiedWaybillCode(null);
         setError(`No packed waybill matched ${normalized}.`);
         return;
       }
 
       setTask(response.task);
       setReturnFlow(response.returnFlow);
+      setVerifiedWaybillCode(
+        options?.markVerified === false || !response.returnFlow?.eligible || !response.task.tracking
+          ? null
+          : normalizeScannedCode(response.task.tracking),
+      );
 
       if (!response.returnFlow?.eligible) {
         setMessage('Not ready for RTS.');
@@ -293,11 +324,43 @@ function RtsWorkspaceTab({
 
     setIsRefreshingTask(true);
     try {
-      await lookupWaybill(trackingCode);
+      await lookupWaybill(trackingCode, {
+        markVerified: isWaybillVerifiedForTask,
+      });
     } finally {
       setIsRefreshingTask(false);
     }
-  }, [loadQueue, lookupWaybill, onRefresh, task?.tracking]);
+  }, [isWaybillVerifiedForTask, loadQueue, lookupWaybill, onRefresh, task?.tracking]);
+
+  const confirmWaybill = useCallback(async (nextCode?: string) => {
+    if (!task || !returnFlow) {
+      setError('Load an RTS task first.');
+      return false;
+    }
+
+    const normalized = normalizeScannedCode(nextCode ?? waybillCode);
+    if (!normalized) {
+      setError('Scan or enter a waybill.');
+      return false;
+    }
+
+    const expected = normalizeScannedCode(task.tracking ?? '');
+    if (!expected) {
+      setError('This order has no waybill yet.');
+      return false;
+    }
+
+    if (normalized !== expected) {
+      setError(`Waybill ${normalized} does not match order ${task.posOrderId}.`);
+      return false;
+    }
+
+    setVerifiedWaybillCode(expected);
+    setWaybillCode('');
+    setError(null);
+    setMessage('Waybill verified.');
+    return true;
+  }, [returnFlow, task, waybillCode]);
 
   const verifyReturnUnit = useCallback(async (nextCode?: string) => {
     if (!task || !returnFlow) {
@@ -318,6 +381,11 @@ function RtsWorkspaceTab({
 
     if (!canVerify) {
       setError('This account can inspect returns but cannot verify RTS units.');
+      return false;
+    }
+
+    if (!isWaybillVerifiedForTask) {
+      setError('Scan the waybill first.');
       return false;
     }
 
@@ -348,7 +416,39 @@ function RtsWorkspaceTab({
     } finally {
       setIsVerifying(false);
     }
-  }, [canVerify, device, loadQueue, returnCode, returnFlow, session.accessToken, task, tenantId]);
+  }, [canVerify, device, isWaybillVerifiedForTask, loadQueue, returnCode, returnFlow, session.accessToken, task, tenantId]);
+
+  useEffect(() => {
+    const nextCode = waybillCode.trim();
+
+    if (
+      !task
+      || !returnFlow?.canVerify
+      || isWaybillVerifiedForTask
+      || nextCode.length < 3
+      || lastWaybillSubmitRef.current === nextCode
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      lastWaybillSubmitRef.current = nextCode;
+      void (async () => {
+        const success = await confirmWaybill(nextCode);
+        if (success) {
+          setWaybillCode('');
+        }
+      })();
+    }, 220);
+
+    return () => clearTimeout(timer);
+  }, [confirmWaybill, isWaybillVerifiedForTask, returnFlow?.canVerify, task, waybillCode]);
+
+  useEffect(() => {
+    if (!waybillCode.trim()) {
+      lastWaybillSubmitRef.current = null;
+    }
+  }, [waybillCode]);
 
   useEffect(() => {
     const nextCode = returnCode.trim();
@@ -386,6 +486,8 @@ function RtsWorkspaceTab({
   const resetTask = () => {
     setTask(null);
     setReturnFlow(null);
+    setWaybillCode('');
+    setVerifiedWaybillCode(null);
     setReturnCode('');
     setError(null);
     setMessage(null);
@@ -394,6 +496,8 @@ function RtsWorkspaceTab({
   const openQueueTask = useCallback((entry: RtsQueueEntry) => {
     setTask(entry.task);
     setReturnFlow(entry.returnFlow);
+    setWaybillCode('');
+    setVerifiedWaybillCode(null);
     setReturnCode('');
     setError(null);
     setMessage(null);
@@ -535,58 +639,132 @@ function RtsWorkspaceTab({
             {returnFlow.canVerify ? (
               canVerify ? (
                 <View style={styles.scanPanel}>
-                  <View style={styles.nextUnitCard}>
-                    <Text style={styles.scanLabel}>Next unit</Text>
-                    <Text numberOfLines={1} style={styles.nextUnitCode}>
-                      {returnFlow.pendingUnits[0]?.code ?? 'Ready'}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.nextUnitName}>
-                      {returnFlow.pendingUnits[0]?.name ?? `${returnFlow.pendingUnits.length} pending`}
-                    </Text>
-                  </View>
+                  {!isWaybillVerifiedForTask ? (
+                    <>
+                      <View style={styles.nextUnitCard}>
+                        <Text style={styles.scanLabel}>Waybill</Text>
+                        <Text numberOfLines={1} style={styles.nextUnitCode}>
+                          {task.tracking ?? 'Tracking pending'}
+                        </Text>
+                        <Text numberOfLines={1} style={styles.nextUnitName}>
+                          Scan this first before returned units
+                        </Text>
+                      </View>
 
-                  <View style={styles.scanInputWrap}>
-                    <Text style={styles.scanInputLabel}>Unit</Text>
-                    <View style={styles.scanInputRow}>
-                      <TextInput
-                        ref={returnInputRef}
-                        autoCapitalize="characters"
-                        autoCorrect={false}
-                        blurOnSubmit={false}
-                        caretHidden
-                        contextMenuHidden
-                        placeholder="Scan returned unit"
-                        placeholderTextColor={tokens.colors.inkSoft}
-                        returnKeyType="done"
-                        selectTextOnFocus={false}
-                        showSoftInputOnFocus={false}
-                        value={returnCode}
-                        onChangeText={(value) => setReturnCode(normalizeScannedCode(value))}
-                        onSubmitEditing={() => {
-                          void verifyReturnUnit();
-                        }}
-                        style={styles.scanInput}
+                      <View style={styles.scanInputWrap}>
+                        <Text style={styles.scanInputLabel}>Waybill</Text>
+                        <View style={styles.scanInputRow}>
+                          <TextInput
+                            ref={waybillInputRef}
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                            blurOnSubmit={false}
+                            caretHidden
+                            contextMenuHidden
+                            placeholder="Scan waybill"
+                            placeholderTextColor={tokens.colors.inkSoft}
+                            returnKeyType="done"
+                            selectTextOnFocus={false}
+                            showSoftInputOnFocus={false}
+                            value={waybillCode}
+                            onChangeText={(value) => setWaybillCode(normalizeScannedCode(value))}
+                            onSubmitEditing={() => {
+                              void confirmWaybill();
+                            }}
+                            style={styles.scanInput}
+                          />
+                          <Pressable
+                            onPress={() => {
+                              void confirmWaybill();
+                            }}
+                            style={styles.scanSubmit}>
+                            <Feather name="corner-down-left" size={18} color={tokens.colors.surface} />
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      <PrimaryButton
+                        label="Confirm waybill"
+                        onPress={() => void confirmWaybill()}
                       />
-                      <Pressable
-                        disabled={isVerifying}
-                        onPress={() => {
-                          void verifyReturnUnit();
-                        }}
-                        style={[styles.scanSubmit, isVerifying ? styles.scanSubmitDisabled : null]}>
-                        {isVerifying ? (
-                          <ActivityIndicator color={tokens.colors.surface} size="small" />
-                        ) : (
-                          <Feather name="corner-down-left" size={18} color={tokens.colors.surface} />
-                        )}
-                      </Pressable>
-                    </View>
-                  </View>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.nextUnitCard}>
+                        <Text style={styles.scanLabel}>Next unit</Text>
+                        <Text numberOfLines={1} style={styles.nextUnitCode}>
+                          {returnFlow.pendingUnits[0]?.barcode ?? returnFlow.pendingUnits[0]?.code ?? 'Ready'}
+                        </Text>
+                        <Text numberOfLines={1} style={styles.nextUnitName}>
+                          {returnFlow.pendingUnits[0]?.code ?? `${returnFlow.pendingUnits.length} pending`}
+                        </Text>
+                      </View>
 
-                  <PrimaryButton
-                    label={isVerifying ? 'Checking…' : 'Verify'}
-                    loading={isVerifying}
-                    onPress={() => void verifyReturnUnit()}
-                  />
+                      {returnFlow.pendingUnits.length ? (
+                        <View style={styles.rtsInlineUnitList}>
+                          <View style={styles.rtsInlineUnitListHeader}>
+                            <Text style={styles.rtsInlineUnitListTitle}>Units in waybill</Text>
+                            <Text style={styles.rtsInlineUnitListCount}>{returnFlow.pendingUnits.length}</Text>
+                          </View>
+                          <View style={styles.rtsInlineUnitListBody}>
+                            {returnFlow.pendingUnits.map((unit) => (
+                              <View key={unit.id} style={styles.rtsInlineUnitRow}>
+                                <Text numberOfLines={1} style={styles.rtsInlineUnitBarcode}>
+                                  {unit.barcode}
+                                </Text>
+                                <Text numberOfLines={1} style={styles.rtsInlineUnitCode}>
+                                  {unit.code}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      ) : null}
+
+                      <View style={styles.scanInputWrap}>
+                        <Text style={styles.scanInputLabel}>Unit</Text>
+                        <View style={styles.scanInputRow}>
+                          <TextInput
+                            ref={returnInputRef}
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                            blurOnSubmit={false}
+                            caretHidden
+                            contextMenuHidden
+                            placeholder="Scan returned unit"
+                            placeholderTextColor={tokens.colors.inkSoft}
+                            returnKeyType="done"
+                            selectTextOnFocus={false}
+                            showSoftInputOnFocus={false}
+                            value={returnCode}
+                            onChangeText={(value) => setReturnCode(normalizeScannedCode(value))}
+                            onSubmitEditing={() => {
+                              void verifyReturnUnit();
+                            }}
+                            style={styles.scanInput}
+                          />
+                          <Pressable
+                            disabled={isVerifying}
+                            onPress={() => {
+                              void verifyReturnUnit();
+                            }}
+                            style={[styles.scanSubmit, isVerifying ? styles.scanSubmitDisabled : null]}>
+                            {isVerifying ? (
+                              <ActivityIndicator color={tokens.colors.surface} size="small" />
+                            ) : (
+                              <Feather name="corner-down-left" size={18} color={tokens.colors.surface} />
+                            )}
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      <PrimaryButton
+                        label={isVerifying ? 'Checking…' : 'Verify'}
+                        loading={isVerifying}
+                        onPress={() => void verifyReturnUnit()}
+                      />
+                    </>
+                  )}
                 </View>
               ) : (
                 <View style={styles.blockedPanel}>
@@ -742,10 +920,11 @@ function RtsUnitSection({
         {units.map((unit) => (
           <SurfaceCard key={unit.id} tone="muted" style={styles.itemCard}>
             <View style={styles.itemHeader}>
-              <Text numberOfLines={1} style={styles.itemName}>{unit.code}</Text>
+              <Text numberOfLines={1} style={styles.itemName}>{unit.barcode || unit.code}</Text>
               <RtsStateBadge state={state} label={unit.statusLabel} compact />
             </View>
-            <Text numberOfLines={1} style={styles.itemMeta}>{unit.name}</Text>
+            <Text numberOfLines={1} style={styles.itemMeta}>{unit.code}</Text>
+            <Text numberOfLines={1} style={styles.itemSubMeta}>{unit.name}</Text>
           </SurfaceCard>
         ))}
       </View>
@@ -1364,6 +1543,51 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  rtsInlineUnitList: {
+    backgroundColor: tokens.colors.surfaceMuted,
+    borderColor: tokens.colors.border,
+    borderRadius: tokens.radius.lg,
+    borderWidth: 1,
+    gap: 10,
+    padding: tokens.spacing.md,
+  },
+  rtsInlineUnitListHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  rtsInlineUnitListTitle: {
+    color: tokens.colors.ink,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  rtsInlineUnitListCount: {
+    color: tokens.colors.accent,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  rtsInlineUnitListBody: {
+    gap: 8,
+  },
+  rtsInlineUnitRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  rtsInlineUnitBarcode: {
+    color: tokens.colors.ink,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  rtsInlineUnitCode: {
+    color: tokens.colors.inkMuted,
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
   scanInputWrap: {
     backgroundColor: tokens.colors.surfaceMuted,
     borderColor: tokens.colors.border,
@@ -1448,5 +1672,10 @@ const styles = StyleSheet.create({
     color: tokens.colors.inkMuted,
     fontSize: 12,
     fontWeight: '700',
+  },
+  itemSubMeta: {
+    color: tokens.colors.inkMuted,
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

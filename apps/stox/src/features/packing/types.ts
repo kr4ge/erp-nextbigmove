@@ -122,3 +122,9 @@ export type WmsMobileBasketPackUnitResponse = WmsMobileBasketPackPlanResponse & 
   activeOrder: WmsMobilePickingTask | null;
   completedOrder: WmsMobilePickingTask | null;
 };
+
+export type WmsMobileBasketPackCompleteResponse = WmsMobileBasketPackPlanResponse & {
+  activeOrderId: string | null;
+  activeOrder: WmsMobilePickingTask | null;
+  completedOrder: WmsMobilePickingTask;
+};
