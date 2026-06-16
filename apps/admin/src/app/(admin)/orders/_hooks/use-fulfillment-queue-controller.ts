@@ -232,6 +232,9 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
         `${result.releasedUnits} unit${result.releasedUnits === 1 ? '' : 's'} returned to bin`,
         `${result.resetOrders} order${result.resetOrders === 1 ? '' : 's'} reset`,
       ];
+      if (result.detachedPackedUnits > 0) {
+        detailParts.push(`${result.detachedPackedUnits} packed unit${result.detachedPackedUnits === 1 ? '' : 's'} detached from basket history`);
+      }
       if (result.canceledOrders > 0) {
         detailParts.push(`${result.canceledOrders} order${result.canceledOrders === 1 ? '' : 's'} removed from queue`);
       }

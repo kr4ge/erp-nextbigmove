@@ -308,7 +308,7 @@ export function FulfillmentQueueTable({
 
             {confirmVoidBasketId === selectedBasket.basket.id ? (
               <div className="rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                Void will release this basket, return picked units to their original bins, and re-evaluate every order inside it.
+                Void will return picked units to their original bins, detach already packed history from this basket, and re-evaluate every remaining order inside it.
               </div>
             ) : null}
 

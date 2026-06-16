@@ -6480,7 +6480,10 @@ export class WmsMobileService {
     const activeOrders = this.getMobileBasketOrders(basket);
     const releaseResult = await this.wmsFulfillmentOpsService.releaseAbandonedDemandBaskets(
       user,
-      { basketId: basket.id },
+      {
+        basketId: basket.id,
+        allowPackedDetach: true,
+      },
       request,
     );
     const basketResult = releaseResult.results[0];
@@ -6514,6 +6517,8 @@ export class WmsMobileService {
         basketCode: basket.barcode,
         releasedOrders: basketResult.releasedOrders ?? activeOrders.length,
         releasedUnits: basketResult.releasedUnits ?? 0,
+        detachedPackedUnits: basketResult.detachedPackedUnits ?? 0,
+        detachedPackedOrders: basketResult.detachedPackedOrders ?? 0,
         resetOrders: repairSummary.resetOrders,
         canceledOrders: repairSummary.canceledOrders,
         refreshedScopes: repairSummary.refreshedScopes,
@@ -6529,6 +6534,8 @@ export class WmsMobileService {
       },
       releasedOrders: basketResult.releasedOrders ?? activeOrders.length,
       releasedUnits: basketResult.releasedUnits ?? 0,
+      detachedPackedUnits: basketResult.detachedPackedUnits ?? 0,
+      detachedPackedOrders: basketResult.detachedPackedOrders ?? 0,
       resetOrders: repairSummary.resetOrders,
       canceledOrders: repairSummary.canceledOrders,
       refreshedScopes: repairSummary.refreshedScopes,

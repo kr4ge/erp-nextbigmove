@@ -84,6 +84,8 @@ export async function voidWmsPickBasket(params: {
     };
     releasedOrders: number;
     releasedUnits: number;
+    detachedPackedUnits: number;
+    detachedPackedOrders: number;
     resetOrders: number;
     canceledOrders: number;
     refreshedScopes: number;

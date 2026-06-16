@@ -141,6 +141,8 @@ type RepairResultRecord = {
   reason?: string;
   releasedOrders?: number;
   releasedUnits?: number;
+  detachedPackedUnits?: number;
+  detachedPackedOrders?: number;
   removedUnits?: number;
   updatedDemands?: number;
   updatedBins?: number;
@@ -531,6 +533,7 @@ export class WmsFulfillmentOpsService {
             basketId: basket.id,
             scopedTenantId: body.basketId ? null : (scope.activeTenantId ?? null),
             actorId,
+            allowPackedDetach: body.allowPackedDetach === true,
             now: new Date(),
             request,
             sessionId: this.resolveSessionId(user),
@@ -978,6 +981,7 @@ export class WmsFulfillmentOpsService {
       basketId: string;
       scopedTenantId: string | null;
       actorId: string | null;
+      allowPackedDetach?: boolean;
       now: Date;
       request?: Request;
       sessionId?: string | null;
@@ -1024,11 +1028,24 @@ export class WmsFulfillmentOpsService {
             tenantId: true,
             inventoryUnitId: true,
             sourceLocationId: true,
+            fulfillmentOrderId: true,
             status: true,
             inventoryUnit: {
               select: {
                 id: true,
                 code: true,
+              },
+            },
+            fulfillmentOrder: {
+              select: {
+                id: true,
+                status: true,
+                posOrder: {
+                  select: {
+                    status: true,
+                    isVoid: true,
+                  },
+                },
               },
             },
           },
@@ -1044,6 +1061,7 @@ export class WmsFulfillmentOpsService {
       new Set([
         ...basket.fulfillmentOrders.map((order) => order.tenantId),
         ...basket.pickDemands.map((demand) => demand.tenantId),
+        ...basket.basketUnits.map((basketUnit) => basketUnit.tenantId),
       ]),
     );
     if (params.scopedTenantId && activeTenantIds.length > 1) {
@@ -1056,12 +1074,21 @@ export class WmsFulfillmentOpsService {
     }
 
     const packedUnits = basket.basketUnits.filter((basketUnit) => basketUnit.status === WmsBasketUnitStatus.PACKED);
-    if (packedUnits.length > 0) {
+    const detachablePackedUnits = params.allowPackedDetach
+      ? packedUnits.filter((basketUnit) => this.canDetachPackedBasketUnit(basketUnit.fulfillmentOrder))
+      : [];
+    const blockedPackedUnits = params.allowPackedDetach
+      ? packedUnits.filter((basketUnit) => !this.canDetachPackedBasketUnit(basketUnit.fulfillmentOrder))
+      : packedUnits;
+
+    if (blockedPackedUnits.length > 0) {
       return {
         basketId: basket.id,
         basketCode: basket.barcode,
         status: 'skipped' as const,
-        reason: 'Basket already contains packed units and cannot be safely released',
+        reason: params.allowPackedDetach
+          ? 'Basket still contains active packed work. Finish or void the active PACK work before resetting this basket.'
+          : 'Basket already contains packed units and cannot be safely released',
       };
     }
 
@@ -1108,6 +1135,27 @@ export class WmsFulfillmentOpsService {
 
       if (basketUnitUpdate.count !== 1) {
         throw new ConflictException(`Basket record for unit ${basketUnit.inventoryUnit.code} changed before release completed`);
+      }
+    }
+
+    if (detachablePackedUnits.length > 0) {
+      const detachedPackedIds = detachablePackedUnits.map((basketUnit) => basketUnit.id);
+      const packedDetachUpdate = await tx.wmsBasketUnit.updateMany({
+        where: {
+          id: {
+            in: detachedPackedIds,
+          },
+          status: WmsBasketUnitStatus.PACKED,
+        },
+        data: {
+          status: WmsBasketUnitStatus.REMOVED,
+          removedById: params.actorId ?? undefined,
+          removedAt: params.now,
+        },
+      });
+
+      if (packedDetachUpdate.count !== detachedPackedIds.length) {
+        throw new ConflictException(`Packed basket state changed before basket ${basket.barcode} could be reset`);
       }
     }
 
@@ -1162,6 +1210,11 @@ export class WmsFulfillmentOpsService {
     });
 
     const orderIds = Array.from(new Set(basket.fulfillmentOrders.map((order) => order.id)));
+    const detachedPackedOrderIds = Array.from(new Set(
+      detachablePackedUnits
+        .map((basketUnit) => basketUnit.fulfillmentOrderId)
+        .filter((orderId): orderId is string => Boolean(orderId)),
+    ));
     for (const orderId of orderIds) {
       await this.refreshDemandOrderAvailabilityState(tx, orderId, params.now);
     }
@@ -1181,6 +1234,8 @@ export class WmsFulfillmentOpsService {
         mode: 'BASKET_DEMAND',
         releasedOrders: orderIds.length,
         releasedUnits: pickedUnits.length,
+        detachedPackedUnits: detachablePackedUnits.length,
+        detachedPackedOrders: detachedPackedOrderIds.length,
         tenantIds: activeTenantIds,
       } as Prisma.InputJsonValue,
     });
@@ -1191,7 +1246,43 @@ export class WmsFulfillmentOpsService {
       status: 'released' as const,
       releasedOrders: orderIds.length,
       releasedUnits: pickedUnits.length,
+      detachedPackedUnits: detachablePackedUnits.length,
+      detachedPackedOrders: detachedPackedOrderIds.length,
     };
+  }
+
+  private canDetachPackedBasketUnit(
+    fulfillmentOrder:
+      | {
+          id: string;
+          status: WmsFulfillmentOrderStatus;
+          posOrder: {
+            status: number | null;
+            isVoid: boolean;
+          } | null;
+        }
+      | null
+      | undefined,
+  ) {
+    if (!fulfillmentOrder) {
+      return true;
+    }
+
+    if (
+      fulfillmentOrder.status === WmsFulfillmentOrderStatus.PACKED
+      || fulfillmentOrder.status === WmsFulfillmentOrderStatus.CANCELED
+    ) {
+      return true;
+    }
+
+    if (!fulfillmentOrder.posOrder) {
+      return false;
+    }
+
+    return (
+      fulfillmentOrder.posOrder.status !== CONFIRMED_POS_ORDER_STATUS
+      || fulfillmentOrder.posOrder.isVoid
+    );
   }
 
   private async computeDemandActualCountState(params: {
