@@ -475,7 +475,7 @@ export class WmsFulfillmentSyncService {
         id: true,
       },
       orderBy: [
-        { createdAt: 'asc' },
+        { posOrder: { dateLocal: 'asc' } },
         { id: 'asc' },
       ],
       take: PUTAWAY_REALLOCATION_ORDER_LIMIT,
@@ -520,7 +520,7 @@ export class WmsFulfillmentSyncService {
         id: true,
       },
       orderBy: [
-        { createdAt: 'asc' },
+        { posOrder: { dateLocal: 'asc' } },
         { id: 'asc' },
       ],
       take: PUTAWAY_REALLOCATION_ORDER_LIMIT,
@@ -660,7 +660,7 @@ export class WmsFulfillmentSyncService {
         },
       },
       orderBy: [
-        { createdAt: 'asc' },
+        { posOrder: { dateLocal: 'asc' } },
         { id: 'asc' },
       ],
       take: params.limit === null ? undefined : (params.limit ?? MANUAL_REALLOCATION_ORDER_LIMIT),
@@ -735,7 +735,7 @@ export class WmsFulfillmentSyncService {
         },
       },
       orderBy: [
-        { createdAt: 'asc' },
+        { posOrder: { dateLocal: 'asc' } },
         { id: 'asc' },
       ],
       take: params.limit === null ? undefined : (params.limit ?? MANUAL_REALLOCATION_ORDER_LIMIT),
@@ -846,22 +846,23 @@ export class WmsFulfillmentSyncService {
           select: {
             status: true,
             isVoid: true,
+            dateLocal: true,
           },
         },
         lines: true,
       },
       orderBy: [
-        { createdAt: 'asc' },
+        { posOrder: { dateLocal: 'asc' } },
         { id: 'asc' },
       ],
       ...(typeof params.limit === 'number' && params.limit > 0 ? { take: params.limit } : {}),
     });
 
     const orderedQueue = queueOrders.sort((left, right) => {
-      const leftCreatedMs = left.createdAt.getTime();
-      const rightCreatedMs = right.createdAt.getTime();
-      if (leftCreatedMs !== rightCreatedMs) {
-        return leftCreatedMs - rightCreatedMs;
+      const leftDateLocal = left.posOrder?.dateLocal ?? '';
+      const rightDateLocal = right.posOrder?.dateLocal ?? '';
+      if (leftDateLocal !== rightDateLocal) {
+        return leftDateLocal.localeCompare(rightDateLocal);
       }
 
       return left.id.localeCompare(right.id);

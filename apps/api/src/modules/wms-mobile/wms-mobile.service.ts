@@ -2763,12 +2763,12 @@ export class WmsMobileService {
         include: this.pickingTaskInclude(),
         orderBy: query.status
           ? [
-              { createdAt: 'asc' },
+              { posOrder: { dateLocal: 'asc' } },
               { id: 'asc' },
             ]
           : [
               { status: 'asc' },
-              { createdAt: 'asc' },
+              { posOrder: { dateLocal: 'asc' } },
               { id: 'asc' },
             ],
         skip,
