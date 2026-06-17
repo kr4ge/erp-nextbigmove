@@ -7,7 +7,6 @@ import {
   FileSpreadsheet,
   LayoutGrid,
   PackageCheck,
-  Route,
   Truck,
   Warehouse,
 } from 'lucide-react';
@@ -120,13 +119,7 @@ export const WMS_NAV_ITEMS: WmsNavItem[] = [
     href: '/shipments',
     label: 'Dispatch',
     icon: Truck,
-    permission: 'wms.dispatch.read',
-  },
-  {
-    href: '/tracking',
-    label: 'RTS',
-    icon: Route,
-    permission: 'wms.rts.read',
+    permission: ['wms.dispatch.read', 'wms.rts.read'],
   },
   {
     href: '/reports',

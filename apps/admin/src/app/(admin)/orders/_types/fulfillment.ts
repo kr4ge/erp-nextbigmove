@@ -63,7 +63,7 @@ export type WmsFulfillmentQueueTask = {
   tracking: string | null;
   delivery: {
     posStatus: number | null;
-    status: 'PACKED' | 'SHIPPED' | 'DELIVERED' | null;
+    status: 'PACKED' | 'SHIPPED' | 'DELIVERED' | 'RETURNING' | 'RETURNED' | null;
     label: string | null;
     deliveredAt: string | null;
   } | null;

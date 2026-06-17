@@ -1,17 +1,5 @@
-import { ModulePlaceholder } from '../_components/module-placeholder';
+import { redirect } from 'next/navigation';
 
 export default function TrackingPage() {
-  return (
-    <ModulePlaceholder
-      eyebrow="Future"
-      title="RTS"
-      description="Returned units, disposition routing, and restock versus damage decisions will be monitored here."
-      milestones={[
-        'Return intake',
-        'Disposition routing',
-        'Restock path',
-        'Damage path',
-      ]}
-    />
-  );
+  redirect('/shipments?tab=returns');
 }

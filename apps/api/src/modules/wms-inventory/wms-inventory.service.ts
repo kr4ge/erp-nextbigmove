@@ -2904,6 +2904,8 @@ export class WmsInventoryService {
       shopId: string;
       posOrderId: string;
     }>;
+    mode?: 'AUTO' | 'MANUAL';
+    actorId?: string | null;
   }) {
     const refs = Array.from(
       new Map(
@@ -3014,6 +3016,8 @@ export class WmsInventoryService {
       ).values(),
     );
     const now = new Date();
+    const syncMode = params.mode ?? 'AUTO';
+    const actorId = params.actorId ?? null;
     let dispatchedUnits = 0;
     const dispatchedByOrderId = new Map<string, Array<typeof matchedUnits[number]>>();
 
@@ -3032,7 +3036,7 @@ export class WmsInventoryService {
             data: {
               currentLocationId: null,
               status: WmsInventoryUnitStatus.DISPATCHED,
-              updatedById: null,
+              updatedById: actorId,
             },
           });
 
@@ -3046,9 +3050,10 @@ export class WmsInventoryService {
           dispatchedByOrderId.set(reservation.fulfillmentOrder.id, dispatchedForOrder);
 
           const shippedStatus = reservation.fulfillmentOrder.posOrder?.status;
+          const notePrefix = syncMode === 'MANUAL' ? 'Dispatch repair' : 'Auto-dispatched';
           const note = shippedStatus === 3
-            ? `Auto-dispatched after POS order ${reservation.fulfillmentOrder.posOrderId} was marked delivered`
-            : `Auto-dispatched after POS order ${reservation.fulfillmentOrder.posOrderId} was marked shipped`;
+            ? `${notePrefix} after POS order ${reservation.fulfillmentOrder.posOrderId} was marked delivered`
+            : `${notePrefix} after POS order ${reservation.fulfillmentOrder.posOrderId} was marked shipped`;
 
           await tx.wmsInventoryMovement.create({
             data: {
@@ -3064,7 +3069,7 @@ export class WmsInventoryService {
               referenceId: reservation.fulfillmentOrder.id,
               referenceCode: reservation.fulfillmentOrder.posOrderId,
               notes: note,
-              actorId: null,
+              actorId,
               createdAt: now,
             },
           });
@@ -3083,7 +3088,7 @@ export class WmsInventoryService {
 
           await this.wmsStaffActivityService.record({
             tenantId: sample.fulfillmentOrder.tenantId,
-            actorId: null,
+            actorId,
             sessionId: (this.cls.get('sessionId') as string | undefined) ?? null,
             actionType: 'ORDER_DISPATCH_SYNC',
             resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -3097,7 +3102,7 @@ export class WmsInventoryService {
             outcome: WmsStaffActivityOutcome.SUCCESS,
             metadata: {
               deliveryState,
-              mode: 'AUTO',
+              mode: syncMode,
               posOrderId: sample.fulfillmentOrder.posOrderId,
               posStatus,
               trackingCode: sample.fulfillmentOrder.posOrder?.tracking ?? null,
@@ -3122,6 +3127,8 @@ export class WmsInventoryService {
       tenantId: params.tenantId,
       storeId: params.storeId ?? null,
       refs,
+      mode: syncMode,
+      actorId,
     });
 
     return {
@@ -3138,6 +3145,8 @@ export class WmsInventoryService {
       shopId: string;
       posOrderId: string;
     }>;
+    mode?: 'AUTO' | 'MANUAL';
+    actorId?: string | null;
   }) {
     const deliveredOrders = await this.prisma.wmsFulfillmentOrder.findMany({
       where: {
@@ -3246,7 +3255,7 @@ export class WmsInventoryService {
         const sampleReservation = order.reservations[0]?.inventoryUnit ?? null;
         await this.wmsStaffActivityService.record({
           tenantId: order.tenantId,
-          actorId: null,
+          actorId: params.actorId ?? null,
           sessionId: (this.cls.get('sessionId') as string | undefined) ?? null,
           actionType: 'ORDER_DELIVERY_SYNC',
           resourceType: 'WMS_FULFILLMENT_ORDER',
@@ -3260,7 +3269,7 @@ export class WmsInventoryService {
           outcome: WmsStaffActivityOutcome.SUCCESS,
           metadata: {
             deliveryState: 'DELIVERED',
-            mode: 'AUTO',
+            mode: params.mode ?? 'AUTO',
             posOrderId: order.posOrderId,
             posStatus: order.posOrder?.status ?? 3,
             trackingCode: order.posOrder?.tracking ?? null,

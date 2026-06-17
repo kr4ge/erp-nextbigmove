@@ -26,6 +26,7 @@ import { WmsPurchasingModule } from './modules/wms-purchasing/wms-purchasing.mod
 import { WmsWarehousesModule } from './modules/wms-warehouses/wms-warehouses.module';
 import { WmsProductsModule } from './modules/wms-products/wms-products.module';
 import { WmsInventoryModule } from './modules/wms-inventory/wms-inventory.module';
+import { WmsDispatchModule } from './modules/wms-dispatch/wms-dispatch.module';
 import { WmsReceivingModule } from './modules/wms-receiving/wms-receiving.module';
 import { WmsMobileModule } from './modules/wms-mobile/wms-mobile.module';
 import { WmsSettingsModule } from './modules/wms-settings/wms-settings.module';
@@ -111,6 +112,7 @@ import { WmsIntegrationsModule } from './modules/wms-integrations/wms-integratio
     WmsProductsModule,
     WmsReceivingModule,
     WmsInventoryModule,
+    WmsDispatchModule,
     WmsMobileModule,
     WmsSettingsModule,
     WmsIntegrationsModule,

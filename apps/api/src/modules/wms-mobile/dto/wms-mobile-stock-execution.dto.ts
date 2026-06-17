@@ -56,6 +56,11 @@ export class GetWmsMobileRtsTasksDto extends GetWmsMobileStockScopedDto {
   storeId?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

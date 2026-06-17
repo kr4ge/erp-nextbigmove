@@ -2165,10 +2165,41 @@ export class WmsMobileService {
     const tenantContext = await this.resolveMobileStockContext(user, { tenantId: query.tenantId }, request);
     const page = Math.max(query.page ?? 1, 1);
     const pageSize = Math.min(Math.max(query.pageSize ?? DEFAULT_RTS_PAGE_SIZE, 5), 50);
-    const where = this.buildOpenRtsOrderWhere({
+    const normalizedSearch = query.search?.trim() || null;
+    const searchWhere: Prisma.WmsFulfillmentOrderWhereInput = normalizedSearch
+      ? {
+          OR: [
+            { posOrderId: { contains: normalizedSearch, mode: 'insensitive' } },
+            {
+              store: {
+                is: {
+                  OR: [
+                    { name: { contains: normalizedSearch, mode: 'insensitive' } },
+                    { shopName: { contains: normalizedSearch, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            },
+            {
+              posOrder: {
+                is: {
+                  OR: [
+                    { customerName: { contains: normalizedSearch, mode: 'insensitive' } },
+                    { tracking: { contains: normalizedSearch, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            },
+          ],
+        }
+      : {};
+    const where = {
+      ...this.buildOpenRtsOrderWhere({
       ...(tenantContext.tenantId ? { tenantId: tenantContext.tenantId } : {}),
       ...(query.storeId ? { storeId: query.storeId } : {}),
-    });
+      }),
+      ...searchWhere,
+    } satisfies Prisma.WmsFulfillmentOrderWhereInput;
 
     const [total, orders, stores] = await Promise.all([
       this.prisma.wmsFulfillmentOrder.count({ where }),
