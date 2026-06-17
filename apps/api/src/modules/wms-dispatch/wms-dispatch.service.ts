@@ -1024,9 +1024,19 @@ export class WmsDispatchService {
       },
       basketUnits: {
         where: {
-          status: {
-            in: [WmsBasketUnitStatus.PICKED, WmsBasketUnitStatus.PACKED],
-          },
+          OR: [
+            {
+              status: {
+                in: [WmsBasketUnitStatus.PICKED, WmsBasketUnitStatus.PACKED],
+              },
+            },
+            {
+              status: WmsBasketUnitStatus.REMOVED,
+              packedAt: {
+                not: null,
+              },
+            },
+          ],
         },
         select: {
           id: true,
@@ -1129,7 +1139,17 @@ export class WmsDispatchService {
               fulfillmentOrderId: {
                 in: demandOrderIds,
               },
-              status: WmsBasketUnitStatus.PACKED,
+              OR: [
+                {
+                  status: WmsBasketUnitStatus.PACKED,
+                },
+                {
+                  status: WmsBasketUnitStatus.REMOVED,
+                  packedAt: {
+                    not: null,
+                  },
+                },
+              ],
             },
             select: {
               fulfillmentOrderId: true,
@@ -1540,7 +1560,7 @@ export class WmsDispatchService {
     if (this.isDemandOrder(order) || (Array.isArray(order?.basketUnits) && order.basketUnits.length > 0)) {
       const units = (Array.isArray(order?.basketUnits) ? order.basketUnits : [])
         .filter((basketUnit: any) => (
-          basketUnit.status === WmsBasketUnitStatus.PACKED
+          this.isHistoricallyPackedDemandBasketUnit(basketUnit)
           && basketUnit.inventoryUnit
         ))
         .map((basketUnit: any) => ({
@@ -1744,7 +1764,7 @@ export class WmsDispatchService {
   private getPackedBasketUnitCount(order: any) {
     return Math.min(
       (Array.isArray(order?.basketUnits) ? order.basketUnits : []).filter(
-        (basketUnit: any) => basketUnit.status === WmsBasketUnitStatus.PACKED,
+        (basketUnit: any) => this.isHistoricallyPackedDemandBasketUnit(basketUnit),
       ).length,
       Math.max(order?.totalQuantity ?? 0, 0),
     );
@@ -1758,12 +1778,29 @@ export class WmsDispatchService {
     return Math.min(
       (Array.isArray(order?.basketUnits) ? order.basketUnits : []).filter(
         (basketUnit: any) => (
-          basketUnit.status === WmsBasketUnitStatus.PACKED
+          this.isHistoricallyPackedDemandBasketUnit(basketUnit)
           && basketUnit.fulfillmentLineId === fulfillmentLineId
         ),
       ).length,
       Math.max(quantityRequired ?? 0, 0),
     );
+  }
+
+  private isHistoricallyPackedDemandBasketUnit(
+    basketUnit:
+      | {
+          status?: WmsBasketUnitStatus | string | null;
+          packedAt?: Date | string | null;
+        }
+      | null
+      | undefined,
+  ) {
+    if (!basketUnit) {
+      return false;
+    }
+
+    return basketUnit.status === WmsBasketUnitStatus.PACKED
+      || (basketUnit.status === WmsBasketUnitStatus.REMOVED && basketUnit.packedAt != null);
   }
 
   private isPackedEquivalentInventoryStatus(status: WmsInventoryUnitStatus | string | null | undefined) {

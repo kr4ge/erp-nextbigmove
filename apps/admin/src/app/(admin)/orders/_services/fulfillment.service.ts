@@ -196,3 +196,28 @@ export async function voidWmsPackTask(params: {
     task: WmsFulfillmentQueueTask;
   };
 }
+
+export async function voidWmsPackBasketOrders(params: {
+  basketId: string;
+  tenantId?: string | null;
+  orderIds: string[];
+  reason: string;
+  supervisorIdentifier?: string | null;
+  supervisorPassword?: string | null;
+}) {
+  const response = await apiClient.post(`/wms/mobile/packing/baskets/${params.basketId}/void-orders`, {
+    tenantId: params.tenantId,
+    orderIds: params.orderIds,
+    reason: params.reason,
+    supervisorIdentifier: params.supervisorIdentifier,
+    supervisorPassword: params.supervisorPassword,
+  });
+
+  return response.data as {
+    success: boolean;
+    activeOrderId: string | null;
+    activeOrder: WmsFulfillmentQueueTask | null;
+    voidedOrderIds: string[];
+    tasks: WmsFulfillmentQueueTask[];
+  };
+}

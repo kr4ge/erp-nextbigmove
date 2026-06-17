@@ -17,6 +17,13 @@ type FulfillmentPackExecutionPanelProps = {
   onScanUnit: (task: WmsFulfillmentQueueTask, code: string) => Promise<boolean>;
   onVerifyTracking: (task: WmsFulfillmentQueueTask, code: string) => Promise<string | null>;
   onComplete: (task: WmsFulfillmentQueueTask, trackingCode: string) => Promise<boolean>;
+  onVoidOrders: (params: {
+    task: WmsFulfillmentQueueTask;
+    orderIds: string[];
+    reason: string;
+    supervisorIdentifier?: string | null;
+    supervisorPassword?: string | null;
+  }) => Promise<boolean>;
   onVoid: (params: {
     task: WmsFulfillmentQueueTask;
     reason: string;
@@ -36,6 +43,7 @@ export function FulfillmentPackExecutionPanel({
   onScanUnit,
   onVerifyTracking,
   onComplete,
+  onVoidOrders,
   onVoid,
 }: FulfillmentPackExecutionPanelProps) {
   const [unitCode, setUnitCode] = useState('');
@@ -44,6 +52,7 @@ export function FulfillmentPackExecutionPanel({
   const [voidReason, setVoidReason] = useState('');
   const [supervisorIdentifier, setSupervisorIdentifier] = useState('');
   const [supervisorPassword, setSupervisorPassword] = useState('');
+  const [selectedVoidOrderIds, setSelectedVoidOrderIds] = useState<string[]>([]);
   const [voidOpen, setVoidOpen] = useState(false);
   const unitInputRef = useRef<HTMLInputElement>(null);
   const trackingInputRef = useRef<HTMLInputElement>(null);
@@ -55,6 +64,7 @@ export function FulfillmentPackExecutionPanel({
     setVoidReason('');
     setSupervisorIdentifier('');
     setSupervisorPassword('');
+    setSelectedVoidOrderIds([]);
     setVoidOpen(false);
   }, [task?.id]);
 
@@ -82,8 +92,22 @@ export function FulfillmentPackExecutionPanel({
   const isPacking = task?.status === 'PACKING';
   const isPacked = task?.status === 'PACKED';
   const packAssignedAt = task ? resolvePackAssignedAt(task) : null;
+  const isDemandBasketTask = task?.assignmentMode === 'BASKET_DEMAND' && Boolean(task.basket?.id);
+  const voidEligibleBasketOrders = useMemo(
+    () => (task?.basket?.orders ?? []).filter((order) => order.status === 'PICKED' || order.status === 'PACKING'),
+    [task?.basket?.orders],
+  );
+  const selectedVoidOrderIdSet = useMemo(() => new Set(selectedVoidOrderIds), [selectedVoidOrderIds]);
+  const allVoidEligibleSelected = voidEligibleBasketOrders.length > 0
+    && selectedVoidOrderIds.length === voidEligibleBasketOrders.length;
 
   const items = useMemo(() => (task ? getVisiblePackLines(task.lines) : []), [task]);
+
+  useEffect(() => {
+    setSelectedVoidOrderIds((current) => current.filter((orderId) => (
+      (task?.basket?.orders ?? []).some((order) => order.id === orderId)
+    )));
+  }, [task?.basket?.orders]);
 
   if (!task) {
     return (
@@ -148,13 +172,50 @@ export function FulfillmentPackExecutionPanel({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Basket orders</p>
-                    <p className="mt-1 text-[12px] text-[#6f8290]">Current order stays highlighted.</p>
+                    <p className="mt-1 text-[12px] text-[#6f8290]">
+                      {isDemandBasketTask ? 'Select basket orders to void when needed.' : 'Current order stays highlighted.'}
+                    </p>
                   </div>
                   <span className="text-[12px] font-semibold text-[#6b4eff]">
                     {task.basket?.orders?.length ?? 0}
                   </span>
                 </div>
-                <PackBasketOrderList task={task} />
+                {isDemandBasketTask && voidEligibleBasketOrders.length > 0 ? (
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-[16px] border border-[#ece6fa] bg-[#faf8ff] px-4 py-3">
+                    <p className="text-[12px] font-semibold text-[#6f8290]">
+                      {selectedVoidOrderIds.length > 0 ? `${selectedVoidOrderIds.length} selected` : 'Select orders'}
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedVoidOrderIds(allVoidEligibleSelected ? [] : voidEligibleBasketOrders.map((order) => order.id))}
+                        className="text-[12px] font-semibold text-[#6b4eff]"
+                      >
+                        {allVoidEligibleSelected ? 'Clear' : 'Select all'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedVoidOrderIds.length === 0 || isSubmitting || !canExecute}
+                        onClick={() => setVoidOpen(true)}
+                        className="inline-flex items-center rounded-full border border-[#ffd5cf] bg-[#fff0ed] px-3 py-1.5 text-[12px] font-semibold text-[#b42318] transition disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Void selected
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                <PackBasketOrderList
+                  selectedOrderIds={selectedVoidOrderIdSet}
+                  selectionEnabled={isDemandBasketTask}
+                  task={task}
+                  onToggleOrder={(orderId) => {
+                    setSelectedVoidOrderIds((current) => (
+                      current.includes(orderId)
+                        ? current.filter((value) => value !== orderId)
+                        : [...current, orderId]
+                    ));
+                  }}
+                />
               </div>
             </div>
 
@@ -180,7 +241,7 @@ export function FulfillmentPackExecutionPanel({
             </div>
           </div>
 
-          {(canStart || ((task.status === 'PICKED' || task.status === 'PACKING' || task.status === 'PACKED') && canExecute) || (!isPacking && canExecute)) ? (
+          {(canStart || ((task.status === 'PICKED' || task.status === 'PACKING') && canExecute) || (!isPacking && canExecute)) ? (
             <div className="flex flex-wrap gap-2">
               {canStart ? (
                 <ActionButton
@@ -192,7 +253,7 @@ export function FulfillmentPackExecutionPanel({
                 />
               ) : null}
 
-              {(task.status === 'PICKED' || task.status === 'PACKING' || task.status === 'PACKED') && canExecute ? (
+              {(task.status === 'PICKED' || task.status === 'PACKING') && canExecute && !isDemandBasketTask ? (
                 <ActionButton
                   disabled={isSubmitting}
                   icon={<Slash className="h-4 w-4" />}
@@ -295,7 +356,7 @@ export function FulfillmentPackExecutionPanel({
 
       <WmsModal
         open={voidOpen}
-        title="Void pack order"
+        title={isDemandBasketTask ? 'Void basket orders' : 'Void pack order'}
         onClose={() => setVoidOpen(false)}
         footer={(
           <div className="flex flex-wrap justify-end gap-2">
@@ -308,15 +369,30 @@ export function FulfillmentPackExecutionPanel({
             </button>
             <button
               type="button"
-              disabled={!voidReason.trim() || (!canDirectVoid && (!supervisorIdentifier.trim() || !supervisorPassword.trim())) || isSubmitting}
+              disabled={
+                !voidReason.trim()
+                || (!canDirectVoid && (!supervisorIdentifier.trim() || !supervisorPassword.trim()))
+                || isSubmitting
+                || (isDemandBasketTask && selectedVoidOrderIds.length === 0)
+              }
               onClick={() => {
-                void onVoid({
-                  task,
-                  reason: voidReason.trim(),
-                  supervisorIdentifier: canDirectVoid ? null : supervisorIdentifier.trim(),
-                  supervisorPassword: canDirectVoid ? null : supervisorPassword,
-                }).then((ok) => {
+                const action = isDemandBasketTask
+                  ? onVoidOrders({
+                      task,
+                      orderIds: selectedVoidOrderIds,
+                      reason: voidReason.trim(),
+                      supervisorIdentifier: canDirectVoid ? null : supervisorIdentifier.trim(),
+                      supervisorPassword: canDirectVoid ? null : supervisorPassword,
+                    })
+                  : onVoid({
+                      task,
+                      reason: voidReason.trim(),
+                      supervisorIdentifier: canDirectVoid ? null : supervisorIdentifier.trim(),
+                      supervisorPassword: canDirectVoid ? null : supervisorPassword,
+                    });
+                void action.then((ok) => {
                   if (ok) {
+                    setSelectedVoidOrderIds([]);
                     setVoidOpen(false);
                   }
                 });
@@ -329,6 +405,18 @@ export function FulfillmentPackExecutionPanel({
         )}
       >
         <div className="space-y-4">
+          {isDemandBasketTask ? (
+            <div className="rounded-xl border border-[#ece6fa] bg-[#faf8ff] px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8193a0]">Selected orders</p>
+              <p className="mt-2 text-sm font-semibold text-primary">
+                {selectedVoidOrderIds.length} order{selectedVoidOrderIds.length === 1 ? '' : 's'} selected
+              </p>
+              <p className="mt-1 text-sm text-[#6f8290]">
+                Selected orders will leave the basket and their picked or packed units will return to the original bins.
+              </p>
+            </div>
+          ) : null}
+
           <label className="block space-y-1.5">
             <span className="form-label">Reason</span>
             <textarea
@@ -497,7 +585,17 @@ function KeyValue({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PackBasketOrderList({ task }: { task: WmsFulfillmentQueueTask }) {
+function PackBasketOrderList({
+  selectedOrderIds,
+  selectionEnabled = false,
+  task,
+  onToggleOrder,
+}: {
+  selectedOrderIds?: Set<string>;
+  selectionEnabled?: boolean;
+  task: WmsFulfillmentQueueTask;
+  onToggleOrder?: (orderId: string) => void;
+}) {
   const orders = task.basket?.orders ?? [];
 
   if (!orders.length) {
@@ -508,28 +606,60 @@ function PackBasketOrderList({ task }: { task: WmsFulfillmentQueueTask }) {
     <div className="mt-3 border-t border-[#ece6fa]">
       {orders.map((order) => {
         const active = order.id === task.id;
+        const selectable = selectionEnabled && (order.status === 'PICKED' || order.status === 'PACKING');
+        const selected = Boolean(selectedOrderIds?.has(order.id));
         return (
-          <div
+          <button
             key={order.id}
-            className={`flex items-center gap-3 border-b px-1 py-3 ${
+            type="button"
+            disabled={!selectable}
+            onClick={() => {
+              if (selectable) {
+                onToggleOrder?.(order.id);
+              }
+            }}
+            className={`flex w-full items-center gap-3 border-b px-1 py-3 text-left transition ${
               active
                 ? 'border-[#ece6fa] bg-[#faf8ff]'
-                : 'border-[#f1edf7] bg-transparent'
-            }`}
+                : selected
+                  ? 'border-[#ece6fa] bg-[#f4efff]'
+                  : 'border-[#f1edf7] bg-transparent'
+            } ${selectable ? 'hover:bg-[#f8f4ff]' : 'cursor-default'}`}
           >
-            <div className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-[#6b4eff]' : 'bg-[#d6dde3]'}`} />
+            {selectionEnabled ? (
+              <span
+                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[10px] border text-white ${
+                  selected
+                    ? 'border-[#6b4eff] bg-[#6b4eff]'
+                    : selectable
+                      ? 'border-[#d6dde3] bg-white'
+                      : 'border-[#e7eaf0] bg-[#f8fafb]'
+                }`}
+              >
+                {selected ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+              </span>
+            ) : (
+              <div className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-[#6b4eff]' : 'bg-[#d6dde3]'}`} />
+            )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-[12px] font-semibold text-primary">
                 {order.posOrderId ? `#${order.posOrderId}` : 'Order'}
               </p>
               <p className="truncate text-[10px] text-[#6f8290]">
-                {active ? 'Current pack order' : order.store?.name ?? order.customerName ?? order.statusLabel ?? 'Same basket'}
+                {active
+                  ? 'Current pack order'
+                  : order.tracking ?? order.store?.name ?? order.customerName ?? order.statusLabel ?? 'Same basket'}
               </p>
             </div>
-            <span className="text-[11px] font-semibold text-primary">
-              {order.totals.picked}/{order.totals.required}
-            </span>
-          </div>
+            <div className="shrink-0 text-right">
+              {active ? (
+                <p className="text-[10px] font-semibold text-[#6b4eff]">Current</p>
+              ) : null}
+              <span className="text-[11px] font-semibold text-primary">
+                {order.totals.picked}/{order.totals.required}
+              </span>
+            </div>
+          </button>
         );
       })}
     </div>

@@ -80,6 +80,7 @@ import {
 } from './dto/wms-mobile-picking.dto';
 import {
   GetWmsMobilePackingTasksDto,
+  WmsMobilePackBasketVoidDto,
   WmsMobilePackBasketOrderCompleteDto,
   WmsMobilePackCompleteDto,
   WmsMobilePackScanDto,
@@ -4153,6 +4154,46 @@ export class WmsMobileService {
     };
   }
 
+  async voidPackingBasketOrders(
+    user: BootstrapUser,
+    basketId: string,
+    body: WmsMobilePackBasketVoidDto,
+    request?: Request,
+  ) {
+    const basket = await this.findPackingBasketForAction(user, basketId, body.tenantId, request);
+    this.assertDemandPackingBasket(basket);
+
+    const selectedOrderIdSet = new Set(body.orderIds);
+    const selectedOrders = (basket.fulfillmentOrders ?? []).filter((order: any) => selectedOrderIdSet.has(order.id));
+    if (selectedOrders.length !== selectedOrderIdSet.size) {
+      throw new BadRequestException('One or more selected pack orders are no longer inside this basket');
+    }
+
+    const result = await this.performDemandPackingBasketVoid(
+      user,
+      basket,
+      selectedOrders,
+      body,
+      request,
+    );
+
+    const activeOrderId = this.resolveActiveBasketPackOrderId(result.updatedBasket);
+    const activeOrder = activeOrderId
+      ? (result.updatedBasket.fulfillmentOrders ?? []).find((order: any) => order.id === activeOrderId) ?? null
+      : null;
+
+    return {
+      success: true,
+      voidedOrderIds: result.releaseResult.voidedOrderIds,
+      posStatusUpdate: result.posStatusUpdate,
+      activeOrderId,
+      activeOrder: activeOrder ? this.mapMobilePickingTask(activeOrder) : null,
+      basket: this.mapMobilePickBasket(result.updatedBasket),
+      tasks: this.mapMobileBasketTasks(result.updatedBasket),
+      plan: this.buildMobileBasketPackPlan(result.updatedBasket, activeOrderId),
+    };
+  }
+
   async startPackingTask(
     user: BootstrapUser,
     id: string,
@@ -4457,6 +4498,40 @@ export class WmsMobileService {
     request?: Request,
   ) {
     const order = await this.findPackingOrderForAction(user, id, body.tenantId, request);
+
+    if ((order.assignmentMode ?? WmsFulfillmentAssignmentMode.SERIAL_RESERVED) === WmsFulfillmentAssignmentMode.BASKET_DEMAND) {
+      const basketId = order.basket?.id ?? order.basketId ?? null;
+      if (!basketId) {
+        throw new BadRequestException(`Order ${order.posOrderId} is no longer inside a pack basket`);
+      }
+
+      const basket = await this.findPackingBasketForAction(user, basketId, body.tenantId, request);
+      this.assertDemandPackingBasket(basket);
+
+      const scopedOrder = (basket.fulfillmentOrders ?? []).find((candidate: any) => candidate.id === order.id);
+      if (!scopedOrder) {
+        throw new BadRequestException(`Order ${order.posOrderId} is no longer inside basket ${basket.barcode}`);
+      }
+
+      await this.performDemandPackingBasketVoid(
+        user,
+        basket,
+        [scopedOrder],
+        body,
+        request,
+      );
+
+      const updatedOrder = await this.prisma.wmsFulfillmentOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: this.pickingTaskInclude(),
+      });
+
+      return {
+        success: true,
+        task: this.mapMobilePickingTask(updatedOrder),
+      };
+    }
+
     this.assertPackingTaskVoidable(order);
 
     const userId = user.userId || user.id || null;
@@ -6573,6 +6648,146 @@ export class WmsMobileService {
     };
   }
 
+  private async performDemandPackingBasketVoid(
+    user: BootstrapUser,
+    basket: any,
+    selectedOrders: any[],
+    body: Pick<WmsMobilePackBasketVoidDto, 'reason' | 'supervisorIdentifier' | 'supervisorPassword'>,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    if (!userId) {
+      throw new ForbiddenException('Missing WMS user context');
+    }
+
+    const directVoidAccess = await this.resolveDirectPackVoidAccess(userId, user);
+    const approval = directVoidAccess.allowed
+      ? {
+          mode: 'DIRECT' as const,
+          approver: null,
+        }
+      : await this.resolvePackVoidSupervisorApproval({
+          requester: user,
+          tenantId: basket.tenantId ?? selectedOrders[0]?.tenantId ?? null,
+          request,
+          supervisorIdentifier: body.supervisorIdentifier,
+          supervisorPassword: body.supervisorPassword,
+        });
+
+    const voidReason = this.cleanOptionalText(body.reason);
+    if (!voidReason) {
+      throw new BadRequestException('Void reason is required');
+    }
+
+    const releaseResult = await this.wmsFulfillmentOpsService.releaseDemandBasketOrdersForPackVoid(
+      user,
+      {
+        basketId: basket.id,
+        orderIds: selectedOrders.map((order: any) => order.id),
+      },
+      request,
+    );
+
+    const updatedBasket = await this.prisma.wmsBasket.findUniqueOrThrow({
+      where: { id: basket.id },
+      include: this.mobileBasketInclude(),
+    });
+
+    const posStatusOrders = selectedOrders.map((order: any) => ({
+      id: order.id,
+      tenantId: order.tenantId,
+      storeId: order.storeId,
+      posOrderDbId: order.posOrderDbId,
+      shopId: order.shopId,
+      posOrderId: order.posOrderId,
+      warehouseId: order.warehouseId ?? null,
+    }));
+    const posStatusUpdate = await this.enqueueVoidedPackOrdersConfirmedStatus(posStatusOrders);
+
+    const selectedTenantIds = Array.from(new Set(selectedOrders.map((order: any) => order.tenantId).filter(Boolean)));
+    const selectedStoreIds = Array.from(new Set(selectedOrders.map((order: any) => order.storeId).filter(Boolean)));
+
+    const activityMetadata = {
+      approvalMode: approval.mode,
+      basketCode: basket.barcode,
+      reason: voidReason,
+      mode: 'BASKET_DEMAND',
+      releasedOrders: releaseResult.voidedOrderIds.length,
+      releasedPosOrderIds: releaseResult.voidedPosOrderIds,
+      restoredPickedUnits: releaseResult.restoredPickedUnits,
+      restoredPackedUnits: releaseResult.restoredPackedUnits,
+      approverId: approval.approver?.id ?? null,
+      approverEmail: approval.approver?.email ?? null,
+      posStatusTarget: posStatusUpdate.targetStatus,
+      posStatusQueued: posStatusUpdate.queued,
+      posStatusSkipped: posStatusUpdate.skipped,
+      posStatusFailed: posStatusUpdate.failed,
+      posStatusResults: posStatusUpdate.results,
+    };
+
+    await this.wmsStaffActivityService.recordFromRequest({
+      request,
+      tenantId: selectedTenantIds.length === 1 ? selectedTenantIds[0] : basket.tenantId ?? null,
+      actorId: userId,
+      sessionId: (this.cls.get('sessionId') as string | undefined) || user.sessionId || null,
+      actionType: approval.mode === 'DIRECT' ? 'PACKING_VOID_COMPLETE' : 'PACKING_VOID_REQUEST',
+      resourceType: 'WMS_BASKET',
+      resourceId: basket.id,
+      storeId: selectedStoreIds.length === 1 ? selectedStoreIds[0] : null,
+      warehouseId: basket.warehouseId ?? selectedOrders[0]?.warehouseId ?? null,
+      fromStatus: basket.status ?? null,
+      toStatus: updatedBasket.status ?? null,
+      metadata: activityMetadata,
+    });
+
+    if (approval.approver) {
+      await this.wmsStaffActivityService.recordFromRequest({
+        request,
+        tenantId: selectedTenantIds.length === 1 ? selectedTenantIds[0] : basket.tenantId ?? null,
+        actorId: approval.approver.id,
+        sessionId: (this.cls.get('sessionId') as string | undefined) || user.sessionId || null,
+        actionType: 'PACKING_VOID_APPROVAL',
+        resourceType: 'WMS_BASKET',
+        resourceId: basket.id,
+        storeId: selectedStoreIds.length === 1 ? selectedStoreIds[0] : null,
+        warehouseId: basket.warehouseId ?? selectedOrders[0]?.warehouseId ?? null,
+        fromStatus: basket.status ?? null,
+        toStatus: updatedBasket.status ?? null,
+        metadata: {
+          basketCode: basket.barcode,
+          reason: voidReason,
+          releasedPosOrderIds: releaseResult.voidedPosOrderIds,
+          requesterId: userId,
+          requesterEmail: user.email ?? null,
+          mode: 'BASKET_DEMAND',
+        },
+      });
+
+      await this.wmsStaffActivityService.recordFromRequest({
+        request,
+        tenantId: selectedTenantIds.length === 1 ? selectedTenantIds[0] : basket.tenantId ?? null,
+        actorId: userId,
+        sessionId: (this.cls.get('sessionId') as string | undefined) || user.sessionId || null,
+        actionType: 'PACKING_VOID_COMPLETE',
+        resourceType: 'WMS_BASKET',
+        resourceId: basket.id,
+        storeId: selectedStoreIds.length === 1 ? selectedStoreIds[0] : null,
+        warehouseId: basket.warehouseId ?? selectedOrders[0]?.warehouseId ?? null,
+        fromStatus: basket.status ?? null,
+        toStatus: updatedBasket.status ?? null,
+        metadata: activityMetadata,
+      });
+    }
+
+    return {
+      updatedBasket,
+      approval,
+      voidReason,
+      releaseResult,
+      posStatusUpdate,
+    };
+  }
+
   private async enqueuePickedOrdersWaitingForPrintingStatus(
     orders: Array<{
       id: string;
@@ -6634,6 +6849,90 @@ export class WmsMobileService {
         this.logger.error(
           `Failed to queue WMS POS status update order=${order.posOrderId} target=${WAITING_FOR_PRINTING_POS_ORDER_STATUS}: ${reason}`,
           error?.stack,
+        );
+        return {
+          posOrderId: order.posOrderId,
+          outcome: 'failed',
+          reason,
+        };
+      }
+    }));
+
+    for (const result of results) {
+      summary.results.push(result);
+      if (result.outcome === 'queued') {
+        summary.queued += 1;
+      } else if (result.outcome === 'skipped') {
+        summary.skipped += 1;
+      } else {
+        summary.failed += 1;
+      }
+    }
+
+    return summary;
+  }
+
+  private async enqueueVoidedPackOrdersConfirmedStatus(
+    orders: Array<{
+      id: string;
+      tenantId: string;
+      storeId: string;
+      posOrderDbId: string;
+      shopId: string;
+      posOrderId: string;
+      warehouseId: string | null;
+    }>,
+  ): Promise<PickedOrderPosStatusUpdateSummary> {
+    const summary: PickedOrderPosStatusUpdateSummary = {
+      targetStatus: CONFIRMED_POS_ORDER_STATUS,
+      queued: 0,
+      skipped: 0,
+      failed: 0,
+      results: [],
+    };
+
+    if (orders.length === 0) {
+      return summary;
+    }
+
+    const results = await Promise.all(orders.map(async (order): Promise<PickedOrderPosStatusUpdateSummary['results'][number]> => {
+      try {
+        const result = await this.ordersService.enqueueSystemPosOrderStatusUpdate({
+          tenantId: order.tenantId,
+          orderRowId: order.posOrderDbId,
+          shopId: order.shopId,
+          posOrderId: order.posOrderId,
+          targetStatus: CONFIRMED_POS_ORDER_STATUS,
+          allowedCurrentStatuses: [WAITING_FOR_PRINTING_POS_ORDER_STATUS],
+          source: 'wms_picking',
+        });
+
+        if (result.skipped) {
+          this.logger.warn(
+            `Skipped WMS POS status reset order=${order.posOrderId} target=${CONFIRMED_POS_ORDER_STATUS} reason=${result.reason} current=${result.currentStatus ?? 'n/a'}`,
+          );
+          return {
+            posOrderId: order.posOrderId,
+            outcome: 'skipped',
+            reason: result.reason,
+            currentStatus: result.currentStatus,
+          };
+        }
+
+        this.logger.log(
+          `Queued WMS POS status reset order=${order.posOrderId} target=${CONFIRMED_POS_ORDER_STATUS} reason=${result.reason}`,
+        );
+        return {
+          posOrderId: order.posOrderId,
+          outcome: 'queued',
+          reason: result.reason,
+          currentStatus: result.currentStatus,
+        };
+      } catch (error: any) {
+        const reason = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+        this.logger.error(
+          `Failed to queue WMS POS status reset order=${order.posOrderId} target=${CONFIRMED_POS_ORDER_STATUS}: ${reason}`,
+          error instanceof Error ? error.stack : undefined,
         );
         return {
           posOrderId: order.posOrderId,
@@ -8395,7 +8694,6 @@ export class WmsMobileService {
     if (
       order.status !== WmsFulfillmentOrderStatus.PICKED
       && order.status !== WmsFulfillmentOrderStatus.PACKING
-      && order.status !== WmsFulfillmentOrderStatus.PACKED
     ) {
       throw new BadRequestException(`Order ${order.posOrderId} is ${this.formatEnumLabel(order.status)} and cannot be voided from PACK`);
     }

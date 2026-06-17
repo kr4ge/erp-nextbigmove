@@ -24,6 +24,7 @@ export type WmsFulfillmentQueueTask = {
   posOrderId: string;
   shopId: string;
   status: string;
+  assignmentMode: string;
   statusLabel: string;
   issueReason: string | null;
   customer: {
@@ -78,6 +79,7 @@ export type WmsFulfillmentQueueTask = {
     orders: Array<{
       id: string;
       posOrderId: string | null;
+      tracking: string | null;
       status: string | null;
       statusLabel: string | null;
       customerName: string | null;

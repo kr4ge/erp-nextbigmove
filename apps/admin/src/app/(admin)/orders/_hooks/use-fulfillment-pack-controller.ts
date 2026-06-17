@@ -10,6 +10,7 @@ import {
   scanWmsPackUnit,
   startWmsPackTask,
   verifyWmsPackTracking,
+  voidWmsPackBasketOrders,
   voidWmsPackTask,
 } from '../_services/fulfillment.service';
 import type {
@@ -306,6 +307,40 @@ export function useFulfillmentPackController() {
     }
   }, [replaceTask, resolveTenantIdForTask]);
 
+  const voidBasketOrders = useCallback(async (params: {
+    task: WmsFulfillmentQueueTask;
+    orderIds: string[];
+    reason: string;
+    supervisorIdentifier?: string | null;
+    supervisorPassword?: string | null;
+  }) => {
+    if (!params.task.basket?.id) {
+      setErrorMessage('This pack order is no longer inside a basket.');
+      return false;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const result = await voidWmsPackBasketOrders({
+        basketId: params.task.basket.id,
+        tenantId: resolveTenantIdForTask(params.task),
+        orderIds: params.orderIds,
+        reason: params.reason,
+        supervisorIdentifier: params.supervisorIdentifier,
+        supervisorPassword: params.supervisorPassword,
+      });
+      await loadQueue({ mode: 'refresh', page: currentPage });
+      setActiveTaskId(result.activeOrderId);
+      return true;
+    } catch (error) {
+      setErrorMessage(resolveQueueError(error));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [currentPage, loadQueue, resolveTenantIdForTask]);
+
   return {
     activeTask,
     canDirectVoid,
@@ -349,6 +384,7 @@ export function useFulfillmentPackController() {
     scanUnit,
     startTask,
     verifyTracking,
+    voidBasketOrders,
     voidTask,
   };
 }

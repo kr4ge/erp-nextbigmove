@@ -1,6 +1,9 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
+  ArrayUnique,
   IsIn,
+  IsArray,
   IsInt,
   IsOptional,
   IsString,
@@ -90,4 +93,12 @@ export class WmsMobilePackVoidDto extends WmsMobilePackScopedDto {
   @IsString()
   @MaxLength(120)
   supervisorPassword?: string;
+}
+
+export class WmsMobilePackBasketVoidDto extends WmsMobilePackVoidDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  orderIds!: string[];
 }

@@ -32,6 +32,7 @@ import {
   WmsMobilePickScopedDto,
 } from './dto/wms-mobile-picking.dto';
 import {
+  WmsMobilePackBasketVoidDto,
   WmsMobilePackBasketOrderCompleteDto,
   GetWmsMobilePackingTasksDto,
   WmsMobilePackCompleteDto,
@@ -451,6 +452,16 @@ export class WmsMobileController {
     @Body() body: WmsMobilePackBasketOrderCompleteDto,
   ) {
     return this.wmsMobileService.completePackingBasketOrder(req.user, id, orderId, body, req);
+  }
+
+  @Post('packing/baskets/:id/void-orders')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override', 'wms.dispatch.void')
+  async voidPackingBasketOrders(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobilePackBasketVoidDto,
+  ) {
+    return this.wmsMobileService.voidPackingBasketOrders(req.user, id, body, req);
   }
 
   @Get('history/feed')

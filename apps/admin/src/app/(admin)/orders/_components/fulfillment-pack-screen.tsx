@@ -116,6 +116,7 @@ export function FulfillmentPackScreen() {
               onScanUnit={pack.scanUnit}
               onVerifyTracking={pack.verifyTracking}
               onComplete={pack.completeTask}
+              onVoidOrders={pack.voidBasketOrders}
               onVoid={pack.voidTask}
             />
           </div>
