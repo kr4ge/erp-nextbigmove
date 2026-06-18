@@ -60,6 +60,11 @@ type DispatchReturnUnit = {
   statusLabel: string;
   name: string;
   customId: string | null;
+  currentLocation: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
 };
 
 type DispatchTaskUnit = {
@@ -134,6 +139,8 @@ type DispatchReturnSummaryCounts = {
   expectedUnits: number;
   verifiedUnits: number;
   pendingUnits: number;
+  awaitingPlacementUnits: number;
+  placedUnits: number;
 };
 
 const DEFAULT_DISPATCH_PAGE_SIZE = 10;
@@ -147,6 +154,7 @@ const RETURNED_EQUIVALENT_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
 ]);
 const DISPATCH_RETURN_ACTIVITY_TYPES = [
   'ORDER_RTS_UNIT_VERIFY',
+  'ORDER_RTS_DISPOSITION',
   'ORDER_RTS_COMPLETE',
 ] as const;
 const DISPATCH_REPORT_TREND_ACTIVITY_TYPES = [
@@ -158,6 +166,7 @@ const DISPATCH_REPORT_TREND_ACTIVITY_TYPES = [
 const DISPATCH_REPORT_ACTIVITY_TYPES = [
   ...DISPATCH_REPORT_TREND_ACTIVITY_TYPES,
   'ORDER_RTS_UNIT_VERIFY',
+  'ORDER_RTS_DISPOSITION',
 ] as const;
 const MANILA_TIME_ZONE = 'Asia/Manila';
 
@@ -300,11 +309,45 @@ export class WmsDispatchService {
     const scope = await this.resolveScope(query);
     const page = Math.max(query.page ?? 1, 1);
     const pageSize = Math.min(Math.max(query.pageSize ?? DEFAULT_DISPATCH_PAGE_SIZE, 5), 50);
+    const lifecycleStatus = this.resolveReturnLifecycleStatusFilter(query.status);
+    const workflowStatus = this.resolveReturnWorkflowStatusFilter(query.status);
     const where = this.combineOrderWhere(
       await this.buildPackedOrderScope(scope),
       this.buildSearchWhere(query.search),
-      this.buildReturnLifecycleWhere(query.status),
+      this.buildReturnLifecycleWhere(lifecycleStatus),
     );
+
+    if (workflowStatus) {
+      const orders = await this.prisma.wmsFulfillmentOrder.findMany({
+        where,
+        select: this.dispatchListOrderSelect(),
+        orderBy: [
+          { updatedAt: 'desc' },
+          { id: 'desc' },
+        ],
+      });
+      const returnSummaries = await this.loadReturnSummaryCountsByOrder(orders);
+      const filteredTasks = orders
+        .map((order) => this.mapReturnListItem(order, returnSummaries))
+        .filter((entry) => entry.returnSummary.state === workflowStatus);
+      const pagedTasks = filteredTasks.slice((page - 1) * pageSize, page * pageSize);
+
+      return {
+        tenantReady: true,
+        serverTime: new Date().toISOString(),
+        pagination: {
+          page,
+          pageSize,
+          total: filteredTasks.length,
+          hasMore: page * pageSize < filteredTasks.length,
+        },
+        context: {
+          activeTenantId: scope.activeTenantId,
+          activeStoreId: scope.activeStore?.id ?? null,
+        },
+        tasks: pagedTasks,
+      };
+    }
 
     const [total, orders] = await Promise.all([
       this.prisma.wmsFulfillmentOrder.count({ where }),
@@ -334,17 +377,7 @@ export class WmsDispatchService {
         activeTenantId: scope.activeTenantId,
         activeStoreId: scope.activeStore?.id ?? null,
       },
-      tasks: orders.map((order) => ({
-        task: this.mapDispatchTaskListItem(order),
-        returnSummary: this.buildReturnSummary(
-          order,
-          returnSummaries.get(order.id) ?? {
-            expectedUnits: 0,
-            verifiedUnits: 0,
-            pendingUnits: 0,
-          },
-        ),
-      })),
+      tasks: orders.map((order) => this.mapReturnListItem(order, returnSummaries)),
     };
   }
 
@@ -893,6 +926,41 @@ export class WmsDispatchService {
     };
   }
 
+  private resolveReturnLifecycleStatusFilter(
+    status?: GetWmsDispatchReturnsDto['status'],
+  ): 'RETURNING' | 'RETURNED' | undefined {
+    if (status === 'RETURNING') {
+      return 'RETURNING';
+    }
+
+    if (
+      status === 'RETURNED'
+      || status === 'READY_TO_VERIFY'
+      || status === 'AWAITING_PLACEMENT'
+      || status === 'PARTIAL'
+      || status === 'VERIFIED'
+    ) {
+      return 'RETURNED';
+    }
+
+    return undefined;
+  }
+
+  private resolveReturnWorkflowStatusFilter(
+    status?: GetWmsDispatchReturnsDto['status'],
+  ): 'READY_TO_VERIFY' | 'AWAITING_PLACEMENT' | 'PARTIAL' | 'VERIFIED' | undefined {
+    if (
+      status === 'READY_TO_VERIFY'
+      || status === 'AWAITING_PLACEMENT'
+      || status === 'PARTIAL'
+      || status === 'VERIFIED'
+    ) {
+      return status;
+    }
+
+    return undefined;
+  }
+
   private dispatchListOrderSelect() {
     return {
       id: true,
@@ -1065,6 +1133,13 @@ export class WmsDispatchService {
               code: true,
               barcode: true,
               status: true,
+              currentLocation: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                },
+              },
               posProduct: {
                 select: {
                   name: true,
@@ -1100,6 +1175,13 @@ export class WmsDispatchService {
                   code: true,
                   barcode: true,
                   status: true,
+                  currentLocation: {
+                    select: {
+                      id: true,
+                      code: true,
+                      name: true,
+                    },
+                  },
                   posProduct: {
                     select: {
                       name: true,
@@ -1196,10 +1278,17 @@ export class WmsDispatchService {
         expectedUnits: 0,
         verifiedUnits: 0,
         pendingUnits: 0,
+        awaitingPlacementUnits: 0,
+        placedUnits: 0,
       };
       current.expectedUnits += 1;
       if (RETURNED_EQUIVALENT_UNIT_STATUSES.has(basketUnit.inventoryUnit.status)) {
         current.verifiedUnits += 1;
+        if (this.isAwaitingReturnPlacementStatus(basketUnit.inventoryUnit.status)) {
+          current.awaitingPlacementUnits += 1;
+        } else {
+          current.placedUnits += 1;
+        }
       }
       summaryByOrderId.set(basketUnit.fulfillmentOrderId, current);
     }
@@ -1220,10 +1309,17 @@ export class WmsDispatchService {
         expectedUnits: 0,
         verifiedUnits: 0,
         pendingUnits: 0,
+        awaitingPlacementUnits: 0,
+        placedUnits: 0,
       };
       current.expectedUnits += 1;
       if (RETURNED_EQUIVALENT_UNIT_STATUSES.has(reservation.inventoryUnit.status)) {
         current.verifiedUnits += 1;
+        if (this.isAwaitingReturnPlacementStatus(reservation.inventoryUnit.status)) {
+          current.awaitingPlacementUnits += 1;
+        } else {
+          current.placedUnits += 1;
+        }
       }
       summaryByOrderId.set(reservation.fulfillmentOrderId, current);
     }
@@ -1336,6 +1432,29 @@ export class WmsDispatchService {
             ),
         shortage: Math.max(Math.max(line.quantityRequired ?? 0, 0) - Math.max(line.quantityAllocated ?? 0, 0), 0),
       })),
+    };
+  }
+
+  private emptyReturnSummaryCounts(): DispatchReturnSummaryCounts {
+    return {
+      expectedUnits: 0,
+      verifiedUnits: 0,
+      pendingUnits: 0,
+      awaitingPlacementUnits: 0,
+      placedUnits: 0,
+    };
+  }
+
+  private mapReturnListItem(
+    order: any,
+    returnSummaries: Map<string, DispatchReturnSummaryCounts>,
+  ) {
+    return {
+      task: this.mapDispatchTaskListItem(order),
+      returnSummary: this.buildReturnSummary(
+        order,
+        returnSummaries.get(order.id) ?? this.emptyReturnSummaryCounts(),
+      ),
     };
   }
 
@@ -1483,40 +1602,38 @@ export class WmsDispatchService {
     const trackedUnits = this.getTrackedReturnUnits(order);
     const verifiedUnits = trackedUnits.filter((unit) => RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status as WmsInventoryUnitStatus));
     const pendingUnits = trackedUnits.filter((unit) => !RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status as WmsInventoryUnitStatus));
+    const awaitingPlacementUnits = verifiedUnits.filter(
+      (unit) => this.isAwaitingReturnPlacementStatus(unit.status as WmsInventoryUnitStatus),
+    );
+    const placedUnits = verifiedUnits.filter(
+      (unit) => !this.isAwaitingReturnPlacementStatus(unit.status as WmsInventoryUnitStatus),
+    );
     const latestActivity = history[0] ?? null;
-
-    let state: 'NONE' | 'RETURNING' | 'READY_TO_VERIFY' | 'PARTIAL' | 'VERIFIED' = 'NONE';
-    let label: string | null = null;
-
-    if (posStatus === 4) {
-      state = 'RETURNING';
-      label = 'Returning';
-    } else if (posStatus === 5) {
-      if (verifiedUnits.length >= trackedUnits.length && trackedUnits.length > 0) {
-        state = 'VERIFIED';
-        label = 'Processed';
-      } else if (verifiedUnits.length > 0) {
-        state = 'PARTIAL';
-        label = 'Processed';
-      } else {
-        state = 'READY_TO_VERIFY';
-        label = 'Returned';
-      }
-    }
+    const latestVerification = history.find((entry) => entry.actionType === 'ORDER_RTS_UNIT_VERIFY') ?? null;
+    const returnProgress = this.resolveReturnProgressState({
+      posStatus,
+      expectedUnits: trackedUnits.length,
+      verifiedUnits: verifiedUnits.length,
+      awaitingPlacementUnits: awaitingPlacementUnits.length,
+    });
 
     return {
       eligible: posStatus === 4 || posStatus === 5,
       posStatus,
       posStatusLabel: posStatusLabel ?? (posStatus === 4 ? 'Returning' : posStatus === 5 ? 'Returned' : null),
-      state,
-      label,
+      state: returnProgress.state,
+      label: returnProgress.label,
       canVerify: posStatus === 5 && pendingUnits.length > 0,
       expectedUnits: trackedUnits.length,
+      awaitingPlacementUnits: awaitingPlacementUnits.length,
+      placedUnits: placedUnits.length,
       verifiedUnits: verifiedUnits.map((unit) => this.mapReturnUnit(unit)),
       pendingUnits: pendingUnits.map((unit) => this.mapReturnUnit(unit)),
       history,
-      lastVerifiedAt: latestActivity?.createdAt ?? null,
-      lastVerifiedBy: latestActivity?.actor ?? null,
+      lastActionAt: latestActivity?.createdAt ?? null,
+      lastActionBy: latestActivity?.actor ?? null,
+      lastVerifiedAt: latestVerification?.createdAt ?? null,
+      lastVerifiedBy: latestVerification?.actor ?? null,
     };
   }
 
@@ -1526,17 +1643,48 @@ export class WmsDispatchService {
   ) {
     const posStatus = typeof order.posOrder?.status === 'number' ? order.posOrder.status : null;
     const posStatusLabel = this.cleanOptionalText(order.posOrder?.statusName ?? null);
-    let state: 'NONE' | 'RETURNING' | 'READY_TO_VERIFY' | 'PARTIAL' | 'VERIFIED' = 'NONE';
+    const returnProgress = this.resolveReturnProgressState({
+      posStatus,
+      expectedUnits: counts.expectedUnits,
+      verifiedUnits: counts.verifiedUnits,
+      awaitingPlacementUnits: counts.awaitingPlacementUnits,
+    });
+
+    return {
+      posStatus,
+      posStatusLabel: posStatusLabel ?? (posStatus === 4 ? 'Returning' : posStatus === 5 ? 'Returned' : null),
+      state: returnProgress.state,
+      label: returnProgress.label,
+      expectedUnits: counts.expectedUnits,
+      verifiedUnits: counts.verifiedUnits,
+      pendingUnits: counts.pendingUnits,
+      awaitingPlacementUnits: counts.awaitingPlacementUnits,
+      placedUnits: counts.placedUnits,
+    };
+  }
+
+  private resolveReturnProgressState(params: {
+    posStatus: number | null;
+    expectedUnits: number;
+    verifiedUnits: number;
+    awaitingPlacementUnits: number;
+  }) {
+    const { posStatus, expectedUnits, verifiedUnits, awaitingPlacementUnits } = params;
+
+    let state: 'NONE' | 'RETURNING' | 'READY_TO_VERIFY' | 'PARTIAL' | 'VERIFIED' | 'AWAITING_PLACEMENT' = 'NONE';
     let label: string | null = null;
 
     if (posStatus === 4) {
       state = 'RETURNING';
       label = 'Returning';
     } else if (posStatus === 5) {
-      if (counts.expectedUnits > 0 && counts.verifiedUnits >= counts.expectedUnits) {
+      if (awaitingPlacementUnits > 0) {
+        state = 'AWAITING_PLACEMENT';
+        label = 'Awaiting placement';
+      } else if (expectedUnits > 0 && verifiedUnits >= expectedUnits) {
         state = 'VERIFIED';
         label = 'Processed';
-      } else if (counts.verifiedUnits > 0) {
+      } else if (verifiedUnits > 0) {
         state = 'PARTIAL';
         label = 'Processed';
       } else {
@@ -1546,13 +1694,8 @@ export class WmsDispatchService {
     }
 
     return {
-      posStatus,
-      posStatusLabel: posStatusLabel ?? (posStatus === 4 ? 'Returning' : posStatus === 5 ? 'Returned' : null),
       state,
       label,
-      expectedUnits: counts.expectedUnits,
-      verifiedUnits: counts.verifiedUnits,
-      pendingUnits: counts.pendingUnits,
     };
   }
 
@@ -1570,6 +1713,13 @@ export class WmsDispatchService {
           status: basketUnit.inventoryUnit.status,
           name: basketUnit.inventoryUnit.posProduct?.name ?? basketUnit.inventoryUnit.code,
           customId: basketUnit.inventoryUnit.posProduct?.customId ?? null,
+          currentLocation: basketUnit.inventoryUnit.currentLocation
+            ? {
+                id: basketUnit.inventoryUnit.currentLocation.id,
+                code: basketUnit.inventoryUnit.currentLocation.code,
+                name: basketUnit.inventoryUnit.currentLocation.name,
+              }
+            : null,
         }));
 
       return this.deduplicateReturnUnits(units);
@@ -1584,6 +1734,13 @@ export class WmsDispatchService {
         status: reservation.inventoryUnit.status,
         name: reservation.inventoryUnit.posProduct?.name ?? reservation.inventoryUnit.code,
         customId: reservation.inventoryUnit.posProduct?.customId ?? null,
+        currentLocation: reservation.inventoryUnit.currentLocation
+          ? {
+              id: reservation.inventoryUnit.currentLocation.id,
+              code: reservation.inventoryUnit.currentLocation.code,
+              name: reservation.inventoryUnit.currentLocation.name,
+            }
+          : null,
       }));
 
     return this.deduplicateReturnUnits(units);
@@ -1596,6 +1753,11 @@ export class WmsDispatchService {
     status: string;
     name: string;
     customId: string | null;
+    currentLocation: {
+      id: string;
+      code: string;
+      name: string;
+    } | null;
   }>) {
     return Array.from(
       new Map(units.map((unit) => [unit.id, unit] as const)).values(),
@@ -1609,6 +1771,11 @@ export class WmsDispatchService {
     status: string;
     name: string;
     customId: string | null;
+    currentLocation: {
+      id: string;
+      code: string;
+      name: string;
+    } | null;
   }): DispatchReturnUnit {
     return {
       id: unit.id,
@@ -1618,6 +1785,7 @@ export class WmsDispatchService {
       statusLabel: this.formatEnumLabel(unit.status),
       name: unit.name,
       customId: unit.customId,
+      currentLocation: unit.currentLocation,
     };
   }
 
@@ -1684,6 +1852,8 @@ export class WmsDispatchService {
     const unitCode = this.readActivityMetadataString(metadata, 'unitCode');
     const unitCount = this.readActivityMetadataNumber(metadata, 'unitCount');
     const trackingCode = this.cleanOptionalText(this.readActivityMetadataString(metadata, 'trackingCode'));
+    const targetCode = this.cleanOptionalText(this.readActivityMetadataString(metadata, 'targetCode'));
+    const dispositionAction = this.cleanOptionalText(this.readActivityMetadataString(metadata, 'dispositionAction'));
     const detailParts: string[] = [];
     let label = this.formatEnumLabel(activity.actionType);
 
@@ -1691,6 +1861,19 @@ export class WmsDispatchService {
       label = 'Verified returned unit';
       if (unitCode) {
         detailParts.push(unitCode);
+      }
+    }
+
+    if (activity.actionType === 'ORDER_RTS_DISPOSITION') {
+      label = 'Applied RTS disposition';
+      if (unitCode) {
+        detailParts.push(unitCode);
+      }
+      if (dispositionAction) {
+        detailParts.push(this.formatEnumLabel(dispositionAction));
+      }
+      if (targetCode) {
+        detailParts.push(`Moved to ${targetCode}`);
       }
     }
 
@@ -1801,6 +1984,10 @@ export class WmsDispatchService {
 
     return basketUnit.status === WmsBasketUnitStatus.PACKED
       || (basketUnit.status === WmsBasketUnitStatus.REMOVED && basketUnit.packedAt != null);
+  }
+
+  private isAwaitingReturnPlacementStatus(status: WmsInventoryUnitStatus | string | null | undefined) {
+    return status === WmsInventoryUnitStatus.RTS;
   }
 
   private isPackedEquivalentInventoryStatus(status: WmsInventoryUnitStatus | string | null | undefined) {

@@ -9,6 +9,7 @@ import type {
   WmsMobileStockScanResult,
   WmsMobileStockUnitLookupResponse,
   WmsMobileStockUnitDetail,
+  WmsMobileTrackingReturnDispositionAction,
   WmsMobileTrackingLookupResponse,
   WmsMobileRtsTasksResponse,
   WmsMobileStockResponse,
@@ -411,6 +412,33 @@ export function verifyMobileTrackingReturnUnit(params: {
     body: {
       code: params.code,
       tenantId: params.tenantId,
+    },
+  });
+}
+
+export function dispositionMobileTrackingReturnUnit(params: {
+  accessToken: string;
+  device: DeviceIdentity;
+  taskId: string;
+  unitId: string;
+  disposition: WmsMobileTrackingReturnDispositionAction;
+  targetCode: string;
+  tenantId?: string | null;
+}) {
+  return apiRequest<{
+    success: boolean;
+    task: WmsMobileTrackingLookupResponse['task'];
+    returnFlow: WmsMobileTrackingLookupResponse['returnFlow'];
+    unit: WmsMobileStockUnitDetail;
+  }>(`/wms/mobile/tracking/tasks/${params.taskId}/disposition-return-unit`, {
+    method: 'POST',
+    token: params.accessToken,
+    device: params.device,
+    body: {
+      tenantId: params.tenantId,
+      unitId: params.unitId,
+      disposition: params.disposition,
+      targetCode: params.targetCode,
     },
   });
 }

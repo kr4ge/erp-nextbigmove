@@ -1,6 +1,13 @@
 export type WmsDispatchTab = 'outbound' | 'returns' | 'reports';
 export type WmsDispatchOutboundStatusFilter = '' | 'PACKED' | 'SHIPPED' | 'DELIVERED';
-export type WmsDispatchReturnStatusFilter = '' | 'RETURNING' | 'RETURNED';
+export type WmsDispatchReturnStatusFilter =
+  | ''
+  | 'RETURNING'
+  | 'RETURNED'
+  | 'READY_TO_VERIFY'
+  | 'AWAITING_PLACEMENT'
+  | 'PARTIAL'
+  | 'VERIFIED';
 
 export type WmsDispatchSummaryResponse = {
   serverTime: string;
@@ -187,18 +194,30 @@ export type WmsDispatchReturnUnit = {
   statusLabel: string;
   name: string;
   customId: string | null;
+  currentLocation: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
 };
 
 export type WmsDispatchReturnFlow = {
   eligible: boolean;
   posStatus: number | null;
   posStatusLabel: string | null;
-  state: 'NONE' | 'RETURNING' | 'READY_TO_VERIFY' | 'PARTIAL' | 'VERIFIED';
+  state: 'NONE' | 'RETURNING' | 'READY_TO_VERIFY' | 'PARTIAL' | 'VERIFIED' | 'AWAITING_PLACEMENT';
   label: string | null;
   canVerify: boolean;
   expectedUnits: number;
+  awaitingPlacementUnits: number;
+  placedUnits: number;
   verifiedUnits: WmsDispatchReturnUnit[];
   pendingUnits: WmsDispatchReturnUnit[];
+  lastActionAt: string | null;
+  lastActionBy: {
+    name: string;
+    email: string;
+  } | null;
   history: Array<{
     id: string;
     actionType: string;
@@ -227,11 +246,13 @@ export type WmsDispatchReturnListItem = {
   returnSummary: {
     posStatus: number | null;
     posStatusLabel: string | null;
-    state: 'NONE' | 'RETURNING' | 'READY_TO_VERIFY' | 'PARTIAL' | 'VERIFIED';
+    state: 'NONE' | 'RETURNING' | 'READY_TO_VERIFY' | 'PARTIAL' | 'VERIFIED' | 'AWAITING_PLACEMENT';
     label: string | null;
     expectedUnits: number;
     verifiedUnits: number;
     pendingUnits: number;
+    awaitingPlacementUnits: number;
+    placedUnits: number;
   };
 };
 

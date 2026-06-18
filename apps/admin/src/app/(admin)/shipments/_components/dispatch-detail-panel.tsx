@@ -93,6 +93,12 @@ export function DispatchDetailPanel({
   }
 
   const returnFlow = tab === 'returns' ? returnTask?.returnFlow ?? null : null;
+  const awaitingPlacementUnits = returnFlow
+    ? returnFlow.verifiedUnits.filter((unit) => unit.status === 'RTS')
+    : [];
+  const placedReturnUnits = returnFlow
+    ? returnFlow.verifiedUnits.filter((unit) => unit.status !== 'RTS')
+    : [];
   const packedUnitCount = task.unitRecords.filter((unit) => isPackedEquivalentUnit(unit.status)).length;
   const latestPackedAt = resolveLatestPackedAt(task);
   const metrics = [
@@ -210,34 +216,36 @@ export function DispatchDetailPanel({
 
       {returnFlow ? (
         <>
-          <DetailSection title="Return progress" description="Verified units, pending units, and the latest return checks.">
+          <DetailSection title="Return progress" description="Track scan backlog, units still sitting in RTS, and units already placed into their final status.">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Expected" value={returnFlow.expectedUnits} />
-              <MetricCard label="Verified" value={returnFlow.verifiedUnits.length} />
-              <MetricCard label="Pending" value={returnFlow.pendingUnits.length} />
+              <MetricCard label="Pending scan" value={returnFlow.pendingUnits.length} />
+              <MetricCard label="Awaiting placement" value={returnFlow.awaitingPlacementUnits} />
+              <MetricCard label="Placed" value={returnFlow.placedUnits} />
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <MetricCard label="State" value={returnFlow.label ?? returnFlow.posStatusLabel ?? 'Not started'} />
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <DetailCard
-                label="Last verified"
-                value={returnFlow.lastVerifiedAt ? formatDateTime(returnFlow.lastVerifiedAt) : 'No verification yet'}
+                label="Last RTS action"
+                value={returnFlow.lastActionAt ? formatDateTime(returnFlow.lastActionAt) : 'No activity yet'}
               />
               <DetailCard
-                label="Verified by"
-                value={returnFlow.lastVerifiedBy?.name ?? returnFlow.lastVerifiedBy?.email ?? 'Not assigned'}
+                label="Handled by"
+                value={returnFlow.lastActionBy?.name ?? returnFlow.lastActionBy?.email ?? 'Not assigned'}
               />
             </div>
           </DetailSection>
 
-          <DetailSection title="Return units" description="Pending and verified dispatched units for this waybill.">
-            <div className="grid gap-4 xl:grid-cols-2">
+          <DetailSection title="Return units" description="Split returned units by what still needs scanning, what is waiting for a bin/disposition, and what is already placed.">
+            <div className="grid gap-4 xl:grid-cols-3">
               <ReturnUnitList title="Pending units" emptyMessage="No pending units." units={returnFlow.pendingUnits} />
-              <ReturnUnitList title="Verified units" emptyMessage="No verified units yet." units={returnFlow.verifiedUnits} />
+              <ReturnUnitList title="Awaiting placement" emptyMessage="No units are waiting for placement." units={awaitingPlacementUnits} />
+              <ReturnUnitList title="Placed units" emptyMessage="No units have been placed yet." units={placedReturnUnits} />
             </div>
           </DetailSection>
 
-          <DetailSection title="Return history" description="Latest RTS verification actions for this order.">
+          <DetailSection title="Return history" description="Latest RTS verification and placement actions for this order.">
             <HistoryList history={returnFlow.history} />
           </DetailSection>
         </>
@@ -396,6 +404,11 @@ function ReturnUnitList({
     statusLabel: string;
     name: string;
     customId: string | null;
+    currentLocation: {
+      id: string;
+      code: string;
+      name: string;
+    } | null;
   }>;
 }) {
   return (
@@ -424,6 +437,9 @@ function ReturnUnitList({
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <MiniInfo label="Unit" value={unit.code} mono />
                 <MiniInfo label="Barcode" value={unit.barcode} mono />
+                {unit.currentLocation ? (
+                  <MiniInfo label="Location" value={`${unit.currentLocation.code} · ${unit.currentLocation.name}`} />
+                ) : null}
               </div>
             </div>
           ))
@@ -562,6 +578,7 @@ function buildPillClass(status: string | null | undefined) {
       return 'pill pill-primary';
     case 'PARTIAL':
     case 'RETURNING':
+    case 'AWAITING_PLACEMENT':
     case 'RTS':
       return 'pill border-none bg-[#fff4db] text-[#a66313]';
     case 'RETURNED':

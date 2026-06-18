@@ -143,6 +143,13 @@ function DispatchReturnRow({
   onSelect: () => void;
 }) {
   const { task, returnSummary } = entry;
+  const unitsCaption = returnSummary.awaitingPlacementUnits > 0
+    ? `${returnSummary.awaitingPlacementUnits} awaiting placement`
+    : returnSummary.pendingUnits > 0
+      ? `${returnSummary.pendingUnits} pending`
+      : returnSummary.placedUnits > 0
+        ? `${returnSummary.placedUnits} placed`
+        : 'No linked units';
 
   return (
     <tr className="cursor-pointer border-b border-[#edf2f6] transition hover:bg-[#f8fbfc]" onClick={onSelect}>
@@ -171,7 +178,7 @@ function DispatchReturnRow({
           {returnSummary.verifiedUnits}/{returnSummary.expectedUnits}
         </p>
         <p className="mt-1 text-xs text-[#708596]">
-          {returnSummary.pendingUnits} pending
+          {unitsCaption}
         </p>
       </td>
       <td className="px-5 py-4 text-sm text-[#506879]">{task.store?.name ?? 'Unassigned'}</td>
@@ -225,6 +232,7 @@ function buildStatusPill(status: string | null | undefined) {
     case 'DELIVERED':
     case 'VERIFIED':
       return 'pill pill-success';
+    case 'AWAITING_PLACEMENT':
     case 'RETURNING':
     case 'PARTIAL':
     case 'READY_TO_VERIFY':

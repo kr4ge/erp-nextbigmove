@@ -32,7 +32,7 @@ export function DispatchReportsPanel({
         <div>
           <p className="card-label">Dispatch Reports</p>
           <p className="mt-1 text-sm text-[#5f7483]">
-            Track packing, shipment, delivery, and RTS completion in one operational view.
+            Track packing, shipment, delivery, RTS verification, and final return placement in one operational view.
           </p>
         </div>
 

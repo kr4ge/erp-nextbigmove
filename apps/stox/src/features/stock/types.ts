@@ -417,7 +417,10 @@ export type WmsMobileTrackingReturnUnit = {
   statusLabel: string;
   name: string;
   customId: string | null;
+  currentLocation: WmsMobileStockLocation | null;
 };
+
+export type WmsMobileTrackingReturnDispositionAction = 'PUTAWAY' | 'DEADSTOCK' | 'DAMAGE';
 
 export type WmsMobileTrackingReturnFlow = {
   eligible: boolean;

@@ -62,6 +62,7 @@ import {
   WmsMobileReopenStockCountDto,
   WmsMobileScanStockCountUnitDto,
   WmsMobileStartStockCountDto,
+  WmsMobileTrackingReturnDispositionDto,
   WmsMobileTrackingReturnUnitDto,
   WmsMobileSubmitStockCountDto,
   WmsMobileStockMoveDto,
@@ -236,6 +237,10 @@ const RTS_VERIFY_ACTION_PERMISSIONS = [
   'wms.dispatch.edit',
   'wms.dispatch.override',
 ] as const;
+const RTS_DISPOSITION_ACTION_PERMISSIONS = [
+  'wms.rts.disposition',
+  'wms.dispatch.override',
+] as const;
 const HISTORY_READ_ALL_PERMISSIONS = [
   'wms.history.read_all',
 ] as const;
@@ -265,6 +270,7 @@ const HISTORY_DISPATCH_ACTION_TYPES = [
 const HISTORY_RTS_ACTION_TYPES = [
   'ORDER_RTS_UNIT_VERIFY',
   'ORDER_RTS_COMPLETE',
+  'ORDER_RTS_DISPOSITION',
 ] as const;
 const HISTORY_SCAN_ACTION_TYPES = [
   'STOCK_SCAN',
@@ -2277,21 +2283,21 @@ export class WmsMobileService {
     this.assertOrderReadyForRtsVerification(order);
 
     const scannedCode = this.normalizeScannedCode(body.code);
-    const reservations = this.getReturnTrackedReservations(order);
-    const matchedReservation = reservations.find((reservation: any) => (
-      reservation.inventoryUnit.code === scannedCode
-      || reservation.inventoryUnit.barcode === scannedCode
-      || reservation.inventoryUnit.id === scannedCode
+    const trackedUnits = await this.getTrackedReturnUnits(order);
+    const matchedUnit = trackedUnits.find((unit: any) => (
+      unit.code === scannedCode
+      || unit.barcode === scannedCode
+      || unit.id === scannedCode
     )) as any | null;
 
-    if (!matchedReservation) {
+    if (!matchedUnit) {
       const scannedUnit = await this.findUnitByCode(scannedCode, order.tenantId);
       if (!scannedUnit) {
         throw new BadRequestException(`Unit ${scannedCode} is not part of order ${order.posOrderId}`);
       }
 
       const requiredVariationIds = new Set(
-        reservations.map((reservation: any) => reservation.inventoryUnit.variationId),
+        trackedUnits.map((unit: any) => unit.variationId),
       );
       if (requiredVariationIds.has(scannedUnit.variationId)) {
         throw new BadRequestException(`Unit ${scannedUnit.code} is not one of the dispatched units for order ${order.posOrderId}`);
@@ -2300,15 +2306,16 @@ export class WmsMobileService {
       throw new BadRequestException(`Unit ${scannedUnit.code} is not one of the products assigned to order ${order.posOrderId}`);
     }
 
-    const unit = matchedReservation.inventoryUnit;
+    const unit = matchedUnit;
     if (unit.status === WmsInventoryUnitStatus.DISPATCHED) {
+      const rtsLocation = await this.resolveWarehouseOperationalLocation(unit.warehouseId, WmsLocationKind.RTS);
       const updatedOrder = await this.prisma.$transaction(async (tx) => {
         await tx.wmsInventoryUnit.update({
           where: { id: unit.id },
           data: {
             status: WmsInventoryUnitStatus.RTS,
-            currentLocationId: null,
-            updatedById: null,
+            currentLocationId: rtsLocation.id,
+            updatedById: user.userId || user.id || undefined,
           },
         });
 
@@ -2318,7 +2325,7 @@ export class WmsMobileService {
             inventoryUnitId: unit.id,
             warehouseId: unit.warehouseId,
             fromLocationId: unit.currentLocationId,
-            toLocationId: null,
+            toLocationId: rtsLocation.id,
             fromStatus: unit.status,
             toStatus: WmsInventoryUnitStatus.RTS,
             movementType: WmsInventoryMovementType.ADJUSTMENT,
@@ -2336,8 +2343,8 @@ export class WmsMobileService {
         });
       });
 
-	    await this.recordStockActivity(user, request, {
-	      tenantId: updatedOrder.tenantId,
+      await this.recordStockActivity(user, request, {
+        tenantId: updatedOrder.tenantId,
         actionType: 'ORDER_RTS_UNIT_VERIFY',
         resourceType: 'WMS_FULFILLMENT_ORDER',
         resourceId: updatedOrder.id,
@@ -2354,6 +2361,7 @@ export class WmsMobileService {
           unitCode: unit.code,
           unitId: unit.id,
           unitCount: 1,
+          targetCode: rtsLocation.code,
         },
       });
 
@@ -2389,6 +2397,7 @@ export class WmsMobileService {
           code: unit.code,
           status: WmsInventoryUnitStatus.RTS,
           statusLabel: this.formatEnumLabel(WmsInventoryUnitStatus.RTS),
+          currentLocation: this.mapLocation(rtsLocation),
         },
       };
     }
@@ -2402,6 +2411,149 @@ export class WmsMobileService {
     }
 
     throw new BadRequestException(`Unit ${unit.code} is ${this.formatEnumLabel(unit.status)} and cannot be verified as RTS`);
+  }
+
+  async dispositionTrackingReturnUnit(
+    user: BootstrapUser,
+    id: string,
+    body: WmsMobileTrackingReturnDispositionDto,
+    request?: Request,
+  ) {
+    const order = await this.findRtsOrderForAction(
+      user,
+      id,
+      body.tenantId,
+      request,
+      RTS_DISPOSITION_ACTION_PERMISSIONS,
+      'This account does not have WMS RTS disposition permission',
+    );
+    this.assertOrderReadyForRtsVerification(order);
+
+    const trackedUnits = await this.getTrackedReturnUnits(order);
+    const unit = (trackedUnits.find((candidate: any) => candidate.id === body.unitId) ?? null) as any | null;
+    if (!unit) {
+      throw new BadRequestException(`Unit ${body.unitId} is not part of order ${order.posOrderId}`);
+    }
+
+    if (unit.status === WmsInventoryUnitStatus.DISPATCHED || unit.status === WmsInventoryUnitStatus.PACKED) {
+      throw new BadRequestException(`Unit ${unit.code} must be verified as RTS before disposition`);
+    }
+
+    if (unit.status !== WmsInventoryUnitStatus.RTS) {
+      throw new ConflictException(`Unit ${unit.code} is already ${this.formatEnumLabel(unit.status)}`);
+    }
+
+    const unitRecord = await this.findUnitById(unit.id, order.tenantId);
+    if (!unitRecord) {
+      throw new NotFoundException('Inventory unit was not found');
+    }
+
+    await this.assertActionTenantAccess(user, body.tenantId, unitRecord.tenantId, request);
+    this.assertMobileActionPreconditions(unitRecord, body);
+
+    const target = await this.resolveTargetLocation(body.targetCode, unitRecord.warehouseId);
+    const { nextStatus, actionLabel } = this.resolveRtsDisposition(body.disposition, target.kind);
+    const notes = this.cleanOptionalText(body.notes) ?? `RTS disposition ${actionLabel.toLowerCase()} to ${target.code}`;
+    const now = new Date();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (target.kind === WmsLocationKind.BIN) {
+        await this.assertLocationCapacity(tx, target.id, target.code, target.capacity, 1, unitRecord.currentLocationId);
+      }
+
+      const transfer = await tx.wmsTransfer.create({
+        data: {
+          code: this.buildMobileTransferCode(),
+          tenantId: unitRecord.tenantId,
+          warehouseId: unitRecord.warehouseId,
+          fromLocationId: unitRecord.currentLocationId,
+          toLocationId: target.id,
+          status: WmsTransferStatus.COMPLETED,
+          notes,
+          createdById: user.userId || user.id || null,
+          updatedById: user.userId || user.id || null,
+        },
+      });
+
+      await tx.wmsTransferItem.create({
+        data: {
+          transferId: transfer.id,
+          inventoryUnitId: unitRecord.id,
+          lineNo: 1,
+        },
+      });
+
+      const updatedUnit = await tx.wmsInventoryUnit.update({
+        where: { id: unitRecord.id },
+        data: {
+          currentLocationId: target.id,
+          status: nextStatus,
+          updatedById: user.userId || user.id || undefined,
+        },
+        include: this.mobileUnitInclude(),
+      });
+
+      await tx.wmsInventoryMovement.create({
+        data: {
+          tenantId: unitRecord.tenantId,
+          inventoryUnitId: unitRecord.id,
+          warehouseId: unitRecord.warehouseId,
+          fromLocationId: unitRecord.currentLocationId,
+          toLocationId: target.id,
+          fromStatus: unitRecord.status,
+          toStatus: nextStatus,
+          movementType: WmsInventoryMovementType.TRANSFER,
+          referenceType: 'TRANSFER',
+          referenceId: transfer.id,
+          referenceCode: transfer.code,
+          notes,
+          actorId: user.userId || user.id || null,
+          createdAt: now,
+        },
+      });
+
+      return updatedUnit;
+    });
+
+    await this.recordStockActivity(user, request, {
+      tenantId: order.tenantId,
+      actionType: 'ORDER_RTS_DISPOSITION',
+      resourceType: 'WMS_FULFILLMENT_ORDER',
+      resourceId: order.id,
+      taskType: 'DISPATCH',
+      taskId: order.id,
+      storeId: order.storeId,
+      warehouseId: unitRecord.warehouseId,
+      fromStatus: unitRecord.status,
+      toStatus: nextStatus,
+      metadata: {
+        posOrderId: order.posOrderId,
+        posStatus: order.posOrder?.status ?? null,
+        trackingCode: order.posOrder?.tracking ?? null,
+        unitCode: unitRecord.code,
+        unitId: unitRecord.id,
+        unitCount: 1,
+        targetCode: target.code,
+        dispositionAction: body.disposition,
+      },
+    });
+
+    if (nextStatus === WmsInventoryUnitStatus.PUTAWAY || nextStatus === WmsInventoryUnitStatus.DEADSTOCK) {
+      await this.wmsFulfillmentSyncService.reallocateWaitingOrdersForRestockedVariations({
+        tenantId: unitRecord.tenantId,
+        storeId: unitRecord.storeId,
+        warehouseId: unitRecord.warehouseId,
+        variationIds: [unitRecord.variationId],
+        actorId: user.userId || user.id || null,
+      });
+    }
+
+    return {
+      success: true,
+      task: this.mapMobilePickingTask(order),
+      returnFlow: await this.buildTrackingReturnFlow(order),
+      unit: this.mapMobileUnitDetail(result),
+    };
   }
 
   async putawayStockUnit(user: BootstrapUser, body: WmsMobileStockMoveDto, request?: Request) {
@@ -10138,6 +10290,8 @@ export class WmsMobileService {
     id: string,
     requestedTenantId?: string | null,
     request?: Request,
+    requiredPermissions: readonly string[] = RTS_VERIFY_ACTION_PERMISSIONS,
+    forbiddenMessage = 'This account does not have WMS RTS verification permission',
   ) {
     const tenantContext = await this.resolveMobileStockContext(
       user,
@@ -10172,9 +10326,9 @@ export class WmsMobileService {
 
     if (
       user.role !== 'SUPER_ADMIN'
-      && !this.hasAnyRequiredPermission(permissions, RTS_VERIFY_ACTION_PERMISSIONS)
+      && !this.hasAnyRequiredPermission(permissions, requiredPermissions)
     ) {
-      throw new ForbiddenException('This account does not have WMS RTS verification permission');
+      throw new ForbiddenException(forbiddenMessage);
     }
 
     return order;
@@ -10341,12 +10495,99 @@ export class WmsMobileService {
     };
   }
 
-  private getReturnTrackedReservations(order: any) {
+  private async getTrackedReturnUnits(order: any) {
+    if (this.isDemandPickingOrder(order) || (Array.isArray(order?.basketUnits) && order.basketUnits.length > 0)) {
+      const basketUnits = await this.prisma.wmsBasketUnit.findMany({
+        where: {
+          fulfillmentOrderId: order.id,
+          OR: [
+            {
+              status: WmsBasketUnitStatus.PACKED,
+            },
+            {
+              status: WmsBasketUnitStatus.REMOVED,
+              packedAt: {
+                not: null,
+              },
+            },
+          ],
+        },
+        select: {
+          inventoryUnit: {
+            select: {
+              id: true,
+              code: true,
+              barcode: true,
+              status: true,
+              productId: true,
+              variationId: true,
+              warehouseId: true,
+              currentLocationId: true,
+              currentLocation: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  kind: true,
+                },
+              },
+              posProduct: {
+                select: {
+                  name: true,
+                  customId: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return Array.from(
+        new Map(
+          basketUnits
+            .filter((basketUnit: any) => Boolean(basketUnit.inventoryUnit?.id))
+            .map((basketUnit: any) => {
+              const unit = basketUnit.inventoryUnit;
+
+              return [unit.id, {
+                id: unit.id,
+                code: unit.code,
+                barcode: unit.barcode,
+                status: unit.status,
+                productId: unit.productId,
+                variationId: unit.variationId,
+                warehouseId: unit.warehouseId,
+                currentLocationId: unit.currentLocationId,
+                currentLocation: unit.currentLocation,
+                name: unit.posProduct?.name ?? unit.code,
+                customId: unit.posProduct?.customId ?? null,
+              }] as const;
+            }),
+        ).values(),
+      );
+    }
+
     return Array.from(
       new Map(
         this.getAllPickReservations(order)
           .filter((reservation: any) => Boolean(reservation.inventoryUnit?.id))
-          .map((reservation: any) => [reservation.inventoryUnit.id, reservation] as const),
+          .map((reservation: any) => {
+            const unit = reservation.inventoryUnit;
+
+            return [unit.id, {
+              id: unit.id,
+              code: unit.code,
+              barcode: unit.barcode,
+              status: unit.status,
+              productId: unit.productId,
+              variationId: unit.variationId,
+              warehouseId: unit.warehouseId,
+              currentLocationId: unit.currentLocationId,
+              currentLocation: unit.currentLocation,
+              name: unit.posProduct?.name ?? unit.code,
+              customId: unit.posProduct?.customId ?? null,
+            }] as const;
+          }),
       ).values(),
     );
   }
@@ -10354,12 +10595,12 @@ export class WmsMobileService {
   private async buildTrackingReturnFlow(order: any) {
     const posStatus = typeof order.posOrder?.status === 'number' ? order.posOrder.status : null;
     const posStatusLabel = this.cleanOptionalText(order.posOrder?.statusName ?? null);
-    const trackedReservations = this.getReturnTrackedReservations(order);
-    const verifiedReservations = trackedReservations.filter((reservation: any) => (
-      RETURNED_EQUIVALENT_UNIT_STATUSES.has(reservation.inventoryUnit.status)
+    const trackedUnits = await this.getTrackedReturnUnits(order);
+    const verifiedUnits = trackedUnits.filter((unit: any) => (
+      RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status)
     ));
-    const pendingReservations = trackedReservations.filter((reservation: any) => (
-      reservation.inventoryUnit.status === WmsInventoryUnitStatus.DISPATCHED
+    const pendingUnits = trackedUnits.filter((unit: any) => (
+      !RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status)
     ));
     const latestVerification = await this.prisma.wmsStaffActivity.findFirst({
       where: {
@@ -10391,10 +10632,13 @@ export class WmsMobileService {
       state = 'RETURNING';
       label = 'Returning';
     } else if (posStatus === 5) {
-      if (verifiedReservations.length >= trackedReservations.length && trackedReservations.length > 0) {
+      if (trackedUnits.length === 0) {
+        state = 'NONE';
+        label = 'No units linked';
+      } else if (verifiedUnits.length >= trackedUnits.length) {
         state = 'VERIFIED';
         label = 'Processed';
-      } else if (verifiedReservations.length > 0) {
+      } else if (verifiedUnits.length > 0) {
         state = 'PARTIAL';
         label = 'Processed';
       } else {
@@ -10409,10 +10653,10 @@ export class WmsMobileService {
       posStatusLabel: posStatusLabel ?? (posStatus === 4 ? 'Returning' : posStatus === 5 ? 'Returned' : null),
       state,
       label,
-      canVerify: posStatus === 5 && pendingReservations.length > 0,
-      expectedUnits: trackedReservations.length,
-      verifiedUnits: verifiedReservations.map((reservation: any) => this.mapTrackingReturnUnit(reservation.inventoryUnit)),
-      pendingUnits: pendingReservations.map((reservation: any) => this.mapTrackingReturnUnit(reservation.inventoryUnit)),
+      canVerify: posStatus === 5 && pendingUnits.length > 0,
+      expectedUnits: trackedUnits.length,
+      verifiedUnits: verifiedUnits.map((unit: any) => this.mapTrackingReturnUnit(unit)),
+      pendingUnits: pendingUnits.map((unit: any) => this.mapTrackingReturnUnit(unit)),
       lastVerifiedAt: latestVerification?.createdAt ?? null,
       lastVerifiedBy: latestVerification?.actor ? this.mapActor(latestVerification.actor) : null,
     };
@@ -10425,8 +10669,9 @@ export class WmsMobileService {
       barcode: unit.barcode,
       status: unit.status,
       statusLabel: this.formatEnumLabel(unit.status),
-      name: unit.posProduct?.name ?? unit.code,
-      customId: unit.posProduct?.customId ?? null,
+      name: unit.name ?? unit.posProduct?.name ?? unit.code,
+      customId: unit.customId ?? unit.posProduct?.customId ?? null,
+      currentLocation: unit.currentLocation ? this.mapLocation(unit.currentLocation) : null,
     };
   }
 
@@ -10644,6 +10889,8 @@ export class WmsMobileService {
         return 'Synced delivery status';
       case 'ORDER_RTS_UNIT_VERIFY':
         return 'Verified returned unit';
+      case 'ORDER_RTS_DISPOSITION':
+        return 'Applied RTS disposition';
       case 'ORDER_RTS_COMPLETE':
         return 'Completed RTS verification';
       case 'PACKING_VOID_REQUEST':
@@ -10707,11 +10954,16 @@ export class WmsMobileService {
         actionType === 'ORDER_DISPATCH_SYNC'
         || actionType === 'ORDER_DELIVERY_SYNC'
         || actionType === 'ORDER_RTS_UNIT_VERIFY'
+        || actionType === 'ORDER_RTS_DISPOSITION'
         || actionType === 'ORDER_RTS_COMPLETE'
       )
       && posOrderId
     ) {
-      if (actionType === 'ORDER_RTS_UNIT_VERIFY' || actionType === 'ORDER_RTS_COMPLETE') {
+      if (
+        actionType === 'ORDER_RTS_UNIT_VERIFY'
+        || actionType === 'ORDER_RTS_DISPOSITION'
+        || actionType === 'ORDER_RTS_COMPLETE'
+      ) {
         return `Order ${posOrderId} · Return verified`;
       }
 
@@ -10780,6 +11032,7 @@ export class WmsMobileService {
       ?? this.readHistoryMetadataString(metadata, 'packerEmail');
     const source = this.readHistoryMetadataString(metadata, 'source');
     const deliveryState = this.readHistoryMetadataString(metadata, 'deliveryState');
+    const dispositionAction = this.readHistoryMetadataString(metadata, 'dispositionAction');
     const unitCount = this.readHistoryMetadataNumber(metadata, 'unitCount');
     const assignedCount = this.readHistoryMetadataNumber(metadata, 'assignedCount');
     const mode = this.readHistoryMetadataString(metadata, 'mode');
@@ -10831,7 +11084,22 @@ export class WmsMobileService {
       if (unitCode) {
         parts.push(`Returned unit ${unitCode}`);
       }
+      if (targetCode) {
+        parts.push(`Moved to ${targetCode}`);
+      }
       parts.push('Verified against the dispatched waybill');
+    }
+
+    if (actionType === 'ORDER_RTS_DISPOSITION') {
+      if (unitCode) {
+        parts.push(`Returned unit ${unitCode}`);
+      }
+      if (dispositionAction) {
+        parts.push(this.formatEnumLabel(dispositionAction));
+      }
+      if (targetCode) {
+        parts.push(`Moved to ${targetCode}`);
+      }
     }
 
     if (actionType === 'ORDER_RTS_COMPLETE') {
@@ -11571,6 +11839,38 @@ export class WmsMobileService {
     );
   }
 
+  private async resolveWarehouseOperationalLocation(warehouseId: string, kind: WmsLocationKind) {
+    const location = await this.prisma.wmsLocation.findFirst({
+      where: {
+        warehouseId,
+        kind,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        kind: true,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+    });
+
+    if (location) {
+      return location;
+    }
+
+    const warehouse = await this.prisma.wmsWarehouse.findUnique({
+      where: { id: warehouseId },
+      select: {
+        code: true,
+      },
+    });
+
+    const locationLabel = this.formatEnumLabel(kind);
+    const warehouseLabel = warehouse?.code ?? 'This warehouse';
+    throw new BadRequestException(`${warehouseLabel} is missing an active ${locationLabel} location`);
+  }
+
   private async buildLocationLookupCandidates(rawCode: string, warehouseId?: string) {
     const code = this.normalizeScannedCode(rawCode);
     const candidates = new Set<string>();
@@ -12140,6 +12440,43 @@ export class WmsMobileService {
     }
 
     return currentStatus;
+  }
+
+  private resolveRtsDisposition(
+    disposition: WmsMobileTrackingReturnDispositionDto['disposition'],
+    targetKind: WmsLocationKind,
+  ) {
+    switch (disposition) {
+      case 'PUTAWAY':
+        if (targetKind !== WmsLocationKind.BIN) {
+          throw new BadRequestException('Putaway target must be a bin');
+        }
+
+        return {
+          nextStatus: WmsInventoryUnitStatus.PUTAWAY,
+          actionLabel: 'Putaway',
+        };
+      case 'DEADSTOCK':
+        if (targetKind !== WmsLocationKind.BIN) {
+          throw new BadRequestException('Deadstock target must be a bin');
+        }
+
+        return {
+          nextStatus: WmsInventoryUnitStatus.DEADSTOCK,
+          actionLabel: 'Deadstock',
+        };
+      case 'DAMAGE':
+        if (targetKind !== WmsLocationKind.DAMAGE && targetKind !== WmsLocationKind.QUARANTINE) {
+          throw new BadRequestException('Damage target must be a damage or quarantine location');
+        }
+
+        return {
+          nextStatus: WmsInventoryUnitStatus.DAMAGED,
+          actionLabel: 'Damage',
+        };
+      default:
+        throw new BadRequestException('Unsupported RTS disposition action');
+    }
   }
 
   private buildMobileTransferCode() {

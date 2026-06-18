@@ -46,6 +46,10 @@ export const STOX_RTS_READ_PERMISSIONS = [
 export const STOX_RTS_VERIFY_PERMISSIONS = [
   ...STOX_PACK_EXECUTE_PERMISSIONS,
 ] as const;
+export const STOX_RTS_DISPOSITION_PERMISSIONS = [
+  'wms.rts.disposition',
+  'wms.dispatch.override',
+] as const;
 export const STOX_HISTORY_READ_ALL_PERMISSIONS = [
   'wms.history.read_all',
 ] as const;
@@ -150,6 +154,10 @@ export function canUseAssignedRtsWorkspace(bootstrap: BootstrapResponse) {
 
 export function canVerifyStoxRts(bootstrap: BootstrapResponse) {
   return hasAnyWmsPermission(bootstrap, STOX_RTS_VERIFY_PERMISSIONS);
+}
+
+export function canDispositionStoxRts(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_RTS_DISPOSITION_PERMISSIONS);
 }
 
 export function canUseStoxHistoryWorkspace(bootstrap: BootstrapResponse) {

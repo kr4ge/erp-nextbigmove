@@ -461,6 +461,10 @@ export function useDispatchController() {
       { value: '', label: 'All returns' },
       { value: 'RETURNING', label: 'Returning' },
       { value: 'RETURNED', label: 'Returned' },
+      { value: 'READY_TO_VERIFY', label: 'Ready to verify' },
+      { value: 'AWAITING_PLACEMENT', label: 'Awaiting placement' },
+      { value: 'PARTIAL', label: 'Partially processed' },
+      { value: 'VERIFIED', label: 'Processed' },
     ],
     [],
   );

@@ -15,6 +15,7 @@ import {
   WmsMobileReopenStockCountDto,
   WmsMobileScanStockCountUnitDto,
   WmsMobileStartStockCountDto,
+  WmsMobileTrackingReturnDispositionDto,
   WmsMobileTrackingReturnUnitDto,
   WmsMobileSubmitStockCountDto,
   WmsMobileStockMoveDto,
@@ -244,6 +245,19 @@ export class WmsMobileController {
     @Body() body: WmsMobileTrackingReturnUnitDto,
   ) {
     return this.wmsMobileService.verifyTrackingReturnUnit(req.user, id, body, req);
+  }
+
+  @Post('tracking/tasks/:id/disposition-return-unit')
+  @Permissions(
+    'wms.rts.disposition',
+    'wms.dispatch.override',
+  )
+  async dispositionTrackingReturnUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsMobileTrackingReturnDispositionDto,
+  ) {
+    return this.wmsMobileService.dispositionTrackingReturnUnit(req.user, id, body, req);
   }
 
   @Post('stock/putaway')

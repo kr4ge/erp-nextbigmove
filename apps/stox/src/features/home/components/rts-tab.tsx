@@ -2,20 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps,
 import { Feather } from '@expo/vector-icons';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
-import { canUseStoxRtsWorkspace, canVerifyStoxRts } from '@/src/features/home/rbac';
+import { canDispositionStoxRts, canUseStoxRtsWorkspace, canVerifyStoxRts } from '@/src/features/home/rbac';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
 import { StockScopeFilterModal } from '@/src/features/stock/components/stock-scope-filter';
 import type { StockScopeOption } from '@/src/features/stock/utils/stock-scope';
 import {
+  dispositionMobileTrackingReturnUnit,
   fetchMobileRtsTasks,
   lookupMobileTrackingOrder,
   verifyMobileTrackingReturnUnit,
 } from '@/src/features/stock/services/stock-api';
-import type { WmsMobileRtsTasksResponse, WmsMobileTrackingReturnFlow } from '@/src/features/stock/types';
+import type {
+  WmsMobileRtsTasksResponse,
+  WmsMobileTrackingReturnDispositionAction,
+  WmsMobileTrackingReturnFlow,
+} from '@/src/features/stock/types';
 import { normalizeScannedCode } from '@/src/features/stock/hooks/use-stock-execution';
 import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { tokens } from '@/src/shared/theme/tokens';
+import { RtsDispositionPanel } from './rts-disposition-panel';
 import { BlockedTaskState, TaskHeader, TaskHeaderIconButton } from './stox-primitives';
 
 type RtsTabProps = {
@@ -102,24 +108,94 @@ function RtsWorkspaceTab({
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [isRefreshingTask, setIsRefreshingTask] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isDispositing, setIsDispositing] = useState(false);
   const [queue, setQueue] = useState<RtsQueueEntry[]>([]);
   const [queueStores, setQueueStores] = useState<WmsMobileRtsTasksResponse['context']['stores']>([]);
   const [queuePage, setQueuePage] = useState(1);
   const [queueHasMore, setQueueHasMore] = useState(false);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
   const [isLoadingMoreQueue, setIsLoadingMoreQueue] = useState(false);
+  const [selectedDispositionUnitId, setSelectedDispositionUnitId] = useState<string | null>(null);
+  const [dispositionAction, setDispositionAction] = useState<WmsMobileTrackingReturnDispositionAction | null>(null);
+  const [dispositionTargetCode, setDispositionTargetCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const waybillInputRef = useRef<TextInput>(null);
   const returnInputRef = useRef<TextInput>(null);
+  const dispositionInputRef = useRef<TextInput>(null);
   const lastWaybillSubmitRef = useRef<string | null>(null);
   const lastReturnSubmitRef = useRef<string | null>(null);
+  const lastDispositionSubmitRef = useRef<string | null>(null);
   const canVerify = canVerifyStoxRts(bootstrap);
+  const canDispose = canDispositionStoxRts(bootstrap);
+  const awaitingDispositionUnits = useMemo(
+    () => (returnFlow?.verifiedUnits ?? []).filter((unit) => unit.status === 'RTS'),
+    [returnFlow?.verifiedUnits],
+  );
+  const processedUnits = useMemo(
+    () => (returnFlow?.verifiedUnits ?? []).filter((unit) => unit.status !== 'RTS'),
+    [returnFlow?.verifiedUnits],
+  );
+  const activeDispositionUnit = useMemo(() => {
+    if (!awaitingDispositionUnits.length) {
+      return null;
+    }
+
+    return awaitingDispositionUnits.find((unit) => unit.id === selectedDispositionUnitId)
+      ?? awaitingDispositionUnits[0]
+      ?? null;
+  }, [awaitingDispositionUnits, selectedDispositionUnitId]);
+  const mustFinishDisposition = awaitingDispositionUnits.length > 0;
   const isWaybillVerifiedForTask = Boolean(
     task?.tracking
     && verifiedWaybillCode
     && normalizeScannedCode(task.tracking) === verifiedWaybillCode,
   );
+  const hasNoLinkedUnits = Boolean(
+    task
+    && returnFlow
+    && returnFlow.state === 'NONE'
+    && returnFlow.expectedUnits === 0,
+  );
+  const isWaybillMissing = Boolean(
+    task
+    && returnFlow?.canVerify
+    && !task.tracking,
+  );
+  const isAlreadyVerified = Boolean(
+    task
+    && returnFlow
+    && returnFlow.expectedUnits > 0
+    && returnFlow.pendingUnits.length === 0
+    && awaitingDispositionUnits.length === 0,
+  );
+  const focusWaybillField = useCallback(() => {
+    setTimeout(() => {
+      waybillInputRef.current?.focus();
+    }, 80);
+  }, []);
+  const focusReturnField = useCallback(() => {
+    setTimeout(() => {
+      returnInputRef.current?.focus();
+    }, 80);
+  }, []);
+  const focusDispositionField = useCallback(() => {
+    setTimeout(() => {
+      dispositionInputRef.current?.focus();
+    }, 80);
+  }, []);
+  const clearWaybillEntry = useCallback(() => {
+    setWaybillCode('');
+    lastWaybillSubmitRef.current = null;
+  }, []);
+  const clearReturnEntry = useCallback(() => {
+    setReturnCode('');
+    lastReturnSubmitRef.current = null;
+  }, []);
+  const clearDispositionEntry = useCallback(() => {
+    setDispositionTargetCode('');
+    lastDispositionSubmitRef.current = null;
+  }, []);
 
   useEffect(() => {
     setTask(initialTask ?? null);
@@ -133,11 +209,30 @@ function RtsWorkspaceTab({
         : null,
     );
     setReturnCode('');
+    setSelectedDispositionUnitId(
+      (initialReturnFlow?.verifiedUnits ?? []).find((unit) => unit.status === 'RTS')?.id ?? null,
+    );
+    setDispositionAction(null);
+    setDispositionTargetCode('');
     setError(null);
     setMessage(null);
     lastWaybillSubmitRef.current = null;
     lastReturnSubmitRef.current = null;
+    lastDispositionSubmitRef.current = null;
   }, [bootstrap.tenant?.id, initialReturnFlow, initialTask]);
+
+  useEffect(() => {
+    if (!awaitingDispositionUnits.length) {
+      setSelectedDispositionUnitId(null);
+      setDispositionTargetCode('');
+      lastDispositionSubmitRef.current = null;
+      return;
+    }
+
+    if (!selectedDispositionUnitId || !awaitingDispositionUnits.some((unit) => unit.id === selectedDispositionUnitId)) {
+      setSelectedDispositionUnitId(awaitingDispositionUnits[0]?.id ?? null);
+    }
+  }, [awaitingDispositionUnits, selectedDispositionUnitId]);
 
   const loadQueue = useCallback(async (mode: 'replace' | 'append' = 'replace') => {
     if (!device) {
@@ -188,11 +283,22 @@ function RtsWorkspaceTab({
   }, [loadQueue]);
 
   useEffect(() => {
-    if (!task || !returnFlow?.canVerify) {
+    if (!task || !task.tracking) {
       return;
     }
 
     const timer = setTimeout(() => {
+      if (mustFinishDisposition && canDispose) {
+        if (dispositionAction) {
+          dispositionInputRef.current?.focus();
+        }
+        return;
+      }
+
+      if (!returnFlow?.canVerify) {
+        return;
+      }
+
       if (!isWaybillVerifiedForTask) {
         waybillInputRef.current?.focus();
         return;
@@ -202,7 +308,7 @@ function RtsWorkspaceTab({
     }, 120);
 
     return () => clearTimeout(timer);
-  }, [isWaybillVerifiedForTask, returnFlow?.canVerify, task]);
+  }, [canDispose, dispositionAction, isWaybillVerifiedForTask, mustFinishDisposition, returnFlow?.canVerify, task]);
 
   const filterOptions = useMemo(
     () => buildRtsFilterOptions(activeFilter, queueStores, bootstrap, bootstrap.user.role === 'SUPER_ADMIN'),
@@ -288,6 +394,12 @@ function RtsWorkspaceTab({
 
       setTask(response.task);
       setReturnFlow(response.returnFlow);
+      setSelectedDispositionUnitId(
+        (response.returnFlow?.verifiedUnits ?? []).find((unit) => unit.status === 'RTS')?.id ?? null,
+      );
+      setDispositionAction(null);
+      setDispositionTargetCode('');
+      lastDispositionSubmitRef.current = null;
       setVerifiedWaybillCode(
         options?.markVerified === false || !response.returnFlow?.eligible || !response.task.tracking
           ? null
@@ -295,12 +407,31 @@ function RtsWorkspaceTab({
       );
 
       if (!response.returnFlow?.eligible) {
-        setMessage('Not ready for RTS.');
+        setMessage('Order is not in return status.');
         return;
       }
 
       if (response.returnFlow.state === 'RETURNING') {
         setMessage('Still returning.');
+        return;
+      }
+
+      if (response.returnFlow.expectedUnits === 0) {
+        setMessage('No dispatched units are linked to this returned order yet.');
+        return;
+      }
+
+      if (response.returnFlow.canVerify && !response.task.tracking) {
+        setMessage('This returned order has no waybill yet.');
+        return;
+      }
+
+      if (
+        !response.returnFlow.canVerify
+        && response.returnFlow.pendingUnits.length === 0
+        && !(response.returnFlow.verifiedUnits ?? []).some((unit) => unit.status === 'RTS')
+      ) {
+        setMessage('All returned units for this waybill are already processed.');
         return;
       }
 
@@ -335,57 +466,85 @@ function RtsWorkspaceTab({
   const confirmWaybill = useCallback(async (nextCode?: string) => {
     if (!task || !returnFlow) {
       setError('Load an RTS task first.');
+      clearWaybillEntry();
+      focusWaybillField();
       return false;
     }
 
     const normalized = normalizeScannedCode(nextCode ?? waybillCode);
     if (!normalized) {
       setError('Scan or enter a waybill.');
+      clearWaybillEntry();
+      focusWaybillField();
       return false;
     }
 
     const expected = normalizeScannedCode(task.tracking ?? '');
     if (!expected) {
       setError('This order has no waybill yet.');
+      clearWaybillEntry();
       return false;
     }
 
     if (normalized !== expected) {
       setError(`Waybill ${normalized} does not match order ${task.posOrderId}.`);
+      clearWaybillEntry();
+      focusWaybillField();
       return false;
     }
 
     setVerifiedWaybillCode(expected);
-    setWaybillCode('');
+    clearWaybillEntry();
     setError(null);
-    setMessage('Waybill verified.');
+    setMessage(
+      returnFlow.pendingUnits.length > 0
+        ? `Waybill verified. ${returnFlow.pendingUnits.length} unit${returnFlow.pendingUnits.length === 1 ? '' : 's'} ready.`
+        : 'Waybill verified.',
+    );
+    focusReturnField();
     return true;
-  }, [returnFlow, task, waybillCode]);
+  }, [clearWaybillEntry, focusReturnField, focusWaybillField, returnFlow, task, waybillCode]);
 
   const verifyReturnUnit = useCallback(async (nextCode?: string) => {
     if (!task || !returnFlow) {
       setError('Load an RTS task first.');
+      clearReturnEntry();
       return false;
     }
 
     const normalized = normalizeScannedCode(nextCode ?? returnCode);
     if (!device) {
       setError('Device is not ready.');
+      clearReturnEntry();
       return false;
     }
 
     if (!normalized) {
       setError('Scan or enter a returned unit.');
+      clearReturnEntry();
+      focusReturnField();
       return false;
     }
 
     if (!canVerify) {
       setError('This account can inspect returns but cannot verify RTS units.');
+      clearReturnEntry();
       return false;
     }
 
     if (!isWaybillVerifiedForTask) {
       setError('Scan the waybill first.');
+      clearReturnEntry();
+      focusWaybillField();
+      return false;
+    }
+
+    if (mustFinishDisposition) {
+      setError('Finish the current returned unit placement first.');
+      clearReturnEntry();
+      if (canDispose && dispositionAction) {
+        focusDispositionField();
+      }
       return false;
     }
 
@@ -401,22 +560,156 @@ function RtsWorkspaceTab({
         taskId: task.id,
         tenantId,
       });
+      const nextReturnFlow = response.returnFlow ?? returnFlow;
 
       if (response.task) {
         setTask(response.task);
       }
-      setReturnFlow(response.returnFlow);
-      setReturnCode('');
-      setMessage(`Verified ${response.unit.code}.`);
+      setReturnFlow(nextReturnFlow);
+      setSelectedDispositionUnitId(response.unit.id);
+      setDispositionTargetCode('');
+      lastDispositionSubmitRef.current = null;
+      clearReturnEntry();
+      setMessage(
+        canDispose
+          ? `Verified ${response.unit.code}. Choose where to place it next.`
+          : `Verified ${response.unit.code}. ${nextReturnFlow.verifiedUnits.length}/${nextReturnFlow.expectedUnits}`,
+      );
+      if (canDispose) {
+        if (dispositionAction) {
+          focusDispositionField();
+        }
+      } else if (nextReturnFlow.canVerify) {
+        focusReturnField();
+      }
       void loadQueue('replace');
       return true;
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Unable to verify the returned unit.');
+      clearReturnEntry();
+      focusReturnField();
       return false;
     } finally {
       setIsVerifying(false);
     }
-  }, [canVerify, device, isWaybillVerifiedForTask, loadQueue, returnCode, returnFlow, session.accessToken, task, tenantId]);
+  }, [
+    canVerify,
+    clearReturnEntry,
+    device,
+    focusReturnField,
+    focusWaybillField,
+    focusDispositionField,
+    isWaybillVerifiedForTask,
+    loadQueue,
+    mustFinishDisposition,
+    returnCode,
+    returnFlow,
+    session.accessToken,
+    task,
+    tenantId,
+    dispositionAction,
+    canDispose,
+  ]);
+
+  const applyDisposition = useCallback(async (nextTargetCode?: string) => {
+    if (!task || !returnFlow) {
+      setError('Load an RTS task first.');
+      clearDispositionEntry();
+      return false;
+    }
+
+    if (!device) {
+      setError('Device is not ready.');
+      clearDispositionEntry();
+      return false;
+    }
+
+    if (!canDispose) {
+      setError('This account cannot place returned units.');
+      clearDispositionEntry();
+      return false;
+    }
+
+    if (!activeDispositionUnit) {
+      setError('No returned unit is waiting for placement.');
+      clearDispositionEntry();
+      return false;
+    }
+
+    if (!dispositionAction) {
+      setError('Choose where to place this returned unit first.');
+      focusDispositionField();
+      return false;
+    }
+
+    const normalized = normalizeScannedCode(nextTargetCode ?? dispositionTargetCode);
+    if (!normalized) {
+      setError('Scan the destination location.');
+      clearDispositionEntry();
+      focusDispositionField();
+      return false;
+    }
+
+    setIsDispositing(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await dispositionMobileTrackingReturnUnit({
+        accessToken: session.accessToken,
+        device,
+        taskId: task.id,
+        unitId: activeDispositionUnit.id,
+        disposition: dispositionAction,
+        targetCode: normalized,
+        tenantId,
+      });
+      const nextReturnFlow = response.returnFlow ?? returnFlow;
+      const nextAwaiting = (nextReturnFlow.verifiedUnits ?? []).filter((unit) => unit.status === 'RTS');
+
+      if (response.task) {
+        setTask(response.task);
+      }
+      setReturnFlow(nextReturnFlow);
+      setSelectedDispositionUnitId(nextAwaiting[0]?.id ?? null);
+      clearDispositionEntry();
+      setMessage(
+        `${response.unit.code} moved to ${response.unit.currentLocation?.code ?? normalized} as ${formatDispositionLabel(dispositionAction)}.`,
+      );
+
+      if (nextAwaiting.length > 0) {
+        if (dispositionAction) {
+          focusDispositionField();
+        }
+      } else if (nextReturnFlow.canVerify) {
+        focusReturnField();
+      }
+
+      void loadQueue('replace');
+      return true;
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Unable to place the returned unit.');
+      clearDispositionEntry();
+      focusDispositionField();
+      return false;
+    } finally {
+      setIsDispositing(false);
+    }
+  }, [
+    activeDispositionUnit,
+    canDispose,
+    clearDispositionEntry,
+    device,
+    dispositionAction,
+    dispositionTargetCode,
+    focusDispositionField,
+    focusReturnField,
+    loadQueue,
+    returnFlow,
+    session.accessToken,
+    task,
+    tenantId,
+  ]);
 
   useEffect(() => {
     const nextCode = waybillCode.trim();
@@ -483,25 +776,74 @@ function RtsWorkspaceTab({
     }
   }, [returnCode]);
 
+  useEffect(() => {
+    const nextCode = dispositionTargetCode.trim();
+
+    if (
+      !activeDispositionUnit
+      || !dispositionAction
+      || !canDispose
+      || isDispositing
+      || nextCode.length < 3
+      || lastDispositionSubmitRef.current === nextCode
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      lastDispositionSubmitRef.current = nextCode;
+      void (async () => {
+        const success = await applyDisposition(nextCode);
+        if (success) {
+          setDispositionTargetCode('');
+        }
+      })();
+    }, 220);
+
+    return () => clearTimeout(timer);
+  }, [
+    activeDispositionUnit,
+    applyDisposition,
+    canDispose,
+    dispositionAction,
+    dispositionTargetCode,
+    isDispositing,
+  ]);
+
+  useEffect(() => {
+    if (!dispositionTargetCode.trim()) {
+      lastDispositionSubmitRef.current = null;
+    }
+  }, [dispositionTargetCode]);
+
   const resetTask = () => {
     setTask(null);
     setReturnFlow(null);
     setWaybillCode('');
     setVerifiedWaybillCode(null);
     setReturnCode('');
+    setSelectedDispositionUnitId(null);
+    setDispositionAction(null);
+    setDispositionTargetCode('');
     setError(null);
     setMessage(null);
+    lastDispositionSubmitRef.current = null;
   };
 
   const openQueueTask = useCallback((entry: RtsQueueEntry) => {
     setTask(entry.task);
     setReturnFlow(entry.returnFlow);
-    setWaybillCode('');
+    clearWaybillEntry();
     setVerifiedWaybillCode(null);
-    setReturnCode('');
+    clearReturnEntry();
+    setSelectedDispositionUnitId(
+      (entry.returnFlow?.verifiedUnits ?? []).find((unit) => unit.status === 'RTS')?.id ?? null,
+    );
+    setDispositionAction(null);
+    setDispositionTargetCode('');
     setError(null);
     setMessage(null);
-  }, []);
+  }, [clearReturnEntry, clearWaybillEntry]);
 
   return (
     <>
@@ -632,11 +974,63 @@ function RtsWorkspaceTab({
             {returnFlow.state === 'RETURNING' ? (
               <View style={styles.blockedPanel}>
                 <Text style={styles.blockedTitle}>Return in transit</Text>
+                <Text style={styles.blockedCopy}>
+                  Wait until the waybill reaches the warehouse return stage, then refresh this task.
+                </Text>
                 <PrimaryButton label="Refresh" onPress={refreshTask} variant="secondary" />
               </View>
-            ) : null}
-
-            {returnFlow.canVerify ? (
+            ) : hasNoLinkedUnits ? (
+              <View style={styles.blockedPanel}>
+                <Text style={styles.blockedTitle}>No linked units</Text>
+                <Text style={styles.blockedCopy}>
+                  This returned order does not have any dispatched units linked for RTS yet.
+                </Text>
+                <PrimaryButton label="Refresh" onPress={refreshTask} variant="secondary" />
+              </View>
+            ) : isWaybillMissing ? (
+              <View style={styles.blockedPanel}>
+                <Text style={styles.blockedTitle}>Waybill missing</Text>
+                <Text style={styles.blockedCopy}>
+                  Add or sync the waybill first before starting RTS verification for this order.
+                </Text>
+                <PrimaryButton label="Refresh" onPress={refreshTask} variant="secondary" />
+              </View>
+            ) : mustFinishDisposition ? (
+              canDispose ? (
+                <RtsDispositionPanel
+                  canSubmit={Boolean(activeDispositionUnit && dispositionAction && dispositionTargetCode.trim())}
+                  disposition={dispositionAction}
+                  inputRef={dispositionInputRef}
+                  isSubmitting={isDispositing}
+                  pendingCount={awaitingDispositionUnits.length}
+                  targetCode={dispositionTargetCode}
+                  unit={activeDispositionUnit}
+                  onChangeTargetCode={(value) => setDispositionTargetCode(normalizeScannedCode(value))}
+                  onSelectDisposition={(value) => {
+                    setDispositionAction(value);
+                    setError(null);
+                    setMessage(null);
+                    focusDispositionField();
+                  }}
+                  onSubmit={() => void applyDisposition()}
+                />
+              ) : (
+                <View style={styles.blockedPanel}>
+                  <Text style={styles.blockedTitle}>Placement permission required</Text>
+                  <Text style={styles.blockedCopy}>
+                    A supervisor needs to place these returned units into bin, deadstock, or damage.
+                  </Text>
+                </View>
+              )
+            ) : isAlreadyVerified ? (
+              <View style={styles.blockedPanel}>
+                <Text style={styles.blockedTitle}>RTS complete</Text>
+                <Text style={styles.blockedCopy}>
+                  All returned units linked to this waybill were already checked and placed.
+                </Text>
+                <PrimaryButton label="Back to queue" onPress={resetTask} variant="secondary" />
+              </View>
+            ) : returnFlow.canVerify ? (
               canVerify ? (
                 <View style={styles.scanPanel}>
                   {!isWaybillVerifiedForTask ? (
@@ -771,7 +1165,15 @@ function RtsWorkspaceTab({
                   <Text style={styles.blockedTitle}>Verification permission required</Text>
                 </View>
               )
-            ) : null}
+            ) : (
+              <View style={styles.blockedPanel}>
+                <Text style={styles.blockedTitle}>RTS not actionable</Text>
+                <Text style={styles.blockedCopy}>
+                  Refresh this task to load the latest return state before continuing.
+                </Text>
+                <PrimaryButton label="Refresh" onPress={refreshTask} variant="secondary" />
+              </View>
+            )}
           </SurfaceCard>
 
           <RtsUnitSection
@@ -781,9 +1183,21 @@ function RtsWorkspaceTab({
           />
 
           <RtsUnitSection
+            selectedUnitId={selectedDispositionUnitId}
+            state="READY_TO_VERIFY"
+            title="Awaiting placement"
+            units={awaitingDispositionUnits}
+            onSelect={(unitId) => {
+              setSelectedDispositionUnitId(unitId);
+              setError(null);
+              setMessage(null);
+            }}
+          />
+
+          <RtsUnitSection
             state="VERIFIED"
-            title="Verified"
-            units={returnFlow.verifiedUnits}
+            title="Placed"
+            units={processedUnits}
           />
 
           <PrimaryButton
@@ -898,10 +1312,14 @@ function RtsFact({ label, value }: { label: string; value: string }) {
 }
 
 function RtsUnitSection({
+  onSelect,
+  selectedUnitId,
   state,
   title,
   units,
 }: {
+  onSelect?: (unitId: string) => void;
+  selectedUnitId?: string | null;
   state: RtsQueueState;
   title: string;
   units: WmsMobileTrackingReturnFlow['pendingUnits'];
@@ -918,14 +1336,33 @@ function RtsUnitSection({
       </View>
       <View style={styles.itemList}>
         {units.map((unit) => (
-          <SurfaceCard key={unit.id} tone="muted" style={styles.itemCard}>
-            <View style={styles.itemHeader}>
-              <Text numberOfLines={1} style={styles.itemName}>{unit.barcode || unit.code}</Text>
-              <RtsStateBadge state={state} label={unit.statusLabel} compact />
-            </View>
-            <Text numberOfLines={1} style={styles.itemMeta}>{unit.code}</Text>
-            <Text numberOfLines={1} style={styles.itemSubMeta}>{unit.name}</Text>
-          </SurfaceCard>
+          <Pressable
+            key={unit.id}
+            disabled={!onSelect}
+            onPress={() => onSelect?.(unit.id)}
+            style={({ pressed }) => [
+              styles.unitPressable,
+              pressed && onSelect ? styles.pressed : null,
+            ]}>
+            <SurfaceCard
+              tone="muted"
+              style={[
+                styles.itemCard,
+                selectedUnitId === unit.id ? styles.itemCardSelected : null,
+              ]}>
+              <View style={styles.itemHeader}>
+                <Text numberOfLines={1} style={styles.itemName}>{unit.barcode || unit.code}</Text>
+                <RtsStateBadge state={state} label={unit.statusLabel} compact />
+              </View>
+              <Text numberOfLines={1} style={styles.itemMeta}>{unit.code}</Text>
+              <Text numberOfLines={1} style={styles.itemSubMeta}>{unit.name}</Text>
+              {unit.currentLocation ? (
+                <Text numberOfLines={1} style={styles.itemLocation}>
+                  {unit.currentLocation.code} · {unit.currentLocation.name}
+                </Text>
+              ) : null}
+            </SurfaceCard>
+          </Pressable>
         ))}
       </View>
     </View>
@@ -975,11 +1412,20 @@ function RtsTaskCard({
 }) {
   const { task, returnFlow } = entry;
   const pendingCount = Math.max(returnFlow.expectedUnits - returnFlow.verifiedUnits.length, 0);
+  const awaitingPlacementCount = returnFlow.verifiedUnits.filter((unit) => unit.status === 'RTS').length;
   const summary = `${returnFlow.verifiedUnits.length}/${returnFlow.expectedUnits}`;
-  const issue = returnFlow.state === 'RETURNING'
+  const issue = awaitingPlacementCount > 0
+    ? `${awaitingPlacementCount} awaiting placement`
+    : returnFlow.state === 'RETURNING'
     ? 'Returning'
+    : returnFlow.state === 'NONE' && returnFlow.expectedUnits === 0
+      ? 'No linked units'
+      : returnFlow.state === 'VERIFIED'
+        ? 'Processed'
     : returnFlow.state === 'PARTIAL'
       ? `${pendingCount} pending`
+      : returnFlow.state === 'READY_TO_VERIFY' && !task.tracking
+        ? 'Waybill missing'
       : null;
 
   return (
@@ -1132,6 +1578,18 @@ function formatRtsQueueDate(value: string) {
     month: 'short',
     day: '2-digit',
   });
+}
+
+function formatDispositionLabel(value: WmsMobileTrackingReturnDispositionAction) {
+  if (value === 'PUTAWAY') {
+    return 'putaway';
+  }
+
+  if (value === 'DEADSTOCK') {
+    return 'deadstock';
+  }
+
+  return 'damage';
 }
 
 const styles = StyleSheet.create({
@@ -1517,6 +1975,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
   },
+  blockedCopy: {
+    color: tokens.colors.inkMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
   scanPanel: {
     gap: tokens.spacing.md,
   },
@@ -1634,6 +2098,9 @@ const styles = StyleSheet.create({
   itemList: {
     gap: tokens.spacing.sm,
   },
+  unitPressable: {
+    borderRadius: tokens.radius.lg,
+  },
   unitSection: {
     gap: tokens.spacing.sm,
   },
@@ -1653,8 +2120,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   itemCard: {
+    borderWidth: 1,
+    borderColor: 'transparent',
     gap: 6,
     padding: tokens.spacing.md,
+  },
+  itemCardSelected: {
+    borderColor: '#CFC3FF',
+    shadowColor: '#B39DFF',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
   },
   itemHeader: {
     alignItems: 'center',
@@ -1677,5 +2153,10 @@ const styles = StyleSheet.create({
     color: tokens.colors.inkMuted,
     fontSize: 12,
     fontWeight: '600',
+  },
+  itemLocation: {
+    color: '#6F5BCB',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
