@@ -115,6 +115,8 @@ export type WmsFulfillmentQueueTask = {
   nextPick: WmsFulfillmentQueueReservation | null;
 };
 
+export type WmsFulfillmentBasket = NonNullable<WmsFulfillmentQueueTask['basket']>;
+
 export type WmsFulfillmentHeldBasket = NonNullable<WmsFulfillmentQueueTask['basket']> & {
   task: WmsFulfillmentQueueTask | null;
   tasks: WmsFulfillmentQueueTask[];
@@ -199,4 +201,89 @@ export type WmsFulfillmentQueueResponse = {
   summary: Record<string, number>;
   heldBaskets?: WmsFulfillmentHeldBasket[];
   tasks: WmsFulfillmentQueueTask[];
+};
+
+export type WmsFulfillmentBasketPackPlanLine = {
+  id: string;
+  variationId: string;
+  productId: string | null;
+  productName: string;
+  productDisplayId: string | null;
+  required: number;
+  packed: number;
+  remaining: number;
+  availableInBasket: number;
+};
+
+export type WmsFulfillmentBasketPackPlanOrder = {
+  id: string;
+  posOrderId: string;
+  status: string;
+  statusLabel: string;
+  customerName: string | null;
+  tracking: string | null;
+  trackingReady: boolean;
+  totals: {
+    required: number;
+    packed: number;
+    remaining: number;
+  };
+  lines: WmsFulfillmentBasketPackPlanLine[];
+};
+
+export type WmsFulfillmentBasketPackPlan = {
+  basketId: string;
+  basketCode: string;
+  mode: string;
+  status: string;
+  statusLabel: string;
+  totals: {
+    required: number;
+    packed: number;
+    remaining: number;
+  };
+  orderProgress: {
+    total: number;
+    packed: number;
+    remaining: number;
+  };
+  availableUnits: Array<{
+    variationId: string;
+    productId: string | null;
+    productName: string;
+    productDisplayId: string | null;
+    unitCount: number;
+  }>;
+  orders: WmsFulfillmentBasketPackPlanOrder[];
+  activeOrder: WmsFulfillmentBasketPackPlanOrder | null;
+};
+
+export type WmsFulfillmentBasketPackValidation = {
+  isConsistent: boolean;
+  issues: string[];
+};
+
+export type WmsFulfillmentBasketPackPlanResponse = {
+  success: boolean;
+  basket: WmsFulfillmentBasket;
+  tasks: WmsFulfillmentQueueTask[];
+  plan: WmsFulfillmentBasketPackPlan;
+};
+
+export type WmsFulfillmentBasketPackWaybillResponse = WmsFulfillmentBasketPackPlanResponse & {
+  tracking: string;
+  activeOrderId: string;
+  activeOrder: WmsFulfillmentQueueTask;
+};
+
+export type WmsFulfillmentBasketPackUnitResponse = WmsFulfillmentBasketPackPlanResponse & {
+  activeOrderId: string | null;
+  activeOrder: WmsFulfillmentQueueTask | null;
+  completedOrder: WmsFulfillmentQueueTask | null;
+};
+
+export type WmsFulfillmentBasketPackCompleteResponse = WmsFulfillmentBasketPackPlanResponse & {
+  activeOrderId: string | null;
+  activeOrder: WmsFulfillmentQueueTask | null;
+  completedOrder: WmsFulfillmentQueueTask;
 };

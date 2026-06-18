@@ -1,5 +1,9 @@
 import apiClient from '@/lib/api-client';
 import type {
+  WmsFulfillmentBasketPackCompleteResponse,
+  WmsFulfillmentBasketPackPlanResponse,
+  WmsFulfillmentBasketPackUnitResponse,
+  WmsFulfillmentBasketPackWaybillResponse,
   WmsFulfillmentPackStatus,
   WmsFulfillmentPickStatus,
   WmsFulfillmentQueueTask,
@@ -128,6 +132,64 @@ export async function startWmsPackTask(params: {
   };
 }
 
+export async function fetchWmsPackBasketPlan(params: {
+  basketId: string;
+  tenantId?: string | null;
+}) {
+  const response = await apiClient.get(`/wms/mobile/packing/baskets/${params.basketId}/plan`, {
+    params: {
+      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+    },
+  });
+
+  return response.data as WmsFulfillmentBasketPackPlanResponse;
+}
+
+export async function scanWmsPackBasketWaybill(params: {
+  basketId: string;
+  tenantId?: string | null;
+  code: string;
+}) {
+  const response = await apiClient.post(`/wms/mobile/packing/baskets/${params.basketId}/scan-waybill`, {
+    tenantId: params.tenantId,
+    code: params.code,
+  });
+
+  return response.data as WmsFulfillmentBasketPackWaybillResponse;
+}
+
+export async function scanWmsPackBasketOrderUnit(params: {
+  basketId: string;
+  orderId: string;
+  tenantId?: string | null;
+  code: string;
+}) {
+  const response = await apiClient.post(
+    `/wms/mobile/packing/baskets/${params.basketId}/orders/${params.orderId}/scan-unit`,
+    {
+      tenantId: params.tenantId,
+      code: params.code,
+    },
+  );
+
+  return response.data as WmsFulfillmentBasketPackUnitResponse;
+}
+
+export async function completeWmsPackBasketOrder(params: {
+  basketId: string;
+  orderId: string;
+  tenantId?: string | null;
+}) {
+  const response = await apiClient.post(
+    `/wms/mobile/packing/baskets/${params.basketId}/orders/${params.orderId}/complete`,
+    {
+      tenantId: params.tenantId,
+    },
+  );
+
+  return response.data as WmsFulfillmentBasketPackCompleteResponse;
+}
+
 export async function scanWmsPackUnit(params: {
   taskId: string;
   tenantId?: string | null;
@@ -218,6 +280,8 @@ export async function voidWmsPackBasketOrders(params: {
     activeOrderId: string | null;
     activeOrder: WmsFulfillmentQueueTask | null;
     voidedOrderIds: string[];
+    basket: WmsFulfillmentBasketPackPlanResponse['basket'];
     tasks: WmsFulfillmentQueueTask[];
+    plan: WmsFulfillmentBasketPackPlanResponse['plan'];
   };
 }

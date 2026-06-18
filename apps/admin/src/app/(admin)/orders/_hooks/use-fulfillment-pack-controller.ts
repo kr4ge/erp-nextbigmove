@@ -1,12 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
 import type { WmsSearchableOption } from '../../_components/wms-searchable-select';
 import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
 import {
+  completeWmsPackBasketOrder,
   completeWmsPackTask,
+  fetchWmsPackBasketPlan,
   fetchWmsPackQueue,
+  scanWmsPackBasketOrderUnit,
+  scanWmsPackBasketWaybill,
   scanWmsPackUnit,
   startWmsPackTask,
   verifyWmsPackTracking,
@@ -14,6 +18,13 @@ import {
   voidWmsPackTask,
 } from '../_services/fulfillment.service';
 import type {
+  WmsFulfillmentBasket,
+  WmsFulfillmentBasketPackPlan,
+  WmsFulfillmentBasketPackPlanResponse,
+  WmsFulfillmentBasketPackValidation,
+  WmsFulfillmentBasketPackWaybillResponse,
+  WmsFulfillmentBasketPackUnitResponse,
+  WmsFulfillmentBasketPackCompleteResponse,
   WmsFulfillmentPackStatus,
   WmsFulfillmentQueueResponse,
   WmsFulfillmentQueueTask,
@@ -38,8 +49,18 @@ const DIRECT_VOID_PERMISSIONS = [
   'wms.dispatch.override',
 ] as const;
 
+type BasketPackView = {
+  basket: WmsFulfillmentBasket;
+  tasks: WmsFulfillmentQueueTask[];
+  plan: WmsFulfillmentBasketPackPlan;
+  validation: WmsFulfillmentBasketPackValidation;
+};
+
 export function useFulfillmentPackController() {
   const [data, setData] = useState<WmsFulfillmentQueueResponse | null>(null);
+  const [basketViews, setBasketViews] = useState<Record<string, BasketPackView>>({});
+  const [activeBasketId, setActiveBasketId] = useState<string | null>(null);
+  const [activeBasketTaskSnapshot, setActiveBasketTaskSnapshot] = useState<WmsFulfillmentQueueTask | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -138,7 +159,32 @@ export function useFulfillmentPackController() {
     () => new Map((data?.tasks ?? []).map((task) => [task.id, task] as const)),
     [data?.tasks],
   );
-  const activeTask = activeTaskId ? indexedTasks.get(activeTaskId) ?? null : null;
+  const activeBasketView = useMemo(() => {
+    if (!activeBasketId) {
+      return null;
+    }
+
+    return basketViews[activeBasketId] ?? null;
+  }, [activeBasketId, basketViews]);
+  const activeTask = useMemo(() => {
+    if (activeBasketId) {
+      const basketTasks = activeBasketView?.tasks
+        ?? (data?.tasks ?? []).filter((task) => task.basket?.id === activeBasketId);
+
+      if (activeTaskId) {
+        const directMatch = basketTasks.find((task) => task.id === activeTaskId)
+          ?? indexedTasks.get(activeTaskId)
+          ?? null;
+        if (directMatch) {
+          return directMatch;
+        }
+      }
+
+      return activeBasketTaskSnapshot ?? basketTasks[0] ?? null;
+    }
+
+    return activeTaskId ? indexedTasks.get(activeTaskId) ?? null : null;
+  }, [activeBasketId, activeBasketTaskSnapshot, activeBasketView?.tasks, activeTaskId, data?.tasks, indexedTasks]);
   const queueScope = data?.context?.canViewAllQueue === false ? 'own' as const : 'all' as const;
   const taskAssignment = (data?.context?.taskAssignment ?? null) as WmsTaskAssignmentType;
 
@@ -147,10 +193,14 @@ export function useFulfillmentPackController() {
       return;
     }
 
+    if (activeBasketId) {
+      return;
+    }
+
     if (!indexedTasks.has(activeTaskId)) {
       setActiveTaskId(null);
     }
-  }, [activeTaskId, indexedTasks]);
+  }, [activeBasketId, activeTaskId, indexedTasks]);
 
   const tenantOptions = useMemo<WmsSearchableOption[]>(
     () => (data?.context.tenantOptions ?? []).map((tenant) => ({
@@ -177,7 +227,7 @@ export function useFulfillmentPackController() {
       { id: 'packing', label: 'Packing', value: summary.packing ?? 0 },
       { id: 'packed', label: 'Packed', value: summary.packed ?? 0 },
     ];
-  }, [data?.summary, data?.tasks]);
+  }, [data?.summary]);
 
   const replaceTask = useCallback((nextTask: WmsFulfillmentQueueTask, options?: { closeWhenFinished?: boolean }) => {
     setData((current) => {
@@ -205,6 +255,132 @@ export function useFulfillmentPackController() {
   const resolveTenantIdForTask = useCallback((task: WmsFulfillmentQueueTask) => (
     task.store?.tenantId ?? selectedTenantIdState ?? null
   ), [selectedTenantIdState]);
+
+  const fetchBasketPlan = useCallback(async (task: WmsFulfillmentQueueTask) => {
+    if (!task.basket?.id) {
+      setErrorMessage('This pack order is no longer inside a basket.');
+      return null;
+    }
+
+    setActiveBasketId(task.basket.id);
+    setActiveBasketTaskSnapshot(task);
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const result = await fetchWmsPackBasketPlan({
+        basketId: task.basket.id,
+        tenantId: resolveTenantIdForTask(task),
+      });
+      applyBasketResult({
+        result,
+        setBasketViews,
+        setData,
+      });
+      setActiveBasketTaskSnapshot(resolveBasketContextTask(result, task));
+      setActiveTaskId(result.plan.activeOrder?.id ?? task.id);
+      return result;
+    } catch (error) {
+      setErrorMessage(resolveQueueError(error));
+      return null;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [resolveTenantIdForTask]);
+
+  const scanBasketWaybill = useCallback(async (task: WmsFulfillmentQueueTask, code: string) => {
+    if (!task.basket?.id) {
+      setErrorMessage('This pack order is no longer inside a basket.');
+      return false;
+    }
+
+    setActiveBasketId(task.basket.id);
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const result = await scanWmsPackBasketWaybill({
+        basketId: task.basket.id,
+        tenantId: resolveTenantIdForTask(task),
+        code,
+      });
+      applyBasketResult({
+        result,
+        setBasketViews,
+        setData,
+      });
+      setActiveBasketTaskSnapshot(resolveBasketContextTask(result, task));
+      setActiveTaskId(result.activeOrderId);
+      return true;
+    } catch (error) {
+      setErrorMessage(resolveQueueError(error));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [resolveTenantIdForTask]);
+
+  const scanBasketUnit = useCallback(async (task: WmsFulfillmentQueueTask, orderId: string, code: string) => {
+    if (!task.basket?.id) {
+      setErrorMessage('This pack order is no longer inside a basket.');
+      return false;
+    }
+
+    setActiveBasketId(task.basket.id);
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const result = await scanWmsPackBasketOrderUnit({
+        basketId: task.basket.id,
+        orderId,
+        tenantId: resolveTenantIdForTask(task),
+        code,
+      });
+      applyBasketResult({
+        result,
+        setBasketViews,
+        setData,
+      });
+      setActiveBasketTaskSnapshot(resolveBasketContextTask(result, task));
+      setActiveTaskId(result.activeOrderId ?? orderId);
+      return true;
+    } catch (error) {
+      setErrorMessage(resolveQueueError(error));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [resolveTenantIdForTask]);
+
+  const completeBasketOrder = useCallback(async (task: WmsFulfillmentQueueTask, orderId: string) => {
+    if (!task.basket?.id) {
+      setErrorMessage('This pack order is no longer inside a basket.');
+      return false;
+    }
+
+    setActiveBasketId(task.basket.id);
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const result = await completeWmsPackBasketOrder({
+        basketId: task.basket.id,
+        orderId,
+        tenantId: resolveTenantIdForTask(task),
+      });
+      applyBasketResult({
+        result,
+        setBasketViews,
+        setData,
+      });
+      setActiveBasketTaskSnapshot(resolveBasketContextTask(result, task));
+      setActiveTaskId(result.activeOrderId ?? null);
+      await loadQueue({ mode: 'refresh', page: currentPage });
+      return true;
+    } catch (error) {
+      setErrorMessage(resolveQueueError(error));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [currentPage, loadQueue, resolveTenantIdForTask]);
 
   const startTask = useCallback(async (task: WmsFulfillmentQueueTask) => {
     setIsSubmitting(true);
@@ -330,6 +506,13 @@ export function useFulfillmentPackController() {
         supervisorIdentifier: params.supervisorIdentifier,
         supervisorPassword: params.supervisorPassword,
       });
+      applyBasketResult({
+        result,
+        setBasketViews,
+        setData,
+      });
+      setActiveBasketId(result.basket.id);
+      setActiveBasketTaskSnapshot(resolveBasketContextTask(result, params.task));
       await loadQueue({ mode: 'refresh', page: currentPage });
       setActiveTaskId(result.activeOrderId);
       return true;
@@ -341,32 +524,80 @@ export function useFulfillmentPackController() {
     }
   }, [currentPage, loadQueue, resolveTenantIdForTask]);
 
+  const selectTask = useCallback((taskId: string | null) => {
+    setActiveTaskId(taskId);
+    if (!taskId) {
+      return;
+    }
+
+    const task = indexedTasks.get(taskId);
+    if (!task || task.assignmentMode !== 'BASKET_DEMAND' || !task.basket?.id) {
+      setActiveBasketId(null);
+      setActiveBasketTaskSnapshot(null);
+      return;
+    }
+
+    setActiveBasketId(task.basket.id);
+    setActiveBasketTaskSnapshot(task);
+    const currentBasketView = basketViews[task.basket.id];
+    if (currentBasketView) {
+      const activeOrderId = currentBasketView.plan.activeOrder?.id;
+      setActiveTaskId(activeOrderId ?? taskId);
+      return;
+    }
+
+    void fetchBasketPlan(task);
+  }, [basketViews, fetchBasketPlan, indexedTasks]);
+
+  const refresh = useCallback(async () => {
+    await loadQueue({ mode: 'refresh', page: currentPage });
+
+    const refreshTask = activeTask ?? activeBasketTaskSnapshot;
+    if (activeBasketId && refreshTask?.assignmentMode === 'BASKET_DEMAND' && refreshTask.basket?.id === activeBasketId) {
+      await fetchBasketPlan(refreshTask);
+    }
+  }, [activeBasketId, activeBasketTaskSnapshot, activeTask, currentPage, fetchBasketPlan, loadQueue]);
+
   return {
+    activeBasketId,
+    activeBasketView,
     activeTask,
+    basketViews,
     canDirectVoid,
     canExecute,
     currentPage,
+    completeBasketOrder,
     errorMessage,
+    fetchBasketPlan,
     isLoading,
     isRefreshing,
     isSubmitting,
     queueScope,
+    scanBasketUnit,
+    scanBasketWaybill,
+    selectTask,
     selectedStatus,
     selectedStoreId: selectedStoreIdState,
     selectedTenantId: selectedTenantIdState,
     setActiveTaskId,
     setCurrentPage,
     setSelectedStatus: (value: string) => {
+      setActiveBasketId(null);
+      setActiveBasketTaskSnapshot(null);
       setActiveTaskId(null);
       setCurrentPage(1);
       setSelectedStatus(value);
     },
     setSelectedStoreId: (value: string | undefined) => {
+      setActiveBasketId(null);
+      setActiveBasketTaskSnapshot(null);
       setActiveTaskId(null);
       setCurrentPage(1);
       setSelectedStoreId(value);
     },
     setSelectedTenantId: (value: string | undefined) => {
+      setActiveBasketId(null);
+      setActiveBasketTaskSnapshot(null);
       setActiveTaskId(null);
       setCurrentPage(1);
       setSelectedTenantId(value);
@@ -380,12 +611,94 @@ export function useFulfillmentPackController() {
     tenantReady: data?.tenantReady ?? false,
     totalPages: Math.max(1, Math.ceil((data?.pagination.total ?? 0) / (data?.pagination.pageSize ?? PAGE_SIZE))),
     completeTask,
-    refresh: () => loadQueue({ mode: 'refresh', page: currentPage }),
+    refresh,
     scanUnit,
     startTask,
     verifyTracking,
     voidBasketOrders,
     voidTask,
+  };
+}
+
+function replaceQueueTasksForBasket(
+  current: WmsFulfillmentQueueResponse,
+  basketId: string,
+  nextTasks: WmsFulfillmentQueueTask[],
+): WmsFulfillmentQueueResponse {
+  const retainedTasks = current.tasks.filter((task) => task.basket?.id !== basketId);
+
+  return {
+    ...current,
+    tasks: [...nextTasks, ...retainedTasks],
+  };
+}
+
+function applyBasketResult(params: {
+  result:
+    | WmsFulfillmentBasketPackPlanResponse
+    | WmsFulfillmentBasketPackWaybillResponse
+    | WmsFulfillmentBasketPackUnitResponse
+    | WmsFulfillmentBasketPackCompleteResponse
+    | ({
+        success: boolean;
+        activeOrderId: string | null;
+        activeOrder: WmsFulfillmentQueueTask | null;
+        voidedOrderIds: string[];
+        basket: WmsFulfillmentBasketPackPlanResponse['basket'];
+        tasks: WmsFulfillmentQueueTask[];
+        plan: WmsFulfillmentBasketPackPlanResponse['plan'];
+      });
+  setBasketViews: Dispatch<SetStateAction<Record<string, BasketPackView>>>;
+  setData: Dispatch<SetStateAction<WmsFulfillmentQueueResponse | null>>;
+}) {
+  const { result, setBasketViews, setData } = params;
+
+  setBasketViews((current) => ({
+    ...current,
+    [result.basket.id]: {
+      basket: result.basket,
+      tasks: result.tasks,
+      plan: result.plan,
+      validation: validateBasketPackResponse(result),
+    },
+  }));
+  setData((current) => current ? replaceQueueTasksForBasket(current, result.basket.id, result.tasks) : current);
+}
+
+function resolveBasketContextTask(
+  result:
+    | WmsFulfillmentBasketPackPlanResponse
+    | WmsFulfillmentBasketPackWaybillResponse
+    | WmsFulfillmentBasketPackUnitResponse
+    | WmsFulfillmentBasketPackCompleteResponse
+    | ({
+        success: boolean;
+        activeOrderId: string | null;
+        activeOrder: WmsFulfillmentQueueTask | null;
+        voidedOrderIds: string[];
+        basket: WmsFulfillmentBasketPackPlanResponse['basket'];
+        tasks: WmsFulfillmentQueueTask[];
+        plan: WmsFulfillmentBasketPackPlanResponse['plan'];
+      }),
+  fallbackTask: WmsFulfillmentQueueTask,
+) {
+  if ('activeOrder' in result && result.activeOrder) {
+    return {
+      ...result.activeOrder,
+      basket: result.basket,
+    };
+  }
+
+  if ('completedOrder' in result && result.completedOrder) {
+    return {
+      ...result.completedOrder,
+      basket: result.basket,
+    };
+  }
+
+  return {
+    ...fallbackTask,
+    basket: result.basket,
   };
 }
 
@@ -404,4 +717,118 @@ function resolveQueueError(error: unknown) {
   }
 
   return 'Unable to update pack queue.';
+}
+
+function validateBasketPackResponse(
+  result:
+    | WmsFulfillmentBasketPackPlanResponse
+    | WmsFulfillmentBasketPackWaybillResponse
+    | WmsFulfillmentBasketPackUnitResponse
+    | WmsFulfillmentBasketPackCompleteResponse
+    | {
+        success: boolean;
+        activeOrderId: string | null;
+        activeOrder: WmsFulfillmentQueueTask | null;
+        voidedOrderIds: string[];
+        basket: WmsFulfillmentBasketPackPlanResponse['basket'];
+        tasks: WmsFulfillmentQueueTask[];
+        plan: WmsFulfillmentBasketPackPlanResponse['plan'];
+      },
+): WmsFulfillmentBasketPackValidation {
+  const issues: string[] = [];
+  const planOrderIds = result.plan.orders.map((order) => order.id);
+  const taskOrderIds = result.tasks.map((task) => task.id);
+  const basketOrderIds = (result.basket.orders ?? []).map((order) => order.id);
+
+  if (result.basket.id !== result.plan.basketId) {
+    issues.push('Basket header and basket plan are pointing to different basket records.');
+  }
+
+  const duplicatePlanOrders = collectDuplicateIds(planOrderIds);
+  if (duplicatePlanOrders.length > 0) {
+    issues.push(`Basket plan has duplicate orders: ${duplicatePlanOrders.join(', ')}.`);
+  }
+
+  const duplicateTaskOrders = collectDuplicateIds(taskOrderIds);
+  if (duplicateTaskOrders.length > 0) {
+    issues.push(`Pack queue returned duplicate basket tasks: ${duplicateTaskOrders.join(', ')}.`);
+  }
+
+  if (!hasSameUniqueIds(planOrderIds, taskOrderIds)) {
+    issues.push('Basket plan orders do not match the pack tasks currently attached to this basket.');
+  }
+
+  if (basketOrderIds.length > 0 && !hasSameUniqueIds(planOrderIds, basketOrderIds)) {
+    issues.push('Basket order chips do not match the plan order list returned for this basket.');
+  }
+
+  if ((result.basket.orders ?? []).some((order) => order.store?.tenantId === null)) {
+    issues.push('One or more basket orders are missing tenant scope in the basket payload.');
+  }
+
+  if (result.tasks.some((task) => task.basket?.id !== result.basket.id)) {
+    issues.push('One or more pack tasks still reference a different basket.');
+  }
+
+  if (result.plan.orderProgress.total !== result.plan.orders.length) {
+    issues.push('Basket order total does not match the number of orders in the active pack plan.');
+  }
+
+  const orderRequiredTotal = result.plan.orders.reduce((sum, order) => sum + order.totals.required, 0);
+  const orderPackedTotal = result.plan.orders.reduce((sum, order) => sum + order.totals.packed, 0);
+  if (
+    orderRequiredTotal !== result.plan.totals.required
+    || orderPackedTotal !== result.plan.totals.packed
+  ) {
+    issues.push('Basket totals do not match the order totals returned by the pack plan.');
+  }
+
+  const taskRequiredTotal = result.tasks.reduce((sum, task) => sum + task.totals.required, 0);
+  const taskPackedTotal = result.tasks.reduce((sum, task) => sum + task.totals.packed, 0);
+  if (
+    taskRequiredTotal !== result.plan.totals.required
+    || taskPackedTotal !== result.plan.totals.packed
+  ) {
+    issues.push('Queue task totals do not match the active basket totals.');
+  }
+
+  if (result.plan.activeOrder && !planOrderIds.includes(result.plan.activeOrder.id)) {
+    issues.push('The active packing order is not included in the basket plan order list.');
+  }
+
+  return {
+    isConsistent: issues.length === 0,
+    issues,
+  };
+}
+
+function hasSameUniqueIds(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  if (leftSet.size !== rightSet.size) {
+    return false;
+  }
+
+  for (const value of leftSet) {
+    if (!rightSet.has(value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function collectDuplicateIds(values: string[]) {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([value]) => value);
 }

@@ -96,22 +96,28 @@ export function FulfillmentPackScreen() {
             )}
           >
             <FulfillmentPackQueueList
+              activeBasketId={pack.activeBasketId}
               activeTaskId={pack.activeTask?.id ?? null}
               tasks={pack.tasks}
               isLoading={pack.isLoading}
               tenantReady={pack.tenantReady}
-              onSelectTask={pack.setActiveTaskId}
+              onSelectTask={pack.selectTask}
             />
           </WmsWorkspaceCard>
 
           <div className="xl:col-span-9">
             <FulfillmentPackExecutionPanel
+              basketView={pack.activeBasketView}
               canDirectVoid={pack.canDirectVoid}
               canExecute={pack.canExecute}
               isRefreshing={pack.isRefreshing}
               isSubmitting={pack.isSubmitting}
               task={pack.activeTask}
+              onCompleteBasketOrder={pack.completeBasketOrder}
+              onLoadBasketPlan={pack.fetchBasketPlan}
               onRefresh={pack.refresh}
+              onScanBasketUnit={pack.scanBasketUnit}
+              onScanBasketWaybill={pack.scanBasketWaybill}
               onStart={pack.startTask}
               onScanUnit={pack.scanUnit}
               onVerifyTracking={pack.verifyTracking}

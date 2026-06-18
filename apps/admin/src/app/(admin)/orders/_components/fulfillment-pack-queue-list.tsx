@@ -19,6 +19,7 @@ type PackQueueEntry =
     };
 
 type FulfillmentPackQueueListProps = {
+  activeBasketId: string | null;
   activeTaskId: string | null;
   tasks: WmsFulfillmentQueueTask[];
   isLoading: boolean;
@@ -27,6 +28,7 @@ type FulfillmentPackQueueListProps = {
 };
 
 export function FulfillmentPackQueueList({
+  activeBasketId,
   activeTaskId,
   tasks,
   isLoading,
@@ -56,7 +58,7 @@ export function FulfillmentPackQueueList({
   return (
     <div className="space-y-3 p-3">
       {entries.map((entry) => {
-        const active = isPackQueueEntryActive(entry, activeTaskId);
+        const active = isPackQueueEntryActive(entry, activeTaskId, activeBasketId);
 
         if (entry.kind === 'basket') {
           return (
@@ -234,7 +236,11 @@ function buildPackQueueEntries(tasks: WmsFulfillmentQueueTask[]): PackQueueEntry
   return entries;
 }
 
-function isPackQueueEntryActive(entry: PackQueueEntry, activeTaskId: string | null) {
+function isPackQueueEntryActive(entry: PackQueueEntry, activeTaskId: string | null, activeBasketId: string | null) {
+  if (activeBasketId && entry.basket?.id === activeBasketId) {
+    return true;
+  }
+
   if (!activeTaskId) {
     return false;
   }
