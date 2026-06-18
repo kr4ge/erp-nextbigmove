@@ -65,6 +65,11 @@ interface PosOrderData {
   assigningCare?: string | null;
 }
 
+type PosOrderCurrencyContext = {
+  orderCurrency: string | null;
+  currencyDivisor: number;
+};
+
 export type PosOrderUpsertStatus = 'UPSERTED' | 'SKIPPED' | 'DELETED' | 'FAILED';
 
 export interface PosOrderUpsertOutcome {
@@ -129,6 +134,44 @@ export class PosOrderService {
     // Remove numeric suffix and trim
     const match = noteProduct.match(/^([A-Za-z\s]+)/);
     return match ? match[1].trim() : undefined;
+  }
+
+  private resolveOrderCurrencyContext(rawOrder: any): PosOrderCurrencyContext {
+    const rawOrderCurrency = rawOrder?.order_currency ?? rawOrder?.orderCurrency ?? null;
+    const orderCurrency = typeof rawOrderCurrency === 'string' || typeof rawOrderCurrency === 'number'
+      ? rawOrderCurrency.toString().trim().toUpperCase() || null
+      : null;
+
+    if (!orderCurrency) {
+      return {
+        orderCurrency: null,
+        currencyDivisor: 1,
+      };
+    }
+
+    const multiplierMatch = orderCurrency.match(/^[A-Z]{3}(\d+(?:\.\d+)?)$/);
+    if (!multiplierMatch) {
+      return {
+        orderCurrency,
+        currencyDivisor: 1,
+      };
+    }
+
+    const parsedDivisor = parseFloat(multiplierMatch[1] ?? '1');
+    return {
+      orderCurrency,
+      currencyDivisor: Number.isFinite(parsedDivisor) && parsedDivisor > 0 ? parsedDivisor : 1,
+    };
+  }
+
+  private scaleCurrencyAmount(value: unknown, currencyDivisor: number): number {
+    const parsedValue = parseFloat(value == null ? '0' : String(value));
+    if (!Number.isFinite(parsedValue)) {
+      return NaN;
+    }
+
+    const safeDivisor = Number.isFinite(currencyDivisor) && currencyDivisor > 0 ? currencyDivisor : 1;
+    return parsedValue / safeDivisor;
   }
 
   private parseNoteProductCogs(noteProduct: any, quantity: number): number {
@@ -268,6 +311,8 @@ export class PosOrderService {
     rawOrder: any,
     initialValueOffer: number | null,
   ): Promise<PosOrderData> {
+    const currencyContext = this.resolveOrderCurrencyContext(rawOrder);
+
     // Skip abandoned Shopify checkouts: status 0 with abandon checkout id
     if (
       (rawOrder?.status === 0 || rawOrder?.status === '0') &&
@@ -458,7 +503,7 @@ export class PosOrderService {
 
     const hasUpsellTag = this.hasUpsellTagInList(rawOrder?.tags ?? null);
     // Compute history-based breakdown even without tag (used for forUpsell baseline)
-    const historyBreakdown = this.computeUpsellBreakdown(rawOrder, false);
+    const historyBreakdown = this.computeUpsellBreakdown(rawOrder, currencyContext.currencyDivisor, false);
     // Only persist upsell breakdown if tagged
     const upsellBreakdown = hasUpsellTag ? historyBreakdown : null;
 
@@ -520,11 +565,13 @@ export class PosOrderService {
       shipping_fee: snapshotShippingFee,
       bank_payments: snapshotBankPayments,
       surcharge: snapshotSurcharge,
+      order_currency: currencyContext.orderCurrency,
+      currency_divisor: currencyContext.currencyDivisor,
       duplicated_phone: snapshotDuplicatedPhone,
       duplicated_ip: snapshotDuplicatedIp,
     };
 
-    const codValue = parseFloat(rawOrder.cod || '0');
+    const codValue = this.scaleCurrencyAmount(rawOrder.cod, currencyContext.currencyDivisor);
     const hasCod = Number.isFinite(codValue);
     let upsellDelta = 0;
     if (upsellBreakdown && typeof upsellBreakdown === 'object') {
@@ -1042,7 +1089,7 @@ export class PosOrderService {
     return false;
   }
 
-  private computeUpsellItemsTotals(itemsRaw: any): { old: number; new: number } {
+  private computeUpsellItemsTotals(itemsRaw: any, currencyDivisor: number): { old: number; new: number } {
     if (!Array.isArray(itemsRaw)) return { old: 0, new: 0 };
     let oldTotal = 0;
     let newTotal = 0;
@@ -1050,51 +1097,52 @@ export class PosOrderService {
       if (!isObject(item)) continue;
       const oldItem = item.old ?? null;
       const newItem = item.new ?? null;
-      if (isObject(oldItem)) oldTotal += this.computeUpsellItemAmount(oldItem);
-      if (isObject(newItem)) newTotal += this.computeUpsellItemAmount(newItem);
+      if (isObject(oldItem)) oldTotal += this.computeUpsellItemAmount(oldItem, currencyDivisor);
+      if (isObject(newItem)) newTotal += this.computeUpsellItemAmount(newItem, currencyDivisor);
     }
     return { old: oldTotal, new: newTotal };
   }
 
-  private computeUpsellItemAmount(item: any): number {
+  private computeUpsellItemAmount(item: any, currencyDivisor: number): number {
     const qty = parseInt(item.quantity ?? '0', 10);
     const price = item.variation_info?.retail_price ?? item.retail_price ?? 0;
     const q = isNaN(qty) ? 0 : Math.max(qty, 0);
-    const p = isNaN(parseFloat(price)) ? 0 : parseFloat(price);
+    const scaledPrice = this.scaleCurrencyAmount(price, currencyDivisor);
+    const p = Number.isFinite(scaledPrice) ? scaledPrice : 0;
     return q * p;
   }
 
-  private extractHistoryAmount(entry: any, key: string): { old: number; new: number } {
+  private extractHistoryAmount(entry: any, key: string, currencyDivisor: number): { old: number; new: number } {
     let old = 0;
     let newVal = 0;
     if (!isObject(entry) || !entry.hasOwnProperty(key)) return { old, new: newVal };
     const value = entry[key];
     if (isObject(value)) {
-      if (isNumeric(value.old)) old = parseFloat(value.old);
-      if (isNumeric(value.new)) newVal = parseFloat(value.new);
+      if (isNumeric(value.old)) old = this.scaleCurrencyAmount(value.old, currencyDivisor);
+      if (isNumeric(value.new)) newVal = this.scaleCurrencyAmount(value.new, currencyDivisor);
     } else if (isNumeric(value)) {
-      newVal = parseFloat(value);
+      newVal = this.scaleCurrencyAmount(value, currencyDivisor);
     }
     return { old, new: newVal };
   }
 
-  private extractHistoryDiscount(entry: any): { old: number; new: number } {
+  private extractHistoryDiscount(entry: any, currencyDivisor: number): { old: number; new: number } {
     for (const key of ['total_discount', 'general_discount', 'discount']) {
       if (!entry || !entry.hasOwnProperty(key)) continue;
       const value = entry[key];
       if (isObject(value)) {
-        const old = isNumeric(value.old) ? parseFloat(value.old) : 0;
-        const neu = isNumeric(value.new) ? parseFloat(value.new) : 0;
+        const old = isNumeric(value.old) ? this.scaleCurrencyAmount(value.old, currencyDivisor) : 0;
+        const neu = isNumeric(value.new) ? this.scaleCurrencyAmount(value.new, currencyDivisor) : 0;
         return { old, new: neu };
       }
       if (isNumeric(value)) {
-        return { old: 0, new: parseFloat(value) };
+        return { old: 0, new: this.scaleCurrencyAmount(value, currencyDivisor) };
       }
     }
     return { old: 0, new: 0 };
   }
 
-  private computeUpsellBreakdown(order: any, requireUpsellTag = true): any | null {
+  private computeUpsellBreakdown(order: any, currencyDivisor: number, requireUpsellTag = true): any | null {
     if (requireUpsellTag) {
       const tags = order?.tags ?? null;
       if (!this.hasUpsellTagInList(tags)) {
@@ -1139,15 +1187,15 @@ export class PosOrderService {
     entriesWithItems.forEach((entry: any, idx: number) => {
       if (!isObject(entry)) return;
 
-      const itemTotals = this.computeUpsellItemsTotals(entry.items ?? null);
+      const itemTotals = this.computeUpsellItemsTotals(entry.items ?? null, currencyDivisor);
       if (itemTotals.new <= 0) return;
 
-      let discount = this.extractHistoryDiscount(entry);
+      let discount = this.extractHistoryDiscount(entry, currencyDivisor);
       if (discount.old <= 0 && discount.new <= 0) {
         const updatedRaw = entry.updated_at ?? null;
         if (isString(updatedRaw) && byUpdatedAt[updatedRaw]) {
           for (const peer of byUpdatedAt[updatedRaw]) {
-            const candidate = this.extractHistoryDiscount(peer);
+            const candidate = this.extractHistoryDiscount(peer, currencyDivisor);
             if (candidate.old > 0 || candidate.new > 0) {
               discount = candidate;
               break;
@@ -1156,7 +1204,7 @@ export class PosOrderService {
         }
       }
 
-      const shipping = this.extractHistoryAmount(entry, 'shipping_fee');
+      const shipping = this.extractHistoryAmount(entry, 'shipping_fee', currencyDivisor);
 
       const isReplacement = itemTotals.old > 0 && itemTotals.new > 0;
       let itemTotalOld = itemTotals.old;
@@ -1166,7 +1214,7 @@ export class PosOrderService {
       let newAmount = 0;
 
       if (!isReplacement) {
-        const orderCod = parseFloat(order?.cod || '0');
+        const orderCod = this.scaleCurrencyAmount(order?.cod, currencyDivisor);
         const hasShippingField = isObject(entry) && Object.prototype.hasOwnProperty.call(entry, 'shipping_fee');
         const hasDiscountField = isObject(entry) && ['total_discount', 'general_discount', 'discount']
           .some((key) => Object.prototype.hasOwnProperty.call(entry, key));
