@@ -485,65 +485,6 @@ export function InventoryUnitModal({
             </div>
           ) : null}
 
-          {false ? (
-            <div className="panel panel-content">
-              <div className="panel-header">
-                <History className='panel-icon' />
-                <p className="panel-title">
-                  Unit Movement History
-                </p>
-              </div>
-
-              <div className="max-h-[420px] overflow-y-auto px-4 py-3">
-                {isLoadingMovements ? (
-                  <p className="py-8 text-center text-sm text-[#708492]">Loading movements…</p>
-                ) : movements.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-[#708492]">No movement history yet.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {movements.map((movement) => (
-                      <div key={movement.id} className="rounded-2xl border border-[#e2e9ee] bg-[#fbfcfc] px-3.5 py-3">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                          <div>
-                            <p className="text-[13px] font-semibold text-primary">
-                              {formatMovementType(movement.movementType)}
-                            </p>
-                            <p className="mt-1 text-[12px] text-[#637786]">
-                              {movement.fromLocation?.code ?? 'No source'} → {movement.toLocation?.code ?? 'No destination'}
-                            </p>
-                          </div>
-                          <p className="text-[11px] text-[#7b8e9c]">{formatDateTime(movement.createdAt)}</p>
-                        </div>
-
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#708492]">
-                          {movement.fromStatusLabel || movement.toStatusLabel ? (
-                            <span className="pill pill-ghost">
-                              {movement.fromStatusLabel ?? '—'} → {movement.toStatusLabel ?? '—'}
-                            </span>
-                          ) : null}
-                          {movement.referenceCode ? (
-                            <span className="pill pill-ghost">
-                              {movement.referenceCode}
-                            </span>
-                          ) : null}
-                          {movement.actor?.name ? (
-                            <span className="pill pill-ghost">
-                              {movement.actor.name}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        {movement.notes ? (
-                          <p className="mt-2 text-[12px] text-[#637786]">{movement.notes}</p>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : null}
-
           {activeTab === 'transfer' ? (
             <div className="panel panel-content">
               <div className="panel-header">

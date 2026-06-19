@@ -726,56 +726,6 @@ export function PurchasingBatchModal({
               </div>
             )}
 
-            {false ? (
-              <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">
-                {isSelfBuy ? 'Partner Shipment Notice' : 'Payment Proof'}
-              </p>
-                {!isSelfBuy && paymentProofImageUrl ? (
-                  <div className="mt-1.5 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveProofImageUrl(paymentProofImageUrl);
-                        setIsProofImageZoomed(false);
-                      }}
-                      className="block w-full overflow-hidden rounded-xl border border-[#dce4ea] bg-[#f8fbfd] text-left transition hover:border-[#b9c9d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7fb0cc]/40"
-                      aria-label="Open payment proof image"
-                    >
-                    <img
-                      src={paymentProofImageUrl ?? ''}
-                      alt="Payment proof"
-                      className="h-auto max-h-[260px] w-full object-contain"
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveProofImageUrl(paymentProofImageUrl);
-                      setIsProofImageZoomed(false);
-                    }}
-                    className="btn btn-sm btn-outline"
-                  >
-                    Open proof image
-                  </button>
-                  <p className="text-[12px] text-[#5f7483]">
-                    Submitted {formatDateTime(batch?.paymentProofSubmittedAt || batch?.paymentSubmittedAt)}
-                    {batch?.paymentProofSubmittedBy ? ` · ${batch?.paymentProofSubmittedBy?.name}` : ''}
-                  </p>
-                </div>
-              ) : (
-                <p className="mt-1.5 text-[12px] text-[#7b8e9c]">
-                  {isSelfBuy
-                    ? batch?.status === 'SHIPPED'
-                      ? 'Partner already confirmed the self-buy shipment to warehouse.'
-                      : batch?.status === 'RECEIVING_EXCEPTION'
-                        ? 'Warehouse flagged a mismatch and is waiting for partner follow-up.'
-                        : 'Shipment notice will appear after the partner marks the self-buy request as shipped.'
-                    : 'No proof submitted yet'}
-                </p>
-              )}
-              </div>
-            ) : null}
           </div>
         </div>
       )}
