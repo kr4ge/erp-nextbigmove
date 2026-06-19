@@ -216,7 +216,7 @@ export function DispatchDetailPanel({
 
       {returnFlow ? (
         <>
-          <DetailSection title="Return progress" description="Track scan backlog, units still sitting in RTS, and units already placed into their final status.">
+          <DetailSection title="Return progress" description="Track return backlog, final placement state, and the completed RTS owner.">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Expected" value={returnFlow.expectedUnits} />
               <MetricCard label="Pending scan" value={returnFlow.pendingUnits.length} />
@@ -227,12 +227,12 @@ export function DispatchDetailPanel({
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <MetricCard label="State" value={returnFlow.label ?? returnFlow.posStatusLabel ?? 'Not started'} />
               <DetailCard
-                label="Last RTS action"
-                value={returnFlow.lastActionAt ? formatDateTime(returnFlow.lastActionAt) : 'No activity yet'}
+                label="Disposed at"
+                value={returnFlow.disposedAt ? formatDateTime(returnFlow.disposedAt) : 'Not completed yet'}
               />
               <DetailCard
-                label="Handled by"
-                value={returnFlow.lastActionBy?.name ?? returnFlow.lastActionBy?.email ?? 'Not assigned'}
+                label="Disposed by"
+                value={returnFlow.disposedBy?.name ?? returnFlow.disposedBy?.email ?? 'Not assigned'}
               />
             </div>
           </DetailSection>
@@ -245,7 +245,7 @@ export function DispatchDetailPanel({
             </div>
           </DetailSection>
 
-          <DetailSection title="Return history" description="Latest RTS verification and placement actions for this order.">
+          <DetailSection title="Return history" description="Audit trail for RTS verification and placement actions on this order.">
             <HistoryList history={returnFlow.history} />
           </DetailSection>
         </>

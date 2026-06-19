@@ -420,7 +420,13 @@ export type WmsMobileTrackingReturnUnit = {
   currentLocation: WmsMobileStockLocation | null;
 };
 
-export type WmsMobileTrackingReturnDispositionAction = 'PUTAWAY' | 'DEADSTOCK' | 'DAMAGE';
+export type WmsMobileTrackingReturnDispositionAction =
+  | 'STAGED'
+  | 'PUTAWAY'
+  | 'DEADSTOCK'
+  | 'DAMAGE'
+  | 'LOST'
+  | 'ARCHIVED';
 
 export type WmsMobileTrackingReturnFlow = {
   eligible: boolean;
@@ -432,6 +438,11 @@ export type WmsMobileTrackingReturnFlow = {
   expectedUnits: number;
   verifiedUnits: WmsMobileTrackingReturnUnit[];
   pendingUnits: WmsMobileTrackingReturnUnit[];
+  disposedAt: string | null;
+  disposedBy: {
+    name: string;
+    email: string;
+  } | null;
   lastVerifiedAt: string | null;
   lastVerifiedBy: {
     name: string;

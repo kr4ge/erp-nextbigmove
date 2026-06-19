@@ -85,19 +85,45 @@ export function usePackingWorkspace({
     }
 
     try {
-      const nextPacking = await fetchMobilePackingTasks({
-        accessToken: session.accessToken,
-        device,
-        filters,
-        status: statusFilter,
-        page: nextPage,
-        pageSize: PACKING_PAGE_SIZE,
-      });
+      if (append) {
+        const nextPacking = await fetchMobilePackingTasks({
+          accessToken: session.accessToken,
+          device,
+          filters,
+          status: statusFilter,
+          page: nextPage,
+          pageSize: PACKING_PAGE_SIZE,
+        });
 
-      setPacking((current) => (
-        append && current ? mergePackingPage(current, nextPacking) : nextPacking
-      ));
-      setPage(nextPage);
+        setPacking((current) => (
+          current ? mergePackingPage(current, nextPacking) : nextPacking
+        ));
+        setPage(nextPage);
+      } else {
+        let mergedPacking: WmsMobilePackingResponse | null = null;
+        let lastLoadedPage = 1;
+
+        for (let pageIndex = 1; pageIndex <= nextPage; pageIndex += 1) {
+          const pageResult = await fetchMobilePackingTasks({
+            accessToken: session.accessToken,
+            device,
+            filters,
+            status: statusFilter,
+            page: pageIndex,
+            pageSize: PACKING_PAGE_SIZE,
+          });
+
+          mergedPacking = mergedPacking ? mergePackingPage(mergedPacking, pageResult) : pageResult;
+          lastLoadedPage = pageIndex;
+
+          if (!pageResult.pagination.hasMore) {
+            break;
+          }
+        }
+
+        setPacking(mergedPacking);
+        setPage(lastLoadedPage);
+      }
       setError(null);
     } catch (requestError) {
       setError(resolvePackingError(requestError));
@@ -111,9 +137,9 @@ export function usePackingWorkspace({
   const refreshPacking = useCallback(async () => {
     await loadPackingPage({
       loadingKind: 'refresh',
-      page: 1,
+      page,
     });
-  }, [loadPackingPage]);
+  }, [loadPackingPage, page]);
 
   const loadMore = useCallback(async () => {
     if (!packing?.pagination.hasMore || isLoadingMore) {
@@ -468,13 +494,13 @@ export function usePackingWorkspace({
       if (!isSubmitting) {
         void loadPackingPage({
           loadingKind: 'refresh',
-          page: 1,
+          page,
         });
       }
     }, 10000);
 
     return () => clearInterval(timer);
-  }, [isSubmitting, loadPackingPage]);
+  }, [isSubmitting, loadPackingPage, page]);
 
   const indexedTasks = useMemo(() => {
     if (!packing) {

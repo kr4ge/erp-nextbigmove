@@ -353,6 +353,7 @@ model User {
   wmsStaffActivities                        WmsStaffActivity[]         @relation("WmsStaffActivityActor")
   wmsFulfillmentOrdersClaimed               WmsFulfillmentOrder[]      @relation("WmsFulfillmentOrderClaimedBy")
   wmsFulfillmentOrdersPacked                WmsFulfillmentOrder[]      @relation("WmsFulfillmentOrderPackedBy")
+  wmsFulfillmentOrdersRtsDisposed           WmsFulfillmentOrder[]      @relation("WmsFulfillmentOrderRtsDisposedBy")
   wmsBasketsAssigned                        WmsBasket[]                @relation("WmsBasketAssignedPicker")
   wmsBasketsAssignedForPacking              WmsBasket[]                @relation("WmsBasketAssignedPacker")
   wmsPickReservationsReserved               WmsPickReservation[]       @relation("WmsPickReservationReservedBy")
@@ -1801,6 +1802,9 @@ model WmsFulfillmentOrder {
   claimedBy         User?                        @relation("WmsFulfillmentOrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
   packedById        String?                      @db.Uuid
   packedBy          User?                        @relation("WmsFulfillmentOrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
+  rtsDisposedById   String?                      @db.Uuid
+  rtsDisposedBy     User?                        @relation("WmsFulfillmentOrderRtsDisposedBy", fields: [rtsDisposedById], references: [id], onDelete: SetNull)
+  rtsDisposedAt     DateTime?
   basketId          String?                      @db.Uuid
   basket            WmsBasket?                   @relation("WmsBasketFulfillmentOrders", fields: [basketId], references: [id], onDelete: SetNull)
   claimedAt         DateTime?
@@ -1822,6 +1826,7 @@ model WmsFulfillmentOrder {
   @@index([storeId, status])
   @@index([claimedById, status])
   @@index([packedById, status])
+  @@index([rtsDisposedById, status])
   @@index([basketId, status])
   @@index([posWarehouseRef])
   @@map("wms_fulfillment_orders")

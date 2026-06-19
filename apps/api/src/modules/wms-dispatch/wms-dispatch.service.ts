@@ -147,10 +147,12 @@ const DEFAULT_DISPATCH_PAGE_SIZE = 10;
 const DEFAULT_DISPATCH_REPORT_WINDOW_DAYS = 14;
 const RETURNED_EQUIVALENT_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.RTS,
+  WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
   WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.DAMAGED,
   WmsInventoryUnitStatus.LOST,
+  WmsInventoryUnitStatus.ARCHIVED,
 ]);
 const DISPATCH_RETURN_ACTIVITY_TYPES = [
   'ORDER_RTS_UNIT_VERIFY',
@@ -971,6 +973,14 @@ export class WmsDispatchService {
       totalQuantity: true,
       customerName: true,
       createdAt: true,
+      rtsDisposedAt: true,
+      rtsDisposedBy: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
       store: {
         select: {
           id: true,
@@ -1034,6 +1044,13 @@ export class WmsDispatchService {
         },
       },
       packedBy: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      rtsDisposedBy: {
         select: {
           firstName: true,
           lastName: true,
@@ -1616,6 +1633,9 @@ export class WmsDispatchService {
       verifiedUnits: verifiedUnits.length,
       awaitingPlacementUnits: awaitingPlacementUnits.length,
     });
+    const isCompleted = trackedUnits.length > 0
+      && pendingUnits.length === 0
+      && awaitingPlacementUnits.length === 0;
 
     return {
       eligible: posStatus === 4 || posStatus === 5,
@@ -1632,6 +1652,10 @@ export class WmsDispatchService {
       history,
       lastActionAt: latestActivity?.createdAt ?? null,
       lastActionBy: latestActivity?.actor ?? null,
+      disposedAt: isCompleted ? (order.rtsDisposedAt ?? null) : null,
+      disposedBy: isCompleted && order.rtsDisposedBy
+        ? this.mapActor(order.rtsDisposedBy)
+        : null,
       lastVerifiedAt: latestVerification?.createdAt ?? null,
       lastVerifiedBy: latestVerification?.actor ?? null,
     };
@@ -1649,6 +1673,9 @@ export class WmsDispatchService {
       verifiedUnits: counts.verifiedUnits,
       awaitingPlacementUnits: counts.awaitingPlacementUnits,
     });
+    const isCompleted = counts.expectedUnits > 0
+      && counts.pendingUnits === 0
+      && counts.awaitingPlacementUnits === 0;
 
     return {
       posStatus,
@@ -1660,6 +1687,10 @@ export class WmsDispatchService {
       pendingUnits: counts.pendingUnits,
       awaitingPlacementUnits: counts.awaitingPlacementUnits,
       placedUnits: counts.placedUnits,
+      disposedAt: isCompleted ? (order.rtsDisposedAt ?? null) : null,
+      disposedBy: isCompleted && order.rtsDisposedBy
+        ? this.mapActor(order.rtsDisposedBy)
+        : null,
     };
   }
 

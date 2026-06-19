@@ -15,27 +15,55 @@ const DISPOSITION_OPTIONS: Array<{
   hint: string;
   submitLabel: string;
   targetPlaceholder: string;
+  requiresTarget: boolean;
 }> = [
+  {
+    value: 'STAGED',
+    label: 'Stage',
+    hint: 'Scan staging',
+    submitLabel: 'Stage unit',
+    targetPlaceholder: 'Scan staging',
+    requiresTarget: true,
+  },
   {
     value: 'PUTAWAY',
     label: 'Putaway',
-    hint: 'Scan the bin for this returned unit.',
-    submitLabel: 'Put away unit',
-    targetPlaceholder: 'Scan destination bin',
+    hint: 'Scan bin',
+    submitLabel: 'Put away',
+    targetPlaceholder: 'Scan bin',
+    requiresTarget: true,
   },
   {
     value: 'DEADSTOCK',
     label: 'Deadstock',
-    hint: 'Send this returned unit to a deadstock bin.',
-    submitLabel: 'Move to deadstock',
+    hint: 'Scan deadstock bin',
+    submitLabel: 'Deadstock',
     targetPlaceholder: 'Scan deadstock bin',
+    requiresTarget: true,
   },
   {
     value: 'DAMAGE',
-    label: 'Damage',
-    hint: 'Send this returned unit to damage or quarantine.',
-    submitLabel: 'Mark as damaged',
-    targetPlaceholder: 'Scan damage or quarantine',
+    label: 'Damaged',
+    hint: 'Scan damage bin',
+    submitLabel: 'Mark damaged',
+    targetPlaceholder: 'Scan damage bin',
+    requiresTarget: true,
+  },
+  {
+    value: 'LOST',
+    label: 'Lost',
+    hint: 'Mark lost',
+    submitLabel: 'Mark as lost',
+    targetPlaceholder: '',
+    requiresTarget: false,
+  },
+  {
+    value: 'ARCHIVED',
+    label: 'Archive',
+    hint: 'Archive unit',
+    submitLabel: 'Archive',
+    targetPlaceholder: '',
+    requiresTarget: false,
   },
 ];
 
@@ -75,7 +103,9 @@ export function RtsDispositionPanel({
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>Placement</Text>
-          <Text style={styles.title}>Finish this returned unit</Text>
+          <Text style={styles.title}>
+            {pendingCount > 1 ? 'Place returned units' : 'Place returned unit'}
+          </Text>
         </View>
         <View style={styles.countPill}>
           <Text style={styles.countText}>{pendingCount}</Text>
@@ -116,45 +146,47 @@ export function RtsDispositionPanel({
       </View>
 
       <Text style={styles.hintText}>
-        {selectedOption?.hint ?? 'Choose how to place this returned unit.'}
+        {selectedOption?.hint ?? 'Choose action'}
       </Text>
 
-      <View style={styles.inputWrap}>
-        <Text style={styles.inputLabel}>Target</Text>
-        <View style={styles.inputRow}>
-          <TextInput
-            ref={inputRef}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            blurOnSubmit={false}
-            caretHidden
-            contextMenuHidden
-            editable={Boolean(disposition) && !isSubmitting}
-            placeholder={selectedOption?.targetPlaceholder ?? 'Choose an action first'}
-            placeholderTextColor={tokens.colors.inkSoft}
-            returnKeyType="done"
-            selectTextOnFocus={false}
-            showSoftInputOnFocus={false}
-            value={targetCode}
-            onChangeText={onChangeTargetCode}
-            onSubmitEditing={onSubmit}
-            style={[
-              styles.input,
-              !disposition ? styles.inputDisabled : null,
-            ]}
-          />
-          <Pressable
-            disabled={!canSubmit || isSubmitting}
-            onPress={onSubmit}
-            style={[styles.submit, (!canSubmit || isSubmitting) ? styles.submitDisabled : null]}>
-            {isSubmitting ? (
-              <ActivityIndicator color={tokens.colors.surface} size="small" />
-            ) : (
-              <Feather name="corner-down-left" size={18} color={tokens.colors.surface} />
-            )}
-          </Pressable>
+      {selectedOption?.requiresTarget ? (
+        <View style={styles.inputWrap}>
+          <Text style={styles.inputLabel}>Target</Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              ref={inputRef}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              blurOnSubmit={false}
+              caretHidden
+              contextMenuHidden
+              editable={Boolean(disposition) && !isSubmitting}
+              placeholder={selectedOption?.targetPlaceholder ?? 'Choose an action first'}
+              placeholderTextColor={tokens.colors.inkSoft}
+              returnKeyType="done"
+              selectTextOnFocus
+              showSoftInputOnFocus={false}
+              value={targetCode}
+              onChangeText={onChangeTargetCode}
+              onSubmitEditing={onSubmit}
+              style={[
+                styles.input,
+                !disposition ? styles.inputDisabled : null,
+              ]}
+            />
+            <Pressable
+              disabled={!canSubmit || isSubmitting}
+              onPress={onSubmit}
+              style={[styles.submit, (!canSubmit || isSubmitting) ? styles.submitDisabled : null]}>
+              {isSubmitting ? (
+                <ActivityIndicator color={tokens.colors.surface} size="small" />
+              ) : (
+                <Feather name="corner-down-left" size={18} color={tokens.colors.surface} />
+              )}
+            </Pressable>
+          </View>
         </View>
-      </View>
+      ) : null}
 
       <PrimaryButton
         disabled={!canSubmit}
@@ -235,13 +267,15 @@ const styles = StyleSheet.create({
   },
   optionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   optionChip: {
     alignItems: 'center',
     backgroundColor: '#EEE9FF',
     borderRadius: 14,
-    flex: 1,
+    flexBasis: '31%',
+    flexGrow: 1,
     justifyContent: 'center',
     minHeight: 42,
     paddingHorizontal: 12,

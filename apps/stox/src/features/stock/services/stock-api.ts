@@ -422,7 +422,7 @@ export function dispositionMobileTrackingReturnUnit(params: {
   taskId: string;
   unitId: string;
   disposition: WmsMobileTrackingReturnDispositionAction;
-  targetCode: string;
+  targetCode?: string;
   tenantId?: string | null;
 }) {
   return apiRequest<{
@@ -438,7 +438,7 @@ export function dispositionMobileTrackingReturnUnit(params: {
       tenantId: params.tenantId,
       unitId: params.unitId,
       disposition: params.disposition,
-      targetCode: params.targetCode,
+      ...(params.targetCode ? { targetCode: params.targetCode } : {}),
     },
   });
 }

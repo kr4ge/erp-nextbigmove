@@ -139,10 +139,12 @@ const FULFILLABLE_UNIT_STATUSES = [
 ] as const;
 const RETURNED_EQUIVALENT_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.RTS,
+  WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
   WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.DAMAGED,
   WmsInventoryUnitStatus.LOST,
+  WmsInventoryUnitStatus.ARCHIVED,
 ]);
 
 const DEFAULT_STOCK_PAGE_SIZE = 12;
@@ -2309,6 +2311,7 @@ export class WmsMobileService {
     const unit = matchedUnit;
     if (unit.status === WmsInventoryUnitStatus.DISPATCHED) {
       const rtsLocation = await this.resolveWarehouseOperationalLocation(unit.warehouseId, WmsLocationKind.RTS);
+      const now = new Date();
       const updatedOrder = await this.prisma.$transaction(async (tx) => {
         await tx.wmsInventoryUnit.update({
           where: { id: unit.id },
@@ -2334,6 +2337,14 @@ export class WmsMobileService {
             referenceCode: order.posOrderId,
             notes: `Returned unit ${unit.code} verified from waybill ${order.posOrder?.tracking ?? order.posOrderId}`,
             actorId: user.userId || user.id || null,
+          },
+        });
+
+        await tx.wmsFulfillmentOrder.update({
+          where: { id: order.id },
+          data: {
+            rtsDisposedById: null,
+            rtsDisposedAt: null,
           },
         });
 
@@ -2451,42 +2462,62 @@ export class WmsMobileService {
     await this.assertActionTenantAccess(user, body.tenantId, unitRecord.tenantId, request);
     this.assertMobileActionPreconditions(unitRecord, body);
 
-    const target = await this.resolveTargetLocation(body.targetCode, unitRecord.warehouseId);
-    const { nextStatus, actionLabel } = this.resolveRtsDisposition(body.disposition, target.kind);
-    const notes = this.cleanOptionalText(body.notes) ?? `RTS disposition ${actionLabel.toLowerCase()} to ${target.code}`;
+    const targetCode = this.cleanOptionalText(body.targetCode);
+    const target = targetCode
+      ? await this.resolveTargetLocation(targetCode, unitRecord.warehouseId)
+      : null;
+    const { nextStatus, actionLabel, requiresTransfer } = this.resolveRtsDisposition(
+      body.disposition,
+      target?.kind ?? null,
+    );
+    const nextLocationId = target?.id ?? null;
+    const notes = this.cleanOptionalText(body.notes)
+      ?? (
+        target
+          ? `RTS disposition ${actionLabel.toLowerCase()} to ${target.code}`
+          : `RTS disposition ${actionLabel.toLowerCase()}`
+      );
     const now = new Date();
 
     const result = await this.prisma.$transaction(async (tx) => {
-      if (target.kind === WmsLocationKind.BIN) {
+      if (target?.kind === WmsLocationKind.BIN) {
         await this.assertLocationCapacity(tx, target.id, target.code, target.capacity, 1, unitRecord.currentLocationId);
       }
 
-      const transfer = await tx.wmsTransfer.create({
-        data: {
-          code: this.buildMobileTransferCode(),
-          tenantId: unitRecord.tenantId,
-          warehouseId: unitRecord.warehouseId,
-          fromLocationId: unitRecord.currentLocationId,
-          toLocationId: target.id,
-          status: WmsTransferStatus.COMPLETED,
-          notes,
-          createdById: user.userId || user.id || null,
-          updatedById: user.userId || user.id || null,
-        },
-      });
+      let transfer: { id: string; code: string } | null = null;
 
-      await tx.wmsTransferItem.create({
-        data: {
-          transferId: transfer.id,
-          inventoryUnitId: unitRecord.id,
-          lineNo: 1,
-        },
-      });
+      if (requiresTransfer && target) {
+        transfer = await tx.wmsTransfer.create({
+          data: {
+            code: this.buildMobileTransferCode(),
+            tenantId: unitRecord.tenantId,
+            warehouseId: unitRecord.warehouseId,
+            fromLocationId: unitRecord.currentLocationId,
+            toLocationId: target.id,
+            status: WmsTransferStatus.COMPLETED,
+            notes,
+            createdById: user.userId || user.id || null,
+            updatedById: user.userId || user.id || null,
+          },
+          select: {
+            id: true,
+            code: true,
+          },
+        });
+
+        await tx.wmsTransferItem.create({
+          data: {
+            transferId: transfer.id,
+            inventoryUnitId: unitRecord.id,
+            lineNo: 1,
+          },
+        });
+      }
 
       const updatedUnit = await tx.wmsInventoryUnit.update({
         where: { id: unitRecord.id },
         data: {
-          currentLocationId: target.id,
+          currentLocationId: nextLocationId,
           status: nextStatus,
           updatedById: user.userId || user.id || undefined,
         },
@@ -2499,20 +2530,43 @@ export class WmsMobileService {
           inventoryUnitId: unitRecord.id,
           warehouseId: unitRecord.warehouseId,
           fromLocationId: unitRecord.currentLocationId,
-          toLocationId: target.id,
+          toLocationId: nextLocationId,
           fromStatus: unitRecord.status,
           toStatus: nextStatus,
-          movementType: WmsInventoryMovementType.TRANSFER,
-          referenceType: 'TRANSFER',
-          referenceId: transfer.id,
-          referenceCode: transfer.code,
+          movementType: transfer ? WmsInventoryMovementType.TRANSFER : WmsInventoryMovementType.ADJUSTMENT,
+          referenceType: transfer ? 'TRANSFER' : 'WMS_FULFILLMENT_ORDER',
+          referenceId: transfer?.id ?? order.id,
+          referenceCode: transfer?.code ?? order.posOrderId,
           notes,
           actorId: user.userId || user.id || null,
           createdAt: now,
         },
       });
 
-      return updatedUnit;
+      const completionState = await this.resolveTrackingReturnCompletionStateTx(tx, order.id, this.isDemandPickingOrder(order));
+
+      await tx.wmsFulfillmentOrder.update({
+        where: { id: order.id },
+        data: completionState.isComplete
+          ? {
+              rtsDisposedById: user.userId || user.id || null,
+              rtsDisposedAt: now,
+            }
+          : {
+              rtsDisposedById: null,
+              rtsDisposedAt: null,
+            },
+      });
+
+      const updatedOrder = await tx.wmsFulfillmentOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: this.pickingTaskInclude(),
+      });
+
+      return {
+        updatedOrder,
+        updatedUnit,
+      };
     });
 
     await this.recordStockActivity(user, request, {
@@ -2533,7 +2587,7 @@ export class WmsMobileService {
         unitCode: unitRecord.code,
         unitId: unitRecord.id,
         unitCount: 1,
-        targetCode: target.code,
+        targetCode: target?.code ?? null,
         dispositionAction: body.disposition,
       },
     });
@@ -2550,9 +2604,9 @@ export class WmsMobileService {
 
     return {
       success: true,
-      task: this.mapMobilePickingTask(order),
-      returnFlow: await this.buildTrackingReturnFlow(order),
-      unit: this.mapMobileUnitDetail(result),
+      task: this.mapMobilePickingTask(result.updatedOrder),
+      returnFlow: await this.buildTrackingReturnFlow(result.updatedOrder),
+      unit: this.mapMobileUnitDetail(result.updatedUnit),
     };
   }
 
@@ -3585,8 +3639,7 @@ export class WmsMobileService {
       ...searchWhere,
     };
 
-    const [total, heldCount, packingCount, awaitingTrackingCount, packedCount, tasks] = await Promise.all([
-      this.prisma.wmsFulfillmentOrder.count({ where: taskWhere }),
+    const [heldCount, packingCount, awaitingTrackingCount, packedCount] = await Promise.all([
       this.prisma.wmsBasket.count({
         where: {
           ...scopedBasketWhere,
@@ -3605,7 +3658,14 @@ export class WmsMobileService {
       this.prisma.wmsFulfillmentOrder.count({
         where: packedCountWhere,
       }),
-      this.prisma.wmsFulfillmentOrder.findMany({
+    ]);
+
+    let total = 0;
+    let tasks: any[] = [];
+
+    if (includePackedHistory) {
+      total = await this.prisma.wmsFulfillmentOrder.count({ where: taskWhere });
+      tasks = await this.prisma.wmsFulfillmentOrder.findMany({
         where: taskWhere,
         include: this.pickingTaskInclude(),
         orderBy: [
@@ -3615,8 +3675,66 @@ export class WmsMobileService {
         ],
         skip,
         take: pageSize,
-      }),
-    ]);
+      });
+    } else {
+      const basketQueueEntries = await this.prisma.wmsBasket.findMany({
+        where: scopedBasketWhere,
+        select: {
+          id: true,
+          readyForPackAt: true,
+          fullAt: true,
+          claimedAt: true,
+          updatedAt: true,
+          createdAt: true,
+        },
+      });
+
+      const orderedBasketIds = basketQueueEntries
+        .map((basket) => ({
+          id: basket.id,
+          sortAt: this.resolvePackQueueSortTimestamp([
+            basket.readyForPackAt,
+            basket.fullAt,
+            basket.claimedAt,
+            basket.updatedAt,
+            basket.createdAt,
+          ]),
+        }))
+        .sort((left, right) => {
+          if (right.sortAt !== left.sortAt) {
+            return right.sortAt - left.sortAt;
+          }
+
+          return left.id.localeCompare(right.id);
+        })
+        .map((entry) => entry.id);
+
+      total = orderedBasketIds.length;
+      const pagedBasketIds = orderedBasketIds.slice(skip, skip + pageSize);
+
+      if (pagedBasketIds.length > 0) {
+        const basketTasks = await this.prisma.wmsFulfillmentOrder.findMany({
+          where: {
+            AND: [
+              taskWhere,
+              {
+                basketId: {
+                  in: pagedBasketIds,
+                },
+              },
+            ],
+          },
+          include: this.pickingTaskInclude(),
+          orderBy: [
+            { updatedAt: 'desc' },
+            { completedAt: 'desc' },
+            { createdAt: 'desc' },
+          ],
+        });
+
+        tasks = this.orderPackingTasksForBaskets(basketTasks, pagedBasketIds);
+      }
+    }
 
     await this.wmsStaffActivityService.recordFromRequest({
       request,
@@ -9266,6 +9384,13 @@ export class WmsMobileService {
           email: true,
         },
       },
+      rtsDisposedBy: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
       posOrder: {
         select: {
           insertedAt: true,
@@ -10603,27 +10728,30 @@ export class WmsMobileService {
       !RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status)
     ));
     const latestVerification = await this.prisma.wmsStaffActivity.findFirst({
-      where: {
-        tenantId: order.tenantId,
-        resourceType: 'WMS_FULFILLMENT_ORDER',
-        resourceId: order.id,
-        actionType: {
-          in: [...HISTORY_RTS_ACTION_TYPES],
+        where: {
+          tenantId: order.tenantId,
+          resourceType: 'WMS_FULFILLMENT_ORDER',
+          resourceId: order.id,
+          actionType: 'ORDER_RTS_UNIT_VERIFY',
+          outcome: WmsStaffActivityOutcome.SUCCESS,
         },
-        outcome: WmsStaffActivityOutcome.SUCCESS,
-      },
-      select: {
-        createdAt: true,
-        actor: {
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
+        select: {
+          createdAt: true,
+          actor: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
           },
         },
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    });
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
+
+    const awaitingPlacementUnits = verifiedUnits.filter((unit: any) => unit.status === WmsInventoryUnitStatus.RTS);
+    const isCompleted = trackedUnits.length > 0
+      && pendingUnits.length === 0
+      && awaitingPlacementUnits.length === 0;
 
     let state: 'NONE' | 'RETURNING' | 'READY_TO_VERIFY' | 'PARTIAL' | 'VERIFIED' = 'NONE';
     let label: string | null = null;
@@ -10657,8 +10785,69 @@ export class WmsMobileService {
       expectedUnits: trackedUnits.length,
       verifiedUnits: verifiedUnits.map((unit: any) => this.mapTrackingReturnUnit(unit)),
       pendingUnits: pendingUnits.map((unit: any) => this.mapTrackingReturnUnit(unit)),
+      disposedAt: isCompleted ? (order.rtsDisposedAt ?? null) : null,
+      disposedBy: isCompleted && order.rtsDisposedBy
+        ? this.mapActor(order.rtsDisposedBy)
+        : null,
       lastVerifiedAt: latestVerification?.createdAt ?? null,
       lastVerifiedBy: latestVerification?.actor ? this.mapActor(latestVerification.actor) : null,
+    };
+  }
+
+  private async resolveTrackingReturnCompletionStateTx(
+    tx: Prisma.TransactionClient,
+    fulfillmentOrderId: string,
+    isDemandOrder: boolean,
+  ) {
+    const unitStatuses = isDemandOrder
+      ? await tx.wmsBasketUnit.findMany({
+          where: {
+            fulfillmentOrderId,
+            OR: [
+              {
+                status: WmsBasketUnitStatus.PACKED,
+              },
+              {
+                status: WmsBasketUnitStatus.REMOVED,
+                packedAt: {
+                  not: null,
+                },
+              },
+            ],
+          },
+          select: {
+            inventoryUnit: {
+              select: {
+                status: true,
+              },
+            },
+          },
+        })
+      : await tx.wmsPickReservation.findMany({
+          where: {
+            fulfillmentOrderId,
+          },
+          select: {
+            inventoryUnit: {
+              select: {
+                status: true,
+              },
+            },
+          },
+        });
+
+    const statuses = unitStatuses
+      .map((record: any) => record.inventoryUnit?.status as WmsInventoryUnitStatus | null)
+      .filter((status): status is WmsInventoryUnitStatus => Boolean(status));
+
+    const pendingCount = statuses.filter((status) => !RETURNED_EQUIVALENT_UNIT_STATUSES.has(status)).length;
+    const awaitingPlacementCount = statuses.filter((status) => status === WmsInventoryUnitStatus.RTS).length;
+
+    return {
+      trackedCount: statuses.length,
+      pendingCount,
+      awaitingPlacementCount,
+      isComplete: statuses.length > 0 && pendingCount === 0 && awaitingPlacementCount === 0,
     };
   }
 
@@ -11386,6 +11575,46 @@ export class WmsMobileService {
       },
       tasks: [],
     };
+  }
+
+  private resolvePackQueueSortTimestamp(values: Array<Date | string | null | undefined>) {
+    for (const value of values) {
+      if (!value) {
+        continue;
+      }
+
+      if (value instanceof Date) {
+        const timestamp = value.getTime();
+        if (!Number.isNaN(timestamp)) {
+          return timestamp;
+        }
+        continue;
+      }
+
+      const timestamp = Date.parse(value);
+      if (!Number.isNaN(timestamp)) {
+        return timestamp;
+      }
+    }
+
+    return 0;
+  }
+
+  private orderPackingTasksForBaskets(tasks: any[], basketIds: string[]) {
+    const tasksByBasketId = new Map<string, any[]>();
+
+    tasks.forEach((task) => {
+      const basketId = typeof task?.basketId === 'string' ? task.basketId : task?.basket?.id;
+      if (!basketId) {
+        return;
+      }
+
+      const existing = tasksByBasketId.get(basketId) ?? [];
+      existing.push(task);
+      tasksByBasketId.set(basketId, existing);
+    });
+
+    return basketIds.flatMap((basketId) => tasksByBasketId.get(basketId) ?? []);
   }
 
   private asJsonRecord(value: unknown): Record<string, any> | null {
@@ -12297,7 +12526,10 @@ export class WmsMobileService {
       currentLocationId?: string | null;
       updatedAt: Date;
     },
-    body: WmsMobileStockMoveDto,
+    body: Pick<
+      WmsMobileStockMoveDto,
+      'expectedStatus' | 'expectedCurrentLocationId' | 'expectedUpdatedAt'
+    >,
   ) {
     if (body.expectedStatus && body.expectedStatus !== unit.status) {
       throw new ConflictException(
@@ -12444,9 +12676,19 @@ export class WmsMobileService {
 
   private resolveRtsDisposition(
     disposition: WmsMobileTrackingReturnDispositionDto['disposition'],
-    targetKind: WmsLocationKind,
+    targetKind: WmsLocationKind | null,
   ) {
     switch (disposition) {
+      case 'STAGED':
+        if (targetKind !== WmsLocationKind.RECEIVING_STAGING) {
+          throw new BadRequestException('Stage target must be a receiving staging location');
+        }
+
+        return {
+          nextStatus: WmsInventoryUnitStatus.STAGED,
+          actionLabel: 'Staged',
+          requiresTransfer: true,
+        };
       case 'PUTAWAY':
         if (targetKind !== WmsLocationKind.BIN) {
           throw new BadRequestException('Putaway target must be a bin');
@@ -12455,6 +12697,7 @@ export class WmsMobileService {
         return {
           nextStatus: WmsInventoryUnitStatus.PUTAWAY,
           actionLabel: 'Putaway',
+          requiresTransfer: true,
         };
       case 'DEADSTOCK':
         if (targetKind !== WmsLocationKind.BIN) {
@@ -12464,6 +12707,7 @@ export class WmsMobileService {
         return {
           nextStatus: WmsInventoryUnitStatus.DEADSTOCK,
           actionLabel: 'Deadstock',
+          requiresTransfer: true,
         };
       case 'DAMAGE':
         if (targetKind !== WmsLocationKind.DAMAGE && targetKind !== WmsLocationKind.QUARANTINE) {
@@ -12472,7 +12716,28 @@ export class WmsMobileService {
 
         return {
           nextStatus: WmsInventoryUnitStatus.DAMAGED,
-          actionLabel: 'Damage',
+          actionLabel: 'Damaged',
+          requiresTransfer: true,
+        };
+      case 'LOST':
+        if (targetKind !== null) {
+          throw new BadRequestException('Lost disposition does not accept a target location');
+        }
+
+        return {
+          nextStatus: WmsInventoryUnitStatus.LOST,
+          actionLabel: 'Lost',
+          requiresTransfer: false,
+        };
+      case 'ARCHIVED':
+        if (targetKind !== null) {
+          throw new BadRequestException('Archive disposition does not accept a target location');
+        }
+
+        return {
+          nextStatus: WmsInventoryUnitStatus.ARCHIVED,
+          actionLabel: 'Archived',
+          requiresTransfer: false,
         };
       default:
         throw new BadRequestException('Unsupported RTS disposition action');

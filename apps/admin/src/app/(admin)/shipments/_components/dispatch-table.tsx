@@ -12,6 +12,14 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 });
 
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
 type DispatchTableProps = {
   tab: WmsDispatchTab;
   outboundTasks: WmsDispatchTaskListItem[];
@@ -27,7 +35,7 @@ export function DispatchTable({
   isLoading,
   onSelectTask,
 }: DispatchTableProps) {
-  const columnCount = 8;
+  const columnCount = tab === 'returns' ? 9 : 8;
 
   return (
     <div className="overflow-x-auto">
@@ -40,6 +48,7 @@ export function DispatchTable({
             <th className="px-5 py-4">Waybill</th>
             <th className="px-5 py-4">{tab === 'returns' ? 'Return State' : 'Dispatch'}</th>
             <th className="px-5 py-4">Units</th>
+            {tab === 'returns' ? <th className="px-5 py-4">Disposed By</th> : null}
             <th className="px-5 py-4">Store</th>
             <th className="px-5 py-4 text-right">Action</th>
           </tr>
@@ -181,6 +190,14 @@ function DispatchReturnRow({
           {unitsCaption}
         </p>
       </td>
+      <td className="px-5 py-4">
+        <p className="text-sm font-semibold text-primary">
+          {returnSummary.disposedBy?.name ?? returnSummary.disposedBy?.email ?? 'Pending'}
+        </p>
+        <p className="mt-1 text-xs text-[#708596]">
+          {returnSummary.disposedAt ? `Done ${formatDateTime(returnSummary.disposedAt)}` : 'Not completed'}
+        </p>
+      </td>
       <td className="px-5 py-4 text-sm text-[#506879]">{task.store?.name ?? 'Unassigned'}</td>
       <td className="px-5 py-4 text-right">
         <button
@@ -221,6 +238,15 @@ function formatDate(value: string | null) {
 
   const nextDate = new Date(value);
   return Number.isNaN(nextDate.getTime()) ? value : DATE_FORMATTER.format(nextDate);
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) {
+    return 'N/A';
+  }
+
+  const nextDate = new Date(value);
+  return Number.isNaN(nextDate.getTime()) ? value : DATE_TIME_FORMATTER.format(nextDate);
 }
 
 function buildStatusPill(status: string | null | undefined) {

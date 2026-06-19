@@ -218,6 +218,11 @@ export type WmsDispatchReturnFlow = {
     name: string;
     email: string;
   } | null;
+  disposedAt: string | null;
+  disposedBy: {
+    name: string;
+    email: string;
+  } | null;
   history: Array<{
     id: string;
     actionType: string;
@@ -253,6 +258,11 @@ export type WmsDispatchReturnListItem = {
     pendingUnits: number;
     awaitingPlacementUnits: number;
     placedUnits: number;
+    disposedAt: string | null;
+    disposedBy: {
+      name: string;
+      email: string;
+    } | null;
   };
 };
 
