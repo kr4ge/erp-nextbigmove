@@ -360,6 +360,7 @@ export function fetchMobileRtsTasks(params: {
   device: DeviceIdentity;
   tenantId?: string | null;
   storeId?: string | null;
+  state?: 'RETURNING' | 'READY_TO_VERIFY' | 'PROCESSED';
   page?: number;
   pageSize?: number;
 }) {
@@ -371,6 +372,10 @@ export function fetchMobileRtsTasks(params: {
 
   if (params.storeId) {
     query.push(`storeId=${encodeURIComponent(params.storeId)}`);
+  }
+
+  if (params.state) {
+    query.push(`state=${encodeURIComponent(params.state)}`);
   }
 
   if (params.page) {

@@ -115,6 +115,7 @@ function RtsWorkspaceTab({
   const [queueHasMore, setQueueHasMore] = useState(false);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
   const [isLoadingMoreQueue, setIsLoadingMoreQueue] = useState(false);
+  const queuePageRef = useRef(1);
   const [selectedDispositionUnitId, setSelectedDispositionUnitId] = useState<string | null>(null);
   const [dispositionAction, setDispositionAction] = useState<WmsMobileTrackingReturnDispositionAction | null>(null);
   const [dispositionTargetCode, setDispositionTargetCode] = useState('');
@@ -241,6 +242,10 @@ function RtsWorkspaceTab({
       return;
     }
 
+    if (mode === 'append' && (isLoadingQueue || isLoadingMoreQueue || !queueHasMore)) {
+      return;
+    }
+
     if (mode === 'replace') {
       setIsLoadingQueue(true);
     } else {
@@ -248,12 +253,13 @@ function RtsWorkspaceTab({
     }
 
     try {
-      const nextPage = mode === 'append' ? queuePage + 1 : 1;
+      const nextPage = mode === 'append' ? queuePageRef.current + 1 : 1;
       const response = await fetchMobileRtsTasks({
         accessToken: session.accessToken,
         device,
         tenantId,
         storeId,
+        state: queueStateFilter === 'ALL' ? undefined : queueStateFilter,
         page: nextPage,
         pageSize: 10,
       });
@@ -269,6 +275,7 @@ function RtsWorkspaceTab({
           ...response.tasks.filter((entry) => !seen.has(entry.task.id)),
         ];
       });
+      queuePageRef.current = response.pagination.page;
       setQueuePage(response.pagination.page);
       setQueueHasMore(response.pagination.hasMore);
       setQueueStores(response.context.stores);
@@ -278,9 +285,10 @@ function RtsWorkspaceTab({
       setIsLoadingQueue(false);
       setIsLoadingMoreQueue(false);
     }
-  }, [device, queuePage, session.accessToken, storeId, tenantId]);
+  }, [device, isLoadingMoreQueue, isLoadingQueue, queueHasMore, queueStateFilter, session.accessToken, storeId, tenantId]);
 
   useEffect(() => {
+    queuePageRef.current = 1;
     void loadQueue('replace');
   }, [loadQueue]);
 
