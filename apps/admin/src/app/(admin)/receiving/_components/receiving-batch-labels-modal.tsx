@@ -7,8 +7,8 @@ import type { WmsReceivingBatchLabels } from '../_types/receiving';
 import { printReceivingBatchLabels } from '../_utils/print-receiving-batch-labels';
 import {
   isCode128CCompatible,
-  normalizeBarcodeValue,
   renderCode128CSvgMarkup,
+  normalizeBarcodeValue,
 } from '../../warehouses/_utils/code39-barcode';
 
 const LABEL_PREVIEW_PAGE_SIZE = 24;

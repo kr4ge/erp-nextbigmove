@@ -93,19 +93,13 @@ export function InventoryUnitsTable({
                 </BodyCell>
 
                 <BodyCell className="font-semibold text-primary">
-                  <div className="min-w-0">
-                    <div className="truncate">{unit.code}</div>
-                    <div className="mt-1 truncate text-[11px] font-medium text-[#7c8f9b]">{unit.barcode}</div>
-                  </div>
+                  <div className="truncate">{unit.code}</div>
                 </BodyCell>
 
                 <BodyCell>
                   <div className="min-w-0">
                     <div className="truncate font-medium text-primary">
                       {unit.variationDisplayId ?? '—'}
-                    </div>
-                    <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">
-                      {unit.productCustomId ? `Product ${unit.productCustomId}` : 'No product ID'}
                     </div>
                   </div>
                 </BodyCell>
@@ -120,18 +114,12 @@ export function InventoryUnitsTable({
                 <BodyCell>{unit.store.name}</BodyCell>
 
                 <BodyCell>
-                  <div className="min-w-0">
-                    <div className="truncate font-medium text-primary">{unit.warehouse.name}</div>
-                    <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">{unit.warehouse.code}</div>
-                  </div>
+                  <div className="truncate font-medium text-primary">{unit.warehouse.name}</div>
                 </BodyCell>
 
                 <BodyCell>
                   {unit.currentLocation ? (
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-primary">{unit.currentLocation.code}</div>
-                      <div className="mt-1 truncate text-[11px] text-[#7c8f9b]">{unit.currentLocation.name}</div>
-                    </div>
+                    <div className="truncate font-medium text-primary">{unit.currentLocation.code}</div>
                   ) : (
                     <span className="text-[#8aa0ae]">Not assigned</span>
                   )}

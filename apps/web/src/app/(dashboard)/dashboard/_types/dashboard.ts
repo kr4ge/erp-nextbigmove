@@ -249,16 +249,48 @@ export type SunburstHoverInfo = {
   color: string;
 };
 
+export type ExecutiveVolumeGrowthRow = {
+  date: string;
+  shipped: number;
+  delivered: number;
+  rts: number;
+};
+
 export interface ExecutiveOverviewStats {
   revenue?: number;
   purchases?: number;
   processed?: number;
   confirmed?: number;
+  unconfirmed?: number;
+  delivered_count?: number;
+  shipped_count?: number;
+  rts_count?: number;
+  confirmed_count?: number;
+  unconfirmed_count?: number;
+  rts_pct?: number;
   ad_spend?: number;
   cancellation_rate_pct?: number;
   ar_pct?: number;
   cm_rts_forecast?: number;
 }
+
+export type ExecutiveOverviewResponse = {
+  kpis?: ExecutiveOverviewStats | null;
+  counts?: {
+    purchases?: number;
+    delivered?: number;
+    shipped?: number;
+    waiting_pickup?: number;
+    rts?: number;
+    undelivered?: number;
+    returned?: number;
+    restocking?: number;
+    confirmed?: number;
+    unconfirmed?: number;
+    canceled?: number;
+  } | null;
+  volumeGrowthTrend?: ExecutiveVolumeGrowthRow[];
+};
 
 export type SalesMetricDefinition = {
   key: keyof SalesDashboardSummary;

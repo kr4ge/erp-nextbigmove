@@ -1,9 +1,10 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Receipt } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type {
   MarkWmsSelfBuyShipmentInput,
@@ -86,7 +87,6 @@ export function RequestDetailPanel({
   const [proofImageBaseSize, setProofImageBaseSize] = useState<ImageSize | null>(null);
   const [proofImageFocusPoint, setProofImageFocusPoint] = useState<ImageFocusPoint | null>(null);
   const proofImageScrollRef = useRef<HTMLDivElement | null>(null);
-  const proofImageRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
     setProofAssetId(null);
@@ -129,43 +129,27 @@ export function RequestDetailPanel({
 
   if (isLoading) {
     return (
-      <section className="panel panel-content">
-        <div className="panel-header">
-          <Receipt className="panel-icon" />
-          <h4 className="panel-title">Request Detail</h4>
-        </div>
-        <div className="p-3">
-          <p className="text-sm text-[#5a7184]">Loading request details...</p>
-        </div>
-      </section>
+      <RequestDetailSection>
+        <p className="text-sm text-[#5a7184]">Loading request details...</p>
+      </RequestDetailSection>
     );
   }
 
   if (error) {
     return (
-      <section className="panel panel-content">
-        <div className="panel-header">
-          <Receipt className="panel-icon" />
-          <h4 className="panel-title">Request Detail</h4>
-        </div>
+      <RequestDetailSection>
         <div className="rounded-lg border border-[#f1c7cc] bg-[#fff8f8] p-3">
           <p className="text-sm text-[#9f1d35]">{error}</p>
         </div>
-      </section>
+      </RequestDetailSection>
     );
   }
 
   if (!batch) {
     return (
-      <section className="panel panel-content">
-        <div className="panel-header">
-          <Receipt className="panel-icon" />
-          <h4 className="panel-title">Request Detail</h4>
-        </div>
-        <div className="p-3">
-          <p className="text-sm text-[#5a7184]">Select a request from the queue to view status and invoice.</p>
-        </div>
-      </section>
+      <RequestDetailSection>
+        <p className="text-sm text-[#5a7184] dark:text-slate-300">Select a request from the queue to view status and invoice.</p>
+      </RequestDetailSection>
     );
   }
 
@@ -207,33 +191,21 @@ export function RequestDetailPanel({
       };
     })
     .filter((line): line is NonNullable<typeof line> => Boolean(line));
-  const zoomedProofImageSize = proofImageBaseSize
-    ? {
-        width: proofImageBaseSize.width * PAYMENT_PROOF_ZOOM_SCALE,
-        height: proofImageBaseSize.height * PAYMENT_PROOF_ZOOM_SCALE,
-      }
-    : null;
 
   return (
     <>
-    <section className="panel panel-content">
-      <div className="panel-header">
-        <Receipt className="panel-icon" />
-        <h4 className="panel-title">Request Detail</h4>
-      </div>
-
-      <div className="space-y-4 p-3">
-      <Card className="border-[#d9e2ec]">
+    <RequestDetailSection contentClassName="space-y-4">
+      <Card className="border-[#d9e2ec]" padding='none'>
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7b8ba1]">
+              <p className="">
                 {isSelfBuy ? 'Self-buy Request' : 'Billing Statement'}
               </p>
-              <h2 className="text-base font-semibold text-[#12344d]">
+              <h2 className="text-base font-semibold text-forergound">
                 {batch.invoice.number || batch.sourceRequestId || batch.id.slice(0, 8)}
               </h2>
-              <p className="text-xs text-[#6d8191]">{formatRequestTypeLabel(batch.requestType)}</p>
+              <p className="text-xs text-[#6d8191] dark:text-slate-400">{formatRequestTypeLabel(batch.requestType)}</p>
             </div>
             <span
               className={clsx(
@@ -245,25 +217,25 @@ export function RequestDetailPanel({
             </span>
           </div>
 
-          <div className="grid gap-3 rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3 text-sm md:grid-cols-2">
+          <div className="grid gap-3 card text-sm md:grid-cols-2">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">From</p>
-              <p className="mt-1 font-semibold text-[#12344d]">
+              <p className="card-label">From</p>
+              <p className="mt-1 font-semibold text-forergound">
                 {bank?.billingCompanyName || bank?.warehouseName || 'Warehouse Billing'}
               </p>
-              <p className="mt-1 text-[#4d6677]">{formatAddress(bank?.billingAddress)}</p>
+              <p className="mt-1 text-slate-300">{formatAddress(bank?.billingAddress)}</p>
             </div>
             <div className="md:text-right">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">Bill To</p>
-              <p className="mt-1 font-semibold text-[#12344d]">{billTo}</p>
-              <p className="mt-1 text-[#4d6677]">Invoice Date: {formatShortDate(batch.updatedAt)}</p>
-              <p className="text-[#4d6677]">Requested: {formatShortDate(batch.createdAt)}</p>
+              <p className="card-label">Bill To</p>
+              <p className="mt-1 font-semibold text-forergound">{billTo}</p>
+              <p className="mt-1 text-slate-300">Invoice Date: {formatShortDate(batch.updatedAt)}</p>
+              <p className="text-slate-300">Requested: {formatShortDate(batch.createdAt)}</p>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-[#e3e9ef]">
-            <table className="min-w-full divide-y divide-[#edf2f7] text-sm">
-              <thead className="bg-[#eff3f6] text-left text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7b8ba1]">
+          <div className="overflow-hidden rounded-xl border border-[#e3e9ef] dark:border-border">
+            <table className="min-w-full divide-y divide-[#edf2f7] text-sm dark:divide-border">
+              <thead className="bg-[#eff3f6] text-left text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7b8ba1] dark:bg-background-secondary dark:text-slate-300">
                 <tr>
                   <th className="px-3 py-2">#</th>
                   <th className="px-3 py-2">Item</th>
@@ -272,19 +244,19 @@ export function RequestDetailPanel({
                   <th className="px-3 py-2 text-right">Amount</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#edf2f7] bg-white">
+              <tbody className="divide-y divide-[#edf2f7] bg-white dark:divide-border dark:bg-surface">
                 {batch.lines.map((line) => {
                   const quantity = line.approvedQuantity ?? line.requestedQuantity;
                   const rate = line.partnerUnitCost ?? 0;
                   return (
                     <tr key={line.id}>
-                      <td className="px-3 py-2.5 text-[#4d6677]">{line.lineNo}</td>
-                      <td className="px-3 py-2.5 font-medium text-[#12344d]">
+                      <td className="px-3 py-2.5 text-[#4d6677] dark:text-slate-300">{line.lineNo}</td>
+                      <td className="px-3 py-2.5 font-medium text-forergound">
                         {line.requestedProductName || line.variationId || line.productId || 'Item'}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-[#12344d]">{quantity}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-[#12344d]">{formatMoney(rate)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-[#12344d]">
+                      <td className="px-3 py-2.5 text-right tabular-nums text-forergound">{quantity}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-forergound">{formatMoney(rate)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-forergound">
                         {formatMoney(quantity * rate)}
                       </td>
                     </tr>
@@ -296,15 +268,15 @@ export function RequestDetailPanel({
 
           {!isSelfBuy ? (
             <>
-              <div className="rounded-xl border border-[#e3e9ef] bg-white p-3">
+              <div className="rounded-xl border border-[#e3e9ef] dark:border-border bg-surface p-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-[#12344d]">Total Amount</span>
-                  <span className="font-semibold text-[#12344d]">{formatMoney(invoiceAmount)}</span>
+                  <span className="font-semibold text-forergound">Total Amount</span>
+                  <span className="font-semibold text-forergound">{formatMoney(invoiceAmount)}</span>
                 </div>
               </div>
 
-              <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3 text-sm text-[#12344d]">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">
+              <div className="card">
+                <p className="card-label">
                   Bank Details
                 </p>
                 <div className="mt-2 space-y-1 text-sm">
@@ -318,7 +290,7 @@ export function RequestDetailPanel({
               </div>
             </>
           ) : (
-            <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3 text-sm text-[#12344d]">
+            <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3 text-sm text-forergound">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">
                 Warehouse Handoff
               </p>
@@ -333,7 +305,7 @@ export function RequestDetailPanel({
       </Card>
 
       {batch.status === 'REVISION' ? (
-        <Card className="border-[#d9e2ec]">
+        <Card className="border-[#d9e2ec]" padding='none'>
           <div className="space-y-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">
@@ -355,15 +327,15 @@ export function RequestDetailPanel({
                     key={line.id}
                     className="rounded-lg border border-[#dce4ea] bg-white px-3 py-2.5"
                   >
-                    <p className="text-sm font-semibold text-[#12344d]">{line.label}</p>
+                    <p className="text-sm font-semibold text-forergound">{line.label}</p>
                     <div className="mt-1 grid gap-2 text-xs text-[#5a7184] sm:grid-cols-2">
                       <p>
-                        Quantity: <span className="font-semibold text-[#12344d]">{line.originalQuantity}</span> to{' '}
-                        <span className="font-semibold text-[#12344d]">{line.revisedQuantity}</span>
+                        Quantity: <span className="font-semibold text-forergound">{line.originalQuantity}</span> to{' '}
+                        <span className="font-semibold text-forergound">{line.revisedQuantity}</span>
                       </p>
                       <p>
-                        Rate: <span className="font-semibold text-[#12344d]">{formatMoney(line.originalRate)}</span> to{' '}
-                        <span className="font-semibold text-[#12344d]">{formatMoney(line.revisedRate)}</span>
+                        Rate: <span className="font-semibold text-forergound">{formatMoney(line.originalRate)}</span> to{' '}
+                        <span className="font-semibold text-forergound">{formatMoney(line.revisedRate)}</span>
                       </p>
                     </div>
                   </div>
@@ -395,9 +367,9 @@ export function RequestDetailPanel({
         </Card>
       ) : null}
 
-      <Card className="border-[#d9e2ec]">
+      <Card className="border-[#d9e2ec]" padding="none">
         <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ba1]">
+          <p className="panel-title">
             {isSelfBuy ? 'Shipment to Warehouse' : 'Payment Proof'}
           </p>
 
@@ -432,20 +404,20 @@ export function RequestDetailPanel({
               >
                 Open uploaded proof
               </button>
-              <p className="text-xs text-[#6d8191]">
+              <p className="text-xs text-[#6d8191] dark:text-slate-300">
                 Submitted: {formatDateTime(batch.paymentProofSubmittedAt || batch.paymentSubmittedAt)}
                 {batch.paymentProofSubmittedBy ? ` · ${batch.paymentProofSubmittedBy.name}` : ''}
               </p>
             </div>
           ) : (
-            <p className="text-sm text-[#5a7184]">
+            <p className="text-sm text-[#5a7184] dark:text-slate-300">
               {isSelfBuy ? 'No shipment notice recorded yet.' : 'No payment proof uploaded yet.'}
             </p>
           )}
 
           {!isSelfBuy && canSubmitPaymentProof ? (
-            <div className="space-y-2 rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3">
-              <div className="space-y-2 rounded-xl border border-dashed border-[#d7e0e7] bg-white p-3">
+            <div className="space-y-2 rounded-xl border border-[#e3e9ef] bg-[#fbfdff] dark:border-border dark:bg-background-secondary p-3">
+              <div className="space-y-2 rounded-xl border border-dashed border-[#d7e0e7] bg-surface p-3">
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
@@ -547,7 +519,7 @@ export function RequestDetailPanel({
               </div>
             </div>
           ) : (
-            <p className="text-xs text-[#6d8191]">
+            <p className="text-xs text-[#6d8191] dark:text-slate-300">
               {isSelfBuy
                 ? batch.status === 'UNDER_REVIEW'
                   ? 'WMS is reviewing the self-buy request before you ship products to warehouse.'
@@ -579,8 +551,7 @@ export function RequestDetailPanel({
           )}
         </div>
       </Card>
-      </div>
-    </section>
+    </RequestDetailSection>
 
     <Dialog
       open={Boolean(activeProofImageUrl)}
@@ -638,6 +609,24 @@ export function RequestDetailPanel({
 }
 
 const PAYMENT_PROOF_ZOOM_SCALE = 2;
+
+function RequestDetailSection({
+  children,
+  contentClassName,
+}: {
+  children: ReactNode;
+  contentClassName?: string;
+}) {
+  return (
+    <DashboardSection
+      title="Request Detail"
+      icon={<Receipt className="panel-icon" />}
+      contentClassName={contentClassName}
+    >
+      {children}
+    </DashboardSection>
+  );
+}
 
 function getSafeImageUrl(url: string | null | undefined) {
   if (!url) {

@@ -3,7 +3,7 @@
 import { DataTable } from '@/components/data-table/data-table';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/emptystate';
-import { Package, Search, ShoppingBag, Tags } from 'lucide-react';
+import { DollarSign, Package, Search, ShoppingBag, Tags } from 'lucide-react';
 import type { Table } from '@tanstack/react-table';
 import type { Product } from '../product-columns';
 
@@ -17,6 +17,7 @@ interface StoreProductsTabProps {
   isSyncingProducts: boolean;
   onSearchInputChange: (value: string) => void;
   onSyncProducts: () => void;
+  onOpenBulkCogs: () => void;
   onOpenBulkMapping: () => void;
 }
 
@@ -30,6 +31,7 @@ export function StoreProductsTab({
   isSyncingProducts,
   onSearchInputChange,
   onSyncProducts,
+  onOpenBulkCogs,
   onOpenBulkMapping,
 }: StoreProductsTabProps) {
   return (
@@ -38,7 +40,7 @@ export function StoreProductsTab({
         <Package className="panel-icon" />
         <h4 className="panel-title">Products</h4>
         {filteredProducts.length > 0 && (
-          <div className="ml-auto flex items-center gap-2 text-xs-tight text-slate-500">
+          <div className="ml-auto flex items-center gap-2 text-xs-tight text-slate-500 dark:text-slate-300">
             <span>
               {filteredProducts.length} variation{filteredProducts.length !== 1 ? 's' : ''}
             </span>
@@ -58,14 +60,24 @@ export function StoreProductsTab({
               <span className="font-semibold">{selectedCount}</span> product
               {selectedCount !== 1 ? 's' : ''} selected
             </p>
-            <Button
-              variant="primary"
-              size="sm"
-              iconLeft={<Tags className="h-3.5 w-3.5" />}
-              onClick={onOpenBulkMapping}
-            >
-              Update Mapping
-            </Button>
+            <div className='flex gap-2'>
+              <Button
+                variant="primary"
+                size="sm"
+                iconLeft={<DollarSign className="h-3.5 w-3.5" />}
+                onClick={onOpenBulkCogs}
+              >
+                Update COGS
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                iconLeft={<Tags className="h-3.5 w-3.5" />}
+                onClick={onOpenBulkMapping}
+              >
+                Update Mapping
+              </Button>
+            </div>
           </div>
         )}
 

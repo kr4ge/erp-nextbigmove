@@ -66,13 +66,13 @@ export function IntegrationConnectModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
-      <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] pl-6 pr-3 py-4">
+      <div className="w-full max-w-xl rounded-2xl bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] dark:border-border pl-6 pr-3 py-4">
           <div>
             <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
               Integrations
             </p>
-            <h2 className="text-xl font-semibold text-[#0F172A]">
+            <h2 className="text-xl font-semibold text-foreground">
               {provider === 'META_ADS' ? 'Meta Marketing API' : 'Pancake POS'}
             </h2>
           </div>

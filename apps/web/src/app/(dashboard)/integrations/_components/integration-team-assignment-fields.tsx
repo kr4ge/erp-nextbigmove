@@ -55,7 +55,7 @@ export function IntegrationTeamAssignmentFields({
               <p className="text-sm text-slate-500">No other teams available</p>
             ) : (
               shareableTeams.map((team) => (
-                <label key={team.id} className="flex items-center gap-2 text-sm text-slate-800">
+                <label key={team.id} className="flex items-center gap-2 text-sm text-foreground">
                   <input
                     type="checkbox"
                     className="h-4 w-4 rounded border-slate-300 accent-primary focus:ring-primary"

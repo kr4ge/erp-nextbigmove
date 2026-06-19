@@ -10,11 +10,12 @@ import {
   BarChart3,
   Users,
   ClipboardList,
-  Target,
   Package,
   FileSpreadsheet,
   Menu,
-  X
+  X,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
@@ -58,11 +59,33 @@ const baseNavigation: NavLink[] = [
       </svg>
     ),
     children: [
-      { href: '/analytics/sales', label: 'Sales', icon: <StoreIcon className="h-4 w-4" /> },
-      { href: '/analytics/sales-by-team', label: 'Sales by Team', icon: <Users className="h-4 w-4" /> },
-      { href: '/analytics/sales-performance', label: 'Sales Performance', icon: <BarChart3 className="h-4 w-4" /> },
-      { href: '/analytics/marketing', label: 'Marketing', icon: <Network className="h-4 w-4" /> },
+      { href: '/analytics/sales', label: 'Business Performance', icon: <StoreIcon className="h-4 w-4" /> },
+      { href: '/analytics/sales-by-team', label: 'Team Performance', icon: <Users className="h-4 w-4" /> },
+      { href: '/analytics/sales-performance', label: 'Sales Operations', icon: <BarChart3 className="h-4 w-4" /> },
+      { href: '/analytics/marketing', label: 'Marketing Operations', icon: <Network className="h-4 w-4" /> },
     ],
+  },
+  {
+    href: '/orders',
+    label: 'Orders',
+    description: 'Order operations queue',
+    icon: <ClipboardList className={iconClasses} />,
+    children: [
+      { href: '/orders/summary', label: 'Orders Summary', icon: <BarChart3 className="h-4 w-4" /> },
+      { href: '/orders/confirmation', label: 'Confirmation of Order', icon: <ClipboardList className="h-4 w-4" /> },
+    ],
+  },
+  {
+    href: '/requests',
+    label: 'Stock Requests',
+    description: 'Inventory request coordination with WMS',
+    icon: <Package className={iconClasses} />,
+  },
+  {
+    href: '/reports',
+    label: 'Reports',
+    description: 'Tenant-wide POS exports',
+    icon: <FileSpreadsheet className={iconClasses} />,
   },
   {
     href: '/integrations',
@@ -99,38 +122,6 @@ const baseNavigation: NavLink[] = [
         <circle cx="7" cy="17" r="1.5" fill="currentColor" />
       </svg>
     ),
-  },
-  {
-    href: '/requests',
-    label: 'Stock Requests',
-    description: 'Inventory request coordination with WMS',
-    icon: <Package className={iconClasses} />,
-  },
-  {
-    href: '/orders',
-    label: 'Orders',
-    description: 'Order operations queue',
-    icon: <ClipboardList className={iconClasses} />,
-    children: [
-      { href: '/orders/confirmation', label: 'Confirmation of Order', icon: <ClipboardList className="h-4 w-4" /> },
-    ],
-  },
-  {
-    href: '/reports',
-    label: 'Reports',
-    description: 'Tenant-wide POS exports',
-    icon: <FileSpreadsheet className={iconClasses} />,
-  },
-  {
-    href: '/kpis',
-    label: 'KPIs',
-    description: 'Targets & performance tracking',
-    icon: <Target className={iconClasses} />,
-    children: [
-      { href: '/kpis/marketing', label: 'Marketing', icon: <Target className="h-4 w-4" /> },
-      { href: '/kpis/funnel', label: 'Funnel', icon: <Target className="h-4 w-4" /> },
-      { href: '/kpis/sales', label: 'Sales', icon: <Target className="h-4 w-4" /> },
-    ],
   },
 ];
 
@@ -178,6 +169,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [collapsedPopupItem, setCollapsedPopupItem] = useState<string | null>(null);
   const [popupPosition, setPopupPosition] = useState<{ top: number; left: number } | null>(null);
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'light';
+    return window.localStorage.getItem('theme_mode') === 'dark' ? 'dark' : 'light';
+  });
   const navButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const mobileNavCloseTimerRef = useRef<number | null>(null);
   const requestNotifications = useRequestNotificationCount(
@@ -233,11 +228,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const hasStockRequests =
       permissions.includes('stock_request.read')
       || permissions.includes('stock_request.write');
+    const hasOrderSummary = permissions.includes('orders.summary.read');
     const hasOrderConfirmation = permissions.includes('pos.read');
     const hasReports = permissions.includes('reports.pos_orders.read');
-    const hasMarketingKpi = permissions.includes('kpi.marketing.read') || permissions.includes('kpi.marketing.manage');
-    const hasFunnelKpi = permissions.includes('kpi.funnel.read');
-    const hasSalesKpi = permissions.includes('kpi.sales.read');
 
     return baseNavigation.flatMap((link) => {
       if (link.href !== '/analytics') {
@@ -249,6 +242,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
         if (link.href === '/orders') {
           const children = (link.children || []).filter((child) => {
+            if (child.href === '/orders/summary') return hasOrderSummary;
             if (child.href === '/orders/confirmation') return hasOrderConfirmation;
             return false;
           });
@@ -257,16 +251,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
         if (link.href === '/reports') {
           return hasReports ? [link] : [];
-        }
-        if (link.href === '/kpis') {
-          const children = (link.children || []).filter((child) => {
-            if (child.href === '/kpis/marketing') return hasMarketingKpi;
-            if (child.href === '/kpis/funnel') return hasFunnelKpi;
-            if (child.href === '/kpis/sales') return hasSalesKpi;
-            return false;
-          });
-          if (children.length === 0) return [];
-          return [{ ...link, children }];
         }
         if (link.href !== '/integrations') return [link];
 
@@ -294,6 +278,26 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     });
   }, [permissions]);
 
+  const getNavigationNotificationCount = (href: string) => {
+    if (href === '/requests') {
+      return requestNotifications.count;
+    }
+    return 0;
+  };
+
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const root = window.document.documentElement;
+    const isDark = themeMode === 'dark';
+    root.classList.toggle('dark', isDark);
+    if (isDark) {
+      localStorage.setItem('theme_mode', 'dark');
+    } else {
+      localStorage.removeItem('theme_mode');
+    }
+  }, [themeMode]);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -457,6 +461,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   const organizationName =
     tenant?.name || user?.tenant?.name || 'ERP Analytics';
+  const isDarkMode = themeMode === 'dark';
 
   useEffect(() => {
     setIsProfileMenuOpen(false);
@@ -495,8 +500,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-slate-300"></div>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-border"></div>
       </div>
     );
   }
@@ -505,15 +510,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <ToastProvider>
-      <div className="h-screen bg-white text-slate-900 flex">
+      <div className="flex h-screen bg-background text-foreground">
         {/* Sidebar */}
         <aside
-          className={`relative hidden md:flex ${sidebarWidth} flex-col bg-white transition-all duration-300 ease-in-out h-screen sticky top-0 overflow-visible z-40`}
+          className={`relative hidden md:flex ${sidebarWidth} sticky top-0 z-40 h-screen flex-col overflow-visible bg-surface transition-all duration-300 ease-in-out`}
         >
           {/* Collapse toggle pinned to the right edge, vertically centered */}
           <button
             onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-            className="absolute -right-3 top-1/2 z-50 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm hover:border-orange-300 hover:text-orange-600 transition-all duration-300"
+            className="absolute -right-3 top-1/2 z-50 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface shadow-sm transition-all duration-300 hover:border-primary/60 hover:text-primary"
             aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             <svg
@@ -540,7 +545,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 .toUpperCase() || 'EA'}
             </div>
             <div className={`min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
-              <p className="whitespace-nowrap text-base font-semibold text-slate-900">{organizationName}</p>
+              <p className="whitespace-nowrap text-base font-semibold text-foreground">{organizationName}</p>
             </div>
           </div>
 
@@ -556,7 +561,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             const isExpanded = expandedItem === link.href;
             const hasActiveChild =
               hasChildren && link.children!.some((child) => normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`));
-            const requestNotificationCount = link.href === '/requests' ? requestNotifications.count : 0;
+            const navigationNotificationCount = getNavigationNotificationCount(link.href);
 
             return (
               <div key={link.href} className="relative">
@@ -576,13 +581,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                           setExpandedItem((prev) => (prev === link.href ? null : link.href));
                         }
                       }}
-                      className={`group flex w-full items-center rounded-xl px-3 py-3 transition-all duration-300 ${
+                      className={`group relative flex w-full items-center rounded-xl px-3 py-3 transition-all duration-300 ${
                         isSidebarCollapsed ? 'justify-center px-0' : ''
-                      } ${hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href) ? 'text-slate-800' : 'text-slate-500 hover:bg-slate-50'}`}
+                      } ${
+                        hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href)
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted hover:bg-foreground/5 dark:text-foreground'
+                      }`}
                     >
                       <span
                         className={`flex-shrink-0 transition-colors duration-300 ${
-                          hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href) ? 'text-primary' : 'text-slate-400'
+                          hasActiveChild || isExpanded || (isSidebarCollapsed && collapsedPopupItem === link.href)
+                            ? 'text-primary'
+                            : 'text-muted dark:text-slate-300'
                         } group-hover:text-primary`}
                       >
                         {link.icon}
@@ -594,10 +605,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             : 'ml-3 flex-1 text-left transition-all duration-300 overflow-hidden'
                         }
                       >
-                        <span className="text-sm-custom font-semibold block text-slate-900 whitespace-nowrap">{link.label}</span>
+                        <span className="text-sm-custom font-semibold text-foreground whitespace-nowrap">
+                          {link.label}
+                        </span>
                       </div>
                       <svg
-                        className={`h-4 w-4 text-slate-400 transition-all duration-300 ${
+                        className={`h-4 w-4 text-muted transition-all duration-300 ${
                           isExpanded ? 'rotate-90 text-primary' : ''
                         } ${isSidebarCollapsed ? 'hidden' : 'opacity-100'}`}
                         viewBox="0 0 20 20"
@@ -612,12 +625,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     <Link
                       href={link.href}
                       className={`group relative flex items-center rounded-xl px-3 py-3 transition-all duration-300 ${
-                        isActive ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+                        isActive ? 'bg-primary/10 text-primary shadow-sm' : 'text-muted hover:bg-foreground/5 dark:text-foreground'
                       } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}
                     >
                       <span
                         className={`flex-shrink-0 transition-colors duration-300 ${
-                          isActive ? 'text-primary' : 'text-slate-400'
+                          isActive ? 'text-primary' : 'text-muted dark:text-slate-300'
                         } group-hover:text-primary`}
                       >
                         {link.icon}
@@ -629,22 +642,22 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             : 'ml-3 flex-1 transition-all duration-300 overflow-hidden'
                         }
                       >
-                        <span className="flex items-center gap-2 text-sm-custom font-semibold text-slate-900 whitespace-nowrap">
+                        <span className="flex items-center gap-2 text-sm-custom font-semibold text-foreground whitespace-nowrap">
                           <span>{link.label}</span>
-                          {requestNotificationCount > 0 ? (
+                          {navigationNotificationCount > 0 ? (
                             <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
-                              {requestNotificationCount > 99 ? '99+' : requestNotificationCount}
+                              {navigationNotificationCount > 99 ? '99+' : navigationNotificationCount}
                             </span>
                           ) : null}
                         </span>
                       </div>
-                      {requestNotificationCount > 0 ? (
+                      {navigationNotificationCount > 0 ? (
                         <span
                           className={`absolute flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive mt-0.5 px-1 text-[10px] font-semibold leading-none text-white shadow-sm ${
                             isSidebarCollapsed ? 'right-1 top-1' : 'hidden'
                           }`}
                         >
-                          {requestNotificationCount > 99 ? '99+' : requestNotificationCount}
+                          {navigationNotificationCount > 99 ? '99+' : navigationNotificationCount}
                         </span>
                       ) : null}
                     </Link>
@@ -657,24 +670,32 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         const childActive = isRootIntegration
                           ? normalizedPath === child.href
                           : normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`);
+                        const childNotificationCount = getNavigationNotificationCount(child.href);
                         return (
                           <Link
                             key={child.href}
                             href={child.href}
                             className={`flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-sm-custom transition ${
                               childActive
-                                ? 'bg-orange-50 text-orange-700 shadow-sm'
-                                : 'text-slate-600 hover:bg-slate-50'
+                                ? 'bg-primary/10 text-primary shadow-sm'
+                                : 'text-muted hover:bg-foreground/5 dark:text-foreground'
                             }`}
                           >
                             <span
                             className={`flex h-6 w-6 items-center justify-center rounded-full ${
-                              childActive ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
+                              childActive ? 'bg-primary/15 text-primary' : 'bg-foreground/5 text-muted dark:text-slate-300'
                             }`}
                           >
                               {child.icon ?? <span className="h-4 w-4" />}
                             </span>
-                            <span className="font-medium">{child.label}</span>
+                            <span className="flex items-center gap-2 font-medium">
+                              <span>{child.label}</span>
+                              {childNotificationCount > 0 ? (
+                                <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
+                                  {childNotificationCount > 99 ? '99+' : childNotificationCount}
+                                </span>
+                              ) : null}
+                            </span>
                           </Link>
                         );
                       })}
@@ -686,11 +707,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        <div className={`px-3 py-3 space-y-3 sticky bottom-0 bg-white transition-all duration-300 ${isSidebarCollapsed ? 'px-2' : ''}`}>
+        <div className={`sticky bottom-0 space-y-3 bg-surface px-3 py-3 transition-all duration-300 ${isSidebarCollapsed ? 'px-2' : ''}`}>
           <div className="relative">
             <button
               onClick={() => isSidebarCollapsed ? handleLogout() : setIsProfileMenuOpen((prev) => !prev)}
-              className={`w-full rounded-xl text-left hover:bg-slate-50 focus:outline-none transition-all duration-300 ${
+              className={`w-full rounded-xl text-left transition-all duration-300 hover:bg-foreground/5 focus:outline-none ${
                 isSidebarCollapsed ? 'px-0 py-2 flex justify-center' : 'px-3 py-2'
               }`}
             >
@@ -705,12 +726,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       : 'flex-1 transition-all duration-300 overflow-hidden'
                   }
                 >
-                  <div className="text-sm-custom font-semibold text-slate-900 whitespace-nowrap">
+                  <div className="text-sm-custom font-semibold text-foreground whitespace-nowrap">
                     {user?.firstName} {user?.lastName}
                   </div>
                 </div>
                 <svg
-                  className={`h-4 w-4 text-slate-500 transition-all duration-300 ${isProfileMenuOpen ? 'rotate-180' : ''} ${isSidebarCollapsed ? 'hidden' : 'opacity-100'}`}
+                  className={`h-4 w-4 text-muted transition-all duration-300 ${isProfileMenuOpen ? 'rotate-180' : ''} ${isSidebarCollapsed ? 'hidden' : 'opacity-100'}`}
                   viewBox="0 0 20 20"
                   fill="none"
                   stroke="currentColor"
@@ -721,19 +742,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </button>
 
             {isProfileMenuOpen && !isSidebarCollapsed && (
-              <div className="absolute inset-x-0 bottom-full mb-2 rounded-2xl border border-slate-200 bg-white shadow-lg z-40">
-                <div className="px-4 py-3 border-b border-slate-100">
-                  <div className="text-sm-custom font-semibold text-slate-900">
+              <div className="absolute inset-x-0 bottom-full z-40 mb-2 rounded-2xl border border-border bg-surface shadow-lg">
+                <div className="border-b border-border/60 px-4 py-3">
+                  <div className="text-sm-custom font-semibold text-foreground">
                     {user?.firstName} {user?.lastName}
                   </div>
-                  <div className="text-xs text-slate-500 truncate">{user?.email}</div>
+                  <div className="truncate text-xs text-muted dark:text-slate-300">{user?.email}</div>
                 </div>
                 <Link
                   href="/settings/profile"
-                  className="flex items-center gap-3 px-4 py-3 text-sm-custom text-slate-700 hover:bg-slate-50"
+                  className="flex items-center gap-3 px-4 py-3 text-sm-custom text-foreground hover:bg-foreground/5"
                   onClick={() => setIsProfileMenuOpen(false)}
                 >
-                  <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                  <svg className="h-4 w-4 text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor">
                     <path
                       d="M4.5 10a5.5 5.5 0 0 1 10 0 5.5 5.5 0 0 1-10 0Zm5.5-3v3l2 1"
                       strokeWidth="1.5"
@@ -745,9 +766,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 </Link>
                 <button
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-sm-custom text-slate-700 hover:bg-slate-50"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-sm-custom text-foreground hover:bg-foreground/5"
                 >
-                  <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                  <svg className="h-4 w-4 text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor">
                     <path d="M11 5v10M7 9l-2 2 2 2M11 10H4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   <span>Log out</span>
@@ -770,7 +791,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             onClick={closeMobileNav}
           />
           <aside
-            className={`absolute inset-y-0 left-0 flex w-[85vw] max-w-sm flex-col bg-white shadow-xl transition-transform duration-200 ease-out ${
+            className={`absolute inset-y-0 left-0 flex w-[85vw] max-w-sm flex-col bg-surface shadow-xl transition-transform duration-200 ease-out ${
               isMobileNavOpen ? 'translate-x-0' : '-translate-x-full'
             }`}
           >
@@ -778,7 +799,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={closeMobileNav}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-muted"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -794,7 +815,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   .toUpperCase() || 'EA'}
               </div>
               <div className="min-w-0">
-                <p className="whitespace-nowrap text-base font-semibold text-slate-900">{organizationName}</p>
+                <p className="whitespace-nowrap text-base font-semibold text-foreground">{organizationName}</p>
               </div>
             </div>
 
@@ -811,7 +832,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     (child) => normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`),
                   ),
                 );
-                const requestNotificationCount = link.href === '/requests' ? requestNotifications.count : 0;
+                const navigationNotificationCount = getNavigationNotificationCount(link.href);
 
                 return (
                   <div key={`mobile-${link.href}`} className="space-y-1">
@@ -820,23 +841,23 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         type="button"
                         onClick={() => setExpandedItem((prev) => (prev === link.href ? null : link.href))}
                         className={`group flex w-full items-center rounded-xl px-3 py-3 transition-all duration-300 ${
-                          hasActiveChild || isExpanded ? 'text-slate-800' : 'text-slate-500 hover:bg-slate-50'
+                          hasActiveChild || isExpanded ? 'bg-primary/10 text-primary' : 'text-muted hover:bg-foreground/5 dark:text-foreground'
                         }`}
                       >
                         <span
                           className={`flex-shrink-0 transition-colors duration-300 ${
                             hasActiveChild || isExpanded
                               ? 'text-primary'
-                              : 'text-slate-400 group-hover:text-primary'
+                              : 'text-muted dark:text-slate-300 group-hover:text-primary'
                           }`}
                         >
                           {link.icon}
                         </span>
-                        <span className="ml-3 flex-1 text-left text-sm-custom font-semibold text-slate-900">
+                        <span className="ml-3 flex-1 text-left text-sm-custom font-semibold text-foreground">
                           {link.label}
                         </span>
                         <svg
-                          className={`h-4 w-4 text-slate-400 transition-all duration-300 ${
+                          className={`h-4 w-4 text-muted transition-all duration-300 ${
                             isExpanded ? 'rotate-90 text-primary' : ''
                           }`}
                           viewBox="0 0 20 20"
@@ -852,27 +873,27 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         href={link.href}
                         onClick={closeMobileNav}
                         className={`group relative flex items-center rounded-xl px-3 py-3 transition-all duration-300 ${
-                          isActive ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+                          isActive ? 'bg-primary/10 text-primary shadow-sm' : 'text-muted hover:bg-foreground/5 dark:text-foreground'
                         }`}
                       >
                         <span
                           className={`flex-shrink-0 transition-colors duration-300 ${
-                            isActive ? 'text-primary' : 'text-slate-400 group-hover:text-primary'
+                            isActive ? 'text-primary' : 'text-muted dark:text-slate-300 group-hover:text-primary'
                           }`}
                         >
                           {link.icon}
                         </span>
-                        <span className="ml-3 flex items-center gap-2 text-sm-custom font-semibold text-slate-900">
+                        <span className="ml-3 flex items-center gap-2 text-sm-custom font-semibold text-foreground">
                           <span>{link.label}</span>
-                          {requestNotificationCount > 0 ? (
+                          {navigationNotificationCount > 0 ? (
                             <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
-                              {requestNotificationCount > 99 ? '99+' : requestNotificationCount}
+                              {navigationNotificationCount > 99 ? '99+' : navigationNotificationCount}
                             </span>
                           ) : null}
                         </span>
-                        {requestNotificationCount > 0 ? (
+                        {navigationNotificationCount > 0 ? (
                           <span className="hidden absolute right-2 top-2 h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
-                            {requestNotificationCount > 99 ? '99+' : requestNotificationCount}
+                            {navigationNotificationCount > 99 ? '99+' : navigationNotificationCount}
                           </span>
                         ) : null}
                       </Link>
@@ -885,6 +906,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                           const childActive = isRootIntegration
                             ? normalizedPath === child.href
                             : normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`);
+                          const childNotificationCount = getNavigationNotificationCount(child.href);
                           return (
                             <Link
                               key={`mobile-child-${child.href}`}
@@ -892,18 +914,25 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                               onClick={closeMobileNav}
                               className={`flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-sm-custom transition ${
                                 childActive
-                                  ? 'bg-orange-50 text-orange-700 shadow-sm'
-                                  : 'text-slate-600 hover:bg-slate-50'
+                                  ? 'bg-primary/10 text-primary shadow-sm'
+                                  : 'text-muted hover:bg-foreground/5 dark:text-foreground'
                               }`}
                             >
                               <span
                                 className={`flex h-6 w-6 items-center justify-center rounded-full ${
-                                  childActive ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
+                                  childActive ? 'bg-primary/15 text-primary' : 'bg-foreground/5 text-muted dark:text-slate-300'
                                 }`}
                               >
                                 {child.icon ?? <span className="h-4 w-4" />}
                               </span>
-                              <span className="font-medium">{child.label}</span>
+                              <span className="flex items-center gap-2 font-medium">
+                                <span>{child.label}</span>
+                                {childNotificationCount > 0 ? (
+                                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
+                                    {childNotificationCount > 99 ? '99+' : childNotificationCount}
+                                  </span>
+                                ) : null}
+                              </span>
                             </Link>
                           );
                         })}
@@ -914,17 +943,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               })}
             </nav>
 
-            <div className="border-t border-slate-200 px-3 py-3">
-              <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+            <div className="border-t border-border px-3 py-3">
+              <div className="rounded-xl border border-border bg-surface px-3 py-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
                     {`${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.trim() || '??'}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-sm-custom font-semibold text-slate-900">
+                    <p className="truncate text-sm-custom font-semibold text-foreground">
                       {user?.firstName} {user?.lastName}
                     </p>
-                    <p className="truncate text-xs text-slate-500">{user?.email}</p>
+                    <p className="truncate text-xs text-muted">{user?.email}</p>
                   </div>
                 </div>
 
@@ -932,9 +961,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   <Link
                     href="/settings/profile"
                     onClick={closeMobileNav}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm-custom text-slate-700 transition-colors hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm-custom text-foreground transition-colors hover:bg-foreground/5"
                   >
-                    <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                    <svg className="h-4 w-4 text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor">
                       <path
                         d="M4.5 10a5.5 5.5 0 0 1 10 0 5.5 5.5 0 0 1-10 0Zm5.5-3v3l2 1"
                         strokeWidth="1.5"
@@ -951,9 +980,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       closeMobileNav();
                       handleLogout();
                     }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm-custom text-slate-700 transition-colors hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm-custom text-foreground transition-colors hover:bg-foreground/5"
                   >
-                    <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                    <svg className="h-4 w-4 text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor">
                       <path d="M11 5v10M7 9l-2 2 2 2M11 10H4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span>Log out</span>
@@ -979,14 +1008,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             return (
               <div
                 key={link.href}
-                className="fixed w-56 rounded-2xl border border-slate-200 bg-white shadow-lg z-50"
+                className="fixed z-50 w-56 rounded-2xl border border-border bg-surface shadow-lg"
                 style={{
                   left: `${popupPosition.left}px`,
                   top: `${popupPosition.top}px`
                 }}
               >
-                <div className="px-4 py-2.5 border-b border-slate-100">
-                  <div className="text-sm-custom font-semibold text-slate-900">{link.label}</div>
+                <div className="border-b border-border/60 px-4 py-2.5">
+                  <div className="text-sm-custom font-semibold text-foreground">{link.label}</div>
                 </div>
                 <div className="py-2">
                   {link.children!.map((child) => {
@@ -994,6 +1023,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     const childActive = isRootIntegration
                       ? normalizedPath === child.href
                       : normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`);
+                    const childNotificationCount = getNavigationNotificationCount(child.href);
                     return (
                       <Link
                         key={child.href}
@@ -1001,18 +1031,25 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         onClick={() => setCollapsedPopupItem(null)}
                         className={`flex items-center gap-3 px-4 py-2.5 text-sm-custom transition ${
                           childActive
-                            ? 'bg-orange-50 text-orange-700'
-                            : 'text-slate-600 hover:bg-slate-50'
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-muted hover:bg-foreground/5 dark:text-foreground'
                         }`}
                       >
                         <span
                           className={`flex h-6 w-6 items-center justify-center rounded-full ${
-                            childActive ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
+                            childActive ? 'bg-primary/15 text-primary' : 'bg-foreground/5 text-muted dark:text-slate-300'
                           }`}
                         >
                           {child.icon ?? <span className="h-4 w-4" />}
                         </span>
-                        <span className="font-medium">{child.label}</span>
+                        <span className="flex items-center gap-2 font-medium">
+                          <span>{child.label}</span>
+                          {childNotificationCount > 0 ? (
+                            <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white shadow-sm">
+                              {childNotificationCount > 99 ? '99+' : childNotificationCount}
+                            </span>
+                          ) : null}
+                        </span>
                       </Link>
                     );
                   })}
@@ -1024,15 +1061,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       )}
 
       {/* Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-white">
+      <div className="flex-1 flex min-w-0 flex-col h-screen overflow-hidden bg-background">
         {/* Top bar - connected to sidebar (no border between them) */}
-        <header className="bg-white px-3 py-1 sm:px-4 lg:px-5 flex-shrink-0 sticky top-0 z-30">
+        <header className="sticky top-0 z-30 flex-shrink-0 bg-surface px-3 py-1 sm:px-4 lg:px-5">
           <div className="max-w-full flex min-h-[32px] items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={openMobileNav}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm md:hidden"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-muted shadow-sm md:hidden"
                 aria-label="Open navigation"
               >
                 <Menu className="h-4 w-4" />
@@ -1040,16 +1077,26 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               <div className="h-10 md:hidden" />
             </div>
 
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'))}
+                className='btn btn-sm btn-outline btn-icon'
+                aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-pressed={isDarkMode}
+              >
+                {isDarkMode ? <Sun className="h-4 w-4 text-primary" /> : <Moon className="h-4 w-4 text-primary" />}
+              </button>
             {canViewAllTeams ? (
               <div className="relative">
                 {isLoadingTeams ? (
-                  <span className="text-sm text-slate-500">Loading teams…</span>
+                  <span className="text-sm text-muted">Loading teams…</span>
                 ) : teams.length > 0 ? (
                   <>
                     <button
                       type="button"
                       onClick={() => setIsTeamMenuOpen((prev) => !prev)}
-                      className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-800 shadow-sm hover:border-orange-400 focus:border-primary focus:outline-none"
+                      className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1 text-sm font-semibold text-foreground shadow-sm hover:border-primary/60 focus:border-primary focus:outline-none"
                     >
                       <span>Team scope:</span>
                       <span className="text-primary">
@@ -1059,18 +1106,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                               .map((id) => teams.find((t) => t.id === id)?.name || id)
                               .join(', ')}
                       </span>
-                      <svg className="h-4 w-4 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                      <svg className="h-4 w-4 text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor">
                         <path d="M6 8l4 4 4-4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     </button>
                     {isTeamMenuOpen && (
-                      <div className="absolute right-0 mt-2 w-64 rounded-xl border border-slate-200 bg-white shadow-lg z-50">
+                      <div className="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-border bg-surface shadow-lg">
                         <div className="max-h-64 overflow-auto py-2">
-                          <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                          <div className="flex items-center justify-between px-3 py-2 text-sm text-foreground hover:bg-foreground/5">
                             <label className="flex cursor-pointer items-center gap-2">
                               <input
                                 type="checkbox"
-                                className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
+                                className="h-4 w-4 rounded border-border accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-primary/20"
                                 checked={selectedTeamIds.length === 0}
                                 onChange={() => handleTeamSelection('__all__')}
                               />
@@ -1080,19 +1127,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                           {teams.map((team) => (
                             <div
                               key={team.id}
-                              className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                              className="flex items-center justify-between px-3 py-2 text-sm text-foreground hover:bg-foreground/5"
                             >
                               <label className="flex cursor-pointer items-center gap-2">
                                 <input
                                   type="checkbox"
-                                  className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
+                                  className="h-4 w-4 rounded border-border accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-primary/20"
                                   checked={selectedTeamIds.includes(team.id)}
                                   onChange={() => handleTeamSelection(team.id)}
                                 />
                                 <span>{team.name}</span>
                               </label>
                               <button
-                                className="text-xs font-semibold text-orange-600 hover:text-orange-700"
+                                className="text-xs font-semibold text-primary hover:text-primary/80"
                                 onClick={() => handleOnlySelection(team.id)}
                               >
                                 ONLY
@@ -1104,17 +1151,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     )}
                   </>
                 ) : (
-                  <span className="text-sm text-red-500">No teams</span>
+                  <span className="text-sm text-destructive">No teams</span>
                 )}
               </div>
-            ) : (
-              <div className="h-9" />
-            )}
+            ) : null}
+            </div>
           </div>
         </header>
 
         {/* Main content area - rounded top-left corner for App Shell look */}
-        <main className="flex-1 overflow-y-auto bg-slate-100 lg:rounded-tl-[1.75rem]">
+        <main className="flex-1 overflow-y-auto bg-background lg:rounded-tl-[1.75rem]">
           <div className="mx-auto min-h-full w-full max-w-[1560px] px-3 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-4 sm:pb-7 lg:px-5 lg:pb-8">
             {children}
           </div>

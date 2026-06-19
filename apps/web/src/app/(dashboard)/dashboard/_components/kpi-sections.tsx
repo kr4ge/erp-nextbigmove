@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import type { EChartsOption } from "echarts";
 import { Flame, Medal, Target, Users } from "lucide-react";
@@ -40,7 +40,7 @@ const GAUGE_GLOW: Record<KpiDashboardCard["status"], string> = {
   NO_TARGET: "rgba(148,163,184,0.15)",
 };
 
-const GAUGE_BG: Record<KpiDashboardCard["status"], string> = {
+const GAUGE_BG_LIGHT: Record<KpiDashboardCard["status"], string> = {
   ON_TRACK: "#dcfce7",
   AT_RISK: "#ffedd5",
   MISSED: "#fff1e6",
@@ -51,8 +51,13 @@ function getEffectiveColor(card: KpiDashboardCard): string {
   return GAUGE_COLORS[card.status];
 }
 
-function getEffectiveBg(card: KpiDashboardCard): string {
-  return GAUGE_BG[card.status];
+function getEffectiveBg(card: KpiDashboardCard, isDark: boolean): string {
+  if (!isDark) return GAUGE_BG_LIGHT[card.status];
+
+  if (card.status === "ON_TRACK") return "rgba(16,185,129,0.18)";
+  if (card.status === "AT_RISK") return "rgba(249,115,22,0.2)";
+  if (card.status === "MISSED") return "rgba(251,146,60,0.18)";
+  return "rgba(71,85,105,0.55)";
 }
 
 function getEffectiveGlow(card: KpiDashboardCard): string {
@@ -61,6 +66,31 @@ function getEffectiveGlow(card: KpiDashboardCard): string {
 
 function clampAchievement(value: number | null | undefined) {
   return Math.max(0, Math.min(value ?? 0, 100));
+}
+
+function useHtmlDarkMode() {
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const root = document.documentElement;
+    const sync = () => setIsDark(root.classList.contains("dark"));
+
+    sync();
+
+    const observer = new MutationObserver(sync);
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  return isDark;
 }
 
 type GaugeTextMode = "dynamic" | "abbrev";
@@ -117,10 +147,11 @@ function resolveGaugeValueFontSize(
 function buildKpiGaugeOption(
   card: KpiDashboardCard,
   textMode: GaugeTextMode,
+  isDark: boolean,
 ): EChartsOption {
   const gaugeValue = clampAchievement(card.achievementPct);
   const color = getEffectiveColor(card);
-  const bgColor = getEffectiveBg(card);
+  const bgColor = getEffectiveBg(card, isDark);
   const glowColor = getEffectiveGlow(card);
   const actualText = formatGaugeValue(card.actualValue, card.format, textMode);
   const targetText =
@@ -132,6 +163,8 @@ function buildKpiGaugeOption(
     card.format,
     textMode,
   );
+  const valueTextColor = isDark ? "#f8fafc" : "#0f172a";
+  const targetTextColor = isDark ? "rgba(248,250,252,0.78)" : "#64748b";
 
   return {
     animation: false,
@@ -171,14 +204,14 @@ function buildKpiGaugeOption(
               fontSize: valueFontSize,
               fontWeight: 700,
               lineHeight: 34,
-              color: "#0f172a",
+              color: valueTextColor,
               align: "center",
             },
             target: {
               fontSize: 13,
               fontWeight: 500,
               lineHeight: 18,
-              color: "#64748b",
+              color: targetTextColor,
               align: "center",
             },
           },
@@ -189,12 +222,12 @@ function buildKpiGaugeOption(
   };
 }
 
-function buildMiniRingOption(card: KpiDashboardCard): EChartsOption {
+function buildMiniRingOption(card: KpiDashboardCard, isDark: boolean): EChartsOption {
   const hasAchievement =
     card.achievementPct !== null && card.achievementPct !== undefined;
   const gaugeValue = hasAchievement ? clampAchievement(card.achievementPct) : 0;
   const color = getEffectiveColor(card);
-  const bgColor = getEffectiveBg(card);
+  const bgColor = getEffectiveBg(card, isDark);
   const glowColor = getEffectiveGlow(card);
 
   return {
@@ -293,11 +326,11 @@ function CombinedProgressBar({ cards }: { cards: KpiDashboardCard[] }) {
   const streakMsg = getStreakMessage(bestStreak);
 
   return (
-    <div className="rounded-lg border border-slate-100 bg-white p-3 space-y-2.5">
+    <div className="rounded-lg border border-border bg-surface p-3 space-y-2.5">
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
-          <p className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <p className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
             Target Progress
           </p>
           {bestStreak > 0 && (
@@ -314,7 +347,7 @@ function CombinedProgressBar({ cards }: { cards: KpiDashboardCard[] }) {
             </div>
           )}
         </div>
-        <p className="shrink-0 pl-1 text-sm font-semibold tabular-nums text-slate-900">
+        <p className="shrink-0 pl-1 text-sm font-semibold tabular-nums text-foreground">
           {avgAchievement.toFixed(1)}%
         </p>
       </div>
@@ -364,9 +397,10 @@ interface KpiProgressCardProps {
 function KpiProgressCard({ card }: KpiProgressCardProps) {
   const statusMeta = KPI_STATUS_META[card.status];
   const streak = calculateStreak(card.dailyProgress);
+  const isDark = useHtmlDarkMode();
 
   return (
-    <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3 space-y-3">
+    <div className="rounded-lg border border-border bg-slate-50/60 p-3 space-y-3">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -395,7 +429,10 @@ function KpiProgressCard({ card }: KpiProgressCardProps) {
       <div className="flex items-center gap-4">
         <div className="shrink-0">
           <ReactECharts
-            option={buildMiniRingOption(card)}
+            key={`${card.metricKey}-mini-${isDark ? "dark" : "light"}`}
+            notMerge={true}
+            lazyUpdate={false}
+            option={buildMiniRingOption(card, isDark)}
             style={{ height: 80, width: 80 }}
             opts={{ renderer: "svg" }}
           />
@@ -438,11 +475,12 @@ interface KpiGaugeCardProps {
 
 function KpiGaugeCard({ card, textMode = "dynamic" }: KpiGaugeCardProps) {
   const statusMeta = KPI_STATUS_META[card.status];
+  const isDark = useHtmlDarkMode();
 
   return (
-    <div className="rounded-lg border border-slate-100 bg-white p-3.5">
+    <div className="rounded-lg border border-border bg-surface p-3.5">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
           {card.label}
         </p>
         <div className="flex items-center gap-1.5">
@@ -457,7 +495,10 @@ function KpiGaugeCard({ card, textMode = "dynamic" }: KpiGaugeCardProps) {
 
       <div className="mt-2.5">
         <ReactECharts
-          option={buildKpiGaugeOption(card, textMode)}
+          key={`${card.metricKey}-${isDark ? "dark" : "light"}`}
+          notMerge={true}
+          lazyUpdate={false}
+          option={buildKpiGaugeOption(card, textMode, isDark)}
           style={{ height: 240, width: "100%" }}
           opts={{ renderer: "svg" }}
         />
@@ -502,15 +543,15 @@ export function KpiProgressSection({
       </div>
 
       {loading ? (
-        <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+        <div className="rounded-lg border border-border bg-slate-50 px-4 py-5 text-sm text-slate-500">
           {loadingLabel}
         </div>
       ) : error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
+        <div className="rounded-lg border border-border bg-rose-50 px-4 py-5 text-sm text-rose-700">
           {error}
         </div>
       ) : cards.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+        <div className="rounded-lg border border-dashed border-border bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
           {emptyLabel}
         </div>
       ) : (
@@ -557,20 +598,20 @@ export function PersonalKpiSection({
       titleClassName=""
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="max-w-2xl text-sm text-slate-600">{description}</p>
+        <p className="max-w-2xl text-sm text-slate-600 dark:text-slate-300">{description}</p>
         {meta}
       </div>
 
       {loading ? (
-        <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+        <div className="rounded-lg border border-border bg-slate-50 px-4 py-5 text-sm text-slate-500">
           {loadingLabel}
         </div>
       ) : error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
+        <div className="rounded-lg border border-border bg-rose-50 px-4 py-5 text-sm text-rose-700">
           {error}
         </div>
       ) : cards.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+        <div className="rounded-lg border border-dashed border-border bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
           {emptyLabel}
         </div>
       ) : (
@@ -679,9 +720,9 @@ function MemberMetricPanel({
   const streak = card ? calculateStreak(card.dailyProgress) : 0;
 
   return (
-    <div className="space-y-1.5 rounded-md border border-slate-100 bg-white p-2.5">
+    <div className="space-y-1.5 rounded-md border border-border bg-surface p-2.5">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
           {label}
         </p>
         <span
@@ -691,10 +732,10 @@ function MemberMetricPanel({
         </span>
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-xs font-semibold tabular-nums text-slate-900">
+        <span className="text-xs font-semibold tabular-nums text-foreground">
           {card ? formatKpiValue(card.actualValue, card.format) : "—"}
         </span>
-        <span className="text-xs tabular-nums text-slate-400">
+        <span className="text-xs tabular-nums text-slate-400 dark:text-slate-300">
           /{" "}
           {card?.targetValue != null
             ? formatKpiValue(card.targetValue, card.format)
@@ -723,13 +764,13 @@ function MemberKpiCard({ member }: { member: ExecutiveKpiMemberRow }) {
   const memberIdentity = member.employeeId || member.email;
 
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+    <div className="space-y-2 rounded-lg border border-border bg-slate-50/60 dark:bg-background-secondary p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-xs font-semibold text-slate-900">
+          <p className="truncate text-xs font-semibold text-foreground">
             <span className="align-middle">{member.name}</span>
             <span className="mx-1 align-middle text-slate-300">·</span>
-            <span className="align-middle text-xs font-medium text-slate-400">
+            <span className="align-middle text-xs font-medium text-slate-300">
               {memberIdentity}
             </span>
           </p>
@@ -764,13 +805,13 @@ function TeamKpiRow({ row, rank }: TeamKpiRowProps) {
           : "text-slate-500";
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-100 bg-white p-3">
+    <div className="space-y-3 rounded-lg border border-border bg-surface dark:bg-background-secondary p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-900">
+          <p className="truncate text-sm font-semibold text-foreground">
             <span className="align-middle">{row.teamName}</span>
             <span className="mx-1 align-middle text-slate-300">·</span>
-            <span className="align-middle text-xs font-medium uppercase tracking-wide text-slate-400">
+            <span className="align-middle text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-300">
               {row.teamCode}
             </span>
           </p>
@@ -823,7 +864,7 @@ function TeamKpiRow({ row, rank }: TeamKpiRowProps) {
           ))}
         </div>
       ) : (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+        <div className="rounded-lg border border-dashed border-border bg-slate-50 px-3 py-4 text-sm text-slate-500">
           No member KPI data for this team.
         </div>
       )}
@@ -851,15 +892,15 @@ export function ExecutiveKpiSection({
       titleClassName="text-xs tracking-[0.18em]"
     >
       {loading ? (
-        <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+        <div className="rounded-lg border border-border bg-slate-50 dark:bg-background-secondary px-4 py-5 text-sm text-slate-500 dark:text-slate-300">
           Loading executive KPI progress…
         </div>
       ) : error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
+        <div className="rounded-lg border border-border bg-rose-50 px-4 py-5 text-sm text-rose-700">
           {error}
         </div>
       ) : rankedRows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+        <div className="rounded-lg border border-dashed border-border bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
           No metrics found.
         </div>
       ) : (
@@ -907,15 +948,15 @@ export function TeamKpiSection({ data, loading, error }: TeamKpiSectionProps) {
       titleClassName="text-xs tracking-[0.18em]"
     >
       {loading ? (
-        <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+        <div className="rounded-lg border border-border bg-slate-50 px-4 py-5 text-sm text-slate-500">
           Loading team KPI progress…
         </div>
       ) : error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">
+        <div className="rounded-lg border border-border bg-rose-50 px-4 py-5 text-sm text-rose-700">
           {error}
         </div>
       ) : !hasMetrics ? (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+        <div className="rounded-lg border border-dashed border-border bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
           No metrics found.
         </div>
       ) : (

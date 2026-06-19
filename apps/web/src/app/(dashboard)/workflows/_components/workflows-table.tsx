@@ -51,10 +51,10 @@ export function WorkflowsTable({
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <WorkflowStatusBadge workflow={workflow} />
-                <span className="text-sm font-semibold text-[#0F172A]">{workflow.name}</span>
+                <span className="text-sm font-semibold text-[#0F172A] dark:text-foreground">{workflow.name}</span>
               </div>
               {workflow.description ? (
-                <p className="text-sm text-[#475569]">{workflow.description}</p>
+                <p className="text-sm text-[#475569] dark:text-slate-300">{workflow.description}</p>
               ) : null}
             </div>
           );
@@ -82,13 +82,13 @@ export function WorkflowsTable({
           const posEnabled = Boolean(row.original.config?.sources?.pos?.enabled);
           return (
             <div className="flex flex-col gap-1 text-sm">
-              <div className="text-[#475569]">
+              <div className="text-[#475569] dark:text-slate-300">
                 <span className="font-medium">Meta:</span>{' '}
                 <span className={metaEnabled ? 'text-success' : 'text-slate-400'}>
                   {metaEnabled ? 'Enabled' : 'Disabled'}
                 </span>
               </div>
-              <div className="text-[#475569]">
+              <div className="text-[#475569] dark:text-slate-300">
                 <span className="font-medium">POS:</span>{' '}
                 <span className={posEnabled ? 'text-success' : 'text-slate-400'}>
                   {posEnabled ? 'Enabled' : 'Disabled'}
@@ -102,7 +102,7 @@ export function WorkflowsTable({
         id: 'dateRange',
         header: 'Date Range',
         cell: ({ row }) => (
-          <span className="text-sm text-[#475569]">{getDateRangeLabel(row.original)}</span>
+          <span className="text-sm text-[#475569] dark:text-slate-300">{getDateRangeLabel(row.original)}</span>
         ),
       },
       {

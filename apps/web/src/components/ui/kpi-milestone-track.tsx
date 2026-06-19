@@ -50,7 +50,12 @@ export function KpiMilestoneTrack({
   return (
     <div className={clsx("space-y-2", className)}>
       <div className="relative">
-        <div className={clsx("w-full rounded-full bg-slate-100", trackHeight)} />
+        <div
+          className={clsx(
+            "w-full rounded-full bg-slate-100 dark:bg-background-secondary",
+            trackHeight,
+          )}
+        />
         <div
           className={clsx(
             "absolute left-0 top-0 rounded-full transition-all duration-300",
@@ -73,9 +78,9 @@ export function KpiMilestoneTrack({
             >
               <div
                 className={clsx(
-                  "rounded-full border-2 border-white shadow-sm",
+                  "rounded-full border-2 border-white shadow-sm dark:border-surface",
                   dotSize,
-                  reached ? "" : "bg-slate-200",
+                  reached ? "" : "bg-slate-200 dark:bg-slate-600",
                 )}
                 style={reached ? { backgroundColor: progressColor } : undefined}
               />

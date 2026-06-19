@@ -392,7 +392,7 @@ export default function MarketingAnalyticsPage() {
             Analytics
           </span>
         }
-        title="Marketing Analytics"
+        title="Marketing Operations"
         description="Monitor revenue, spend, and efficiency by marketing associate."
       />
 
@@ -426,39 +426,39 @@ export default function MarketingAnalyticsPage() {
               <button
                 type="button"
                 onClick={() => setShowFilterMenu((p) => !p)}
-                className="inline-flex h-10 items-center justify-center rounded-r-xl rounded-l-none border border-slate-200 bg-white px-3 text-slate-600 hover:border-orange-200 hover:text-orange-700"
+                className="inline-flex h-10 items-center justify-center rounded-r-xl rounded-l-none border border-slate-200 bg-white px-3 text-slate-600 hover:border-orange-200 hover:text-orange-700 dark:border-border dark:bg-transparent dark:text-foreground"
                 aria-label="Filters"
               >
                 <Filter className="h-4 w-4" />
               </button>
               {showFilterMenu && (
-                <div className="absolute right-0 top-full mt-2 w-60 rounded-xl border border-slate-200 bg-white p-3 space-y-3 shadow-lg z-30">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                <div className="absolute right-0 top-full z-30 mt-2 w-60 space-y-3 rounded-xl border border-slate-200 bg-surface p-3 shadow-lg dark:border-border">
+                  <label className="flex cursor-pointer select-none items-center gap-2">
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                       checked={excludeCanceled}
                       onChange={(e) => setExcludeCanceled(e.target.checked)}
                     />
-                    <span className="text-sm text-slate-800">Exclude Canceled</span>
+                    <span className="text-sm text-foreground">Exclude Canceled</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <label className="flex cursor-pointer select-none items-center gap-2">
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                       checked={excludeRestocking}
                       onChange={(e) => setExcludeRestocking(e.target.checked)}
                     />
-                    <span className="text-sm text-slate-800">Exclude Restocking</span>
+                    <span className="text-sm text-foreground">Exclude Restocking</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <label className="flex cursor-pointer select-none items-center gap-2">
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
                       checked={excludeAbandoned}
                       onChange={(e) => setExcludeAbandoned(e.target.checked)}
                     />
-                    <span className="text-sm text-slate-800">Exclude Abandoned</span>
+                    <span className="text-sm text-foreground">Exclude Abandoned</span>
                   </label>
                 </div>
               )}
@@ -476,7 +476,7 @@ export default function MarketingAnalyticsPage() {
                 showFooter={false}
                 primaryColor="orange"
                 readOnly
-                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-border dark:!bg-transparent dark:!text-transparent transition-[width] duration-300 ease-out ${
                   marketingDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
                 }`}
                 containerClassName=""
@@ -487,7 +487,7 @@ export default function MarketingAnalyticsPage() {
                   <span className="flex w-full items-center gap-2 overflow-hidden">
                     <CalendarDays className="h-4 w-4 shrink-0" />
                     <span
-                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
                         marketingDateRangeIsToday
                           ? 'max-w-0 -translate-x-1 opacity-0'
                           : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
@@ -497,7 +497,7 @@ export default function MarketingAnalyticsPage() {
                     </span>
                   </span>
                 )}
-                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-orange-700 dark:text-foreground"
                 placeholder=" "
               />
             </div>
@@ -505,7 +505,7 @@ export default function MarketingAnalyticsPage() {
               <button
                 type="button"
                 onClick={openShareModal}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-border dark:bg-transparent dark:text-foreground"
                 aria-label="Share analytics"
               >
                 <Share2 className="h-4 w-4" />
@@ -569,39 +569,39 @@ export default function MarketingAnalyticsPage() {
             isLoading={isLoading}
           >
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-100">
-                <thead className="bg-slate-50">
+              <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
+                <thead className="bg-slate-50 dark:bg-background-secondary">
                   <tr>
-                    <th className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 md:sticky md:left-0 md:z-20 sm:px-4 lg:px-6">#</th>
-                    <th className="min-w-[12rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 md:sticky md:left-[4rem] md:z-20 sm:px-4 lg:px-6">Marketing Associate</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Revenue (₱)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">CPC (₱)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Ad Spend (₱)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">AR (%)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Conversion (%)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Ads Running</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Ads Created</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Ads Active</th>
+                    <th className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:bg-background-secondary dark:text-slate-300 md:sticky md:left-0 md:z-20 sm:px-4 lg:px-6">#</th>
+                    <th className="min-w-[12rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:bg-background-secondary dark:text-slate-300 md:sticky md:left-[4rem] md:z-20 sm:px-4 lg:px-6">Marketing Associate</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Revenue (₱)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">CPC (₱)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Ad Spend (₱)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">AR (%)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Conversion (%)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Ads Running</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Ads Created</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Ads Active</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
                   {isLoading ? (
                     <AnalyticsTableLoadingRows colCount={10} />
                   ) : (
                     pagedTopAssociates.map((row, idx) => (
-                      <tr key={`${row.associate}-${idx}`} className="group hover:bg-slate-50">
-                        <td className="w-16 min-w-[4rem] max-w-[4rem] bg-white px-3 py-3 text-sm whitespace-nowrap text-slate-700 md:sticky md:left-0 md:z-10 group-hover:bg-slate-50 sm:px-4 lg:px-6">{(topAssocPage - 1) * pageSize + idx + 1}.</td>
-                        <td className="min-w-[12rem] bg-white px-3 py-3 text-sm font-medium whitespace-nowrap text-slate-900 md:sticky md:left-[4rem] md:z-10 group-hover:bg-slate-50 sm:px-4 lg:px-6">
+                      <tr key={`${row.associate}-${idx}`} className="group hover:bg-slate-50 dark:hover:bg-background-secondary">
+                        <td className="w-16 min-w-[4rem] max-w-[4rem] bg-white px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:bg-surface dark:text-slate-300 md:sticky md:left-0 md:z-10 group-hover:bg-slate-50 dark:group-hover:bg-background-secondary sm:px-4 lg:px-6">{(topAssocPage - 1) * pageSize + idx + 1}.</td>
+                        <td className="min-w-[12rem] bg-white px-3 py-3 text-sm font-medium whitespace-nowrap text-slate-900 dark:bg-surface dark:text-foreground md:sticky md:left-[4rem] md:z-10 group-hover:bg-slate-50 dark:group-hover:bg-background-secondary sm:px-4 lg:px-6">
                           {toTitleCase(row.associateDisplay || row.associate)}
                         </td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.revenue)}</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.cpc)}</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.ad_spend)}</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{(row.ar_pct ?? 0).toFixed(1)}%</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{(row.conversion_pct ?? 0).toFixed(1)}%</td>
-                        <td className="px-3 py-3 text-sm text-center whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{row.ads_running ?? 0}</td>
-                        <td className="px-3 py-3 text-sm text-center whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{row.ads_created ?? 0}</td>
-                        <td className="px-3 py-3 text-sm text-center whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{row.ads_active ?? 0}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{formatPhpCurrency(row.revenue)}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{formatPhpCurrency(row.cpc)}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{formatPhpCurrency(row.ad_spend)}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{(row.ar_pct ?? 0).toFixed(1)}%</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{(row.conversion_pct ?? 0).toFixed(1)}%</td>
+                        <td className="px-3 py-3 text-sm text-center whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{row.ads_running ?? 0}</td>
+                        <td className="px-3 py-3 text-sm text-center whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{row.ads_created ?? 0}</td>
+                        <td className="px-3 py-3 text-sm text-center whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{row.ads_active ?? 0}</td>
                       </tr>
                     ))
                   )}
@@ -624,35 +624,35 @@ export default function MarketingAnalyticsPage() {
             isLoading={isLoading}
           >
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-100">
-                <thead className="bg-slate-50">
+              <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
+                <thead className="bg-slate-50 dark:bg-background-secondary">
                   <tr>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">#</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Campaign</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Revenue (₱)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">CPC (₱)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Ad Spend (₱)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">AR (%)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">#</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Campaign</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Revenue (₱)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">CPC (₱)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Ad Spend (₱)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">AR (%)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
                   {isLoading ? (
                     <AnalyticsTableLoadingRows colCount={6} />
                   ) : (
                     pagedTopCampaigns.map((row, idx) => (
-                      <tr key={`${row.campaign}-${idx}`} className="hover:bg-slate-50">
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">
+                      <tr key={`${row.campaign}-${idx}`} className="hover:bg-slate-50 dark:hover:bg-background-secondary">
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
                           {(topCampaignPage - 1) * pageSize + idx + 1}.
                         </td>
-                        <td className="px-3 py-3 text-sm font-medium text-slate-900 sm:px-4 lg:px-6">
+                        <td className="px-3 py-3 text-sm font-medium text-slate-900 dark:text-foreground sm:px-4 lg:px-6">
                           <div className="min-w-[150px] max-w-[260px]">
                             <div className="truncate" title={row.campaign}>{row.campaign || '—'}</div>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.revenue)}</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.cpc)}</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.ad_spend)}</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{(row.ar_pct ?? 0).toFixed(1)}%</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{formatPhpCurrency(row.revenue)}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{formatPhpCurrency(row.cpc)}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{formatPhpCurrency(row.ad_spend)}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{(row.ar_pct ?? 0).toFixed(1)}%</td>
                       </tr>
                     ))
                   )}
@@ -675,39 +675,39 @@ export default function MarketingAnalyticsPage() {
             isLoading={isLoading}
           >
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-100">
-                <thead className="bg-slate-50">
+              <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
+                <thead className="bg-slate-50 dark:bg-background-secondary">
                   <tr>
-                    <th className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 md:sticky md:left-0 md:z-20 sm:px-4 lg:px-6">#</th>
-                    <th className="min-w-[12rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 md:sticky md:left-[4rem] md:z-20 sm:px-4 lg:px-6">Marketing Associate</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Ad</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Revenue (₱)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">CPC (₱)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">Ad Spend (₱)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 sm:px-4 lg:px-6">AR (%)</th>
+                    <th className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:bg-background-secondary dark:text-slate-300 md:sticky md:left-0 md:z-20 sm:px-4 lg:px-6">#</th>
+                    <th className="min-w-[12rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:bg-background-secondary dark:text-slate-300 md:sticky md:left-[4rem] md:z-20 sm:px-4 lg:px-6">Marketing Associate</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Ad</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Revenue (₱)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">CPC (₱)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">Ad Spend (₱)</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">AR (%)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
                   {isLoading ? (
                     <AnalyticsTableLoadingRows colCount={7} />
                   ) : (
                     pagedTopCreatives.map((row, idx) => (
-                      <tr key={`${row.associate}-${row.ad_name}-${idx}`} className="group hover:bg-slate-50">
-                        <td className="w-16 min-w-[4rem] max-w-[4rem] bg-white px-3 py-3 text-sm whitespace-nowrap text-slate-700 md:sticky md:left-0 md:z-10 group-hover:bg-slate-50 sm:px-4 lg:px-6">
+                      <tr key={`${row.associate}-${row.ad_name}-${idx}`} className="group hover:bg-slate-50 dark:hover:bg-background-secondary">
+                        <td className="w-16 min-w-[4rem] max-w-[4rem] bg-white px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:bg-surface dark:text-slate-300 md:sticky md:left-0 md:z-10 group-hover:bg-slate-50 dark:group-hover:bg-background-secondary sm:px-4 lg:px-6">
                           {(topCreativePage - 1) * pageSize + idx + 1}.
                         </td>
-                        <td className="min-w-[12rem] bg-white px-3 py-3 text-sm font-medium whitespace-nowrap text-slate-900 md:sticky md:left-[4rem] md:z-10 group-hover:bg-slate-50 sm:px-4 lg:px-6">
+                        <td className="min-w-[12rem] bg-white px-3 py-3 text-sm font-medium whitespace-nowrap text-slate-900 dark:bg-surface dark:text-foreground md:sticky md:left-[4rem] md:z-10 group-hover:bg-slate-50 dark:group-hover:bg-background-secondary sm:px-4 lg:px-6">
                           {toTitleCase(row.associateDisplay || row.associate)}
                         </td>
-                        <td className="px-3 py-3 text-sm text-slate-900 sm:px-4 lg:px-6">
+                        <td className="px-3 py-3 text-sm text-slate-900 dark:text-foreground sm:px-4 lg:px-6">
                           <div className="min-w-[150px] max-w-[260px]">
                             <div className="truncate" title={row.ad_name || '—'}>{row.ad_name || '—'}</div>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.revenue)}</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.cpc)}</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{formatPhpCurrency(row.ad_spend)}</td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 sm:px-4 lg:px-6">{(row.ar_pct ?? 0).toFixed(1)}%</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{formatPhpCurrency(row.revenue)}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{formatPhpCurrency(row.cpc)}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{formatPhpCurrency(row.ad_spend)}</td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">{(row.ar_pct ?? 0).toFixed(1)}%</td>
                       </tr>
                     ))
                   )}

@@ -30,7 +30,7 @@ export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
             'input',
             error
               ? 'border-destructive bg-destructive-soft/50'
-              : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1]',
+              : 'border-[#E2E8F0] bg-surface dark:border-border hover:border-[#CBD5E1]',
             className
           )}
           {...props}

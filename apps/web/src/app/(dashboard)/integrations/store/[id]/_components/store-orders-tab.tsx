@@ -109,7 +109,7 @@ export function StoreOrdersTab({
                 }
                 onDateRangeChange(value as StoreOrderDateRange);
               }}
-              inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 transition-[width] duration-300 ease-out ${
+              inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-border dark:!bg-transparent dark:!text-transparent transition-[width] duration-300 ease-out ${
                 showRangeText ? 'w-[236px]' : 'w-10'
               }`}
               displayFormat="MM/DD/YYYY"
@@ -118,7 +118,7 @@ export function StoreOrdersTab({
                 <span className="flex w-full items-center gap-2 overflow-hidden">
                   <Calendar className="h-4 w-4 shrink-0" />
                   <span
-                    className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                    className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
                       showRangeText
                         ? 'max-w-[184px] translate-x-0 opacity-100'
                         : 'max-w-0 -translate-x-1 opacity-0'
@@ -128,7 +128,7 @@ export function StoreOrdersTab({
                   </span>
                 </span>
               )}
-              toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+              toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-orange-700 dark:text-foreground"
               containerClassName=""
               popupClassName={(defaultClass: string) => `${defaultClass} z-50 kpi-datepicker-light`}
               placeholder=" "

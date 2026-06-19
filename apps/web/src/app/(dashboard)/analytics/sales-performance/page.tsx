@@ -69,6 +69,27 @@ const formatShortDate = (dateStr: string) => {
   });
 };
 
+type ChartPalette = {
+  foreground: string;
+  secondary: string;
+  border: string;
+  borderSoft: string;
+};
+
+const CHART_LIGHT: ChartPalette = {
+  foreground: '#0f172a',
+  secondary: 'rgba(15, 23, 42, 0.78)',
+  border: '#cbd5e1',
+  borderSoft: '#e2e8f0',
+};
+
+const CHART_DARK: ChartPalette = {
+  foreground: '#f8fafc',
+  secondary: 'rgba(248, 250, 252, 0.82)',
+  border: '#475569',
+  borderSoft: 'rgba(71, 85, 105, 0.45)',
+};
+
 const buildSparklineOption = (
   labels: string[],
   data: number[],
@@ -125,7 +146,7 @@ const buildSparklineOption = (
 const TooltipRow = ({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) => (
   <div className="flex items-center justify-between text-[12px] text-slate-700">
     <span>{label}</span>
-    <span className={bold ? 'font-semibold text-slate-900' : ''}>{value}</span>
+    <span className={bold ? 'font-semibold text-foreground' : ''}>{value}</span>
   </div>
 );
 
@@ -169,6 +190,7 @@ export default function SalesPerformancePage() {
   const [problematicData, setProblematicData] = useState<ProblematicDeliveryResponse | null>(null);
   const [sunburstHoverInfo, setSunburstHoverInfo] = useState<SunburstHoverInfo | null>(null);
   const [isProblematicLoading, setIsProblematicLoading] = useState(false);
+  const [isChartsDark, setIsChartsDark] = useState(false);
   const [chartShopOptions, setChartShopOptions] = useState<string[]>([]);
   const [selectedChartShops, setSelectedChartShops] = useState<string[]>([]);
   const [isAllChartShopsMode, setIsAllChartShopsMode] = useState(true);
@@ -234,6 +256,30 @@ export default function SalesPerformancePage() {
     document.addEventListener('mousedown', handleDeliveryMenuClose);
     return () => document.removeEventListener('mousedown', handleDeliveryMenuClose);
   }, [showDeliveryViewMenu]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const root = document.documentElement;
+    const syncChartMode = () => {
+      setIsChartsDark(root.classList.contains('dark'));
+    };
+
+    syncChartMode();
+
+    const observer = new MutationObserver(() => {
+      syncChartMode();
+    });
+
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['class', 'style'],
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -546,64 +592,68 @@ export default function SalesPerformancePage() {
   }, [problematicData?.data]);
 
   const chartOption = useMemo(
-    () => ({
-      tooltip: {
-        show: false,
-      },
-      series: [
-        {
-          type: 'sunburst',
-          radius: ['2%', '94%'],
-          data: sunburstSeriesData,
-          sort: null,
-          nodeClick: false,
-          animation: false,
-          animationDurationUpdate: 0,
-          label: { show: false },
-          itemStyle: {
-            borderColor: '#ffffff',
-            borderWidth: 2,
-          },
-          levels: [
-            {},
-            {
-              r0: '8%',
-              r: '24%',
-              itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
-              label: { show: false },
-            },
-            {
-              r0: '34%',
-              r: '50%',
-              itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
-              label: { show: false },
-            },
-            {
-              r0: '60%',
-              r: '76%',
-              itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
-              label: { show: false },
-            },
-          ],
-          emphasis: {
-            focus: 'ancestor',
-            itemStyle: {
-              opacity: 1,
-              borderColor: '#ffffff',
-              borderWidth: 2,
-            },
-          },
-          blur: {
-            itemStyle: {
-              opacity: 0.22,
-              borderColor: '#ffffff',
-              borderWidth: 2,
-            },
-          },
+    () => {
+      const segmentBorder = isChartsDark ? '#0f172a' : '#ffffff';
+
+      return {
+        tooltip: {
+          show: false,
         },
-      ],
-    }),
-    [sunburstSeriesData],
+        series: [
+          {
+            type: 'sunburst',
+            radius: ['2%', '94%'],
+            data: sunburstSeriesData,
+            sort: null,
+            nodeClick: false,
+            animation: false,
+            animationDurationUpdate: 0,
+            label: { show: false },
+            itemStyle: {
+              borderColor: segmentBorder,
+              borderWidth: 2,
+            },
+            levels: [
+              {},
+              {
+                r0: '8%',
+                r: '24%',
+                itemStyle: { borderColor: segmentBorder, borderWidth: 2 },
+                label: { show: false },
+              },
+              {
+                r0: '34%',
+                r: '50%',
+                itemStyle: { borderColor: segmentBorder, borderWidth: 2 },
+                label: { show: false },
+              },
+              {
+                r0: '60%',
+                r: '76%',
+                itemStyle: { borderColor: segmentBorder, borderWidth: 2 },
+                label: { show: false },
+              },
+            ],
+            emphasis: {
+              focus: 'ancestor',
+              itemStyle: {
+                opacity: 1,
+                borderColor: segmentBorder,
+                borderWidth: 2,
+              },
+            },
+            blur: {
+              itemStyle: {
+                opacity: 0.22,
+                borderColor: segmentBorder,
+                borderWidth: 2,
+              },
+            },
+          },
+        ],
+      };
+    },
+    [isChartsDark, sunburstSeriesData],
   );
 
   const sunburstEvents = useMemo(
@@ -811,15 +861,26 @@ export default function SalesPerformancePage() {
 
   const trendLineOption = useMemo(() => {
     const { labels, delivered, rts } = trendChartData;
+    const palette = isChartsDark ? CHART_DARK : CHART_LIGHT;
 
     return {
       tooltip: {
         trigger: 'axis',
+        backgroundColor: isChartsDark ? '#0f172a' : '#ffffff',
+        borderColor: palette.border,
+        borderWidth: 1,
+        textStyle: { color: palette.foreground },
       },
       legend: {
         data: ['Delivered', 'RTS'],
         top: 6,
         left: 12,
+        itemWidth: 10,
+        itemHeight: 10,
+        textStyle: {
+          color: palette.secondary,
+          fontSize: 11,
+        },
       },
       grid: {
         left: 16,
@@ -832,13 +893,18 @@ export default function SalesPerformancePage() {
         type: 'category',
         data: labels,
         boundaryGap: false,
+        axisLine: { lineStyle: { color: palette.border } },
         axisTick: { show: false },
+        axisLabel: { color: palette.secondary, fontSize: 11 },
       },
       yAxis: {
         type: 'value',
         splitLine: {
-          lineStyle: { color: '#E2E8F0' },
+          lineStyle: { color: palette.borderSoft },
         },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: { color: palette.secondary, fontSize: 11 },
       },
       series: [
         {
@@ -869,13 +935,13 @@ export default function SalesPerformancePage() {
         },
       ],
     };
-  }, [trendChartData]);
+  }, [isChartsDark, trendChartData]);
 
   const buildSmpTooltip = (summary?: SalesPerformanceSummary | null) => {
     if (!summary) return null;
     return (
       <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-slate-900">SMP % inputs</div>
+        <div className="text-[12px] font-semibold text-foreground">SMP % inputs</div>
         <div className="space-y-1">
           <TooltipRow label="Sales Cod" value={formatCurrency(summary.sales_cod)} />
           <TooltipRow label="MKTG Cod" value={formatCurrency(summary.mktg_cod)} />
@@ -892,7 +958,7 @@ export default function SalesPerformancePage() {
     if (!summary) return null;
     return (
       <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-slate-900">RTS Rate inputs</div>
+        <div className="text-[12px] font-semibold text-foreground">RTS Rate inputs</div>
         <div className="space-y-1">
           <TooltipRow label="RTS Orders" value={formatCount(summary.rts_count)} />
           <TooltipRow label="Delivered Orders" value={formatCount(summary.delivered_count)} />
@@ -909,7 +975,7 @@ export default function SalesPerformancePage() {
     if (!summary) return null;
     return (
       <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-slate-900">Confirmation Rate inputs</div>
+        <div className="text-[12px] font-semibold text-foreground">Confirmation Rate inputs</div>
         <div className="space-y-1">
           <TooltipRow label="Confirmed Orders" value={formatCount(summary.confirmed_count)} />
           <TooltipRow label="Total Orders" value={formatCount(summary.order_count)} />
@@ -926,7 +992,7 @@ export default function SalesPerformancePage() {
     if (!summary) return null;
     return (
       <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-slate-900">Pending Rate inputs</div>
+        <div className="text-[12px] font-semibold text-foreground">Pending Rate inputs</div>
         <div className="space-y-1">
           <TooltipRow label="Pending Orders" value={formatCount(summary.pending_count)} />
           <TooltipRow label="Total Orders" value={formatCount(summary.order_count)} />
@@ -943,7 +1009,7 @@ export default function SalesPerformancePage() {
     if (!summary) return null;
     return (
       <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-slate-900">Cancellation Rate inputs</div>
+        <div className="text-[12px] font-semibold text-foreground">Cancellation Rate inputs</div>
         <div className="space-y-1">
           <TooltipRow label="Cancelled Orders" value={formatCount(summary.cancelled_count)} />
           <TooltipRow label="Total Orders" value={formatCount(summary.order_count)} />
@@ -960,7 +1026,7 @@ export default function SalesPerformancePage() {
     if (!summary) return null;
     return (
       <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-slate-900">Upsell Rate inputs</div>
+        <div className="text-[12px] font-semibold text-foreground">Upsell Rate inputs</div>
         <div className="space-y-1">
           <TooltipRow label="Upsell Tag Count" value={formatCount(summary.upsell_tag_count)} />
           <TooltipRow label="For Upsell Count" value={formatCount(summary.for_upsell_count)} />
@@ -1214,7 +1280,7 @@ export default function SalesPerformancePage() {
             Analytics
           </span>
         }
-        title="Sales Performance"
+        title="Sales Operations"
         description="Track performance by sales assignee and shop to understand upsell impact."
       />
 
@@ -1259,7 +1325,7 @@ export default function SalesPerformancePage() {
                 showFooter={false}
                 primaryColor="orange"
                 readOnly
-                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-border dark:!bg-transparent dark:!text-transparent transition-[width] duration-300 ease-out ${
                   salesPerformanceDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
                 }`}
                 containerClassName=""
@@ -1270,7 +1336,7 @@ export default function SalesPerformancePage() {
                   <span className="flex w-full items-center gap-2 overflow-hidden">
                     <CalendarDays className="h-4 w-4 shrink-0" />
                     <span
-                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
                         salesPerformanceDateRangeIsToday
                           ? 'max-w-0 -translate-x-1 opacity-0'
                           : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
@@ -1280,7 +1346,7 @@ export default function SalesPerformancePage() {
                     </span>
                   </span>
                 )}
-                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 dark:text-white hover:text-orange-700 dark:text-foreground"
                 placeholder=" "
               />
             </div>
@@ -1415,7 +1481,7 @@ export default function SalesPerformancePage() {
             <button
               type="button"
               onClick={() => setShowDeliveryViewMenu((p) => !p)}
-              className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900 sm:text-lg"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-foreground sm:text-lg"
             >
               <span className='whitespace-nowrap'>
                 {selectedDeliveryViewLabel}
@@ -1423,7 +1489,7 @@ export default function SalesPerformancePage() {
               <ChevronDown className="h-4 w-4 text-slate-500" />
             </button>
             {showDeliveryViewMenu && (
-              <div className="absolute left-0 z-20 mt-2 w-64 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              <div className="absolute left-0 z-20 mt-2 w-64 rounded-xl border border-slate-200 bg-surface py-1 shadow-lg dark:border-border">
                 {deliveryViewOptions.map((opt) => (
                   <button
                     key={opt.key}
@@ -1434,8 +1500,8 @@ export default function SalesPerformancePage() {
                     }}
                     className={`block w-full px-3 py-2 text-left text-sm sm:text-base ${
                       deliveryViewSelection === opt.key
-                        ? 'bg-slate-100 font-semibold text-foreground'
-                        : 'text-slate-700 hover:bg-slate-50'
+                        ? 'bg-slate-100 font-semibold text-foreground dark:bg-background-secondary'
+                        : 'text-foreground hover:bg-slate-50 dark:bg-surface dark:hover:bg-background-secondary'
                     }`}
                   >
                     {opt.label}
@@ -1446,7 +1512,7 @@ export default function SalesPerformancePage() {
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
             {deliveryViewSelection === 'repurchase' && !isProblematicLoading && !hasChartShopOptions ? (
-              <p className="flex h-10 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-sm text-slate-500">
+              <p className="flex h-10 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 dark:border-border dark:bg-background-secondary dark:text-slate-300">
                 No shops to filter.
               </p>
             ) : (
@@ -1482,7 +1548,7 @@ export default function SalesPerformancePage() {
                 showFooter={false}
                 primaryColor="orange"
                 readOnly
-                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-border dark:!bg-transparent dark:!text-transparent transition-[width] duration-300 ease-out ${
                   salesPerformanceDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
                 }`}
                 containerClassName=""
@@ -1491,9 +1557,9 @@ export default function SalesPerformancePage() {
                 separator=" - "
                 toggleIcon={() => (
                   <span className="flex w-full items-center gap-2 overflow-hidden">
-                    <CalendarDays className="h-4 w-4 shrink-0" />
+                    <CalendarDays className="h-4 w-4 shrink-0 text-white" />
                     <span
-                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                      className={`whitespace-nowrap text-xs font-medium text-slate-700 dark:text-white transition-all duration-300 ease-out ${
                         salesPerformanceDateRangeIsToday
                           ? 'max-w-0 -translate-x-1 opacity-0'
                           : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
@@ -1503,7 +1569,7 @@ export default function SalesPerformancePage() {
                     </span>
                   </span>
                 )}
-                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 dark:text-white hover:text-orange-700 cursor-pointer"
                 placeholder=" "
               />
             </div>
@@ -1544,13 +1610,13 @@ export default function SalesPerformancePage() {
           ) : (
             <>
           <div className="mb-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:bg-background-secondary dark:border-border">
               <div className="px-1 pb-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">On Delivery</p>
-                <p className="text-3xl font-bold text-slate-900">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">On Delivery</p>
+                <p className="text-3xl font-bold text-foreground">
                   {formatCount(problematicData?.onDeliveryAllTime?.count || 0)}
                 </p>
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-300">
                   COD: {formatCurrency(problematicData?.onDeliveryAllTime?.totalCod || 0)}
                 </p>
               </div>
@@ -1564,13 +1630,13 @@ export default function SalesPerformancePage() {
                 </div>
               )}
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:bg-background-secondary dark:border-border">
               <div className="px-1 pb-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Undeliverable</p>
-                <p className="text-3xl font-bold text-slate-900">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">Undeliverable</p>
+                <p className="text-3xl font-bold text-foreground">
                   {formatCount(problematicData?.undeliverableAllTime?.count || 0)}
                 </p>
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-300">
                   COD: {formatCurrency(problematicData?.undeliverableAllTime?.totalCod || 0)}
                 </p>
               </div>
@@ -1584,15 +1650,15 @@ export default function SalesPerformancePage() {
                 </div>
               )}
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:bg-background-secondary dark:border-border">
               <div className="px-1 pb-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                   {deliveredInRangeLabel}
                 </p>
-                <p className="text-3xl font-bold text-slate-900">
+                <p className="text-3xl font-bold text-foreground">
                   {formatCount(problematicData?.deliveredInRange?.count || 0)}
                 </p>
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-300">
                   COD: {formatCurrency(problematicData?.deliveredInRange?.totalCod || 0)}
                 </p>
               </div>
@@ -1606,15 +1672,15 @@ export default function SalesPerformancePage() {
                 </div>
               )}
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:bg-background-secondary dark:border-border">
               <div className="px-1 pb-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                   {returnedInRangeLabel}
                 </p>
-                <p className="text-3xl font-bold text-slate-900">
+                <p className="text-3xl font-bold text-foreground">
                   {formatCount(problematicData?.returnedInRange?.count || 0)}
                 </p>
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-300">
                   COD: {formatCurrency(problematicData?.returnedInRange?.totalCod || 0)}
                 </p>
               </div>
@@ -1630,29 +1696,34 @@ export default function SalesPerformancePage() {
             </div>
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-            <div className="xl:col-span-2 rounded-xl border border-slate-200 bg-slate-50/40 p-2">
-              <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">RTS Reason Data</p>
+            <div className="xl:col-span-2 rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:bg-background-secondary dark:border-border">
+              <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">RTS Reason Data</p>
               {isProblematicLoading ? (
-                <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
+                <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100 dark:bg-background-secondary" />
               ) : (problematicData?.data?.length || 0) > 0 ? (
                 <>
                   <div className="px-2 pt-2 pb-1">
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
                       {sunburstLegend.map((item) => (
-                        <div key={item.name} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                        <div key={item.name} className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-foreground">
                           <span
                             className="h-4 w-8 flex-shrink-0 rounded-md"
                             style={{ backgroundColor: item.color }}
                           />
-                          <span className="font-medium text-slate-700">{item.name}</span>
-                          <span className="tabular-nums text-slate-500">{formatCount(item.count)}</span>
+                          <span className="font-medium text-slate-700 dark:text-foreground">{item.name}</span>
+                          <span className="tabular-nums text-slate-500 dark:text-slate-300">{formatCount(item.count)}</span>
                         </div>
                       ))}
                     </div>
                   </div>
-                  <ReactECharts option={chartOption} onEvents={sunburstEvents} style={{ height: 500 }} />
+                  <ReactECharts
+                    key={`sales-problematic-sunburst-${isChartsDark ? 'dark' : 'light'}`}
+                    option={chartOption}
+                    onEvents={sunburstEvents}
+                    style={{ height: 500 }}
+                  />
                   <div className="px-2 pt-2 pb-1">
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 min-h-[84px]">
+                    <div className="rounded-lg border border-slate-200 bg-surface px-3 py-2 min-h-[84px] dark:border-border">
                       {sunburstHoverInfo ? (
                         <div className="space-y-1">
                           <div className="flex min-w-0 items-start gap-2">
@@ -1661,7 +1732,7 @@ export default function SalesPerformancePage() {
                               style={{ backgroundColor: sunburstHoverInfo.color }}
                             />
                             <p
-                              className="min-w-0 flex-1 text-sm font-medium text-slate-800 leading-5 whitespace-normal break-words"
+                              className="min-w-0 flex-1 text-sm font-medium text-foreground leading-5 whitespace-normal break-words"
                               title={sunburstHoverInfo.path}
                               style={{
                                 display: '-webkit-box',
@@ -1673,13 +1744,13 @@ export default function SalesPerformancePage() {
                               {sunburstHoverInfo.path}
                             </p>
                           </div>
-                          <p className="text-xs text-slate-600">
-                            Orders: <span className="font-semibold text-slate-900">{formatCount(sunburstHoverInfo.orders)}</span>{' '}
+                          <p className="text-xs text-slate-600 dark:text-slate-300">
+                            Orders: <span className="font-semibold text-foreground">{formatCount(sunburstHoverInfo.orders)}</span>{' '}
                             ({sunburstHoverInfo.pct.toFixed(1)}%)
                           </p>
                         </div>
                       ) : (
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-slate-500 dark:text-slate-300">
                           Hover a chart segment to inspect details.
                         </p>
                       )}
@@ -1687,19 +1758,23 @@ export default function SalesPerformancePage() {
                   </div>
                 </>
               ) : (
-                <div className="h-[500px] w-full rounded-xl border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-sm text-slate-500">
+                <div className="flex h-[500px] w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/40 text-sm text-slate-500 dark:border-border dark:bg-surface dark:text-slate-300">
                   No problematic delivery data.
                 </div>
               )}
             </div>
-            <div className="xl:col-span-3 rounded-xl border border-slate-200 bg-slate-50/40 p-2">
-              <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Delivered vs RTS Trend</p>
+            <div className="xl:col-span-3 rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:bg-background-secondary dark:border-border">
+              <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">Delivered vs RTS Trend</p>
               {isProblematicLoading ? (
-                <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100" />
+                <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100 dark:bg-surface" />
               ) : (problematicData?.trend?.length || 0) > 0 ? (
-                <ReactECharts option={trendLineOption} style={{ height: 500 }} />
+                <ReactECharts
+                  key={`sales-problematic-trend-${isChartsDark ? 'dark' : 'light'}`}
+                  option={trendLineOption}
+                  style={{ height: 500 }}
+                />
               ) : (
-                <div className="h-[500px] w-full rounded-xl border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-sm text-slate-500">
+                <div className="flex h-[500px] w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/40 text-sm text-slate-500 dark:border-border dark:bg-surface dark:text-slate-300">
                   No trend data for the selected range.
                 </div>
               )}
@@ -1731,7 +1806,7 @@ export default function SalesPerformancePage() {
             <AlertBanner tone="warning" message="This action cannot be undone." />
             <div>
               <span className="text-slate-500">Date range:</span>{' '}
-              <span className="font-semibold text-slate-900">{rangeLabel}</span>
+              <span className="font-semibold text-foreground">{rangeLabel}</span>
             </div>
           </div>
 

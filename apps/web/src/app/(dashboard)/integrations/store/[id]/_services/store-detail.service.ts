@@ -3,6 +3,29 @@ import type { Product } from '../product-columns';
 import type { Order } from '../order-columns';
 import type { PosStore, StoreOrderDateRange } from '../../../_types/store-detail';
 
+export type BulkCogsSummaryItem = {
+  id: string;
+  name: string | null;
+  productId: string | null;
+  customId: string | null;
+  reason?: string;
+};
+
+export type BulkCogsUpdateResponse = {
+  success: boolean;
+  updated: number;
+  created: number;
+  processed: number;
+  requested: number;
+  matched: number;
+  message: string;
+  summary: {
+    new: BulkCogsSummaryItem[];
+    updated: BulkCogsSummaryItem[];
+    failed: BulkCogsSummaryItem[];
+  };
+};
+
 function getAuthHeaders() {
   const token = localStorage.getItem('access_token');
   if (!token) return null;
@@ -120,5 +143,25 @@ export const storeDetailService = {
       },
       { headers },
     );
+  },
+
+  async updateProductsCogs(params: {
+    storeId: string;
+    productIds: string[];
+    cogs: number;
+  }) {
+    const headers = getAuthHeaders();
+    if (!headers) throw new Error('UNAUTHORIZED');
+
+    const response = await apiClient.patch<BulkCogsUpdateResponse>(
+      `/integrations/pos-stores/${params.storeId}/products/cogs`,
+      {
+        productIds: params.productIds,
+        cogs: params.cogs,
+      },
+      { headers },
+    );
+
+    return response.data;
   },
 };

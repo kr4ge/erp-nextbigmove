@@ -218,6 +218,19 @@ export function useStoreDetailController(storeId: string) {
     [fetchStoredProducts, storeId],
   );
 
+  const handleBulkCogs = useCallback(
+    async (selectedProductIds: string[], cogs: number) => {
+      const response = await storeDetailService.updateProductsCogs({
+        storeId,
+        productIds: selectedProductIds,
+        cogs,
+      });
+      await fetchStoredProducts();
+      return response;
+    },
+    [fetchStoredProducts, storeId],
+  );
+
   const storeName = store?.shopName || store?.name || 'Store';
   const avatarUrl = store?.shopAvatarUrl;
 
@@ -260,6 +273,7 @@ export function useStoreDetailController(storeId: string) {
     handleSaveInitialOffer,
     handleCopyApiKey,
     handleBulkMapping,
+    handleBulkCogs,
     storeName,
     avatarUrl,
     formatDate,

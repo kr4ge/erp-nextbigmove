@@ -68,7 +68,7 @@ export function InventoryTransferHistoryTable({
                 </BodyCell>
 
                 <BodyCell>
-                  <div className="min-w-[200px]">
+                  <div className="min-w-[150px]">
                     <div className="truncate font-medium text-primary">
                       {transfer.fromLocation?.code ?? 'No source'} → {transfer.toLocation.code}
                     </div>

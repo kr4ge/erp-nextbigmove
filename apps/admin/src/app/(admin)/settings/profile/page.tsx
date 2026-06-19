@@ -175,7 +175,7 @@ export default function SettingsProfilePage() {
                 </WmsFormField>
 
                 <div className="md:col-span-2">
-                  <div className="rounded-[20px] border border-[#dce4ea] bg-[#fbfcfc] p-4">
+                  <div className="rounded-xl border border-[#dce4ea] bg-[#fbfcfc] p-4">
                     <p className="panel-title">
                       Password
                     </p>

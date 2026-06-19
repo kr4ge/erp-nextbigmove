@@ -117,16 +117,16 @@ export function NameConventionCard({
       titleClassName=""
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="max-w-2xl text-sm text-slate-600">
+        <p className="max-w-2xl text-sm text-slate-600 dark:text-slate-300">
           Generate standardized ad and campaign names without leaving the
           dashboard.
         </p>
-        <div className="inline-flex self-start rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm font-medium text-slate-700">
+        <div className="inline-flex self-start rounded-lg border border-slate-200 bg-slate-50 dark:border-border dark:bg-background-secondary p-1 text-sm font-medium text-slate-700">
           <button
             className={`rounded-md px-3 py-1 ${
               nameTab === "ads"
-              ? "btn btn-md btn-primary-soft"  // "bg-white text-orange-700 shadow-sm ring-1 ring-orange-100"
-                : "text-slate-500"
+              ? "btn btn-md btn-primary-soft"
+                : "text-slate-500 dark:text-slate-300"
             }`}
             onClick={() => setNameTab("ads")}
           >
@@ -136,7 +136,7 @@ export function NameConventionCard({
             className={`rounded-md px-3 py-1 ${
               nameTab === "campaign"
               ? "btn btn-md btn-primary-soft"
-                : "text-muted"
+                : "text-muted dark:text-slate-300"
             }`}
             onClick={() => setNameTab("campaign")}
           >

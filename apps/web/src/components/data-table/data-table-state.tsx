@@ -24,9 +24,9 @@ export function DataTableState({
       className={cn("flex flex-col items-center justify-center py-8 text-center", className)}
       {...props}
     >
-      {icon ? <div className="mb-3 text-[#94A3B8]">{icon}</div> : null}
-      <p className="text-sm font-semibold text-[#334155]">{title}</p>
-      {description ? <p className="mt-1 text-sm text-[#64748B]">{description}</p> : null}
+      {icon ? <div className="mb-3 text-[#94A3B8] dark:text-slate-400">{icon}</div> : null}
+      <p className="text-sm font-semibold text-[#334155] dark:text-foreground">{title}</p>
+      {description ? <p className="mt-1 text-sm text-[#64748B] dark:text-slate-300">{description}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );

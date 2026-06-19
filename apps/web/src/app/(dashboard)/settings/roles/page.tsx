@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
+import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import { FormInput } from '@/components/ui/form-input';
 import { FormTextarea } from '@/components/ui/form-textarea';
@@ -224,11 +225,12 @@ export default function RolesPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Existing Roles */}
         <div className="lg:col-span-2">
-          <section className="panel panel-content overflow-hidden">
-            <div className="panel-header">
-              <Shield className="panel-icon" />
-              <h2 className="panel-title">Roles</h2>
-            </div>
+          <DashboardSection
+            title="Roles"
+            icon={<Shield className="panel-icon" />}
+            className="overflow-hidden"
+            contentClassName="p-0"
+          >
             {isLoading && (
               <div className="p-6">
                 <LoadingCard label="Loading roles..." />
@@ -261,14 +263,14 @@ export default function RolesPage() {
                     <div key={role.id} className="space-y-4 px-6 py-4">
                       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div className="space-y-1">
-                          <p className="font-medium text-[#0F172A]">
+                          <p className="font-medium text-foreground">
                             {role.name}{' '}
                             <span className="text-xs text-[#94A3B8]">
                               {role.tenantId ? '(tenant)' : '(default)'} {role.isSystem ? '· system' : ''}
                             </span>
                           </p>
-                          <p className="text-sm text-[#475569]">{role.description}</p>
-                          <p className="break-all text-xs text-[#94A3B8]">{role.key}</p>
+                          <p className="text-sm text-[#475569] dark:text-slate-300">{role.description}</p>
+                          <p className="break-all text-xs text-[#94A3B8] dark:text-slate-400">{role.key}</p>
                         </div>
                         <div className="flex items-center gap-2">
                           {!role.isSystem && (
@@ -302,7 +304,7 @@ export default function RolesPage() {
                       )}
 
                       {isEditing && (
-                        <div className="space-y-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
+                        <div className="space-y-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] bg-background-secondary dark:border-border p-4">
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <FormInput
                               label="Name"
@@ -327,16 +329,16 @@ export default function RolesPage() {
                           </div>
 
                           <div className="space-y-2">
-                            <p className="text-sm font-semibold text-[#0F172A]">Permissions</p>
+                            <p className="text-sm font-semibold text-foreground">Permissions</p>
                             <div className="grid max-h-52 grid-cols-1 gap-2 overflow-auto sm:grid-cols-2 md:grid-cols-3">
                               {permissions?.map((p) => {
                                 const checked = draft.permissionKeys.includes(p.key);
                                 return (
-                                  <label key={p.id} className="flex items-center gap-2 text-sm text-[#0F172A]">
+                                  <label key={p.id} className="flex items-center gap-2 text-sm text-foreground">
                                     <input
                                       type="checkbox"
                                       checked={checked}
-                                      className="h-4 w-4 rounded border-[#E2E8F0] text-[#2563EB] focus:ring-[#2563EB]"
+                                      className="h-4 w-4 rounded border-[#E2E8F0] text-primary focus:ring-primary"
                                       onChange={() => {
                                         setDrafts((prev) => ({
                                           ...prev,
@@ -399,17 +401,16 @@ export default function RolesPage() {
                 })}
               </div>
             )}
-          </section>
+          </DashboardSection>
         </div>
 
         {/* Create Role Form */}
         <div>
-          <section className="panel panel-content">
-            <div className="panel-header">
-              <PlusCircle className="panel-icon" />
-              <h2 className="panel-title">Create ERP Role</h2>
-            </div>
-            <div className="p-4">
+          <DashboardSection
+            title="Create ERP Role"
+            icon={<PlusCircle className="panel-icon" />}
+            contentClassName="p-4"
+          >
             <form
               className="space-y-4"
               onSubmit={(e) => {
@@ -439,16 +440,16 @@ export default function RolesPage() {
               />
 
               <div className="space-y-2">
-                <p className="text-sm font-semibold text-[#0F172A]">Permissions</p>
+                <p className="text-sm font-semibold text-foreground">Permissions</p>
                 <div className="grid max-h-56 grid-cols-1 gap-2 overflow-auto rounded-xl border border-[#E2E8F0] p-3 min-[1730px]:grid-cols-2">
                   {permissions?.map((p) => {
                     const checked = createForm.permissionKeys.includes(p.key);
                     return (
-                      <label key={p.id} className="flex items-center gap-2 text-sm text-[#0F172A]">
+                      <label key={p.id} className="flex items-center gap-2 text-sm text-foreground">
                         <input
                           type="checkbox"
                           checked={checked}
-                          className="h-4 w-4 rounded border-[#E2E8F0] text-[#2563EB] focus:ring-[#2563EB]"
+                          className="h-4 w-4 rounded border-[#E2E8F0] text-primary focus:ring-primary"
                           onChange={() =>
                             setCreateForm((prev) => ({
                               ...prev,
@@ -478,8 +479,7 @@ export default function RolesPage() {
                 <AlertBanner tone="error" message="Failed to create role. Check details and try again." />
               )}
             </form>
-            </div>
-          </section>
+          </DashboardSection>
         </div>
       </div>
 

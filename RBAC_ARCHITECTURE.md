@@ -82,6 +82,7 @@ This ERP system implements a **two-tier RBAC architecture** that separates platf
 #### Data Access
 - `pos.read` - Read POS data (stores, orders, products)
 - `pos.cogs.manage` - Manage cost of goods sold
+- `orders.summary.read` - Access Orders Summary page
 - `meta.read` - Read Meta advertising data
 - `analytics.marketing` - Access marketing analytics dashboards
 - `analytics.sales` - Access sales analytics dashboards
@@ -188,6 +189,7 @@ useEffect(() => {
 | `/users` | `user.manage` |
 | `/teams` | `team.manage` |
 | `/roles` | `permission.assign` |
+| `/orders/summary` | `orders.summary.read` |
 
 ---
 

@@ -1,7 +1,6 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import type { WebhookConfig } from '../_types/webhook';
 
 interface WebhookReconcileSectionProps {
@@ -32,12 +31,11 @@ export function WebhookReconcileSection({
   onToggleAutoCancelEnabled,
 }: WebhookReconcileSectionProps) {
   return (
-    <Card>
-      <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-border dark:bg-surface">
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <p className="text-sm font-semibold text-slate-900">Webhook Reconciliation Settings</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-sm font-semibold text-foreground">Webhook Reconciliation Settings</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">
               Configure auto-reconcile behavior for webhook-triggered updates.
             </p>
           </div>
@@ -61,7 +59,7 @@ export function WebhookReconcileSection({
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">Reconcile Mode</label>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Reconcile Mode</label>
             <select
               value={reconcileModeInput}
               onChange={(event) =>
@@ -70,18 +68,18 @@ export function WebhookReconcileSection({
                 )
               }
               disabled={!canManage || loading || isUpdating}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-border dark:bg-background dark:text-foreground"
             >
               <option value="full_reset">Full Reset (same as manual reconcile)</option>
               <option value="incremental">Incremental (no day reset)</option>
             </select>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-300">
               `full_reset` clears and rebuilds the day slice for maximum consistency.
             </p>
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">Reconcile Interval (seconds)</label>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Reconcile Interval (seconds)</label>
             <input
               type="number"
               min={10}
@@ -90,9 +88,9 @@ export function WebhookReconcileSection({
               value={reconcileIntervalSecondsInput}
               onChange={(event) => onReconcileIntervalSecondsChange(event.target.value)}
               disabled={!canManage || loading || isUpdating}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-border dark:bg-background dark:text-foreground"
             />
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-300">
               Delay before running tenant-wide reconcile for queued webhook dates.
             </p>
           </div>
@@ -109,10 +107,10 @@ export function WebhookReconcileSection({
           </Button>
         </div>
 
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-border dark:bg-background">
           <div className="space-y-0.5">
-            <p className="text-sm font-semibold text-slate-900">Auto Cancel Job</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-sm font-semibold text-foreground">Auto Cancel Job</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">
               Automatically enqueue status update to `6` when return-rate criteria are met.
             </p>
           </div>
@@ -133,7 +131,6 @@ export function WebhookReconcileSection({
             />
           </button>
         </div>
-      </div>
-    </Card>
+    </div>
   );
 }

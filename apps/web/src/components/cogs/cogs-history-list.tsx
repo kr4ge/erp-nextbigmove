@@ -40,9 +40,7 @@ export function CogsHistoryList({ entries, onEdit, onDelete }: CogsHistoryListPr
         return (
           <div
             key={entry.id}
-            className={`border rounded-lg p-4 hover:bg-[#F8FAFC] transition ${
-              isActive ? "border-blue-200 bg-blue-50/30" : "border-[#E2E8F0] bg-white"
-            }`}
+            className="card border border-blue-200 bg-blue-50/30"
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -50,15 +48,7 @@ export function CogsHistoryList({ entries, onEdit, onDelete }: CogsHistoryListPr
                   <span className="text-2xl font-bold text-[#0F172A]">
                     ₱{parseFloat(entry.cogs).toFixed(2)}
                   </span>
-                  {isActive && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-700 text-xs font-medium">
-                      Current • Active
-                    </span>
-                  )}
                 </div>
-                <p className="text-sm text-[#64748B] mt-1">
-                  {startDate} → {endDate}
-                </p>
               </div>
 
               <div className="flex gap-2">

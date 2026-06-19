@@ -28,7 +28,7 @@ export const FormTextarea = forwardRef<HTMLTextAreaElement, FormTextareaProps>(
             'input',
             error
               ? 'border-destructive bg-destructive/10'
-              : 'border-[#E2E8F0] bg-surface hover:border-[#CBD5E1]',
+              : 'border-[#E2E8F0] bg-surface hover:border-[#CBD5E1] dark:border-border',
             className
           )}
           rows={4}

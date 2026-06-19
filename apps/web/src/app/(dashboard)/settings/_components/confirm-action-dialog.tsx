@@ -34,12 +34,12 @@ export function ConfirmActionDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md p-0">
-        <DialogHeader className="border-b border-slate-200 px-4 py-4">
+        <DialogHeader className="border-b border-slate-200 dark:border-border px-4 py-4">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        <DialogFooter className="border-t border-slate-200 px-4 py-4 sm:justify-end">
+        <DialogFooter className="border-t border-slate-200 dark:border-border px-4 py-4 sm:justify-end">
           <Button
             variant="ghost"
             onClick={() => onOpenChange(false)}

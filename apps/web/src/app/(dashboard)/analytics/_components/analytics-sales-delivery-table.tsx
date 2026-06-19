@@ -86,16 +86,16 @@ export function AnalyticsSalesDeliveryTable({
       pageIndicatorLabel={`Page ${deliveryPage} of ${totalDeliveryPages}`}
     >
       <div className="overflow-x-auto">
-        <table className="min-w-full table-fixed divide-y divide-slate-100">
-          <thead className="bg-slate-50">
+        <table className="min-w-full table-fixed divide-y divide-slate-100 dark:divide-border">
+          <thead className="bg-slate-50 dark:bg-background-secondary">
             <tr>
-              <th className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap md:sticky md:left-0 md:z-20 sm:px-4 lg:px-6">
+              <th className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-50 px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap dark:bg-background-secondary dark:text-slate-300 md:sticky md:left-0 md:z-10 sm:px-4 lg:px-6">
                 {renderSortLabel('#', 'index')}
               </th>
-              <th className="bg-slate-50 px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap md:sticky md:left-16 md:z-20 sm:px-4 lg:px-6">
+              <th className="bg-slate-50 px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap dark:bg-background-secondary dark:text-slate-300 md:sticky md:left-16 md:z-10 sm:px-4 lg:px-6">
                 {renderSortLabel('Product', 'product')}
               </th>
-              <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
+              <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap dark:text-slate-300">
                 {renderSortLabel('Total Order', 'total_orders')}
               </th>
               <th className="px-3 sm:px-4 lg:px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
@@ -130,29 +130,29 @@ export function AnalyticsSalesDeliveryTable({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
+          <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
             {isLoading ? (
               <AnalyticsTableLoadingRows colCount={13} />
             ) : (
               rows.map((item, idx) => (
-                <tr key={`${item.row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50">
-                  <td className="w-16 min-w-[4rem] max-w-[4rem] bg-white px-3 py-3 text-sm text-slate-700 whitespace-nowrap md:sticky md:left-0 md:z-20 sm:px-4 lg:px-6">
+                <tr key={`${item.row.mapping || 'null'}-${idx}`} className="hover:bg-slate-50 dark:hover:bg-background-secondary">
+                  <td className="w-16 min-w-[4rem] max-w-[4rem] bg-white px-3 py-3 text-sm text-slate-700 whitespace-nowrap dark:bg-surface dark:text-slate-300 md:sticky md:left-0 md:z-10 sm:px-4 lg:px-6">
                     {(deliveryPage - 1) * pageSize + idx + 1}.
                   </td>
-                  <td className="bg-white px-3 py-3 text-sm text-slate-900 font-medium whitespace-nowrap md:sticky md:left-16 md:z-20 sm:px-4 lg:px-6">
+                  <td className="bg-white px-3 py-3 text-sm text-slate-900 font-medium whitespace-nowrap dark:bg-surface dark:text-foreground md:sticky md:left-16 md:z-10 sm:px-4 lg:px-6">
                     {toTitleCase(item.display)}
                   </td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.total_orders ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.new_orders ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.restocking ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.confirmed ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.printed ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.waiting_pickup ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.shipped ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.delivered ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.rts ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.canceled ?? 0, 'number', 0)}</td>
-                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap">{formatMetricValue(item.row.deleted ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.total_orders ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.new_orders ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.restocking ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.confirmed ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.printed ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.waiting_pickup ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.shipped ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.delivered ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.rts ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.canceled ?? 0, 'number', 0)}</td>
+                  <td className="px-3 sm:px-4 lg:px-6 py-3 text-sm text-center text-slate-700 whitespace-nowrap dark:text-slate-300">{formatMetricValue(item.row.deleted ?? 0, 'number', 0)}</td>
                 </tr>
               ))
             )}

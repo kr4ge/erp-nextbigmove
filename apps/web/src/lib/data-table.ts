@@ -11,10 +11,10 @@ export type DataTableRowVariant =
 
 const rowVariantClassMap: Record<DataTableRowVariant, string> = {
   default: "",
-  info: "bg-blue-50/45",
-  success: "bg-emerald-50/45",
-  warning: "bg-amber-50/45",
-  error: "bg-rose-50/45",
+  info: "bg-blue-50/45 dark:bg-blue-950/20",
+  success: "bg-emerald-50/45 dark:bg-emerald-950/20",
+  warning: "bg-amber-50/45 dark:bg-amber-950/20",
+  error: "bg-rose-50/45 dark:bg-rose-950/20",
 };
 
 export function getCommonPinningStyles<TData>({
@@ -51,7 +51,7 @@ export function getPinnedCellClassName<TData>({
   section?: DataTableSection;
 }) {
   if (!column.getIsPinned()) return "";
-  return section === "head" ? "bg-[#F8FAFC]" : "bg-white";
+  return section === "head" ? "bg-[#F8FAFC] dark:bg-background-secondary" : "bg-white dark:bg-surface";
 }
 
 export function getDataTableRowVariantClassName(
@@ -64,6 +64,6 @@ export function getDataTableRowVariantClassName(
 export function getRowHoverClassName(isClickable = false) {
   return cn(
     "transition-colors",
-    isClickable ? "cursor-pointer hover:bg-[#F8FAFC]" : "hover:bg-[#F8FAFC]",
+    isClickable ? "cursor-pointer hover:bg-[#F8FAFC] dark:hover:bg-background-secondary" : "hover:bg-[#F8FAFC] dark:hover:bg-background-secondary",
   );
 }

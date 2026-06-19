@@ -47,10 +47,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             >
               {t.type === 'success' ? '✓' : t.type === 'error' ? '!' : 'i'}
             </div>
-            <div className="ml-3 mr-2 min-w-0 flex-1 text-sm font-medium text-slate-900">{t.message}</div>
+            <div className="ml-3 mr-2 min-w-0 flex-1 text-sm font-medium text-foreground">{t.message}</div>
             <button
               type="button"
-              className="ml-auto inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-border/70 bg-surface-soft text-slate-500 transition hover:border-border hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              className="ml-auto inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-border/70 bg-surface-soft text-slate-500 transition hover:border-border hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-background-secondary dark:hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200"
               onClick={() => removeToast(t.id)}
               aria-label="Close toast"
             >

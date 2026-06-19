@@ -60,15 +60,15 @@ export function AnalyticsMultiSelectPicker({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white hover:border-slate-300 focus:outline-none"
+        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:border-slate-300 focus:outline-none dark:border-border dark:bg-transparent"
       >
-        <span className="text-slate-900">{selectedLabel}</span>
-        <span className="text-slate-400 text-xs">(click to choose)</span>
+        <span className="text-slate-900 dark:text-foreground">{selectedLabel}</span>
+        <span className="text-xs text-slate-400 dark:text-slate-300">(click to choose)</span>
       </button>
 
       {open && (
-        <div className="absolute z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg">
-          <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 border-b border-slate-100">
+        <div className="absolute z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-surface shadow-lg dark:border-border">
+          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 text-sm text-slate-700 dark:border-border dark:text-foreground">
             <span>{selectTitle}</span>
             <button
               type="button"
@@ -81,17 +81,17 @@ export function AnalyticsMultiSelectPicker({
               Clear
             </button>
           </div>
-          <div className="px-3 py-2 border-b border-slate-100">
+          <div className="border-b border-slate-100 px-3 py-2 dark:border-border">
             <input
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search"
-              className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-primary"
+              className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:border-primary focus:outline-none dark:border-border dark:bg-surface dark:text-foreground"
             />
           </div>
           <div className="max-h-64 overflow-auto">
-            <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+            <div className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-foreground dark:hover:bg-background-secondary">
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -108,7 +108,7 @@ export function AnalyticsMultiSelectPicker({
             {filteredOptions.map((option) => (
               <div
                 key={option.value}
-                className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
+                className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-foreground dark:hover:bg-background-secondary"
               >
                 <label className="flex items-center gap-2">
                   <input

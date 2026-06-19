@@ -19,7 +19,7 @@ export function AnalyticsSortToggleLabel({
     <button
       type="button"
       onClick={onToggle}
-      className="inline-flex items-center gap-1 text-xs font-semibold uppercase text-slate-500 hover:text-slate-700"
+      className="inline-flex items-center gap-1 text-xs font-semibold uppercase text-slate-500 hover:text-slate-700 dark:text-slate-300"
     >
       <span>{label}</span>
       {isActive ? (

@@ -3526,6 +3526,127 @@ export class IntegrationService {
     };
   }
 
+  async bulkUpdateProductCogs(storeId: string, productIds: string[], cogs: number) {
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      throw new BadRequestException('productIds must contain at least one product');
+    }
+
+    if (!Number.isFinite(cogs) || cogs <= 0) {
+      throw new BadRequestException('cogs must be greater than 0');
+    }
+
+    const store = await this.getPosStore(storeId); // validates access including shared integrations
+    const effectiveTeamId = await this.teamContext.validateAndGetTeamId(store.teamId);
+    const uniqueProductIds = Array.from(
+      new Set(productIds.filter((value) => typeof value === 'string' && value.trim().length > 0)),
+    );
+
+    if (uniqueProductIds.length === 0) {
+      throw new BadRequestException('productIds must contain valid product IDs');
+    }
+
+    const products = await this.prisma.posProduct.findMany({
+      where: {
+        id: { in: uniqueProductIds },
+        storeId: store.id,
+      },
+      select: {
+        id: true,
+        name: true,
+        productId: true,
+        customId: true,
+      },
+    });
+
+    if (products.length === 0) {
+      throw new NotFoundException('No matching products found in this store');
+    }
+
+    const matchedProductIds = products.map((product) => product.id);
+    const matchedProductIdSet = new Set(matchedProductIds);
+    const existingEntries = await this.prisma.posProductCogs.findMany({
+      where: {
+        tenantId: store.tenantId,
+        storeId: store.id,
+        productId: { in: matchedProductIds },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const latestEntryIdsByProductId = new Map<string, string>();
+    for (const entry of existingEntries) {
+      if (!latestEntryIdsByProductId.has(entry.productId)) {
+        latestEntryIdsByProductId.set(entry.productId, entry.id);
+      }
+    }
+
+    const existingEntryIds = Array.from(latestEntryIdsByProductId.values());
+    const missingProductIds = matchedProductIds.filter(
+      (productId) => !latestEntryIdsByProductId.has(productId),
+    );
+    const updatedProducts = products.filter((product) => latestEntryIdsByProductId.has(product.id));
+    const newProducts = products.filter((product) => !latestEntryIdsByProductId.has(product.id));
+    const failedProducts = uniqueProductIds
+      .filter((productId) => !matchedProductIdSet.has(productId))
+      .map((productId) => ({
+        id: productId,
+        name: null,
+        productId: null,
+        customId: null,
+        reason: 'Product not found in this store',
+      }));
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      let updated = 0;
+      let created = 0;
+
+      if (existingEntryIds.length > 0) {
+        const updateResult = await tx.posProductCogs.updateMany({
+          where: {
+            id: { in: existingEntryIds },
+          },
+          data: {
+            cogs,
+            endDate: null,
+          },
+        });
+        updated = updateResult.count;
+      }
+
+      if (missingProductIds.length > 0) {
+        const createResult = await tx.posProductCogs.createMany({
+          data: missingProductIds.map((productId) => ({
+            tenantId: store.tenantId,
+            teamId: effectiveTeamId,
+            productId,
+            storeId: store.id,
+            cogs,
+            startDate: null,
+            endDate: null,
+          })),
+        });
+        created = createResult.count;
+      }
+
+      return { updated, created };
+    });
+
+    return {
+      success: true,
+      updated: result.updated,
+      created: result.created,
+      processed: result.updated + result.created,
+      requested: uniqueProductIds.length,
+      matched: matchedProductIds.length,
+      summary: {
+        new: newProducts,
+        updated: updatedProducts,
+        failed: failedProducts,
+      },
+      message: `Processed ${result.updated + result.created} product(s)`,
+    };
+  }
+
   async checkPosDuplicate(apiKey?: string, shopId?: string) {
     const { tenantId } = await this.teamContext.getContext();
     const where = await this.teamContext.buildTeamWhereClause();
@@ -5342,36 +5463,41 @@ export class IntegrationService {
   // COGS (Cost of Goods Sold) Management
   // ============================================================================
 
+  private async getLatestProductCogsEntry(productId: string, storeId: string) {
+    const { tenantId } = await this.teamContext.getContext();
+
+    return this.prisma.posProductCogs.findFirst({
+      where: {
+        tenantId,
+        productId,
+        storeId,
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
   /**
    * Get COGS history for a product in a store
    */
   async getProductCogsHistory(productId: string, storeId: string) {
-    const { tenantId } = await this.teamContext.getContext();
-    const storeWhere = await this.teamContext.buildTeamWhereClause({ id: storeId });
-
-    // Verify store belongs to user's accessible teams
-    const store = await this.prisma.posStore.findFirst({
-      where: storeWhere,
-    });
-
-    if (!store) {
-      throw new NotFoundException(`Store with ID ${storeId} not found`);
-    }
+    const store = await this.getPosStore(storeId); // validates access including shared integrations
 
     // Verify product belongs to this store
     const product = await this.prisma.posProduct.findFirst({
-      where: { id: productId, storeId },
+      where: { id: productId, storeId: store.id },
     });
 
     if (!product) {
       throw new NotFoundException(`Product with ID ${productId} not found in this store`);
     }
 
-    const cogsWhere = await this.teamContext.buildTeamWhereClause({ productId, storeId, tenantId });
-
     return this.prisma.posProductCogs.findMany({
-      where: cogsWhere,
-      orderBy: { startDate: 'desc' },
+      where: {
+        tenantId: store.tenantId,
+        productId,
+        storeId: store.id,
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
@@ -5379,14 +5505,24 @@ export class IntegrationService {
    * Get current active COGS for a product in a store
    */
   async getCurrentCogs(productId: string, storeId: string) {
-    const where = await this.teamContext.buildTeamWhereClause({
-      productId,
-      storeId,
-      endDate: null, // Currently active
+    const store = await this.getPosStore(storeId); // validates access including shared integrations
+
+    const product = await this.prisma.posProduct.findFirst({
+      where: { id: productId, storeId: store.id },
+      select: { id: true },
     });
 
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${productId} not found in this store`);
+    }
+
     return this.prisma.posProductCogs.findFirst({
-      where,
+      where: {
+        tenantId: store.tenantId,
+        storeId: store.id,
+        productId,
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
@@ -5394,18 +5530,24 @@ export class IntegrationService {
    * Get COGS for a product on a specific date (used in Meta attribution)
    */
   async getCogsForDate(productId: string, storeId: string, date: Date) {
-    const where = await this.teamContext.buildTeamWhereClause({
+    const legacyWhere = await this.teamContext.buildTeamWhereClause({
       productId,
       storeId,
-      startDate: { lte: date },
+      AND: [{ startDate: { not: null } }, { startDate: { lte: date } }],
       OR: [{ endDate: { gte: date } }, { endDate: null }],
     });
 
-    const entry = await this.prisma.posProductCogs.findFirst({
-      where,
+    const datedEntry = await this.prisma.posProductCogs.findFirst({
+      where: legacyWhere,
+      orderBy: [{ startDate: 'desc' }, { updatedAt: 'desc' }],
     });
 
-    return entry?.cogs || null;
+    if (datedEntry) {
+      return datedEntry.cogs;
+    }
+
+    const latestEntry = await this.getLatestProductCogsEntry(productId, storeId);
+    return latestEntry?.cogs || null;
   }
 
   /**
@@ -5416,97 +5558,43 @@ export class IntegrationService {
     productId: string,
     storeId: string,
     cogs: number,
-    startDate: Date,
   ) {
     const { tenantId } = await this.teamContext.getContext();
-    const storeWhere = await this.teamContext.buildTeamWhereClause({ id: storeId });
-
-    // Verify store belongs to user's accessible teams
-    const store = await this.prisma.posStore.findFirst({
-      where: storeWhere,
-    });
-
-    if (!store) {
-      throw new NotFoundException(`Store with ID ${storeId} not found`);
-    }
+    const store = await this.getPosStore(storeId); // validates access including shared integrations
 
     // Verify product belongs to this store
     const product = await this.prisma.posProduct.findFirst({
-      where: { id: productId, storeId },
+      where: { id: productId, storeId: store.id },
     });
 
     if (!product) {
       throw new NotFoundException(`Product with ID ${productId} not found in this store`);
     }
 
-    // Check for existing entry with same start date
-    const existingEntryWhere = await this.teamContext.buildTeamWhereClause({
-      productId,
-      storeId,
-      startDate,
-    });
-
-    const existingEntry = await this.prisma.posProductCogs.findFirst({
-      where: existingEntryWhere,
-    });
-
-    if (existingEntry) {
-      throw new ConflictException(
-        'COGS entry with this start date already exists',
-      );
-    }
-
-    const baseWhere = await this.teamContext.buildTeamWhereClause({ productId, storeId });
-    const nextEntry = await this.prisma.posProductCogs.findFirst({
-      where: {
-        ...baseWhere,
-        startDate: { gt: startDate },
-      },
-      orderBy: { startDate: 'asc' },
-    });
-    const prevEntry = await this.prisma.posProductCogs.findFirst({
-      where: {
-        ...baseWhere,
-        startDate: { lt: startDate },
-      },
-      orderBy: { startDate: 'desc' },
-    });
-
-    // If there's a future entry, cap this one to the day before it starts.
-    let newEndDate: Date | null = null;
-    if (nextEntry) {
-      newEndDate = new Date(nextEntry.startDate);
-      newEndDate.setDate(newEndDate.getDate() - 1);
-      if (newEndDate < startDate) {
-        throw new BadRequestException('COGS entry overlaps an existing entry');
-      }
-    }
-
     // Validate and get effective team ID
     const effectiveTeamId = await this.teamContext.validateAndGetTeamId(store.teamId);
+    const existingEntry = await this.getLatestProductCogsEntry(productId, storeId);
 
-    // Create new entry and adjust previous entry (if overlapping) in a transaction
-    return this.prisma.$transaction(async (tx) => {
-      if (prevEntry && (prevEntry.endDate === null || prevEntry.endDate >= startDate)) {
-        const prevEndDate = new Date(startDate);
-        prevEndDate.setDate(prevEndDate.getDate() - 1);
-        await tx.posProductCogs.update({
-          where: { id: prevEntry.id },
-          data: { endDate: prevEndDate },
-        });
-      }
-
-      return tx.posProductCogs.create({
+    if (existingEntry) {
+      return this.prisma.posProductCogs.update({
+        where: { id: existingEntry.id },
         data: {
-          tenantId,
-          teamId: effectiveTeamId,
-          productId,
-          storeId,
           cogs,
-          startDate,
-          endDate: newEndDate, // Active until next change or until next entry starts
+          endDate: null,
         },
       });
+    }
+
+    return this.prisma.posProductCogs.create({
+      data: {
+        tenantId,
+        teamId: effectiveTeamId,
+        productId,
+        storeId: store.id,
+        cogs,
+        startDate: null,
+        endDate: null,
+      },
     });
   }
 
@@ -5514,43 +5602,38 @@ export class IntegrationService {
    * Update existing COGS entry
    */
   async updateCogsEntry(
+    storeId: string,
+    productId: string,
     cogsId: string,
     cogs: number,
-    startDate: Date,
   ) {
-    const where = await this.teamContext.buildTeamWhereClause({ id: cogsId });
+    const store = await this.getPosStore(storeId); // validates access including shared integrations
+
+    const product = await this.prisma.posProduct.findFirst({
+      where: { id: productId, storeId: store.id },
+      select: { id: true },
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${productId} not found in this store`);
+    }
 
     const existingEntry = await this.prisma.posProductCogs.findFirst({
-      where,
+      where: {
+        id: cogsId,
+        tenantId: store.tenantId,
+        storeId: store.id,
+        productId,
+      },
     });
 
     if (!existingEntry) {
       throw new NotFoundException('COGS entry not found');
     }
 
-    // Check for conflicts with other entries if start date is changing
-    if (startDate.getTime() !== existingEntry.startDate.getTime()) {
-      const conflictWhere = await this.teamContext.buildTeamWhereClause({
-        productId: existingEntry.productId,
-        storeId: existingEntry.storeId,
-        startDate,
-        id: { not: cogsId },
-      });
-
-      const conflictEntry = await this.prisma.posProductCogs.findFirst({
-        where: conflictWhere,
-      });
-
-      if (conflictEntry) {
-        throw new ConflictException(
-          'Another COGS entry with this start date already exists',
-        );
-      }
-    }
-
     return this.prisma.posProductCogs.update({
       where: { id: cogsId },
-      data: { cogs, startDate },
+      data: { cogs },
     });
   }
 
@@ -5558,37 +5641,29 @@ export class IntegrationService {
    * Delete COGS entry
    * If deleting current active entry, makes previous entry active again
    */
-  async deleteCogsEntry(cogsId: string): Promise<void> {
-    const { tenantId } = await this.teamContext.getContext();
-    const where = await this.teamContext.buildTeamWhereClause({ id: cogsId });
+  async deleteCogsEntry(storeId: string, productId: string, cogsId: string): Promise<void> {
+    const store = await this.getPosStore(storeId); // validates access including shared integrations
+
+    const product = await this.prisma.posProduct.findFirst({
+      where: { id: productId, storeId: store.id },
+      select: { id: true },
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${productId} not found in this store`);
+    }
 
     const entry = await this.prisma.posProductCogs.findFirst({
-      where,
+      where: {
+        id: cogsId,
+        tenantId: store.tenantId,
+        storeId: store.id,
+        productId,
+      },
     });
 
     if (!entry) {
       throw new NotFoundException('COGS entry not found');
-    }
-
-    // If deleting current active entry, make previous entry active again
-    if (entry.endDate === null) {
-      const previousWhere = await this.teamContext.buildTeamWhereClause({
-        productId: entry.productId,
-        storeId: entry.storeId,
-        endDate: { lt: entry.startDate },
-      });
-
-      const previousEntry = await this.prisma.posProductCogs.findFirst({
-        where: previousWhere,
-        orderBy: { startDate: 'desc' },
-      });
-
-      if (previousEntry) {
-        await this.prisma.posProductCogs.update({
-          where: { id: previousEntry.id },
-          data: { endDate: null },
-        });
-      }
     }
 
     await this.prisma.posProductCogs.delete({

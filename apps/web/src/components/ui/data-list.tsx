@@ -34,7 +34,7 @@ export function DataListItem({
       onClick={onClick}
       className={clsx(
         'flex w-full items-center justify-between px-6 py-4 text-left',
-        hoverable && 'hover:bg-[#F8FAFC] transition-colors',
+        hoverable && 'hover:bg-[#F8FAFC] dark:hover:bg-background-secondary transition-colors',
         onClick && 'cursor-pointer',
         className
       )}
@@ -53,9 +53,9 @@ type DataListContentProps = {
 export function DataListContent({ title, description, meta }: DataListContentProps) {
   return (
     <div className="min-w-0 flex-1">
-      <p className="text-sm font-medium text-[#0F172A]">{title}</p>
+      <p className="text-sm font-medium text-foreground">{title}</p>
       {description && (
-        <p className="mt-0.5 truncate text-sm text-[#475569]">{description}</p>
+        <p className="mt-0.5 truncate text-sm text-[#475569] dark:text-slate-300">{description}</p>
       )}
       {meta && <p className="mt-1 text-xs text-[#94A3B8]">{meta}</p>}
     </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { ClipboardList, Search, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import { FormSelect } from '@/components/ui/form-select';
 import { FormTextarea } from '@/components/ui/form-textarea';
 import { RequestsSearchableSelect } from './requests-searchable-select';
@@ -115,18 +116,16 @@ export function RequestCreatePanel({
     isSelfBuy && cartLines.some((line) => line.unitAmount === null || line.unitAmount <= 0);
 
   return (
-    <section className="panel panel-content">
-      <div className="panel-header">
-        <ClipboardList className="panel-icon" />
-        <h4 className="panel-title">Stock Request Cart</h4>
-      </div>
-
-      <div className="space-y-3.5 p-3">
-        <p className="text-xs text-slate-500">Select products and submit to WMS</p>
+    <DashboardSection
+      title="Stock Request Cart"
+      icon={<ClipboardList className="panel-icon" />}
+      contentClassName="space-y-3.5"
+    >
+        {/* <p className="text-xs text-slate-500 dark:text-slate-300">Select products and submit to WMS</p> */}
 
         <div className="grid gap-3 lg:grid-cols-2">
-          <div className="space-y-1.5 mt-2">
-            <label className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Store</label>
+          <div className="mt-2 space-y-1.5">
+            <label className="form-label">Store</label>
             <RequestsSearchableSelect
               label="Store"
               value={createStoreScopeId}
@@ -136,26 +135,28 @@ export function RequestCreatePanel({
               placeholder="Search stores..."
             />
           </div>
-          <FormSelect
-            label="Request type"
-            value={createRequestType}
-            onChange={(event) => onRequestTypeChange(event.target.value as WmsPurchasingRequestType)}
-            className="rounded-lg px-3 py-1.5 text-sm"
-            options={[
-              { value: 'PROCUREMENT', label: 'Procurement' },
-              { value: 'SELF_BUY', label: 'Self-buy' },
-            ]}
-          />
+          <div className="mt-1.5 space-y-1.5">
+            <FormSelect
+              label="Request type"
+              value={createRequestType}
+              onChange={(event) => onRequestTypeChange(event.target.value as WmsPurchasingRequestType)}
+              className="rounded-lg px-3 py-1.5 text-sm"
+              options={[
+                { value: 'PROCUREMENT', label: 'Procurement' },
+                { value: 'SELF_BUY', label: 'Self-buy' },
+              ]}
+            />
+          </div>
         </div>
 
-        <p className="text-xs text-slate-500">
-          Scope: <span className="font-semibold text-slate-700">{effectiveStoreName}</span>
+        <p className="text-xs text-slate-500 dark:text-slate-300">
+          Scope: <span className="font-semibold text-slate-700 dark:text-foreground">{effectiveStoreName}</span>
         </p>
 
         {cartLines.length > 0 ? (
-          <div className="overflow-hidden rounded-xl border border-slate-200">
-            <table className="min-w-full divide-y divide-slate-100 text-sm">
-              <thead className="bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+          <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-border">
+            <table className="min-w-full divide-y divide-slate-100 text-sm dark:divide-border">
+              <thead className="bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500 dark:bg-surface dark:text-slate-300">
                 <tr>
                   <th className="px-2.5 py-1.5">Product</th>
                   <th className="px-2.5 py-1.5">Store</th>
@@ -165,20 +166,20 @@ export function RequestCreatePanel({
                   <th className="px-2.5 py-1.5 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
+              <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
                 {cartLines.map((line) => {
                   const unitAmount = line.unitAmount;
                   const subtotal = (unitAmount ?? 0) * line.quantity;
                   return (
-                    <tr key={line.id} className="hover:bg-slate-50">
+                    <tr key={line.id} className="hover:bg-slate-50 dark:hover:bg-surface/80">
                       <td className="px-2.5 py-2">
-                        <p className="font-semibold text-slate-800">{line.product.name}</p>
-                        <p className="text-xs text-slate-500">
+                        <p className="font-semibold text-slate-800 dark:text-foreground">{line.product.name}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-300">
                           {line.product.variationDisplayId || line.product.variationId || 'No variation'}
                         </p>
                       </td>
-                      <td className="px-2.5 py-2 text-slate-800">{line.product.store.name}</td>
-                      <td className="px-2.5 py-2 font-semibold text-slate-800">
+                      <td className="px-2.5 py-2 text-slate-800 dark:text-foreground">{line.product.store.name}</td>
+                      <td className="px-2.5 py-2 font-semibold text-slate-800 dark:text-foreground">
                         {isSelfBuy ? (
                           <input
                             type="number"
@@ -193,7 +194,7 @@ export function RequestCreatePanel({
                                 nextValue === '' ? null : Number(nextValue),
                               );
                             }}
-                            className="h-8 w-28 rounded-md border border-slate-200 px-2 text-sm font-semibold text-slate-800 outline-none focus:border-slate-300"
+                            className="h-8 w-28 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 outline-none focus:border-slate-300 dark:border-border dark:bg-transparent dark:text-foreground"
                           />
                         ) : (
                           formatCurrency(unitAmount ?? 0)
@@ -237,17 +238,17 @@ export function RequestCreatePanel({
                               return next;
                             });
                           }}
-                          className="h-8 w-16 rounded-md border border-slate-200 px-2 text-sm text-slate-800 outline-none focus:border-slate-300"
+                          className="h-8 w-16 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 outline-none focus:border-slate-300 dark:border-border dark:bg-transparent dark:text-foreground"
                         />
                       </td>
-                      <td className="px-2.5 py-2 text-right font-semibold text-slate-800">
+                      <td className="px-2.5 py-2 text-right font-semibold text-slate-800 dark:text-foreground">
                         {formatCurrency(subtotal)}
                       </td>
                       <td className="px-2.5 py-2 text-right">
                         <button
                           type="button"
                           onClick={() => onRemoveLine(line.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 dark:border-border dark:text-slate-300 dark:hover:border-rose-400/40 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -258,7 +259,7 @@ export function RequestCreatePanel({
               </tbody>
             </table>
             {hasMissingSelfBuyUnitAmount ? (
-              <div className="border-t border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              <div className="border-t border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
                 Self-buy requires actual unit COGS for every line before submit.
               </div>
             ) : null}
@@ -269,24 +270,24 @@ export function RequestCreatePanel({
           type="button"
           onClick={onOpenProductPicker}
           disabled={isSubmitting}
-          className="group w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-center transition hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className="group w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-center transition hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-border dark:bg-surface dark:hover:border-slate-500 dark:hover:bg-surface/80"
         >
-          <span className="text-sm font-medium tracking-tight text-slate-600">
+          <span className="text-sm font-medium tracking-tight text-slate-600 dark:text-slate-300">
             Drag products here
           </span>
-          <span className="px-1.5 text-sm font-medium text-slate-500">or</span>
-          <span className="text-sm font-semibold text-slate-800 group-hover:text-slate-900">
+          <span className="px-1.5 text-sm font-medium text-slate-500 dark:text-slate-400">or</span>
+          <span className="text-sm font-semibold text-slate-800 group-hover:text-slate-900 dark:text-foreground dark:group-hover:text-white">
             Add product
           </span>
         </button>
 
         {isProductPickerOpen ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-border dark:bg-surface">
             <div className="flex items-center gap-2">
               <label className="relative flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-300" />
                 <input
-                  className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-300"
+                  className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-300 dark:border-border dark:bg-transparent dark:text-foreground dark:placeholder:text-slate-400"
                   placeholder={
                     effectiveStoreId
                       ? 'Search products in selected store...'
@@ -299,41 +300,41 @@ export function RequestCreatePanel({
               <button
                 type="button"
                 onClick={onCloseProductPicker}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700 dark:border-border dark:bg-transparent dark:text-slate-300 dark:hover:text-foreground"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="mt-2.5 max-h-[280px] overflow-auto rounded-lg border border-slate-200 bg-white">
+            <div className="mt-2.5 max-h-[280px] overflow-auto rounded-lg border border-slate-200 bg-white dark:border-border dark:bg-background">
               {isLoadingProductOptions ? (
-                <div className="px-3 py-8 text-center text-sm text-slate-500">Loading products...</div>
+                <div className="px-3 py-8 text-center text-sm text-slate-500 dark:text-slate-300">Loading products...</div>
               ) : productOptionsError ? (
                 <div className="px-3 py-8 text-center text-sm text-rose-700">{productOptionsError}</div>
               ) : (productOptions?.products.length ?? 0) === 0 ? (
-                <div className="px-3 py-8 text-center text-sm text-slate-500">No products found</div>
+                <div className="px-3 py-8 text-center text-sm text-slate-500 dark:text-slate-300">No products found</div>
               ) : (
-                <ul className="divide-y divide-slate-100">
+                <ul className="divide-y divide-slate-100 dark:divide-border">
                   {productOptions?.products.map((product) => (
                     <li key={product.profileId}>
                       <button
                         type="button"
                         onClick={() => onAddProduct(product)}
-                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-slate-50"
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-slate-50 dark:hover:bg-surface"
                       >
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-slate-800">{product.name}</p>
-                          <p className="text-xs text-slate-500">
+                          <p className="truncate text-sm font-semibold text-slate-800 dark:text-foreground">{product.name}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-300">
                             {product.variationDisplayId || product.variationId || 'No variation'} · {product.store.name}
                           </p>
                         </div>
                         <div className="shrink-0 text-right">
-                          <p className="text-sm font-semibold text-slate-800">
+                          <p className="text-sm font-semibold text-slate-800 dark:text-foreground">
                             {isSelfBuy
                               ? 'Enter after adding'
                               : formatCurrency(product.inhouseUnitCost ?? 0)}
                           </p>
-                          <p className="text-[11px] text-slate-500">
+                          <p className="text-[11px] text-slate-500 dark:text-slate-300">
                             {isSelfBuy
                               ? 'Actual unit COGS required'
                               : product.inhouseUnitCost === null
@@ -357,7 +358,7 @@ export function RequestCreatePanel({
               >
                 Previous
               </Button>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-500 dark:text-slate-300">
                 {productOptionsPage} / {Math.max(1, totalPages)}
               </span>
               <Button
@@ -395,7 +396,7 @@ export function RequestCreatePanel({
             <SummaryCard
               label="Total amount"
               value={formatCurrency(cartTotals.totalAmount)}
-              valueClassName="text-slate-900"
+              valueClassName="text-slate-900 dark:text-foreground"
             />
           </div>
         ) : null}
@@ -410,8 +411,7 @@ export function RequestCreatePanel({
             Submit request
           </Button>
         </div>
-      </div>
-    </section>
+    </DashboardSection>
   );
 }
 

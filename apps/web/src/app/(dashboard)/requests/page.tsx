@@ -3,6 +3,7 @@
 import { LineChartIcon } from 'lucide-react';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import { PageHeader } from '@/components/ui/page-header';
+import { DashboardSection } from '../dashboard/_components/dashboard-section';
 import { RequestCreatePanel } from './_components/request-create-panel';
 import { RequestDetailPanel } from './_components/request-detail-panel';
 import { RequestsQueuePanel } from './_components/requests-queue-panel';
@@ -86,15 +87,12 @@ export default function RequestsPage() {
       {overviewError && <AlertBanner tone="error" message={overviewError} />}
 
       {overview?.summary ? (
-        <section className="panel panel-content">
-          <div className="panel-header">
-            <LineChartIcon className="panel-icon" />
-            <h4 className="panel-title">Request Summary</h4>
-          </div>
-          <div className="p-3">
-            <RequestsSummaryStrip summary={overview.summary} />
-          </div>
-        </section>
+        <DashboardSection
+          title="Request Summary"
+          icon={<LineChartIcon className="panel-icon" />}
+        >
+          <RequestsSummaryStrip summary={overview.summary} />
+        </DashboardSection>
       ) : null}
 
       <RequestCreatePanel

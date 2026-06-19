@@ -192,6 +192,7 @@ enum NotificationSystem {
 
 enum NotificationDomain {
   PURCHASING
+  ORDERS_AGING
   TRANSFER
   PICK_PACK
 }
@@ -548,7 +549,7 @@ model PosProductCogs {
   store   PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   cogs      Decimal   @db.Decimal(12, 2)
-  startDate DateTime  @db.Date
+  startDate DateTime? @db.Date
   endDate   DateTime? @db.Date
 
   createdAt DateTime @default(now())

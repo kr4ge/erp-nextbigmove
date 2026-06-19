@@ -339,15 +339,15 @@ export default function CreateIntegrationPage() {
         <section className="panel panel-content">
           <div className="panel-header">
             <ProviderGlyph provider={provider} className="panel-icon" />
-            <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Credentials</h2>
+            <h2 className="panel-title">Credentials</h2>
           </div>
 
           <div className="p-4 sm:p-5">
             <div className="mb-5">
-              <p className="text-sm-custom font-semibold text-slate-900">
+              <p className="text-sm-custom font-semibold text-foreground">
                 {provider === 'META_ADS' ? 'Meta Ads' : 'Pancake POS'} Credentials
               </p>
-              <p className="mt-1 text-sm-custom text-slate-500">
+              <p className="mt-1 text-sm-custom text-slate-500 dark:text-slate-300">
                 Enter your API credentials to connect.
               </p>
             </div>
@@ -421,7 +421,7 @@ export default function CreateIntegrationPage() {
 
           <div className="p-4 sm:p-5">
             <div className="mb-5">
-              <p className="text-sm-custom font-semibold text-slate-900">
+              <p className="text-sm-custom font-semibold text-foreground">
                 {provider === 'META_ADS' ? 'Select Ad Account' : 'Select Shop'}
               </p>
               <p className="mt-1 text-sm-custom text-slate-500">

@@ -199,7 +199,7 @@ export default function TeamsPage() {
                     />
                     <DataListActions>
                       <Button
-                        variant="secondary"
+                        variant="outline"
                         size="sm"
                         onClick={() => {
                           setEditingTeam(team);

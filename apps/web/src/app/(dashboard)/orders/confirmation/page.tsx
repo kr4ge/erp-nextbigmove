@@ -23,7 +23,6 @@ import {
   X,
 } from 'lucide-react';
 
-import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 
 import { StatusBadge } from '../_components/status-badge';
@@ -1442,13 +1441,13 @@ export default function OrdersConfirmationPage() {
 
   return (
     <div className="space-y-3">
-      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+      <header className="flex flex-col gap-3 border-b border-slate-200 dark:border-border pb-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
           <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Orders
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">Confirmation of Order</h1>
+            <h1 className="text-xl-loose font-semibold tracking-tight text-foreground">Confirmation of Order</h1>
           </div>
         </div>
       </header>
@@ -1458,20 +1457,20 @@ export default function OrdersConfirmationPage() {
             <button
               type="button"
               onClick={() => setShowShopPicker((prev) => !prev)}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm bg-white hover:border-slate-300 focus:outline-none"
+              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm hover:border-slate-300 focus:outline-none dark:border-border dark:bg-surface dark:text-foreground dark:hover:border-slate-500"
             >
-              <span className="text-slate-900">{selectedShopLabel}</span>
-              <span className="text-slate-400 text-xs">(click to choose)</span>
-              <ChevronDown className="h-4 w-4 text-slate-500" />
+              <span className="text-slate-900 dark:text-foreground">{selectedShopLabel}</span>
+              <span className="text-xs text-slate-400 dark:text-slate-300">(click to choose)</span>
+              <ChevronDown className="h-4 w-4 text-slate-500 dark:text-slate-300" />
             </button>
 
             {showShopPicker && (
-              <div className="absolute right-0 z-20 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg">
-                <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
-                  <span className="text-sm text-slate-700">Select shops</span>
+              <div className="absolute right-0 z-50 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg dark:border-border dark:bg-surface">
+                <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-border">
+                  <span className="text-sm text-slate-700 dark:text-foreground">Select shops</span>
                   <button
                     type="button"
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-orange-300 dark:hover:text-orange-200"
                     onClick={() => {
                       setIsAllShopsMode(true);
                       setSelectedShopIds([]);
@@ -1480,18 +1479,18 @@ export default function OrdersConfirmationPage() {
                     Clear
                   </button>
                 </div>
-                <div className="px-3 py-2 border-b border-slate-100">
+                <div className="border-b border-slate-100 px-3 py-2 dark:border-border">
                   <input
                     type="text"
                     value={shopSearch}
                     onChange={(event) => setShopSearch(event.target.value)}
                     placeholder="Search store"
-                    className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
+                    className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none dark:border-border dark:bg-background dark:text-foreground dark:placeholder:text-slate-400"
                   />
                 </div>
                 <div className="max-h-64 overflow-auto">
-                  <div className="flex items-center px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                    <label className="flex items-center gap-2 cursor-pointer">
+                  <div className="flex items-center px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-background-secondary">
+                    <label className="flex cursor-pointer items-center gap-2">
                       <input
                         type="checkbox"
                         checked={isAllShopsMode}
@@ -1502,7 +1501,7 @@ export default function OrdersConfirmationPage() {
                             setSelectedShopIds([]);
                           }
                         }}
-                        className="rounded border-slate-300"
+                        className="rounded border-slate-300 dark:border-border"
                       />
                       <span>All</span>
                     </label>
@@ -1512,20 +1511,20 @@ export default function OrdersConfirmationPage() {
                     return (
                       <div
                         key={shop.shop_id}
-                        className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                        className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-background-secondary"
                       >
-                        <label className="flex items-center gap-2 cursor-pointer">
+                        <label className="flex cursor-pointer items-center gap-2">
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={() => toggleShop(shop.shop_id)}
-                            className="rounded border-slate-300"
+                            className="rounded border-slate-300 dark:border-border"
                           />
                           <span>{shop.shop_name}</span>
                         </label>
                         <button
                           type="button"
-                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-orange-300 dark:hover:text-orange-200"
                           onClick={() => {
                             setIsAllShopsMode(false);
                             setSelectedShopIds([shop.shop_id]);
@@ -1551,7 +1550,7 @@ export default function OrdersConfirmationPage() {
               showFooter={false}
               primaryColor="orange"
               readOnly
-              inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 transition-[width] duration-300 ease-out ${
+              inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-border dark:!bg-transparent dark:!text-transparent transition-[width] duration-300 ease-out ${
                 confirmationDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
               }`}
               containerClassName=""
@@ -1562,7 +1561,7 @@ export default function OrdersConfirmationPage() {
                 <span className="flex w-full items-center gap-2 overflow-hidden">
                   <CalendarDays className="h-4 w-4 shrink-0" />
                   <span
-                    className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                    className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
                       confirmationDateRangeIsToday
                         ? 'max-w-0 -translate-x-1 opacity-0'
                         : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
@@ -1572,7 +1571,7 @@ export default function OrdersConfirmationPage() {
                   </span>
                 </span>
               )}
-              toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+              toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-orange-700 dark:text-foreground"
               placeholder=" "
             />
           </div>
@@ -1584,29 +1583,29 @@ export default function OrdersConfirmationPage() {
           </div>
         ) : null}
 
-        <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
+        <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden dark:border-border dark:bg-surface">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50">
+            <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
+              <thead className="bg-slate-50 dark:bg-background-secondary">
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Date</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Shop</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Order ID</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Product</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">COD</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Return Rate</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Tags</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Customer</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap">Phone</th>
-                  <th className="w-[150px] min-w-[150px] px-2 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap sticky right-0 z-20 bg-slate-50 border-l border-slate-200">
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap dark:text-slate-300">Date</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap dark:text-slate-300">Shop</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap dark:text-slate-300">Order ID</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap dark:text-slate-300">Product</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap dark:text-slate-300">COD</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap dark:text-slate-300">Return Rate</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap dark:text-slate-300">Tags</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap dark:text-slate-300">Customer</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap dark:text-slate-300">Phone</th>
+                  <th className="w-[150px] min-w-[150px] px-2 py-2 text-left text-xs font-semibold uppercase text-slate-500 whitespace-nowrap sticky right-0 z-20 bg-slate-50 border-l border-slate-200 dark:bg-background-secondary dark:border-border dark:text-slate-300">
                     Status
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 dark:divide-border">
                 {isLoading ? (
                   <tr>
-                    <td className="px-3 py-3 text-xs text-slate-400" colSpan={10}>
+                    <td className="px-3 py-3 text-xs text-slate-400 dark:text-slate-500" colSpan={10}>
                       Loading...
                     </td>
                   </tr>
@@ -1620,22 +1619,22 @@ export default function OrdersConfirmationPage() {
                       key={row.id}
                       className={`cursor-pointer transition-colors ${
                         rowHasNoProduct
-                          ? 'bg-rose-100 hover:bg-rose-200/80'
+                          ? 'bg-rose-100 hover:bg-rose-200/80 dark:bg-rose-950/40 dark:hover:bg-rose-950/55'
                           : rowHasDuplicate
-                          ? 'bg-rose-50 hover:bg-rose-100/70'
-                          : 'bg-white hover:bg-slate-50/80'
+                          ? 'bg-rose-50 hover:bg-rose-100/70 dark:bg-rose-950/20 dark:hover:bg-rose-950/35'
+                          : 'bg-white hover:bg-slate-50/80 dark:bg-surface dark:hover:bg-background-secondary'
                       }`}
                       onClick={() => setSelectedOrderForModal(row)}
                     >
-                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{row.date_local}</td>
-                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{row.shop_name}</td>
-                      <td className="px-3 py-2 text-xs font-semibold text-slate-900 whitespace-nowrap">{row.pos_order_id}</td>
-                      <td className="px-3 py-2 text-xs text-slate-700">
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap dark:text-slate-300">{row.date_local}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap dark:text-slate-300">{row.shop_name}</td>
+                      <td className="px-3 py-2 text-xs font-semibold text-slate-900 whitespace-nowrap dark:text-foreground">{row.pos_order_id}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                         <span className="block max-w-[280px] truncate" title={productSummary}>
                           {productSummary}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-xs font-semibold text-slate-900 whitespace-nowrap">
+                      <td className="px-3 py-2 text-xs font-semibold text-slate-900 whitespace-nowrap dark:text-foreground">
                         {formatCurrency(row.cod || 0)}
                       </td>
                       <td className="px-3 py-2 text-xs font-semibold whitespace-nowrap">
@@ -1644,14 +1643,14 @@ export default function OrdersConfirmationPage() {
                           fail={row.reports_by_phone_fail}
                         />
                       </td>
-                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap dark:text-slate-300">
                         {row.tags?.length ? row.tags.join(', ') : '—'}
                       </td>
-                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{row.customer_name || '—'}</td>
-                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{row.customer_phone || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap dark:text-slate-300">{row.customer_name || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap dark:text-slate-300">{row.customer_phone || '—'}</td>
                       <td
-                        className={`w-[150px] min-w-[150px] px-2 py-1.5 text-xs font-semibold text-slate-900 whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 ${
-                          rowHasNoProduct ? 'bg-rose-100' : rowHasDuplicate ? 'bg-rose-50' : 'bg-white'
+                        className={`w-[150px] min-w-[150px] px-2 py-1.5 text-xs font-semibold text-slate-900 whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 dark:border-border dark:text-foreground ${
+                          rowHasNoProduct ? 'bg-rose-100 dark:bg-rose-950/40' : rowHasDuplicate ? 'bg-rose-50 dark:bg-rose-950/20' : 'bg-white dark:bg-surface'
                         }`}
                       >
                         <StatusBadge
@@ -1666,7 +1665,7 @@ export default function OrdersConfirmationPage() {
                   })
                 ) : (
                   <tr>
-                    <td className="px-3 py-3 text-xs text-slate-400" colSpan={10}>
+                    <td className="px-3 py-3 text-xs text-slate-400 dark:text-slate-300" colSpan={10}>
                       No new orders for the selected filters.
                     </td>
                   </tr>
@@ -1675,23 +1674,23 @@ export default function OrdersConfirmationPage() {
             </table>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-slate-50 border-t border-slate-200">
-            <p className="text-xs text-slate-600">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-slate-50 border-t border-slate-200 dark:bg-background-secondary dark:border-border">
+            <p className="text-xs text-slate-600 dark:text-slate-300">
               Showing {startRow}-{endRow} of {pagination.total}
             </p>
             <div className="flex gap-2">
               <button
-                className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-border dark:bg-surface dark:text-foreground dark:hover:bg-background-secondary"
                 onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                 disabled={!canPrev || isLoading}
               >
                 Previous
               </button>
-              <span className="inline-flex min-w-[96px] items-center justify-center px-2.5 py-1 text-xs text-slate-700">
+              <span className="inline-flex min-w-[96px] items-center justify-center px-2.5 py-1 text-xs text-slate-700 dark:text-slate-300">
                 Page {pagination.page} of {Math.max(1, pagination.pageCount)}
               </span>
               <button
-                className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-border dark:bg-surface dark:text-foreground dark:hover:bg-background-secondary"
                 onClick={() => setPage((prev) => prev + 1)}
                 disabled={!canNext || isLoading}
               >

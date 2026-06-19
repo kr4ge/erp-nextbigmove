@@ -20,6 +20,7 @@ import {
   DataTableActionCell,
   DataTableState,
 } from '@/components/data-table';
+import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import type { Integration } from '../types';
 import {
   formatIntegrationDate,
@@ -57,7 +58,7 @@ function IntegrationActionsMenu({
       <div>
         <DropdownMenu>
           <DropdownMenuTrigger
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-[#0F172A] transition hover:bg-[#F8FAFC] active:bg-[#E2E8F0] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-foreground transition hover:bg-[#F8FAFC] active:bg-[#E2E8F0] focus:outline-none focus:ring-2 focus:ring-[#2563EB] dark:hover:bg-background-secondary dark:active:bg-background-secondary"
             aria-label="Integration actions"
           >
             <MoreVertical className="h-4 w-4" />
@@ -109,7 +110,7 @@ export function IntegrationsListCard({
               <div className="text-slate-400">{getProviderIcon(integration.provider)}</div>
               <div>
                 <div className="text-sm font-semibold text-foreground">{integration.name}</div>
-                <div className="text-sm text-muted">{getProviderName(integration.provider)}</div>
+                <div className="text-sm text-slate-500 dark:text-slate-300">{getProviderName(integration.provider)}</div>
               </div>
             </div>
           );
@@ -121,7 +122,7 @@ export function IntegrationsListCard({
         cell: ({ row }) => {
           const value = row.original.lastSyncAt;
           return (
-            <span className="text-sm text-muted">
+            <span className="text-sm text-slate-500 dark:text-slate-300">
               {value ? formatIntegrationDate(value) : 'Never'}
             </span>
           );
@@ -146,7 +147,7 @@ export function IntegrationsListCard({
         ),
       },
     ],
-    [onDelete, onEdit, onView],
+    [onEdit, onView],
   );
 
   const table = useReactTable({
@@ -168,8 +169,8 @@ export function IntegrationsListCard({
         <div className="mb-3 text-primary">
           <PlugZap className="h-6 w-6" />
         </div>
-        <p className="text-base font-semibold text-slate-700">No integrations yet</p>
-        <p className="mt-1 text-[0.95rem] text-slate-500">
+        <p className="text-base font-semibold text-foreground">No integrations yet</p>
+        <p className="mt-1 text-[0.95rem] text-slate-500 dark:text-slate-300">
           Connect Meta Ads or Pancake POS to get started.
         </p>
         <Button
@@ -194,17 +195,13 @@ export function IntegrationsListCard({
     );
 
   return (
-    <section className="panel panel-content">
-      <div className="panel-header">
-        <PlugZap className="panel-icon" />
-        <h4 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-          All Integrations
-        </h4>
-      </div>
-
-      <div className="space-y-3 p-3">
+    <DashboardSection
+      title="All Integrations"
+      icon={<PlugZap className="panel-icon" />}
+      contentClassName="space-y-3"
+    >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm-custom text-slate-500">
+          <p className="text-sm-custom text-slate-500 dark:text-slate-300">
             {filteredIntegrations.length} of {allCount} integration{allCount === 1 ? '' : 's'}
           </p>
           <IntegrationsSearchInput value={searchInput} onChange={onSearchInputChange} />
@@ -217,7 +214,6 @@ export function IntegrationsListCard({
           totalRows={filteredIntegrations.length}
           showPageSizeSelector={false}
         />
-      </div>
       <ConfirmActionDialog
         open={deleteDialogOpen}
         onOpenChange={(open) => {
@@ -235,6 +231,6 @@ export function IntegrationsListCard({
           }
         }}
       />
-    </section>
+    </DashboardSection>
   );
 }

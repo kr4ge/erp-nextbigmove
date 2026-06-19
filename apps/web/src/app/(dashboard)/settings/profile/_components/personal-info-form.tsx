@@ -2,9 +2,9 @@
 
 import type { FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { FormInput } from '@/components/ui/form-input';
 import { BookUser } from 'lucide-react';
+import { DashboardSection } from '../../../dashboard/_components/dashboard-section';
 
 interface PersonalInfoFormProps {
   isLoading: boolean;
@@ -23,11 +23,11 @@ interface PersonalInfoFormProps {
 }
 
 const profileFormLabelClass =
-  'text-xs font-semibold uppercase tracking-[0.16em] text-slate-500';
+  'form-label';
 const profileFormInputClass =
-  'rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100';
-const profileFormHelperClass = 'text-xs text-slate-500';
-const profileFormReadOnlyClass = 'bg-slate-50 text-slate-700';
+  'rounded-2xl border border-slate-200 px-4 py-3 text-sm text-foreground placeholder:text-slate-400 transition focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100';
+const profileFormHelperClass = 'text-xs text-slate-500 dark:text-slate-300';
+const profileFormReadOnlyClass = 'bg-slate-50 text-slate-700 dark:text-slate-300';
 
 export function PersonalInfoForm({
   isLoading,
@@ -45,16 +45,15 @@ export function PersonalInfoForm({
   onSubmit,
 }: PersonalInfoFormProps) {
   return (
-    <Card className="lg:col-span-2 panel panel-content">
+    <DashboardSection
+      title="Personal Information"
+      icon={<BookUser className="panel-icon" />}
+      className="lg:col-span-2"
+      contentClassName="p-6"
+    >
       <form className="space-y-4" onSubmit={onSubmit}>
-        <div className="-mx-6 -mt-6 mb-4 panel-header">
-          <BookUser className="panel-icon" />
-          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-            Personal Information
-          </h3>
-        </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <p className="text-sm text-slate-500">These details are visible across your workspace.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-300">These details are visible across your workspace.</p>
           <Button
             type="submit"
             variant='primary'
@@ -121,6 +120,6 @@ export function PersonalInfoForm({
           helperClassName={profileFormHelperClass}
         />
       </form>
-    </Card>
+    </DashboardSection>
   );
 }

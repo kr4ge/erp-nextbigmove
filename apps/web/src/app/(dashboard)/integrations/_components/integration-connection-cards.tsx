@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import { getProviderIcon } from '../utils';
 
 interface IntegrationConnectionCardsProps {
@@ -18,19 +19,14 @@ export function IntegrationConnectionCards({
 }: IntegrationConnectionCardsProps) {
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <section className="panel panel-content">
-        <div className="panel-header">
-          <span className="text-primary [&>svg]:!h-3.5 [&>svg]:!w-3.5">
-            {getProviderIcon('META_ADS')}
-          </span>
-          <h3 className="panel-title">
-            Meta Marketing API
-          </h3>
-        </div>
-        <div className="space-y-4 p-4 sm:p-5">
+      <DashboardSection
+        title="Meta Marketing API"
+        icon={<span className="text-primary [&>svg]:!h-3.5 [&>svg]:!w-3.5">{getProviderIcon('META_ADS')}</span>}
+        contentClassName="space-y-4 p-4 sm:p-5"
+      >
           <div className="space-y-1 text-center">
-            <p className="text-[0.95rem] font-medium text-slate-700">Connect your Meta ad accounts.</p>
-            <p className="text-[0.9rem] text-slate-500">
+            <p className="text-[0.95rem] font-medium text-foreground">Connect your Meta ad accounts.</p>
+            <p className="text-[0.9rem] text-slate-500 dark:text-slate-300">
               {metaCount === 0
                 ? 'No APIs connected'
                 : `${metaCount} API${metaCount > 1 ? 's' : ''} connected`}
@@ -43,22 +39,16 @@ export function IntegrationConnectionCards({
           >
             Add Meta API
           </Button>
-        </div>
-      </section>
+      </DashboardSection>
 
-      <section className="panel panel-content">
-        <div className="panel-header">
-          <span className="text-primary [&>svg]:!h-3.5 [&>svg]:!w-3.5">
-            {getProviderIcon('PANCAKE_POS')}
-          </span>
-          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-            Pancake POS
-          </h3>
-        </div>
-        <div className="space-y-4 p-4 sm:p-5">
+      <DashboardSection
+        title="Pancake POS"
+        icon={<span className="text-primary [&>svg]:!h-3.5 [&>svg]:!w-3.5">{getProviderIcon('PANCAKE_POS')}</span>}
+        contentClassName="space-y-4 p-4 sm:p-5"
+      >
           <div className="space-y-1 text-center">
-            <p className="text-[0.95rem] font-medium text-slate-700">Connect your POS system.</p>
-            <p className="text-[0.9rem] text-slate-500">
+            <p className="text-[0.95rem] font-medium text-foreground">Connect your POS system.</p>
+            <p className="text-[0.9rem] text-slate-500 dark:text-slate-300">
               {posCount === 0
                 ? 'No stores connected'
                 : `${posCount} store${posCount > 1 ? 's' : ''} connected`}
@@ -71,8 +61,7 @@ export function IntegrationConnectionCards({
           >
             {posCount === 0 ? 'Connect Pancake POS' : 'Add Another Store'}
           </Button>
-        </div>
-      </section>
+      </DashboardSection>
     </div>
   );
 }

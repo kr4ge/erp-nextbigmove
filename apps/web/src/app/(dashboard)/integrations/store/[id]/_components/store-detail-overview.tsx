@@ -73,8 +73,8 @@ export function StoreDetailOverview({
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold text-slate-900">{storeName}</h2>
-            <p className="mt-0.5 text-xs text-slate-500">Shop ID: {store.shopId}</p>
+            <h2 className="truncate text-sm font-semibold text-foreground">{storeName}</h2>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">Shop ID: {store.shopId}</p>
             <p className="mt-0.5 text-xs-tight text-slate-400">Created: {createdAtLabel}</p>
           </div>
         </div>
@@ -91,7 +91,7 @@ export function StoreDetailOverview({
               readOnly
               value={showApiKey ? apiKey : maskedApiKey}
               onClick={apiKey ? onCopyApiKey : undefined}
-              className="input bg-secondary"
+              className="input bg-secondary dark:bg-background-secondary"
             />
             <div className="absolute inset-y-0 right-2 flex items-center gap-1.5">
               {apiKey && (

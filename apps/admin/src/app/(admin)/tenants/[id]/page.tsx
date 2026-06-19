@@ -66,6 +66,8 @@ const statusOptions: Array<{ value: TenantStatus; label: string }> = [
   { value: 'CANCELLED', label: 'Cancelled' },
 ];
 
+const NOTICE_AUTO_DISMISS_MS = 5000;
+
 export default function TenantDetailsPage() {
   const router = useRouter();
   const params = useParams();
@@ -239,8 +241,9 @@ export default function TenantDetailsPage() {
   return (
     <WmsPageShell
       title={tenant.name}
-      actions={
-        <>
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
           <Link
             href="/tenants"
             className="btn btn-md btn-outline btn-icon"
@@ -248,6 +251,8 @@ export default function TenantDetailsPage() {
             <ArrowLeft className="h-3.5 w-3.5" />
             Back
           </Link>
+        </div>
+        <div className='space-x-2'>
           <span
             className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getTenantStatusClassName(tenant.status)}`}
           >
@@ -258,11 +263,29 @@ export default function TenantDetailsPage() {
           >
             {formatTenantPlan(tenant.planType)}
           </span>
-        </>
-      }
-    >
-      {error ? <WmsInlineNotice tone="error">{error}</WmsInlineNotice> : null}
-      {successMessage ? <WmsInlineNotice tone="success">{successMessage}</WmsInlineNotice> : null}
+        </div>
+      </div>
+      
+      {error ? (
+        <WmsInlineNotice
+          tone="error"
+          dismissible
+          autoDismissMs={NOTICE_AUTO_DISMISS_MS}
+          onDismiss={() => setError('')}
+        >
+          {error}
+        </WmsInlineNotice>
+      ) : null}
+      {successMessage ? (
+        <WmsInlineNotice
+          tone="success"
+          dismissible
+          autoDismissMs={NOTICE_AUTO_DISMISS_MS}
+          onDismiss={() => setSuccessMessage('')}
+        >
+          {successMessage}
+        </WmsInlineNotice>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,360px)]">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">

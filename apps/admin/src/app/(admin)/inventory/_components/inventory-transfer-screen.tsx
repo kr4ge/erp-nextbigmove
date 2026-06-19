@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, History, Truck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, History } from 'lucide-react';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
@@ -32,17 +32,19 @@ export function InventoryTransferScreen() {
   return (
     <div className="space-y-4">
       <WmsPageShell title="Transfer">
-        <div className="flex flex-wrap items-center gap-2">
-          <ViewButton
-            active={activeView === 'putaway'}
-            label="Put-away"
-            onClick={() => setActiveView('putaway')}
-          />
-          <ViewButton
-            active={activeView === 'history'}
-            label="History"
-            onClick={() => setActiveView('history')}
-          />
+        <div className="overflow-x-auto">
+          <nav className="flex min-w-max gap-6 border-b border-slate-200">
+            <ViewButton
+              active={activeView === 'putaway'}
+              label="Put-away"
+              onClick={() => setActiveView('putaway')}
+            />
+            <ViewButton
+              active={activeView === 'history'}
+              label="History"
+              onClick={() => setActiveView('history')}
+            />
+          </nav>
         </div>
 
         {activeView === 'putaway' ? (
@@ -155,10 +157,10 @@ function ViewButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition ${
+      className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
         active
-          ? 'border-primary bg-primary text-white'
-          : 'border-[#d7e0e7] bg-white text-[#4f6776] hover:border-[#c6d4dd] hover:text-primary'
+          ? 'border-primary text-primary'
+          : 'border-transparent text-slate-600 hover:text-slate-900'
       }`}
     >
       {label}

@@ -107,7 +107,7 @@ export function getOrderColumns(): ColumnDef<Order>[] {
       id: 'actions',
       cell: () => (
         <DropdownMenu>
-          <DropdownMenuTrigger className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-slate-600 hover:bg-slate-100">
+          <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-background-secondary">
             <MoreHorizontal className="h-4 w-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

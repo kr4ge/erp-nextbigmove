@@ -63,6 +63,8 @@ type SalesCounts = {
   shipped: number;
   waiting_pickup: number;
   rts: number;
+  undelivered: number;
+  returned: number;
   restocking: number;
   confirmed: number;
   unconfirmed: number;
@@ -152,6 +154,42 @@ export class SalesAnalyticsService {
     const s = dayjs(startStr, 'YYYY-MM-DD');
     const e = dayjs(endStr, 'YYYY-MM-DD');
     return e.diff(s, 'day');
+  }
+
+  private buildVolumeGrowthTrend(
+    rows: Array<{
+      date: Date;
+      _sum: {
+        shippedCount: number | null;
+        deliveredCount: number | null;
+        rtsCount: number | null;
+      };
+    }>,
+    startStr: string,
+    endStr: string,
+  ) {
+    const byDate = new Map(
+      rows.map((row) => [
+        dayjs.utc(row.date).format('YYYY-MM-DD'),
+        {
+          shipped: this.toNumber(row._sum?.shippedCount),
+          delivered: this.toNumber(row._sum?.deliveredCount),
+          rts: this.toNumber(row._sum?.rtsCount),
+        },
+      ]),
+    );
+
+    const totalDays = this.diffDays(startStr, endStr);
+    return Array.from({ length: totalDays + 1 }, (_, index) => {
+      const date = this.shiftDate(startStr, index);
+      const values = byDate.get(date);
+      return {
+        date,
+        shipped: values?.shipped ?? 0,
+        delivered: values?.delivered ?? 0,
+        rts: values?.rts ?? 0,
+      };
+    });
   }
 
   private computeKpis(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean; includeTax12: boolean; includeTax1: boolean; rtsForecastPct?: number; processedSalesValue?: number }): SalesKpis {
@@ -291,7 +329,11 @@ export class SalesAnalyticsService {
     };
   }
 
-  private computeCounts(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean }): SalesCounts {
+  private computeCounts(
+    sum: any,
+    opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean },
+    stageCounts?: { undelivered?: number; returned?: number },
+  ): SalesCounts {
     const purchasesRaw = this.toNumber(sum?._sum?.purchasesPos);
     const cancelAdj = opts.excludeCancel ? this.toNumber(sum?._sum?.canceledCount) : 0;
     const restockAdj = opts.excludeRestocking ? this.toNumber(sum?._sum?.restockingCount) : 0;
@@ -306,6 +348,8 @@ export class SalesAnalyticsService {
       waiting_pickup: this.toNumber(sum?._sum?.waitingPickupCount),
       // Keep RTS count constant regardless of excludeRts toggle so KPI remains comparable
       rts: this.toNumber(sum?._sum?.rtsCount),
+      undelivered: this.toNumber(stageCounts?.undelivered),
+      returned: this.toNumber(stageCounts?.returned),
       restocking: this.toNumber(sum?._sum?.restockingCount),
       confirmed: this.toNumber(sum?._sum?.confirmedCount),
       unconfirmed: this.toNumber(sum?._sum?.unconfirmedCount),
@@ -504,6 +548,7 @@ export class SalesAnalyticsService {
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
     const cacheTeamIds = effectiveTeamIds ? [...effectiveTeamIds].sort() : teamId ? [teamId] : [];
     const cacheKeyPayload = {
+      responseShapeVersion: 2,
       tenantId,
       teamIds: cacheTeamIds,
       start: startStr,
@@ -531,6 +576,11 @@ export class SalesAnalyticsService {
       cancelledOrdersCount,
       prevTotalOrdersCount,
       prevCancelledOrdersCount,
+      undeliveredOrdersCount,
+      returnedOrdersCount,
+      prevUndeliveredOrdersCount,
+      prevReturnedOrdersCount,
+      volumeGrowthTrendRows,
       mappingRows,
       nullCount,
       productGroups,
@@ -660,6 +710,42 @@ export class SalesAnalyticsService {
         where: {
           ...prevCancellationRateWhere,
           status: 6,
+        },
+      }),
+      this.prisma.posOrder.count({
+        where: {
+          ...cancellationRateWhere,
+          status: 4,
+        },
+      }),
+      this.prisma.posOrder.count({
+        where: {
+          ...cancellationRateWhere,
+          status: 5,
+        },
+      }),
+      this.prisma.posOrder.count({
+        where: {
+          ...prevCancellationRateWhere,
+          status: 4,
+        },
+      }),
+      this.prisma.posOrder.count({
+        where: {
+          ...prevCancellationRateWhere,
+          status: 5,
+        },
+      }),
+      this.prisma.reconcileSales.groupBy({
+        by: ['date'],
+        where,
+        _sum: {
+          shippedCount: true,
+          deliveredCount: true,
+          rtsCount: true,
+        },
+        orderBy: {
+          date: 'asc',
         },
       }),
       this.prisma.reconcileSales.findMany({
@@ -797,8 +883,27 @@ export class SalesAnalyticsService {
           ? (prevCancelledOrdersCount / prevTotalOrdersCount) * 100
           : 0,
     };
-    const counts = this.computeCounts(agg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts });
-    const prevCounts = this.computeCounts(prevAgg, { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts });
+    const counts = this.computeCounts(
+      agg,
+      { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts },
+      {
+        undelivered: undeliveredOrdersCount,
+        returned: returnedOrdersCount,
+      },
+    );
+    const prevCounts = this.computeCounts(
+      prevAgg,
+      { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts },
+      {
+        undelivered: prevUndeliveredOrdersCount,
+        returned: prevReturnedOrdersCount,
+      },
+    );
+    const volumeGrowthTrend = this.buildVolumeGrowthTrend(
+      volumeGrowthTrendRows,
+      startStr,
+      endStr,
+    );
 
     const response = {
       kpis,
@@ -818,6 +923,7 @@ export class SalesAnalyticsService {
       lastUpdatedAt: lastUpdatedAgg?._max?.updatedAt || null,
       products,
       deliveryStatuses,
+      volumeGrowthTrend,
     };
 
     this.logger.log(`CACHE SET ${cacheKey}`);

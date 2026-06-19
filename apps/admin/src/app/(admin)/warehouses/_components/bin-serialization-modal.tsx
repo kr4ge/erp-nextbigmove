@@ -189,21 +189,17 @@ export function BinSerializationModal({
     >
       {target ? (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2 border-b border-[#e6edf1] pb-3">
-            {TAB_OPTIONS.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                onClick={() => setActiveTab(tab.value)}
-                className={`inline-flex rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
-                  activeTab === tab.value
-                    ? 'border-primary bg-primary text-white'
-                    : 'border-[#d7e0e7] bg-white text-[#4d6677] hover:border-[#c6d4dd] hover:bg-[#f8fafb]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="overflow-x-auto">
+            <nav className="flex min-w-max gap-6 border-b border-slate-200">
+              {TAB_OPTIONS.map((tab) => (
+                <TabButton
+                  key={tab.value}
+                  active={activeTab === tab.value}
+                  label={tab.label}
+                  onClick={() => setActiveTab(tab.value)}
+                />
+              ))}
+            </nav>
           </div>
 
           {activeTab === 'label' ? (
@@ -350,6 +346,30 @@ function MetaItem({ label, value }: { label: string; value: string }) {
       <p className="card-label">{label}</p>
       <p className="card-value text-base">{value}</p>
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
+        active
+          ? 'border-primary text-primary'
+          : 'border-transparent text-slate-600 hover:text-slate-900'
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

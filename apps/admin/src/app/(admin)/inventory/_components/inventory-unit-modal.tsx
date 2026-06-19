@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, History, MoveHorizontal, Printer, RefreshCcw, Settings2 } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
@@ -43,7 +43,7 @@ type InventoryUnitModalProps = {
   onClose: () => void;
 };
 
-type UnitModalTab = 'overview' | 'movements' | 'transfer' | 'adjust';
+type UnitModalTab = 'overview' | 'transfer' | 'adjust';
 type TransferMode = 'bin' | 'operational';
 
 export function InventoryUnitModal({
@@ -80,6 +80,11 @@ export function InventoryUnitModal({
   const [voidReason, setVoidReason] = useState('');
   const [voidNotes, setVoidNotes] = useState('');
   const [voidError, setVoidError] = useState<string | null>(null);
+  const overviewStaticRef = useRef<HTMLDivElement | null>(null);
+  const overviewAsideRef = useRef<HTMLElement | null>(null);
+  const movementCardRef = useRef<HTMLDivElement | null>(null);
+  const movementBodyRef = useRef<HTMLDivElement | null>(null);
+  const [movementViewportHeight, setMovementViewportHeight] = useState<number | null>(null);
 
   useEffect(() => {
     if (!open || !unit) {
@@ -145,6 +150,57 @@ export function InventoryUnitModal({
     }
   }, [binId, selectedRack]);
 
+  useEffect(() => {
+    if (!open || activeTab !== 'overview') {
+      setMovementViewportHeight(null);
+      return;
+    }
+
+    const syncMovementViewportHeight = () => {
+      if (typeof window === 'undefined' || window.innerWidth < 1280) {
+        setMovementViewportHeight(null);
+        return;
+      }
+
+      const asideHeight = overviewAsideRef.current?.offsetHeight ?? 0;
+      const staticHeight = overviewStaticRef.current?.offsetHeight ?? 0;
+      const movementCardHeight = movementCardRef.current?.offsetHeight ?? 0;
+      const movementBodyHeight = movementBodyRef.current?.offsetHeight ?? 0;
+      const gapHeight = 12;
+      const movementChromeHeight = movementCardHeight - movementBodyHeight;
+      const availableHeight = asideHeight - staticHeight - gapHeight - movementChromeHeight;
+
+      setMovementViewportHeight(availableHeight > 0 ? availableHeight : null);
+    };
+
+    syncMovementViewportHeight();
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          syncMovementViewportHeight();
+        });
+
+    if (resizeObserver) {
+      if (overviewStaticRef.current) {
+        resizeObserver.observe(overviewStaticRef.current);
+      }
+      if (overviewAsideRef.current) {
+        resizeObserver.observe(overviewAsideRef.current);
+      }
+      if (movementCardRef.current) {
+        resizeObserver.observe(movementCardRef.current);
+      }
+    }
+
+    window.addEventListener('resize', syncMovementViewportHeight);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', syncMovementViewportHeight);
+    };
+  }, [activeTab, movements.length, open]);
+
   const targetLocationId =
     transferMode === 'bin'
       ? binId || null
@@ -186,7 +242,7 @@ export function InventoryUnitModal({
       setSectionId('');
       setRackId('');
       setBinId('');
-      setActiveTab('movements');
+      setActiveTab('overview');
     } catch (error) {
       setTransferError(error instanceof Error ? error.message : 'Unable to transfer unit');
     }
@@ -206,7 +262,7 @@ export function InventoryUnitModal({
       });
       setVoidReason('');
       setVoidNotes('');
-      setActiveTab('movements');
+      setActiveTab('overview');
     } catch (error) {
       setVoidError(error instanceof Error ? error.message : 'Unable to void unit');
     }
@@ -268,11 +324,6 @@ export function InventoryUnitModal({
                 onClick={() => setActiveTab('overview')}
               />
               <TabButton
-                active={activeTab === 'movements'}
-                label="Movements"
-                onClick={() => setActiveTab('movements')}
-              />
-              <TabButton
                 active={activeTab === 'transfer'}
                 label="Transfer"
                 onClick={() => setActiveTab('transfer')}
@@ -287,8 +338,9 @@ export function InventoryUnitModal({
 
           {activeTab === 'overview' ? (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
-              <div className="card">
-                <div className="card">
+              <div className="space-y-3">
+                <div ref={overviewStaticRef} className="space-y-3">
+                  <div className="card">
                   {barcodeMarkup ? (
                     <div
                       className="flex justify-center"
@@ -301,16 +353,76 @@ export function InventoryUnitModal({
                   )}
                 </div>
 
-                <div className="card mt-3">
+                  <div className="card">
                   <p className="card-label">Barcode Value</p>
                   <p className="card-value text-base">
                     {barcodeValue}
                     <sub className="ml-1 text-[10px] leading-none">01</sub>
                   </p>
+                  </div>
+                </div>
+
+                <div ref={movementCardRef} className="card">
+                  <div className="flex items-center gap-2.5">
+                    <History className="h-4 w-4 text-[#708492]" />
+                    <p className="card-label">Unit Movement History</p>
+                  </div>
+
+                  <div
+                    ref={movementBodyRef}
+                    className="mt-3 overflow-y-auto"
+                    style={movementViewportHeight ? { maxHeight: `${movementViewportHeight}px` } : { maxHeight: '420px' }}
+                  >
+                    {isLoadingMovements ? (
+                      <p className="py-8 text-center text-sm text-[#708492]">Loading movements...</p>
+                    ) : movements.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-[#708492]">No movement history yet.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {movements.map((movement) => (
+                          <div key={movement.id} className="rounded-2xl border border-[#e2e9ee] bg-[#fbfcfc] px-3.5 py-3">
+                            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                              <div>
+                                <p className="text-[13px] font-semibold text-primary">
+                                  {formatMovementType(movement.movementType)}
+                                </p>
+                                <p className="mt-1 text-[12px] text-[#637786]">
+                                  {movement.fromLocation?.code ?? 'No source'} &rarr; {movement.toLocation?.code ?? 'No destination'}
+                                </p>
+                              </div>
+                              <p className="text-[11px] text-[#7b8e9c]">{formatDateTime(movement.createdAt)}</p>
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#708492]">
+                              {movement.fromStatusLabel || movement.toStatusLabel ? (
+                                <span className="pill pill-ghost">
+                                  {movement.fromStatusLabel ?? '-'} &rarr; {movement.toStatusLabel ?? '-'}
+                                </span>
+                              ) : null}
+                              {movement.referenceCode ? (
+                                <span className="pill pill-ghost">
+                                  {movement.referenceCode}
+                                </span>
+                              ) : null}
+                              {movement.actor?.name ? (
+                                <span className="pill pill-ghost">
+                                  {movement.actor.name}
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {movement.notes ? (
+                              <p className="mt-2 text-[12px] text-[#637786]">{movement.notes}</p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <aside className="space-y-2.5">
+              <aside ref={overviewAsideRef} className="space-y-2.5">
                 <MetaItem label="Product" value={unit.name} />
                 <MetaItem label="Variation" value={unit.variationDisplayId ?? unit.variationId} />
                 <MetaItem label="Product ID" value={unit.productCustomId ?? '—'} />
@@ -331,16 +443,13 @@ export function InventoryUnitModal({
                     </p>
                   </div>
                 ) : (
-                  <div className="rounded-[18px] border border-rose-200 bg-rose-50/70 px-4 py-3">
+                  <div className="card border-rose-200 bg-rose-50/70 px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Archive className="h-4 w-4 text-rose-700" />
                       <p className="text-[12px] font-bold uppercase tracking-[0.24em] text-rose-700">
                         Void Unit
                       </p>
                     </div>
-                    <p className="mt-2 text-[12px] text-rose-800">
-                      Archives this unit and frees its location. Reserved units will be released.
-                    </p>
 
                     <input
                       value={voidReason}
@@ -376,7 +485,7 @@ export function InventoryUnitModal({
             </div>
           ) : null}
 
-          {activeTab === 'movements' ? (
+          {false ? (
             <div className="panel panel-content">
               <div className="panel-header">
                 <History className='panel-icon' />
@@ -590,7 +699,7 @@ export function InventoryUnitModal({
                   isAdjustingUnit={isAdjustingUnit}
                   onAdjustUnit={onAdjustUnit}
                   onSuccess={() => {
-                    setActiveTab('movements');
+                    setActiveTab('overview');
                   }}
                 />
               </div>

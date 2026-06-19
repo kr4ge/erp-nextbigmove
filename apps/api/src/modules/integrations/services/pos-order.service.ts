@@ -279,15 +279,27 @@ export class PosOrderService {
       }
 
       // Get COGS for the order date
-      const cogsEntry = await this.prisma.posProductCogs.findFirst({
+      let cogsEntry = await this.prisma.posProductCogs.findFirst({
         where: {
           tenantId,
           productId: product.id,
           storeId,
-          startDate: { lte: orderDate },
+          AND: [{ startDate: { not: null } }, { startDate: { lte: orderDate } }],
           OR: [{ endDate: { gte: orderDate } }, { endDate: null }],
         },
+        orderBy: [{ startDate: 'desc' }, { updatedAt: 'desc' }],
       });
+
+      if (!cogsEntry) {
+        cogsEntry = await this.prisma.posProductCogs.findFirst({
+          where: {
+            tenantId,
+            productId: product.id,
+            storeId,
+          },
+          orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        });
+      }
 
       if (cogsEntry) {
         const itemCogs = parseFloat(cogsEntry.cogs.toString()) * quantity;

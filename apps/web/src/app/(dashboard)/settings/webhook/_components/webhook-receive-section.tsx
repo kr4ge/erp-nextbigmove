@@ -1,7 +1,6 @@
 'use client';
 
 import { Copy, Eye, EyeOff, KeyRound, RefreshCcw, Webhook } from 'lucide-react';
-import { Card } from '@/components/ui/card';
 import { FormInput } from '@/components/ui/form-input';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -40,16 +39,15 @@ export function WebhookReceiveSection({
   onToggleEnabled,
 }: WebhookReceiveSectionProps) {
   return (
-    <Card>
-      <div className="space-y-6">
+    <div className="space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-lg bg-orange-50 px-3 py-1 text-xs font-semibold text-primary">
               <Webhook className="h-4 w-4" />
               Receive
             </div>
-            <h2 className="text-xl font-semibold text-slate-900">Pancake POS to ERP</h2>
-            <p className="text-sm text-slate-600">
+            <h2 className="text-xl font-semibold text-foreground">Pancake POS to ERP</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
               Use this URL and API key in Pancake settings. This is shared across all shops in your tenant.
             </p>
           </div>
@@ -69,10 +67,10 @@ export function WebhookReceiveSection({
           </div>
         </div>
 
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-border dark:bg-surface">
           <div className="space-y-0.5">
-            <p className="text-sm font-semibold text-slate-900">Receive Webhook</p>
-            <p className="text-xs text-slate-500">Accept Pancake webhook payloads for this tenant.</p>
+            <p className="text-sm font-semibold text-foreground">Receive Webhook</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">Accept Pancake webhook payloads for this tenant.</p>
           </div>
           <button
             type="button"
@@ -133,9 +131,9 @@ export function WebhookReceiveSection({
           </div>
         </div>
 
-        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-border dark:bg-surface">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-slate-900">API Key</p>
+            <p className="text-sm font-semibold text-foreground">API Key</p>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -175,20 +173,19 @@ export function WebhookReceiveSection({
             className="font-mono"
           />
 
-          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-300">
             <div className="inline-flex items-center gap-2">
               <KeyRound className="h-3.5 w-3.5" />
-              Last 4: <span className="font-semibold text-slate-700">{config?.keyLast4 || '--'}</span>
+              Last 4: <span className="font-semibold text-foreground">{config?.keyLast4 || '--'}</span>
             </div>
             <div>
-              Rotated at: <span className="font-semibold text-slate-700">{formatWebhookDateTime(config?.rotatedAt)}</span>
+              Rotated at: <span className="font-semibold text-foreground">{formatWebhookDateTime(config?.rotatedAt)}</span>
             </div>
             <div>
-              Rotated by: <span className="font-semibold text-slate-700">{config?.rotatedByUserId || '--'}</span>
+              Rotated by: <span className="font-semibold text-foreground">{config?.rotatedByUserId || '--'}</span>
             </div>
           </div>
         </div>
-      </div>
-    </Card>
+    </div>
   );
 }

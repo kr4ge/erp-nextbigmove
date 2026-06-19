@@ -23,7 +23,7 @@ export function DashboardTabs<T extends string>({
 }: DashboardTabsProps<T>) {
   return (
     <div className={clsx('overflow-x-auto', className)}>
-      <div className="inline-flex min-w-max items-center gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1">
+      <div className="inline-flex min-w-max items-center gap-2 rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-500 dark:bg-background-secondary">
         {items.map((item) => {
           const active = item.value === value;
           return (
@@ -32,10 +32,10 @@ export function DashboardTabs<T extends string>({
               type="button"
               onClick={() => onValueChange(item.value)}
               className={clsx(
-                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors',
+                'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-colors',
                 active
                   ? 'btn btn-primary-soft'
-                  : 'text-slate-500 hover:bg-white hover:text-slate-800',
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-foreground dark:text-foreground',
               )}
             >
               {item.icon ? <span className="text-current">{item.icon}</span> : null}
@@ -44,7 +44,7 @@ export function DashboardTabs<T extends string>({
                 <span
                   className={clsx(
                     'rounded-full px-1.5 py-px text-xs-tight font-medium tabular-nums',
-                    active ? 'btn btn-primary-soft' : 'bg-slate-200/80 text-slate-500',
+                    active ? 'btn btn-primary-soft' : 'bg-slate-200/80 text-slate-500 dark:bg-background-secondary dark:text-foreground',
                   )}
                 >
                   {item.badge}

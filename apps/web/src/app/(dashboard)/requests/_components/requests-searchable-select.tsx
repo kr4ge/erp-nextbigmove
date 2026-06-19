@@ -147,26 +147,26 @@ export function RequestsSearchableSelect({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((previous) => !previous)}
-        className={`flex h-8 w-full items-center gap-2 rounded-lg border bg-white pl-3 pr-2 text-slate-800 transition ${
+        className={`flex h-8 w-full items-center gap-2 rounded-lg border bg-white pl-3 pr-2 text-slate-800 transition dark:border-border dark:bg-transparent dark:text-foreground ${
           open
-            ? 'border-slate-300 shadow-[0_0_0_3px_rgba(148,163,184,0.18)]'
-            : 'border-slate-200 hover:border-slate-300'
+            ? 'border-slate-300 shadow-[0_0_0_3px_rgba(148,163,184,0.18)] dark:border-slate-500 dark:shadow-[0_0_0_3px_rgba(71,85,105,0.24)]'
+            : 'border-slate-200 hover:border-slate-300 dark:hover:border-slate-500'
         }`}
       >
-        <span className="text-[8px] font-semibold uppercase tracking-[0.17em] text-slate-500">
+        <span className="text-[8px] font-semibold uppercase tracking-[0.17em] text-slate-500 dark:text-slate-300">
           {label}
         </span>
-        <span className="max-w-[160px] truncate text-[11.5px] font-semibold text-slate-800">
+        <span className="max-w-[160px] truncate text-[11.5px] font-semibold text-slate-800 dark:text-foreground">
           {selected?.label ?? allLabel}
         </span>
-        <ChevronDown className={`ml-auto h-4 w-4 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`ml-auto h-4 w-4 text-slate-400 transition dark:text-slate-300 ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && portalReady
         ? createPortal(
             <div
               ref={popoverRef}
-              className="fixed z-[120] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_42px_-28px_rgba(15,23,42,0.35)]"
+              className="fixed z-[120] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_42px_-28px_rgba(15,23,42,0.35)] dark:border-border dark:bg-background dark:shadow-[0_20px_42px_-28px_rgba(2,6,23,0.7)]"
               style={{
                 top: popoverStyle?.top ?? -9999,
                 left: popoverStyle?.left ?? -9999,
@@ -174,20 +174,20 @@ export function RequestsSearchableSelect({
                 visibility: popoverStyle ? 'visible' : 'hidden',
               }}
             >
-              <div className="flex items-center gap-2 border-b border-slate-100 px-2.5 py-1.5">
-                <Search className="h-3.5 w-3.5 text-slate-400" />
+              <div className="flex items-center gap-2 border-b border-slate-100 px-2.5 py-1.5 dark:border-border">
+                <Search className="h-3.5 w-3.5 text-slate-400 dark:text-slate-300" />
                 <input
                   ref={inputRef}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder={placeholder}
-                  className="h-6 w-full border-none bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400"
+                  className="h-6 w-full border-none bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400 dark:text-foreground dark:placeholder:text-slate-400"
                 />
                 {query ? (
                   <button
                     type="button"
                     onClick={() => setQuery('')}
-                    className="flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                    className="flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-300 dark:hover:bg-surface dark:hover:text-foreground"
                     aria-label="Clear search"
                   >
                     <X className="h-3 w-3" />
@@ -203,7 +203,7 @@ export function RequestsSearchableSelect({
                 />
 
                 {filtered.length === 0 ? (
-                  <div className="px-3 py-5 text-center text-xs text-slate-500">
+                  <div className="px-3 py-5 text-center text-xs text-slate-500 dark:text-slate-300">
                     No matches found
                   </div>
                 ) : (
@@ -240,8 +240,8 @@ function OptionRow({
       onClick={onClick}
       className={`flex w-full items-center gap-3 px-3 py-1.5 text-left text-[12px] transition ${
         active
-          ? 'bg-slate-100 text-slate-900'
-          : 'text-slate-700 hover:bg-slate-50'
+          ? 'bg-slate-100 text-slate-900 dark:bg-surface dark:text-foreground'
+          : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-surface'
       }`}
     >
       <span className="truncate font-semibold">{label}</span>

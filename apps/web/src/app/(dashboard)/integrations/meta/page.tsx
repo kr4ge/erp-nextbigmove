@@ -42,7 +42,7 @@ export default function MetaPage() {
 
       {/* Integrations List */}
       {integrations.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center px-8 py-12 text-center bg-secondary/40 rounded-xl shadow-sm">
+        <Card className="flex flex-col items-center justify-center px-8 py-12 text-center bg-secondary/40 dark:bg-surface rounded-xl shadow-sm">
           <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center text-primary">
             <ShieldCheck className="h-8 w-8" />
           </div>
@@ -52,7 +52,7 @@ export default function MetaPage() {
           </p>
           <Button
             onClick={() => router.push('/integrations/create?provider=META_ADS')}
-            className="mt-6"
+            className="mt-6 mx-auto"
             variant='primary'
             size='md'
           >

@@ -1154,16 +1154,16 @@ export default function SalesAnalyticsPage() {
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between dark:border-border">
         <div className="space-y-1.5">
           <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Analytics
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">
-              Sales Analytics
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Business Performance
             </h1>
-            <p className="text-sm-custom text-slate-500">
+            <p className="text-sm-custom text-slate-500 dark:text-slate-300">
               Monitor sales performance by mapping.
             </p>
           </div>
@@ -1208,13 +1208,13 @@ export default function SalesAnalyticsPage() {
                 <button
                   type="button"
                   onClick={() => setShowFilterMenu((p) => !p)}
-                  className="inline-flex h-10 items-center justify-center rounded-r-xl rounded-l-none border border-slate-200 bg-white px-3 text-slate-600 hover:border-orange-200 hover:text-orange-700"
+                className="inline-flex h-10 items-center justify-center rounded-r-xl rounded-l-none border border-slate-200 bg-white px-3 text-slate-600 hover:border-orange-200 hover:text-orange-700 dark:border-border dark:bg-transparent dark:text-foreground"
                   aria-label="Filters"
                 >
                   <Filter className="h-4 w-4" />
                 </button>
                 {showFilterMenu && (
-                  <div className="absolute right-0 mt-2 w-60 rounded-xl border border-slate-200 bg-white shadow-lg z-30 p-3 space-y-3">
+                  <div className="absolute right-0 z-30 mt-2 w-60 space-y-3 rounded-xl border border-slate-200 bg-surface p-3 shadow-lg dark:border-border">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
@@ -1222,7 +1222,7 @@ export default function SalesAnalyticsPage() {
                         checked={excludeCanceled}
                         onChange={(e) => setExcludeCanceled(e.target.checked)}
                       />
-                      <span className="text-sm text-slate-800">Exclude Canceled</span>
+                      <span className="text-sm text-foreground">Exclude Canceled</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
@@ -1231,7 +1231,7 @@ export default function SalesAnalyticsPage() {
                         checked={excludeRestocking}
                         onChange={(e) => setExcludeRestocking(e.target.checked)}
                       />
-                      <span className="text-sm text-slate-800">Exclude Restocking</span>
+                      <span className="text-sm text-foreground">Exclude Restocking</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
@@ -1240,7 +1240,7 @@ export default function SalesAnalyticsPage() {
                         checked={excludeAbandoned}
                         onChange={(e) => setExcludeAbandoned(e.target.checked)}
                       />
-                      <span className="text-sm text-slate-800">Exclude Abandoned</span>
+                      <span className="text-sm text-foreground">Exclude Abandoned</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
@@ -1249,11 +1249,11 @@ export default function SalesAnalyticsPage() {
                         checked={excludeRts}
                         onChange={(e) => setExcludeRts(e.target.checked)}
                       />
-                      <span className="text-sm text-slate-800">Exclude RTS</span>
+                      <span className="text-sm text-foreground">Exclude RTS</span>
                     </label>
-                    <div className="h-px bg-slate-100 my-1" />
+                    <div className="my-1 h-px bg-slate-100 dark:bg-border" />
                     <div className="space-y-1">
-                      <label className="text-sm text-slate-800 flex items-center justify-between">
+                      <label className="flex items-center justify-between text-sm text-foreground">
                         <span>RTS %</span>
                         <input
                           type="number"
@@ -1268,12 +1268,12 @@ export default function SalesAnalyticsPage() {
                             }
                             setRtsForecastPct(Math.min(100, Math.max(0, val)));
                           }}
-                          className="w-20 rounded border border-slate-200 px-2 py-1 text-sm text-slate-900 focus:outline-none focus:border-indigo-300"
+                          className="w-20 rounded border border-slate-200 px-2 py-1 text-sm text-foreground focus:border-indigo-300 focus:outline-none dark:border-border dark:bg-surface"
                         />
                       </label>
-                      <p className="text-xs text-slate-500">Used for CM (RTS %) forecast column</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-300">Used for CM (RTS %) forecast column</p>
                     </div>
-                    <div className="h-px bg-slate-100 my-1" />
+                    <div className="my-1 h-px bg-slate-100 dark:bg-border" />
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
@@ -1281,7 +1281,7 @@ export default function SalesAnalyticsPage() {
                         checked={includeTax12}
                         onChange={(e) => setIncludeTax12(e.target.checked)}
                       />
-                      <span className="text-sm text-slate-800">Include 12% Ads Tax</span>
+                      <span className="text-sm text-foreground">Include 12% Ads Tax</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
@@ -1290,7 +1290,7 @@ export default function SalesAnalyticsPage() {
                         checked={includeTax1}
                         onChange={(e) => setIncludeTax1(e.target.checked)}
                       />
-                      <span className="text-sm text-slate-800">Include 1% transaction fee</span>
+                      <span className="text-sm text-foreground">Include 1% transaction fee</span>
                     </label>
                   </div>
                 )}
@@ -1308,7 +1308,7 @@ export default function SalesAnalyticsPage() {
                   showFooter={false}
                   primaryColor="orange"
                   readOnly
-                  inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                  inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-border dark:!bg-transparent dark:!text-transparent transition-[width] duration-300 ease-out ${
                     salesDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
                   }`}
                   containerClassName=""
@@ -1319,7 +1319,7 @@ export default function SalesAnalyticsPage() {
                     <span className="flex w-full items-center gap-2 overflow-hidden">
                       <CalendarDays className="h-4 w-4 shrink-0" />
                       <span
-                        className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                        className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
                           salesDateRangeIsToday
                             ? 'max-w-0 -translate-x-1 opacity-0'
                             : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
@@ -1329,7 +1329,7 @@ export default function SalesAnalyticsPage() {
                       </span>
                     </span>
                   )}
-                  toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                  toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 border rounded-xl border-slate-200 hover:text-orange-700 cursor-pointer dark:bg-surface dark:text-foreground dark:border-border"
                   placeholder=" "
                 />
               </div>
@@ -1338,7 +1338,7 @@ export default function SalesAnalyticsPage() {
                   type="button"
                   onClick={reconcileRange}
                   disabled={isReconciling}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300 disabled:opacity-60"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-surface text-slate-600 dark:text-foreground dark:border-border hover:border-slate-300 disabled:opacity-60"
                   aria-label="Reconcile date range"
                   title="Reconcile date range"
                 >
@@ -1347,7 +1347,7 @@ export default function SalesAnalyticsPage() {
                 <button
                   type="button"
                   onClick={() => setShowKpiVisibilityModal(true)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-surface text-slate-600 dark:text-foreground dark:border-border hover:border-slate-300"
                   aria-label="Show or hide KPI boxes"
                   title="Show or hide KPI boxes"
                 >
@@ -1357,7 +1357,7 @@ export default function SalesAnalyticsPage() {
                   <button
                     type="button"
                     onClick={openShareModal}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-surface text-slate-600 dark:text-foreground dark:border-border hover:border-slate-300"
                     aria-label="Share analytics"
                   >
                     <Share2 className="h-4 w-4" />

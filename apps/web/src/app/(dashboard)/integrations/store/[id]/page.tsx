@@ -4,6 +4,8 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { BarChart3, ClipboardList, DollarSign, Package } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { useDataTable } from '@/hooks/use-data-table';
+import { BulkCogsModal } from '@/components/cogs/bulk-cogs-modal';
+import { BulkCogsSummaryModal, type BulkCogsSummary } from '@/components/cogs/bulk-cogs-summary-modal';
 import { getProductColumns, type Product } from './product-columns';
 import { getOrderColumns } from './order-columns';
 import { CogsModal } from '@/components/cogs/cogs-modal';
@@ -47,7 +49,7 @@ function StoreExecutiveOverviewCard({
   tone?: StoreExecutiveCardTone;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1.5">
           <p className="card-label">
@@ -104,6 +106,9 @@ export default function StoreDetailPage() {
   const [activeTab, setActiveTab] = useState<StoreDetailTab>('products');
   const [cogsModalOpen, setCogsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [bulkCogsModalOpen, setBulkCogsModalOpen] = useState(false);
+  const [bulkCogsSummaryModalOpen, setBulkCogsSummaryModalOpen] = useState(false);
+  const [bulkCogsSummary, setBulkCogsSummary] = useState<BulkCogsSummary | null>(null);
   const [bulkMappingModalOpen, setBulkMappingModalOpen] = useState(false);
 
   const {
@@ -136,6 +141,7 @@ export default function StoreDetailPage() {
     handleSaveInitialOffer,
     handleCopyApiKey,
     handleBulkMapping: submitBulkMapping,
+    handleBulkCogs: submitBulkCogs,
     storeName,
     avatarUrl,
     formatDate,
@@ -201,6 +207,20 @@ export default function StoreDetailPage() {
       addToast('success', 'Product mapping updated.');
     } catch (mappingError) {
       throw new Error(parseIntegrationErrorMessage(mappingError));
+    }
+  };
+
+  const handleBulkCogsSubmit = async (cogs: number) => {
+    const selectedProductIds = selectedRows.map((row) => row.original.id);
+    if (selectedProductIds.length === 0) return;
+    try {
+      const response = await submitBulkCogs(selectedProductIds, cogs);
+      setBulkCogsSummary(response.summary);
+      setBulkCogsSummaryModalOpen(true);
+      table.resetRowSelection();
+      addToast('success', 'COGS updated.');
+    } catch (cogsError) {
+      throw new Error(parseIntegrationErrorMessage(cogsError));
     }
   };
 
@@ -303,6 +323,7 @@ export default function StoreDetailPage() {
             isSyncingProducts={isSyncingProducts}
             onSearchInputChange={setProductSearchInput}
             onSyncProducts={handleSyncProducts}
+            onOpenBulkCogs={() => setBulkCogsModalOpen(true)}
             onOpenBulkMapping={() => setBulkMappingModalOpen(true)}
           />
         </div>
@@ -337,6 +358,19 @@ export default function StoreDetailPage() {
         onClose={() => setBulkMappingModalOpen(false)}
         selectedCount={selectedCount}
         onSubmit={handleBulkMappingSubmit}
+      />
+
+      <BulkCogsModal
+        isOpen={bulkCogsModalOpen}
+        onClose={() => setBulkCogsModalOpen(false)}
+        selectedCount={selectedCount}
+        onSubmit={handleBulkCogsSubmit}
+      />
+
+      <BulkCogsSummaryModal
+        isOpen={bulkCogsSummaryModalOpen}
+        onClose={() => setBulkCogsSummaryModalOpen(false)}
+        summary={bulkCogsSummary}
       />
     </div>
   );

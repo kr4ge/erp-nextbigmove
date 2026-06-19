@@ -791,7 +791,6 @@ export function InventoryTransfersTab({
                                 <BodyCell>
                                   <div className="min-w-[136px]">
                                     <p className="font-semibold text-primary">{unit.code}</p>
-                                    <p className="mt-1 text-[11px] text-[#7c8f9b]">{unit.barcode}</p>
                                   </div>
                                 </BodyCell>
 

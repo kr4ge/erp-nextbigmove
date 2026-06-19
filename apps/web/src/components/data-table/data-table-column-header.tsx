@@ -23,7 +23,7 @@ export function DataTableColumnHeader<TData, TValue>({
     <button
       type="button"
       className={cn(
-        "flex items-center gap-2 transition hover:text-[#0F172A]",
+        "flex items-center gap-2 transition hover:text-foreground",
         className,
       )}
       onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}

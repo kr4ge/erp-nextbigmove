@@ -278,6 +278,23 @@ export class IntegrationController {
   }
 
   /**
+   * POS Stores - bulk create/update product COGS
+   * NOTE: This must come BEFORE /pos-stores/:id to avoid route conflicts
+   */
+  @Patch('/pos-stores/:id/products/cogs')
+  @Permissions('pos.cogs.manage')
+  async bulkUpdateProductCogs(
+    @Param('id') storeId: string,
+    @Body() body: { productIds: string[]; cogs: number },
+  ) {
+    return this.integrationService.bulkUpdateProductCogs(
+      storeId,
+      body.productIds,
+      body.cogs,
+    );
+  }
+
+  /**
    * POS Stores - bulk import from API keys
    */
   @Post('/pos-stores/bulk-import')
@@ -489,13 +506,12 @@ export class IntegrationController {
   async addCogsEntry(
     @Param('storeId') storeId: string,
     @Param('productId') productId: string,
-    @Body() body: { cogs: number; startDate: string },
+    @Body() body: { cogs: number },
   ) {
     return this.integrationService.addCogsEntry(
       productId,
       storeId,
       body.cogs,
-      new Date(body.startDate),
     );
   }
 
@@ -508,12 +524,13 @@ export class IntegrationController {
     @Param('storeId') storeId: string,
     @Param('productId') productId: string,
     @Param('cogsId') cogsId: string,
-    @Body() body: { cogs: number; startDate: string },
+    @Body() body: { cogs: number },
   ) {
     return this.integrationService.updateCogsEntry(
+      storeId,
+      productId,
       cogsId,
       body.cogs,
-      new Date(body.startDate),
     );
   }
 
@@ -528,6 +545,6 @@ export class IntegrationController {
     @Param('productId') productId: string,
     @Param('cogsId') cogsId: string,
   ) {
-    return this.integrationService.deleteCogsEntry(cogsId);
+    return this.integrationService.deleteCogsEntry(storeId, productId, cogsId);
   }
 }

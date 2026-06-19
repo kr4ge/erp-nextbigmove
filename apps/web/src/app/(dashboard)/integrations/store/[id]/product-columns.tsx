@@ -51,7 +51,7 @@ export function getProductColumns(
         <DataTableColumnHeader column={column} label="Product ID" />
       ),
       cell: ({ row }) => (
-        <div className="font-mono text-xs text-[#475569]">
+        <div className="font-mono text-xs text-slate-600 dark:text-slate-300">
           {row.getValue("productId")}
         </div>
       ),
@@ -63,7 +63,7 @@ export function getProductColumns(
         <DataTableColumnHeader column={column} label="Custom ID" />
       ),
       cell: ({ row }) => (
-        <div className="font-mono text-xs text-[#475569]">
+        <div className="font-mono text-xs text-slate-600 dark:text-slate-300">
           {row.getValue("customId") || "—"}
         </div>
       ),
@@ -81,7 +81,7 @@ export function getProductColumns(
       cell: ({ row }) => {
         const value = Number(row.original.retailPrice ?? 0);
         return (
-          <div className="font-medium text-[#0F172A] whitespace-nowrap">
+          <div className="whitespace-nowrap font-medium text-foreground">
             {Number.isFinite(value)
               ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
               : "0.00"}
@@ -106,7 +106,7 @@ export function getProductColumns(
         <DataTableColumnHeader column={column} label="Mapping" />
       ),
       cell: ({ row }) => (
-        <div className="text-sm text-[#475569]">
+        <div className="text-sm text-slate-600 dark:text-slate-300">
           {row.getValue("mapping") || <span className="text-[#94A3B8]">—</span>}
         </div>
       ),
@@ -121,7 +121,7 @@ export function getProductColumns(
         return (
           <div className="flex items-center justify-end">
             <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex items-center justify-center h-8 w-8 rounded-xl text-[#0F172A] hover:bg-[#F8FAFC] active:bg-[#E2E8F0] transition focus:outline-none focus:ring-2 focus:ring-[#2563EB]">
+              <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-foreground transition hover:bg-[#F8FAFC] active:bg-[#E2E8F0] focus:outline-none focus:ring-2 focus:ring-[#2563EB] dark:hover:bg-background-secondary dark:active:bg-background-secondary">
                 <MoreHorizontal className="h-4 w-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent>

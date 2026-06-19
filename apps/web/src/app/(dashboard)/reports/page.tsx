@@ -168,7 +168,7 @@ export default function ReportsPage() {
               showFooter={false}
               primaryColor="orange"
               readOnly
-              inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+              inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-surface dark:border-border p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 transition-[width] duration-300 ease-out ${
                 reportsDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
               }`}
               containerClassName=""
@@ -177,9 +177,9 @@ export default function ReportsPage() {
               separator=" - "
               toggleIcon={() => (
                 <span className="flex w-full items-center gap-2 overflow-hidden">
-                  <CalendarDays className="h-4 w-4 shrink-0" />
+                  <CalendarDays className="h-4 w-4 shrink-0 dark:text-white" />
                   <span
-                    className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                    className={`whitespace-nowrap text-xs font-medium text-foreground transition-all duration-300 ease-out ${
                       reportsDateRangeIsToday
                         ? 'max-w-0 -translate-x-1 opacity-0'
                         : 'max-w-[148px] sm:max-w-[184px] translate-x-0 opacity-100'
@@ -193,12 +193,12 @@ export default function ReportsPage() {
               placeholder=" "
             />
           </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
             <div>
-              Stores: <span className="font-semibold text-slate-900">{report?.row_count ?? 0}</span>
+              Stores: <span className="font-semibold text-foreground">{report?.row_count ?? 0}</span>
             </div>
             <div>
-              Generated: <span className="font-semibold text-slate-900">{generatedAtLabel}</span>
+              Generated: <span className="font-semibold text-foreground">{generatedAtLabel}</span>
             </div>
             <Button
               variant="outline"
@@ -236,7 +236,7 @@ export default function ReportsPage() {
       ) : report && report.items.length > 0 ? (
         <ReportsSummaryTable items={report.items} totals={totals!} />
       ) : (
-        <Card className="border-dashed border-slate-300 bg-slate-50/60 text-center text-slate-600">
+        <Card className="border-dashed border-slate-300 bg-slate-50/60 dark:bg-surface text-center text-slate-600 dark:bg-slate-300">
           No stores with orders were found for the selected date range.
         </Card>
       )}

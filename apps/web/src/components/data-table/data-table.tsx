@@ -84,14 +84,14 @@ export function DataTable<TData>({
     extraClassName?: string,
   ) => (
     <div className={cn("py-8 text-center", extraClassName)}>
-      <p className="text-sm font-semibold text-[#334155]">{title}</p>
-      {description ? <p className="mt-1 text-sm text-[#64748B]">{description}</p> : null}
+      <p className="text-sm font-semibold text-[#334155] dark:text-foreground">{title}</p>
+      {description ? <p className="mt-1 text-sm text-[#64748B] dark:text-slate-300">{description}</p> : null}
     </div>
   );
 
   const renderStateRow = (content: React.ReactNode) => (
     <tr>
-      <td colSpan={colSpan} className="px-6 py-4 align-middle text-[#475569]">
+      <td colSpan={colSpan} className="px-6 py-4 align-middle text-[#475569] dark:text-slate-300">
         {content}
       </td>
     </tr>
@@ -103,7 +103,7 @@ export function DataTable<TData>({
         <tr key={`loading-row-${rowIdx}`}>
           {Array.from({ length: colSpan }).map((__, cellIdx) => (
             <td key={`loading-cell-${rowIdx}-${cellIdx}`} className="px-6 py-4 align-middle">
-              <div className="h-4 w-full animate-pulse rounded bg-[#E2E8F0]" />
+              <div className="h-4 w-full animate-pulse rounded bg-[#E2E8F0] dark:bg-slate-600" />
             </td>
           ))}
         </tr>
@@ -120,10 +120,10 @@ export function DataTable<TData>({
   return (
     <div className={cn("w-full", className)} {...props}>
       {children}
-      <div className="overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-sm dark:border-border dark:bg-surface">
         <div className={cn("overflow-x-auto", bodyMaxHeight && "overflow-y-auto")} style={bodyStyle}>
-          <table className="min-w-full divide-y divide-[#E2E8F0]">
-            <thead className={cn("bg-[#F8FAFC]", stickyHeadEnabled && "sticky top-0 z-20")}>
+          <table className="min-w-full divide-y divide-[#E2E8F0] dark:divide-border">
+            <thead className={cn("bg-[#F8FAFC] dark:bg-background-secondary", stickyHeadEnabled && "sticky top-0 z-20")}>
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
@@ -131,7 +131,7 @@ export function DataTable<TData>({
                       key={header.id}
                       colSpan={header.colSpan}
                       className={cn(
-                        "px-6 py-3 text-xs font-semibold text-[#475569] uppercase tracking-wide",
+                        "px-6 py-3 text-xs font-semibold text-[#475569] uppercase tracking-wide dark:text-slate-300",
                         getPinnedCellClassName({
                           column: header.column,
                           section: "head",
@@ -154,7 +154,7 @@ export function DataTable<TData>({
                 </tr>
               ))}
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
+            <tbody className="divide-y divide-[#E2E8F0] dark:divide-border">
               {loading ? (
                 loadingState ? (
                   renderStateRow(loadingState)
@@ -194,7 +194,7 @@ export function DataTable<TData>({
                       <td
                         key={cell.id}
                         className={cn(
-                          "px-6 py-4 text-sm text-[#0F172A] align-middle",
+                          "px-6 py-4 text-sm text-[#0F172A] align-middle dark:text-foreground",
                           getPinnedCellClassName({
                             column: cell.column,
                             section: "body",
@@ -224,7 +224,7 @@ export function DataTable<TData>({
           </table>
         </div>
         {showPagination ? (
-          <div className="border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-3">
+          <div className="border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-3 dark:border-border dark:bg-background-secondary">
             <DataTablePagination
               table={table}
               pageSizeOptions={pageSizeOptions}

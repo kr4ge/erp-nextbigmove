@@ -315,14 +315,14 @@ export default function UsersPage() {
 
   const statusBadge = (status: string) => {
     const styles: Record<string, string> = {
-      ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      INACTIVE: 'bg-slate-100 text-slate-600 border-slate-200',
-      INVITED: 'bg-amber-50 text-amber-700 border-amber-200',
-      SUSPENDED: 'bg-rose-50 text-rose-700 border-rose-200',
+      ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-400/30',
+      INACTIVE: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-400/30',
+      INVITED: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-400/30',
+      SUSPENDED: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-400/30',
     };
     return (
       <span
-        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${styles[status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}
+        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${styles[status] || 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-400/30'}`}
       >
         {statusOptions.find((opt) => opt.value === status)?.label || status}
       </span>
@@ -336,10 +336,10 @@ export default function UsersPage() {
         header: 'User',
         cell: ({ row }) => (
           <div>
-            <p className="font-medium text-[#0F172A]">
+            <p className="font-medium text-[#0F172A] dark:text-foreground">
               {row.original.firstName} {row.original.lastName}
             </p>
-            <p className="text-xs text-[#64748B]">{row.original.email}</p>
+            <p className="text-xs text-[#64748B] dark:text-slate-300">{row.original.email}</p>
           </div>
         ),
       },
@@ -352,14 +352,14 @@ export default function UsersPage() {
         id: 'team',
         header: 'Team',
         cell: ({ row }) => (
-          <span className="text-sm text-[#0F172A]">{getTeamLabel(row.original)}</span>
+          <span className="text-sm text-[#0F172A] dark:text-foreground">{getTeamLabel(row.original)}</span>
         ),
       },
       {
         id: 'role',
         header: 'Role',
         cell: ({ row }) => (
-          <span className="inline-flex w-fit items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-semibold text-[#475569]">
+          <span className="inline-flex w-fit items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-semibold text-[#475569] dark:bg-surface dark:text-slate-300">
             {getRoleLabel(row.original)}
           </span>
         ),
@@ -368,7 +368,7 @@ export default function UsersPage() {
         id: 'last_login',
         header: 'Last Login',
         cell: ({ row }) => (
-          <span className="text-sm text-[#475569] whitespace-nowrap">
+          <span className="whitespace-nowrap text-sm text-[#475569] dark:text-slate-300">
             {formatLastLogin(row.original.lastLoginAt)}
           </span>
         ),
@@ -379,7 +379,7 @@ export default function UsersPage() {
         cell: ({ row }) => (
           <div className="flex w-full justify-end">
             <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+              <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-surface">
                 <MoreHorizontal className="h-4 w-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-36">
@@ -425,8 +425,8 @@ export default function UsersPage() {
     <div className="space-y-6">
       <Card className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4">
-          <div className="text-sm text-slate-600">
-            All Users: <span className="font-semibold text-slate-900">{users?.length ?? 0}</span>
+          <div className="text-sm text-slate-600 dark:text-slate-300">
+            All Users: <span className="font-semibold text-foreground">{users?.length ?? 0}</span>
           </div>
           <Button
             variant="primary"
@@ -562,7 +562,7 @@ export default function UsersPage() {
             <DialogFooter className="gap-2 sm:justify-end">
               <Button
                 type="button"
-                variant="secondary"
+                variant="outline"
                 onClick={() => setCreateOpen(false)}
               >
                 Cancel
@@ -688,7 +688,7 @@ export default function UsersPage() {
             <DialogFooter className="gap-2 sm:justify-end">
               <Button
                 type="button"
-                variant="secondary"
+                variant="outline"
                 onClick={() => setEditOpen(false)}
               >
                 Cancel

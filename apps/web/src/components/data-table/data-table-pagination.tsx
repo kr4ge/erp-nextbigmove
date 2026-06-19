@@ -35,7 +35,7 @@ export function DataTablePagination<TData>({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-between gap-3 text-sm text-[#475569] sm:flex-row sm:items-center sm:gap-4",
+        "flex flex-col items-center justify-between gap-3 text-sm text-[#475569] dark:text-slate-300 sm:flex-row sm:items-center sm:gap-4",
         className,
       )}
       {...props}
@@ -50,7 +50,7 @@ export function DataTablePagination<TData>({
             onChange={(e) => {
               table.setPageSize(Number(e.target.value));
             }}
-            className="hidden rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 lg:block lg:w-auto"
+            className="hidden rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-border dark:bg-surface dark:text-foreground lg:block lg:w-auto"
           >
             {pageSizeOptions.map((pageSizeOption) => (
               <option key={pageSizeOption} value={pageSizeOption}>
@@ -80,7 +80,7 @@ export function DataTablePagination<TData>({
           >
             Previous
           </Button>
-          <span className="px-2 py-1 text-xs text-[#0F172A] sm:px-3 sm:py-1.5 sm:text-sm">
+          <span className="px-2 py-1 text-xs text-foreground sm:px-3 sm:py-1.5 sm:text-sm">
             Page {pageIndex + 1} of {pageCount}
           </span>
           <Button

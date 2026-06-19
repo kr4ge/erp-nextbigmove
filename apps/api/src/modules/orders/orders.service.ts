@@ -11,18 +11,31 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { Prisma } from '@prisma/client';
+import { ClsService } from 'nestjs-cls';
+import { createHash } from 'crypto';
+import {
+  NotificationDomain,
+  NotificationSystem,
+  Prisma,
+} from '@prisma/client';
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { NotificationStateService } from '../../common/services/notification-state.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import { IntegrationService } from '../integrations/integration.service';
+import { WorkflowExecutionGateway } from '../workflows/gateways/workflow-execution.gateway';
+import { OrdersAgingNotificationCacheService } from './orders-aging-notification-cache.service';
 import {
+  AGING_ORDERS_NOTIFICATION_ENTITY_TYPE,
+  AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS,
   CONFIRMATION_UPDATE_STATUS_JOB,
   CONFIRMATION_UPDATE_QUEUE,
   ConfirmationUpdateItemPayload,
   ConfirmationUpdateStatusJobData,
+  ORDERS_AGING_NOTIFICATION_UPDATED_EVENT,
+  type AgingOrdersNotificationBucketKey,
 } from './orders.constants';
 
 dayjs.extend(utc);
@@ -43,6 +56,10 @@ type ListConfirmationPhoneHistoryParams = {
   phone?: string;
   page?: string;
   limit?: string;
+};
+
+type GetAgingOrdersSummaryParams = {
+  thresholdDays?: number;
 };
 
 type PosStoreAccessRow = {
@@ -95,6 +112,39 @@ type ConfirmationOrderTag = {
   name: string;
 };
 
+type AgingOrdersSummaryRow = {
+  shopId: string;
+  total_orders: number;
+  new_orders: number;
+  restocking: number;
+  confirmed: number;
+  printed: number;
+  waiting_pickup: number;
+  shipped: number;
+  rts: number;
+};
+
+type AgingOrdersBucketQueryRow = {
+  shopId: string;
+  bucketKey: AgingOrdersNotificationBucketKey;
+  agedCount: number;
+  orderIds: string[] | null;
+};
+
+type AgingOrdersBucketDetail = {
+  shopId: string;
+  bucketKey: AgingOrdersNotificationBucketKey;
+  agedCount: number;
+  orderIds: string[];
+};
+
+type AgingOrdersNotificationContext = {
+  shopId?: string;
+  shopName?: string;
+  shopSignature?: string | null;
+  affectedOrderCount?: number;
+};
+
 type SystemPosOrderStatusUpdateParams = {
   tenantId: string;
   orderRowId: string;
@@ -129,8 +179,12 @@ export class OrdersService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly cls: ClsService,
     private readonly teamContext: TeamContextService,
+    private readonly notificationStateService: NotificationStateService,
     private readonly integrationService: IntegrationService,
+    private readonly workflowExecutionGateway: WorkflowExecutionGateway,
+    private readonly ordersAgingNotificationCache: OrdersAgingNotificationCacheService,
     @InjectQueue(CONFIRMATION_UPDATE_QUEUE)
     private readonly confirmationUpdateQueue: Queue<ConfirmationUpdateStatusJobData>,
   ) {}
@@ -158,6 +212,38 @@ export class OrdersService {
     const parsed = Number.parseInt(raw || '', 10);
     if (!Number.isFinite(parsed) || parsed <= 0) return 20;
     return Math.min(parsed, 200);
+  }
+
+  private parseThresholdDays(raw?: number): number {
+    if (!Number.isFinite(raw)) return AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS;
+    const normalized = Math.trunc(Number(raw));
+    if (normalized < 1) return 1;
+    return Math.min(normalized, 30);
+  }
+
+  private getAgingOrderNotificationEntityId(shopId: string) {
+    return shopId;
+  }
+
+  private parseAgingOrderNotificationEntityId(entityId: string): { shopId: string } | null {
+    const trimmed = entityId.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const separatorIndex = entityId.indexOf(':');
+    if (separatorIndex > 0) {
+      const shopId = entityId.slice(0, separatorIndex).trim();
+      return shopId ? { shopId } : null;
+    }
+
+    return {
+      shopId: trimmed,
+    };
+  }
+
+  private getAgingOrderNotificationSignature(orderIds: string[]) {
+    return createHash('sha1').update(orderIds.join('|')).digest('hex');
   }
 
   private getConfirmationUpdateProcessingTtlSeconds(): number {
@@ -742,6 +828,751 @@ export class OrdersService {
 
   async listGeoCommunes(provinceIdRaw: string, districtIdRaw?: string) {
     return this.integrationService.listPosGeoCommunes(provinceIdRaw, districtIdRaw);
+  }
+
+  private async listShopAccessRows(where: Prisma.PosStoreWhereInput) {
+    return (await this.prisma.posStore.findMany({
+      where,
+      select: {
+        id: true,
+        shopId: true,
+        shopName: true,
+        name: true,
+      },
+      orderBy: [{ shopName: 'asc' }, { name: 'asc' }],
+    })) as PosStoreAccessRow[];
+  }
+
+  private buildShopDisplayMap(
+    stores: Array<{ shopId: string; shopName: string | null; name: string | null }>,
+  ) {
+    const shopDisplayMap = new Map<string, string>();
+
+    stores.forEach((store) => {
+      if (!store.shopId || shopDisplayMap.has(store.shopId)) {
+        return;
+      }
+
+      shopDisplayMap.set(
+        store.shopId,
+        store.shopName?.trim() || store.name?.trim() || store.shopId,
+      );
+    });
+
+    return shopDisplayMap;
+  }
+
+  private buildAgingOrderNotificationEntityIds(shopIds: string[]) {
+    return shopIds.map((shopId) =>
+      this.getAgingOrderNotificationEntityId(shopId),
+    );
+  }
+
+  private async resolveAccessibleAgingOrderScope() {
+    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const allowedTeams = (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
+    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
+
+    if (!storeWhere) {
+      return {
+        tenantId,
+        accessibleShopIds: [] as string[],
+        shopDisplayMap: new Map<string, string>(),
+      };
+    }
+
+    const stores = await this.listShopAccessRows(storeWhere);
+    const shopDisplayMap = this.buildShopDisplayMap(stores);
+
+    return {
+      tenantId,
+      accessibleShopIds: Array.from(shopDisplayMap.keys()),
+      shopDisplayMap,
+    };
+  }
+
+  private async getTenantAgingOrderShopDisplayMap(tenantId: string) {
+    const stores = await this.listShopAccessRows({ tenantId });
+    return this.buildShopDisplayMap(stores);
+  }
+
+  private normalizeAgingOrderScopeShopIds(shopIds: string[]) {
+    return Array.from(new Set(
+      shopIds
+        .map((shopId) => shopId?.trim())
+        .filter((shopId): shopId is string => !!shopId),
+    )).sort((left, right) => left.localeCompare(right));
+  }
+
+  private async loadAgingOrdersBucketDetails(params: {
+    tenantId: string;
+    shopIds: string[];
+    thresholdDays: number;
+  }): Promise<AgingOrdersBucketDetail[]> {
+    const normalizedShopIds = this.normalizeAgingOrderScopeShopIds(params.shopIds);
+
+    if (normalizedShopIds.length === 0) {
+      return [] as AgingOrdersBucketDetail[];
+    }
+
+    const staleCutoffDate = dayjs()
+      .tz(TIMEZONE)
+      .subtract(params.thresholdDays, 'day')
+      .format('YYYY-MM-DD');
+
+    const rows = await this.prisma.$queryRaw<AgingOrdersBucketQueryRow[]>(Prisma.sql`
+      WITH relevant AS (
+        SELECT
+          o."id",
+          o."shopId",
+          CASE
+            WHEN o."status" = 0 THEN 'new_orders'
+            WHEN o."status" = 11 THEN 'restocking'
+            WHEN o."status" = 1 THEN 'confirmed'
+            WHEN o."status" = 13 THEN 'printed'
+            WHEN o."status" = 9 THEN 'waiting_pickup'
+            WHEN o."status" = 2 THEN 'shipped'
+            WHEN o."status" = 4 THEN 'rts'
+            ELSE NULL
+          END AS "bucketKey",
+          CASE
+            WHEN o."status" = 0 THEN o."dateLocal"::date
+            ELSE (
+              SELECT MAX(
+                CASE
+                  WHEN jsonb_typeof(entry) = 'object'
+                    AND COALESCE(entry->>'status', '') ~ '^-?\\d+$'
+                    AND (entry->>'status')::int = o."status"
+                    AND COALESCE(entry->>'updated_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T'
+                  THEN ((entry->>'updated_at')::timestamptz AT TIME ZONE ${TIMEZONE})::date
+                  ELSE NULL
+                END
+              )
+              FROM jsonb_array_elements(COALESCE(o."statusHistory"::jsonb, '[]'::jsonb)) entry
+            )
+          END AS status_reference_date
+        FROM "pos_orders" o
+        WHERE o."tenantId" = CAST(${params.tenantId} AS uuid)
+          AND o."shopId" IN (${Prisma.join(normalizedShopIds)})
+          AND o."status" IS NOT NULL
+          AND COALESCE(o."isVoid", false) = false
+      )
+      SELECT
+        "shopId",
+        "bucketKey",
+        COUNT(*)::int AS "agedCount",
+        ARRAY_AGG("id"::text ORDER BY "id"::text) AS "orderIds"
+      FROM relevant
+      WHERE "bucketKey" IS NOT NULL
+        AND status_reference_date IS NOT NULL
+        AND status_reference_date <= ${staleCutoffDate}::date
+      GROUP BY "shopId", "bucketKey"
+      ORDER BY "shopId" ASC, "bucketKey" ASC
+    `);
+
+    return rows.map((row) => ({
+      shopId: row.shopId,
+      bucketKey: row.bucketKey,
+      agedCount: Number(row.agedCount || 0),
+      orderIds: Array.isArray(row.orderIds)
+        ? row.orderIds.filter((value): value is string => typeof value === 'string')
+        : [],
+    }));
+  }
+
+  private async loadCachedAgingOrdersBucketDetails(params: {
+    tenantId: string;
+    shopIds: string[];
+    thresholdDays: number;
+  }) {
+    const normalizedShopIds = this.normalizeAgingOrderScopeShopIds(params.shopIds);
+    const cached = await this.ordersAgingNotificationCache.getCachedBucketDetails(
+      params.tenantId,
+      normalizedShopIds,
+      params.thresholdDays,
+    );
+
+    if (cached) {
+      return cached.map((row) => ({
+        shopId: row.shopId,
+        bucketKey: row.bucketKey as AgingOrdersNotificationBucketKey,
+        agedCount: Number(row.agedCount || 0),
+        orderIds: Array.isArray(row.orderIds) ? row.orderIds : [],
+      }));
+    }
+
+    const bucketDetails = await this.loadAgingOrdersBucketDetails({
+      ...params,
+      shopIds: normalizedShopIds,
+    });
+
+    await this.ordersAgingNotificationCache.setCachedBucketDetails(
+      params.tenantId,
+      normalizedShopIds,
+      params.thresholdDays,
+      bucketDetails.map((row) => ({
+        shopId: row.shopId,
+        bucketKey: row.bucketKey,
+        agedCount: row.agedCount,
+        orderIds: row.orderIds,
+      })),
+    );
+
+    return bucketDetails;
+  }
+
+  private buildAgingOrdersSummaryRows(
+    bucketDetails: AgingOrdersBucketDetail[],
+    shopDisplayMap: Map<string, string>,
+  ) {
+    const rowsByShopId = new Map<string, AgingOrdersSummaryRow>();
+
+    for (const bucket of bucketDetails) {
+      const current =
+        rowsByShopId.get(bucket.shopId)
+        || {
+          shopId: bucket.shopId,
+          total_orders: 0,
+          new_orders: 0,
+          restocking: 0,
+          confirmed: 0,
+          printed: 0,
+          waiting_pickup: 0,
+          shipped: 0,
+          rts: 0,
+        };
+
+      current[bucket.bucketKey] = bucket.agedCount;
+      current.total_orders += bucket.agedCount;
+      rowsByShopId.set(bucket.shopId, current);
+    }
+
+    return Array.from(rowsByShopId.values())
+      .sort((left, right) => left.shopId.localeCompare(right.shopId))
+      .map((row) => ({
+        shop_id: row.shopId,
+        shop_name: shopDisplayMap.get(row.shopId) || row.shopId,
+        total_orders: Number(row.total_orders || 0),
+        new_orders: Number(row.new_orders || 0),
+        restocking: Number(row.restocking || 0),
+        confirmed: Number(row.confirmed || 0),
+        printed: Number(row.printed || 0),
+        waiting_pickup: Number(row.waiting_pickup || 0),
+        shipped: Number(row.shipped || 0),
+        rts: Number(row.rts || 0),
+      }));
+  }
+
+  private buildAgingOrdersNotificationCells(
+    notificationStates: Array<{ entityId: string; context: Prisma.JsonValue | null }>,
+  ) {
+    const cells: Record<string, boolean> = {};
+
+    for (const state of notificationStates) {
+      const context = this.toObject(state.context) as AgingOrdersNotificationContext | null;
+      const parsed = this.parseAgingOrderNotificationEntityId(state.entityId);
+      const shopId = context?.shopId?.trim() || parsed?.shopId || '';
+
+      if (!shopId) {
+        continue;
+      }
+
+      cells[shopId] = true;
+    }
+
+    return cells;
+  }
+
+  private buildAgingOrdersNotificationShopState(bucketDetails: AgingOrdersBucketDetail[]) {
+    const rowsByShopId = new Map<
+      string,
+      {
+        orderIds: Set<string>;
+        affectedOrderCount: number;
+      }
+    >();
+
+    for (const bucket of bucketDetails) {
+      const current = rowsByShopId.get(bucket.shopId) || {
+        orderIds: new Set<string>(),
+        affectedOrderCount: 0,
+      };
+
+      current.affectedOrderCount += bucket.agedCount;
+      for (const orderId of bucket.orderIds) {
+        current.orderIds.add(orderId);
+      }
+
+      rowsByShopId.set(bucket.shopId, current);
+    }
+
+    return new Map(
+      Array.from(rowsByShopId.entries()).map(([shopId, value]) => {
+        const orderIds = Array.from(value.orderIds).sort((left, right) => left.localeCompare(right));
+        return [
+          shopId,
+          {
+            shopId,
+            affectedOrderCount: value.affectedOrderCount,
+            orderIds,
+            shopSignature: this.getAgingOrderNotificationSignature(orderIds),
+          },
+        ];
+      }),
+    );
+  }
+
+  private emitAgingOrdersNotificationUpdate(params: {
+    tenantId: string;
+    source: 'lazy' | 'read';
+    changedEntityIds?: string[];
+    changedRowCount?: number;
+  }) {
+    this.workflowExecutionGateway.emitTenantEvent(
+      params.tenantId,
+      null,
+      ORDERS_AGING_NOTIFICATION_UPDATED_EVENT,
+      {
+        tenantId: params.tenantId,
+        source: params.source,
+        changedEntityIds: params.changedEntityIds ?? [],
+        changedRowCount: params.changedRowCount ?? 0,
+        updatedAt: new Date().toISOString(),
+      },
+    );
+  }
+
+  private async ensureAgingOrdersNotificationsFresh(params: {
+    tenantId: string;
+    shopIds: string[];
+    shopDisplayMap: Map<string, string>;
+  }) {
+    const normalizedShopIds = this.normalizeAgingOrderScopeShopIds(params.shopIds);
+    if (normalizedShopIds.length === 0) {
+      return;
+    }
+
+    if (await this.ordersAgingNotificationCache.hasRecentLazySync(
+      params.tenantId,
+      normalizedShopIds,
+    )) {
+      return;
+    }
+
+    if (await this.ordersAgingNotificationCache.hasLazySyncLock(
+      params.tenantId,
+      normalizedShopIds,
+    )) {
+      return;
+    }
+
+    await this.ordersAgingNotificationCache.setLazySyncLock(
+      params.tenantId,
+      normalizedShopIds,
+    );
+
+    try {
+      const bucketDetails = await this.loadAgingOrdersBucketDetails({
+        tenantId: params.tenantId,
+        shopIds: normalizedShopIds,
+        thresholdDays: AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS,
+      });
+
+      await this.ordersAgingNotificationCache.setCachedBucketDetails(
+        params.tenantId,
+        normalizedShopIds,
+        AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS,
+        bucketDetails.map((row) => ({
+          shopId: row.shopId,
+          bucketKey: row.bucketKey,
+          agedCount: row.agedCount,
+          orderIds: row.orderIds,
+        })),
+      );
+
+      await this.syncAgingOrderNotificationsForTenant(
+        params.tenantId,
+        'lazy',
+        {
+          shopIds: normalizedShopIds,
+          shopDisplayMap: params.shopDisplayMap,
+          bucketDetails,
+        },
+      );
+
+      await this.ordersAgingNotificationCache.markLazySyncFresh(
+        params.tenantId,
+        normalizedShopIds,
+      );
+    } catch (error: any) {
+      this.logger.warn(
+        `Lazy aging notification sync failed for tenant=${params.tenantId}: ${error?.message || 'Unknown error'}`,
+      );
+    } finally {
+      await this.ordersAgingNotificationCache.clearLazySyncLock(
+        params.tenantId,
+        normalizedShopIds,
+      );
+    }
+  }
+
+  async getAgingOrdersSummary(params: GetAgingOrdersSummaryParams) {
+    const thresholdDays = this.parseThresholdDays(params.thresholdDays);
+    const generatedAt = new Date().toISOString();
+
+    const { tenantId, accessibleShopIds, shopDisplayMap } =
+      await this.resolveAccessibleAgingOrderScope();
+
+    if (accessibleShopIds.length === 0) {
+      return {
+        items: [],
+        filters: {
+          shops: [],
+        },
+        selected: {
+          threshold_days: thresholdDays,
+        },
+        generated_at: generatedAt,
+        notification_cells: {},
+      };
+    }
+
+    if (thresholdDays === AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS) {
+      await this.ensureAgingOrdersNotificationsFresh({
+        tenantId,
+        shopIds: accessibleShopIds,
+        shopDisplayMap,
+      });
+    }
+
+    const bucketDetails = await this.loadCachedAgingOrdersBucketDetails({
+      tenantId,
+      shopIds: accessibleShopIds,
+      thresholdDays,
+    });
+    const items = this.buildAgingOrdersSummaryRows(bucketDetails, shopDisplayMap);
+
+    const unreadStates = thresholdDays === AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS
+      ? await this.prisma.notificationState.findMany({
+          where: {
+            tenantId,
+            system: NotificationSystem.ERP,
+            domain: NotificationDomain.ORDERS_AGING,
+            entityType: AGING_ORDERS_NOTIFICATION_ENTITY_TYPE,
+            isUnread: true,
+            entityId: {
+              in: this.buildAgingOrderNotificationEntityIds(accessibleShopIds),
+            },
+          },
+          select: {
+            entityId: true,
+            context: true,
+          },
+        })
+      : [];
+
+    const shops = accessibleShopIds.map((shopId) => ({
+      shop_id: shopId,
+      shop_name: shopDisplayMap.get(shopId) || shopId,
+    }));
+
+    return {
+      items,
+      filters: {
+        shops,
+      },
+      selected: {
+        threshold_days: thresholdDays,
+      },
+      generated_at: generatedAt,
+      notification_cells: this.buildAgingOrdersNotificationCells(unreadStates),
+    };
+  }
+
+  async getAgingOrdersUnreadNotificationCount() {
+    const { tenantId, accessibleShopIds, shopDisplayMap } =
+      await this.resolveAccessibleAgingOrderScope();
+    if (accessibleShopIds.length === 0) {
+      return { count: 0 };
+    }
+
+    await this.ensureAgingOrdersNotificationsFresh({
+      tenantId,
+      shopIds: accessibleShopIds,
+      shopDisplayMap,
+    });
+
+    return {
+      count: await this.prisma.notificationState.count({
+        where: {
+          tenantId,
+          system: NotificationSystem.ERP,
+          domain: NotificationDomain.ORDERS_AGING,
+          entityType: AGING_ORDERS_NOTIFICATION_ENTITY_TYPE,
+          isUnread: true,
+          entityId: {
+            in: this.buildAgingOrderNotificationEntityIds(accessibleShopIds),
+          },
+        },
+      }),
+    };
+  }
+
+  async markAgingOrdersNotificationRead(params: {
+    shop_id: string;
+  }) {
+    const { tenantId, accessibleShopIds } = await this.resolveAccessibleAgingOrderScope();
+    if (!accessibleShopIds.includes(params.shop_id)) {
+      throw new ForbiddenException('Selected shop is outside your team scope');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const entityId = this.getAgingOrderNotificationEntityId(params.shop_id);
+    const updatedCount = await this.notificationStateService.markEntityRead({
+      tenantId,
+      system: NotificationSystem.ERP,
+      domain: NotificationDomain.ORDERS_AGING,
+      entityType: AGING_ORDERS_NOTIFICATION_ENTITY_TYPE,
+      entityId,
+      readByUserId: actorId,
+    });
+
+    if (updatedCount > 0) {
+      this.emitAgingOrdersNotificationUpdate({
+        tenantId,
+        source: 'read',
+        changedEntityIds: [entityId],
+        changedRowCount: updatedCount,
+      });
+    }
+
+    return {
+      success: true,
+      count: updatedCount,
+    };
+  }
+
+  private async syncAgingOrderNotificationsForTenant(
+    tenantId: string,
+    source: 'lazy',
+    options?: {
+      shopIds?: string[];
+      shopDisplayMap?: Map<string, string>;
+      bucketDetails?: AgingOrdersBucketDetail[];
+    },
+  ) {
+    const baseShopDisplayMap =
+      options?.shopDisplayMap ?? await this.getTenantAgingOrderShopDisplayMap(tenantId);
+    const shopIds = Array.from(
+      new Set(
+        (options?.shopIds?.length ? options.shopIds : Array.from(baseShopDisplayMap.keys()))
+          .map((shopId) => shopId?.trim())
+          .filter((shopId): shopId is string => !!shopId),
+      ),
+    );
+    const shopDisplayMap = new Map(
+      shopIds.map((shopId) => [shopId, baseShopDisplayMap.get(shopId) || shopId]),
+    );
+
+    if (shopIds.length === 0) {
+      return {
+        changedRowCount: 0,
+      };
+    }
+
+    const bucketDetails =
+      options?.bucketDetails
+      ?? await this.loadAgingOrdersBucketDetails({
+        tenantId,
+        shopIds,
+        thresholdDays: AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS,
+      });
+    const existingRows = await this.prisma.notificationState.findMany({
+      where: {
+        tenantId,
+        system: NotificationSystem.ERP,
+        domain: NotificationDomain.ORDERS_AGING,
+        entityType: AGING_ORDERS_NOTIFICATION_ENTITY_TYPE,
+      },
+      select: {
+        id: true,
+        entityId: true,
+        context: true,
+        isUnread: true,
+      },
+    });
+
+    const scopedExistingRows = existingRows.filter((row) => {
+      const parsed = this.parseAgingOrderNotificationEntityId(row.entityId);
+      return !!parsed && shopIds.includes(parsed.shopId);
+    });
+    const currentShopStatesByEntityId = new Map(
+      Array.from(this.buildAgingOrdersNotificationShopState(bucketDetails).entries()).map(
+        ([shopId, value]) => [this.getAgingOrderNotificationEntityId(shopId), value],
+      ),
+    );
+    const existingRowsByEntityId = new Map(
+      scopedExistingRows
+        .filter((row) => !row.entityId.includes(':'))
+        .map((row) => [row.entityId, row]),
+    );
+    const changedEntityIds: string[] = [];
+    let changedRowCount = 0;
+    const now = new Date();
+    const syncStamp = now.toISOString();
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const existingRow of scopedExistingRows.filter((row) => row.entityId.includes(':'))) {
+        const parsedEntity = this.parseAgingOrderNotificationEntityId(existingRow.entityId);
+        if (!parsedEntity) {
+          continue;
+        }
+
+        changedRowCount += 1;
+        changedEntityIds.push(this.getAgingOrderNotificationEntityId(parsedEntity.shopId));
+
+        await tx.notificationState.delete({
+          where: { id: existingRow.id },
+        });
+      }
+
+      for (const existingRow of scopedExistingRows.filter((row) => !row.entityId.includes(':'))) {
+        if (currentShopStatesByEntityId.has(existingRow.entityId)) {
+          continue;
+        }
+
+        const parsedEntity = this.parseAgingOrderNotificationEntityId(existingRow.entityId);
+        if (!parsedEntity) {
+          continue;
+        }
+
+        const existingContext = this.toObject(
+          existingRow.context,
+        ) as AgingOrdersNotificationContext | null;
+        const existingAffectedOrderCount =
+          typeof existingContext?.affectedOrderCount === 'number'
+            ? existingContext.affectedOrderCount
+            : 0;
+        const existingSignature =
+          typeof existingContext?.shopSignature === 'string'
+            ? existingContext.shopSignature
+            : null;
+
+        if (!existingRow.isUnread && existingAffectedOrderCount === 0 && existingSignature === null) {
+          continue;
+        }
+
+        changedRowCount += 1;
+        changedEntityIds.push(existingRow.entityId);
+
+        await tx.notificationState.update({
+          where: { id: existingRow.id },
+          data: {
+            sourceEventId: `aging-orders-sync:${tenantId}:${existingRow.entityId}:${syncStamp}`,
+            sourceEventType: 'AGING_THRESHOLD_SYNC',
+            fromState: existingAffectedOrderCount > 0 ? String(existingAffectedOrderCount) : null,
+            toState: '0',
+            context: {
+              shopId: parsedEntity.shopId,
+              shopName: shopDisplayMap.get(parsedEntity.shopId) || parsedEntity.shopId,
+              shopSignature: null,
+              affectedOrderCount: 0,
+              thresholdDays: AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS,
+              sampleOrderIds: [],
+              source,
+              syncedAt: syncStamp,
+            },
+            isUnread: false,
+            readAt: now,
+            readByUserId: null,
+          },
+        });
+      }
+
+      for (const [entityId, shopState] of currentShopStatesByEntityId) {
+        const existingRow = existingRowsByEntityId.get(entityId);
+        const existingContext = this.toObject(
+          existingRow?.context ?? null,
+        ) as AgingOrdersNotificationContext | null;
+        const existingAffectedOrderCount =
+          typeof existingContext?.affectedOrderCount === 'number'
+            ? existingContext.affectedOrderCount
+            : 0;
+        const existingSignature =
+          typeof existingContext?.shopSignature === 'string'
+            ? existingContext.shopSignature
+            : null;
+        const nextContext = {
+          shopId: shopState.shopId,
+          shopName: shopDisplayMap.get(shopState.shopId) || shopState.shopId,
+          shopSignature: shopState.shopSignature,
+          affectedOrderCount: shopState.affectedOrderCount,
+          thresholdDays: AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS,
+          sampleOrderIds: shopState.orderIds.slice(0, 10),
+          source,
+          syncedAt: syncStamp,
+        };
+
+        if (!existingRow) {
+          changedRowCount += 1;
+          changedEntityIds.push(entityId);
+
+          await tx.notificationState.create({
+            data: {
+              tenantId,
+              system: NotificationSystem.ERP,
+              domain: NotificationDomain.ORDERS_AGING,
+              entityType: AGING_ORDERS_NOTIFICATION_ENTITY_TYPE,
+              entityId,
+              sourceEventId: `aging-orders-sync:${tenantId}:${entityId}:${syncStamp}`,
+              sourceEventType: 'AGING_THRESHOLD_SYNC',
+              fromState: null,
+              toState: String(shopState.affectedOrderCount),
+              context: nextContext,
+              isUnread: true,
+            },
+          });
+          continue;
+        }
+
+        if (
+          existingSignature === shopState.shopSignature
+          && existingAffectedOrderCount === shopState.affectedOrderCount
+        ) {
+          continue;
+        }
+
+        changedRowCount += 1;
+        changedEntityIds.push(entityId);
+
+        await tx.notificationState.update({
+          where: { id: existingRow.id },
+          data: {
+            sourceEventId: `aging-orders-sync:${tenantId}:${entityId}:${syncStamp}`,
+            sourceEventType: 'AGING_THRESHOLD_SYNC',
+            fromState: existingAffectedOrderCount > 0 ? String(existingAffectedOrderCount) : null,
+            toState: String(shopState.affectedOrderCount),
+            context: nextContext,
+            isUnread: true,
+            readAt: null,
+            readByUserId: null,
+          },
+        });
+      }
+    });
+
+    if (changedEntityIds.length > 0) {
+      this.emitAgingOrdersNotificationUpdate({
+        tenantId,
+        source,
+        changedEntityIds,
+        changedRowCount,
+      });
+    }
+
+    return {
+      changedRowCount,
+    };
   }
 
   async listConfirmationOrders(params: ListConfirmationOrdersParams) {

@@ -2,7 +2,6 @@
 
 import { Webhook } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { FormInput } from '@/components/ui/form-input';
 import { StatusBadge } from '@/components/ui/status-badge';
 import type { WebhookConfig } from '../_types/webhook';
@@ -40,16 +39,15 @@ export function WebhookRelaySection({
   onRelayApiKeyInputChange,
 }: WebhookRelaySectionProps) {
   return (
-    <Card>
-      <div className="space-y-6">
+    <div className="space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
               <Webhook className="h-4 w-4" />
               Send
             </div>
-            <h2 className="text-xl font-semibold text-slate-900">ERP to External Webhook</h2>
-            <p className="text-sm text-slate-600">
+            <h2 className="text-xl font-semibold text-foreground">ERP to External Webhook</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
               Forward received Pancake payloads (unchanged JSON) to another platform webhook.
             </p>
           </div>
@@ -66,10 +64,10 @@ export function WebhookRelaySection({
           </div>
         </div>
 
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-border dark:bg-surface">
           <div className="space-y-0.5">
-            <p className="text-sm font-semibold text-slate-900">Send Relay</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-sm font-semibold text-foreground">Send Relay</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">
               Forward received payloads to your external webhook endpoint.
             </p>
           </div>
@@ -113,12 +111,12 @@ export function WebhookRelaySection({
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs text-[#94A3B8]">
+          <p className="text-xs text-slate-500 dark:text-slate-300">
             Local `pos_orders` saving still runs even when relay delivery fails.
           </p>
         </div>
 
-        <div className="space-y-3 rounded-2xl border border-slate-200 bg-surface p-4">
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-border dark:bg-surface">
           <FormInput
             label="Relay API Key"
             type="text"
@@ -133,23 +131,22 @@ export function WebhookRelaySection({
             disabled={!canManage || loading}
           />
 
-          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-300">
             <div>
-              Last 4: <span className="font-semibold text-slate-700">{config?.relayKeyLast4 || '--'}</span>
+              Last 4: <span className="font-semibold text-foreground">{config?.relayKeyLast4 || '--'}</span>
             </div>
             <div>
               Updated at:{' '}
-              <span className="font-semibold text-slate-700">
+              <span className="font-semibold text-foreground">
                 {formatWebhookDateTime(config?.relayUpdatedAt)}
               </span>
             </div>
             <div>
               Updated by:{' '}
-              <span className="font-semibold text-slate-700">{config?.relayUpdatedByUserId || '--'}</span>
+              <span className="font-semibold text-foreground">{config?.relayUpdatedByUserId || '--'}</span>
             </div>
           </div>
         </div>
-      </div>
-    </Card>
+    </div>
   );
 }

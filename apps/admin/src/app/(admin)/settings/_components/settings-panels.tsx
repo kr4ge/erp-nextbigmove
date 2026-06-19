@@ -115,7 +115,7 @@ export function SettingsStatCard({
       ? 'border-[#f3df9f] bg-[#fff8de] text-[#8a6814]'
       : tone === 'blue'
         ? 'border-[#cfe3ee] bg-[#f1f8fb] text-primary'
-        : 'border-[#dce4ea] bg-white text-primary';
+        : '';
 
   return (
     <div className={`card ${toneClass}`}>
@@ -190,10 +190,10 @@ export function SettingsBadge({
 }) {
   const toneClass =
     tone === 'success'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      ? 'pill-success'
       : tone === 'warning'
-        ? 'border-[#f2dc9b] bg-[#fff8df] text-[#806115]'
-        : 'border-[#dce4ea] bg-[#fbfcfc] text-[#637786]';
+        ? 'pill-destructive'
+        : 'pill-neutral';
 
   return (
     <span className={`pill ${toneClass}`}>

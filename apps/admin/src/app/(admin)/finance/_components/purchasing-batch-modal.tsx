@@ -1,7 +1,7 @@
 'use client';
 
 import { ClipboardCheck, Clock, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsModal } from '../../_components/wms-modal';
 import type {
@@ -78,7 +78,7 @@ export function PurchasingBatchModal({
   const [isProofImageZoomed, setIsProofImageZoomed] = useState(false);
   const [proofImageBaseSize, setProofImageBaseSize] = useState<ImageSize | null>(null);
   const [proofImageFocusPoint, setProofImageFocusPoint] = useState<ImageFocusPoint | null>(null);
-  const proofImageScrollRef = useRef<HTMLDivElement | null>(null);
+  const proofImageScrollRef = useRef<HTMLButtonElement | null>(null);
   const proofImageRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
@@ -107,6 +107,66 @@ export function PurchasingBatchModal({
     setProofImageBaseSize(null);
     setProofImageFocusPoint(null);
   }, [batch?.id, open]);
+
+  useEffect(() => {
+    if (!isProofImageZoomed || !proofImageFocusPoint || !proofImageBaseSize) {
+      return;
+    }
+
+    const container = proofImageScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const zoomRatio = 1.6;
+    const scaledWidth = proofImageBaseSize.width * zoomRatio;
+    const scaledHeight = proofImageBaseSize.height * zoomRatio;
+    const targetLeft = Math.max(
+      0,
+      proofImageFocusPoint.x * scaledWidth - container.clientWidth / 2,
+    );
+    const targetTop = Math.max(
+      0,
+      proofImageFocusPoint.y * scaledHeight - container.clientHeight / 2,
+    );
+
+    const frame = window.requestAnimationFrame(() => {
+      container.scrollTo({
+        left: targetLeft,
+        top: targetTop,
+        behavior: 'auto',
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isProofImageZoomed, proofImageBaseSize, proofImageFocusPoint]);
+
+  const handleProofImageZoomToggle = (event: MouseEvent<HTMLButtonElement>) => {
+    const image = proofImageRef.current;
+
+    if (!image) {
+      setIsProofImageZoomed((current) => !current);
+      return;
+    }
+
+    if (isProofImageZoomed) {
+      setIsProofImageZoomed(false);
+      setProofImageFocusPoint(null);
+      proofImageScrollRef.current?.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+      return;
+    }
+
+    const bounds = image.getBoundingClientRect();
+    const relativeX = bounds.width > 0
+      ? Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
+      : 0.5;
+    const relativeY = bounds.height > 0
+      ? Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
+      : 0.5;
+
+    setProofImageFocusPoint({ x: relativeX, y: relativeY });
+    setIsProofImageZoomed(true);
+  };
 
   const editableLines = canEdit && (batch?.status === 'UNDER_REVIEW' || batch?.status === 'REVISION');
   const isSelfBuy = batch?.requestType === 'SELF_BUY';
@@ -274,6 +334,57 @@ export function PurchasingBatchModal({
 
     return [];
   }, [batch]);
+
+  const paymentProofCard = batch ? (
+    <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">
+        {isSelfBuy ? 'Partner Shipment Notice' : 'Payment Proof'}
+      </p>
+      {!isSelfBuy && paymentProofImageUrl ? (
+        <div className="mt-1.5 space-y-2">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveProofImageUrl(paymentProofImageUrl);
+              setIsProofImageZoomed(false);
+            }}
+            className="block w-full overflow-hidden rounded-xl border border-[#dce4ea] bg-[#f8fbfd] text-left transition hover:border-[#b9c9d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7fb0cc]/40"
+            aria-label="Open payment proof image"
+          >
+            <img
+              src={paymentProofImageUrl}
+              alt="Payment proof"
+              className="h-auto max-h-[260px] w-full object-contain"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveProofImageUrl(paymentProofImageUrl);
+              setIsProofImageZoomed(false);
+            }}
+            className="btn btn-sm btn-outline"
+          >
+            Open proof image
+          </button>
+          <p className="text-[12px] text-[#5f7483]">
+                    Submitted {formatDateTime(batch?.paymentProofSubmittedAt || batch?.paymentSubmittedAt)}
+                    {batch?.paymentProofSubmittedBy ? ` Â· ${batch.paymentProofSubmittedBy.name}` : ''}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-1.5 text-[12px] text-[#7b8e9c]">
+          {isSelfBuy
+            ? batch.status === 'SHIPPED'
+              ? 'Partner already confirmed the self-buy shipment to warehouse.'
+              : batch.status === 'RECEIVING_EXCEPTION'
+                ? 'Warehouse flagged a mismatch and is waiting for partner follow-up.'
+                : 'Shipment notice will appear after the partner marks the self-buy request as shipped.'
+            : 'No proof submitted yet'}
+        </p>
+      )}
+    </div>
+  ) : null;
 
   async function handleStatusAction(status: WmsPurchasingBatchStatus) {
     if (status !== 'CANCELED' && pendingLineUpdates.length > 0) {
@@ -509,6 +620,8 @@ export function PurchasingBatchModal({
                 )}
               </div>
             </WmsCompactPanel>
+
+            {paymentProofCard}
           </div>
 
           <div className="space-y-3">
@@ -613,7 +726,8 @@ export function PurchasingBatchModal({
               </div>
             )}
 
-            <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
+            {false ? (
+              <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">
                 {isSelfBuy ? 'Partner Shipment Notice' : 'Payment Proof'}
               </p>
@@ -629,7 +743,7 @@ export function PurchasingBatchModal({
                       aria-label="Open payment proof image"
                     >
                     <img
-                      src={paymentProofImageUrl}
+                      src={paymentProofImageUrl ?? ''}
                       alt="Payment proof"
                       className="h-auto max-h-[260px] w-full object-contain"
                     />
@@ -645,22 +759,23 @@ export function PurchasingBatchModal({
                     Open proof image
                   </button>
                   <p className="text-[12px] text-[#5f7483]">
-                    Submitted {formatDateTime(batch.paymentProofSubmittedAt || batch.paymentSubmittedAt)}
-                    {batch.paymentProofSubmittedBy ? ` · ${batch.paymentProofSubmittedBy.name}` : ''}
+                    Submitted {formatDateTime(batch?.paymentProofSubmittedAt || batch?.paymentSubmittedAt)}
+                    {batch?.paymentProofSubmittedBy ? ` · ${batch?.paymentProofSubmittedBy?.name}` : ''}
                   </p>
                 </div>
               ) : (
                 <p className="mt-1.5 text-[12px] text-[#7b8e9c]">
                   {isSelfBuy
-                    ? batch.status === 'SHIPPED'
+                    ? batch?.status === 'SHIPPED'
                       ? 'Partner already confirmed the self-buy shipment to warehouse.'
-                      : batch.status === 'RECEIVING_EXCEPTION'
+                      : batch?.status === 'RECEIVING_EXCEPTION'
                         ? 'Warehouse flagged a mismatch and is waiting for partner follow-up.'
                         : 'Shipment notice will appear after the partner marks the self-buy request as shipped.'
                     : 'No proof submitted yet'}
                 </p>
               )}
-            </div>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
@@ -681,19 +796,35 @@ export function PurchasingBatchModal({
           <div className="flex min-h-[60dvh] items-center justify-center">
             <button
               type="button"
-              onClick={() => setIsProofImageZoomed((current) => !current)}
-              className="block h-full w-full cursor-zoom-in overflow-auto rounded-xl border border-white/10 bg-[#050f16] p-3 text-left"
+              onClick={handleProofImageZoomToggle}
+              ref={proofImageScrollRef}
+              className={`block h-full w-full overflow-auto rounded-xl border border-white/10 bg-[#050f16] p-3 text-left ${
+                isProofImageZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
+              }`}
               aria-label={isProofImageZoomed ? 'Zoom out payment proof image' : 'Zoom in payment proof image'}
             >
               <div
-                className="mx-auto transition-[width,transform] duration-200 ease-out"
-                style={{ width: isProofImageZoomed ? '160%' : '100%' }}
+                className="mx-auto flex items-center justify-center transition-[width,transform] duration-200 ease-out"
+                style={{
+                  width: isProofImageZoomed ? '160%' : '100%',
+                  minHeight: 'calc(60dvh - 24px)',
+                }}
               >
                 <img
+                  ref={proofImageRef}
                   src={activeProofImageUrl}
                   alt="Payment proof preview"
-                  className={`block h-auto w-full rounded-xl border border-white/10 bg-white object-contain shadow-[0_24px_80px_-36px_rgba(0,0,0,0.7)] ${
-                    isProofImageZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
+                  onLoad={(event) => {
+                    const target = event.currentTarget;
+                    setProofImageBaseSize({
+                      width: target.clientWidth,
+                      height: target.clientHeight,
+                    });
+                  }}
+                  className={`block rounded-xl border border-white/10 bg-white object-contain shadow-[0_24px_80px_-36px_rgba(0,0,0,0.7)] ${
+                    isProofImageZoomed
+                      ? 'h-auto w-full max-w-none cursor-zoom-out'
+                      : 'max-h-[calc(60dvh-24px)] h-auto w-auto max-w-full cursor-zoom-in'
                   }`}
                 />
               </div>

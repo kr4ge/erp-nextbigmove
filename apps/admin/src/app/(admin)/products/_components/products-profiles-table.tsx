@@ -44,7 +44,7 @@ export function ProductsProfilesTable({
               <TableHeader>Store</TableHeader>
               <TableHeader>Status</TableHeader>
               <TableHeader>Serialized</TableHeader>
-              <TableHeader className="text-right">Action</TableHeader>
+              <TableHeader>Action</TableHeader>
             </tr>
           </thead>
 

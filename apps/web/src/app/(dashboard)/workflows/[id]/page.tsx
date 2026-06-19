@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import apiClient from '@/lib/api-client';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
+import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import { LiveExecutionMonitor } from '@/components/workflows/live-execution-monitor';
 import { useExecutionStore } from '@/stores/workflow-execution-store';
 import { Activity, ArrowBigLeft, CalendarClock, Settings, SlidersHorizontal } from 'lucide-react';
@@ -127,11 +128,11 @@ function ExecutionCard({
         : `${execution.posFetched}`;
 
   return (
-    <div className="border border-slate-200 rounded-lg p-3 text-sm text-slate-700 space-y-2">
+    <div className="space-y-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-700 dark:border-border dark:bg-surface dark:text-slate-300">
       <div className="flex flex-wrap gap-3 justify-between">
         <div>
-          <div className="font-semibold text-slate-900">{status}</div>
-          <div className="text-slate-500 text-xs">
+          <div className="font-semibold text-foreground">{status}</div>
+          <div className="text-xs text-slate-500 dark:text-slate-300">
             Trigger: {execution.triggerType} · Created {new Date(execution.createdAt).toLocaleString()}
           </div>
         </div>
@@ -140,12 +141,12 @@ function ExecutionCard({
             {execution.dateRangeSince} → {execution.dateRangeUntil}
           </div>
           {status !== 'RUNNING' && (
-            <div className="text-slate-500 text-xs">Processed {progressLabel} days</div>
+            <div className="text-xs text-slate-500 dark:text-slate-300">Processed {progressLabel} days</div>
           )}
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-600">
+      <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-600 dark:text-slate-300">
         <span>Meta fetched: {metaDisplay}</span>
         <span>POS fetched: {posDisplay}</span>
       </div>
@@ -157,7 +158,7 @@ function ExecutionCard({
             <button
               onClick={() => onCancel(execution.id)}
               disabled={cancelling[execution.id]}
-              className="px-3 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-700 hover:bg-red-50 disabled:bg-slate-100 disabled:text-slate-400 transition"
+              className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:bg-slate-100 disabled:text-slate-400 dark:border-red-400/30 dark:text-red-300 dark:hover:bg-red-500/10 dark:disabled:border-border dark:disabled:bg-surface dark:disabled:text-slate-500"
             >
               {cancelling[execution.id] ? 'Cancelling…' : 'Cancel'}
             </button>
@@ -166,8 +167,8 @@ function ExecutionCard({
       )}
 
       {execution.errors?.length > 0 && (
-        <div className="mt-1 rounded border border-red-100 bg-red-50 p-2 text-xs text-red-700">
-          <div className="font-semibold mb-1">Errors ({execution.errors.length})</div>
+        <div className="mt-1 rounded border border-red-100 bg-red-50 p-2 text-xs text-red-700 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-300">
+          <div className="mb-1 font-semibold">Errors ({execution.errors.length})</div>
           <ul className="space-y-1">
             {execution.errors.map((err, idx) => (
               <li key={idx} className="leading-snug">
@@ -275,12 +276,12 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-border md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
           <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">Workflows</p>
           <div className="space-y-0.5">
-            <h2 className="text-xl-loose font-semibold tracking-tight text-slate-900">{workflow.name}</h2>
-            <p className="text-sm-custom text-slate-500">{workflow.description || 'No description'}</p>
+            <h2 className="text-xl-loose font-semibold tracking-tight text-foreground">{workflow.name}</h2>
+            <p className="text-sm-custom text-slate-500 dark:text-slate-300">{workflow.description || 'No description'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -303,78 +304,74 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="panel panel-content">
-          <div className="panel-header">
-            <SlidersHorizontal className="panel-icon" />
-            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Configuration</h3>
-          </div>
-          <div className="space-y-3 p-4 text-sm text-slate-700">
+      <div className="grid gap-4 md:grid-cols-2">
+        <DashboardSection
+          title="Configuration"
+          icon={<SlidersHorizontal className="panel-icon" />}
+          contentClassName="space-y-3 p-4 text-sm text-slate-700 dark:text-slate-300"
+        >
             <div className="flex justify-between">
-              <span className="text-slate-600">Status</span>
-              <span className="font-medium">{workflow.enabled ? 'Enabled' : 'Disabled'}</span>
+              <span className="text-slate-600 dark:text-slate-300">Status</span>
+              <span className="font-medium text-foreground">{workflow.enabled ? 'Enabled' : 'Disabled'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Schedule</span>
-              <span className="font-medium">{workflow.schedule || 'Manual only'}</span>
+              <span className="text-slate-600 dark:text-slate-300">Schedule</span>
+              <span className="font-medium text-foreground">{workflow.schedule || 'Manual only'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Date Range</span>
-              <span className="font-medium">{getDateRangeLabel(workflow)}</span>
+              <span className="text-slate-600 dark:text-slate-300">Date Range</span>
+              <span className="font-medium text-foreground">{getDateRangeLabel(workflow)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Meta</span>
-              <span className="font-medium">
+              <span className="text-slate-600 dark:text-slate-300">Meta</span>
+              <span className="font-medium text-foreground">
                 {workflow.config?.sources?.meta?.enabled ? 'Enabled' : 'Disabled'}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">POS</span>
-              <span className="font-medium">
+              <span className="text-slate-600 dark:text-slate-300">POS</span>
+              <span className="font-medium text-foreground">
                 {workflow.config?.sources?.pos?.enabled ? 'Enabled' : 'Disabled'}
               </span>
             </div>
-          </div>
-        </div>
+        </DashboardSection>
 
-        <div className="panel panel-content">
-          <div className="panel-header">
-            <Activity className="panel-icon" />
-            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Rate Limits</h3>
-          </div>
-          <div className="space-y-3 p-4 text-sm text-slate-700">
+        <DashboardSection
+          title="Rate Limits"
+          icon={<Activity className="panel-icon" />}
+          contentClassName="space-y-3 p-4 text-sm text-slate-700 dark:text-slate-300"
+        >
             <div className="flex justify-between">
-              <span className="text-slate-600">Meta delay (ms)</span>
-              <span className="font-medium">{workflow.config?.rateLimit?.metaDelayMs || 0}</span>
+              <span className="text-slate-600 dark:text-slate-300">Meta delay (ms)</span>
+              <span className="font-medium text-foreground">{workflow.config?.rateLimit?.metaDelayMs || 0}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">POS delay (ms)</span>
-              <span className="font-medium">{workflow.config?.rateLimit?.posDelayMs || 0}</span>
+              <span className="text-slate-600 dark:text-slate-300">POS delay (ms)</span>
+              <span className="font-medium text-foreground">{workflow.config?.rateLimit?.posDelayMs || 0}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Created</span>
-              <span className="font-medium">
+              <span className="text-slate-600 dark:text-slate-300">Created</span>
+              <span className="font-medium text-foreground">
                 {new Date(workflow.createdAt).toLocaleString()}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Updated</span>
-              <span className="font-medium">
+              <span className="text-slate-600 dark:text-slate-300">Updated</span>
+              <span className="font-medium text-foreground">
                 {new Date(workflow.updatedAt).toLocaleString()}
               </span>
             </div>
-          </div>
-        </div>
+        </DashboardSection>
       </div>
 
-      <div className="panel panel-content p-4 shadow-sm space-y-4">
-        <div className="-mx-4 -mt-4 mb-1 flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-          <CalendarClock className="panel-icon" />
-          Execution History
-        </div>
+      <DashboardSection
+        title="Execution History"
+        icon={<CalendarClock className="panel-icon" />}
+        contentClassName="space-y-4 p-4"
+      >
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="mt-1 text-xs text-slate-500">
+          <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">
             <span className="mr-3">Last run: {formatDateTime(workflow.lastRunAt)}</span>
             <span className="mr-3">Next run: {formatDateTime(workflow.nextRunAt)}</span>
             {workflow.schedule && (
@@ -384,14 +381,14 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
           <button
             onClick={triggerWorkflow}
             disabled={triggering}
-            className="btn btn-md btn-primary-soft disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            className="btn btn-md btn-primary-soft disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:border-border dark:disabled:bg-surface dark:disabled:text-slate-500"
           >
             {triggering ? 'Starting…' : 'Trigger Execution'}
           </button>
         </div>
 
         {executions.length === 0 ? (
-          <p className="text-sm text-slate-600">No executions yet.</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">No executions yet.</p>
         ) : (
           <div className="space-y-3">
             {executions.map((execution) => (
@@ -404,7 +401,7 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
             ))}
           </div>
         )}
-      </div>
+      </DashboardSection>
     </div>
   );
 }

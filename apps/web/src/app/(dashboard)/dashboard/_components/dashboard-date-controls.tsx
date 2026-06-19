@@ -100,16 +100,16 @@ export function DashboardDateControls({
               endDate: normalizePickerDate(val?.endDate),
             });
           }}
-          inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+          inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-500 dark:!bg-surface dark:!text-surface transition-[width] duration-300 ease-out ${
             showRangeText ? "w-[236px]" : "w-10"
-          }`}
+          }`} 
           displayFormat="MM/DD/YYYY"
           separator=" – "
           toggleIcon={() => (
             <span className="flex w-full items-center gap-2 overflow-hidden">
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span
-                className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
                   showRangeText
                     ? "max-w-[184px] translate-x-0 opacity-100"
                     : "max-w-0 -translate-x-1 opacity-0"
@@ -119,7 +119,7 @@ export function DashboardDateControls({
               </span>
             </span>
           )}
-          toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+          toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-orange-700 dark:text-foreground"
           containerClassName=""
           popupClassName={(defaultClass: string) =>
             `${defaultClass} z-50 kpi-datepicker-light`
@@ -132,7 +132,7 @@ export function DashboardDateControls({
         <Button
           variant="secondary"
           size="sm"
-          className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:text-orange-700"
+          className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:text-orange-700 dark:border-slate-500 dark:bg-surface dark:text-foreground"
           onClick={(event) => {
             event.stopPropagation();
             setIsFilterOpen((prev) => !prev);
@@ -143,12 +143,12 @@ export function DashboardDateControls({
         {isFilterOpen ? (
           <div
             ref={filterMenuRef}
-            className={`absolute left-0 right-auto mt-2 max-w-[calc(100vw-1rem)] rounded-xl border border-slate-200 bg-white shadow-lg z-30 p-3 space-y-3 sm:left-auto sm:right-0 ${filterMenuWidthClassName}`}
+            className={`absolute left-0 right-auto mt-2 max-w-[calc(100vw-1rem)] rounded-xl border border-slate-200 bg-surface shadow-lg z-30 p-3 space-y-3 sm:left-auto sm:right-0 ${filterMenuWidthClassName}`}
           >
             {filters.map((filter) => (
               <label
                 key={filter.id}
-                className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-800"
+                className="flex items-center gap-2 cursor-pointer select-none text-sm text-foreground"
               >
                 <input
                   type="checkbox"

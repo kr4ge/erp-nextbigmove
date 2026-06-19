@@ -81,7 +81,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="max-w-md w-full space-y-4 bg-white p-8 rounded-xl shadow-lg">
+      <div className="max-w-md w-full space-y-4 bg-surface p-8 rounded-xl shadow-lg">
         <div>
           <h2 className="text-center text-3xl font-bold text-foreground">
             Sign in to your account
@@ -142,7 +142,7 @@ export default function LoginPage() {
             </div>
 
             <div className="text-sm">
-              <a href="#" className="font-medium text-gray-900 hover:text-gray-700">
+              <a href="#" className="font-medium text-foreground">
                 Forgot password?
               </a>
             </div>

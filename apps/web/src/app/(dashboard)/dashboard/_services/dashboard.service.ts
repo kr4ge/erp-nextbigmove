@@ -1,5 +1,6 @@
 import apiClient from "@/lib/api-client";
 import type {
+  ExecutiveOverviewResponse,
   MarketingLeaderStatsResponse,
   MarketingMyStatsResponse,
   MarketingKpiDashboardResponse,
@@ -32,9 +33,12 @@ export async function getMyTeams() {
 }
 
 export async function getExecutiveOverview(params: QueryParams) {
-  const res = await apiClient.get("/analytics/sales/executive-overview", {
+  const res = await apiClient.get<ExecutiveOverviewResponse>(
+    "/analytics/sales/executive-overview",
+    {
     params,
-  });
+    },
+  );
   return res.data;
 }
 

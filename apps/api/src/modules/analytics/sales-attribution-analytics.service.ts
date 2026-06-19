@@ -214,6 +214,10 @@ export class SalesAttributionAnalyticsService {
       excludeAbandoned: boolean;
       excludeRts: boolean;
     },
+    stageCounts?: {
+      undelivered?: number;
+      returned?: number;
+    },
   ): SalesAttributionCounts {
     const purchasesRaw = this.toNumber(sum?._sum?.purchasesPos);
     const cancelAdj = opts.excludeCancel ? this.toNumber(sum?._sum?.canceledCount) : 0;
@@ -228,6 +232,8 @@ export class SalesAttributionAnalyticsService {
       shipped: this.toNumber(sum?._sum?.shippedCount),
       waiting_pickup: this.toNumber(sum?._sum?.waitingPickupCount),
       rts: this.toNumber(sum?._sum?.rtsCount),
+      undelivered: this.toNumber(stageCounts?.undelivered),
+      returned: this.toNumber(stageCounts?.returned),
       restocking: this.toNumber(sum?._sum?.restockingCount),
       confirmed: this.toNumber(sum?._sum?.confirmedCount),
       unconfirmed: this.toNumber(sum?._sum?.unconfirmedCount),

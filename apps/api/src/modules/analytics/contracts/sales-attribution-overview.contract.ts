@@ -46,6 +46,8 @@ export type SalesAttributionCounts = {
   shipped: number;
   waiting_pickup: number;
   rts: number;
+  undelivered: number;
+  returned: number;
   restocking: number;
   confirmed: number;
   unconfirmed: number;
@@ -115,6 +117,13 @@ export type SalesAttributionSelected = {
   mappings: string[];
 };
 
+export type SalesAttributionVolumeGrowthRow = {
+  date: string;
+  shipped: number;
+  delivered: number;
+  rts: number;
+};
+
 export type SalesAttributionOverviewContract = {
   kpis: SalesAttributionKpis;
   prevKpis: SalesAttributionKpis;
@@ -126,4 +135,5 @@ export type SalesAttributionOverviewContract = {
   selected: SalesAttributionSelected;
   rangeDays: number;
   lastUpdatedAt: Date | string | null;
+  volumeGrowthTrend?: SalesAttributionVolumeGrowthRow[];
 };

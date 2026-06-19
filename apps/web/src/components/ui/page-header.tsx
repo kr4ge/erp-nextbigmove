@@ -14,7 +14,7 @@ export function PageHeader({
   actions,
 }: Props) {
   return (
-    <div className="mb-6 flex flex-col gap-3 border-b border-slate-200 pb-3">
+    <div className="mb-6 flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-border">
       {breadcrumbs && (
         <div className="text-xs font-medium uppercase tracking-wide text-primary">
           {breadcrumbs}
@@ -26,7 +26,7 @@ export function PageHeader({
             {title}
           </h1>
           {description && (
-            <p className="mt-1 text-sm text-muted">{description}</p>
+            <p className="mt-1 text-sm text-muted dark:text-slate-300">{description}</p>
           )}
         </div>
         {actions && <div className="flex gap-2">{actions}</div>}

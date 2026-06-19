@@ -856,8 +856,8 @@ export default function SalesByTeamAnalyticsPage() {
 
     return (
       <div className="space-y-1">
-        <p className="font-semibold text-slate-800">Contribution Margin inputs</p>
-        <div className="flex justify-between text-slate-800">
+        <p className="font-semibold text-foreground">Contribution Margin inputs</p>
+        <div className="flex justify-between text-foreground">
           <span>Gross COD</span>
           <span>{nf(kpis.gross_cod ?? 0)}</span>
         </div>
@@ -873,11 +873,11 @@ export default function SalesByTeamAnalyticsPage() {
           <span>RTS COD</span>
           <span>{neg(rtsCodAdj)}</span>
         </div>
-        <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-800">
+        <div className="flex justify-between border-t border-slate-100 pt-1 text-foreground">
           <span>Revenue after adjustments</span>
           <span>{nf(kpis.revenue ?? 0)}</span>
         </div>
-        <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-800">
+        <div className="flex justify-between border-t border-slate-100 pt-1 text-foreground">
           <span>Fulfillment (SF+FF+IF)</span>
           <span>{neg(fulfillment)}</span>
         </div>
@@ -893,15 +893,15 @@ export default function SalesByTeamAnalyticsPage() {
           <span>IF Fees</span>
           <span>{neg(kpis.if_fees ?? 0)}</span>
         </div>
-        <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-800">
+        <div className="flex justify-between border-t border-slate-100 pt-1 text-foreground">
           <span>COD Fee</span>
           <span>{neg(kpis.cod_fee ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>Ad Spend</span>
           <span>{neg(kpis.ad_spend ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>COGS (raw)</span>
           <span>{neg(cogsRaw)}</span>
         </div>
@@ -913,7 +913,7 @@ export default function SalesByTeamAnalyticsPage() {
           <span>- COGS Restocking</span>
           <span>{pos(excludedCogsRestocking)}</span>
         </div>
-        <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-800">
+        <div className="flex justify-between border-t border-slate-100 pt-1 text-foreground">
           <span>COGS used in CM</span>
           <span>{neg(cogsIncluded)}</span>
         </div>
@@ -943,32 +943,32 @@ export default function SalesByTeamAnalyticsPage() {
 
     return (
       <div className="space-y-1">
-        <p className="font-semibold text-slate-800">Net Margin inputs</p>
-        <div className="flex justify-between text-slate-800">
+        <p className="font-semibold text-foreground">Net Margin inputs</p>
+        <div className="flex justify-between text-foreground">
           <span>Delivered COD</span>
           <span>{nf(kpis.delivered ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>SF SDR Fees</span>
           <span>{neg(kpis.sf_sdr_fees ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>FF SDR Fees</span>
           <span>{neg(kpis.ff_sdr_fees ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>IF SDR Fees</span>
           <span>{neg(kpis.if_sdr_fees ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>COD Fee (Delivered)</span>
           <span>{neg(kpis.cod_fee_delivered ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>COGS Delivered</span>
           <span>{neg(kpis.cogs_delivered ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>Ad Spend</span>
           <span>{neg(kpis.ad_spend ?? 0)}</span>
         </div>
@@ -1020,56 +1020,56 @@ export default function SalesByTeamAnalyticsPage() {
 
     return (
       <div className="space-y-1">
-        <p className="font-semibold text-slate-800">CM (RTS {rtsForecastSafe}%) inputs</p>
-        <div className="flex justify-between text-slate-800">
+        <p className="font-semibold text-foreground">CM (RTS {rtsForecastSafe}%) inputs</p>
+        <div className="flex justify-between text-foreground">
           <span>Purchases (adj)</span>
           <span>{purchasesForCmRts.toFixed(0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>AOV (adj)</span>
           <span>{nf(aovForCmRts)}</span>
         </div>
-        <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-800">
+        <div className="flex justify-between border-t border-slate-100 pt-1 text-foreground">
           <span>Revenue base (AOV × purchases)</span>
           <span>{nf(revenueBaseForCmRts)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>RTS forecast ({rtsForecastSafe}%)</span>
           <span>{neg(revenueBaseForCmRts * forecast.rtsFraction)}</span>
         </div>
-        <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-800">
+        <div className="flex justify-between border-t border-slate-100 pt-1 text-foreground">
           <span>Revenue after RTS</span>
           <span>{nf(forecast.revenueAfterRts)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>Ad Spend</span>
           <span>{neg(kpis.ad_spend ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>Fulfillment (SF+FF+IF)</span>
           <span>{neg((kpis.sf_fees ?? 0) + (kpis.ff_fees ?? 0) + (kpis.if_fees ?? 0))}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>COD Fee (Delivered)</span>
           <span>{neg(kpis.cod_fee_delivered ?? 0)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>COGS (raw)</span>
           <span>{neg(cogsTotal)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>COGS Canceled</span>
           <span>{neg(cogsCanceled)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>COGS Restocking</span>
           <span>{neg(cogsRestocking)}</span>
         </div>
-        <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-800">
+        <div className="flex justify-between border-t border-slate-100 pt-1 text-foreground">
           <span>COGS (adjusted)</span>
           <span>{neg(cogsAdjusted)}</span>
         </div>
-        <div className="flex justify-between text-slate-800">
+        <div className="flex justify-between text-foreground">
           <span>RTS COGS</span>
           <span>{pos(kpis.cogs_rts ?? 0)}</span>
         </div>
@@ -1135,10 +1135,10 @@ export default function SalesByTeamAnalyticsPage() {
             Analytics
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">
-              Sales by Team
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Team Performance
             </h1>
-            <p className="text-sm-custom text-slate-500">
+            <p className="text-sm-custom text-slate-500 dark:text-slate-300">
               Monitor sales performance by team code and mapping.
             </p>
           </div>
@@ -1206,13 +1206,13 @@ export default function SalesByTeamAnalyticsPage() {
               <button
                 type="button"
                 onClick={() => setShowFilterMenu((prev) => !prev)}
-                className="inline-flex h-10 items-center justify-center rounded-r-xl rounded-l-none border border-slate-200 bg-white px-3 text-slate-600 hover:border-orange-200 hover:text-orange-700"
+                className="inline-flex h-10 items-center justify-center rounded-r-xl rounded-l-none border border-slate-200 bg-white px-3 text-slate-600 hover:border-orange-200 hover:text-orange-700 dark:border-border dark:bg-transparent dark:text-foreground"
                 aria-label="Filters"
               >
                 <Filter className="h-4 w-4" />
               </button>
               {showFilterMenu && (
-                <div className="absolute right-0 z-30 mt-2 w-60 space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+                <div className="absolute right-0 z-30 mt-2 w-60 space-y-3 rounded-xl border border-slate-200 bg-surface p-3 shadow-lg dark:border-border">
                   <label className="flex cursor-pointer select-none items-center gap-2">
                     <input
                       type="checkbox"
@@ -1220,7 +1220,7 @@ export default function SalesByTeamAnalyticsPage() {
                       checked={excludeCanceled}
                       onChange={(event) => setExcludeCanceled(event.target.checked)}
                     />
-                    <span className="text-sm text-slate-800">Exclude Canceled</span>
+                    <span className="text-sm text-foreground">Exclude Canceled</span>
                   </label>
                   <label className="flex cursor-pointer select-none items-center gap-2">
                     <input
@@ -1229,7 +1229,7 @@ export default function SalesByTeamAnalyticsPage() {
                       checked={excludeRestocking}
                       onChange={(event) => setExcludeRestocking(event.target.checked)}
                     />
-                    <span className="text-sm text-slate-800">Exclude Restocking</span>
+                    <span className="text-sm text-foreground">Exclude Restocking</span>
                   </label>
                   <label className="flex cursor-pointer select-none items-center gap-2">
                     <input
@@ -1238,7 +1238,7 @@ export default function SalesByTeamAnalyticsPage() {
                       checked={excludeAbandoned}
                       onChange={(event) => setExcludeAbandoned(event.target.checked)}
                     />
-                    <span className="text-sm text-slate-800">Exclude Abandoned</span>
+                    <span className="text-sm text-foreground">Exclude Abandoned</span>
                   </label>
                   <label className="flex cursor-pointer select-none items-center gap-2">
                     <input
@@ -1247,11 +1247,11 @@ export default function SalesByTeamAnalyticsPage() {
                       checked={excludeRts}
                       onChange={(event) => setExcludeRts(event.target.checked)}
                     />
-                    <span className="text-sm text-slate-800">Exclude RTS</span>
+                    <span className="text-sm text-foreground">Exclude RTS</span>
                   </label>
-                  <div className="my-1 h-px bg-slate-100" />
+                  <div className="my-1 h-px bg-slate-100 dark:bg-border" />
                   <div className="space-y-1">
-                    <label className="flex items-center justify-between text-sm text-slate-800">
+                    <label className="flex items-center justify-between text-sm text-foreground">
                       <span>RTS %</span>
                       <input
                         type="number"
@@ -1266,12 +1266,12 @@ export default function SalesByTeamAnalyticsPage() {
                           }
                           setRtsForecastPct(Math.min(100, Math.max(0, value)));
                         }}
-                        className="w-20 rounded border border-slate-200 px-2 py-1 text-sm text-slate-900 focus:border-indigo-300 focus:outline-none"
+                        className="w-20 rounded border border-slate-200 px-2 py-1 text-sm text-foreground dark:bg-surface dark:border-border focus:border-indigo-300 focus:outline-none"
                       />
                     </label>
-                    <p className="text-xs text-slate-500">Used for CM (RTS %) forecast column</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-300">Used for CM (RTS %) forecast column</p>
                   </div>
-                  <div className="my-1 h-px bg-slate-100" />
+                  <div className="my-1 h-px bg-slate-100 dark:bg-border" />
                   <label className="flex cursor-pointer select-none items-center gap-2">
                     <input
                       type="checkbox"
@@ -1279,7 +1279,7 @@ export default function SalesByTeamAnalyticsPage() {
                       checked={includeTax12}
                       onChange={(event) => setIncludeTax12(event.target.checked)}
                     />
-                    <span className="text-sm text-slate-800">Include 12% Ads Tax</span>
+                    <span className="text-sm text-foreground">Include 12% Ads Tax</span>
                   </label>
                   <label className="flex cursor-pointer select-none items-center gap-2">
                     <input
@@ -1288,7 +1288,7 @@ export default function SalesByTeamAnalyticsPage() {
                       checked={includeTax1}
                       onChange={(event) => setIncludeTax1(event.target.checked)}
                     />
-                    <span className="text-sm text-slate-800">Include 1% transaction fee</span>
+                    <span className="text-sm text-foreground">Include 1% transaction fee</span>
                   </label>
                 </div>
               )}
@@ -1306,7 +1306,7 @@ export default function SalesByTeamAnalyticsPage() {
                 showFooter={false}
                 primaryColor="orange"
                 readOnly
-                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm transition-[width] duration-300 ease-out focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent ${
+                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm transition-[width] duration-300 ease-out focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-border dark:!bg-transparent dark:!text-transparent ${
                   salesDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
                 }`}
                 containerClassName=""
@@ -1317,7 +1317,7 @@ export default function SalesByTeamAnalyticsPage() {
                   <span className="flex w-full items-center gap-2 overflow-hidden">
                     <CalendarDays className="h-4 w-4 shrink-0" />
                     <span
-                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
                         salesDateRangeIsToday
                           ? 'max-w-0 -translate-x-1 opacity-0'
                           : 'max-w-[148px] translate-x-0 opacity-100 sm:max-w-[184px]'
@@ -1327,7 +1327,7 @@ export default function SalesByTeamAnalyticsPage() {
                     </span>
                   </span>
                 )}
-                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-orange-700 dark:text-foreground"
                 placeholder=" "
               />
             </div>
@@ -1338,7 +1338,7 @@ export default function SalesByTeamAnalyticsPage() {
                   void fetchData({ silent: true });
                 }}
                 disabled={isRefreshing}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300 disabled:opacity-60"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300 disabled:opacity-60 dark:border-border dark:bg-transparent dark:text-foreground"
                 aria-label="Refresh preview"
                 title="Refresh preview"
               >
@@ -1347,7 +1347,7 @@ export default function SalesByTeamAnalyticsPage() {
               <button
                 type="button"
                 onClick={() => setShowKpiVisibilityModal(true)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-border dark:bg-transparent dark:text-foreground"
                 aria-label="Show or hide KPI boxes"
                 title="Show or hide KPI boxes"
               >

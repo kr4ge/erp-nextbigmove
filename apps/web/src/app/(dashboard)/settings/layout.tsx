@@ -46,13 +46,16 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     if (perms.includes('integration.webhook.read') || perms.includes('integration.webhook.update')) {
       base.push({ href: '/settings/webhook', label: 'Webhook' });
     }
+    if (perms.includes('kpi.marketing.read') || perms.includes('kpi.marketing.manage')) {
+      base.push({ href: '/settings/kpis', label: 'KPIs' });
+    }
     return base;
   }, [perms]);
 
   return (
     <div className="space-y-6">
       <div className="overflow-x-auto">
-        <div className="flex gap-6 min-w-max sm:min-w-0 border-b border-slate-200">
+        <div className="flex gap-6 min-w-max sm:min-w-0 border-b border-slate-200 dark:border-border">
           {tabs.map((tab) => {
             const active = pathname === tab.href || pathname?.startsWith(`${tab.href}/`);
             return (
@@ -60,7 +63,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
                 key={tab.href}
                 href={tab.href}
                 className={`pb-3 text-sm font-semibold whitespace-nowrap transition-colors ${
-                  active ? 'text-orange-600 border-b-2 border-primary' : 'text-slate-600 hover:text-slate-900'
+                  active ? 'text-orange-600 border-b-2 border-primary' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-400'
                 }`}
               >
                 {tab.label}

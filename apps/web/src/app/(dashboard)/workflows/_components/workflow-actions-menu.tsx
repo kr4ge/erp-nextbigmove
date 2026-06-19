@@ -30,7 +30,7 @@ export function WorkflowActionsMenu({
       <DropdownMenu>
         <DropdownMenuTrigger
           type="button"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-[#0F172A] transition hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-300 dark:hover:bg-surface dark:focus:ring-orange-300 dark:focus:ring-offset-background"
           aria-label="Workflow actions"
         >
           <MoreHorizontal className="h-4 w-4" />

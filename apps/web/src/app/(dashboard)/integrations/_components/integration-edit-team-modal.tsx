@@ -38,11 +38,11 @@ export function IntegrationEditTeamModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] px-6 py-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] dark:border-border px-6 py-4">
           <div>
-            <p className="text-xs font-semibold uppercase text-[#94A3B8]">Update Integration</p>
-            <h2 className="text-xl font-semibold text-[#0F172A]">Assign Team</h2>
+            <p className="panel-title">Update Integration</p>
+            <h2 className="text-xl font-semibold text-foreground">Assign Team</h2>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose} iconLeft={<X className="h-5 w-5" />} className='h-10 w-10 px-0' />
         </div>

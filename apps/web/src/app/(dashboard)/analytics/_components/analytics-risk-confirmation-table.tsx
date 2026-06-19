@@ -56,57 +56,57 @@ export function AnalyticsRiskConfirmationTable({
       pageIndicatorLabel={`Page ${currentPage} of ${totalPages}`}
     >
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-100">
-          <thead className="bg-slate-50">
+        <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
+          <thead className="bg-slate-50 dark:bg-background-secondary">
             <tr>
-              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">
                 Risk Confirmation
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">
                 Restocking
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">
                 Confirmed
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">
                 Waiting For Pickup
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">
                 Shipped
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">
                 Delivered
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 sm:px-4 lg:px-6">
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">
                 RTS
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
             {isLoading ? (
               <AnalyticsTableLoadingRows colCount={7} />
             ) : (
               rows.map((row) => (
-                <tr key={row.riskTag} className="bg-white">
-                  <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
+                <tr key={row.riskTag} className="bg-white hover:bg-slate-50 dark:bg-surface dark:hover:bg-background-secondary">
+                  <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
                     {row.riskTag}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-slate-900 dark:text-foreground sm:px-4 lg:px-6">
                     {formatCount(row.restockingCount)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-slate-900 dark:text-foreground sm:px-4 lg:px-6">
                     {formatCount(row.confirmedCount)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatCount(row.waitingForPickupCount)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatCount(row.shippedCount)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatCount(row.deliveredCount)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatCount(row.rtsCount)}
                   </td>
                 </tr>

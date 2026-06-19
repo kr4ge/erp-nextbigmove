@@ -1,6 +1,10 @@
 "use client";
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  EChartsOption,
+  TooltipComponentFormatterCallbackParams,
+} from "echarts";
 import { Button } from "@/components/ui/button";
 import { AlertBanner } from "@/components/ui/feedback";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -20,6 +24,7 @@ import {
   DollarSignIcon,
   ClipboardList,
   Columns,
+  PackageCheck,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { DashboardDateControls } from "./_components/dashboard-date-controls";
@@ -47,7 +52,9 @@ import {
 } from "./_services/dashboard.service";
 import type {
   DashboardStats,
+  ExecutiveOverviewResponse,
   ExecutiveOverviewStats,
+  ExecutiveVolumeGrowthRow,
   MarketingLeaderStatsResponse,
   MarketingKpiDashboardResponse,
   MarketingKpiExecutiveDashboardResponse,
@@ -90,6 +97,9 @@ type DashboardUser = {
 type DashboardTenant = {
   status?: string;
 };
+
+type ExecutiveGraphPreset = "1d" | "7d" | "1m";
+type TrendGraphPreset = Exclude<ExecutiveGraphPreset, "1d">;
 
 const EMPTY_SHOP_SELECTION: string[] = [];
 const MARKETING_KPI_VISIBILITY_STORAGE_KEY =
@@ -217,6 +227,254 @@ const EXECUTIVE_CARD_TONE_MAP: Record<ExecutiveOverviewCardTone, string> = {
   warning: "bg-amber-50 text-amber-600 ring-amber-100",
 };
 
+type ExecutiveChartPalette = {
+  foreground: string;
+  secondary: string;
+  muted: string;
+  border: string;
+  borderSoft: string;
+};
+
+const EXECUTIVE_CHART_LIGHT: ExecutiveChartPalette = {
+  foreground: "#0f172a",
+  secondary: "rgba(15, 23, 42, 0.78)",
+  muted: "rgba(15, 23, 42, 0.62)",
+  border: "#cbd5e1",
+  borderSoft: "#e2e8f0",
+};
+
+const EXECUTIVE_CHART_DARK: ExecutiveChartPalette = {
+  foreground: "#f8fafc",
+  secondary: "rgba(248, 250, 252, 0.82)",
+  muted: "rgba(248, 250, 252, 0.66)",
+  border: "#475569",
+  borderSoft: "rgba(71, 85, 105, 0.45)",
+};
+
+function buildExecutiveOrdersSummaryDonutOption(params: {
+  deliveredCount: number;
+  shippedCount: number;
+  rtsCount: number;
+}, isDark: boolean): EChartsOption {
+  const palette = isDark ? EXECUTIVE_CHART_DARK : EXECUTIVE_CHART_LIGHT;
+  const totalCount =
+    params.deliveredCount + params.shippedCount + params.rtsCount;
+
+  return {
+    color: ["#10b981", "#f59e0b", "#ef4444"],
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "#0f172a",
+      borderWidth: 0,
+      textStyle: { color: "#f8fafc" },
+      formatter: (tooltipParams: TooltipComponentFormatterCallbackParams) => {
+        const datum = Array.isArray(tooltipParams)
+          ? tooltipParams[0]
+          : tooltipParams;
+        const rawValue = Array.isArray(datum?.value)
+          ? datum.value[0]
+          : datum?.value;
+        const value =
+          typeof rawValue === "number" ? rawValue : Number(rawValue ?? 0);
+
+        return `${datum?.seriesName}<br/>${datum?.name}: ${formatCount(value)}`;
+      },
+    },
+    graphic: [
+      {
+        type: "text",
+        left: "center",
+        top: "34%",
+        silent: true,
+        style: {
+          text: formatCount(totalCount),
+          fill: palette.foreground,
+          fontSize: 28,
+          fontWeight: 700,
+          // textAlign: "center" as const,
+        },
+      },
+      {
+        type: "text",
+        left: "center",
+        top: "45%",
+        silent: true,
+        style: {
+          text: "total",
+          fill: palette.muted,
+          fontSize: 13,
+          fontWeight: 500,
+          // textAlign: "center" as const,
+        },
+      },
+    ],
+    legend: {
+      bottom: 0,
+      left: "center",
+      itemWidth: 10,
+      itemHeight: 10,
+      textStyle: {
+        color: palette.secondary,
+        fontSize: 11,
+      },
+    },
+    series: [
+      {
+        name: "Order Count",
+        type: "pie",
+        radius: ["52%", "78%"],
+        center: ["50%", "42%"],
+        avoidLabelOverlap: true,
+        label: {
+          show: false,
+        },
+        labelLine: { show: false },
+        data: [
+          { value: params.deliveredCount, name: "Delivered" },
+          { value: params.shippedCount, name: "Shipped" },
+          { value: params.rtsCount, name: "RTS" },
+        ],
+      },
+    ],
+  };
+}
+
+function buildExecutiveOrdersSummaryTrendOption(
+  rows: ExecutiveVolumeGrowthRow[],
+  isDark: boolean,
+): EChartsOption {
+  const palette = isDark ? EXECUTIVE_CHART_DARK : EXECUTIVE_CHART_LIGHT;
+  return {
+    color: ["#f59e0b", "#10b981", "#ef4444"],
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: "#0f172a",
+      borderWidth: 0,
+      textStyle: { color: "#f8fafc" },
+    },
+    legend: {
+      top: 0,
+      left: "left",
+      itemWidth: 10,
+      itemHeight: 10,
+      textStyle: {
+        color: palette.secondary,
+        fontSize: 11,
+      },
+    },
+    grid: {
+      left: 16,
+      right: 16,
+      top: 40,
+      bottom: 16,
+      containLabel: true,
+    },
+    xAxis: {
+      type: "category",
+      boundaryGap: false,
+      data: rows.map((row) => formatShortDate(row.date)),
+      axisLine: { lineStyle: { color: palette.border } },
+      axisTick: { show: false },
+      axisLabel: { color: palette.secondary, fontSize: 11 },
+    },
+    yAxis: {
+      type: "value",
+      splitLine: { lineStyle: { color: palette.borderSoft, type: "dashed" } },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: palette.secondary, fontSize: 11 },
+    },
+    series: [
+      {
+        name: "Shipped",
+        type: "line",
+        smooth: true,
+        symbol: "circle",
+        symbolSize: 7,
+        lineStyle: { width: 3 },
+        data: rows.map((row) => row.shipped),
+      },
+      {
+        name: "Delivered",
+        type: "line",
+        smooth: true,
+        symbol: "circle",
+        symbolSize: 7,
+        lineStyle: { width: 3 },
+        data: rows.map((row) => row.delivered),
+      },
+      {
+        name: "RTS",
+        type: "line",
+        smooth: true,
+        symbol: "circle",
+        symbolSize: 7,
+        lineStyle: { width: 3 },
+        data: rows.map((row) => row.rts),
+      },
+    ],
+  };
+}
+
+function parseDashboardYmd(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
+
+function getExecutiveGraphPresetRange(preset: ExecutiveGraphPreset) {
+  const endYmd = formatDateInTimezone(new Date());
+  const startDate = parseDashboardYmd(endYmd);
+
+  if (preset === "7d") {
+    startDate.setDate(startDate.getDate() - 6);
+  } else if (preset === "1m") {
+    startDate.setMonth(startDate.getMonth() - 1);
+  }
+
+  return {
+    start_date: formatDateInTimezone(startDate),
+    end_date: endYmd,
+  };
+}
+
+function GraphRangeButtonGroup<TPreset extends string>({
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  value: TPreset | null;
+  options: Array<{ value: TPreset; label: string }>;
+  disabled?: boolean;
+  onChange: (value: TPreset) => void;
+}) {
+  return (
+    <div className="inline-flex gap-2 rounded-lg border border-slate-200 dark:border-border bg-surface p-0.5">
+      {options.map((option) => {
+        const isActive = value === option.value;
+
+        return (
+          <Button
+            key={option.value}
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            className={`h-7 rounded-md px-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+              isActive
+                ? "bg-primary text-white"
+                : "text-slate-500 hover:bg-slate-100 hover:text-foreground dark:text-foreground"
+            }`}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
 function ExecutiveOverviewCard({
   label,
   value,
@@ -235,17 +493,14 @@ function ExecutiveOverviewCard({
 }) {
   return (
     <div className="card"
-    // "rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1.5">
           <p className="card-label"
-          // "text-xs-tight font-semibold uppercase tracking-[0.18em] text-slate-500"
           >
             {label}
           </p>
           <p className="card-value"
-          // "text-lg-loose font-semibold tracking-tight text-slate-950 tabular-nums"
           >
             {value}
           </p>
@@ -282,11 +537,11 @@ export default function DashboardPage() {
   const [leaderStatsError, setLeaderStatsError] = useState("");
   const [range, setRange] = useState(todayRange);
   const [perms, setPerms] = useState<string[]>([]);
-  const [excludeCancel, setExcludeCancel] = useState(false);
-  const [excludeRestocking, setExcludeRestocking] = useState(false);
-  const [excludeAbandoned, setExcludeAbandoned] = useState(false);
+  const [excludeCancel, setExcludeCancel] = useState(true);
+  const [excludeRestocking, setExcludeRestocking] = useState(true);
+  const [excludeAbandoned, setExcludeAbandoned] = useState(true);
   const [showAllWinning, setShowAllWinning] = useState(false);
-  const [excludeRts, setExcludeRts] = useState(false);
+  const [excludeRts, setExcludeRts] = useState(true);
   const [includeTax12, setIncludeTax12] = useState(true);
   const [includeTax1, setIncludeTax1] = useState(true);
   const [showMarketingKpiVisibilityModal, setShowMarketingKpiVisibilityModal] =
@@ -306,6 +561,23 @@ export default function DashboardPage() {
   const [execStats, setExecStats] = useState<ExecutiveOverviewStats | null>(
     null,
   );
+  const [execVolumeGrowthTrend, setExecVolumeGrowthTrend] = useState<
+    ExecutiveVolumeGrowthRow[]
+  >([]);
+  const [statusGraphPreset, setStatusGraphPreset] =
+    useState<ExecutiveGraphPreset | null>(null);
+  const [trendGraphPreset, setTrendGraphPreset] =
+    useState<TrendGraphPreset | null>(null);
+  const [statusGraphOverride, setStatusGraphOverride] = useState<{
+    delivered_count: number;
+    shipped_count: number;
+    rts_count: number;
+  } | null>(null);
+  const [trendGraphOverride, setTrendGraphOverride] = useState<
+    ExecutiveVolumeGrowthRow[] | null
+  >(null);
+  const [statusGraphLoading, setStatusGraphLoading] = useState(false);
+  const [trendGraphLoading, setTrendGraphLoading] = useState(false);
   const [execLoading, setExecLoading] = useState(false);
   const [execError, setExecError] = useState("");
   const [teamCode, setTeamCode] = useState<string>("");
@@ -337,6 +609,7 @@ export default function DashboardPage() {
     useState<ProblematicDeliveryResponse | null>(null);
   const [salesSunburstHoverInfo, setSalesSunburstHoverInfo] =
     useState<SunburstHoverInfo | null>(null);
+  const [isExecutiveChartsDark, setIsExecutiveChartsDark] = useState(false);
   const [salesLoading, setSalesLoading] = useState(false);
   const [shopOptions, setShopOptions] = useState<string[]>([]);
   const [selectedShops, setSelectedShops] = useState<string[]>([]);
@@ -388,6 +661,29 @@ export default function DashboardPage() {
     () => perms.includes("dashboard.sales"),
     [perms],
   );
+  const executiveOrdersSummaryDonutOption = useMemo(
+    () =>
+      buildExecutiveOrdersSummaryDonutOption({
+        deliveredCount: toSafeNumber(
+          statusGraphOverride?.delivered_count ?? execStats?.delivered_count,
+        ),
+        shippedCount: toSafeNumber(
+          statusGraphOverride?.shipped_count ?? execStats?.shipped_count,
+        ),
+        rtsCount: toSafeNumber(
+          statusGraphOverride?.rts_count ?? execStats?.rts_count,
+        ),
+      }, isExecutiveChartsDark),
+    [execStats, isExecutiveChartsDark, statusGraphOverride],
+  );
+  const executiveOrdersSummaryTrendOption = useMemo(
+    () =>
+      buildExecutiveOrdersSummaryTrendOption(
+        trendGraphOverride ?? execVolumeGrowthTrend,
+        isExecutiveChartsDark,
+      ),
+    [execVolumeGrowthTrend, isExecutiveChartsDark, trendGraphOverride],
+  );
   const activeDashboardMode = useMemo<
     "executive" | "leader" | "marketing" | "sales" | "default"
   >(() => {
@@ -409,6 +705,30 @@ export default function DashboardPage() {
 
     if (userStr) setUser(JSON.parse(userStr) as DashboardUser);
     if (tenantStr) setTenant(JSON.parse(tenantStr) as DashboardTenant);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const root = document.documentElement;
+    const syncExecutiveChartMode = () => {
+      setIsExecutiveChartsDark(root.classList.contains("dark"));
+    };
+
+    syncExecutiveChartMode();
+
+    const observer = new MutationObserver(() => {
+      syncExecutiveChartMode();
+    });
+
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["class", "style"],
+    });
+
+    return () => {
+      observer.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -595,9 +915,13 @@ export default function DashboardPage() {
         params.exclude_rts = excludeRts;
         params.include_tax_12 = includeTax12;
         params.include_tax_1 = includeTax1;
-        const overview = await getExecutiveOverview(params);
-        const kpis = overview?.kpis || null;
+        const overview: ExecutiveOverviewResponse =
+          await getExecutiveOverview(params);
+        const kpis = (overview?.kpis || null) as
+          | (ExecutiveOverviewStats & Record<string, unknown>)
+          | null;
         const counts = overview?.counts || {};
+        setExecVolumeGrowthTrend(overview?.volumeGrowthTrend || []);
         const adjustedGrossCod = kpis
           ? computeAdjustedCod(
               toSafeNumber(kpis.gross_cod),
@@ -635,16 +959,29 @@ export default function DashboardPage() {
               rtsPct: 20,
             })
           : 0;
+        const rtsPct =
+          toSafeNumber(counts.delivered) + toSafeNumber(counts.rts) > 0
+            ? (toSafeNumber(counts.rts) /
+                (toSafeNumber(counts.delivered) + toSafeNumber(counts.rts))) *
+              100
+            : 0;
         setExecStats(
           kpis
             ? {
                 ...kpis,
                 purchases: toSafeNumber(counts.purchases),
+                delivered_count: toSafeNumber(counts.delivered),
+                shipped_count: toSafeNumber(counts.shipped),
+                rts_count: toSafeNumber(counts.rts),
+                confirmed_count: toSafeNumber(counts.confirmed),
+                unconfirmed_count: toSafeNumber(counts.unconfirmed),
                 cm_rts_forecast: cmRtsForecast,
+                rts_pct: rtsPct,
               }
             : null,
         );
       } catch (error: unknown) {
+        setExecVolumeGrowthTrend([]);
         setExecError(
           parseErrorMessage(error, "Failed to load executive stats"),
         );
@@ -657,6 +994,114 @@ export default function DashboardPage() {
     activeDashboardMode,
     range.startDate,
     range.endDate,
+    excludeCancel,
+    excludeRestocking,
+    excludeAbandoned,
+    excludeRts,
+    includeTax12,
+    includeTax1,
+  ]);
+
+  useEffect(() => {
+    setStatusGraphPreset(null);
+    setTrendGraphPreset(null);
+    setStatusGraphOverride(null);
+    setTrendGraphOverride(null);
+  }, [range.startDate, range.endDate]);
+
+  useEffect(() => {
+    if (activeDashboardMode !== "executive" || !statusGraphPreset) {
+      if (!statusGraphPreset) setStatusGraphOverride(null);
+      return;
+    }
+
+    let active = true;
+    setStatusGraphLoading(true);
+
+    void (async () => {
+      const { start_date, end_date } =
+        getExecutiveGraphPresetRange(statusGraphPreset);
+
+      try {
+        const overview: ExecutiveOverviewResponse = await getExecutiveOverview({
+          start_date,
+          end_date,
+          exclude_cancel: excludeCancel,
+          exclude_restocking: excludeRestocking,
+          exclude_abandoned: excludeAbandoned,
+          exclude_rts: excludeRts,
+          include_tax_12: includeTax12,
+          include_tax_1: includeTax1,
+        });
+        if (!active) return;
+        const counts = overview?.counts || {};
+        setStatusGraphOverride({
+          delivered_count: toSafeNumber(counts.delivered),
+          shipped_count: toSafeNumber(counts.shipped),
+          rts_count: toSafeNumber(counts.rts),
+        });
+      } catch {
+        if (!active) return;
+        setStatusGraphOverride(null);
+      } finally {
+        if (active) setStatusGraphLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    activeDashboardMode,
+    statusGraphPreset,
+    excludeCancel,
+    excludeRestocking,
+    excludeAbandoned,
+    excludeRts,
+    includeTax12,
+    includeTax1,
+  ]);
+
+  useEffect(() => {
+    if (activeDashboardMode !== "executive" || !trendGraphPreset) {
+      if (!trendGraphPreset) setTrendGraphOverride(null);
+      return;
+    }
+
+    let active = true;
+    setTrendGraphLoading(true);
+
+    void (async () => {
+      const { start_date, end_date } =
+        getExecutiveGraphPresetRange(trendGraphPreset);
+
+      try {
+        const overview: ExecutiveOverviewResponse = await getExecutiveOverview({
+          start_date,
+          end_date,
+          exclude_cancel: excludeCancel,
+          exclude_restocking: excludeRestocking,
+          exclude_abandoned: excludeAbandoned,
+          exclude_rts: excludeRts,
+          include_tax_12: includeTax12,
+          include_tax_1: includeTax1,
+        });
+        if (!active) return;
+        setTrendGraphOverride(overview?.volumeGrowthTrend || []);
+      } catch {
+        if (!active) return;
+        setTrendGraphOverride(null);
+      } finally {
+        if (active) setTrendGraphLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    activeDashboardMode,
+    trendGraphPreset,
     excludeCancel,
     excludeRestocking,
     excludeAbandoned,
@@ -1225,15 +1670,28 @@ export default function DashboardPage() {
 
   const salesTrendLineOption = useMemo(() => {
     const { labels, delivered, rts } = salesTrendChartData;
+    const palette = isExecutiveChartsDark
+      ? EXECUTIVE_CHART_DARK
+      : EXECUTIVE_CHART_LIGHT;
 
     return {
       tooltip: {
         trigger: "axis",
+        backgroundColor: isExecutiveChartsDark ? "#0f172a" : "#ffffff",
+        borderColor: palette.border,
+        borderWidth: 1,
+        textStyle: { color: palette.foreground },
       },
       legend: {
         data: ["Delivered", "RTS"],
         top: 6,
         left: 12,
+        itemWidth: 10,
+        itemHeight: 10,
+        textStyle: {
+          color: palette.secondary,
+          fontSize: 11,
+        },
       },
       grid: {
         left: 16,
@@ -1246,13 +1704,18 @@ export default function DashboardPage() {
         type: "category",
         data: labels,
         boundaryGap: false,
+        axisLine: { lineStyle: { color: palette.border } },
         axisTick: { show: false },
+        axisLabel: { color: palette.secondary, fontSize: 11 },
       },
       yAxis: {
         type: "value",
         splitLine: {
-          lineStyle: { color: "#E2E8F0" },
+          lineStyle: { color: palette.borderSoft },
         },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: { color: palette.secondary, fontSize: 11 },
       },
       series: [
         {
@@ -1283,7 +1746,7 @@ export default function DashboardPage() {
         },
       ],
     };
-  }, [salesTrendChartData]);
+  }, [isExecutiveChartsDark, salesTrendChartData]);
 
   const salesUndeliverableChartData = useMemo(() => {
     const trend = salesProblematicData?.undeliverableTrend || [];
@@ -1458,13 +1921,13 @@ export default function DashboardPage() {
 
   const renderDefaultDashboard = () => (
     <>
-      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-border md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
           <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Dashboard
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">
+            <h1 className="text-xl-loose font-semibold tracking-tight text-foreground">
               Dashboard
             </h1>
             <p className="text-sm-custom text-slate-500">
@@ -1574,7 +2037,7 @@ export default function DashboardPage() {
                   className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5"
                 >
                   <div>
-                    <p className="text-sm font-medium text-slate-900">
+                    <p className="text-sm font-medium text-foreground">
                       {item.title}
                     </p>
                     <p className="mt-1 text-xs text-slate-400">{item.time}</p>
@@ -1608,7 +2071,7 @@ export default function DashboardPage() {
                 <a
                   key={link.href}
                   href={link.href}
-                  className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-900 hover:bg-slate-50"
+                  className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-sm text-foreground hover:bg-slate-50 dark:bg-background-secondary dark:border-border"
                 >
                   <span>{link.label}</span>
                   <span className="text-slate-400">→</span>
@@ -1630,16 +2093,16 @@ export default function DashboardPage() {
 
   const renderSalesDashboard = () => (
     <div className="space-y-4">
-      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+      <header className="flex flex-col gap-3 border-b border-slate-200 dark:border-border pb-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1.5">
           <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Dashboard
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">
+            <h1 className="text-xl-loose font-semibold tracking-tight text-foreground">
               Sales Dashboard
             </h1>
-            <p className="text-sm-custom text-slate-500">
+            <p className="text-sm-custom text-slate-500 dark:text-slate-300">
               Your performance overview based on the selected date range.
             </p>
           </div>
@@ -1659,16 +2122,16 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setShowShopPicker((p) => !p)}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm hover:border-orange-200 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm hover:border-orange-200 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:border-border dark:bg-surface dark:text-foreground dark:hover:border-slate-500"
               >
-                <span className="text-slate-900">{selectedShopLabel}</span>
-                <span className="text-slate-400 text-xs">
+                <span className="text-foreground">{selectedShopLabel}</span>
+                <span className="text-xs text-slate-400 dark:text-slate-300">
                   (click to choose)
                 </span>
               </button>
               {showShopPicker && (
-                <div className="absolute z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg">
-                  <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 border-b border-slate-100">
+                <div className="absolute z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg dark:border-border dark:bg-surface">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 text-sm text-slate-700 dark:border-border dark:text-foreground">
                     <span>Select shops</span>
                     <button
                       type="button"
@@ -1681,17 +2144,17 @@ export default function DashboardPage() {
                       Clear
                     </button>
                   </div>
-                  <div className="px-3 py-2 border-b border-slate-100">
+                  <div className="border-b border-slate-100 px-3 py-2 dark:border-border">
                     <input
                       type="text"
                       value={shopSearch}
                       onChange={(e) => setShopSearch(e.target.value)}
                       placeholder="Search"
-                      className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                      className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:border-border dark:bg-background dark:text-foreground dark:placeholder:text-slate-400"
                     />
                   </div>
                   <div className="max-h-64 overflow-auto">
-                    <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                    <div className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-background-secondary">
                       <label className="flex items-center gap-2">
                         <input
                           type="checkbox"
@@ -1702,7 +2165,7 @@ export default function DashboardPage() {
                             setSelectedShops([]);
                             setShowShopPicker(true);
                           }}
-                          className="rounded border-slate-300 text-orange-600 focus:ring-orange-200"
+                          className="rounded border-slate-300 text-orange-600 focus:ring-orange-200 dark:border-border"
                         />
                         <span>All</span>
                       </label>
@@ -1712,14 +2175,14 @@ export default function DashboardPage() {
                       return (
                         <div
                           key={value}
-                          className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
+                          className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-background-secondary"
                         >
                           <label className="flex items-center gap-2">
                             <input
                               type="checkbox"
                               checked={checked}
                               onChange={() => toggleShop(value)}
-                              className="rounded border-slate-300 text-orange-600 focus:ring-orange-200"
+                              className="rounded border-slate-300 text-orange-600 focus:ring-orange-200 dark:border-border"
                             />
                             <span>{displayShop(value)}</span>
                           </label>
@@ -1769,7 +2232,7 @@ export default function DashboardPage() {
                   setSalesStartDate(formatDatepickerValue(nextStartRaw, today));
                   setSalesEndDate(formatDatepickerValue(nextEndRaw, today));
                 }}
-                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-slate-200 dark:!bg-white dark:!text-transparent transition-[width] duration-300 ease-out ${
+                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 dark:!border-border dark:!bg-transparent dark:!text-transparent transition-[width] duration-300 ease-out ${
                   salesDateRangeIsToday ? "w-10" : "w-[182px]"
                 }`}
                 containerClassName=""
@@ -1782,7 +2245,7 @@ export default function DashboardPage() {
                   <span className="flex w-full items-center gap-2 overflow-hidden">
                     <CalendarDays className="h-4 w-4 shrink-0" />
                     <span
-                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
                         salesDateRangeIsToday
                           ? "max-w-0 -translate-x-1 opacity-0"
                           : "max-w-[130px] translate-x-0 opacity-100"
@@ -1792,7 +2255,7 @@ export default function DashboardPage() {
                     </span>
                   </span>
                 )}
-                toggleClassName="absolute inset-0 flex items-center justify-start px-3 text-slate-600 hover:text-orange-700 cursor-pointer"
+                toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-orange-700 dark:text-foreground"
                 placeholder=" "
               />
             </div>
@@ -1825,46 +2288,46 @@ export default function DashboardPage() {
       >
         <div className="overflow-hidden rounded-b-xl">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50/80">
+            <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
+              <thead className="bg-slate-50/80 dark:bg-background-secondary">
                 <tr>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     Shop POS
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     MKTG Cod
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     Sales Cod
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     SMP %
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     RTS Rate %
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     Confirmation Rate %
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     Pending Rate %
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     Cancellation Rate %
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     Upsell Rate %
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                     Sales Upsell
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 dark:divide-border">
                 {salesLoading ? (
                   <tr>
                     <td
-                      className="px-3 py-6 text-sm text-slate-400"
+                      className="px-3 py-6 text-sm text-slate-400 dark:text-slate-300"
                       colSpan={10}
                     >
                       Loading...
@@ -1874,45 +2337,45 @@ export default function DashboardPage() {
                   salesData.rows.map((row) => (
                     <tr
                       key={`${row.shopId}`}
-                      className="bg-white hover:bg-slate-50/50"
+                      className="bg-white hover:bg-slate-50/50 dark:bg-background dark:hover:bg-background-secondary"
                     >
-                      <td className="px-3 py-2.5 text-sm text-slate-700">
+                      <td className="px-3 py-2.5 text-sm text-slate-700 dark:text-slate-300">
                         <div className="flex flex-col">
-                          <span className="text-slate-900">
+                          <span className="text-foreground">
                             {displayShop(row.shopId)}
                           </span>
                           {displayShop(row.shopId) !== row.shopId && (
-                            <span className="text-xs text-slate-400">
+                            <span className="text-xs text-slate-400 dark:text-slate-400">
                               {row.shopId}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2.5 text-sm tabular-nums text-slate-700">
+                      <td className="px-3 py-2.5 text-sm tabular-nums text-slate-700 dark:text-slate-300">
                         {formatCurrency(row.mktgCod)}
                       </td>
-                      <td className="px-3 py-2.5 text-sm tabular-nums text-slate-700">
+                      <td className="px-3 py-2.5 text-sm tabular-nums text-slate-700 dark:text-slate-300">
                         {formatCurrency(row.salesCod)}
                       </td>
-                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-slate-900">
+                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-foreground">
                         {formatSalesValue(row.salesVsMktgPct, "percent")}
                       </td>
-                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-slate-900">
+                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-foreground">
                         {formatSalesValue(row.rtsRatePct, "percent")}
                       </td>
-                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-slate-900">
+                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-foreground">
                         {formatSalesValue(row.confirmationRatePct, "percent")}
                       </td>
-                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-slate-900">
+                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-foreground">
                         {formatSalesValue(row.pendingRatePct, "percent")}
                       </td>
-                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-slate-900">
+                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-foreground">
                         {formatSalesValue(row.cancellationRatePct, "percent")}
                       </td>
-                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-slate-900">
+                      <td className="px-3 py-2.5 text-sm font-semibold tabular-nums text-foreground">
                         {formatSalesValue(row.upsellRatePct, "percent")}
                       </td>
-                      <td className="px-3 py-2.5 text-sm tabular-nums text-slate-700">
+                      <td className="px-3 py-2.5 text-sm tabular-nums text-slate-700 dark:text-slate-300">
                         {formatCurrency(row.upsellDelta)}
                       </td>
                     </tr>
@@ -1920,7 +2383,7 @@ export default function DashboardPage() {
                 ) : (
                   <tr>
                     <td
-                      className="px-3 py-6 text-sm text-slate-400"
+                      className="px-3 py-6 text-sm text-slate-400 dark:text-slate-300"
                       colSpan={10}
                     >
                       No data available for the selected filters.
@@ -1941,29 +2404,29 @@ export default function DashboardPage() {
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-end">
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 dark:text-slate-300">
             Total problematic orders:{" "}
-            <span className="font-semibold tabular-nums text-slate-700">
+            <span className="font-semibold tabular-nums text-slate-700 dark:text-foreground">
               {formatCount(salesProblematicData?.total || 0)}
             </span>
           </p>
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 dark:border-border dark:bg-background-secondary">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
               On Delivery
             </p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
               {formatCount(salesProblematicData?.onDeliveryAllTime?.count || 0)}
             </p>
-            <p className="text-xs tabular-nums text-slate-500">
+            <p className="text-xs tabular-nums text-slate-500 dark:text-slate-300">
               COD:{" "}
               {formatCurrency(
                 salesProblematicData?.onDeliveryAllTime?.totalCod || 0,
               )}
             </p>
-            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-border dark:bg-background-secondary">
               {salesLoading ? (
                 <div className="h-[140px] animate-pulse" />
               ) : (salesProblematicData?.onDeliveryTrend?.length || 0) > 0 ? (
@@ -1972,29 +2435,29 @@ export default function DashboardPage() {
                   style={{ height: 140 }}
                 />
               ) : (
-                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400">
+                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400 dark:text-slate-300">
                   No on-delivery trend data.
                 </div>
               )}
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 dark:border-border dark:bg-background-secondary">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
               Undeliverable
             </p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
               {formatCount(
                 salesProblematicData?.undeliverableAllTime?.count || 0,
               )}
             </p>
-            <p className="text-xs tabular-nums text-slate-500">
+            <p className="text-xs tabular-nums text-slate-500 dark:text-slate-300">
               COD:{" "}
               {formatCurrency(
                 salesProblematicData?.undeliverableAllTime?.totalCod || 0,
               )}
             </p>
-            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-border dark:bg-background-secondary">
               {salesLoading ? (
                 <div className="h-[140px] animate-pulse" />
               ) : (salesProblematicData?.undeliverableTrend?.length || 0) >
@@ -2004,7 +2467,7 @@ export default function DashboardPage() {
                   style={{ height: 140 }}
                 />
               ) : (
-                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400">
+                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400 dark:text-slate-300">
                   No undeliverable trend data.
                 </div>
               )}
@@ -2013,20 +2476,20 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 dark:border-border dark:bg-background-secondary">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
               {salesDeliveredInRangeLabel}
             </p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
               {formatCount(salesProblematicData?.deliveredInRange?.count || 0)}
             </p>
-            <p className="text-xs tabular-nums text-slate-500">
+            <p className="text-xs tabular-nums text-slate-500 dark:text-slate-300">
               COD:{" "}
               {formatCurrency(
                 salesProblematicData?.deliveredInRange?.totalCod || 0,
               )}
             </p>
-            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-border dark:bg-background-secondary">
               {salesLoading ? (
                 <div className="h-[140px] animate-pulse" />
               ) : (salesProblematicData?.deliveredInRangeTrend?.length || 0) >
@@ -2036,27 +2499,27 @@ export default function DashboardPage() {
                   style={{ height: 140 }}
                 />
               ) : (
-                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400">
+                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400 dark:text-slate-300">
                   No delivered trend data.
                 </div>
               )}
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 dark:border-border dark:bg-background-secondary">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
               {salesReturnedInRangeLabel}
             </p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
               {formatCount(salesProblematicData?.returnedInRange?.count || 0)}
             </p>
-            <p className="text-xs tabular-nums text-slate-500">
+            <p className="text-xs tabular-nums text-slate-500 dark:text-slate-300">
               COD:{" "}
               {formatCurrency(
                 salesProblematicData?.returnedInRange?.totalCod || 0,
               )}
             </p>
-            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-border dark:bg-background-secondary">
               {salesLoading ? (
                 <div className="h-[140px] animate-pulse" />
               ) : (salesProblematicData?.returnedInRangeTrend?.length || 0) >
@@ -2066,7 +2529,7 @@ export default function DashboardPage() {
                   style={{ height: 140 }}
                 />
               ) : (
-                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400">
+                <div className="h-[140px] flex items-center justify-center text-xs text-slate-400 dark:text-slate-300">
                   No returned trend data.
                 </div>
               )}
@@ -2075,28 +2538,28 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
-          <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 lg:col-span-2">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 dark:border-border dark:bg-background-secondary lg:col-span-2">
             <p className="mb-2 panel-title">
               RTS Reason Data
             </p>
             {salesLoading ? (
-              <div className="h-[440px] animate-pulse rounded-lg bg-white" />
+              <div className="h-[440px] animate-pulse rounded-lg bg-white dark:bg-background-secondary" />
             ) : (salesProblematicData?.data?.length || 0) > 0 ? (
               <div className="flex flex-col">
                 <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
                   {salesSunburstLegend.map((item) => (
                     <div
                       key={item.name}
-                      className="flex items-center gap-1.5 text-xs text-slate-600"
+                      className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"
                     >
                       <span
                         className="inline-block h-2.5 w-2.5 rounded-full"
                         style={{ backgroundColor: item.color }}
                       />
-                      <span className="font-medium text-slate-700">
+                      <span className="font-medium text-slate-700 dark:text-foreground">
                         {item.name}
                       </span>
-                      <span className="text-slate-500">
+                      <span className="text-slate-500 dark:text-slate-300">
                         {formatCount(item.count)}
                       </span>
                     </div>
@@ -2107,7 +2570,7 @@ export default function DashboardPage() {
                   onEvents={salesSunburstEvents}
                   style={{ height: 420 }}
                 />
-                <div className="mt-2 min-h-[76px] rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="mt-2 min-h-[76px] rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-border dark:bg-background-secondary">
                   {salesSunburstHoverInfo ? (
                     <div className="space-y-1">
                       <div className="flex min-w-0 items-start gap-2">
@@ -2118,47 +2581,48 @@ export default function DashboardPage() {
                           }}
                         />
                         <p
-                          className="line-clamp-2 min-w-0 flex-1 whitespace-normal break-words text-sm font-medium leading-5 text-slate-800"
+                          className="line-clamp-2 min-w-0 flex-1 whitespace-normal break-words text-sm font-medium leading-5 text-slate-800 dark:text-foreground"
                           title={salesSunburstHoverInfo.path}
                         >
                           {salesSunburstHoverInfo.path}
                         </p>
                       </div>
-                      <p className="text-xs text-slate-600">
+                      <p className="text-xs text-slate-600 dark:text-slate-300">
                         Orders:{" "}
-                        <span className="font-semibold text-slate-900">
+                        <span className="font-semibold text-foreground">
                           {formatCount(salesSunburstHoverInfo.orders)}
                         </span>{" "}
                         ({salesSunburstHoverInfo.pct.toFixed(1)}%)
                       </p>
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-500 dark:text-slate-300">
                       Hover a chart segment to inspect details.
                     </p>
                   )}
                 </div>
               </div>
             ) : (
-              <div className="flex h-[440px] items-center justify-center text-sm text-slate-400">
+              <div className="flex h-[440px] items-center justify-center text-sm text-slate-400 dark:text-slate-300">
                 No RTS reason data.
               </div>
             )}
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 lg:col-span-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 dark:border-border dark:bg-background-secondary lg:col-span-3">
             <p className="mb-2 panel-title">
               Delivered vs RTS Trend
             </p>
             {salesLoading ? (
-              <div className="h-[440px] animate-pulse rounded-lg bg-white" />
+              <div className="h-[440px] animate-pulse rounded-lg bg-white dark:bg-background-secondary" />
             ) : (salesProblematicData?.trend?.length || 0) > 0 ? (
               <ReactECharts
+                key={`sales-trend-${isExecutiveChartsDark ? "dark" : "light"}`}
                 option={salesTrendLineOption}
                 style={{ height: 440 }}
               />
             ) : (
-              <div className="flex h-[440px] items-center justify-center text-sm text-slate-400">
+              <div className="flex h-[440px] items-center justify-center text-sm text-slate-400 dark:text-slate-300">
                 No trend data for the selected range.
               </div>
             )}
@@ -2176,7 +2640,7 @@ export default function DashboardPage() {
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Good day, {displayName}{" "}
             {teamName ? (
               <span className="ml-2 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700 align-super">
@@ -2184,7 +2648,7 @@ export default function DashboardPage() {
               </span>
             ) : null}
           </h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
             This is your report based on the selected period.
           </p>
         </div>
@@ -2232,9 +2696,9 @@ export default function DashboardPage() {
           ]}
           extraAction={
             <Button
-              variant="secondary"
+              variant="outline"
               size="sm"
-              className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:text-orange-700"
+              className="h-10 w-10 rounded-xl border border-slate-200 bg-surface dark:border-slate-500 text-slate-600 dark:text-foreground hover:border-orange-200 hover:text-orange-700"
               onClick={() => setShowMarketingKpiVisibilityModal(true)}
               aria-label="Configure visible KPI boxes"
             >
@@ -2336,7 +2800,7 @@ export default function DashboardPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-auto px-0 py-0 text-xs font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+                className="h-auto px-0 py-0 text-xs font-medium text-slate-500 hover:bg-transparent hover:text-orange-600 dark:text-foreground"
                 onClick={() => setShowAllWinning((prev) => !prev)}
               >
                 {showAllWinning ? "Collapse" : "View all"}
@@ -2356,7 +2820,7 @@ export default function DashboardPage() {
                 className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5"
               >
                 <div>
-                  <p className="text-sm font-medium text-slate-900">
+                  <p className="text-sm font-medium text-foreground">
                     {item.adName || "Unnamed creative"}
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
@@ -2367,7 +2831,7 @@ export default function DashboardPage() {
               </div>
             ))
           ) : (
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
               No winning creatives in this range.
             </p>
           )}
@@ -2381,7 +2845,7 @@ export default function DashboardPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="text-xs font-medium text-slate-500 hover:bg-transparent hover:text-orange-600"
+              className="text-xs font-medium text-slate-500 hover:bg-transparent hover:text-orange-600 dark:text-foreground"
             >
               Manage
             </Button>
@@ -2396,7 +2860,7 @@ export default function DashboardPage() {
             <a
               key={`${link.href}-${link.label}`}
               href={link.href}
-              className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-900 hover:bg-slate-50"
+              className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-sm text-foreground hover:bg-slate-50 dark:bg-background-secondary dark:border-border"
             >
               <span>{link.label}</span>
               <span className="text-slate-400">&rarr;</span>
@@ -2419,16 +2883,16 @@ export default function DashboardPage() {
         <AlertBanner tone="error" message={execError} className="mb-2" />
       )}
 
-      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between dark:border-border">
         <div className="space-y-1.5">
           <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
             Dashboard
           </p>
           <div className="space-y-0.5">
-            <h1 className="text-xl-loose font-semibold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Executive Dashboard
             </h1>
-            <p className="max-w-2xl text-sm-custom text-slate-500">
+            <p className="max-w-2xl text-sm-custom text-slate-500 dark:text-slate-300">
               Challenge-driven KPI command center for team and member performance.
             </p>
           </div>
@@ -2491,10 +2955,11 @@ export default function DashboardPage() {
           tone="success"
         />
         <ExecutiveOverviewCard
-          label="Processed Sales"
-          value={formatCurrency(execStats?.processed ?? execStats?.confirmed ?? 0)}
-          icon={<CheckCircle2 className="h-4 w-4" />}
-          tone="success"
+          label="New"
+          value={formatCurrency(execStats?.unconfirmed)}
+          count={{ value: formatNumber(execStats?.unconfirmed_count) }}
+          icon={<ClipboardList className="h-4 w-4" />}
+          tone="default"
         />
         <ExecutiveOverviewCard
           label="Ad Spend"
@@ -2503,16 +2968,17 @@ export default function DashboardPage() {
           tone="warning"
         />
         <ExecutiveOverviewCard
-          label="CM (RTS 20%)"
+          label={`CM (RTS 20%)`}
           value={formatCurrency(execStats?.cm_rts_forecast)}
           icon={<Zap className="h-4 w-4" />}
           tone="warning"
         />
         <ExecutiveOverviewCard
-          label="Cancellation Rate"
-          value={formatPercent(execStats?.cancellation_rate_pct)}
-          icon={<TrendingUp className="h-4 w-4" />}
-          tone="default"
+          label="Confirmed"
+          value={formatCurrency(execStats?.confirmed)}
+          count={{ value: formatNumber(execStats?.confirmed_count) }}
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          tone="success"
         />
         <ExecutiveOverviewCard
           label="AR %"
@@ -2521,6 +2987,67 @@ export default function DashboardPage() {
           tone="default"
         />
       </div>
+
+      <DashboardSection
+        title="Orders Summary"
+        icon={<PackageCheck className="panel-icon" />}
+        contentClassName="space-y-3"
+      >
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-white dark:border-border dark:bg-background-secondary p-3">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  Status
+                </p>
+              </div>
+              <GraphRangeButtonGroup
+                value={statusGraphPreset}
+                disabled={statusGraphLoading}
+                options={[
+                  { value: "1d", label: "1D" },
+                  { value: "7d", label: "7D" },
+                  { value: "1m", label: "1M" },
+                ]}
+                onChange={setStatusGraphPreset}
+              />
+            </div>
+            <ReactECharts
+              key={`executive-orders-status-${isExecutiveChartsDark ? "dark" : "light"}`}
+              notMerge={true}
+              lazyUpdate={false}
+              option={executiveOrdersSummaryDonutOption}
+              style={{ height: 300 }}
+            />
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50/60 dark:border-border dark:bg-background-secondary p-3">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  Volume Growth
+                </p>
+              </div>
+              <GraphRangeButtonGroup
+                value={trendGraphPreset}
+                disabled={trendGraphLoading}
+                options={[
+                  { value: "7d", label: "7D" },
+                  { value: "1m", label: "1M" },
+                ]}
+                onChange={setTrendGraphPreset}
+              />
+            </div>
+            <ReactECharts
+              key={`executive-orders-trend-${isExecutiveChartsDark ? "dark" : "light"}`}
+              notMerge={true}
+              lazyUpdate={false}
+              option={executiveOrdersSummaryTrendOption}
+              style={{ height: 300 }}
+            />
+          </div>
+        </div>
+      </DashboardSection>
 
       <ExecutiveKpiSection
         data={executiveKpiData}
@@ -2545,7 +3072,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Good day, {displayName}{" "}
               {teamName ? (
                 <span className="ml-2 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700 align-super">
@@ -2553,7 +3080,7 @@ export default function DashboardPage() {
                 </span>
               ) : null}
             </h1>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
               This is your team report based on the selected period.
             </p>
           </div>
@@ -2602,9 +3129,9 @@ export default function DashboardPage() {
           ]}
           extraAction={
             <Button
-              variant="secondary"
+              variant="outline"
               size="sm"
-              className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:text-orange-700"
+              className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:text-orange-700 dark:bg-surface dark:border-slate-500 dark:text-foreground"
               onClick={() => setShowLeaderKpiVisibilityModal(true)}
               aria-label="Configure visible KPI boxes"
             >

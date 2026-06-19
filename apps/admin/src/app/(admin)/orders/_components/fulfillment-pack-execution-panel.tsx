@@ -145,11 +145,11 @@ export function FulfillmentPackExecutionPanel({
       <WmsCompactPanel title="Pack Execution" icon={<PackageOpen className='panel-icon'/>}>
         <div className="flex min-h-[520px] items-center justify-center rounded-2xl border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-8 py-10 text-center">
           <div className="max-w-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Pack window</p>
+            <p className="form-label">Pack window</p>
             <h3 className="mt-3 text-xl font-semibold tracking-tight text-primary">Select a pack order</h3>
-            <p className="mt-3 text-sm leading-6 text-[#607482]">
+            {/* <p className="mt-3 text-sm leading-6 text-[#607482]">
               This execution window will let packers start packing, scan units, verify waybills, complete packing, and void orders when permitted.
-            </p>
+            </p> */}
           </div>
         </div>
       </WmsCompactPanel>
@@ -218,7 +218,7 @@ export function FulfillmentPackExecutionPanel({
           <div className="flex flex-col gap-5 xl:flex-row">
             <div className="xl:min-w-0 xl:flex-1">
               <div className="card">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Handoff</p>
+                <p className="card-label">Handoff</p>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <KeyValue label="Picker" value={task.claimedBy?.name ?? task.claimedBy?.email ?? 'Unknown'} />
                   <KeyValue label="Packer" value={task.basket?.assignedPacker?.name ?? task.packedBy?.name ?? 'Assigned queue'} />
@@ -280,7 +280,7 @@ export function FulfillmentPackExecutionPanel({
 
             <div className="xl:min-w-0 xl:flex-1">
               <div className="card h-full">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">Items</p>
+                <p className="card-label">Items</p>
                 <div className="mt-3 space-y-3">
                   {items.map((line) => (
                     <div key={line.id} className="rounded-[18px] border border-[#e8eef2] bg-white px-4 py-3">

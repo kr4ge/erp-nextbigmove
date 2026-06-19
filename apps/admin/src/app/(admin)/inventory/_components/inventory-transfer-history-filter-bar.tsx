@@ -24,26 +24,27 @@ export function InventoryTransferHistoryFilterBar({
   onWarehouseChange,
 }: InventoryTransferHistoryFilterBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2.5">
-      <label className="wms-pill-control flex min-w-[240px] flex-1 items-center gap-2 rounded-full border border-[#d7e0e7] bg-white px-4 text-primary">
-        <Search className="h-4 w-4 text-[#8193a0]" />
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-2.5">
+      <div className="relative min-w-[240px] flex-[1_1_20rem]">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
         <input
+          type="text"
           value={searchText}
           onChange={(event) => onSearchTextChange(event.target.value)}
           placeholder="Search by transfer, location, notes, or unit code"
-          className="h-full w-full border-none bg-transparent text-[13px] outline-none placeholder:text-[#94a3b8]"
+          className="input pr-10 pl-10 text-sm-custom grow"
         />
         {searchText ? (
           <button
             type="button"
             onClick={() => onSearchTextChange('')}
-            className="flex h-5 w-5 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-primary"
+            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-[#8193a0] transition hover:bg-[#eef2f5] hover:text-primary"
             aria-label="Clear search"
           >
             <X className="h-3 w-3" />
           </button>
         ) : null}
-      </label>
+      </div>
 
       <WmsScopeFilterFields
         tenantOptions={(filters?.tenants ?? []).map((tenant) => ({

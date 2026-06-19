@@ -57,10 +57,10 @@ export function AnalyticsSalesPerformanceStoreTable({
       pageIndicatorLabel={`Page ${currentPage} of ${totalPages}`}
     >
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-100">
-          <thead className="bg-slate-50">
+        <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
+          <thead className="bg-slate-50 dark:bg-background-secondary">
             <tr>
-              <th className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-3 text-left sm:px-4 lg:px-6">
+              <th className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-3 text-left dark:bg-background-secondary sm:px-4 lg:px-6">
                 {renderSortLabel('Sales Assignee', 'assignee')}
               </th>
               <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
@@ -95,43 +95,43 @@ export function AnalyticsSalesPerformanceStoreTable({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
             {isLoading ? (
               <AnalyticsTableLoadingRows colCount={11} />
             ) : (
               rows.map((row) => (
-                <tr key={`${row.salesAssignee ?? 'unassigned'}-${row.shopId}`} className="bg-white">
-                  <td className="sticky left-0 z-10 bg-white px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
+                <tr key={`${row.salesAssignee ?? 'unassigned'}-${row.shopId}`} className="bg-white hover:bg-slate-50 dark:bg-surface dark:hover:bg-background-secondary">
+                  <td className="sticky left-0 z-10 bg-white px-3 py-4 text-sm text-slate-700 dark:bg-surface dark:text-slate-300 sm:px-4 lg:px-6">
                     {displayAssignee(row.salesAssignee)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
-                    <span className="text-slate-900">{displayShop(row.shopId)}</span>
+                  <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
+                    <span className="text-foreground">{displayShop(row.shopId)}</span>
                   </td>
-                  <td className="px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
+                  <td className="px-3 py-4 text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
                     {formatCurrency(row.mktgCod)}
                   </td>
-                  <td className="px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
+                  <td className="px-3 py-4 text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
                     {formatCurrency(row.salesCod)}
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatPct(row.salesVsMktgPct)}
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatPct(row.rtsRatePct)}
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatPct(row.confirmationRatePct)}
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatPct(row.pendingRatePct)}
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatPct(row.cancellationRatePct)}
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-slate-900 sm:px-4 lg:px-6">
+                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
                     {formatPct(row.upsellRatePct)}
                   </td>
-                  <td className="px-3 py-4 text-sm text-slate-700 sm:px-4 lg:px-6">
+                  <td className="px-3 py-4 text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
                     {formatCurrency(row.upsellDelta)}
                   </td>
                 </tr>

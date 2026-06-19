@@ -2,9 +2,9 @@
 
 import type { FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { FormInput } from '@/components/ui/form-input';
 import { KeyRound } from 'lucide-react';
+import { DashboardSection } from '../../../dashboard/_components/dashboard-section';
 
 interface PasswordFormProps {
   isLoading: boolean;
@@ -19,9 +19,9 @@ interface PasswordFormProps {
 }
 
 const passwordFormLabelClass =
-  'text-xs font-semibold uppercase tracking-[0.16em] text-slate-500';
+  'form-label';
 const passwordFormInputClass =
-  'rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100';
+  'rounded-2xl border border-slate-200 px-4 py-3 text-sm text-foreground placeholder:text-slate-400 transition focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100';
 const passwordFormHelperClass = 'text-xs text-slate-500';
 
 export function PasswordForm({
@@ -36,19 +36,17 @@ export function PasswordForm({
   onSubmit,
 }: PasswordFormProps) {
   return (
-    <Card className="panel panel-content">
+    <DashboardSection
+      title="Password"
+      icon={<KeyRound className="panel-icon" />}
+      contentClassName="p-6"
+    >
       <form className="space-y-4" onSubmit={onSubmit}>
-        <div className="-mx-6 -mt-6 mb-4 panel-header">
-          <KeyRound className="panel-icon" />
-          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-            Password
-          </h3>
-        </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <p className="text-sm text-slate-500">Update your password to keep your account secure.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-300">Update your password to keep your account secure.</p>
           <Button
             type="submit"
-            variant="secondary"
+            variant="primary"
             disabled={isSavingPassword || isLoading}
             className='border-none'
           >
@@ -97,6 +95,6 @@ export function PasswordForm({
           />
         </div>
       </form>
-    </Card>
+    </DashboardSection>
   );
 }

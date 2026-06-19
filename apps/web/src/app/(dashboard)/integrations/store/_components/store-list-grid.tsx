@@ -64,13 +64,13 @@ export function StoreListGrid({
                     {getStoreInitials(displayName)}
                   </div>
                 )}
-                <h3 className="mt-4 text-lg font-semibold text-[#0F172A]">{displayName}</h3>
+                <h3 className="mt-4 text-lg font-semibold text-foreground">{displayName}</h3>
                 <p className="mt-1 text-sm text-foreground">Pancake POS</p>
                 {store.description ? (
                   <p className="mt-1 line-clamp-2 text-xs text-secondary/20">{store.description}</p>
                 ) : null}
                 {store.shopId ? (
-                  <p className="mt-2 text-xs text-muted">Shop ID: {store.shopId}</p>
+                  <p className="mt-2 text-xs text-muted dark:text-slate-300">Shop ID: {store.shopId}</p>
                 ) : null}
               </div>
 

@@ -54,24 +54,24 @@ export function AnalyticsSingleSelectPicker({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:border-slate-300 focus:outline-none"
+        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:border-slate-300 focus:outline-none dark:border-border dark:bg-transparent"
       >
-        <span className="text-slate-900">{selectedLabel}</span>
-        <span className="text-xs text-slate-400">(click to choose)</span>
+        <span className="text-slate-900 dark:text-foreground">{selectedLabel}</span>
+        <span className="text-xs text-slate-400 dark:text-slate-300">(click to choose)</span>
       </button>
 
       {open && (
-        <div className="absolute z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg">
-          <div className="border-b border-slate-100 px-3 py-2 text-sm text-slate-700">
+        <div className="absolute z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-surface shadow-lg dark:border-border">
+          <div className="border-b border-slate-100 px-3 py-2 text-sm text-slate-700 dark:border-border dark:text-foreground">
             {selectTitle}
           </div>
-          <div className="border-b border-slate-100 px-3 py-2">
+          <div className="border-b border-slate-100 px-3 py-2 dark:border-border">
             <input
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search"
-              className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:border-primary focus:outline-none"
+              className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-slate-800 focus:border-primary focus:outline-none dark:border-border dark:bg-surface dark:text-foreground"
             />
           </div>
           <div className="max-h-64 overflow-auto">
@@ -82,7 +82,9 @@ export function AnalyticsSingleSelectPicker({
                   key={option.value}
                   type="button"
                   className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
-                    isActive ? 'bg-slate-50 font-semibold text-slate-900' : 'text-slate-700 hover:bg-slate-50'
+                    isActive
+                      ? 'bg-slate-50 font-semibold text-slate-900 dark:bg-background-secondary dark:text-foreground'
+                      : 'text-slate-700 hover:bg-slate-50 dark:text-foreground dark:hover:bg-background-secondary'
                   }`}
                   onClick={() => {
                     onSelect(option.value);
@@ -92,7 +94,7 @@ export function AnalyticsSingleSelectPicker({
                   <span>{option.label}</span>
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${
-                      isActive ? 'bg-primary' : 'border border-slate-300 bg-white'
+                      isActive ? 'bg-primary' : 'border border-slate-300 bg-white dark:border-border dark:bg-surface'
                     }`}
                   />
                 </button>

@@ -9,10 +9,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
+import { ConfirmActionDialog } from "@/app/(dashboard)/settings/_components/confirm-action-dialog";
 import { CogsEntryForm } from "./cogs-entry-form";
-import { CogsHistoryList } from "./cogs-history-list";
-import { format } from "date-fns";
 import apiClient from "@/lib/api-client";
+import { Pencil, Trash2 } from "lucide-react";
+import { parseIntegrationErrorMessage } from "@/app/(dashboard)/integrations/_utils/integration-error";
 
 interface Product {
   id: string;
@@ -23,8 +25,6 @@ interface Product {
 interface CogsEntry {
   id: string;
   cogs: string;
-  startDate: string;
-  endDate: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,10 +37,12 @@ interface CogsModalProps {
 }
 
 export function CogsModal({ product, storeId, isOpen, onClose }: CogsModalProps) {
-  const [cogsHistory, setCogsHistory] = useState<CogsEntry[]>([]);
+  const { addToast } = useToast();
   const [currentCogs, setCurrentCogs] = useState<CogsEntry | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<CogsEntry | null>(null);
+  const [entryToDelete, setEntryToDelete] = useState<CogsEntry | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchCogsData = useCallback(async () => {
     try {
@@ -49,18 +51,11 @@ export function CogsModal({ product, storeId, isOpen, onClose }: CogsModalProps)
         throw new Error("Unauthorized");
       }
 
-      const [historyRes, currentRes] = await Promise.all([
-        apiClient.get(
-          `/integrations/pos-stores/${storeId}/products/${product.id}/cogs`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        ),
-        apiClient.get(
-          `/integrations/pos-stores/${storeId}/products/${product.id}/cogs/current`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        ),
-      ]);
+      const currentRes = await apiClient.get(
+        `/integrations/pos-stores/${storeId}/products/${product.id}/cogs/current`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
 
-      setCogsHistory(historyRes.data || []);
       setCurrentCogs(currentRes.data || null);
     } catch (error) {
       console.error("Failed to fetch COGS data:", error);
@@ -73,130 +68,64 @@ export function CogsModal({ product, storeId, isOpen, onClose }: CogsModalProps)
     }
   }, [isOpen, fetchCogsData]);
 
-  const hasOverlap = (newStart: Date, newEnd: Date | null, excludeId?: string) => {
-    const toDate = (d: string | null) => (d ? new Date(d) : new Date("9999-12-31"));
-    const proposedEnd = newEnd || new Date("9999-12-31");
-    const entries = [
-      ...cogsHistory,
-      ...(currentCogs ? [currentCogs] : []),
-    ].filter((e) => !excludeId || e.id !== excludeId);
-
-    return entries.some((entry) => {
-      const existingStart = new Date(entry.startDate);
-      const existingEnd = toDate(entry.endDate);
-      return newStart <= existingEnd && existingStart <= proposedEnd;
-    });
-  };
-
-  const handleAddCogs = async (cogs: number, startDate: Date, endDate?: Date | null) => {
+  const handleAddCogs = async (cogs: number) => {
     try {
       const token = localStorage.getItem("access_token");
       if (!token) {
-        alert("Unauthorized");
-        return;
-      }
-
-      // Validate dates
-      if (!startDate || isNaN(startDate.getTime())) {
-        alert("Invalid start date");
-        return;
-      }
-
-      if (endDate && isNaN(endDate.getTime())) {
-        alert("Invalid end date");
-        return;
-      }
-
-      if (endDate && endDate < startDate) {
-        alert("End date cannot be before start date");
-        return;
-      }
-
-      if (hasOverlap(startDate, endDate || null)) {
-        alert("The selected date range overlaps with an existing COGS entry.");
+        addToast("error", "Unauthorized");
         return;
       }
 
       await apiClient.post(
         `/integrations/pos-stores/${storeId}/products/${product.id}/cogs`,
-        {
-          cogs,
-          startDate: format(startDate, "yyyy-MM-dd"),
-          endDate: endDate ? format(endDate, "yyyy-MM-dd") : null,
-        },
+        { cogs },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       await fetchCogsData();
       setShowForm(false);
       setEditingEntry(null);
+      addToast("success", "COGS created.");
     } catch (error) {
       console.error("Failed to add COGS entry:", error);
-      alert("Failed to add COGS entry");
+      addToast("error", parseIntegrationErrorMessage(error));
     }
   };
 
-  const handleUpdateCogs = async (cogsId: string, cogs: number, startDate: Date, endDate?: Date | null) => {
+  const handleUpdateCogs = async (cogsId: string, cogs: number) => {
     try {
       const token = localStorage.getItem("access_token");
       if (!token) {
-        alert("Unauthorized");
-        return;
-      }
-
-      // Validate dates
-      if (!startDate || isNaN(startDate.getTime())) {
-        alert("Invalid start date");
-        return;
-      }
-
-      if (endDate && isNaN(endDate.getTime())) {
-        alert("Invalid end date");
-        return;
-      }
-
-      if (endDate && endDate < startDate) {
-        alert("End date cannot be before start date");
-        return;
-      }
-
-      if (hasOverlap(startDate, endDate || null, cogsId)) {
-        alert("The selected date range overlaps with an existing COGS entry.");
+        addToast("error", "Unauthorized");
         return;
       }
 
       await apiClient.patch(
         `/integrations/pos-stores/${storeId}/products/${product.id}/cogs/${cogsId}`,
-        {
-          cogs,
-          startDate: format(startDate, "yyyy-MM-dd"),
-          endDate: endDate ? format(endDate, "yyyy-MM-dd") : null,
-        },
+        { cogs },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       await fetchCogsData();
       setShowForm(false);
       setEditingEntry(null);
+      addToast("success", "COGS updated.");
     } catch (error) {
       console.error("Failed to update COGS entry:", error);
-      alert("Failed to update COGS entry");
+      addToast("error", parseIntegrationErrorMessage(error));
     }
   };
 
   const handleDeleteCogs = async (cogsId: string) => {
-    if (!confirm("Are you sure you want to delete this COGS entry?")) {
-      return;
-    }
-
     try {
+      setIsDeleting(true);
       const token = localStorage.getItem("access_token");
       if (!token) {
-        alert("Unauthorized");
+        addToast("error", "Unauthorized");
         return;
       }
 
@@ -204,13 +133,19 @@ export function CogsModal({ product, storeId, isOpen, onClose }: CogsModalProps)
         `/integrations/pos-stores/${storeId}/products/${product.id}/cogs/${cogsId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       await fetchCogsData();
+      setShowForm(false);
+      setEditingEntry(null);
+      setEntryToDelete(null);
+      addToast("success", "COGS deleted.");
     } catch (error) {
       console.error("Failed to delete COGS entry:", error);
-      alert("Failed to delete COGS entry");
+      addToast("error", parseIntegrationErrorMessage(error));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -225,83 +160,97 @@ export function CogsModal({ product, storeId, isOpen, onClose }: CogsModalProps)
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Manage COGS - {product.name}</DialogTitle>
-          <DialogDescription>
-            Store: {storeId}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader className="mb-3 gap-1.5">
+            <DialogTitle>Manage COGS - {product.name}</DialogTitle>
+            <DialogDescription>
+              Store: {storeId}
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-6">
-          {currentCogs && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-emerald-700 font-medium">Current COGS</p>
-                  <p className="text-2xl font-bold text-emerald-900">
-                    ₱{parseFloat(currentCogs.cogs).toFixed(2)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-emerald-700">
-                    {format(new Date(currentCogs.startDate), "MMM d, yyyy")} → Present
-                  </p>
+          <div className="space-y-6">
+            {!showForm && !currentCogs && (
+              <button
+                onClick={() => setShowForm(true)}
+                className="w-full rounded-lg border-2 border-dashed border-[#CBD5E1] p-4 text-[#64748B] transition hover:border-[#2563EB] hover:text-[#2563EB]"
+              >
+                Add COGS
+              </button>
+            )}
+
+            {!showForm && currentCogs && (
+              <div className="card border border-blue-200 bg-blue-50/30 dark:bg-background-secondary">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="card-label mb-2">Current COGS</p>
+                    <span className="text-2xl font-bold text-foreground">
+                      PHP {parseFloat(currentCogs.cogs).toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEdit(currentCogs)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#64748B] transition hover:bg-[#F8FAFC] hover:text-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB] dark:text-slate-300"
+                      title="Edit"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setEntryToDelete(currentCogs)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#64748B] transition hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 dark:text-slate-300"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
+            )}
+
+            {showForm && (
+              <CogsEntryForm
+                onSubmit={(cogs) => {
+                  if (editingEntry) {
+                    return handleUpdateCogs(editingEntry.id, cogs);
+                  }
+
+                  return handleAddCogs(cogs);
+                }}
+                onCancel={handleCancelForm}
+                initialCogs={editingEntry ? parseFloat(editingEntry.cogs) : undefined}
+                isEditing={!!editingEntry}
+              />
+            )}
+
+            <div className="flex justify-end border-t border-border pt-4">
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
             </div>
-          )}
-
-          {!showForm && (
-            <button
-              onClick={() => setShowForm(true)}
-              className="w-full border-2 border-dashed border-[#CBD5E1] rounded-lg p-4 text-[#64748B] hover:border-[#2563EB] hover:text-[#2563EB] transition"
-            >
-              ➕ Add New COGS Entry
-            </button>
-          )}
-
-          {showForm && (
-            <CogsEntryForm
-              onSubmit={(cogs, startDate, endDate) => {
-                if (editingEntry) {
-                  handleUpdateCogs(
-                    editingEntry.id,
-                    cogs,
-                    startDate,
-                    endDate
-                  );
-                } else {
-                  handleAddCogs(cogs, startDate, endDate);
-                }
-              }}
-              onCancel={handleCancelForm}
-              initialCogs={editingEntry ? parseFloat(editingEntry.cogs) : undefined}
-              initialStartDate={editingEntry ? new Date(editingEntry.startDate) : undefined}
-              initialEndDate={editingEntry && editingEntry.endDate ? new Date(editingEntry.endDate) : undefined}
-              isEditing={!!editingEntry}
-            />
-          )}
-
-          <div className="border-t border-[#E2E8F0] pt-6">
-            <h3 className="text-sm font-semibold text-[#0F172A] mb-4">
-              📜 COGS History ({cogsHistory.length} {cogsHistory.length === 1 ? 'entry' : 'entries'})
-            </h3>
-            <CogsHistoryList
-              entries={cogsHistory}
-              onEdit={handleEdit}
-              onDelete={handleDeleteCogs}
-            />
           </div>
+        </DialogContent>
+      </Dialog>
 
-          <div className="flex justify-end pt-4 border-t border-[#E2E8F0]">
-            <Button variant="secondary" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+      <ConfirmActionDialog
+        open={Boolean(entryToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) {
+            setEntryToDelete(null);
+          }
+        }}
+        title="Delete COGS"
+        description="Are you sure you want to delete this COGS entry? This action cannot be undone."
+        confirmLabel="Delete COGS"
+        cancelLabel="Cancel"
+        isConfirming={isDeleting}
+        onConfirm={() => {
+          if (!entryToDelete) return;
+          void handleDeleteCogs(entryToDelete.id);
+        }}
+      />
+    </>
   );
 }

@@ -2,11 +2,11 @@ import { HTMLAttributes, ReactNode } from "react";
 import clsx from "clsx";
 
 type CardProps = HTMLAttributes<HTMLDivElement> & {
-  padding?: "sm" | "md" | "lg";
+  padding?: "none" | "sm" | "md" | "lg";
   footer?: ReactNode;
 };
 
-const paddings = { sm: "p-4", md: "p-6", lg: "p-8" };
+const paddings = { none: "", sm: "p-4", md: "p-6", lg: "p-8" };
 
 export function Card({
   padding = "md",
@@ -23,7 +23,7 @@ export function Card({
       )}
       {...rest}
     >
-      <div className={paddings[padding]}>{children}</div>
+      <div className={`dark:bg-surface dark:text-slate-300 ${paddings[padding]}`}>{children}</div>
       {footer && (
         <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 rounded-b-2xl">
           {footer}

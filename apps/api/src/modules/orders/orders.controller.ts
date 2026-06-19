@@ -1,15 +1,50 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { OrdersService } from './orders.service';
+import { GetAgingOrdersSummaryQueryDto } from './dto/get-aging-orders-summary-query.dto';
+import { MarkAgingOrdersSummaryNotificationReadDto } from './dto/mark-aging-orders-summary-notification-read.dto';
 import { UpdateConfirmationOrderStatusDto } from './dto/update-confirmation-order-status.dto';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
+
+  @Get('summary/aging')
+  @Permissions('orders.summary.read')
+  async getAgingOrdersSummary(@Query() query: GetAgingOrdersSummaryQueryDto) {
+    return this.ordersService.getAgingOrdersSummary({
+      thresholdDays: query.threshold_days,
+    });
+  }
+
+  @Get('summary/aging/notifications/unread-count')
+  @Permissions('orders.summary.read')
+  async getAgingOrdersUnreadNotificationCount() {
+    return this.ordersService.getAgingOrdersUnreadNotificationCount();
+  }
+
+  @Post('summary/aging/notifications/read')
+  @HttpCode(200)
+  @Permissions('orders.summary.read')
+  async markAgingOrdersSummaryNotificationRead(
+    @Body() body: MarkAgingOrdersSummaryNotificationReadDto,
+  ) {
+    return this.ordersService.markAgingOrdersNotificationRead(body);
+  }
 
   @Get('confirmation')
   @Permissions('pos.read')

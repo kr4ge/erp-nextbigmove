@@ -97,7 +97,7 @@ export default function WmsHomePage() {
           </WmsCompactPanel>
 
           <WmsCompactPanel title="Session" icon={< HeartHandshake className='panel-icon' />}>
-            <div className="flex items-center justify-between rounded-[20px] border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3.5">
+            <div className="flex items-center justify-between rounded-xl border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3.5">
               <div>
                 <p className="text-[13px] font-semibold text-primary">
                   {data?.tenantReady ? 'Partner context ready' : 'Partner context pending'}

@@ -58,7 +58,7 @@ export function ManualMetaUploadModal({
               value={selectedIntegrationId}
               onChange={(event) => onIntegrationChange(event.target.value)}
               disabled={isUploading}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="input w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">No integration (auto-match by Account ID)</option>
               {integrations.map((integration) => (
@@ -67,7 +67,7 @@ export function ManualMetaUploadModal({
                 </option>
               ))}
             </select>
-            <p className="text-xs leading-5 text-slate-500">
+            <p className="text-xs leading-5 text-slate-500 dark:text-slate-300">
               Choose a Meta integration to restrict the upload to its ad accounts, or leave it on no integration to auto-match rows tenant-wide by <code>Account ID</code>.
             </p>
           </div>
@@ -79,9 +79,9 @@ export function ManualMetaUploadModal({
               accept=".csv,.xlsx,.xls"
               disabled={isUploading}
               onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
-              className="block w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800"
+              className="input block w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm dark:border-border dark:bg-surface dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800 dark:file:bg-slate-700 dark:hover:file:bg-slate-600"
             />
-            <p className="text-xs leading-5 text-slate-500">
+            <p className="text-xs leading-5 text-slate-500 dark:text-slate-300">
               Supported formats: CSV, XLSX, XLS. The file can include multiple Meta account IDs. If an integration is selected, all rows must belong to that integration.
             </p>
             {selectedFile && (

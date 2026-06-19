@@ -53,7 +53,7 @@ export function Button({
 }: Props) {
   return (
     <button
-      className={clsx(base, sizes[size], variants[variant], className)}
+      className={`${clsx(base, sizes[size], variants[variant], className)} ${iconLeft !== null || iconRight !== null ? 'btn-icon' : ''}`}
       disabled={loading || rest.disabled}
       {...rest}
     >

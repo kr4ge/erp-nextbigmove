@@ -265,12 +265,12 @@ export default function CreateWorkflowPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Create Workflow</h2>
-          <p className="text-sm text-slate-600 mt-1">Step {step} of 3</p>
+          <h2 className="text-2xl font-semibold text-foreground">Create Workflow</h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">Step {step} of 3</p>
         </div>
         <Link
           href="/workflows"
-          className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+          className="btn btn-md btn-outline"
         >
           Cancel
         </Link>
@@ -278,9 +278,9 @@ export default function CreateWorkflowPage() {
 
       {/* Progress Bar */}
       <div className="flex items-center gap-2">
-        <div className={`flex-1 h-2 rounded-full ${step >= 1 ? 'bg-primary' : 'bg-slate-200'}`}></div>
-        <div className={`flex-1 h-2 rounded-full ${step >= 2 ? 'bg-primary' : 'bg-slate-200'}`}></div>
-        <div className={`flex-1 h-2 rounded-full ${step >= 3 ? 'bg-primary' : 'bg-slate-200'}`}></div>
+        <div className={`flex-1 h-2 rounded-full ${step >= 1 ? 'bg-primary' : 'bg-slate-200 dark:bg-border'}`}></div>
+        <div className={`flex-1 h-2 rounded-full ${step >= 2 ? 'bg-primary' : 'bg-slate-200 dark:bg-border'}`}></div>
+        <div className={`flex-1 h-2 rounded-full ${step >= 3 ? 'bg-primary' : 'bg-slate-200 dark:bg-border'}`}></div>
       </div>
 
       {error && (
@@ -289,13 +289,13 @@ export default function CreateWorkflowPage() {
 
       {/* Step 1: Basic Info */}
       {step === 1 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-6">
+        <div className="bg-surface rounded-xl border border-slate-200 p-6 space-y-6 dark:border-border">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Basic Information</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-4">Basic Information</h3>
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <label className="form-label">
               Workflow Name <span className="text-primary">*</span>
             </label>
             <input
@@ -303,12 +303,12 @@ export default function CreateWorkflowPage() {
               value={formData.name}
               onChange={(e) => updateField('name', e.target.value)}
               placeholder="e.g., Daily Meta & POS Sync"
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+              className="input w-full rounded-2xl border border-slate-200 bg-surface dark:border-border px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
             />
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <label className="form-label">
               Description (optional)
             </label>
             <textarea
@@ -316,12 +316,12 @@ export default function CreateWorkflowPage() {
               onChange={(e) => updateField('description', e.target.value)}
               placeholder="e.g., Fetch yesterday's Meta ads and POS orders daily at 2am"
               rows={3}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+              className="w-full rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
             />
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Team</label>
+            <label className="form-label">Team</label>
             <select
               value={teamId}
           onChange={(e) => {
@@ -335,7 +335,7 @@ export default function CreateWorkflowPage() {
               localStorage.setItem('current_team_id', value);
             }
           }}
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+          className="w-full rounded-2xl border border-slate-200 dark:border-border bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
         >
           {teams.map((team) => (
             <option key={team.id} value={team.id}>
@@ -347,24 +347,24 @@ export default function CreateWorkflowPage() {
 
           {canShareWorkflows && (
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <label className="form-label">
                 Share with teams
               </label>
-              <div className="space-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-border bg-surface px-4 py-3">
                 {teams.filter((t) => t.id !== sanitizeTeamId(teamId)).length === 0 ? (
-                  <p className="text-sm text-slate-500">No other teams available</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-300">No other teams available</p>
                 ) : (
                   teams
                     .filter((t) => t.id !== sanitizeTeamId(teamId))
                     .map((t) => (
-                      <label key={t.id} className="flex items-center gap-2 text-sm text-slate-800">
+                      <label key={t.id} className="flex items-center gap-2 text-sm text-slate-800 dark:text-foreground">
                         <input
                           type="checkbox"
                           className="h-4 w-4 rounded border-slate-300 accent-primary focus:ring-primary"
                           checked={sharedTeamIds.includes(t.id)}
                           onChange={() => toggleSharedTeam(t.id)}
                         />
-                        <span>{t.name}</span>
+                        <span className='text-foreground'>{t.name}</span>
                       </label>
                     ))
                 )}
@@ -376,7 +376,7 @@ export default function CreateWorkflowPage() {
             <button
               onClick={() => setStep(2)}
               disabled={!formData.name || !formData.teamId}
-              className="btn btn-lg btn-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              className="btn btn-lg btn-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:border-border dark:disabled:bg-surface dark:disabled:text-slate-500"
             >
               Next Step
             </button>
@@ -388,19 +388,19 @@ export default function CreateWorkflowPage() {
       {step === 2 && (
         <div className="space-y-6">
           {/* Shared Date Range */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+          <div className="bg-surface rounded-xl border border-slate-200 p-6 space-y-4 dark:border-border">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Date Range</h3>
-                <p className="text-sm text-slate-600">Applies to both Meta Ads and Pancake POS</p>
+                <h3 className="text-lg font-semibold text-foreground">Date Range</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-300">Applies to both Meta Ads and Pancake POS</p>
               </div>
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <label className="form-label">
                 Date Range Type
               </label>
-              <div className="space-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div className="space-y-2 rounded-2xl border border-slate-200 bg-surface px-4 py-3 dark:border-border">
                 <label className="flex items-center gap-2">
                   <input
                     type="radio"
@@ -408,7 +408,7 @@ export default function CreateWorkflowPage() {
                     onChange={() => updateField('dateRangeType', 'rolling')}
                     className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
                   />
-                  <span className="text-sm text-slate-700">Rolling (Offset from today)</span>
+                  <span className="text-sm text-slate-700 dark:text-foreground">Rolling (Offset from today)</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -417,7 +417,7 @@ export default function CreateWorkflowPage() {
                     onChange={() => updateField('dateRangeType', 'relative')}
                     className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
                   />
-                  <span className="text-sm text-slate-700">Relative (Last N days)</span>
+                  <span className="text-sm text-slate-700 dark:text-foreground">Relative (Last N days)</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -426,34 +426,34 @@ export default function CreateWorkflowPage() {
                     onChange={() => updateField('dateRangeType', 'absolute')}
                     className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
                   />
-                  <span className="text-sm text-slate-700">Absolute (Specific dates)</span>
+                  <span className="text-sm text-slate-700 dark:text-foreground">Absolute (Specific dates)</span>
                 </label>
               </div>
             </div>
 
             {formData.dateRangeType === 'rolling' && (
               <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Offset Days</label>
+                <label className="form-label mr-2">Offset Days</label>
                 <input
                   type="number"
                   min="0"
                   value={formData.offsetDays}
                   onChange={(e) => updateField('offsetDays', parseInt(e.target.value) || 0)}
-                  className="w-32 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                  className="w-32 rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                 />
-                <p className="text-xs text-slate-500 mt-1">0 = today, 1 = yesterday</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">0 = today, 1 = yesterday</p>
               </div>
             )}
 
             {formData.dateRangeType === 'relative' && (
               <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Last N Days</label>
+                <label className="form-label">Last N Days</label>
                 <input
                   type="number"
                   min="1"
                   value={formData.days}
                   onChange={(e) => updateField('days', parseInt(e.target.value) || 1)}
-                  className="w-32 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                  className="w-32 rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                 />
               </div>
             )}
@@ -461,21 +461,21 @@ export default function CreateWorkflowPage() {
             {formData.dateRangeType === 'absolute' && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">From</label>
+                  <label className="form-label">From</label>
                   <input
                     type="date"
                     value={formData.since}
                     onChange={(e) => updateField('since', e.target.value)}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                    className="w-full rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">To</label>
+                  <label className="form-label">To</label>
                   <input
                     type="date"
                     value={formData.until}
                     onChange={(e) => updateField('until', e.target.value)}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                    className="w-full rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                   />
                 </div>
               </div>
@@ -483,9 +483,9 @@ export default function CreateWorkflowPage() {
           </div>
 
           {/* Meta Ads */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+          <div className="bg-surface rounded-xl border border-slate-200 p-6 space-y-4 dark:border-border">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">Meta Ads</h3>
+              <h3 className="text-lg font-semibold text-foreground">Meta Ads</h3>
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -493,15 +493,15 @@ export default function CreateWorkflowPage() {
                   onChange={(e) => updateField('metaEnabled', e.target.checked)}
                   className="h-4 w-4 rounded border-slate-300 accent-primary focus:ring-primary"
                 />
-                <span className="text-sm font-medium text-slate-700">Enable Meta Ads fetching</span>
+                <span className="text-sm font-medium text-slate-700 dark:text-foreground">Enable Meta Ads fetching</span>
               </label>
             </div>
 
             {formData.metaEnabled && (
               <>
-                <p className="text-sm text-slate-600">Uses the shared date range above.</p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">Uses the shared date range above.</p>
                 <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <label className="form-label mr-2">
                     Rate Limit Delay (ms)
                   </label>
                   <input
@@ -510,18 +510,18 @@ export default function CreateWorkflowPage() {
                     step="100"
                     value={formData.metaDelayMs}
                     onChange={(e) => updateField('metaDelayMs', parseInt(e.target.value) || 3000)}
-                    className="w-40 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                    className="w-40 rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                   />
-                  <p className="text-xs text-slate-500 mt-1">Recommended: 3000ms (3 seconds)</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Recommended: 3000ms (3 seconds)</p>
                 </div>
               </>
             )}
           </div>
 
           {/* POS */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+          <div className="bg-surface rounded-xl border border-slate-200 p-6 space-y-4 dark:border-border">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">Pancake POS</h3>
+              <h3 className="text-lg font-semibold text-foreground">Pancake POS</h3>
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -529,15 +529,15 @@ export default function CreateWorkflowPage() {
                   onChange={(e) => updateField('posEnabled', e.target.checked)}
                   className="h-4 w-4 rounded border-slate-300 accent-primary focus:ring-primary"
                 />
-                <span className="text-sm font-medium text-slate-700">Enable POS fetching</span>
+                <span className="text-sm font-medium text-slate-700 dark:text-foreground">Enable POS fetching</span>
               </label>
             </div>
 
             {formData.posEnabled && (
               <>
-                <p className="text-sm text-slate-600">Uses the shared date range above.</p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">Uses the shared date range above.</p>
                 <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <label className="form-label mr-2">
                     Rate Limit Delay (ms)
                   </label>
                   <input
@@ -546,9 +546,9 @@ export default function CreateWorkflowPage() {
                     step="100"
                     value={formData.posDelayMs}
                     onChange={(e) => updateField('posDelayMs', parseInt(e.target.value) || 3000)}
-                    className="w-40 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                    className="w-40 rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                   />
-                  <p className="text-xs text-slate-500 mt-1">Recommended: 3000ms (3 seconds)</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Recommended: 3000ms (3 seconds)</p>
                 </div>
               </>
             )}
@@ -564,7 +564,7 @@ export default function CreateWorkflowPage() {
             <button
               onClick={() => setStep(3)}
               disabled={!formData.metaEnabled && !formData.posEnabled}
-              className="btn btn-lg btn-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              className="btn btn-lg btn-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:border-border dark:disabled:bg-surface dark:disabled:text-slate-500"
             >
               Next Step →
             </button>
@@ -574,9 +574,9 @@ export default function CreateWorkflowPage() {
 
       {/* Step 3: Schedule */}
       {step === 3 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-6">
+        <div className="bg-surface rounded-xl border border-slate-200 p-6 space-y-6 dark:border-border">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Execution Schedule</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-4">Execution Schedule</h3>
           </div>
 
           <div className="space-y-3">
@@ -587,7 +587,7 @@ export default function CreateWorkflowPage() {
                 onChange={() => updateField('scheduleType', 'manual')}
                 className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
               />
-              <span className="text-sm font-medium text-slate-700">Manual only (no automatic schedule)</span>
+              <span className="text-sm font-medium text-slate-700 dark:text-foreground">Manual only (no automatic schedule)</span>
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -596,7 +596,7 @@ export default function CreateWorkflowPage() {
                 onChange={() => updateField('scheduleType', 'scheduled')}
                 className="h-4 w-4 border-slate-300 accent-primary focus:ring-primary"
               />
-              <span className="text-sm font-medium text-slate-700">Scheduled (cron expression)</span>
+              <span className="text-sm font-medium text-slate-700 dark:text-foreground">Scheduled (cron expression)</span>
             </label>
           </div>
 
@@ -610,7 +610,7 @@ export default function CreateWorkflowPage() {
                       type="button"
                       onClick={() => updateField('scheduleUnit', unit)}
                       className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
-                        formData.scheduleUnit === unit ? 'bg-primary text-white' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                        formData.scheduleUnit === unit ? 'bg-primary text-surface' : 'bg-slate-50 text-slate-700 hover:bg-slate-100 dark:bg-surface dark:text-slate-300 dark:hover:bg-background-secondary'
                       }`}
                     >
                       {unit === 'minutes' ? 'Minutes' : unit === 'hours' ? 'Hours' : 'Days'}
@@ -621,14 +621,14 @@ export default function CreateWorkflowPage() {
                 {formData.scheduleUnit === 'minutes' && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Every (minutes)</label>
+                      <label className="form-label">Every (minutes)</label>
                       <input
                         type="number"
                         min={1}
                         max={59}
                         value={formData.everyMinutes}
                         onChange={(e) => updateField('everyMinutes', Math.max(1, Math.min(59, parseInt(e.target.value) || 1)))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                        className="w-full rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                       />
                     </div>
                   </div>
@@ -637,25 +637,25 @@ export default function CreateWorkflowPage() {
                 {formData.scheduleUnit === 'hours' && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Every (hours)</label>
+                      <label className="form-label">Every (hours)</label>
                       <input
                         type="number"
                         min={1}
                         max={23}
                         value={formData.everyHours}
                         onChange={(e) => updateField('everyHours', Math.max(1, Math.min(23, parseInt(e.target.value) || 1)))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                        className="w-full rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                       />
                     </div>
                     <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">At minute</label>
+                      <label className="form-label">At minute</label>
                       <input
                         type="number"
                         min={0}
                         max={59}
                         value={formData.atMinutes}
                         onChange={(e) => updateField('atMinutes', Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                        className="w-full rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                       />
                     </div>
                   </div>
@@ -664,42 +664,42 @@ export default function CreateWorkflowPage() {
                 {formData.scheduleUnit === 'days' && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Every (days)</label>
+                      <label className="form-label">Every (days)</label>
                       <input
                         type="number"
                         min={1}
                         max={31}
                         value={formData.everyDays}
                         onChange={(e) => updateField('everyDays', Math.max(1, Math.min(31, parseInt(e.target.value) || 1)))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                        className="w-full rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                       />
                     </div>
                     <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">At hour</label>
+                      <label className="form-label">At hour</label>
                       <input
                         type="number"
                         min={0}
                         max={23}
                         value={formData.atHours}
                         onChange={(e) => updateField('atHours', Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                        className="w-full rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                       />
                     </div>
                     <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">At minute</label>
+                      <label className="form-label">At minute</label>
                       <input
                         type="number"
                         min={0}
                         max={59}
                         value={formData.atMinutes}
                         onChange={(e) => updateField('atMinutes', Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100"
+                        className="w-full rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-sm text-foreground focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border"
                       />
                     </div>
                   </div>
                 )}
 
-                <div className="text-sm text-slate-700">
+                <div className="text-sm text-slate-700 dark:text-foreground">
                   <span className="font-medium">Runs: </span>
                   {formData.scheduleUnit === 'minutes' &&
                     `Every ${formData.everyMinutes} minute${formData.everyMinutes === 1 ? '' : 's'}`}
@@ -708,7 +708,7 @@ export default function CreateWorkflowPage() {
                   {formData.scheduleUnit === 'days' &&
                     `Every ${formData.everyDays} day${formData.everyDays === 1 ? '' : 's'} at ${String(formData.atHours).padStart(2, '0')}:${String(formData.atMinutes).padStart(2, '0')}`}
                 </div>
-                <p className="text-xs text-slate-500">Cron generated: <span className="font-mono">{formData.schedule}</span></p>
+                <p className="text-xs text-slate-500 dark:text-slate-300">Cron generated: <span className="font-mono">{formData.schedule}</span></p>
               </div>
             </>
           )}
@@ -721,7 +721,7 @@ export default function CreateWorkflowPage() {
                 onChange={(e) => updateField('enabled', e.target.checked)}
                 className="h-4 w-4 rounded border-slate-300 accent-primary focus:ring-primary"
               />
-              <span className="text-sm font-medium text-slate-700">Enable workflow immediately</span>
+              <span className="text-sm font-medium text-slate-700 dark:text-foreground">Enable workflow immediately</span>
             </label>
           </div>
 

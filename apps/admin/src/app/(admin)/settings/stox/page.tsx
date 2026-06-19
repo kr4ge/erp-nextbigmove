@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, Plus, RefreshCcw, Smartphone } from 'lucide-react';
+import { Download, History, Plus, RefreshCcw, Smartphone } from 'lucide-react';
 import { readStoredAdminUser, readStoredPermissions, type StoredAdminUser } from '@/lib/admin-session';
 import {
   hasAnyAdminPermission,
@@ -24,6 +24,7 @@ import {
   SettingsPageFrame,
   SettingsStatCard,
 } from '../_components/settings-panels';
+import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsStoxReleaseFormModal } from '../_components/wms-stox-release-form-modal';
 
 export default function SettingsStoxPage() {
@@ -166,84 +167,77 @@ export default function SettingsStoxPage() {
           <div className="grid gap-3 md:grid-cols-4">
             <SettingsStatCard label="Latest Version" value={latestRelease?.version ?? 'None'} tone="blue" />
             <SettingsStatCard label="Latest Build" value={latestRelease?.buildNumber ?? '—'} tone="gold" />
-            <SettingsStatCard label="Active Releases" value={activeCount} tone="neutral" />
-            <SettingsStatCard label="Release History" value={data?.releases.length ?? 0} tone="neutral" />
+            <SettingsStatCard label="Active Releases" value={activeCount} />
+            <SettingsStatCard label="Release History" value={data?.releases.length ?? 0} />
           </div>
 
           {latestRelease ? (
-            <section className="rounded-[26px] border border-[#dce4ea] bg-white p-5 shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)]">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#eff5f8] text-primary">
-                      <Smartphone className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#9a894f]">
-                        Latest STOX Android APK
-                      </p>
-                      <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-primary">
-                        Version {latestRelease.version} · Build {latestRelease.buildNumber}
-                      </h2>
-                    </div>
-                  </div>
+            <WmsCompactPanel
+              title="Latest APK"
+              icon={<Smartphone className="panel-icon" />}
+            >
+              <div className="space-y-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">
+                  Version {latestRelease.version} · Build {latestRelease.buildNumber}
+                </h2>
 
-                  <div className="flex flex-wrap gap-2">
-                    <SettingsBadge tone={latestRelease.isActive ? 'success' : 'warning'}>
-                      {latestRelease.isActive ? 'Active WMS download' : 'Uploaded only'}
-                    </SettingsBadge>
-                    <SettingsBadge>{formatBytes(latestRelease.byteSize)}</SettingsBadge>
-                    <SettingsBadge>{latestRelease.downloadFileName}</SettingsBadge>
-                  </div>
-
-                  {latestRelease.releaseNotes ? (
-                    <p className="max-w-3xl text-sm leading-6 text-[#637786]">
-                      {latestRelease.releaseNotes}
-                    </p>
-                  ) : (
-                    <p className="text-sm leading-6 text-[#8a9ba8]">
-                      No release notes were added for this build.
-                    </p>
-                  )}
-
-                  <div className="grid gap-3 text-sm text-[#637786] sm:grid-cols-3">
-                    <ReleaseMeta
-                      label="Uploaded"
-                      value={`${formatDateTime(latestRelease.createdAt)}${latestRelease.createdBy ? ` · ${latestRelease.createdBy.displayName}` : ''}`}
-                    />
-                    <ReleaseMeta
-                      label="Activated"
-                      value={latestRelease.activatedAt
-                        ? `${formatDateTime(latestRelease.activatedAt)}${latestRelease.activatedBy ? ` · ${latestRelease.activatedBy.displayName}` : ''}`
-                        : 'Not activated yet'}
-                    />
-                    <ReleaseMeta
-                      label="Original file"
-                      value={latestRelease.originalFileName ?? latestRelease.downloadFileName}
-                    />
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void loadReleases()}
+                      className="btn btn-md btn-outline btn-icon"
+                    >
+                      <RefreshCcw className="h-3.5 w-3.5" />
+                      Refresh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(latestRelease)}
+                      className="btn btn-md btn-primary btn-icon"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download APK
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void loadReleases()}
-                    className="btn btn-md btn-secondary btn-icon"
-                  >
-                    <RefreshCcw className="h-3.5 w-3.5" />
-                    Refresh
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDownload(latestRelease)}
-                    className="btn btn-md btn-primary btn-icon"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    Download APK
-                  </button>
+                <div className="flex flex-wrap gap-2">
+                  <SettingsBadge tone={latestRelease.isActive ? 'success' : 'warning'}>
+                    {latestRelease.isActive ? 'Active WMS download' : 'Uploaded only'}
+                  </SettingsBadge>
+                  <SettingsBadge>{formatBytes(latestRelease.byteSize)}</SettingsBadge>
+                  <SettingsBadge>{latestRelease.downloadFileName}</SettingsBadge>
+                </div>
+
+                {latestRelease.releaseNotes ? (
+                  <p className="max-w-3xl text-sm leading-6 text-[#637786]">
+                    {latestRelease.releaseNotes}
+                  </p>
+                ) : (
+                  <p className="text-sm leading-6 text-[#8a9ba8]">
+                    No release notes were added for this build.
+                  </p>
+                )}
+
+                <div className="grid gap-3 text-sm text-[#637786] sm:grid-cols-3">
+                  <ReleaseMeta
+                    label="Uploaded"
+                    value={`${formatDateTime(latestRelease.createdAt)}${latestRelease.createdBy ? ` · ${latestRelease.createdBy.displayName}` : ''}`}
+                  />
+                  <ReleaseMeta
+                    label="Activated"
+                    value={latestRelease.activatedAt
+                      ? `${formatDateTime(latestRelease.activatedAt)}${latestRelease.activatedBy ? ` · ${latestRelease.activatedBy.displayName}` : ''}`
+                      : 'Not activated yet'}
+                  />
+                  <ReleaseMeta
+                    label="Original file"
+                    value={latestRelease.originalFileName ?? latestRelease.downloadFileName}
+                  />
                 </div>
               </div>
-            </section>
+            </WmsCompactPanel>
           ) : (
             <SettingsNotice
               title="No STOX release yet"
@@ -252,9 +246,9 @@ export default function SettingsStoxPage() {
           )}
 
           {data?.releases.length ? (
-            <div className="overflow-hidden rounded-2xl border border-[#dce4ea] bg-white shadow-[0_24px_70px_-50px_rgba(18,56,75,0.45)]">
-              <div className="overflow-x-auto">
-                <table className="min-w-[980px] w-full border-separate border-spacing-0">
+            <WmsCompactPanel title="Version History" icon={<History className='panel-icon' />} className="overflow-hidden">
+              <div className="-m-3 overflow-x-auto xl:overflow-visible">
+                <table className="w-full min-w-[980px] border-separate border-spacing-0 xl:min-w-full">
                   <thead>
                     <tr className="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
                       <th className="px-5 py-4">Release</th>
@@ -262,7 +256,7 @@ export default function SettingsStoxPage() {
                       <th className="px-5 py-4">Uploaded</th>
                       <th className="px-5 py-4">Status</th>
                       <th className="px-5 py-4">File</th>
-                      <th className="w-[220px] px-5 py-4">Actions</th>
+                      <th className="w-[150px] px-5 py-4">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#edf2f6]">
@@ -308,7 +302,7 @@ export default function SettingsStoxPage() {
                             <button
                               type="button"
                               onClick={() => handleDownload(release)}
-                              className="btn btn-sm btn-secondary btn-icon"
+                              className="btn btn-sm btn-primary btn-icon"
                             >
                               <Download className="h-3.5 w-3.5" />
                               Download
@@ -330,7 +324,7 @@ export default function SettingsStoxPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </WmsCompactPanel>
           ) : null}
         </div>
       )}
@@ -355,9 +349,9 @@ export default function SettingsStoxPage() {
 
 function ReleaseMeta({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8293a0]">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-primary">{value}</p>
+    <div className="card">
+      <p className="card-label">{label}</p>
+      <p className="card-value mt-1 text-sm">{value}</p>
     </div>
   );
 }
