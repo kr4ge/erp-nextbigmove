@@ -9891,28 +9891,11 @@ export class WmsMobileService {
       basketUnit.status === WmsBasketUnitStatus.PICKED
       && !basketUnit.fulfillmentOrderId
     ));
-    const activeOrderIdSet = new Set(activeOrders.map((order: any) => order.id));
     const availableUnitCounts = new Map<string, number>();
-    const detachedPackedUnitCountsByOrderId = new Map<string, number>();
 
     for (const basketUnit of availableBasketUnits) {
       const key = `${basketUnit.variationId}::${basketUnit.productId ?? ''}`;
       availableUnitCounts.set(key, (availableUnitCounts.get(key) ?? 0) + 1);
-    }
-
-    for (const basketUnit of basketUnits) {
-      if (basketUnit.status !== WmsBasketUnitStatus.PACKED || !basketUnit.fulfillmentOrderId) {
-        continue;
-      }
-
-      if (activeOrderIdSet.has(basketUnit.fulfillmentOrderId)) {
-        continue;
-      }
-
-      detachedPackedUnitCountsByOrderId.set(
-        basketUnit.fulfillmentOrderId,
-        (detachedPackedUnitCountsByOrderId.get(basketUnit.fulfillmentOrderId) ?? 0) + 1,
-      );
     }
 
     const orders = activeOrders.map((order: any) => {
@@ -9979,15 +9962,10 @@ export class WmsMobileService {
     const activeOrder = resolvedActiveOrderId
       ? orders.find((order: any) => order.id === resolvedActiveOrderId) ?? null
       : null;
-    const detachedCompletedRequired = Array.from(detachedPackedUnitCountsByOrderId.values())
-      .reduce((sum: number, packedCount: number) => sum + packedCount, 0);
-    const basketRequired = orders.reduce((sum: number, order: any) => sum + order.totals.required, 0)
-      + detachedCompletedRequired;
-    const basketPacked = orders.reduce((sum: number, order: any) => sum + order.totals.packed, 0)
-      + detachedCompletedRequired;
-    const packedOrderCount = orders.filter((order: any) => order.status === WmsFulfillmentOrderStatus.PACKED).length
-      + detachedPackedUnitCountsByOrderId.size;
-    const totalOrderCount = orders.length + detachedPackedUnitCountsByOrderId.size;
+    const basketRequired = orders.reduce((sum: number, order: any) => sum + order.totals.required, 0);
+    const basketPacked = orders.reduce((sum: number, order: any) => sum + order.totals.packed, 0);
+    const packedOrderCount = orders.filter((order: any) => order.status === WmsFulfillmentOrderStatus.PACKED).length;
+    const totalOrderCount = orders.length;
 
     return {
       basketId: basket.id,
