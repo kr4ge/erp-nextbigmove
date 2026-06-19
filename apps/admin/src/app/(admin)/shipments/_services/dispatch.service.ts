@@ -121,3 +121,36 @@ export async function reconcileWmsDispatchOutbound(params: {
 
   return response.data as WmsDispatchReconcileResponse;
 }
+
+export async function voidWmsDispatchOutboundTask(params: {
+  taskId: string;
+  tenantId?: string;
+  storeId?: string;
+  reason: string;
+}) {
+  const response = await apiClient.post(`/wms/dispatch/outbound/${params.taskId}/void`, {
+    ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+    ...(params.storeId ? { storeId: params.storeId } : {}),
+    reason: params.reason,
+  });
+
+  return response.data as {
+    success: boolean;
+    taskId: string;
+    posOrderId: string;
+    restoredPackedUnits: number;
+    affectedBasketIds: string[];
+    posStatusUpdate: {
+      targetStatus: number;
+      queued: number;
+      skipped: number;
+      failed: number;
+      results: Array<{
+        posOrderId: string;
+        outcome: 'queued' | 'skipped' | 'failed';
+        reason: string;
+        currentStatus?: number | null;
+      }>;
+    };
+  };
+}

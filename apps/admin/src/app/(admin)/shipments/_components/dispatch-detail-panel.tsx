@@ -1,9 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { WmsSidePanel } from '../../_components/wms-side-panel';
-import type { WmsDispatchReturnTask, WmsDispatchTab, WmsDispatchTask } from '../_types/dispatch';
+import { WmsModal } from '../../_components/wms-modal';
+import type {
+  WmsDispatchHistoryEntry,
+  WmsDispatchReturnTask,
+  WmsDispatchTab,
+  WmsDispatchTask,
+} from '../_types/dispatch';
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
   month: 'short',
@@ -37,7 +43,10 @@ type DispatchDetailPanelProps = {
   isLoading?: boolean;
   canReconcileOutbound?: boolean;
   isReconcilingOutbound?: boolean;
+  canVoidOutbound?: boolean;
+  isVoidingOutbound?: boolean;
   onReconcileOutboundTask?: (taskId: string) => void | Promise<void> | Promise<boolean>;
+  onVoidOutboundTask?: (taskId: string, reason: string) => void | Promise<void> | Promise<boolean>;
   onClose: () => void;
 };
 
@@ -49,10 +58,20 @@ export function DispatchDetailPanel({
   isLoading = false,
   canReconcileOutbound = false,
   isReconcilingOutbound = false,
+  canVoidOutbound = false,
+  isVoidingOutbound = false,
   onReconcileOutboundTask,
+  onVoidOutboundTask,
   onClose,
 }: DispatchDetailPanelProps) {
   const task = tab === 'returns' ? returnTask?.task ?? null : outboundTask ?? null;
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
+
+  useEffect(() => {
+    setVoidOpen(false);
+    setVoidReason('');
+  }, [task?.id, tab]);
 
   if (!task && !hasSelection) {
     return null;
@@ -118,47 +137,64 @@ export function DispatchDetailPanel({
     { id: 'pack', href: '/orders/pack', label: 'Pack queue', note: 'Review packed basket handoff' },
     { id: 'stock', href: '/inventory/stock', label: 'Stock', note: 'Open serialized stock records' },
   ];
+  const canShowDispatchVoid = tab === 'outbound'
+    && canVoidOutbound
+    && task.voidControl.eligible;
+  const dispatchVoidBlockedReason = tab === 'outbound' && canVoidOutbound && !task.voidControl.eligible
+    ? task.voidControl.reason
+    : null;
 
   return (
-    <WmsSidePanel
-      open={true}
-      title={`Order #${task.posOrderId}`}
-      description={`${task.store?.tenantName ?? 'Tenant'} · ${task.store?.name ?? 'Store'}`}
-      onClose={onClose}
-      bodyClassName="space-y-5"
-      footer={(
-        <div className="flex flex-wrap justify-end gap-2">
-          {tab === 'outbound' && canReconcileOutbound ? (
+    <>
+      <WmsSidePanel
+        open={true}
+        title={`Order #${task.posOrderId}`}
+        description={`${task.store?.tenantName ?? 'Tenant'} · ${task.store?.name ?? 'Store'}`}
+        onClose={onClose}
+        bodyClassName="space-y-5"
+        footer={(
+          <div className="flex flex-wrap justify-end gap-2">
+            {canShowDispatchVoid ? (
+              <button
+                type="button"
+                onClick={() => setVoidOpen(true)}
+                disabled={isVoidingOutbound}
+                className="btn btn-md btn-destructive"
+              >
+                {isVoidingOutbound ? 'Voiding…' : 'Void packed order'}
+              </button>
+            ) : null}
+            {tab === 'outbound' && canReconcileOutbound ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!outboundTask || !onReconcileOutboundTask) {
+                    return;
+                  }
+
+                  void onReconcileOutboundTask(outboundTask.id);
+                }}
+                disabled={isReconcilingOutbound}
+                className="btn btn-md btn-outline"
+              >
+                {isReconcilingOutbound ? 'Repairing…' : 'Repair order sync'}
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={() => {
-                if (!outboundTask || !onReconcileOutboundTask) {
-                  return;
-                }
-
-                void onReconcileOutboundTask(outboundTask.id);
-              }}
-              disabled={isReconcilingOutbound}
+              onClick={onClose}
               className="btn btn-md btn-outline"
             >
-              {isReconcilingOutbound ? 'Repairing…' : 'Repair order sync'}
+              Close
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn btn-md btn-outline"
-          >
-            Close
-          </button>
+          </div>
+        )}
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {metrics.map((metric) => (
+            <MetricCard key={metric.id} label={metric.label} value={metric.value} />
+          ))}
         </div>
-      )}
-    >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <MetricCard key={metric.id} label={metric.label} value={metric.value} />
-        ))}
-      </div>
 
       <DetailSection title="Quick links" description="Open the related WMS workspaces for this order.">
         <div className="grid gap-3 sm:grid-cols-3">
@@ -193,6 +229,13 @@ export function DispatchDetailPanel({
             <DetailCard label="Returning at" value={formatDateTime(task.delivery?.rtsAt ?? null)} />
           ) : null}
         </div>
+
+        {dispatchVoidBlockedReason ? (
+          <div className="mt-4 rounded-[18px] border border-[#e7edf2] bg-[#fbfcfc] px-4 py-4">
+            <p className="card-label">Void unavailable</p>
+            <p className="mt-2 text-[13px] text-[#5c7483]">{dispatchVoidBlockedReason}</p>
+          </div>
+        ) : null}
       </DetailSection>
 
       {task.basket ? (
@@ -246,48 +289,123 @@ export function DispatchDetailPanel({
           </DetailSection>
 
           <DetailSection title="Return history" description="Audit trail for RTS verification and placement actions on this order.">
-            <HistoryList history={returnFlow.history} />
+            <HistoryList
+              history={returnFlow.history}
+              emptyMessage="No return verification activity has been recorded yet."
+            />
           </DetailSection>
         </>
       ) : (
-        <DetailSection
-          title={`Packed units · ${task.unitRecords.length} unit${task.unitRecords.length === 1 ? '' : 's'}`}
-          description={`${packedUnitCount} unit${packedUnitCount === 1 ? '' : 's'} already packed or dispatched for this order.`}
-        >
-          <UnitRecordList units={task.unitRecords} />
-        </DetailSection>
+        <>
+          <DetailSection title="Dispatch history" description="Packing, dispatch sync, delivery sync, and dispatch void actions for this order.">
+            <HistoryList
+              history={task.history}
+              emptyMessage="No dispatch activity has been recorded for this order yet."
+            />
+          </DetailSection>
+
+          <DetailSection
+            title={`Packed units · ${task.unitRecords.length} unit${task.unitRecords.length === 1 ? '' : 's'}`}
+            description={`${packedUnitCount} unit${packedUnitCount === 1 ? '' : 's'} already packed or dispatched for this order.`}
+          >
+            <UnitRecordList units={task.unitRecords} />
+          </DetailSection>
+        </>
       )}
 
-      <DetailSection title={`Order items · ${task.lines.length} line${task.lines.length === 1 ? '' : 's'}`}>
-        <div className="space-y-3">
-          {task.lines.map((line) => (
-            <div
-              key={line.id}
-              className="rounded-[20px] border border-[#dce4ea] bg-white px-4 py-4 shadow-[0_10px_24px_-24px_rgba(18,56,75,0.45)]"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[15px] font-semibold text-primary">{line.productName}</p>
-                  <p className="mt-1 text-[12px] text-[#667d8d]">
-                    {line.productDisplayId ? `Code ${line.productDisplayId}` : 'No product code'}
-                  </p>
+        <DetailSection title={`Order items · ${task.lines.length} line${task.lines.length === 1 ? '' : 's'}`}>
+          <div className="space-y-3">
+            {task.lines.map((line) => (
+              <div
+                key={line.id}
+                className="rounded-[20px] border border-[#dce4ea] bg-white px-4 py-4 shadow-[0_10px_24px_-24px_rgba(18,56,75,0.45)]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-semibold text-primary">{line.productName}</p>
+                    <p className="mt-1 text-[12px] text-[#667d8d]">
+                      {line.productDisplayId ? `Code ${line.productDisplayId}` : 'No product code'}
+                    </p>
+                  </div>
+                  <span className={buildPillClass(line.status)}>
+                    {line.statusLabel}
+                  </span>
                 </div>
-                <span className={buildPillClass(line.status)}>
-                  {line.statusLabel}
-                </span>
-              </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                <LineMetric label="Required" value={line.required} />
-                <LineMetric label="Picked" value={line.picked} />
-                <LineMetric label="Packed" value={line.packed} />
-                <LineMetric label="Shortage" value={line.shortage} />
+                <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  <LineMetric label="Required" value={line.required} />
+                  <LineMetric label="Picked" value={line.picked} />
+                  <LineMetric label="Packed" value={line.packed} />
+                  <LineMetric label="Shortage" value={line.shortage} />
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+        </DetailSection>
+      </WmsSidePanel>
+
+      <WmsModal
+        open={voidOpen && canShowDispatchVoid}
+        title={`Void order #${task.posOrderId}`}
+        description="Return the packed units for this order back into inventory and reopen the order in picking."
+        onClose={() => {
+          if (isVoidingOutbound) {
+            return;
+          }
+          setVoidOpen(false);
+        }}
+        bodyClassName="space-y-4"
+        panelClassName="max-w-xl"
+        footer={(
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setVoidOpen(false)}
+              disabled={isVoidingOutbound}
+              className="btn btn-md btn-outline"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isVoidingOutbound || voidReason.trim().length < 3 || !onVoidOutboundTask}
+              className="btn btn-md btn-destructive"
+              onClick={() => {
+                if (!onVoidOutboundTask) {
+                  return;
+                }
+
+                void Promise.resolve(onVoidOutboundTask(task.id, voidReason.trim())).then((success) => {
+                  if (success) {
+                    setVoidOpen(false);
+                    setVoidReason('');
+                  }
+                });
+              }}
+            >
+              {isVoidingOutbound ? 'Voiding…' : 'Void order'}
+            </button>
+          </div>
+        )}
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <DetailCard label="Waybill" value={task.tracking ?? 'Awaiting tracking'} mono={Boolean(task.tracking)} />
+          <DetailCard label="Packed units" value={task.totals.packed} />
+          <DetailCard label="Store" value={task.store?.name ?? 'Unassigned'} />
         </div>
-      </DetailSection>
-    </WmsSidePanel>
+
+        <label className="block">
+          <span className="card-label">Reason</span>
+          <textarea
+            value={voidReason}
+            onChange={(event) => setVoidReason(event.target.value)}
+            placeholder="State why this packed order needs to be voided."
+            rows={4}
+            className="mt-2 w-full rounded-[18px] border border-[#d7e0e7] bg-white px-4 py-3 text-sm text-primary outline-none transition placeholder:text-[#8ca0ae] focus:border-[#12384b] focus:ring-2 focus:ring-[#12384b]/10"
+          />
+        </label>
+      </WmsModal>
+    </>
   );
 }
 
@@ -451,22 +569,15 @@ function ReturnUnitList({
 
 function HistoryList({
   history,
+  emptyMessage,
 }: {
-  history: Array<{
-    id: string;
-    label: string;
-    detail: string | null;
-    createdAt: string;
-    actor: {
-      name: string;
-      email: string;
-    } | null;
-  }>;
+  history: WmsDispatchHistoryEntry[];
+  emptyMessage: string;
 }) {
   if (history.length === 0) {
     return (
       <div className="rounded-[18px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-4 py-6 text-sm text-[#6f8290]">
-        No return verification activity has been recorded yet.
+        {emptyMessage}
       </div>
     );
   }

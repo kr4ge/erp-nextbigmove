@@ -125,6 +125,10 @@ export type WmsDispatchTask = {
     deliveredAt: string | null;
     rtsAt: string | null;
   } | null;
+  voidControl: {
+    eligible: boolean;
+    reason: string | null;
+  };
   createdAt: string;
   basket: {
     id: string;
@@ -150,6 +154,7 @@ export type WmsDispatchTask = {
       name: string;
     } | null;
   } | null;
+  history: WmsDispatchHistoryEntry[];
   unitRecords: Array<{
     id: string;
     code: string;
@@ -184,6 +189,18 @@ export type WmsDispatchTask = {
     packed: number;
     shortage: number;
   }>;
+};
+
+export type WmsDispatchHistoryEntry = {
+  id: string;
+  actionType: string;
+  label: string;
+  detail: string | null;
+  createdAt: string;
+  actor: {
+    name: string;
+    email: string;
+  } | null;
 };
 
 export type WmsDispatchReturnUnit = {
@@ -223,17 +240,7 @@ export type WmsDispatchReturnFlow = {
     name: string;
     email: string;
   } | null;
-  history: Array<{
-    id: string;
-    actionType: string;
-    label: string;
-    detail: string | null;
-    createdAt: string;
-    actor: {
-      name: string;
-      email: string;
-    } | null;
-  }>;
+  history: WmsDispatchHistoryEntry[];
   lastVerifiedAt: string | null;
   lastVerifiedBy: {
     name: string;

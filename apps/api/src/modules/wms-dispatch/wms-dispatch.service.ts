@@ -11,12 +11,16 @@ import {
   WmsStaffActivityOutcome,
   type Prisma,
 } from '@prisma/client';
+import type { Request } from 'express';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { GetWmsDispatchOutboundDto } from './dto/get-wms-dispatch-outbound.dto';
 import { GetWmsDispatchReportsDto } from './dto/get-wms-dispatch-reports.dto';
 import { GetWmsDispatchReturnsDto } from './dto/get-wms-dispatch-returns.dto';
 import { GetWmsDispatchSummaryDto } from './dto/get-wms-dispatch-summary.dto';
 import { ReconcileWmsDispatchOutboundDto } from './dto/reconcile-wms-dispatch-outbound.dto';
+import { VoidWmsDispatchOutboundDto } from './dto/void-wms-dispatch-outbound.dto';
+import { OrdersService } from '../orders/orders.service';
+import { WmsFulfillmentOpsService } from '../wms-fulfillment/wms-fulfillment-ops.service';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
 
 type ActiveTenantOption = {
@@ -159,6 +163,13 @@ const DISPATCH_RETURN_ACTIVITY_TYPES = [
   'ORDER_RTS_DISPOSITION',
   'ORDER_RTS_COMPLETE',
 ] as const;
+const DISPATCH_OUTBOUND_ACTIVITY_TYPES = [
+  'PACKING_TRACKING_VERIFY',
+  'PACKING_COMPLETE',
+  'ORDER_DISPATCH_SYNC',
+  'ORDER_DELIVERY_SYNC',
+  'DISPATCH_VOID_COMPLETE',
+] as const;
 const DISPATCH_REPORT_TREND_ACTIVITY_TYPES = [
   'PACKING_COMPLETE',
   'ORDER_DISPATCH_SYNC',
@@ -167,16 +178,21 @@ const DISPATCH_REPORT_TREND_ACTIVITY_TYPES = [
 ] as const;
 const DISPATCH_REPORT_ACTIVITY_TYPES = [
   ...DISPATCH_REPORT_TREND_ACTIVITY_TYPES,
+  'DISPATCH_VOID_COMPLETE',
   'ORDER_RTS_UNIT_VERIFY',
   'ORDER_RTS_DISPOSITION',
 ] as const;
 const MANILA_TIME_ZONE = 'Asia/Manila';
+const CONFIRMED_POS_ORDER_STATUS = 1;
+const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
 
 @Injectable()
 export class WmsDispatchService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly wmsInventoryService: WmsInventoryService,
+    private readonly wmsFulfillmentOpsService: WmsFulfillmentOpsService,
+    private readonly ordersService: OrdersService,
   ) {}
 
   async getSummary(query: GetWmsDispatchSummaryDto) {
@@ -398,10 +414,14 @@ export class WmsDispatchService {
       throw new NotFoundException('Dispatch order not found in the active outbound scope');
     }
 
+    const outboundActivities = await this.loadOutboundActivitiesByOrder([order.id]);
+
     return {
       tenantReady: true,
       serverTime: new Date().toISOString(),
-      task: this.mapDispatchTask(order),
+      task: this.mapDispatchTask(order, {
+        history: outboundActivities.get(order.id) ?? [],
+      }),
     };
   }
 
@@ -623,6 +643,156 @@ export class WmsDispatchService {
       },
       result,
     };
+  }
+
+  async voidOutboundTask(
+    user: {
+      userId?: string;
+      id?: string;
+      sessionId?: string | null;
+      permissions?: string[];
+      role?: string;
+    } | null | undefined,
+    taskId: string,
+    body: VoidWmsDispatchOutboundDto,
+    request?: Request,
+  ) {
+    const scope = await this.resolveScope(body);
+    const reason = body.reason?.trim() ?? '';
+    if (!reason) {
+      throw new BadRequestException('Void reason is required');
+    }
+
+    const order = await this.prisma.wmsFulfillmentOrder.findFirst({
+      where: this.combineOrderWhere(
+        await this.buildPackedOrderScope(scope),
+        this.buildOutboundLifecycleWhere('PACKED'),
+        { id: taskId },
+      ),
+      select: {
+        id: true,
+        tenantId: true,
+        storeId: true,
+        shopId: true,
+        posOrderId: true,
+        posOrderDbId: true,
+        assignmentMode: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Packed dispatch order not found in the active outbound scope');
+    }
+
+    if (order.assignmentMode !== WmsFulfillmentAssignmentMode.BASKET_DEMAND) {
+      throw new BadRequestException('Dispatch void is currently available only for basket-demand packed orders');
+    }
+
+    const releaseResult = await this.wmsFulfillmentOpsService.releaseDemandOrderForDispatchVoid(
+      user ?? {},
+      {
+        fulfillmentOrderId: order.id,
+        reason,
+      },
+      request,
+    );
+
+    const posStatusUpdate = await this.enqueueVoidedDispatchOrdersConfirmedStatus([
+      {
+        tenantId: releaseResult.tenantId,
+        storeId: releaseResult.storeId,
+        posOrderDbId: releaseResult.posOrderDbId,
+        shopId: releaseResult.shopId,
+        posOrderId: releaseResult.posOrderId,
+        warehouseId: releaseResult.warehouseId,
+      },
+    ]);
+
+    return {
+      success: true,
+      taskId: releaseResult.fulfillmentOrderId,
+      posOrderId: releaseResult.posOrderId,
+      restoredPackedUnits: releaseResult.restoredPackedUnits,
+      affectedBasketIds: releaseResult.affectedBasketIds,
+      posStatusUpdate,
+    };
+  }
+
+  private async enqueueVoidedDispatchOrdersConfirmedStatus(
+    orders: Array<{
+      tenantId: string;
+      storeId: string;
+      posOrderDbId: string;
+      shopId: string;
+      posOrderId: string;
+      warehouseId: string | null;
+    }>,
+  ) {
+    const summary = {
+      targetStatus: CONFIRMED_POS_ORDER_STATUS,
+      queued: 0,
+      skipped: 0,
+      failed: 0,
+      results: [] as Array<{
+        posOrderId: string;
+        outcome: 'queued' | 'skipped' | 'failed';
+        reason: string;
+        currentStatus?: number | null;
+      }>,
+    };
+
+    if (orders.length === 0) {
+      return summary;
+    }
+
+    const results = await Promise.all(orders.map(async (order) => {
+      try {
+        const result = await this.ordersService.enqueueSystemPosOrderStatusUpdate({
+          tenantId: order.tenantId,
+          orderRowId: order.posOrderDbId,
+          shopId: order.shopId,
+          posOrderId: order.posOrderId,
+          targetStatus: CONFIRMED_POS_ORDER_STATUS,
+          allowedCurrentStatuses: [WAITING_FOR_PRINTING_POS_ORDER_STATUS],
+          source: 'wms_picking',
+        });
+
+        if (result.skipped) {
+          return {
+            posOrderId: order.posOrderId,
+            outcome: 'skipped' as const,
+            reason: result.reason,
+            currentStatus: result.currentStatus,
+          };
+        }
+
+        return {
+          posOrderId: order.posOrderId,
+          outcome: 'queued' as const,
+          reason: result.reason,
+          currentStatus: result.currentStatus,
+        };
+      } catch (error) {
+        return {
+          posOrderId: order.posOrderId,
+          outcome: 'failed' as const,
+          reason: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+        };
+      }
+    }));
+
+    for (const result of results) {
+      summary.results.push(result);
+      if (result.outcome === 'queued') {
+        summary.queued += 1;
+      } else if (result.outcome === 'skipped') {
+        summary.skipped += 1;
+      } else {
+        summary.failed += 1;
+      }
+    }
+
+    return summary;
   }
 
   private async resolveScope(query: GetWmsDispatchSummaryDto): Promise<DispatchScope> {
@@ -1099,6 +1269,7 @@ export class WmsDispatchService {
           insertedAt: true,
           dateLocal: true,
           tracking: true,
+          isVoid: true,
           status: true,
           statusName: true,
           deliveredAt: true,
@@ -1349,7 +1520,12 @@ export class WmsDispatchService {
     return summaryByOrderId;
   }
 
-  private mapDispatchTask(order: any) {
+  private mapDispatchTask(
+    order: any,
+    options?: {
+      history?: DispatchHistoryEntry[];
+    },
+  ) {
     const lines = Array.isArray(order.lines)
       ? order.lines.filter((line: any) => (
           line.status !== WmsFulfillmentLineStatus.CANCELED
@@ -1403,6 +1579,7 @@ export class WmsDispatchService {
       orderDateLocal: order.posOrder?.dateLocal ?? null,
       tracking: order.posOrder?.tracking ?? null,
       delivery: this.mapDelivery(order),
+      voidControl: this.buildDispatchVoidControl(order),
       createdAt: order.createdAt,
       basket: order.basket
         ? {
@@ -1426,6 +1603,7 @@ export class WmsDispatchService {
               : null,
           }
         : null,
+      history: options?.history ?? [],
       unitRecords,
       lines: lines.map((line: any) => ({
         id: line.id,
@@ -1610,6 +1788,60 @@ export class WmsDispatchService {
     return historyByOrderId;
   }
 
+  private async loadOutboundActivitiesByOrder(orderIds: string[]) {
+    if (orderIds.length === 0) {
+      return new Map<string, DispatchHistoryEntry[]>();
+    }
+
+    const rows = await this.prisma.wmsStaffActivity.findMany({
+      where: {
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: {
+          in: orderIds,
+        },
+        actionType: {
+          in: [...DISPATCH_OUTBOUND_ACTIVITY_TYPES],
+        },
+        outcome: WmsStaffActivityOutcome.SUCCESS,
+      },
+      select: {
+        id: true,
+        resourceId: true,
+        actionType: true,
+        metadata: true,
+        createdAt: true,
+        actor: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+    });
+
+    const historyByOrderId = new Map<string, DispatchHistoryEntry[]>();
+    for (const row of rows) {
+      if (!row.resourceId) {
+        continue;
+      }
+
+      const existing = historyByOrderId.get(row.resourceId) ?? [];
+      if (existing.length >= 12) {
+        continue;
+      }
+
+      existing.push(this.mapOutboundHistoryEntry(row));
+      historyByOrderId.set(row.resourceId, existing);
+    }
+
+    return historyByOrderId;
+  }
+
   private buildReturnFlow(
     order: any,
     history: DispatchHistoryEntry[],
@@ -1658,6 +1890,60 @@ export class WmsDispatchService {
         : null,
       lastVerifiedAt: latestVerification?.createdAt ?? null,
       lastVerifiedBy: latestVerification?.actor ?? null,
+    };
+  }
+
+  private buildDispatchVoidControl(order: any) {
+    if (order.assignmentMode !== WmsFulfillmentAssignmentMode.BASKET_DEMAND) {
+      return {
+        eligible: false,
+        reason: 'Only basket-demand packed orders can be voided from Dispatch.',
+      };
+    }
+
+    if (order.posOrder?.isVoid) {
+      return {
+        eligible: false,
+        reason: 'This order is already voided in POS and can no longer be reopened from Dispatch.',
+      };
+    }
+
+    const delivery = this.mapDelivery(order);
+    if (delivery?.status !== 'PACKED') {
+      return {
+        eligible: false,
+        reason: 'Only orders still in Packed stage can be voided from Dispatch.',
+      };
+    }
+
+    const packedBasketUnits = (Array.isArray(order?.basketUnits) ? order.basketUnits : []).filter(
+      (basketUnit: any) => (
+        this.isHistoricallyPackedDemandBasketUnit(basketUnit)
+        && basketUnit.fulfillmentOrderId === order.id
+        && basketUnit.inventoryUnit
+      ),
+    );
+
+    if (packedBasketUnits.length === 0) {
+      return {
+        eligible: false,
+        reason: 'No packed unit history is available to restore for this order.',
+      };
+    }
+
+    const changedUnit = packedBasketUnits.find(
+      (basketUnit: any) => basketUnit.inventoryUnit?.status !== WmsInventoryUnitStatus.PACKED,
+    );
+    if (changedUnit?.inventoryUnit?.code) {
+      return {
+        eligible: false,
+        reason: `Unit ${changedUnit.inventoryUnit.code} already left Packed stage and can no longer be voided from Dispatch.`,
+      };
+    }
+
+    return {
+      eligible: true,
+      reason: null,
     };
   }
 
@@ -1917,6 +2203,67 @@ export class WmsDispatchService {
 
     if (trackingCode) {
       detailParts.push(`Waybill ${trackingCode}`);
+    }
+
+    return {
+      id: activity.id,
+      actionType: activity.actionType,
+      label,
+      detail: detailParts.join(' · ') || null,
+      createdAt: activity.createdAt.toISOString(),
+      actor: this.mapActor(activity.actor),
+    };
+  }
+
+  private mapOutboundHistoryEntry(activity: {
+    id: string;
+    actionType: string;
+    metadata: Prisma.JsonValue | null;
+    createdAt: Date;
+    actor: {
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+    } | null;
+  }): DispatchHistoryEntry {
+    const metadata = this.readActivityMetadata(activity.metadata);
+    const posOrderId = this.cleanOptionalText(this.readActivityMetadataString(metadata, 'posOrderId'));
+    const trackingCode = this.cleanOptionalText(this.readActivityMetadataString(metadata, 'trackingCode'));
+    const basketCode = this.cleanOptionalText(this.readActivityMetadataString(metadata, 'basketCode'));
+    const restoredPackedUnits = this.readActivityMetadataNumber(metadata, 'restoredPackedUnits');
+    const unitCount = this.readActivityMetadataNumber(metadata, 'unitCount');
+    const reason = this.cleanOptionalText(this.readActivityMetadataString(metadata, 'reason'));
+    const detailParts: string[] = [];
+    let label = this.formatEnumLabel(activity.actionType);
+
+    if (activity.actionType === 'PACKING_TRACKING_VERIFY') {
+      label = 'Verified waybill';
+    } else if (activity.actionType === 'PACKING_COMPLETE') {
+      label = 'Packed order';
+    } else if (activity.actionType === 'ORDER_DISPATCH_SYNC') {
+      label = 'Synced shipped order';
+    } else if (activity.actionType === 'ORDER_DELIVERY_SYNC') {
+      label = 'Synced delivered order';
+    } else if (activity.actionType === 'DISPATCH_VOID_COMPLETE') {
+      label = 'Voided packed order';
+    }
+
+    if (posOrderId) {
+      detailParts.push(`Order #${posOrderId}`);
+    }
+    if (trackingCode) {
+      detailParts.push(`Waybill ${trackingCode}`);
+    }
+    if (basketCode) {
+      detailParts.push(basketCode);
+    }
+    if (typeof restoredPackedUnits === 'number' && restoredPackedUnits > 0) {
+      detailParts.push(`${restoredPackedUnits} unit${restoredPackedUnits === 1 ? '' : 's'} restored`);
+    } else if (typeof unitCount === 'number' && unitCount > 0) {
+      detailParts.push(`${unitCount} unit${unitCount === 1 ? '' : 's'}`);
+    }
+    if (reason) {
+      detailParts.push(reason);
     }
 
     return {
@@ -2190,6 +2537,8 @@ export class WmsDispatchService {
       label = 'Synced shipped order';
     } else if (activity.actionType === 'ORDER_DELIVERY_SYNC') {
       label = 'Synced delivered order';
+    } else if (activity.actionType === 'DISPATCH_VOID_COMPLETE') {
+      label = 'Voided packed order';
     } else if (activity.actionType === 'ORDER_RTS_UNIT_VERIFY') {
       label = 'Verified returned unit';
     } else if (activity.actionType === 'ORDER_RTS_COMPLETE') {

@@ -13,6 +13,7 @@ import {
   fetchWmsDispatchReturns,
   fetchWmsDispatchSummary,
   reconcileWmsDispatchOutbound,
+  voidWmsDispatchOutboundTask,
 } from '../_services/dispatch.service';
 import type {
   WmsDispatchOutboundResponse,
@@ -45,6 +46,10 @@ const RETURNS_PERMISSIONS = [
 const OUTBOUND_MUTATION_PERMISSIONS = [
   'wms.dispatch.write',
   'wms.dispatch.edit',
+  'wms.dispatch.override',
+] as const;
+const OUTBOUND_VOID_PERMISSIONS = [
+  'wms.dispatch.void',
   'wms.dispatch.override',
 ] as const;
 
@@ -82,6 +87,7 @@ export function useDispatchController() {
   const [isTaskDetailLoading, setIsTaskDetailLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
+  const [isVoiding, setIsVoiding] = useState(false);
   const summaryRequestIdRef = useRef(0);
   const listRequestIdRef = useRef(0);
   const reportsRequestIdRef = useRef(0);
@@ -94,6 +100,7 @@ export function useDispatchController() {
   const canViewReturns = isSuperAdmin || RETURNS_PERMISSIONS.some((permission) => permissions.includes(permission));
   const canViewReports = canViewOutbound || canViewReturns;
   const canManageOutbound = isSuperAdmin || OUTBOUND_MUTATION_PERMISSIONS.some((permission) => permissions.includes(permission));
+  const canVoidOutbound = isSuperAdmin || OUTBOUND_VOID_PERMISSIONS.some((permission) => permissions.includes(permission));
 
   const {
     setSelectedTenantId,
@@ -520,11 +527,48 @@ export function useDispatchController() {
     }
   }, [loadList, loadSummary, selectedTaskId]);
 
+  const runDispatchVoid = useCallback(async (params: {
+    taskId: string;
+    reason: string;
+  }) => {
+    setIsVoiding(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await voidWmsDispatchOutboundTask({
+        taskId: params.taskId,
+        tenantId: selectedTenantIdState,
+        storeId: selectedStoreIdState,
+        reason: params.reason,
+      });
+      const syncSummary = response.posStatusUpdate.queued > 0
+        ? ` POS reset queued for ${response.posStatusUpdate.queued} order${response.posStatusUpdate.queued === 1 ? '' : 's'}.`
+        : '';
+
+      setSuccessMessage(
+        `Dispatch void returned order #${response.posOrderId} with ${response.restoredPackedUnits} packed unit${response.restoredPackedUnits === 1 ? '' : 's'} back to picking.${syncSummary}`,
+      );
+      setSelectedTaskId(null);
+      await Promise.all([
+        loadSummary(true),
+        loadList(true),
+      ]);
+      return true;
+    } catch (error) {
+      setErrorMessage(resolveDispatchError(error));
+      return false;
+    } finally {
+      setIsVoiding(false);
+    }
+  }, [loadList, loadSummary, selectedStoreIdState, selectedTenantIdState]);
+
   return {
     canViewOutbound,
     canViewReports,
     canViewReturns,
     canManageOutbound,
+    canVoidOutbound,
     canRunScopedReconcile,
     currentPage,
     errorMessage,
@@ -532,6 +576,7 @@ export function useDispatchController() {
     isReconciling,
     isRefreshing,
     isTaskDetailLoading,
+    isVoiding,
     outboundTasks,
     reportsData,
     returnTasks,
@@ -609,6 +654,10 @@ export function useDispatchController() {
       tenantId: selectedTenantIdState,
       storeId: selectedStoreIdState,
       taskIds: [taskId],
+    }),
+    voidOutboundTask: async (taskId: string, reason: string) => runDispatchVoid({
+      taskId,
+      reason,
     }),
     refresh: async () => {
       setSuccessMessage(null);

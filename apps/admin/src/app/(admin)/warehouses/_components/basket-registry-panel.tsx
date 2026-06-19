@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Plus, ShoppingBasket } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { BasketLabelModal } from './basket-label-modal';
@@ -13,7 +13,6 @@ import type {
 } from '../_types/warehouse';
 
 const EDITABLE_STATUSES: WmsBasketStatus[] = ['AVAILABLE', 'DAMAGED', 'RETIRED'];
-const BASKET_CAPACITY_OPTIONS = Array.from({ length: 20 }, (_, index) => index + 1);
 
 type BasketRegistryPanelProps = {
   warehouse: WmsWarehouseDetail | null;
@@ -64,19 +63,17 @@ export function BasketRegistryPanel({
             placeholder="Auto or scan barcode"
             className="input"
           />
-          <select
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={maxFulfillmentOrders}
-            onChange={(event) => setMaxFulfillmentOrders(event.target.value)}
+            onChange={(event) => setMaxFulfillmentOrders(sanitizeBasketCapacityInput(event.target.value))}
+            placeholder="1"
             className="h-12 w-24 rounded-[14px] border border-[#d7e0e7] bg-white px-3 text-[12px] font-bold text-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
             aria-label="Basket order capacity"
             title="Basket order capacity"
-          >
-            {BASKET_CAPACITY_OPTIONS.map((capacity) => (
-              <option key={capacity} value={capacity}>
-                {capacity} order{capacity === 1 ? '' : 's'}
-              </option>
-            ))}
-          </select>
+          />
           <button
             type="submit"
             disabled={isSaving || !warehouse}
@@ -144,6 +141,30 @@ function BasketRow({
 }) {
   const activeFulfillmentOrders = basket.activeFulfillmentOrders ?? (basket.fulfillmentOrder ? 1 : 0);
   const isLocked = activeFulfillmentOrders > 0;
+  const [capacityDraft, setCapacityDraft] = useState(String(basket.maxFulfillmentOrders));
+
+  useEffect(() => {
+    setCapacityDraft(String(basket.maxFulfillmentOrders));
+  }, [basket.maxFulfillmentOrders]);
+
+  const commitCapacityDraft = () => {
+    const normalized = sanitizeBasketCapacityInput(capacityDraft);
+    const nextValue = Number(normalized) || 1;
+    setCapacityDraft(String(nextValue));
+    if (nextValue === basket.maxFulfillmentOrders) {
+      return;
+    }
+
+    void onUpdate(basket.id, { maxFulfillmentOrders: nextValue });
+  };
+
+  const handleCapacityKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commitCapacityDraft();
+    }
+  };
 
   return (
     <div
@@ -174,23 +195,20 @@ function BasketRow({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <select
-            value={basket.maxFulfillmentOrders}
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={capacityDraft}
             disabled={isSaving || isLocked}
             onClick={(event) => event.stopPropagation()}
-            onChange={(event) => {
-              void onUpdate(basket.id, { maxFulfillmentOrders: Number(event.target.value) || 1 });
-            }}
-            className="h-9 rounded-[12px] border border-[#d7e0e7] bg-white px-2 text-[11px] font-bold text-primary disabled:cursor-not-allowed disabled:bg-[#f3f6f8] disabled:text-[#8a9aa6]"
+            onKeyDown={handleCapacityKeyDown}
+            onBlur={commitCapacityDraft}
+            onChange={(event) => setCapacityDraft(sanitizeBasketCapacityInput(event.target.value))}
+            className="h-9 w-20 rounded-[12px] border border-[#d7e0e7] bg-white px-2 text-[11px] font-bold text-primary disabled:cursor-not-allowed disabled:bg-[#f3f6f8] disabled:text-[#8a9aa6]"
             aria-label={`Order capacity for ${basket.barcode}`}
             title="Order capacity"
-          >
-            {BASKET_CAPACITY_OPTIONS.map((capacity) => (
-              <option key={capacity} value={capacity}>
-                {capacity}
-              </option>
-            ))}
-          </select>
+          />
 
           <select
             value={basket.status}
@@ -222,4 +240,8 @@ function formatBasketStatus(status: string) {
     .split('_')
     .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
     .join(' ');
+}
+
+function sanitizeBasketCapacityInput(value: string) {
+  return value.replace(/\D+/g, '');
 }

@@ -7,6 +7,7 @@ import { GetWmsDispatchReportsDto } from './dto/get-wms-dispatch-reports.dto';
 import { GetWmsDispatchReturnsDto } from './dto/get-wms-dispatch-returns.dto';
 import { GetWmsDispatchSummaryDto } from './dto/get-wms-dispatch-summary.dto';
 import { ReconcileWmsDispatchOutboundDto } from './dto/reconcile-wms-dispatch-outbound.dto';
+import { VoidWmsDispatchOutboundDto } from './dto/void-wms-dispatch-outbound.dto';
 import { WmsDispatchService } from './wms-dispatch.service';
 
 @Controller('wms/dispatch')
@@ -45,6 +46,16 @@ export class WmsDispatchController {
   @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
   async reconcileOutbound(@Request() req, @Body() body: ReconcileWmsDispatchOutboundDto) {
     return this.wmsDispatchService.reconcileOutbound(req.user, body);
+  }
+
+  @Post('outbound/:taskId/void')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override', 'wms.dispatch.void')
+  async voidOutboundTask(
+    @Request() req,
+    @Param('taskId', new ParseUUIDPipe()) taskId: string,
+    @Body() body: VoidWmsDispatchOutboundDto,
+  ) {
+    return this.wmsDispatchService.voidOutboundTask(req.user, taskId, body, req);
   }
 
   @Get('returns')

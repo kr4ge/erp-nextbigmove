@@ -207,7 +207,10 @@ export function DispatchScreen() {
           isLoading={dispatch.isTaskDetailLoading}
           canReconcileOutbound={dispatch.canManageOutbound}
           isReconcilingOutbound={dispatch.isReconciling}
+          canVoidOutbound={dispatch.canVoidOutbound}
+          isVoidingOutbound={dispatch.isVoiding}
           onReconcileOutboundTask={(taskId) => dispatch.reconcileOutboundTask(taskId)}
+          onVoidOutboundTask={(taskId, reason) => dispatch.voidOutboundTask(taskId, reason)}
           onClose={() => dispatch.setSelectedTaskId(null)}
         />
       )}

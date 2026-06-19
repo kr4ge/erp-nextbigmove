@@ -594,6 +594,36 @@ export class WmsFulfillmentOpsService {
     ));
   }
 
+  async releaseDemandOrderForDispatchVoid(
+    user: { userId?: string; id?: string; sessionId?: string | null },
+    params: {
+      fulfillmentOrderId: string;
+      reason: string;
+    },
+    request?: Request,
+  ) {
+    if (!params.fulfillmentOrderId?.trim()) {
+      throw new BadRequestException('Select a packed order before voiding dispatch work');
+    }
+
+    const reason = params.reason?.trim() ?? '';
+    if (!reason) {
+      throw new BadRequestException('Void reason is required');
+    }
+
+    const actorId = this.resolveActorId(user);
+    return this.prisma.$transaction(async (tx) => (
+      this.releaseDemandOrderForDispatchVoidTx(tx, {
+        fulfillmentOrderId: params.fulfillmentOrderId,
+        actorId,
+        now: new Date(),
+        reason,
+        request,
+        sessionId: this.resolveSessionId(user),
+      })
+    ));
+  }
+
   async removeStaleBasketUnits(
     user: { userId?: string; id?: string; sessionId?: string | null },
     body: RepairWmsDemandBasketsDto,
@@ -1580,6 +1610,260 @@ export class WmsFulfillmentOpsService {
     };
   }
 
+  private async releaseDemandOrderForDispatchVoidTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      fulfillmentOrderId: string;
+      actorId: string | null;
+      now: Date;
+      reason: string;
+      request?: Request;
+      sessionId?: string | null;
+    },
+  ) {
+    const order = await tx.wmsFulfillmentOrder.findUnique({
+      where: { id: params.fulfillmentOrderId },
+      select: {
+        id: true,
+        tenantId: true,
+        storeId: true,
+        shopId: true,
+        posOrderId: true,
+        posOrderDbId: true,
+        assignmentMode: true,
+        status: true,
+        warehouseId: true,
+        posOrder: {
+          select: {
+            status: true,
+            isVoid: true,
+          },
+        },
+        basketUnits: {
+          where: {
+            OR: [
+              {
+                status: WmsBasketUnitStatus.PACKED,
+              },
+              {
+                status: WmsBasketUnitStatus.REMOVED,
+                packedAt: {
+                  not: null,
+                },
+              },
+            ],
+          },
+          select: {
+            id: true,
+            basketId: true,
+            tenantId: true,
+            inventoryUnitId: true,
+            status: true,
+            sourceLocationId: true,
+            inventoryUnit: {
+              select: {
+                id: true,
+                code: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: [
+            { packedAt: 'desc' },
+            { id: 'desc' },
+          ],
+        },
+      },
+    });
+
+    if (!order) {
+      throw new BadRequestException('Packed dispatch order was not found');
+    }
+
+    if (order.assignmentMode !== WmsFulfillmentAssignmentMode.BASKET_DEMAND) {
+      throw new BadRequestException('Dispatch void currently supports basket-demand packed orders only');
+    }
+
+    if (order.status !== WmsFulfillmentOrderStatus.PACKED) {
+      throw new BadRequestException(`Order ${order.posOrderId} is ${this.formatEnumLabel(order.status)} and cannot be voided from Dispatch`);
+    }
+
+    const posStatus = order.posOrder?.status ?? null;
+    if (
+      order.posOrder?.isVoid
+      || posStatus === 2
+      || posStatus === 3
+      || posStatus === 4
+      || posStatus === 5
+    ) {
+      throw new ConflictException(`Order ${order.posOrderId} has already moved beyond packed dispatch work and cannot be voided`);
+    }
+
+    if (order.basketUnits.length === 0) {
+      throw new ConflictException(`Order ${order.posOrderId} has no restorable packed unit history`);
+    }
+
+    const blockedUnit = order.basketUnits.find((basketUnit) => (
+      basketUnit.inventoryUnit.status !== WmsInventoryUnitStatus.PACKED
+    ));
+    if (blockedUnit) {
+      throw new ConflictException(
+        `Unit ${blockedUnit.inventoryUnit.code} is already ${this.formatEnumLabel(blockedUnit.inventoryUnit.status)} and cannot be voided from Dispatch`,
+      );
+    }
+
+    const basketIdSet = new Set<string>();
+    const inventoryUnitIdsByBasketId = new Map<string, string[]>();
+    for (const basketUnit of order.basketUnits) {
+      if (!basketUnit.basketId) {
+        throw new ConflictException(`Unit ${basketUnit.inventoryUnit.code} is missing its source basket history`);
+      }
+
+      basketIdSet.add(basketUnit.basketId);
+      const existing = inventoryUnitIdsByBasketId.get(basketUnit.basketId) ?? [];
+      existing.push(basketUnit.inventoryUnitId);
+      inventoryUnitIdsByBasketId.set(basketUnit.basketId, existing);
+    }
+
+    for (const basketId of basketIdSet) {
+      await this.lockBasketForUpdate(tx, basketId);
+    }
+
+    const restoreStateByInventoryUnitId = new Map<string, {
+      fromLocationId: string | null;
+      fromStatus: WmsInventoryUnitStatus | null;
+      warehouseId: string | null;
+    }>();
+    for (const [basketId, inventoryUnitIds] of inventoryUnitIdsByBasketId.entries()) {
+      const basketRestoreState = await this.loadBasketUnitRestoreStates(tx, basketId, inventoryUnitIds);
+      for (const [inventoryUnitId, restoreState] of basketRestoreState.entries()) {
+        if (!restoreStateByInventoryUnitId.has(inventoryUnitId)) {
+          restoreStateByInventoryUnitId.set(inventoryUnitId, restoreState);
+        }
+      }
+    }
+
+    const movementRows: Prisma.WmsInventoryMovementCreateManyInput[] = [];
+    for (const basketUnit of order.basketUnits) {
+      const restoreState = restoreStateByInventoryUnitId.get(basketUnit.inventoryUnitId);
+      if (!restoreState?.fromLocationId || !restoreState.fromStatus || !restoreState.warehouseId) {
+        throw new ConflictException(`Unable to restore original bin state for unit ${basketUnit.inventoryUnit.code}`);
+      }
+
+      const inventoryUpdate = await tx.wmsInventoryUnit.updateMany({
+        where: {
+          id: basketUnit.inventoryUnitId,
+          status: WmsInventoryUnitStatus.PACKED,
+        },
+        data: {
+          currentLocationId: restoreState.fromLocationId,
+          status: restoreState.fromStatus,
+          updatedById: params.actorId ?? undefined,
+        },
+      });
+
+      if (inventoryUpdate.count !== 1) {
+        throw new ConflictException(`Unit ${basketUnit.inventoryUnit.code} changed before the dispatch void completed`);
+      }
+
+      if (basketUnit.status === WmsBasketUnitStatus.PACKED) {
+        const basketUnitUpdate = await tx.wmsBasketUnit.updateMany({
+          where: {
+            id: basketUnit.id,
+            status: WmsBasketUnitStatus.PACKED,
+          },
+          data: {
+            status: WmsBasketUnitStatus.REMOVED,
+            removedById: params.actorId ?? undefined,
+            removedAt: params.now,
+          },
+        });
+
+        if (basketUnitUpdate.count !== 1) {
+          throw new ConflictException(`Basket state for unit ${basketUnit.inventoryUnit.code} changed before the dispatch void completed`);
+        }
+      }
+
+      movementRows.push({
+        tenantId: basketUnit.tenantId,
+        inventoryUnitId: basketUnit.inventoryUnitId,
+        warehouseId: restoreState.warehouseId,
+        fromLocationId: null,
+        toLocationId: restoreState.fromLocationId,
+        fromStatus: WmsInventoryUnitStatus.PACKED,
+        toStatus: restoreState.fromStatus,
+        movementType: WmsInventoryMovementType.TRANSFER,
+        referenceType: 'WMS_FULFILLMENT_ORDER',
+        referenceId: order.id,
+        referenceCode: order.posOrderId,
+        notes: `Dispatch void returned packed order ${order.posOrderId} to inventory: ${params.reason}`,
+        actorId: params.actorId,
+        createdAt: params.now,
+      });
+    }
+
+    if (movementRows.length > 0) {
+      await tx.wmsInventoryMovement.createMany({
+        data: movementRows,
+      });
+    }
+
+    await tx.wmsBasketPickDemand.deleteMany({
+      where: {
+        fulfillmentOrderId: order.id,
+      },
+    });
+
+    for (const basketId of basketIdSet) {
+      await this.syncDemandBasketCountsTx(tx, {
+        basketId,
+        now: params.now,
+        refreshBasketState: false,
+      });
+    }
+
+    await this.refreshDemandOrderAvailabilityState(tx, order.id, params.now, {
+      allowedPosStatuses: [CONFIRMED_POS_ORDER_STATUS, WAITING_FOR_PRINTING_POS_ORDER_STATUS],
+      allowPackedCurrentStatus: true,
+    });
+
+    for (const basketId of basketIdSet) {
+      await this.refreshBasketState(tx, basketId, params.now);
+    }
+
+    await this.wmsStaffActivityService.recordFromRequest({
+      request: params.request,
+      tenantId: order.tenantId,
+      actorId: params.actorId,
+      sessionId: params.sessionId ?? null,
+      actionType: 'DISPATCH_VOID_COMPLETE',
+      resourceType: 'WMS_FULFILLMENT_ORDER',
+      resourceId: order.id,
+      storeId: order.storeId,
+      warehouseId: order.warehouseId ?? null,
+      metadata: {
+        mode: 'BASKET_DEMAND',
+        source: 'DISPATCH',
+        reason: params.reason,
+        posOrderId: order.posOrderId,
+        restoredPackedUnits: order.basketUnits.length,
+        affectedBasketIds: Array.from(basketIdSet),
+      } as Prisma.InputJsonValue,
+    });
+
+    return {
+      fulfillmentOrderId: order.id,
+      tenantId: order.tenantId,
+      storeId: order.storeId,
+      shopId: order.shopId,
+      posOrderId: order.posOrderId,
+      posOrderDbId: order.posOrderDbId,
+      warehouseId: order.warehouseId ?? null,
+      restoredPackedUnits: order.basketUnits.length,
+      affectedBasketIds: Array.from(basketIdSet),
+    };
+  }
+
   private canDetachPackedBasketUnit(
     fulfillmentOrder:
       | {
@@ -1996,6 +2280,7 @@ export class WmsFulfillmentOpsService {
     now: Date,
     options?: {
       allowedPosStatuses?: number[];
+      allowPackedCurrentStatus?: boolean;
     },
   ) {
     const order = await tx.wmsFulfillmentOrder.findUnique({
@@ -2017,7 +2302,7 @@ export class WmsFulfillmentOpsService {
     if (
       !order
       || order.assignmentMode !== WmsFulfillmentAssignmentMode.BASKET_DEMAND
-      || order.status === WmsFulfillmentOrderStatus.PACKED
+      || (!options?.allowPackedCurrentStatus && order.status === WmsFulfillmentOrderStatus.PACKED)
       || order.status === WmsFulfillmentOrderStatus.CANCELED
       || !allowedPosStatuses.includes(order.posOrder.status ?? Number.NaN)
       || order.posOrder.isVoid
@@ -2897,6 +3182,14 @@ export class WmsFulfillmentOpsService {
       name,
       email: actor.email,
     };
+  }
+
+  private formatEnumLabel(value: string) {
+    return value
+      .toLowerCase()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
   }
 
   private buildEmptyOpsHealth(
