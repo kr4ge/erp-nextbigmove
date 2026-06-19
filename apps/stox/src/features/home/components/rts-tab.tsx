@@ -116,6 +116,9 @@ function RtsWorkspaceTab({
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
   const [isLoadingMoreQueue, setIsLoadingMoreQueue] = useState(false);
   const queuePageRef = useRef(1);
+  const queueHasMoreRef = useRef(false);
+  const queueRequestIdRef = useRef(0);
+  const queueRequestInFlightRef = useRef(false);
   const [selectedDispositionUnitId, setSelectedDispositionUnitId] = useState<string | null>(null);
   const [dispositionAction, setDispositionAction] = useState<WmsMobileTrackingReturnDispositionAction | null>(null);
   const [dispositionTargetCode, setDispositionTargetCode] = useState('');
@@ -242,9 +245,13 @@ function RtsWorkspaceTab({
       return;
     }
 
-    if (mode === 'append' && (isLoadingQueue || isLoadingMoreQueue || !queueHasMore)) {
+    if (mode === 'append' && (queueRequestInFlightRef.current || !queueHasMoreRef.current)) {
       return;
     }
+
+    const requestId = queueRequestIdRef.current + 1;
+    queueRequestIdRef.current = requestId;
+    queueRequestInFlightRef.current = true;
 
     if (mode === 'replace') {
       setIsLoadingQueue(true);
@@ -264,6 +271,10 @@ function RtsWorkspaceTab({
         pageSize: 10,
       });
 
+      if (queueRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setQueue((current) => {
         if (mode === 'replace') {
           return response.tasks;
@@ -277,18 +288,25 @@ function RtsWorkspaceTab({
       });
       queuePageRef.current = response.pagination.page;
       setQueuePage(response.pagination.page);
+      queueHasMoreRef.current = response.pagination.hasMore;
       setQueueHasMore(response.pagination.hasMore);
       setQueueStores(response.context.stores);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Unable to load RTS tasks.');
+      if (queueRequestIdRef.current === requestId) {
+        setError(requestError instanceof Error ? requestError.message : 'Unable to load RTS tasks.');
+      }
     } finally {
-      setIsLoadingQueue(false);
-      setIsLoadingMoreQueue(false);
+      if (queueRequestIdRef.current === requestId) {
+        queueRequestInFlightRef.current = false;
+        setIsLoadingQueue(false);
+        setIsLoadingMoreQueue(false);
+      }
     }
-  }, [device, isLoadingMoreQueue, isLoadingQueue, queueHasMore, queueStateFilter, session.accessToken, storeId, tenantId]);
+  }, [device, queueStateFilter, session.accessToken, storeId, tenantId]);
 
   useEffect(() => {
     queuePageRef.current = 1;
+    queueHasMoreRef.current = false;
     void loadQueue('replace');
   }, [loadQueue]);
 

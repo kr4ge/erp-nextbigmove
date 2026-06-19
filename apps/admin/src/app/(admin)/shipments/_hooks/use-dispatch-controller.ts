@@ -506,8 +506,23 @@ export function useDispatchController() {
     try {
       const response = await reconcileWmsDispatchOutbound(params);
       const changedCount = response.result.dispatchedUnits + response.result.deliveredOrders;
-      const summaryMessage = changedCount > 0
-        ? `Dispatch repair updated ${response.result.dispatchedUnits} dispatched units and ${response.result.deliveredOrders} delivered orders.`
+      const repairedCount = response.repair.repaired;
+      const messageParts: string[] = [];
+
+      if (repairedCount > 0) {
+        messageParts.push(
+          `Dispatch repair reopened ${repairedCount} stuck packed order${repairedCount === 1 ? '' : 's'}.`,
+        );
+      }
+
+      if (changedCount > 0) {
+        messageParts.push(
+          `Updated ${response.result.dispatchedUnits} dispatched units and ${response.result.deliveredOrders} delivered orders.`,
+        );
+      }
+
+      const summaryMessage = messageParts.length > 0
+        ? messageParts.join(' ')
         : 'Dispatch repair completed. No additional outbound repairs were needed.';
 
       setSuccessMessage(summaryMessage);

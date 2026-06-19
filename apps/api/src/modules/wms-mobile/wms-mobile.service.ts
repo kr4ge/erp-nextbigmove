@@ -8233,6 +8233,10 @@ export class WmsMobileService {
       return WmsFulfillmentOrderStatus.PACKING;
     }
 
+    if (params.currentStatus === WmsFulfillmentOrderStatus.PICKED) {
+      return WmsFulfillmentOrderStatus.PICKED;
+    }
+
     if (params.totalQuantity <= 0 || params.hasIssue) {
       return WmsFulfillmentOrderStatus.ISSUE;
     }

@@ -324,6 +324,19 @@ export type WmsDispatchReconcileResponse = {
     storeId: string | null;
     targetedOrders: number;
   };
+  repair: {
+    repaired: number;
+    skipped: number;
+    results: Array<{
+      outcome: 'repaired' | 'skipped';
+      fulfillmentOrderId: string;
+      posOrderId: string | null;
+      previousStatus: string | null;
+      nextStatus: string | null;
+      reason: string | null;
+      affectedBasketIds: string[];
+    }>;
+  };
   result: {
     dispatchedUnits: number;
     deliveredOrders: number;

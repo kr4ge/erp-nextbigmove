@@ -169,6 +169,7 @@ const DISPATCH_OUTBOUND_ACTIVITY_TYPES = [
   'ORDER_DISPATCH_SYNC',
   'ORDER_DELIVERY_SYNC',
   'DISPATCH_VOID_COMPLETE',
+  'DISPATCH_VOID_REPAIR_COMPLETE',
 ] as const;
 const DISPATCH_REPORT_TREND_ACTIVITY_TYPES = [
   'PACKING_COMPLETE',
@@ -179,6 +180,7 @@ const DISPATCH_REPORT_TREND_ACTIVITY_TYPES = [
 const DISPATCH_REPORT_ACTIVITY_TYPES = [
   ...DISPATCH_REPORT_TREND_ACTIVITY_TYPES,
   'DISPATCH_VOID_COMPLETE',
+  'DISPATCH_VOID_REPAIR_COMPLETE',
   'ORDER_RTS_UNIT_VERIFY',
   'ORDER_RTS_DISPOSITION',
 ] as const;
@@ -570,8 +572,9 @@ export class WmsDispatchService {
   }
 
   async reconcileOutbound(
-    user: { userId?: string; id?: string } | null | undefined,
+    user: { userId?: string; id?: string; sessionId?: string | null } | null | undefined,
     body: ReconcileWmsDispatchOutboundDto,
+    request?: Request,
   ) {
     const scope = await this.resolveScope(body);
     const requestedTaskIds = Array.from(new Set((body.taskIds ?? []).filter(Boolean)));
@@ -593,6 +596,7 @@ export class WmsDispatchService {
             storeId: true,
             shopId: true,
             posOrderId: true,
+            assignmentMode: true,
           },
         })
       : [];
@@ -618,6 +622,45 @@ export class WmsDispatchService {
       throw new BadRequestException('Selected orders must belong to the same tenant');
     }
 
+    const repairTargets = requestedTaskIds.length > 0
+      ? targetOrders.filter((order) => order.assignmentMode === WmsFulfillmentAssignmentMode.BASKET_DEMAND)
+      : await this.prisma.wmsFulfillmentOrder.findMany({
+          where: this.combineOrderWhere(
+            await this.buildPackedOrderScope(scope),
+            {
+              assignmentMode: WmsFulfillmentAssignmentMode.BASKET_DEMAND,
+            },
+          ),
+          select: {
+            id: true,
+            posOrderId: true,
+          },
+          orderBy: [
+            { updatedAt: 'desc' },
+            { id: 'desc' },
+          ],
+        });
+    const repairResults: Array<{
+      outcome: 'repaired' | 'skipped';
+      fulfillmentOrderId: string;
+      posOrderId: string | null;
+      previousStatus: string | null;
+      nextStatus: string | null;
+      reason: string | null;
+      affectedBasketIds: string[];
+    }> = [];
+
+    for (const order of repairTargets) {
+      const repairResult = await this.wmsFulfillmentOpsService.repairDemandOrderAfterStuckDispatchVoid(
+        user ?? {},
+        {
+          fulfillmentOrderId: order.id,
+        },
+        request,
+      );
+      repairResults.push(repairResult);
+    }
+
     const result = await this.wmsInventoryService.syncPackedUnitsToDispatchedForPosOrders({
       tenantId: reconcileTenantId,
       ...(requestedTaskIds.length > 0
@@ -640,6 +683,11 @@ export class WmsDispatchService {
         tenantId: reconcileTenantId,
         storeId: requestedTaskIds.length > 0 ? null : effectiveStoreId,
         targetedOrders: targetOrders.length,
+      },
+      repair: {
+        repaired: repairResults.filter((entry) => entry.outcome === 'repaired').length,
+        skipped: repairResults.filter((entry) => entry.outcome === 'skipped').length,
+        results: repairResults,
       },
       result,
     };
@@ -1934,10 +1982,10 @@ export class WmsDispatchService {
     const changedUnit = packedBasketUnits.find(
       (basketUnit: any) => basketUnit.inventoryUnit?.status !== WmsInventoryUnitStatus.PACKED,
     );
-    if (changedUnit?.inventoryUnit?.code) {
+    if (changedUnit) {
       return {
         eligible: false,
-        reason: `Unit ${changedUnit.inventoryUnit.code} already left Packed stage and can no longer be voided from Dispatch.`,
+        reason: 'Historical packed units already returned to inventory. Use Repair order sync to reopen this order.',
       };
     }
 
@@ -2246,6 +2294,8 @@ export class WmsDispatchService {
       label = 'Synced delivered order';
     } else if (activity.actionType === 'DISPATCH_VOID_COMPLETE') {
       label = 'Voided packed order';
+    } else if (activity.actionType === 'DISPATCH_VOID_REPAIR_COMPLETE') {
+      label = 'Reopened packed order';
     }
 
     if (posOrderId) {
@@ -2261,6 +2311,10 @@ export class WmsDispatchService {
       detailParts.push(`${restoredPackedUnits} unit${restoredPackedUnits === 1 ? '' : 's'} restored`);
     } else if (typeof unitCount === 'number' && unitCount > 0) {
       detailParts.push(`${unitCount} unit${unitCount === 1 ? '' : 's'}`);
+    }
+    const nextStatus = this.cleanOptionalText(this.readActivityMetadataString(metadata, 'nextStatus'));
+    if (nextStatus) {
+      detailParts.push(`Next ${this.formatEnumLabel(nextStatus)}`);
     }
     if (reason) {
       detailParts.push(reason);
@@ -2539,6 +2593,8 @@ export class WmsDispatchService {
       label = 'Synced delivered order';
     } else if (activity.actionType === 'DISPATCH_VOID_COMPLETE') {
       label = 'Voided packed order';
+    } else if (activity.actionType === 'DISPATCH_VOID_REPAIR_COMPLETE') {
+      label = 'Reopened packed order';
     } else if (activity.actionType === 'ORDER_RTS_UNIT_VERIFY') {
       label = 'Verified returned unit';
     } else if (activity.actionType === 'ORDER_RTS_COMPLETE') {

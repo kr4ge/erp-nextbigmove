@@ -624,6 +624,29 @@ export class WmsFulfillmentOpsService {
     ));
   }
 
+  async repairDemandOrderAfterStuckDispatchVoid(
+    user: { userId?: string; id?: string; sessionId?: string | null },
+    params: {
+      fulfillmentOrderId: string;
+    },
+    request?: Request,
+  ) {
+    if (!params.fulfillmentOrderId?.trim()) {
+      throw new BadRequestException('Select a packed order before repairing dispatch state');
+    }
+
+    const actorId = this.resolveActorId(user);
+    return this.prisma.$transaction(async (tx) => (
+      this.repairDemandOrderAfterStuckDispatchVoidTx(tx, {
+        fulfillmentOrderId: params.fulfillmentOrderId,
+        actorId,
+        now: new Date(),
+        request,
+        sessionId: this.resolveSessionId(user),
+      })
+    ));
+  }
+
   async removeStaleBasketUnits(
     user: { userId?: string; id?: string; sessionId?: string | null },
     body: RepairWmsDemandBasketsDto,
@@ -1825,6 +1848,7 @@ export class WmsFulfillmentOpsService {
     await this.refreshDemandOrderAvailabilityState(tx, order.id, params.now, {
       allowedPosStatuses: [CONFIRMED_POS_ORDER_STATUS, WAITING_FOR_PRINTING_POS_ORDER_STATUS],
       allowPackedCurrentStatus: true,
+      allowAnyPreDispatchPosStatus: true,
     });
 
     for (const basketId of basketIdSet) {
@@ -1860,6 +1884,236 @@ export class WmsFulfillmentOpsService {
       posOrderDbId: order.posOrderDbId,
       warehouseId: order.warehouseId ?? null,
       restoredPackedUnits: order.basketUnits.length,
+      affectedBasketIds: Array.from(basketIdSet),
+    };
+  }
+
+  private async repairDemandOrderAfterStuckDispatchVoidTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      fulfillmentOrderId: string;
+      actorId: string | null;
+      now: Date;
+      request?: Request;
+      sessionId?: string | null;
+    },
+  ) {
+    const order = await tx.wmsFulfillmentOrder.findUnique({
+      where: { id: params.fulfillmentOrderId },
+      select: {
+        id: true,
+        tenantId: true,
+        storeId: true,
+        shopId: true,
+        posOrderId: true,
+        assignmentMode: true,
+        status: true,
+        basketId: true,
+        warehouseId: true,
+        posOrder: {
+          select: {
+            status: true,
+            isVoid: true,
+          },
+        },
+        basketUnits: {
+          where: {
+            OR: [
+              {
+                status: WmsBasketUnitStatus.PACKED,
+              },
+              {
+                status: WmsBasketUnitStatus.REMOVED,
+                packedAt: {
+                  not: null,
+                },
+              },
+            ],
+          },
+          select: {
+            id: true,
+            basketId: true,
+            status: true,
+            inventoryUnit: {
+              select: {
+                id: true,
+                code: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: [
+            { packedAt: 'desc' },
+            { id: 'desc' },
+          ],
+        },
+      },
+    });
+
+    if (!order) {
+      return {
+        outcome: 'skipped' as const,
+        fulfillmentOrderId: params.fulfillmentOrderId,
+        posOrderId: null,
+        previousStatus: null,
+        nextStatus: null,
+        reason: 'Order was not found.',
+        affectedBasketIds: [] as string[],
+      };
+    }
+
+    if (order.assignmentMode !== WmsFulfillmentAssignmentMode.BASKET_DEMAND) {
+      return {
+        outcome: 'skipped' as const,
+        fulfillmentOrderId: order.id,
+        posOrderId: order.posOrderId,
+        previousStatus: order.status,
+        nextStatus: order.status,
+        reason: 'Only basket-demand orders can be repaired with this flow.',
+        affectedBasketIds: [] as string[],
+      };
+    }
+
+    if (order.status !== WmsFulfillmentOrderStatus.PACKED) {
+      return {
+        outcome: 'skipped' as const,
+        fulfillmentOrderId: order.id,
+        posOrderId: order.posOrderId,
+        previousStatus: order.status,
+        nextStatus: order.status,
+        reason: `Order is ${this.formatEnumLabel(order.status)} and is not stuck in packed dispatch state.`,
+        affectedBasketIds: [] as string[],
+      };
+    }
+
+    const posStatus = order.posOrder?.status ?? null;
+    if (order.posOrder?.isVoid || [2, 3, 4, 5].includes(posStatus ?? Number.NaN)) {
+      return {
+        outcome: 'skipped' as const,
+        fulfillmentOrderId: order.id,
+        posOrderId: order.posOrderId,
+        previousStatus: order.status,
+        nextStatus: order.status,
+        reason: 'Order already moved beyond packed dispatch work.',
+        affectedBasketIds: [] as string[],
+      };
+    }
+
+    const historicalPackedUnits = order.basketUnits.filter((basketUnit) => Boolean(basketUnit.inventoryUnit));
+    if (historicalPackedUnits.length === 0) {
+      return {
+        outcome: 'skipped' as const,
+        fulfillmentOrderId: order.id,
+        posOrderId: order.posOrderId,
+        previousStatus: order.status,
+        nextStatus: order.status,
+        reason: 'No historical packed units were found for this order.',
+        affectedBasketIds: [] as string[],
+      };
+    }
+
+    const stillPackedUnit = historicalPackedUnits.find((basketUnit) => (
+      basketUnit.status === WmsBasketUnitStatus.PACKED
+      || basketUnit.inventoryUnit?.status === WmsInventoryUnitStatus.PACKED
+    ));
+    if (stillPackedUnit) {
+      return {
+        outcome: 'skipped' as const,
+        fulfillmentOrderId: order.id,
+        posOrderId: order.posOrderId,
+        previousStatus: order.status,
+        nextStatus: order.status,
+        reason: 'Packed units are still active, so this order is not a stale dispatch-void candidate.',
+        affectedBasketIds: [] as string[],
+      };
+    }
+
+    const basketIdSet = new Set<string>();
+    if (order.basketId) {
+      basketIdSet.add(order.basketId);
+    }
+    for (const basketUnit of historicalPackedUnits) {
+      if (basketUnit.basketId) {
+        basketIdSet.add(basketUnit.basketId);
+      }
+    }
+
+    for (const basketId of basketIdSet) {
+      await this.lockBasketForUpdate(tx, basketId);
+    }
+
+    await tx.wmsBasketPickDemand.deleteMany({
+      where: {
+        fulfillmentOrderId: order.id,
+      },
+    });
+
+    await tx.wmsFulfillmentOrder.updateMany({
+      where: {
+        id: order.id,
+        status: WmsFulfillmentOrderStatus.PACKED,
+      },
+      data: {
+        basketId: null,
+        claimedById: null,
+        claimedAt: null,
+        packedById: null,
+        completedAt: null,
+      },
+    });
+
+    for (const basketId of basketIdSet) {
+      await this.syncDemandBasketCountsTx(tx, {
+        basketId,
+        now: params.now,
+        refreshBasketState: false,
+      });
+    }
+
+    await this.refreshDemandOrderAvailabilityState(tx, order.id, params.now, {
+      allowedPosStatuses: [CONFIRMED_POS_ORDER_STATUS, WAITING_FOR_PRINTING_POS_ORDER_STATUS],
+      allowPackedCurrentStatus: true,
+      allowAnyPreDispatchPosStatus: true,
+    });
+
+    for (const basketId of basketIdSet) {
+      await this.refreshBasketState(tx, basketId, params.now);
+    }
+
+    const refreshedOrder = await tx.wmsFulfillmentOrder.findUnique({
+      where: { id: order.id },
+      select: {
+        status: true,
+      },
+    });
+
+    await this.wmsStaffActivityService.recordFromRequest({
+      request: params.request,
+      tenantId: order.tenantId,
+      actorId: params.actorId,
+      sessionId: params.sessionId ?? null,
+      actionType: 'DISPATCH_VOID_REPAIR_COMPLETE',
+      resourceType: 'WMS_FULFILLMENT_ORDER',
+      resourceId: order.id,
+      storeId: order.storeId,
+      warehouseId: order.warehouseId ?? null,
+      metadata: {
+        mode: 'BASKET_DEMAND',
+        source: 'DISPATCH_REPAIR',
+        posOrderId: order.posOrderId,
+        previousStatus: order.status,
+        nextStatus: refreshedOrder?.status ?? order.status,
+        affectedBasketIds: Array.from(basketIdSet),
+      } as Prisma.InputJsonValue,
+    });
+
+    return {
+      outcome: 'repaired' as const,
+      fulfillmentOrderId: order.id,
+      posOrderId: order.posOrderId,
+      previousStatus: order.status,
+      nextStatus: refreshedOrder?.status ?? order.status,
+      reason: null,
       affectedBasketIds: Array.from(basketIdSet),
     };
   }
@@ -2281,6 +2535,7 @@ export class WmsFulfillmentOpsService {
     options?: {
       allowedPosStatuses?: number[];
       allowPackedCurrentStatus?: boolean;
+      allowAnyPreDispatchPosStatus?: boolean;
     },
   ) {
     const order = await tx.wmsFulfillmentOrder.findUnique({
@@ -2298,13 +2553,17 @@ export class WmsFulfillmentOpsService {
     const allowedPosStatuses = options?.allowedPosStatuses?.length
       ? options.allowedPosStatuses
       : [CONFIRMED_POS_ORDER_STATUS];
+    const posStatus = order?.posOrder?.status ?? null;
+    const posStatusAllowed = options?.allowAnyPreDispatchPosStatus
+      ? posStatus === null || ![2, 3, 4, 5].includes(posStatus)
+      : allowedPosStatuses.includes(posStatus ?? Number.NaN);
 
     if (
       !order
       || order.assignmentMode !== WmsFulfillmentAssignmentMode.BASKET_DEMAND
       || (!options?.allowPackedCurrentStatus && order.status === WmsFulfillmentOrderStatus.PACKED)
       || order.status === WmsFulfillmentOrderStatus.CANCELED
-      || !allowedPosStatuses.includes(order.posOrder.status ?? Number.NaN)
+      || !posStatusAllowed
       || order.posOrder.isVoid
     ) {
       return;
@@ -3038,6 +3297,10 @@ export class WmsFulfillmentOpsService {
 
     if (params.currentStatus === WmsFulfillmentOrderStatus.PACKING) {
       return WmsFulfillmentOrderStatus.PACKING;
+    }
+
+    if (params.currentStatus === WmsFulfillmentOrderStatus.PICKED) {
+      return WmsFulfillmentOrderStatus.PICKED;
     }
 
     if (params.totalQuantity <= 0 || params.hasIssue) {

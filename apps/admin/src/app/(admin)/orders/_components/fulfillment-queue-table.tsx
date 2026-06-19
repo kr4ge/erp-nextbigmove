@@ -824,4 +824,4 @@ function getStatusTone(statusLabel: string) {
   return 'bg-slate-100 text-slate-700';
 }
 
-const ACTIVE_PICK_BASKET_STATUSES = new Set(['ASSIGNED', 'IN_PICKING']);
+const ACTIVE_PICK_BASKET_STATUSES = new Set(['ASSIGNED', 'IN_PICKING', 'FULL_HELD']);

@@ -45,7 +45,7 @@ export class WmsDispatchController {
   @Post('outbound/reconcile')
   @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
   async reconcileOutbound(@Request() req, @Body() body: ReconcileWmsDispatchOutboundDto) {
-    return this.wmsDispatchService.reconcileOutbound(req.user, body);
+    return this.wmsDispatchService.reconcileOutbound(req.user, body, req);
   }
 
   @Post('outbound/:taskId/void')
