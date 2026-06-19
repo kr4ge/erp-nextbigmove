@@ -10,6 +10,11 @@ const WMS_MOBILE_RTS_DISPOSITION_ACTIONS = [
   'LOST',
   'ARCHIVED',
 ] as const;
+const WMS_MOBILE_RTS_TASK_STATES = [
+  'RETURNING',
+  'READY_TO_VERIFY',
+  'PROCESSED',
+] as const;
 
 export class GetWmsMobileStockScanDto {
   @IsString()
@@ -95,6 +100,10 @@ export class GetWmsMobileRtsTasksDto extends GetWmsMobileStockScopedDto {
   @IsOptional()
   @IsUUID()
   storeId?: string;
+
+  @IsOptional()
+  @IsIn(WMS_MOBILE_RTS_TASK_STATES)
+  state?: (typeof WMS_MOBILE_RTS_TASK_STATES)[number];
 
   @IsOptional()
   @IsString()

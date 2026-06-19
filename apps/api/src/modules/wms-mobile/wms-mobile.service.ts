@@ -2206,7 +2206,7 @@ export class WmsMobileService {
       ...this.buildOpenRtsOrderWhere({
       ...(tenantContext.tenantId ? { tenantId: tenantContext.tenantId } : {}),
       ...(query.storeId ? { storeId: query.storeId } : {}),
-      }),
+      }, query.state),
       ...searchWhere,
     } satisfies Prisma.WmsFulfillmentOrderWhereInput;
 
@@ -10455,8 +10455,9 @@ export class WmsMobileService {
 
   private buildOpenRtsOrderWhere(
     scope: Pick<Prisma.WmsFulfillmentOrderWhereInput, 'tenantId' | 'storeId'>,
+    state?: GetWmsMobileRtsTasksDto['state'],
   ): Prisma.WmsFulfillmentOrderWhereInput {
-    return {
+    const baseWhere: Prisma.WmsFulfillmentOrderWhereInput = {
       ...scope,
       status: WmsFulfillmentOrderStatus.PACKED,
       posOrder: {
@@ -10476,6 +10477,120 @@ export class WmsMobileService {
           },
         },
       },
+    };
+
+    if (!state) {
+      return baseWhere;
+    }
+
+    const returnedEquivalentStatuses = Array.from(RETURNED_EQUIVALENT_UNIT_STATUSES);
+    const trackedDemandUnitsWhere: Prisma.WmsFulfillmentOrderWhereInput = {
+      basketUnits: {
+        some: {
+          OR: [
+            {
+              status: WmsBasketUnitStatus.PACKED,
+            },
+            {
+              status: WmsBasketUnitStatus.REMOVED,
+              packedAt: {
+                not: null,
+              },
+            },
+          ],
+        },
+      },
+    };
+    const verifiedDemandUnitsWhere: Prisma.WmsFulfillmentOrderWhereInput = {
+      basketUnits: {
+        some: {
+          OR: [
+            {
+              status: WmsBasketUnitStatus.PACKED,
+            },
+            {
+              status: WmsBasketUnitStatus.REMOVED,
+              packedAt: {
+                not: null,
+              },
+            },
+          ],
+          inventoryUnit: {
+            status: {
+              in: returnedEquivalentStatuses,
+            },
+          },
+        },
+      },
+    };
+    const trackedReservedUnitsWhere: Prisma.WmsFulfillmentOrderWhereInput = {
+      reservations: {
+        some: {},
+      },
+    };
+    const verifiedReservedUnitsWhere: Prisma.WmsFulfillmentOrderWhereInput = {
+      reservations: {
+        some: {
+          inventoryUnit: {
+            status: {
+              in: returnedEquivalentStatuses,
+            },
+          },
+        },
+      },
+    };
+
+    if (state === 'RETURNING') {
+      return {
+        ...baseWhere,
+        posOrder: {
+          is: {
+            status: 4,
+          },
+        },
+      };
+    }
+
+    if (state === 'READY_TO_VERIFY') {
+      return {
+        ...baseWhere,
+        posOrder: {
+          is: {
+            status: 5,
+          },
+        },
+        OR: [
+          {
+            assignmentMode: WmsFulfillmentAssignmentMode.BASKET_DEMAND,
+            ...trackedDemandUnitsWhere,
+            NOT: verifiedDemandUnitsWhere,
+          },
+          {
+            assignmentMode: WmsFulfillmentAssignmentMode.SERIAL_RESERVED,
+            ...trackedReservedUnitsWhere,
+            NOT: verifiedReservedUnitsWhere,
+          },
+        ],
+      };
+    }
+
+    return {
+      ...baseWhere,
+      posOrder: {
+        is: {
+          status: 5,
+        },
+      },
+      OR: [
+        {
+          assignmentMode: WmsFulfillmentAssignmentMode.BASKET_DEMAND,
+          ...verifiedDemandUnitsWhere,
+        },
+        {
+          assignmentMode: WmsFulfillmentAssignmentMode.SERIAL_RESERVED,
+          ...verifiedReservedUnitsWhere,
+        },
+      ],
     };
   }
 
