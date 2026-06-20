@@ -2836,9 +2836,19 @@ export class WmsInventoryService {
         },
         basketUnits: {
           where: {
-            status: {
-              in: [WmsBasketUnitStatus.PICKED, WmsBasketUnitStatus.PACKED],
-            },
+            OR: [
+              {
+                status: {
+                  in: [WmsBasketUnitStatus.PICKED, WmsBasketUnitStatus.PACKED],
+                },
+              },
+              {
+                status: WmsBasketUnitStatus.REMOVED,
+                packedAt: {
+                  not: null,
+                },
+              },
+            ],
           },
           select: {
             inventoryUnit: {
@@ -2974,7 +2984,17 @@ export class WmsInventoryService {
       }),
       this.prisma.wmsBasketUnit.findMany({
         where: {
-          status: WmsBasketUnitStatus.PACKED,
+          OR: [
+            {
+              status: WmsBasketUnitStatus.PACKED,
+            },
+            {
+              status: WmsBasketUnitStatus.REMOVED,
+              packedAt: {
+                not: null,
+              },
+            },
+          ],
           inventoryUnit: {
             status: WmsInventoryUnitStatus.PACKED,
           },

@@ -2543,6 +2543,13 @@ export class WmsMobileService {
         },
       });
 
+      const releasedBasketHoldCount = await this.releaseReturnedUnitBasketHoldsTx(
+        tx,
+        unitRecord.id,
+        user.userId || user.id || null,
+        now,
+      );
+
       const completionState = await this.resolveTrackingReturnCompletionStateTx(tx, order.id, this.isDemandPickingOrder(order));
 
       await tx.wmsFulfillmentOrder.update({
@@ -2566,6 +2573,7 @@ export class WmsMobileService {
       return {
         updatedOrder,
         updatedUnit,
+        releasedBasketHoldCount,
       };
     });
 
@@ -2589,6 +2597,7 @@ export class WmsMobileService {
         unitCount: 1,
         targetCode: target?.code ?? null,
         dispositionAction: body.disposition,
+        releasedBasketHoldCount: result.releasedBasketHoldCount,
       },
     });
 
@@ -4359,6 +4368,13 @@ export class WmsMobileService {
           basketId: null,
         },
       });
+
+      await this.releaseCompletedDemandPackUnitsTx(
+        tx,
+        scopedOrder.id,
+        user.userId || user.id || null,
+        now,
+      );
 
       await this.refreshBasketState(tx, scopedBasket.id, now);
 
@@ -9328,7 +9344,7 @@ export class WmsMobileService {
   private getPackedBasketUnitCount(order: any) {
     return Math.min(
       (Array.isArray(order?.basketUnits) ? order.basketUnits : []).filter(
-        (basketUnit: any) => basketUnit.status === WmsBasketUnitStatus.PACKED,
+        (basketUnit: any) => this.isHistoricallyPackedDemandBasketUnit(basketUnit),
       ).length,
       Math.max(order?.totalQuantity ?? 0, 0),
     );
@@ -9342,12 +9358,29 @@ export class WmsMobileService {
     return Math.min(
       (Array.isArray(order?.basketUnits) ? order.basketUnits : []).filter(
         (basketUnit: any) => (
-          basketUnit.status === WmsBasketUnitStatus.PACKED
+          this.isHistoricallyPackedDemandBasketUnit(basketUnit)
           && basketUnit.fulfillmentLineId === fulfillmentLineId
         ),
       ).length,
       Math.max(quantityRequired, 0),
     );
+  }
+
+  private isHistoricallyPackedDemandBasketUnit(
+    basketUnit:
+      | {
+          status?: WmsBasketUnitStatus | string | null;
+          packedAt?: Date | string | null;
+        }
+      | null
+      | undefined,
+  ) {
+    if (!basketUnit) {
+      return false;
+    }
+
+    return basketUnit.status === WmsBasketUnitStatus.PACKED
+      || (basketUnit.status === WmsBasketUnitStatus.REMOVED && basketUnit.packedAt != null);
   }
 
   private pickingTaskInclude() {
@@ -9497,9 +9530,19 @@ export class WmsMobileService {
       },
       basketUnits: {
         where: {
-          status: {
-            in: [...ACTIVE_BASKET_UNIT_STATUSES],
-          },
+          OR: [
+            {
+              status: {
+                in: [...ACTIVE_BASKET_UNIT_STATUSES],
+              },
+            },
+            {
+              status: WmsBasketUnitStatus.REMOVED,
+              packedAt: {
+                not: null,
+              },
+            },
+          ],
         },
         include: {
           inventoryUnit: {
@@ -10812,6 +10855,96 @@ export class WmsMobileService {
           }),
       ).values(),
     );
+  }
+
+  private async releaseReturnedUnitBasketHoldsTx(
+    tx: Prisma.TransactionClient,
+    inventoryUnitId: string,
+    actorId: string | null,
+    now: Date,
+  ) {
+    const activeBasketUnits = await tx.wmsBasketUnit.findMany({
+      where: {
+        inventoryUnitId,
+        status: {
+          in: [...ACTIVE_BASKET_UNIT_STATUSES],
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (activeBasketUnits.length === 0) {
+      return 0;
+    }
+
+    const updateResult = await tx.wmsBasketUnit.updateMany({
+      where: {
+        id: {
+          in: activeBasketUnits.map((basketUnit) => basketUnit.id),
+        },
+        status: {
+          in: [...ACTIVE_BASKET_UNIT_STATUSES],
+        },
+      },
+      data: {
+        status: WmsBasketUnitStatus.REMOVED,
+        removedById: actorId ?? undefined,
+        removedAt: now,
+      },
+    });
+
+    if (updateResult.count !== activeBasketUnits.length) {
+      throw new ConflictException('Returned unit hold changed before RTS disposition could finish');
+    }
+
+    return updateResult.count;
+  }
+
+  private async releaseCompletedDemandPackUnitsTx(
+    tx: Prisma.TransactionClient,
+    fulfillmentOrderId: string,
+    actorId: string | null,
+    now: Date,
+  ) {
+    const packedBasketUnits = await tx.wmsBasketUnit.findMany({
+      where: {
+        fulfillmentOrderId,
+        status: WmsBasketUnitStatus.PACKED,
+        packedAt: {
+          not: null,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (packedBasketUnits.length === 0) {
+      return 0;
+    }
+
+    const updateResult = await tx.wmsBasketUnit.updateMany({
+      where: {
+        id: {
+          in: packedBasketUnits.map((basketUnit) => basketUnit.id),
+        },
+        fulfillmentOrderId,
+        status: WmsBasketUnitStatus.PACKED,
+      },
+      data: {
+        status: WmsBasketUnitStatus.REMOVED,
+        removedById: actorId ?? undefined,
+        removedAt: now,
+      },
+    });
+
+    if (updateResult.count !== packedBasketUnits.length) {
+      throw new ConflictException('Packed basket state changed before pack completion could finish');
+    }
+
+    return updateResult.count;
   }
 
   private async buildTrackingReturnFlow(order: any) {
