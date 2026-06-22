@@ -7181,58 +7181,16 @@ export class WmsMobileService {
       return summary;
     }
 
-    const results = await Promise.all(orders.map(async (order): Promise<PickedOrderPosStatusUpdateSummary['results'][number]> => {
-      try {
-        const result = await this.ordersService.enqueueSystemPosOrderStatusUpdate({
-          tenantId: order.tenantId,
-          orderRowId: order.posOrderDbId,
-          shopId: order.shopId,
-          posOrderId: order.posOrderId,
-          targetStatus: CONFIRMED_POS_ORDER_STATUS,
-          allowedCurrentStatuses: [WAITING_FOR_PRINTING_POS_ORDER_STATUS],
-          source: 'wms_picking',
-        });
-
-        if (result.skipped) {
-          this.logger.warn(
-            `Skipped WMS POS status reset order=${order.posOrderId} target=${CONFIRMED_POS_ORDER_STATUS} reason=${result.reason} current=${result.currentStatus ?? 'n/a'}`,
-          );
-          return {
-            posOrderId: order.posOrderId,
-            outcome: 'skipped',
-            reason: result.reason,
-            currentStatus: result.currentStatus,
-          };
-        }
-
-        this.logger.log(
-          `Queued WMS POS status reset order=${order.posOrderId} target=${CONFIRMED_POS_ORDER_STATUS} reason=${result.reason}`,
-        );
-        return {
-          posOrderId: order.posOrderId,
-          outcome: 'queued',
-          reason: result.reason,
-          currentStatus: result.currentStatus,
-        };
-      } catch (error: any) {
-        const reason = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
-        this.logger.error(
-          `Failed to queue WMS POS status reset order=${order.posOrderId} target=${CONFIRMED_POS_ORDER_STATUS}: ${reason}`,
-          error instanceof Error ? error.stack : undefined,
-        );
-        return {
-          posOrderId: order.posOrderId,
-          outcome: 'failed',
-          reason,
-        };
-      }
+    const results = orders.map((order): PickedOrderPosStatusUpdateSummary['results'][number] => ({
+      posOrderId: order.posOrderId,
+      outcome: 'skipped',
+      reason: 'WMS_VOID_DOES_NOT_MUTATE_POS_ORDER',
+      currentStatus: WAITING_FOR_PRINTING_POS_ORDER_STATUS,
     }));
 
     for (const result of results) {
       summary.results.push(result);
-      if (result.outcome === 'queued') {
-        summary.queued += 1;
-      } else if (result.outcome === 'skipped') {
+      if (result.outcome === 'skipped') {
         summary.skipped += 1;
       } else {
         summary.failed += 1;

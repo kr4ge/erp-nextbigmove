@@ -557,12 +557,8 @@ export function useDispatchController() {
         storeId: selectedStoreIdState,
         reason: params.reason,
       });
-      const syncSummary = response.posStatusUpdate.queued > 0
-        ? ` POS reset queued for ${response.posStatusUpdate.queued} order${response.posStatusUpdate.queued === 1 ? '' : 's'}.`
-        : '';
-
       setSuccessMessage(
-        `Dispatch void returned order #${response.posOrderId} with ${response.restoredPackedUnits} packed unit${response.restoredPackedUnits === 1 ? '' : 's'} back to picking.${syncSummary}`,
+        `Dispatch void returned order #${response.posOrderId} with ${response.restoredPackedUnits} packed unit${response.restoredPackedUnits === 1 ? '' : 's'} back to WMS picking.`,
       );
       setSelectedTaskId(null);
       await Promise.all([
