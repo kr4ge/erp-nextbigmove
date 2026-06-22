@@ -10951,11 +10951,18 @@ export class WmsMobileService {
     const posStatus = typeof order.posOrder?.status === 'number' ? order.posOrder.status : null;
     const posStatusLabel = this.cleanOptionalText(order.posOrder?.statusName ?? null);
     const trackedUnits = await this.getTrackedReturnUnits(order);
+    const historicallyDisposedUnits = await this.loadSuccessfulTrackingReturnDispositionUnitKeys(
+      this.prisma,
+      order.id,
+      order.tenantId,
+    );
     const verifiedUnits = trackedUnits.filter((unit: any) => (
       RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status)
+      || this.isHistoricallyDisposedTrackingReturnUnit(unit, historicallyDisposedUnits)
     ));
     const pendingUnits = trackedUnits.filter((unit: any) => (
       !RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status)
+      && !this.isHistoricallyDisposedTrackingReturnUnit(unit, historicallyDisposedUnits)
     ));
     const latestVerification = await this.prisma.wmsStaffActivity.findFirst({
         where: {
@@ -11048,6 +11055,8 @@ export class WmsMobileService {
           select: {
             inventoryUnit: {
               select: {
+                id: true,
+                code: true,
                 status: true,
               },
             },
@@ -11060,25 +11069,93 @@ export class WmsMobileService {
           select: {
             inventoryUnit: {
               select: {
+                id: true,
+                code: true,
                 status: true,
               },
             },
           },
         });
 
-    const statuses = unitStatuses
-      .map((record: any) => record.inventoryUnit?.status as WmsInventoryUnitStatus | null)
-      .filter((status): status is WmsInventoryUnitStatus => Boolean(status));
+    const historicallyDisposedUnits = await this.loadSuccessfulTrackingReturnDispositionUnitKeys(
+      tx,
+      fulfillmentOrderId,
+    );
+    const trackedUnits = unitStatuses
+      .map((record: any) => record.inventoryUnit ?? null)
+      .filter((unit: any) => Boolean(unit?.id));
 
-    const pendingCount = statuses.filter((status) => !RETURNED_EQUIVALENT_UNIT_STATUSES.has(status)).length;
-    const awaitingPlacementCount = statuses.filter((status) => status === WmsInventoryUnitStatus.RTS).length;
+    const pendingCount = trackedUnits.filter((unit: any) => (
+      !RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status as WmsInventoryUnitStatus)
+      && !this.isHistoricallyDisposedTrackingReturnUnit(unit, historicallyDisposedUnits)
+    )).length;
+    const awaitingPlacementCount = trackedUnits.filter((unit: any) => (
+      unit.status === WmsInventoryUnitStatus.RTS
+    )).length;
 
     return {
-      trackedCount: statuses.length,
+      trackedCount: trackedUnits.length,
       pendingCount,
       awaitingPlacementCount,
-      isComplete: statuses.length > 0 && pendingCount === 0 && awaitingPlacementCount === 0,
+      isComplete: trackedUnits.length > 0 && pendingCount === 0 && awaitingPlacementCount === 0,
     };
+  }
+
+  private async loadSuccessfulTrackingReturnDispositionUnitKeys(
+    client: Prisma.TransactionClient | PrismaService,
+    fulfillmentOrderId: string,
+    tenantId?: string | null,
+  ) {
+    const rows = await client.wmsStaffActivity.findMany({
+      where: {
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: fulfillmentOrderId,
+        ...(tenantId ? { tenantId } : {}),
+        actionType: 'ORDER_RTS_DISPOSITION',
+        outcome: WmsStaffActivityOutcome.SUCCESS,
+      },
+      select: {
+        metadata: true,
+      },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+    });
+
+    const unitIds = new Set<string>();
+    const unitCodes = new Set<string>();
+
+    for (const row of rows) {
+      const metadata = this.readHistoryMetadata(row.metadata);
+      const unitId = this.readHistoryMetadataString(metadata, 'unitId');
+      const unitCode = this.readHistoryMetadataString(metadata, 'unitCode');
+
+      if (unitId) {
+        unitIds.add(unitId);
+      }
+
+      if (unitCode) {
+        unitCodes.add(unitCode);
+      }
+    }
+
+    return {
+      unitIds,
+      unitCodes,
+    };
+  }
+
+  private isHistoricallyDisposedTrackingReturnUnit(
+    unit: { id?: string | null; code?: string | null; status?: WmsInventoryUnitStatus | null },
+    historicallyDisposedUnits: { unitIds: Set<string>; unitCodes: Set<string> },
+  ) {
+    if (!unit || unit.status === WmsInventoryUnitStatus.RTS) {
+      return false;
+    }
+
+    return (unit.id ? historicallyDisposedUnits.unitIds.has(unit.id) : false)
+      || (unit.code ? historicallyDisposedUnits.unitCodes.has(unit.code) : false);
   }
 
   private mapTrackingReturnUnit(unit: any) {

@@ -442,14 +442,21 @@ export class WmsDispatchService {
       throw new NotFoundException('Dispatch order not found in the active returns scope');
     }
 
-    const returnActivities = await this.loadReturnActivitiesByOrder([order.id]);
+    const [returnActivities, dispositionKeysByOrderId] = await Promise.all([
+      this.loadReturnActivitiesByOrder([order.id]),
+      this.loadSuccessfulReturnDispositionUnitKeysByOrder([order.id]),
+    ]);
 
     return {
       tenantReady: true,
       serverTime: new Date().toISOString(),
       task: {
         task: this.mapDispatchTask(order),
-        returnFlow: this.buildReturnFlow(order, returnActivities.get(order.id) ?? []),
+        returnFlow: this.buildReturnFlow(
+          order,
+          returnActivities.get(order.id) ?? [],
+          dispositionKeysByOrderId.get(order.id) ?? this.emptyDispositionUnitKeySets(),
+        ),
       },
     };
   }
@@ -1443,6 +1450,7 @@ export class WmsDispatchService {
       return new Map<string, DispatchReturnSummaryCounts>();
     }
 
+    const orderIds = orders.map((order) => order.id);
     const demandOrderIds = orders
       .filter((order) => order.assignmentMode === WmsFulfillmentAssignmentMode.BASKET_DEMAND)
       .map((order) => order.id);
@@ -1450,7 +1458,7 @@ export class WmsDispatchService {
       .filter((order) => order.assignmentMode !== WmsFulfillmentAssignmentMode.BASKET_DEMAND)
       .map((order) => order.id);
 
-    const [basketUnits, reservations] = await Promise.all([
+    const [basketUnits, reservations, dispositionKeysByOrderId] = await Promise.all([
       demandOrderIds.length > 0
         ? this.prisma.wmsBasketUnit.findMany({
             where: {
@@ -1501,6 +1509,7 @@ export class WmsDispatchService {
             },
           })
         : Promise.resolve([]),
+      this.loadSuccessfulReturnDispositionUnitKeysByOrder(orderIds),
     ]);
 
     const summaryByOrderId = new Map<string, DispatchReturnSummaryCounts>();
@@ -1517,8 +1526,13 @@ export class WmsDispatchService {
         awaitingPlacementUnits: 0,
         placedUnits: 0,
       };
+      const historicallyDisposedUnits = dispositionKeysByOrderId.get(basketUnit.fulfillmentOrderId) ?? this.emptyDispositionUnitKeySets();
+      const isHistoricallyDisposed = this.isHistoricallyDisposedReturnUnit(
+        basketUnit.inventoryUnit,
+        historicallyDisposedUnits,
+      );
       current.expectedUnits += 1;
-      if (RETURNED_EQUIVALENT_UNIT_STATUSES.has(basketUnit.inventoryUnit.status)) {
+      if (RETURNED_EQUIVALENT_UNIT_STATUSES.has(basketUnit.inventoryUnit.status) || isHistoricallyDisposed) {
         current.verifiedUnits += 1;
         if (this.isAwaitingReturnPlacementStatus(basketUnit.inventoryUnit.status)) {
           current.awaitingPlacementUnits += 1;
@@ -1548,8 +1562,13 @@ export class WmsDispatchService {
         awaitingPlacementUnits: 0,
         placedUnits: 0,
       };
+      const historicallyDisposedUnits = dispositionKeysByOrderId.get(reservation.fulfillmentOrderId) ?? this.emptyDispositionUnitKeySets();
+      const isHistoricallyDisposed = this.isHistoricallyDisposedReturnUnit(
+        reservation.inventoryUnit,
+        historicallyDisposedUnits,
+      );
       current.expectedUnits += 1;
-      if (RETURNED_EQUIVALENT_UNIT_STATUSES.has(reservation.inventoryUnit.status)) {
+      if (RETURNED_EQUIVALENT_UNIT_STATUSES.has(reservation.inventoryUnit.status) || isHistoricallyDisposed) {
         current.verifiedUnits += 1;
         if (this.isAwaitingReturnPlacementStatus(reservation.inventoryUnit.status)) {
           current.awaitingPlacementUnits += 1;
@@ -1893,12 +1912,19 @@ export class WmsDispatchService {
   private buildReturnFlow(
     order: any,
     history: DispatchHistoryEntry[],
+    historicallyDisposedUnits: { unitIds: Set<string>; unitCodes: Set<string> },
   ) {
     const posStatus = typeof order.posOrder?.status === 'number' ? order.posOrder.status : null;
     const posStatusLabel = this.cleanOptionalText(order.posOrder?.statusName ?? null);
     const trackedUnits = this.getTrackedReturnUnits(order);
-    const verifiedUnits = trackedUnits.filter((unit) => RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status as WmsInventoryUnitStatus));
-    const pendingUnits = trackedUnits.filter((unit) => !RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status as WmsInventoryUnitStatus));
+    const verifiedUnits = trackedUnits.filter((unit) => (
+      RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status as WmsInventoryUnitStatus)
+      || this.isHistoricallyDisposedReturnUnit(unit, historicallyDisposedUnits)
+    ));
+    const pendingUnits = trackedUnits.filter((unit) => (
+      !RETURNED_EQUIVALENT_UNIT_STATUSES.has(unit.status as WmsInventoryUnitStatus)
+      && !this.isHistoricallyDisposedReturnUnit(unit, historicallyDisposedUnits)
+    ));
     const awaitingPlacementUnits = verifiedUnits.filter(
       (unit) => this.isAwaitingReturnPlacementStatus(unit.status as WmsInventoryUnitStatus),
     );
@@ -2026,6 +2052,75 @@ export class WmsDispatchService {
         ? this.mapActor(order.rtsDisposedBy)
         : null,
     };
+  }
+
+  private async loadSuccessfulReturnDispositionUnitKeysByOrder(orderIds: string[]) {
+    if (orderIds.length === 0) {
+      return new Map<string, { unitIds: Set<string>; unitCodes: Set<string> }>();
+    }
+
+    const rows = await this.prisma.wmsStaffActivity.findMany({
+      where: {
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: {
+          in: orderIds,
+        },
+        actionType: 'ORDER_RTS_DISPOSITION',
+        outcome: WmsStaffActivityOutcome.SUCCESS,
+      },
+      select: {
+        resourceId: true,
+        metadata: true,
+      },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+    });
+
+    const dispositionKeysByOrderId = new Map<string, { unitIds: Set<string>; unitCodes: Set<string> }>();
+
+    for (const row of rows) {
+      if (!row.resourceId) {
+        continue;
+      }
+
+      const existing = dispositionKeysByOrderId.get(row.resourceId) ?? this.emptyDispositionUnitKeySets();
+      const metadata = this.readActivityMetadata(row.metadata);
+      const unitId = this.readActivityMetadataString(metadata, 'unitId');
+      const unitCode = this.readActivityMetadataString(metadata, 'unitCode');
+
+      if (unitId) {
+        existing.unitIds.add(unitId);
+      }
+
+      if (unitCode) {
+        existing.unitCodes.add(unitCode);
+      }
+
+      dispositionKeysByOrderId.set(row.resourceId, existing);
+    }
+
+    return dispositionKeysByOrderId;
+  }
+
+  private emptyDispositionUnitKeySets() {
+    return {
+      unitIds: new Set<string>(),
+      unitCodes: new Set<string>(),
+    };
+  }
+
+  private isHistoricallyDisposedReturnUnit(
+    unit: { id?: string | null; code?: string | null; status?: string | WmsInventoryUnitStatus | null } | null | undefined,
+    historicallyDisposedUnits: { unitIds: Set<string>; unitCodes: Set<string> },
+  ) {
+    if (!unit || unit.status === WmsInventoryUnitStatus.RTS) {
+      return false;
+    }
+
+    return (unit.id ? historicallyDisposedUnits.unitIds.has(unit.id) : false)
+      || (unit.code ? historicallyDisposedUnits.unitCodes.has(unit.code) : false);
   }
 
   private resolveReturnProgressState(params: {

@@ -50,6 +50,133 @@ type FulfillmentPackExecutionPanelProps = {
   }) => Promise<boolean>;
 };
 
+function useScannerKeyboardCapture({
+  enabled,
+  inputRef,
+  onScannedValue,
+  onSubmit,
+}: {
+  enabled: boolean;
+  inputRef: RefObject<HTMLInputElement>;
+  onScannedValue: (value: string) => void;
+  onSubmit: (value: string) => void | Promise<void>;
+}) {
+  const submitRef = useRef(onSubmit);
+  const changeRef = useRef(onScannedValue);
+  const bufferRef = useRef('');
+  const lastKeyAtRef = useRef(0);
+
+  useEffect(() => {
+    submitRef.current = onSubmit;
+  }, [onSubmit]);
+
+  useEffect(() => {
+    changeRef.current = onScannedValue;
+  }, [onScannedValue]);
+
+  useEffect(() => {
+    if (!enabled) {
+      bufferRef.current = '';
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (isEditableElement(target)) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastKeyAtRef.current > 250) {
+        bufferRef.current = '';
+      }
+      lastKeyAtRef.current = now;
+
+      if (event.key === 'Escape') {
+        bufferRef.current = '';
+        return;
+      }
+
+      if (event.key === 'Backspace') {
+        bufferRef.current = bufferRef.current.slice(0, -1);
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        const scannedValue = bufferRef.current.trim();
+        bufferRef.current = '';
+        if (!scannedValue) {
+          return;
+        }
+
+        event.preventDefault();
+        changeRef.current(scannedValue);
+        window.setTimeout(() => {
+          inputRef.current?.focus();
+        }, 0);
+        void submitRef.current(scannedValue);
+        return;
+      }
+
+      if (event.key.length !== 1) {
+        return;
+      }
+
+      bufferRef.current += event.key;
+      changeRef.current(bufferRef.current);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [enabled, inputRef]);
+}
+
+function usePackCompleteHotkey({
+  enabled,
+  onTrigger,
+}: {
+  enabled: boolean;
+  onTrigger: () => void | Promise<void>;
+}) {
+  const triggerRef = useRef(onTrigger);
+
+  useEffect(() => {
+    triggerRef.current = onTrigger;
+  }, [onTrigger]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.key !== 'F9') {
+        return;
+      }
+
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const scannerFocused = target?.getAttribute('data-scanner-input') === 'true';
+      if (isEditableElement(target) && !scannerFocused) {
+        return;
+      }
+
+      event.preventDefault();
+      void triggerRef.current();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [enabled]);
+}
+
 export function FulfillmentPackExecutionPanel({
   basketView,
   canDirectVoid,
@@ -134,11 +261,76 @@ export function FulfillmentPackExecutionPanel({
 
   const items = useMemo(() => (task ? getVisiblePackLines(task.lines) : []), [task]);
 
+  const submitPackedUnit = async (scannedValue?: string) => {
+    const code = (scannedValue ?? unitCode).trim();
+    if (!task || !code || isSubmitting || packedAll) {
+      unitInputRef.current?.focus();
+      return;
+    }
+
+    const ok = await onScanUnit(task, code);
+    if (ok) {
+      setUnitCode('');
+    } else {
+      setUnitCode('');
+    }
+    window.setTimeout(() => {
+      unitInputRef.current?.focus();
+    }, 80);
+  };
+
+  const submitTrackedWaybill = async (scannedValue?: string) => {
+    const code = (scannedValue ?? trackingCode).trim();
+    if (!task || !code || isSubmitting) {
+      trackingInputRef.current?.focus();
+      return;
+    }
+
+    const verified = await onVerifyTracking(task, code);
+    if (verified) {
+      setTrackingCode(verified);
+      setVerifiedTracking(verified);
+    } else {
+      setTrackingCode('');
+      setVerifiedTracking(null);
+    }
+    window.setTimeout(() => {
+      trackingInputRef.current?.focus();
+    }, 80);
+  };
+
   useEffect(() => {
     setSelectedVoidOrderIds((current) => current.filter((orderId) => (
       (task?.basket?.orders ?? []).some((order) => order.id === orderId)
     )));
   }, [task?.basket?.orders]);
+
+  useScannerKeyboardCapture({
+    enabled: Boolean(task && canExecute && isPacking && !packedAll && !voidOpen),
+    inputRef: unitInputRef,
+    onScannedValue: setUnitCode,
+    onSubmit: submitPackedUnit,
+  });
+
+  useScannerKeyboardCapture({
+    enabled: Boolean(task && canExecute && isPacking && packedAll && !voidOpen),
+    inputRef: trackingInputRef,
+    onScannedValue: (value) => {
+      setTrackingCode(value);
+      setVerifiedTracking(null);
+    },
+    onSubmit: submitTrackedWaybill,
+  });
+
+  usePackCompleteHotkey({
+    enabled: Boolean(task && canExecute && isPacking && packedAll && verifiedTracking && !isSubmitting && !voidOpen),
+    onTrigger: async () => {
+      if (!task || !verifiedTracking) {
+        return;
+      }
+      await onComplete(task, verifiedTracking ?? trackingCode);
+    },
+  });
 
   if (!task) {
     return (
@@ -363,25 +555,18 @@ export function FulfillmentPackExecutionPanel({
 
               {!packedAll ? (
                 <ScannerInput
-                  autoSubmit
                   disabled={isSubmitting}
                   helper="Each scanned unit is verified against the handed-off order."
                   inputRef={unitInputRef}
                   label="Scannable unit"
                   onChange={setUnitCode}
-                  onSubmit={() => void (unitCode.trim() ? onScanUnit(task, unitCode.trim()).then((ok) => {
-                    if (ok) {
-                      setUnitCode('');
-                      window.setTimeout(() => unitInputRef.current?.focus(), 80);
-                    }
-                  }) : Promise.resolve())}
+                  onSubmit={() => void submitPackedUnit()}
                   placeholder="Scan picked unit"
                   value={unitCode}
                 />
               ) : null}
 
               <ScannerInput
-                autoSubmit
                 disabled={isSubmitting}
                 helper={verifiedTracking ? `Verified ${verifiedTracking}` : 'Scan the waybill barcode to confirm the order tracking number.'}
                 inputRef={trackingInputRef}
@@ -390,12 +575,7 @@ export function FulfillmentPackExecutionPanel({
                   setTrackingCode(value);
                   setVerifiedTracking(null);
                 }}
-                onSubmit={() => void (trackingCode.trim() ? onVerifyTracking(task, trackingCode.trim()).then((verified) => {
-                  if (verified) {
-                    setTrackingCode(verified);
-                    setVerifiedTracking(verified);
-                  }
-                }) : Promise.resolve())}
+                onSubmit={() => void submitTrackedWaybill()}
                 placeholder={tracking ?? 'Scan tracking barcode'}
                 value={trackingCode}
               />
@@ -403,7 +583,7 @@ export function FulfillmentPackExecutionPanel({
               <ActionButton
                 disabled={!packedAll || !verifiedTracking || isSubmitting}
                 icon={<CheckCircle2 className="h-4 w-4" />}
-                label="Mark packed"
+                label="Mark packed · F9"
                 onClick={() => void onComplete(task, verifiedTracking ?? trackingCode)}
                 tone="primary"
               />
@@ -662,24 +842,8 @@ function DemandBasketPackExecutionPanel({
     return () => window.clearTimeout(timer);
   }, [activeOrderReadyToComplete, basketComplete, selectedOrder]);
 
-  if (!plan || !basket) {
-    return (
-      <WmsCompactPanel title="Pack Execution" icon={<PackageOpen className='panel-icon'/>}>
-        <div className="flex min-h-[520px] items-center justify-center rounded-2xl border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-8 py-10 text-center">
-          <div className="max-w-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Basket mode</p>
-            <h3 className="mt-3 text-xl font-semibold tracking-tight text-primary">Loading basket plan</h3>
-            <p className="mt-3 text-sm leading-6 text-[#607482]">
-              Fetching basket orders and current packing progress.
-            </p>
-          </div>
-        </div>
-      </WmsCompactPanel>
-    );
-  }
-
-  const submitWaybill = async () => {
-    const code = waybillCode.trim();
+  const submitWaybill = async (scannedValue?: string) => {
+    const code = (scannedValue ?? waybillCode).trim();
     if (!code || isSubmitting || basketComplete) {
       waybillInputRef.current?.focus();
       return;
@@ -697,8 +861,8 @@ function DemandBasketPackExecutionPanel({
     }, 80);
   };
 
-  const submitUnit = async () => {
-    const code = unitCode.trim();
+  const submitUnit = async (scannedValue?: string) => {
+    const code = (scannedValue ?? unitCode).trim();
     if (!selectedOrder || !code || isSubmitting || activeOrderReadyToComplete) {
       unitInputRef.current?.focus();
       return;
@@ -710,6 +874,46 @@ function DemandBasketPackExecutionPanel({
       unitInputRef.current?.focus();
     }, 80);
   };
+
+  useScannerKeyboardCapture({
+    enabled: Boolean(canExecute && !voidOpen && !selectedOrder && !basketComplete),
+    inputRef: waybillInputRef,
+    onScannedValue: setWaybillCode,
+    onSubmit: submitWaybill,
+  });
+
+  useScannerKeyboardCapture({
+    enabled: Boolean(canExecute && !voidOpen && selectedOrder && !activeOrderReadyToComplete),
+    inputRef: unitInputRef,
+    onScannedValue: setUnitCode,
+    onSubmit: submitUnit,
+  });
+
+  usePackCompleteHotkey({
+    enabled: Boolean(canExecute && !voidOpen && selectedOrder && activeOrderReadyToComplete && !isSubmitting),
+    onTrigger: async () => {
+      if (!selectedOrder) {
+        return;
+      }
+      await onCompleteBasketOrder(task, selectedOrder.id);
+    },
+  });
+
+  if (!plan || !basket) {
+    return (
+      <WmsCompactPanel title="Pack Execution" icon={<PackageOpen className='panel-icon'/>}>
+        <div className="flex min-h-[520px] items-center justify-center rounded-2xl border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-8 py-10 text-center">
+          <div className="max-w-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8193a0]">Basket mode</p>
+            <h3 className="mt-3 text-xl font-semibold tracking-tight text-primary">Loading basket plan</h3>
+            <p className="mt-3 text-sm leading-6 text-[#607482]">
+              Fetching basket orders and current packing progress.
+            </p>
+          </div>
+        </div>
+      </WmsCompactPanel>
+    );
+  }
 
   return (
     <>
@@ -888,7 +1092,6 @@ function DemandBasketPackExecutionPanel({
                       </div>
                     ) : (
                       <ScannerInput
-                        autoSubmit
                         disabled={isSubmitting}
                         inputRef={unitInputRef}
                         helper="Auto-clears after every scan."
@@ -902,7 +1105,6 @@ function DemandBasketPackExecutionPanel({
                   </>
                 ) : (
                   <ScannerInput
-                    autoSubmit
                     disabled={isSubmitting}
                     inputRef={waybillInputRef}
                     helper="Scans the next order in this basket."
@@ -926,7 +1128,7 @@ function DemandBasketPackExecutionPanel({
                     <ActionButton
                       disabled={isSubmitting}
                       icon={<CheckCircle2 className="h-4 w-4" />}
-                      label="Done packing"
+                      label="Done packing · F9"
                       onClick={() => void onCompleteBasketOrder(task, selectedOrder.id)}
                       tone="primary"
                     />
@@ -1136,6 +1338,7 @@ function ScannerInput({
       <span className="card-label">{label}</span>
       <div className="mt-2 flex items-center gap-2">
         <input
+          data-scanner-input="true"
           ref={inputRef}
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -1183,6 +1386,18 @@ function MetricTile({
       <p className="mt-1 text-[12px] text-[#6f8290]">{note}</p>
     </div>
   );
+}
+
+function isEditableElement(element: HTMLElement | null) {
+  if (!element) {
+    return false;
+  }
+
+  const tagName = element.tagName;
+  return element.isContentEditable
+    || tagName === 'INPUT'
+    || tagName === 'TEXTAREA'
+    || tagName === 'SELECT';
 }
 
 function KeyValue({ label, value }: { label: string; value: string }) {
