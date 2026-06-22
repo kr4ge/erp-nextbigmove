@@ -19,6 +19,7 @@ import { GetWmsDispatchReturnsDto } from './dto/get-wms-dispatch-returns.dto';
 import { GetWmsDispatchSummaryDto } from './dto/get-wms-dispatch-summary.dto';
 import { ReconcileWmsDispatchOutboundDto } from './dto/reconcile-wms-dispatch-outbound.dto';
 import { VoidWmsDispatchOutboundDto } from './dto/void-wms-dispatch-outbound.dto';
+import { OrdersService } from '../orders/orders.service';
 import { WmsFulfillmentOpsService } from '../wms-fulfillment/wms-fulfillment-ops.service';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
 
@@ -101,6 +102,13 @@ type DispatchHistoryEntry = {
     email: string;
   } | null;
 };
+
+type DispatchOutboundLifecycleStatus =
+  | 'PACKED'
+  | 'PACKED_CANCELED'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'CANCELED';
 
 type DispatchReportsTrendPoint = {
   date: string;
@@ -193,6 +201,7 @@ export class WmsDispatchService {
     private readonly prisma: PrismaService,
     private readonly wmsInventoryService: WmsInventoryService,
     private readonly wmsFulfillmentOpsService: WmsFulfillmentOpsService,
+    private readonly ordersService: OrdersService,
   ) {}
 
   async getSummary(query: GetWmsDispatchSummaryDto) {
@@ -287,7 +296,7 @@ export class WmsDispatchService {
     const page = Math.max(query.page ?? 1, 1);
     const pageSize = Math.min(Math.max(query.pageSize ?? DEFAULT_DISPATCH_PAGE_SIZE, 5), 50);
     const where = this.combineOrderWhere(
-      await this.buildPackedOrderScope(scope),
+      await this.buildOutboundOrderScope(scope, query.status),
       this.buildSearchWhere(query.search),
       this.buildOutboundLifecycleWhere(query.status),
     );
@@ -403,7 +412,7 @@ export class WmsDispatchService {
     const scope = await this.resolveScope(query);
     const order = await this.prisma.wmsFulfillmentOrder.findFirst({
       where: this.combineOrderWhere(
-        await this.buildPackedOrderScope(scope),
+        await this.buildOutboundOrderScope(scope),
         this.buildOutboundLifecycleWhere(),
         { id: taskId },
       ),
@@ -718,8 +727,13 @@ export class WmsDispatchService {
 
     const order = await this.prisma.wmsFulfillmentOrder.findFirst({
       where: this.combineOrderWhere(
-        await this.buildPackedOrderScope(scope),
-        this.buildOutboundLifecycleWhere('PACKED'),
+        await this.buildOutboundOrderScope(scope),
+        {
+          OR: [
+            this.buildOutboundLifecycleWhere('PACKED'),
+            this.buildOutboundLifecycleWhere('PACKED_CANCELED'),
+          ],
+        },
         { id: taskId },
       ),
       select: {
@@ -750,21 +764,30 @@ export class WmsDispatchService {
       request,
     );
 
-    const posStatusUpdate = await this.enqueueVoidedDispatchOrdersConfirmedStatus([
-      {
-        tenantId: releaseResult.tenantId,
-        storeId: releaseResult.storeId,
-        posOrderDbId: releaseResult.posOrderDbId,
-        shopId: releaseResult.shopId,
-        posOrderId: releaseResult.posOrderId,
-        warehouseId: releaseResult.warehouseId,
-      },
-    ]);
+    const posStatusUpdate = releaseResult.resolution === 'RETURNED_TO_PICKING'
+      ? await this.enqueueVoidedDispatchOrdersConfirmedStatus([
+          {
+            tenantId: releaseResult.tenantId,
+            storeId: releaseResult.storeId,
+            posOrderDbId: releaseResult.posOrderDbId,
+            shopId: releaseResult.shopId,
+            posOrderId: releaseResult.posOrderId,
+            warehouseId: releaseResult.warehouseId,
+          },
+        ])
+      : {
+          targetStatus: CONFIRMED_POS_ORDER_STATUS,
+          queued: 0,
+          skipped: 0,
+          failed: 0,
+          results: [],
+        };
 
     return {
       success: true,
       taskId: releaseResult.fulfillmentOrderId,
       posOrderId: releaseResult.posOrderId,
+      resolution: releaseResult.resolution,
       restoredPackedUnits: releaseResult.restoredPackedUnits,
       affectedBasketIds: releaseResult.affectedBasketIds,
       posStatusUpdate,
@@ -798,16 +821,47 @@ export class WmsDispatchService {
       return summary;
     }
 
-    const results = orders.map((order) => ({
-      posOrderId: order.posOrderId,
-      outcome: 'skipped' as const,
-      reason: 'WMS_VOID_DOES_NOT_MUTATE_POS_ORDER',
-      currentStatus: WAITING_FOR_PRINTING_POS_ORDER_STATUS,
+    const results = await Promise.all(orders.map(async (order) => {
+      try {
+        const result = await this.ordersService.enqueueSystemPosOrderStatusUpdate({
+          tenantId: order.tenantId,
+          orderRowId: order.posOrderDbId,
+          shopId: order.shopId,
+          posOrderId: order.posOrderId,
+          targetStatus: CONFIRMED_POS_ORDER_STATUS,
+          allowedCurrentStatuses: [WAITING_FOR_PRINTING_POS_ORDER_STATUS],
+          source: 'wms_picking',
+        });
+
+        if (result.skipped) {
+          return {
+            posOrderId: order.posOrderId,
+            outcome: 'skipped' as const,
+            reason: result.reason,
+            currentStatus: result.currentStatus,
+          };
+        }
+
+        return {
+          posOrderId: order.posOrderId,
+          outcome: 'queued' as const,
+          reason: result.reason,
+          currentStatus: result.currentStatus,
+        };
+      } catch (error) {
+        return {
+          posOrderId: order.posOrderId,
+          outcome: 'failed' as const,
+          reason: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+        };
+      }
     }));
 
     for (const result of results) {
       summary.results.push(result);
-      if (result.outcome === 'skipped') {
+      if (result.outcome === 'queued') {
+        summary.queued += 1;
+      } else if (result.outcome === 'skipped') {
         summary.skipped += 1;
       } else {
         summary.failed += 1;
@@ -927,6 +981,44 @@ export class WmsDispatchService {
     );
   }
 
+  private async buildOutboundOrderScope(
+    scope: DispatchScope,
+    status?: DispatchOutboundLifecycleStatus,
+  ): Promise<Prisma.WmsFulfillmentOrderWhereInput> {
+    const allowedStatuses = status === 'CANCELED'
+      ? [WmsFulfillmentOrderStatus.CANCELED]
+      : status
+        ? [WmsFulfillmentOrderStatus.PACKED]
+        : [WmsFulfillmentOrderStatus.PACKED, WmsFulfillmentOrderStatus.CANCELED];
+    const baseScope: Prisma.WmsFulfillmentOrderWhereInput = {
+      status: {
+        in: allowedStatuses,
+      },
+      ...(scope.activeTenantId ? { tenantId: scope.activeTenantId } : {}),
+      ...(scope.activeStore ? { storeId: scope.activeStore.id } : {}),
+    };
+
+    if (scope.activeTenantId) {
+      const tenant = scope.tenantOptions.find((option) => option.id === scope.activeTenantId) ?? null;
+      return this.combineOrderWhere(
+        baseScope,
+        this.buildFulfillmentGoLiveWhere(tenant?.wmsFulfillmentGoLiveAt ?? null),
+      );
+    }
+
+    const goLiveFilters = scope.tenantOptions.map((tenantOption) => this.buildTenantGoLiveScope(tenantOption));
+    if (goLiveFilters.length === 0) {
+      return baseScope;
+    }
+
+    return this.combineOrderWhere(
+      baseScope,
+      {
+        OR: goLiveFilters,
+      },
+    );
+  }
+
   private async buildInventoryUnitScope(scope: DispatchScope): Promise<Prisma.WmsInventoryUnitWhereInput> {
     return {
       ...(scope.activeTenantId ? { tenantId: scope.activeTenantId } : {}),
@@ -1010,10 +1102,23 @@ export class WmsDispatchService {
   }
 
   private buildOutboundLifecycleWhere(
-    status?: 'PACKED' | 'SHIPPED' | 'DELIVERED',
+    status?: DispatchOutboundLifecycleStatus,
   ): Prisma.WmsFulfillmentOrderWhereInput {
+    if (!status) {
+      return {
+        OR: [
+          this.buildOutboundLifecycleWhere('PACKED'),
+          this.buildOutboundLifecycleWhere('PACKED_CANCELED'),
+          this.buildOutboundLifecycleWhere('SHIPPED'),
+          this.buildOutboundLifecycleWhere('DELIVERED'),
+          this.buildOutboundLifecycleWhere('CANCELED'),
+        ],
+      };
+    }
+
     if (status === 'SHIPPED') {
       return {
+        status: WmsFulfillmentOrderStatus.PACKED,
         posOrder: {
           is: {
             status: 2,
@@ -1024,6 +1129,7 @@ export class WmsDispatchService {
 
     if (status === 'DELIVERED') {
       return {
+        status: WmsFulfillmentOrderStatus.PACKED,
         posOrder: {
           is: {
             status: 3,
@@ -1032,8 +1138,26 @@ export class WmsDispatchService {
       };
     }
 
+    if (status === 'PACKED_CANCELED') {
+      return {
+        status: WmsFulfillmentOrderStatus.PACKED,
+        posOrder: {
+          is: {
+            status: 6,
+          },
+        },
+      };
+    }
+
+    if (status === 'CANCELED') {
+      return {
+        status: WmsFulfillmentOrderStatus.CANCELED,
+      };
+    }
+
     if (status === 'PACKED') {
       return {
+        status: WmsFulfillmentOrderStatus.PACKED,
         OR: [
           {
             posOrder: {
@@ -1046,7 +1170,7 @@ export class WmsDispatchService {
             posOrder: {
               is: {
                 status: {
-                  notIn: [2, 3, 4, 5],
+                  notIn: [2, 3, 4, 5, 6],
                 },
               },
             },
@@ -1055,35 +1179,7 @@ export class WmsDispatchService {
       };
     }
 
-    return {
-      OR: [
-        {
-          posOrder: {
-            is: {
-              status: null,
-            },
-          },
-        },
-        {
-          posOrder: {
-            is: {
-              status: {
-                in: [2, 3],
-              },
-            },
-          },
-        },
-        {
-          posOrder: {
-            is: {
-              status: {
-                notIn: [4, 5],
-              },
-            },
-          },
-        },
-      ],
-    };
+    return {};
   }
 
   private buildReturnLifecycleWhere(
@@ -1719,6 +1815,16 @@ export class WmsDispatchService {
   private mapDelivery(order: any) {
     const posStatus = typeof order.posOrder?.status === 'number' ? order.posOrder.status : null;
 
+    if (order.status === WmsFulfillmentOrderStatus.CANCELED) {
+      return {
+        posStatus,
+        status: 'CANCELED' as const,
+        label: 'Cancelled',
+        deliveredAt: order.posOrder?.deliveredAt ?? null,
+        rtsAt: order.posOrder?.rtsAt ?? null,
+      };
+    }
+
     if (posStatus === 5) {
       return {
         posStatus,
@@ -1754,6 +1860,16 @@ export class WmsDispatchService {
         posStatus,
         status: 'SHIPPED' as const,
         label: 'Shipped',
+        deliveredAt: order.posOrder?.deliveredAt ?? null,
+        rtsAt: order.posOrder?.rtsAt ?? null,
+      };
+    }
+
+    if (posStatus === 6) {
+      return {
+        posStatus,
+        status: 'PACKED_CANCELED' as const,
+        label: 'Packed cancelled',
         deliveredAt: order.posOrder?.deliveredAt ?? null,
         rtsAt: order.posOrder?.rtsAt ?? null,
       };
@@ -1942,18 +2058,25 @@ export class WmsDispatchService {
       };
     }
 
-    if (order.posOrder?.isVoid) {
+    if (order.status === WmsFulfillmentOrderStatus.CANCELED) {
+      return {
+        eligible: false,
+        reason: 'This dispatch order is already cancelled in WMS.',
+      };
+    }
+
+    const delivery = this.mapDelivery(order);
+    if (order.posOrder?.isVoid && delivery?.status !== 'PACKED_CANCELED') {
       return {
         eligible: false,
         reason: 'This order is already voided in POS and can no longer be reopened from Dispatch.',
       };
     }
 
-    const delivery = this.mapDelivery(order);
-    if (delivery?.status !== 'PACKED') {
+    if (delivery?.status !== 'PACKED' && delivery?.status !== 'PACKED_CANCELED') {
       return {
         eligible: false,
-        reason: 'Only orders still in Packed stage can be voided from Dispatch.',
+        reason: 'Only orders still in Packed or Packed cancelled stage can be voided from Dispatch.',
       };
     }
 

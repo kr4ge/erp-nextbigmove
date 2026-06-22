@@ -1712,8 +1712,9 @@ export class WmsFulfillmentOpsService {
     }
 
     const posStatus = order.posOrder?.status ?? null;
+    const isPackedCanceled = posStatus === 6;
     if (
-      order.posOrder?.isVoid
+      (!isPackedCanceled && order.posOrder?.isVoid)
       || posStatus === 2
       || posStatus === 3
       || posStatus === 4
@@ -1845,11 +1846,37 @@ export class WmsFulfillmentOpsService {
       });
     }
 
-    await this.refreshDemandOrderAvailabilityState(tx, order.id, params.now, {
-      allowedPosStatuses: [CONFIRMED_POS_ORDER_STATUS, WAITING_FOR_PRINTING_POS_ORDER_STATUS],
-      allowPackedCurrentStatus: true,
-      allowAnyPreDispatchPosStatus: true,
-    });
+    if (isPackedCanceled) {
+      await tx.wmsFulfillmentLine.updateMany({
+        where: {
+          fulfillmentOrderId: order.id,
+        },
+        data: {
+          quantityAllocated: 0,
+          quantityPicked: 0,
+          status: WmsFulfillmentLineStatus.CANCELED,
+          issueReason: params.reason,
+        },
+      });
+
+      await tx.wmsFulfillmentOrder.update({
+        where: { id: order.id },
+        data: {
+          status: WmsFulfillmentOrderStatus.CANCELED,
+          issueReason: params.reason,
+          allocatedQuantity: 0,
+          pickedQuantity: 0,
+          completedAt: params.now,
+          basketId: null,
+        },
+      });
+    } else {
+      await this.refreshDemandOrderAvailabilityState(tx, order.id, params.now, {
+        allowedPosStatuses: [CONFIRMED_POS_ORDER_STATUS, WAITING_FOR_PRINTING_POS_ORDER_STATUS],
+        allowPackedCurrentStatus: true,
+        allowAnyPreDispatchPosStatus: true,
+      });
+    }
 
     for (const basketId of basketIdSet) {
       await this.refreshBasketState(tx, basketId, params.now);
@@ -1868,6 +1895,7 @@ export class WmsFulfillmentOpsService {
       metadata: {
         mode: 'BASKET_DEMAND',
         source: 'DISPATCH',
+        resolution: isPackedCanceled ? 'CANCELED' : 'RETURNED_TO_PICKING',
         reason: params.reason,
         posOrderId: order.posOrderId,
         restoredPackedUnits: order.basketUnits.length,
@@ -1883,6 +1911,7 @@ export class WmsFulfillmentOpsService {
       posOrderId: order.posOrderId,
       posOrderDbId: order.posOrderDbId,
       warehouseId: order.warehouseId ?? null,
+      resolution: isPackedCanceled ? 'CANCELED' as const : 'RETURNED_TO_PICKING' as const,
       restoredPackedUnits: order.basketUnits.length,
       affectedBasketIds: Array.from(basketIdSet),
     };
@@ -2555,7 +2584,7 @@ export class WmsFulfillmentOpsService {
       : [CONFIRMED_POS_ORDER_STATUS];
     const posStatus = order?.posOrder?.status ?? null;
     const posStatusAllowed = options?.allowAnyPreDispatchPosStatus
-      ? posStatus === null || ![2, 3, 4, 5].includes(posStatus)
+      ? posStatus === null || ![2, 3, 4, 5, 6].includes(posStatus)
       : allowedPosStatuses.includes(posStatus ?? Number.NaN);
 
     if (

@@ -161,7 +161,7 @@ export function DispatchDetailPanel({
                 disabled={isVoidingOutbound}
                 className="btn btn-md btn-destructive"
               >
-                {isVoidingOutbound ? 'Voiding…' : 'Void packed order'}
+                {isVoidingOutbound ? 'Voiding…' : 'Void dispatch order'}
               </button>
             ) : null}
             {tab === 'outbound' && canReconcileOutbound ? (
@@ -680,6 +680,8 @@ function buildPillClass(status: string | null | undefined) {
     case 'DISPATCHED':
     case 'SHIPPED':
       return 'pill pill-info';
+    case 'PACKED_CANCELED':
+      return 'pill border-none bg-[#fff4db] text-[#a66313]';
     case 'DELIVERED':
     case 'PUTAWAY':
     case 'VERIFIED':

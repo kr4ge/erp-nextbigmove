@@ -1,5 +1,5 @@
 export type WmsDispatchTab = 'outbound' | 'returns' | 'reports';
-export type WmsDispatchOutboundStatusFilter = '' | 'PACKED' | 'SHIPPED' | 'DELIVERED';
+export type WmsDispatchOutboundStatusFilter = '' | 'PACKED' | 'PACKED_CANCELED' | 'SHIPPED' | 'DELIVERED' | 'CANCELED';
 export type WmsDispatchReturnStatusFilter =
   | ''
   | 'RETURNING'
@@ -68,7 +68,7 @@ export type WmsDispatchTaskListItem = {
   tracking: string | null;
   delivery: {
     posStatus: number | null;
-    status: 'PACKED' | 'SHIPPED' | 'DELIVERED' | 'RETURNING' | 'RETURNED';
+    status: 'PACKED' | 'PACKED_CANCELED' | 'SHIPPED' | 'DELIVERED' | 'RETURNING' | 'RETURNED' | 'CANCELED';
     label: string | null;
     deliveredAt: string | null;
     rtsAt: string | null;
@@ -120,7 +120,7 @@ export type WmsDispatchTask = {
   tracking: string | null;
   delivery: {
     posStatus: number | null;
-    status: 'PACKED' | 'SHIPPED' | 'DELIVERED' | 'RETURNING' | 'RETURNED';
+    status: 'PACKED' | 'PACKED_CANCELED' | 'SHIPPED' | 'DELIVERED' | 'RETURNING' | 'RETURNED' | 'CANCELED';
     label: string | null;
     deliveredAt: string | null;
     rtsAt: string | null;

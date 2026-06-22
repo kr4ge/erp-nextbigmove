@@ -253,6 +253,8 @@ function buildStatusPill(status: string | null | undefined) {
   switch (status) {
     case 'PACKED':
       return 'pill pill-info';
+    case 'PACKED_CANCELED':
+      return 'pill border-none bg-[#fff4db] text-[#a66313]';
     case 'SHIPPED':
       return 'pill pill-primary';
     case 'DELIVERED':
@@ -264,6 +266,7 @@ function buildStatusPill(status: string | null | undefined) {
     case 'READY_TO_VERIFY':
       return 'pill border-none bg-[#fff4db] text-[#a66313]';
     case 'RETURNED':
+    case 'CANCELED':
       return 'pill pill-destructive';
     default:
       return 'pill pill-neutral';

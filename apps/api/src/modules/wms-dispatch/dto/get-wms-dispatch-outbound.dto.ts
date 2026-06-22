@@ -1,8 +1,8 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { GetWmsDispatchSummaryDto } from './get-wms-dispatch-summary.dto';
 
-const DISPATCH_OUTBOUND_STATUSES = ['PACKED', 'SHIPPED', 'DELIVERED'] as const;
+const DISPATCH_OUTBOUND_STATUSES = ['PACKED', 'PACKED_CANCELED', 'SHIPPED', 'DELIVERED', 'CANCELED'] as const;
 
 export class GetWmsDispatchOutboundDto extends GetWmsDispatchSummaryDto {
   @IsOptional()

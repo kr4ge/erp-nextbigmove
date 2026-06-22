@@ -457,8 +457,10 @@ export function useDispatchController() {
     () => [
       { value: '', label: 'All outbound' },
       { value: 'PACKED', label: 'Packed' },
+      { value: 'PACKED_CANCELED', label: 'Packed cancelled' },
       { value: 'SHIPPED', label: 'Shipped' },
       { value: 'DELIVERED', label: 'Delivered' },
+      { value: 'CANCELED', label: 'Cancelled' },
     ],
     [],
   );
@@ -557,9 +559,13 @@ export function useDispatchController() {
         storeId: selectedStoreIdState,
         reason: params.reason,
       });
-      setSuccessMessage(
-        `Dispatch void returned order #${response.posOrderId} with ${response.restoredPackedUnits} packed unit${response.restoredPackedUnits === 1 ? '' : 's'} back to WMS picking.`,
-      );
+      const syncSummary = response.posStatusUpdate.queued > 0
+        ? ` POS reset queued for ${response.posStatusUpdate.queued} order${response.posStatusUpdate.queued === 1 ? '' : 's'}.`
+        : '';
+
+      setSuccessMessage(response.resolution === 'CANCELED'
+        ? `Dispatch void restored ${response.restoredPackedUnits} packed unit${response.restoredPackedUnits === 1 ? '' : 's'} for cancelled order #${response.posOrderId} and marked it cancelled in WMS.`
+        : `Dispatch void returned order #${response.posOrderId} with ${response.restoredPackedUnits} packed unit${response.restoredPackedUnits === 1 ? '' : 's'} back to picking.${syncSummary}`);
       setSelectedTaskId(null);
       await Promise.all([
         loadSummary(true),

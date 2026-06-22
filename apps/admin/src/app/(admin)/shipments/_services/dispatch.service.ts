@@ -138,6 +138,7 @@ export async function voidWmsDispatchOutboundTask(params: {
     success: boolean;
     taskId: string;
     posOrderId: string;
+    resolution: 'RETURNED_TO_PICKING' | 'CANCELED';
     restoredPackedUnits: number;
     affectedBasketIds: string[];
     posStatusUpdate: {
