@@ -787,6 +787,7 @@ function DemandBasketPackExecutionPanel({
     for (const order of task.basket?.orders ?? []) {
       const orderTask = orderTaskMap.get(order.id) ?? null;
       const deliveryStatus = orderTask?.delivery?.status ?? null;
+      const canceledInPos = deliveryStatus === 'CANCELED';
       const inDispatch = deliveryStatus === 'SHIPPED'
         || deliveryStatus === 'DELIVERED'
         || deliveryStatus === 'RETURNING'
@@ -794,7 +795,11 @@ function DemandBasketPackExecutionPanel({
       const selectable = (order.status === 'PICKED' || order.status === 'PACKING') && !inDispatch;
       state.set(order.id, {
         selectable,
-        reason: inDispatch ? orderTask?.delivery?.label ?? 'In dispatch' : null,
+        reason: canceledInPos
+          ? 'Cancelled in POS · void this order'
+          : inDispatch
+            ? orderTask?.delivery?.label ?? 'In dispatch'
+            : null,
       });
     }
     return state;
@@ -1673,6 +1678,10 @@ function formatPackDateTime(value: string) {
 }
 
 function resolvePackStateLabel(task: WmsFulfillmentQueueTask, tracking: string | null) {
+  if (task.delivery?.status === 'CANCELED') {
+    return task.delivery.label ?? 'Cancelled';
+  }
+
   if (task.status === 'PACKED' && task.delivery?.label) {
     return task.delivery.label;
   }
@@ -1697,6 +1706,10 @@ function resolvePackStateLabel(task: WmsFulfillmentQueueTask, tracking: string |
 }
 
 function resolvePackedStateCopy(task: WmsFulfillmentQueueTask) {
+  if (task.delivery?.status === 'CANCELED') {
+    return 'This order was canceled in POS. Void it from the active pack basket before the team continues.';
+  }
+
   if (task.delivery?.status === 'DELIVERED') {
     return 'This order was delivered. The packed activity remains traceable in WMS and STOX history.';
   }

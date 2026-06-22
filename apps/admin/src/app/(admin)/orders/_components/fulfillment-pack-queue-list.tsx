@@ -354,6 +354,10 @@ function mapPackCardStatus(
   fallback: string,
   tracking: string | null,
 ) {
+  if (task.delivery?.status === 'CANCELED') {
+    return task.delivery.label ?? 'Cancelled';
+  }
+
   if (task.status === 'PACKED' && task.delivery?.label) {
     return task.delivery.label;
   }

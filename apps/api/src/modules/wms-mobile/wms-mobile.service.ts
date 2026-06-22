@@ -167,6 +167,7 @@ const DEFAULT_PACKING_PAGE_SIZE = 10;
 const DEFAULT_RTS_PAGE_SIZE = 10;
 const CONFIRMED_POS_ORDER_STATUS = 1;
 const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
+const CANCELED_POS_ORDER_STATUS = 6;
 const PICKING_SYNC_ORDER_LIMIT = 80;
 const ACTIVE_PICKING_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.READY,
@@ -4040,6 +4041,7 @@ export class WmsMobileService {
         throw new NotFoundException('Pack task was not found in this basket');
       }
 
+      this.assertPackOrderNotCanceledInPos(scopedOrder);
       this.assertOrderHasTracking(scopedOrder);
       this.assertNoOtherDemandPackOrderInProgress(scopedBasket, scopedOrder.id);
 
@@ -4144,6 +4146,7 @@ export class WmsMobileService {
         throw new NotFoundException('Pack task was not found in this basket');
       }
 
+      this.assertPackOrderNotCanceledInPos(scopedOrder);
       this.assertPackingTaskInProgress(scopedOrder);
       this.assertOrderHasTracking(scopedOrder);
 
@@ -4351,6 +4354,7 @@ export class WmsMobileService {
         throw new NotFoundException('Pack task was not found in this basket');
       }
 
+      this.assertPackOrderNotCanceledInPos(scopedOrder);
       this.assertPackingTaskInProgress(scopedOrder);
       this.assertOrderHasTracking(scopedOrder);
 
@@ -4471,7 +4475,6 @@ export class WmsMobileService {
     return {
       success: true,
       voidedOrderIds: result.releaseResult.voidedOrderIds,
-      posStatusUpdate: result.posStatusUpdate,
       activeOrderId,
       activeOrder: activeOrder ? this.mapMobilePickingTask(activeOrder) : null,
       basket: this.mapMobilePickBasket(result.updatedBasket),
@@ -6970,6 +6973,7 @@ export class WmsMobileService {
       {
         basketId: basket.id,
         orderIds: selectedOrders.map((order: any) => order.id),
+        reason: voidReason,
       },
       request,
     );
@@ -6978,17 +6982,6 @@ export class WmsMobileService {
       where: { id: basket.id },
       include: this.mobileBasketInclude(),
     });
-
-    const posStatusOrders = selectedOrders.map((order: any) => ({
-      id: order.id,
-      tenantId: order.tenantId,
-      storeId: order.storeId,
-      posOrderDbId: order.posOrderDbId,
-      shopId: order.shopId,
-      posOrderId: order.posOrderId,
-      warehouseId: order.warehouseId ?? null,
-    }));
-    const posStatusUpdate = await this.enqueueVoidedPackOrdersConfirmedStatus(posStatusOrders);
 
     const selectedTenantIds = Array.from(new Set(selectedOrders.map((order: any) => order.tenantId).filter(Boolean)));
     const selectedStoreIds = Array.from(new Set(selectedOrders.map((order: any) => order.storeId).filter(Boolean)));
@@ -7002,13 +6995,10 @@ export class WmsMobileService {
       releasedPosOrderIds: releaseResult.voidedPosOrderIds,
       restoredPickedUnits: releaseResult.restoredPickedUnits,
       restoredPackedUnits: releaseResult.restoredPackedUnits,
+      canceledPosOrderIds: releaseResult.canceledPosOrderIds,
+      reopenedPosOrderIds: releaseResult.reopenedPosOrderIds,
       approverId: approval.approver?.id ?? null,
       approverEmail: approval.approver?.email ?? null,
-      posStatusTarget: posStatusUpdate.targetStatus,
-      posStatusQueued: posStatusUpdate.queued,
-      posStatusSkipped: posStatusUpdate.skipped,
-      posStatusFailed: posStatusUpdate.failed,
-      posStatusResults: posStatusUpdate.results,
     };
 
     await this.wmsStaffActivityService.recordFromRequest({
@@ -7070,7 +7060,6 @@ export class WmsMobileService {
       approval,
       voidReason,
       releaseResult,
-      posStatusUpdate,
     };
   }
 
@@ -7135,90 +7124,6 @@ export class WmsMobileService {
         this.logger.error(
           `Failed to queue WMS POS status update order=${order.posOrderId} target=${WAITING_FOR_PRINTING_POS_ORDER_STATUS}: ${reason}`,
           error?.stack,
-        );
-        return {
-          posOrderId: order.posOrderId,
-          outcome: 'failed',
-          reason,
-        };
-      }
-    }));
-
-    for (const result of results) {
-      summary.results.push(result);
-      if (result.outcome === 'queued') {
-        summary.queued += 1;
-      } else if (result.outcome === 'skipped') {
-        summary.skipped += 1;
-      } else {
-        summary.failed += 1;
-      }
-    }
-
-    return summary;
-  }
-
-  private async enqueueVoidedPackOrdersConfirmedStatus(
-    orders: Array<{
-      id: string;
-      tenantId: string;
-      storeId: string;
-      posOrderDbId: string;
-      shopId: string;
-      posOrderId: string;
-      warehouseId: string | null;
-    }>,
-  ): Promise<PickedOrderPosStatusUpdateSummary> {
-    const summary: PickedOrderPosStatusUpdateSummary = {
-      targetStatus: CONFIRMED_POS_ORDER_STATUS,
-      queued: 0,
-      skipped: 0,
-      failed: 0,
-      results: [],
-    };
-
-    if (orders.length === 0) {
-      return summary;
-    }
-
-    const results = await Promise.all(orders.map(async (order): Promise<PickedOrderPosStatusUpdateSummary['results'][number]> => {
-      try {
-        const result = await this.ordersService.enqueueSystemPosOrderStatusUpdate({
-          tenantId: order.tenantId,
-          orderRowId: order.posOrderDbId,
-          shopId: order.shopId,
-          posOrderId: order.posOrderId,
-          targetStatus: CONFIRMED_POS_ORDER_STATUS,
-          allowedCurrentStatuses: [WAITING_FOR_PRINTING_POS_ORDER_STATUS],
-          source: 'wms_picking',
-        });
-
-        if (result.skipped) {
-          this.logger.warn(
-            `Skipped WMS POS status reset order=${order.posOrderId} target=${CONFIRMED_POS_ORDER_STATUS} reason=${result.reason} current=${result.currentStatus ?? 'n/a'}`,
-          );
-          return {
-            posOrderId: order.posOrderId,
-            outcome: 'skipped',
-            reason: result.reason,
-            currentStatus: result.currentStatus,
-          };
-        }
-
-        this.logger.log(
-          `Queued WMS POS status reset order=${order.posOrderId} target=${CONFIRMED_POS_ORDER_STATUS} reason=${result.reason}`,
-        );
-        return {
-          posOrderId: order.posOrderId,
-          outcome: 'queued',
-          reason: result.reason,
-          currentStatus: result.currentStatus,
-        };
-      } catch (error: any) {
-        const reason = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
-        this.logger.error(
-          `Failed to queue WMS POS status reset order=${order.posOrderId} target=${CONFIRMED_POS_ORDER_STATUS}: ${reason}`,
-          error instanceof Error ? error.stack : undefined,
         );
         return {
           posOrderId: order.posOrderId,
@@ -8989,6 +8894,13 @@ export class WmsMobileService {
     }
   }
 
+  private assertPackOrderNotCanceledInPos(order: any) {
+    const posStatus = typeof order.posOrder?.status === 'number' ? order.posOrder.status : null;
+    if (posStatus === CANCELED_POS_ORDER_STATUS || order.posOrder?.isVoid) {
+      throw new ConflictException(`Order ${order.posOrderId} was canceled in POS. Void it from PACK before continuing`);
+    }
+  }
+
   private assertOrderHasTracking(order: any) {
     const tracking = this.cleanOptionalText(order.posOrder?.tracking ?? null);
     if (!tracking) {
@@ -10375,6 +10287,15 @@ export class WmsMobileService {
 
   private mapTaskDelivery(task: any) {
     const posStatus = typeof task.posOrder?.status === 'number' ? task.posOrder.status : null;
+
+    if (posStatus === CANCELED_POS_ORDER_STATUS) {
+      return {
+        posStatus,
+        status: 'CANCELED' as const,
+        label: 'Cancelled',
+        deliveredAt: task.posOrder?.deliveredAt ?? null,
+      };
+    }
 
     if (posStatus === 5) {
       return {

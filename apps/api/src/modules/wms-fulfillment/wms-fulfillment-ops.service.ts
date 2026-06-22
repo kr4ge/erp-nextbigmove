@@ -55,6 +55,7 @@ const FULFILLABLE_UNIT_STATUSES = [
 ] as const;
 const CONFIRMED_POS_ORDER_STATUS = 1;
 const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
+const CANCELED_POS_ORDER_STATUS = 6;
 
 type DemandHealthDemandRecord = Prisma.WmsBasketPickDemandGetPayload<{
   include: {
@@ -564,6 +565,7 @@ export class WmsFulfillmentOpsService {
     params: {
       basketId: string;
       orderIds: string[];
+      reason: string;
     },
     request?: Request,
   ) {
@@ -586,6 +588,7 @@ export class WmsFulfillmentOpsService {
       this.releaseDemandBasketOrdersForPackVoidTx(tx, {
         basketId: params.basketId,
         orderIds,
+        reason: params.reason,
         actorId,
         now: new Date(),
         request,
@@ -1304,6 +1307,7 @@ export class WmsFulfillmentOpsService {
     params: {
       basketId: string;
       orderIds: string[];
+      reason: string;
       actorId: string | null;
       now: Date;
       request?: Request;
@@ -1410,9 +1414,14 @@ export class WmsFulfillmentOpsService {
 
     const blockedDispatchOrder = selectedOrders.find((order) => {
       const posStatus = order.posOrder?.status ?? null;
+      const isCanceledInPos = posStatus === CANCELED_POS_ORDER_STATUS;
       return (
-        order.posOrder?.isVoid
-        || (posStatus !== CONFIRMED_POS_ORDER_STATUS && posStatus !== WAITING_FOR_PRINTING_POS_ORDER_STATUS)
+        (!isCanceledInPos && order.posOrder?.isVoid)
+        || (
+          posStatus !== CONFIRMED_POS_ORDER_STATUS
+          && posStatus !== WAITING_FOR_PRINTING_POS_ORDER_STATUS
+          && posStatus !== CANCELED_POS_ORDER_STATUS
+        )
       );
     });
     if (blockedDispatchOrder) {
@@ -1420,6 +1429,13 @@ export class WmsFulfillmentOpsService {
         `Order ${blockedDispatchOrder.posOrderId} is already outside the pack basket flow and cannot be voided`,
       );
     }
+
+    const selectedCanceledOrders = selectedOrders.filter(
+      (order) => (order.posOrder?.status ?? null) === CANCELED_POS_ORDER_STATUS,
+    );
+    const selectedReopenOrders = selectedOrders.filter(
+      (order) => (order.posOrder?.status ?? null) !== CANCELED_POS_ORDER_STATUS,
+    );
 
     const selectedPackedUnits = basket.basketUnits.filter((basketUnit) => (
       basketUnit.status === WmsBasketUnitStatus.PACKED
@@ -1594,7 +1610,33 @@ export class WmsFulfillmentOpsService {
       });
     }
 
-    for (const order of selectedOrders) {
+    for (const order of selectedCanceledOrders) {
+      await tx.wmsFulfillmentLine.updateMany({
+        where: {
+          fulfillmentOrderId: order.id,
+        },
+        data: {
+          quantityAllocated: 0,
+          quantityPicked: 0,
+          status: WmsFulfillmentLineStatus.CANCELED,
+          issueReason: params.reason,
+        },
+      });
+
+      await tx.wmsFulfillmentOrder.update({
+        where: { id: order.id },
+        data: {
+          status: WmsFulfillmentOrderStatus.CANCELED,
+          issueReason: params.reason,
+          allocatedQuantity: 0,
+          pickedQuantity: 0,
+          completedAt: params.now,
+          basketId: null,
+        },
+      });
+    }
+
+    for (const order of selectedReopenOrders) {
       await this.refreshDemandOrderAvailabilityState(tx, order.id, params.now, {
         allowedPosStatuses: [CONFIRMED_POS_ORDER_STATUS, WAITING_FOR_PRINTING_POS_ORDER_STATUS],
       });
@@ -1620,6 +1662,8 @@ export class WmsFulfillmentOpsService {
         })),
         restoredPickedUnits: releasedPickedUnits.length,
         restoredPackedUnits: selectedPackedUnits.length,
+        canceledPosOrderIds: selectedCanceledOrders.map((order) => order.posOrderId),
+        reopenedPosOrderIds: selectedReopenOrders.map((order) => order.posOrderId),
       } as Prisma.InputJsonValue,
     });
 
@@ -1630,6 +1674,8 @@ export class WmsFulfillmentOpsService {
       voidedPosOrderIds: selectedOrders.map((order) => order.posOrderId),
       restoredPickedUnits: releasedPickedUnits.length,
       restoredPackedUnits: selectedPackedUnits.length,
+      canceledPosOrderIds: selectedCanceledOrders.map((order) => order.posOrderId),
+      reopenedPosOrderIds: selectedReopenOrders.map((order) => order.posOrderId),
     };
   }
 

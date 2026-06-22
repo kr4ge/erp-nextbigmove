@@ -113,7 +113,7 @@ export type WmsMobilePickingTask = {
   tracking: string | null;
   delivery: {
     posStatus: number | null;
-    status: 'PACKED' | 'SHIPPED' | 'DELIVERED' | 'RETURNING' | 'RETURNED' | null;
+    status: 'PACKED' | 'SHIPPED' | 'DELIVERED' | 'RETURNING' | 'RETURNED' | 'CANCELED' | null;
     label: string | null;
     deliveredAt: string | null;
   } | null;
