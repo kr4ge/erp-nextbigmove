@@ -13,6 +13,7 @@ import {
   type StoredAdminUser,
 } from '@/lib/admin-session';
 import { hasWmsAccess, WMS_NAV_ITEMS } from '@/lib/wms-access';
+import { ToastProvider } from '@/components/ui/toast';
 import { usePurchasingNotificationCount } from '../finance/_hooks/use-purchasing-notification-count';
 import { WmsSidebarBrand } from './wms-sidebar-brand';
 import { WmsTopbar } from './wms-topbar';
@@ -259,85 +260,43 @@ export function WmsShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f4eb] text-slate-900 lg:h-screen lg:overflow-hidden">
-      <div className="flex min-h-screen lg:h-screen">
-        <aside
-          style={{
-            width: isSidebarCollapsed ? 'var(--wms-sidebar-collapsed-width)' : 'var(--wms-sidebar-width)',
-          }}
-          className="relative z-40 hidden h-screen shrink-0 border-r border-[#214c63] bg-primary text-slate-100 transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:flex-col"
-        >
-          <div
-            className={`min-h-[64px] flex items-center gap-2 border-b border-white/10 ${
-              isSidebarCollapsed ? 'justify-center px-3' : 'gap-3 px-5'
-            }`}
-          >
-            <WmsSidebarBrand collapsed={isSidebarCollapsed} />
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed((current) => !current)}
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/88 transition hover:bg-white/10 hover:text-white ${
-                isSidebarCollapsed ? '' : 'ml-auto'
-              }`}
-              aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              {isSidebarCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-            </button>
-          </div>
-
-          <nav
-            className={`min-h-0 flex-1 overflow-x-visible overflow-y-auto pb-4 pt-4 ${
-              isSidebarCollapsed ? 'px-3' : 'px-4'
-            }`}
-          >
-            <WmsSidebarNav
-              navItems={navItems}
-              pathname={pathname}
-              isSidebarCollapsed={isSidebarCollapsed}
-              expandedItems={expandedItems}
-              purchasingNotificationCount={purchasingNotifications.count}
-              onToggleItem={(label, nextExpanded) =>
-                setExpandedItems((current) => ({
-                  ...current,
-                  [label]: nextExpanded,
-                }))}
-            />
-          </nav>
-        </aside>
-
-        <div
-          className={`fixed inset-0 z-50 bg-[#0d2431]/44 transition duration-200 lg:hidden ${
-            isMobileSidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-          }`}
-          aria-hidden={!isMobileSidebarOpen}
-          onClick={() => setIsMobileSidebarOpen(false)}
-        >
+    <ToastProvider>
+      <div className="min-h-screen bg-[#f7f4eb] text-slate-900 lg:h-screen lg:overflow-hidden">
+        <div className="flex min-h-screen lg:h-screen">
           <aside
-            id="wms-mobile-sidebar"
-            className={`flex h-full w-[min(84vw,320px)] flex-col border-r border-[#214c63] bg-primary text-slate-100 shadow-[0_28px_70px_-34px_rgba(0,0,0,0.6)] transition-transform duration-200 ${
-              isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-            }`}
-            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: isSidebarCollapsed ? 'var(--wms-sidebar-collapsed-width)' : 'var(--wms-sidebar-width)',
+            }}
+            className="relative z-40 hidden h-screen shrink-0 border-r border-[#214c63] bg-primary text-slate-100 transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:flex-col"
           >
-            <div className="flex min-h-[64px] items-center gap-3 border-b border-white/10 px-5">
-              <WmsSidebarBrand />
+            <div
+              className={`min-h-[64px] flex items-center gap-2 border-b border-white/10 ${
+                isSidebarCollapsed ? 'justify-center px-3' : 'gap-3 px-5'
+              }`}
+            >
+              <WmsSidebarBrand collapsed={isSidebarCollapsed} />
               <button
                 type="button"
-                onClick={() => setIsMobileSidebarOpen(false)}
-                className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/88 transition hover:bg-white/10 hover:text-white"
-                aria-label="Close sidebar"
-                title="Close sidebar"
+                onClick={() => setIsSidebarCollapsed((current) => !current)}
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/88 transition hover:bg-white/10 hover:text-white ${
+                  isSidebarCollapsed ? '' : 'ml-auto'
+                }`}
+                aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
-                <X className="h-4 w-4" />
+                {isSidebarCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
               </button>
             </div>
 
-            <nav className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4">
+            <nav
+              className={`min-h-0 flex-1 overflow-x-visible overflow-y-auto pb-4 pt-4 ${
+                isSidebarCollapsed ? 'px-3' : 'px-4'
+              }`}
+            >
               <WmsSidebarNav
                 navItems={navItems}
                 pathname={pathname}
-                isSidebarCollapsed={false}
+                isSidebarCollapsed={isSidebarCollapsed}
                 expandedItems={expandedItems}
                 purchasingNotificationCount={purchasingNotifications.count}
                 onToggleItem={(label, nextExpanded) =>
@@ -345,26 +304,70 @@ export function WmsShell({ children }: { children: ReactNode }) {
                     ...current,
                     [label]: nextExpanded,
                   }))}
-                onNavigate={() => setIsMobileSidebarOpen(false)}
               />
             </nav>
           </aside>
-        </div>
 
-        <div className="relative z-0 flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden lg:h-screen lg:min-h-0 lg:overflow-hidden">
-          <div className="sticky top-0 z-30 shrink-0">
-            <WmsTopbar
-              user={state.user}
-              permissions={state.permissions}
-              onLogout={handleLogout}
-              onOpenSidebar={() => setIsMobileSidebarOpen(true)}
-            />
+          <div
+            className={`fixed inset-0 z-50 bg-[#0d2431]/44 transition duration-200 lg:hidden ${
+              isMobileSidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+            }`}
+            aria-hidden={!isMobileSidebarOpen}
+            onClick={() => setIsMobileSidebarOpen(false)}
+          >
+            <aside
+              id="wms-mobile-sidebar"
+              className={`flex h-full w-[min(84vw,320px)] flex-col border-r border-[#214c63] bg-primary text-slate-100 shadow-[0_28px_70px_-34px_rgba(0,0,0,0.6)] transition-transform duration-200 ${
+                isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+              }`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex min-h-[64px] items-center gap-3 border-b border-white/10 px-5">
+                <WmsSidebarBrand />
+                <button
+                  type="button"
+                  onClick={() => setIsMobileSidebarOpen(false)}
+                  className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/88 transition hover:bg-white/10 hover:text-white"
+                  aria-label="Close sidebar"
+                  title="Close sidebar"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <nav className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4">
+                <WmsSidebarNav
+                  navItems={navItems}
+                  pathname={pathname}
+                  isSidebarCollapsed={false}
+                  expandedItems={expandedItems}
+                  purchasingNotificationCount={purchasingNotifications.count}
+                  onToggleItem={(label, nextExpanded) =>
+                    setExpandedItems((current) => ({
+                      ...current,
+                      [label]: nextExpanded,
+                    }))}
+                  onNavigate={() => setIsMobileSidebarOpen(false)}
+                />
+              </nav>
+            </aside>
           </div>
 
-          <main className="wms-shell-main min-h-0 min-w-0 flex-1 overflow-x-hidden lg:overflow-y-auto">{children}</main>
+          <div className="relative z-0 flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden lg:h-screen lg:min-h-0 lg:overflow-hidden">
+            <div className="sticky top-0 z-30 shrink-0">
+              <WmsTopbar
+                user={state.user}
+                permissions={state.permissions}
+                onLogout={handleLogout}
+                onOpenSidebar={() => setIsMobileSidebarOpen(true)}
+              />
+            </div>
+
+            <main className="wms-shell-main min-h-0 min-w-0 flex-1 overflow-x-hidden lg:overflow-y-auto">{children}</main>
+          </div>
         </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 }
 

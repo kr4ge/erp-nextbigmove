@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
+import { useToast } from '@/components/ui/toast';
 import type { WmsSearchableOption } from '../../_components/wms-searchable-select';
 import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
 import {
@@ -57,6 +58,7 @@ type BasketPackView = {
 };
 
 export function useFulfillmentPackController() {
+  const { addToast } = useToast();
   const [data, setData] = useState<WmsFulfillmentQueueResponse | null>(null);
   const [basketViews, setBasketViews] = useState<Record<string, BasketPackView>>({});
   const [activeBasketId, setActiveBasketId] = useState<string | null>(null);
@@ -103,6 +105,14 @@ export function useFulfillmentPackController() {
     () => user?.role === 'SUPER_ADMIN' || DIRECT_VOID_PERMISSIONS.some((permission) => permissions.includes(permission)),
     [permissions, user?.role],
   );
+  const notifyActionError = useCallback((error: unknown) => {
+    const message = typeof error === 'string' ? error : resolveQueueError(error);
+    addToast('error', message);
+    return message;
+  }, [addToast]);
+  const notifyActionSuccess = useCallback((message: string) => {
+    addToast('success', message);
+  }, [addToast]);
 
   const loadQueue = useCallback(async ({
     page,
@@ -289,7 +299,7 @@ export function useFulfillmentPackController() {
 
   const scanBasketWaybill = useCallback(async (task: WmsFulfillmentQueueTask, code: string) => {
     if (!task.basket?.id) {
-      setErrorMessage('This pack order is no longer inside a basket.');
+      notifyActionError('This pack order is no longer inside a basket.');
       return false;
     }
 
@@ -309,18 +319,19 @@ export function useFulfillmentPackController() {
       });
       setActiveBasketTaskSnapshot(resolveBasketContextTask(result, task));
       setActiveTaskId(result.activeOrderId);
+      notifyActionSuccess(`Waybill ${result.tracking} verified.`);
       return true;
     } catch (error) {
-      setErrorMessage(resolveQueueError(error));
+      notifyActionError(error);
       return false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [resolveTenantIdForTask]);
+  }, [notifyActionError, notifyActionSuccess, resolveTenantIdForTask]);
 
   const scanBasketUnit = useCallback(async (task: WmsFulfillmentQueueTask, orderId: string, code: string) => {
     if (!task.basket?.id) {
-      setErrorMessage('This pack order is no longer inside a basket.');
+      notifyActionError('This pack order is no longer inside a basket.');
       return false;
     }
 
@@ -343,16 +354,16 @@ export function useFulfillmentPackController() {
       setActiveTaskId(result.activeOrderId ?? orderId);
       return true;
     } catch (error) {
-      setErrorMessage(resolveQueueError(error));
+      notifyActionError(error);
       return false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [resolveTenantIdForTask]);
+  }, [notifyActionError, resolveTenantIdForTask]);
 
   const completeBasketOrder = useCallback(async (task: WmsFulfillmentQueueTask, orderId: string) => {
     if (!task.basket?.id) {
-      setErrorMessage('This pack order is no longer inside a basket.');
+      notifyActionError('This pack order is no longer inside a basket.');
       return false;
     }
 
@@ -373,14 +384,15 @@ export function useFulfillmentPackController() {
       setActiveBasketTaskSnapshot(resolveBasketContextTask(result, task));
       setActiveTaskId(result.activeOrderId ?? null);
       await loadQueue({ mode: 'refresh', page: currentPage });
+      notifyActionSuccess(`Order #${result.completedOrder.posOrderId} packed.`);
       return true;
     } catch (error) {
-      setErrorMessage(resolveQueueError(error));
+      notifyActionError(error);
       return false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [currentPage, loadQueue, resolveTenantIdForTask]);
+  }, [currentPage, loadQueue, notifyActionError, notifyActionSuccess, resolveTenantIdForTask]);
 
   const startTask = useCallback(async (task: WmsFulfillmentQueueTask) => {
     setIsSubmitting(true);
@@ -391,14 +403,15 @@ export function useFulfillmentPackController() {
         tenantId: resolveTenantIdForTask(task),
       });
       replaceTask(result.task);
+      notifyActionSuccess(`Packing started for order #${result.task.posOrderId}.`);
       return true;
     } catch (error) {
-      setErrorMessage(resolveQueueError(error));
+      notifyActionError(error);
       return false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [replaceTask, resolveTenantIdForTask]);
+  }, [notifyActionError, notifyActionSuccess, replaceTask, resolveTenantIdForTask]);
 
   const scanUnit = useCallback(async (task: WmsFulfillmentQueueTask, code: string) => {
     setIsSubmitting(true);
@@ -412,12 +425,12 @@ export function useFulfillmentPackController() {
       replaceTask(result.task);
       return true;
     } catch (error) {
-      setErrorMessage(resolveQueueError(error));
+      notifyActionError(error);
       return false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [replaceTask, resolveTenantIdForTask]);
+  }, [notifyActionError, replaceTask, resolveTenantIdForTask]);
 
   const verifyTracking = useCallback(async (task: WmsFulfillmentQueueTask, code: string) => {
     setIsSubmitting(true);
@@ -429,14 +442,15 @@ export function useFulfillmentPackController() {
         code,
       });
       replaceTask(result.task);
+      notifyActionSuccess(`Waybill ${result.tracking} verified.`);
       return result.tracking;
     } catch (error) {
-      setErrorMessage(resolveQueueError(error));
+      notifyActionError(error);
       return null;
     } finally {
       setIsSubmitting(false);
     }
-  }, [replaceTask, resolveTenantIdForTask]);
+  }, [notifyActionError, notifyActionSuccess, replaceTask, resolveTenantIdForTask]);
 
   const completeTask = useCallback(async (task: WmsFulfillmentQueueTask, trackingCode: string) => {
     setIsSubmitting(true);
@@ -448,14 +462,15 @@ export function useFulfillmentPackController() {
         trackingCode,
       });
       replaceTask(result.task, { closeWhenFinished: true });
+      notifyActionSuccess(`Order #${result.task.posOrderId} packed.`);
       return true;
     } catch (error) {
-      setErrorMessage(resolveQueueError(error));
+      notifyActionError(error);
       return false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [replaceTask, resolveTenantIdForTask]);
+  }, [notifyActionError, notifyActionSuccess, replaceTask, resolveTenantIdForTask]);
 
   const voidTask = useCallback(async (params: {
     task: WmsFulfillmentQueueTask;
@@ -474,14 +489,15 @@ export function useFulfillmentPackController() {
         supervisorPassword: params.supervisorPassword,
       });
       replaceTask(result.task, { closeWhenFinished: true });
+      notifyActionSuccess(`Order #${result.task.posOrderId} voided from pack.`);
       return true;
     } catch (error) {
-      setErrorMessage(resolveQueueError(error));
+      notifyActionError(error);
       return false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [replaceTask, resolveTenantIdForTask]);
+  }, [notifyActionError, notifyActionSuccess, replaceTask, resolveTenantIdForTask]);
 
   const voidBasketOrders = useCallback(async (params: {
     task: WmsFulfillmentQueueTask;
@@ -491,7 +507,7 @@ export function useFulfillmentPackController() {
     supervisorPassword?: string | null;
   }) => {
     if (!params.task.basket?.id) {
-      setErrorMessage('This pack order is no longer inside a basket.');
+      notifyActionError('This pack order is no longer inside a basket.');
       return false;
     }
 
@@ -515,14 +531,19 @@ export function useFulfillmentPackController() {
       setActiveBasketTaskSnapshot(resolveBasketContextTask(result, params.task));
       await loadQueue({ mode: 'refresh', page: currentPage });
       setActiveTaskId(result.activeOrderId);
+      notifyActionSuccess(
+        params.orderIds.length === 1
+          ? '1 order voided from basket.'
+          : `${params.orderIds.length} orders voided from basket.`,
+      );
       return true;
     } catch (error) {
-      setErrorMessage(resolveQueueError(error));
+      notifyActionError(error);
       return false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [currentPage, loadQueue, resolveTenantIdForTask]);
+  }, [currentPage, loadQueue, notifyActionError, notifyActionSuccess, resolveTenantIdForTask]);
 
   const selectTask = useCallback((taskId: string | null) => {
     setActiveTaskId(taskId);

@@ -1239,6 +1239,10 @@ export class WmsDispatchService {
   private resolveReturnWorkflowStatusFilter(
     status?: GetWmsDispatchReturnsDto['status'],
   ): 'READY_TO_VERIFY' | 'AWAITING_PLACEMENT' | 'PARTIAL' | 'VERIFIED' | undefined {
+    if (status === 'RETURNED') {
+      return 'READY_TO_VERIFY';
+    }
+
     if (
       status === 'READY_TO_VERIFY'
       || status === 'AWAITING_PLACEMENT'
