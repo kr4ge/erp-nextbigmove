@@ -186,6 +186,27 @@ export function BlockedTaskState({
   );
 }
 
+export function FloatingErrorBanner({
+  message,
+}: {
+  message: string | null;
+}) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <View pointerEvents="box-none" style={styles.floatingErrorWrap}>
+      <SurfaceCard style={styles.floatingErrorCard}>
+        <View style={styles.floatingErrorIconWrap}>
+          <Feather name="alert-circle" size={18} color={tokens.colors.danger} />
+        </View>
+        <Text style={styles.floatingErrorText}>{message}</Text>
+      </SurfaceCard>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   taskHeader: {
     alignItems: 'center',
@@ -314,6 +335,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     lineHeight: 20,
+  },
+  floatingErrorWrap: {
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 40,
+    elevation: 40,
+  },
+  floatingErrorCard: {
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF5F3',
+    borderColor: 'rgba(211, 84, 69, 0.24)',
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    shadowColor: tokens.colors.danger,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+  },
+  floatingErrorIconWrap: {
+    paddingTop: 2,
+  },
+  floatingErrorText: {
+    color: tokens.colors.danger,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 18,
   },
   actionTile: {
     flex: 1,

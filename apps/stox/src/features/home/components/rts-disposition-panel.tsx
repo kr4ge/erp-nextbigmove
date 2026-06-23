@@ -15,15 +15,17 @@ const DISPOSITION_OPTIONS: Array<{
   hint: string;
   submitLabel: string;
   targetPlaceholder: string;
+  supportsTarget: boolean;
   requiresTarget: boolean;
 }> = [
   {
     value: 'STAGED',
     label: 'Stage',
-    hint: 'Scan staging',
+    hint: 'Use staging lane or scan another',
     submitLabel: 'Stage unit',
-    targetPlaceholder: 'Scan staging',
-    requiresTarget: true,
+    targetPlaceholder: 'Scan staging or leave blank',
+    supportsTarget: true,
+    requiresTarget: false,
   },
   {
     value: 'PUTAWAY',
@@ -31,6 +33,7 @@ const DISPOSITION_OPTIONS: Array<{
     hint: 'Scan bin',
     submitLabel: 'Put away',
     targetPlaceholder: 'Scan bin',
+    supportsTarget: true,
     requiresTarget: true,
   },
   {
@@ -39,15 +42,17 @@ const DISPOSITION_OPTIONS: Array<{
     hint: 'Scan deadstock bin',
     submitLabel: 'Deadstock',
     targetPlaceholder: 'Scan deadstock bin',
+    supportsTarget: true,
     requiresTarget: true,
   },
   {
     value: 'DAMAGE',
     label: 'Damaged',
-    hint: 'Scan damage bin',
+    hint: 'Use damage area or scan quarantine',
     submitLabel: 'Mark damaged',
-    targetPlaceholder: 'Scan damage bin',
-    requiresTarget: true,
+    targetPlaceholder: 'Scan quarantine or leave blank',
+    supportsTarget: true,
+    requiresTarget: false,
   },
   {
     value: 'LOST',
@@ -55,6 +60,7 @@ const DISPOSITION_OPTIONS: Array<{
     hint: 'Mark lost',
     submitLabel: 'Mark as lost',
     targetPlaceholder: '',
+    supportsTarget: false,
     requiresTarget: false,
   },
   {
@@ -63,6 +69,7 @@ const DISPOSITION_OPTIONS: Array<{
     hint: 'Archive unit',
     submitLabel: 'Archive',
     targetPlaceholder: '',
+    supportsTarget: false,
     requiresTarget: false,
   },
 ];
@@ -149,7 +156,7 @@ export function RtsDispositionPanel({
         {selectedOption?.hint ?? 'Choose action'}
       </Text>
 
-      {selectedOption?.requiresTarget ? (
+      {selectedOption?.supportsTarget ? (
         <View style={styles.inputWrap}>
           <Text style={styles.inputLabel}>Target</Text>
           <View style={styles.inputRow}>

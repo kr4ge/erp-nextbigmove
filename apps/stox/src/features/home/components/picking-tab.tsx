@@ -28,7 +28,7 @@ import {
   StockScopeFilterModal,
 } from '@/src/features/stock/components/stock-scope-filter';
 import type { StockScopeOption } from '@/src/features/stock/utils/stock-scope';
-import { BlockedTaskState, SectionLabel, TaskHeader, TaskHeaderIconButton, UtilityPill } from './stox-primitives';
+import { BlockedTaskState, FloatingErrorBanner, SectionLabel, TaskHeader, TaskHeaderIconButton, UtilityPill } from './stox-primitives';
 import { useStoxShellOverlay } from './stox-shell';
 
 type PickingTabProps = {
@@ -385,7 +385,9 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
   }
 
   return (
-    <>
+    <View style={[styles.workspaceShell, error ? styles.workspaceShellWithError : null]}>
+      <FloatingErrorBanner message={error} />
+
       {showQueueChrome ? (
         <>
           <View style={styles.queueHeader}>
@@ -427,13 +429,6 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
             />
           </View>
         </>
-      ) : null}
-
-      {error ? (
-        <SurfaceCard style={styles.errorCard}>
-          <Feather name="alert-circle" size={18} color={tokens.colors.danger} />
-          <Text style={styles.errorText}>{error}</Text>
-        </SurfaceCard>
       ) : null}
 
       {showQueueChrome ? <PickTabSwitcher activeTab={activeTab} onChange={setActiveTab} /> : null}
@@ -535,7 +530,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
         onClose={() => setActiveFilter(null)}
         onSelect={updateFilter}
       />
-    </>
+    </View>
   );
 }
 
@@ -2678,6 +2673,13 @@ const styles = StyleSheet.create({
     minHeight: 140,
     justifyContent: 'center',
   },
+  workspaceShell: {
+    gap: tokens.spacing.lg,
+    position: 'relative',
+  },
+  workspaceShellWithError: {
+    paddingTop: 78,
+  },
   loadingText: {
     color: tokens.colors.inkMuted,
     fontSize: 14,
@@ -3039,18 +3041,6 @@ const styles = StyleSheet.create({
   },
   dateCardWeekdayActive: {
     color: '#F4EEFF',
-  },
-  errorCard: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: tokens.spacing.sm,
-  },
-  errorText: {
-    color: tokens.colors.danger,
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
   },
   emptyCard: {
     backgroundColor: '#FFFFFF',

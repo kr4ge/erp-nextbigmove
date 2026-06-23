@@ -111,7 +111,7 @@ function RtsWorkspaceTab({
   const [isDispositing, setIsDispositing] = useState(false);
   const [queue, setQueue] = useState<RtsQueueEntry[]>([]);
   const [queueStores, setQueueStores] = useState<WmsMobileRtsTasksResponse['context']['stores']>([]);
-  const [queuePage, setQueuePage] = useState(1);
+  const [, setQueuePage] = useState(1);
   const [queueHasMore, setQueueHasMore] = useState(false);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
   const [isLoadingMoreQueue, setIsLoadingMoreQueue] = useState(false);
@@ -317,7 +317,7 @@ function RtsWorkspaceTab({
 
     const timer = setTimeout(() => {
       if (isDispositionStage && canDispose) {
-        if (dispositionAction && rtsDispositionRequiresTarget(dispositionAction)) {
+        if (dispositionAction && rtsDispositionSupportsTarget(dispositionAction)) {
           dispositionInputRef.current?.focus();
         }
         return;
@@ -570,7 +570,7 @@ function RtsWorkspaceTab({
     if (isDispositionStage) {
       setError('Finish the current returned unit placement first.');
       clearReturnEntry();
-      if (canDispose && dispositionAction && rtsDispositionRequiresTarget(dispositionAction)) {
+      if (canDispose && dispositionAction && rtsDispositionSupportsTarget(dispositionAction)) {
         focusDispositionField();
       }
       return false;
@@ -609,7 +609,7 @@ function RtsWorkspaceTab({
             ? 'All units verified. Place them next.'
             : 'All units verified. Waiting for placement permission.',
         );
-        if (canDispose && dispositionAction && rtsDispositionRequiresTarget(dispositionAction)) {
+        if (canDispose && dispositionAction && rtsDispositionSupportsTarget(dispositionAction)) {
           focusDispositionField();
         }
       }
@@ -705,7 +705,8 @@ function RtsWorkspaceTab({
       setSelectedDispositionUnitId(nextAwaiting[0]?.id ?? null);
       const dispositionLabel = formatDispositionLabel(dispositionAction);
       const shouldKeepTarget = nextAwaiting.length > 0
-        && rtsDispositionRequiresTarget(dispositionAction);
+        && rtsDispositionSupportsTarget(dispositionAction)
+        && Boolean(normalized);
 
       if (shouldKeepTarget) {
         setDispositionTargetCode(normalized);
@@ -725,7 +726,7 @@ function RtsWorkspaceTab({
       );
 
       if (nextAwaiting.length > 0) {
-        if (dispositionAction && rtsDispositionRequiresTarget(dispositionAction)) {
+        if (dispositionAction && rtsDispositionSupportsTarget(dispositionAction)) {
           focusDispositionField();
         }
       } else if (nextReturnFlow.canVerify) {
@@ -1699,6 +1700,11 @@ function formatRtsQueueDate(value: string) {
 }
 
 function rtsDispositionRequiresTarget(value: WmsMobileTrackingReturnDispositionAction | null | undefined) {
+  return value === 'PUTAWAY'
+    || value === 'DEADSTOCK';
+}
+
+function rtsDispositionSupportsTarget(value: WmsMobileTrackingReturnDispositionAction | null | undefined) {
   return value === 'STAGED'
     || value === 'PUTAWAY'
     || value === 'DEADSTOCK'

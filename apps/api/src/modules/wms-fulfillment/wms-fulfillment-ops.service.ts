@@ -2605,6 +2605,11 @@ export class WmsFulfillmentOpsService {
       conflictMessage: string;
     },
   ) {
+    const targetStatus = params.restoreState.fromStatus;
+    if (!targetStatus) {
+      throw new ConflictException(params.conflictMessage);
+    }
+
     const inventoryUpdate = await tx.wmsInventoryUnit.updateMany({
       where: {
         id: params.inventoryUnitId,
@@ -2612,7 +2617,7 @@ export class WmsFulfillmentOpsService {
       },
       data: {
         currentLocationId: params.restoreState.fromLocationId,
-        status: params.restoreState.fromStatus,
+        status: targetStatus,
         updatedById: params.actorId ?? undefined,
       },
     });
@@ -2632,7 +2637,7 @@ export class WmsFulfillmentOpsService {
 
     if (
       currentUnit
-      && currentUnit.status === params.restoreState.fromStatus
+      && currentUnit.status === targetStatus
       && currentUnit.currentLocationId === params.restoreState.fromLocationId
     ) {
       return false;

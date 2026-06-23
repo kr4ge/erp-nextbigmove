@@ -2464,9 +2464,11 @@ export class WmsMobileService {
     this.assertMobileActionPreconditions(unitRecord, body);
 
     const targetCode = this.cleanOptionalText(body.targetCode);
-    const target = targetCode
-      ? await this.resolveTargetLocation(targetCode, unitRecord.warehouseId)
-      : null;
+    const target = await this.resolveTrackingReturnDispositionTarget(
+      unitRecord.warehouseId,
+      body.disposition,
+      targetCode,
+    );
     const { nextStatus, actionLabel, requiresTransfer } = this.resolveRtsDisposition(
       body.disposition,
       target?.kind ?? null,
@@ -12308,12 +12310,21 @@ export class WmsMobileService {
         code: true,
         name: true,
         kind: true,
+        warehouseId: true,
+        capacity: true,
       },
       orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
     });
 
     if (location) {
-      return location;
+      return {
+        id: location.id,
+        code: location.code,
+        name: location.name,
+        kind: location.kind,
+        warehouseId: location.warehouseId,
+        capacity: location.capacity,
+      };
     }
 
     const warehouse = await this.prisma.wmsWarehouse.findUnique({
@@ -12970,6 +12981,26 @@ export class WmsMobileService {
       default:
         throw new BadRequestException('Unsupported RTS disposition action');
     }
+  }
+
+  private async resolveTrackingReturnDispositionTarget(
+    warehouseId: string,
+    disposition: WmsMobileTrackingReturnDispositionDto['disposition'],
+    targetCode: string | null,
+  ) {
+    if (targetCode) {
+      return this.resolveTargetLocation(targetCode, warehouseId);
+    }
+
+    if (disposition === 'STAGED') {
+      return this.resolveWarehouseOperationalLocation(warehouseId, WmsLocationKind.RECEIVING_STAGING);
+    }
+
+    if (disposition === 'DAMAGE') {
+      return this.resolveWarehouseOperationalLocation(warehouseId, WmsLocationKind.DAMAGE);
+    }
+
+    return null;
   }
 
   private buildMobileTransferCode() {
