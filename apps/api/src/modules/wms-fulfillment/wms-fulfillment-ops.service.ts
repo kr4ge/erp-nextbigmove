@@ -57,6 +57,12 @@ const CONFIRMED_POS_ORDER_STATUS = 1;
 const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
 const CANCELED_POS_ORDER_STATUS = 6;
 
+type BasketUnitRestoreState = {
+  fromLocationId: string | null;
+  fromStatus: WmsInventoryUnitStatus | null;
+  warehouseId: string | null;
+};
+
 type DemandHealthDemandRecord = Prisma.WmsBasketPickDemandGetPayload<{
   include: {
     basket: {
@@ -918,26 +924,23 @@ export class WmsFulfillmentOpsService {
       basketUnits.map((basketUnit) => basketUnit.inventoryUnitId),
     );
 
+    const restoredInventoryUnitIds = new Set<string>();
     for (const basketUnit of basketUnits) {
       const restoreState = restoreStateByInventoryUnitId.get(basketUnit.inventoryUnitId);
       if (!restoreState?.fromLocationId || !restoreState.fromStatus || !restoreState.warehouseId) {
         throw new ConflictException(`Unable to restore original bin state for unit ${basketUnit.inventoryUnit.code}`);
       }
 
-      const inventoryUpdate = await tx.wmsInventoryUnit.updateMany({
-        where: {
-          id: basketUnit.inventoryUnitId,
-          status: WmsInventoryUnitStatus.PICKED,
-        },
-        data: {
-          currentLocationId: restoreState.fromLocationId,
-          status: restoreState.fromStatus,
-          updatedById: params.actorId ?? undefined,
-        },
+      const restoredNow = await this.restoreInventoryUnitToPriorStateTx(tx, {
+        inventoryUnitId: basketUnit.inventoryUnitId,
+        expectedSourceStatus: WmsInventoryUnitStatus.PICKED,
+        restoreState,
+        actorId: params.actorId,
+        conflictMessage: `Unit ${basketUnit.inventoryUnit.code} changed before the stale removal completed`,
       });
 
-      if (inventoryUpdate.count !== 1) {
-        throw new ConflictException(`Unit ${basketUnit.inventoryUnit.code} changed before the stale removal completed`);
+      if (restoredNow) {
+        restoredInventoryUnitIds.add(basketUnit.inventoryUnitId);
       }
 
       const basketUnitUpdate = await tx.wmsBasketUnit.updateMany({
@@ -957,13 +960,17 @@ export class WmsFulfillmentOpsService {
       }
     }
 
-    const movementRows: Prisma.WmsInventoryMovementCreateManyInput[] = basketUnits.map((basketUnit) => {
+    const movementRows: Prisma.WmsInventoryMovementCreateManyInput[] = basketUnits.flatMap((basketUnit) => {
+      if (!restoredInventoryUnitIds.has(basketUnit.inventoryUnitId)) {
+        return [];
+      }
+
       const restoreState = restoreStateByInventoryUnitId.get(basketUnit.inventoryUnitId);
       if (!restoreState?.fromLocationId || !restoreState.fromStatus || !restoreState.warehouseId) {
         throw new ConflictException(`Unable to restore original movement state for unit ${basketUnit.inventoryUnit.code}`);
       }
 
-      return {
+      return [{
         tenantId: basketUnit.tenantId,
         inventoryUnitId: basketUnit.inventoryUnitId,
         warehouseId: restoreState.warehouseId,
@@ -978,12 +985,14 @@ export class WmsFulfillmentOpsService {
         notes: `Released stale STOX basket unit from ${basket.barcode}`,
         actorId: params.actorId,
         createdAt: params.now,
-      };
+      }];
     });
 
-    await tx.wmsInventoryMovement.createMany({
-      data: movementRows,
-    });
+    if (movementRows.length > 0) {
+      await tx.wmsInventoryMovement.createMany({
+        data: movementRows,
+      });
+    }
 
     const activeDemands = await tx.wmsBasketPickDemand.findMany({
       where: {
@@ -1150,26 +1159,23 @@ export class WmsFulfillmentOpsService {
       pickedUnits.map((basketUnit) => basketUnit.inventoryUnitId),
     );
 
+    const restoredInventoryUnitIds = new Set<string>();
     for (const basketUnit of pickedUnits) {
       const restoreState = restoreStateByInventoryUnitId.get(basketUnit.inventoryUnitId);
       if (!restoreState?.fromLocationId || !restoreState.fromStatus || !restoreState.warehouseId) {
         throw new ConflictException(`Unable to restore original bin state for unit ${basketUnit.inventoryUnit.code}`);
       }
 
-      const inventoryUpdate = await tx.wmsInventoryUnit.updateMany({
-        where: {
-          id: basketUnit.inventoryUnitId,
-          status: WmsInventoryUnitStatus.PICKED,
-        },
-        data: {
-          currentLocationId: restoreState.fromLocationId,
-          status: restoreState.fromStatus,
-          updatedById: params.actorId ?? undefined,
-        },
+      const restoredNow = await this.restoreInventoryUnitToPriorStateTx(tx, {
+        inventoryUnitId: basketUnit.inventoryUnitId,
+        expectedSourceStatus: WmsInventoryUnitStatus.PICKED,
+        restoreState,
+        actorId: params.actorId,
+        conflictMessage: `Unit ${basketUnit.inventoryUnit.code} changed before basket release completed`,
       });
 
-      if (inventoryUpdate.count !== 1) {
-        throw new ConflictException(`Unit ${basketUnit.inventoryUnit.code} changed before basket release completed`);
+      if (restoredNow) {
+        restoredInventoryUnitIds.add(basketUnit.inventoryUnitId);
       }
 
       const basketUnitUpdate = await tx.wmsBasketUnit.updateMany({
@@ -1211,13 +1217,17 @@ export class WmsFulfillmentOpsService {
     }
 
     if (pickedUnits.length > 0) {
-      const movementRows: Prisma.WmsInventoryMovementCreateManyInput[] = pickedUnits.map((basketUnit) => {
+      const movementRows: Prisma.WmsInventoryMovementCreateManyInput[] = pickedUnits.flatMap((basketUnit) => {
+        if (!restoredInventoryUnitIds.has(basketUnit.inventoryUnitId)) {
+          return [];
+        }
+
         const restoreState = restoreStateByInventoryUnitId.get(basketUnit.inventoryUnitId);
         if (!restoreState?.fromLocationId || !restoreState.fromStatus || !restoreState.warehouseId) {
           throw new ConflictException(`Unable to restore original movement state for unit ${basketUnit.inventoryUnit.code}`);
         }
 
-        return {
+        return [{
           tenantId: basketUnit.tenantId,
           inventoryUnitId: basketUnit.inventoryUnitId,
           warehouseId: restoreState.warehouseId,
@@ -1232,12 +1242,14 @@ export class WmsFulfillmentOpsService {
           notes: `Released abandoned STOX basket ${basket.barcode}`,
           actorId: params.actorId,
           createdAt: params.now,
-        };
+        }];
       });
 
-      await tx.wmsInventoryMovement.createMany({
-        data: movementRows,
-      });
+      if (movementRows.length > 0) {
+        await tx.wmsInventoryMovement.createMany({
+          data: movementRows,
+        });
+      }
     }
 
     await tx.wmsBasketPickDemand.deleteMany({
@@ -1537,21 +1549,13 @@ export class WmsFulfillmentOpsService {
         ? WmsInventoryUnitStatus.PACKED
         : WmsInventoryUnitStatus.PICKED;
 
-      const inventoryUpdate = await tx.wmsInventoryUnit.updateMany({
-        where: {
-          id: basketUnit.inventoryUnitId,
-          status: sourceStatus,
-        },
-        data: {
-          currentLocationId: restoreState.fromLocationId,
-          status: restoreState.fromStatus,
-          updatedById: params.actorId ?? undefined,
-        },
+      const restoredNow = await this.restoreInventoryUnitToPriorStateTx(tx, {
+        inventoryUnitId: basketUnit.inventoryUnitId,
+        expectedSourceStatus: sourceStatus,
+        restoreState,
+        actorId: params.actorId,
+        conflictMessage: `Unit ${basketUnit.inventoryUnit.code} changed before the pack void completed`,
       });
-
-      if (inventoryUpdate.count !== 1) {
-        throw new ConflictException(`Unit ${basketUnit.inventoryUnit.code} changed before the pack void completed`);
-      }
 
       const basketUnitUpdate = await tx.wmsBasketUnit.updateMany({
         where: {
@@ -1569,22 +1573,24 @@ export class WmsFulfillmentOpsService {
         throw new ConflictException(`Basket state for unit ${basketUnit.inventoryUnit.code} changed before the pack void completed`);
       }
 
-      movementRows.push({
-        tenantId: basketUnit.tenantId,
-        inventoryUnitId: basketUnit.inventoryUnitId,
-        warehouseId: restoreState.warehouseId,
-        fromLocationId: null,
-        toLocationId: restoreState.fromLocationId,
-        fromStatus: sourceStatus,
-        toStatus: restoreState.fromStatus,
-        movementType: WmsInventoryMovementType.TRANSFER,
-        referenceType: 'WMS_BASKET',
-        referenceId: basket.id,
-        referenceCode: basket.barcode,
-        notes: `Released STOX pack basket ${basket.barcode} during PACK void`,
-        actorId: params.actorId,
-        createdAt: params.now,
-      });
+      if (restoredNow) {
+        movementRows.push({
+          tenantId: basketUnit.tenantId,
+          inventoryUnitId: basketUnit.inventoryUnitId,
+          warehouseId: restoreState.warehouseId,
+          fromLocationId: null,
+          toLocationId: restoreState.fromLocationId,
+          fromStatus: sourceStatus,
+          toStatus: restoreState.fromStatus,
+          movementType: WmsInventoryMovementType.TRANSFER,
+          referenceType: 'WMS_BASKET',
+          referenceId: basket.id,
+          referenceCode: basket.barcode,
+          notes: `Released STOX pack basket ${basket.barcode} during PACK void`,
+          actorId: params.actorId,
+          createdAt: params.now,
+        });
+      }
     }
 
     if (movementRows.length > 0) {
@@ -1820,21 +1826,13 @@ export class WmsFulfillmentOpsService {
         throw new ConflictException(`Unable to restore original bin state for unit ${basketUnit.inventoryUnit.code}`);
       }
 
-      const inventoryUpdate = await tx.wmsInventoryUnit.updateMany({
-        where: {
-          id: basketUnit.inventoryUnitId,
-          status: WmsInventoryUnitStatus.PACKED,
-        },
-        data: {
-          currentLocationId: restoreState.fromLocationId,
-          status: restoreState.fromStatus,
-          updatedById: params.actorId ?? undefined,
-        },
+      const restoredNow = await this.restoreInventoryUnitToPriorStateTx(tx, {
+        inventoryUnitId: basketUnit.inventoryUnitId,
+        expectedSourceStatus: WmsInventoryUnitStatus.PACKED,
+        restoreState,
+        actorId: params.actorId,
+        conflictMessage: `Unit ${basketUnit.inventoryUnit.code} changed before the dispatch void completed`,
       });
-
-      if (inventoryUpdate.count !== 1) {
-        throw new ConflictException(`Unit ${basketUnit.inventoryUnit.code} changed before the dispatch void completed`);
-      }
 
       if (basketUnit.status === WmsBasketUnitStatus.PACKED) {
         const basketUnitUpdate = await tx.wmsBasketUnit.updateMany({
@@ -1854,22 +1852,24 @@ export class WmsFulfillmentOpsService {
         }
       }
 
-      movementRows.push({
-        tenantId: basketUnit.tenantId,
-        inventoryUnitId: basketUnit.inventoryUnitId,
-        warehouseId: restoreState.warehouseId,
-        fromLocationId: null,
-        toLocationId: restoreState.fromLocationId,
-        fromStatus: WmsInventoryUnitStatus.PACKED,
-        toStatus: restoreState.fromStatus,
-        movementType: WmsInventoryMovementType.TRANSFER,
-        referenceType: 'WMS_FULFILLMENT_ORDER',
-        referenceId: order.id,
-        referenceCode: order.posOrderId,
-        notes: `Dispatch void returned packed order ${order.posOrderId} to inventory: ${params.reason}`,
-        actorId: params.actorId,
-        createdAt: params.now,
-      });
+      if (restoredNow) {
+        movementRows.push({
+          tenantId: basketUnit.tenantId,
+          inventoryUnitId: basketUnit.inventoryUnitId,
+          warehouseId: restoreState.warehouseId,
+          fromLocationId: null,
+          toLocationId: restoreState.fromLocationId,
+          fromStatus: WmsInventoryUnitStatus.PACKED,
+          toStatus: restoreState.fromStatus,
+          movementType: WmsInventoryMovementType.TRANSFER,
+          referenceType: 'WMS_FULFILLMENT_ORDER',
+          referenceId: order.id,
+          referenceCode: order.posOrderId,
+          notes: `Dispatch void returned packed order ${order.posOrderId} to inventory: ${params.reason}`,
+          actorId: params.actorId,
+          createdAt: params.now,
+        });
+      }
     }
 
     if (movementRows.length > 0) {
@@ -2555,11 +2555,7 @@ export class WmsFulfillmentOpsService {
     inventoryUnitIds: string[],
   ) {
     if (inventoryUnitIds.length === 0) {
-      return new Map<string, {
-        fromLocationId: string | null;
-        fromStatus: WmsInventoryUnitStatus | null;
-        warehouseId: string | null;
-      }>();
+      return new Map<string, BasketUnitRestoreState>();
     }
 
     const movements = await tx.wmsInventoryMovement.findMany({
@@ -2584,11 +2580,7 @@ export class WmsFulfillmentOpsService {
       ],
     });
 
-    const restoreStateByInventoryUnitId = new Map<string, {
-      fromLocationId: string | null;
-      fromStatus: WmsInventoryUnitStatus | null;
-      warehouseId: string | null;
-    }>();
+    const restoreStateByInventoryUnitId = new Map<string, BasketUnitRestoreState>();
     for (const movement of movements) {
       if (restoreStateByInventoryUnitId.has(movement.inventoryUnitId)) {
         continue;
@@ -2601,6 +2593,52 @@ export class WmsFulfillmentOpsService {
     }
 
     return restoreStateByInventoryUnitId;
+  }
+
+  private async restoreInventoryUnitToPriorStateTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      inventoryUnitId: string;
+      expectedSourceStatus: WmsInventoryUnitStatus;
+      restoreState: BasketUnitRestoreState;
+      actorId: string | null;
+      conflictMessage: string;
+    },
+  ) {
+    const inventoryUpdate = await tx.wmsInventoryUnit.updateMany({
+      where: {
+        id: params.inventoryUnitId,
+        status: params.expectedSourceStatus,
+      },
+      data: {
+        currentLocationId: params.restoreState.fromLocationId,
+        status: params.restoreState.fromStatus,
+        updatedById: params.actorId ?? undefined,
+      },
+    });
+
+    if (inventoryUpdate.count === 1) {
+      return true;
+    }
+
+    const currentUnit = await tx.wmsInventoryUnit.findUnique({
+      where: { id: params.inventoryUnitId },
+      select: {
+        id: true,
+        status: true,
+        currentLocationId: true,
+      },
+    });
+
+    if (
+      currentUnit
+      && currentUnit.status === params.restoreState.fromStatus
+      && currentUnit.currentLocationId === params.restoreState.fromLocationId
+    ) {
+      return false;
+    }
+
+    throw new ConflictException(params.conflictMessage);
   }
 
   private async refreshDemandOrderAvailabilityState(
