@@ -297,6 +297,7 @@ export class WmsInventoryService {
           tenants: scope.tenants,
           stores: [],
           warehouses: [],
+          products: [],
           statuses: UNIT_STATUS_ORDER.map((status) => ({
             value: status,
             label: this.formatStatusLabel(status),
@@ -305,6 +306,7 @@ export class WmsInventoryService {
           activeTenantId: null,
           activeStoreId: null,
           activeWarehouseId: null,
+          activeVariationId: null,
           activeStatus: null,
         },
         units: [],
@@ -372,6 +374,95 @@ export class WmsInventoryService {
         ? query.warehouseId
         : null;
 
+    const productFilterScope: Prisma.WmsInventoryUnitWhereInput = {
+      ...unitTenantWhere,
+      ...(activeStoreId ? { storeId: activeStoreId } : {}),
+      ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+    };
+
+    const [productOptions, productCounts] = await Promise.all([
+      this.prisma.wmsInventoryUnit.findMany({
+        where: productFilterScope,
+        distinct: ['storeId', 'variationId'],
+        select: {
+          tenantId: true,
+          storeId: true,
+          store: {
+            select: {
+              name: true,
+              shopName: true,
+              tenant: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+          variationId: true,
+          posProduct: {
+            select: {
+              name: true,
+              customId: true,
+              productSnapshot: true,
+            },
+          },
+        },
+        orderBy: [{ storeId: 'asc' }, { variationId: 'asc' }],
+      }),
+      this.prisma.wmsInventoryUnit.groupBy({
+        by: ['storeId', 'variationId'],
+        where: productFilterScope,
+        _count: {
+          _all: true,
+        },
+      }),
+    ]);
+
+    const activeVariationId =
+      query.variationId && productOptions.some((product) => product.variationId === query.variationId)
+        ? query.variationId
+        : null;
+    const productCountMap = new Map(
+      productCounts.map((record) => [`${record.storeId}::${record.variationId}`, record._count._all]),
+    );
+    const mappedProductOptions = productOptions
+      .map((product) => {
+        const variationDisplayId = this.resolveVariationDisplayId(product.posProduct.productSnapshot);
+        const productCustomId = product.posProduct.customId;
+        const name = product.posProduct.name;
+        const storeName = product.store.shopName || product.store.name;
+        const tenantLabel = product.store.tenant.name;
+
+        return {
+          tenantId: product.store.tenant.id,
+          tenantLabel,
+          storeId: product.storeId,
+          storeName,
+          variationId: product.variationId,
+          name,
+          label: this.formatInventoryProductFilterLabel({
+            storeName,
+            tenantLabel,
+            includeStoreContext: !activeStoreId,
+            includeTenantContext: isAllTenantScope,
+            variationId: product.variationId,
+            name,
+            variationDisplayId,
+            productCustomId,
+          }),
+          selectedLabel: name,
+          variationDisplayId,
+          productCustomId,
+          unitCount: productCountMap.get(`${product.storeId}::${product.variationId}`) ?? 0,
+        };
+      })
+      .sort((left, right) => (
+        left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
+        || left.label.localeCompare(right.label, undefined, { sensitivity: 'base' })
+      ));
+
     if (scope.activeTenantId) {
       // Repair any shipped/delivered packed units before computing tenant-scoped inventory totals.
       await this.syncPackedUnitsToDispatchedForPosOrders({
@@ -384,6 +475,7 @@ export class WmsInventoryService {
       ...unitTenantWhere,
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
+      ...(activeVariationId ? { variationId: activeVariationId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.search
         ? {
@@ -500,9 +592,7 @@ export class WmsInventoryService {
     const warehouseCountMap = new Map(
       warehouseCounts.map((record) => [record.warehouseId, record._count._all]),
     );
-    const statusCountMap = new Map(
-      statusCounts.map((record) => [record.status, record._count._all]),
-    );
+    const statusCountMap = new Map(statusCounts.map((record) => [record.status, record._count._all]));
     const dispatchedUnits = statusCountMap.get(WmsInventoryUnitStatus.DISPATCHED) ?? 0;
 
     return {
@@ -533,6 +623,7 @@ export class WmsInventoryService {
           label: warehouse.name,
           unitCount: warehouseCountMap.get(warehouse.id) ?? 0,
         })),
+        products: mappedProductOptions,
         statuses: UNIT_STATUS_ORDER.map((status) => ({
           value: status,
           label: this.formatStatusLabel(status),
@@ -541,6 +632,7 @@ export class WmsInventoryService {
         activeTenantId: scope.activeTenantId,
         activeStoreId,
         activeWarehouseId,
+        activeVariationId,
         activeStatus: query.status ?? null,
       },
       units: units.map((unit) => this.mapUnit(unit)),
@@ -3541,6 +3633,33 @@ export class WmsInventoryService {
       name: profile.posProduct.name,
       label: profile.posProduct.name,
     };
+  }
+
+  private formatInventoryProductFilterLabel(product: {
+    name: string;
+    variationDisplayId: string | null;
+    productCustomId: string | null;
+    variationId: string;
+    storeName?: string;
+    tenantLabel?: string;
+    includeStoreContext?: boolean;
+    includeTenantContext?: boolean;
+  }) {
+    const identity =
+      product.variationDisplayId
+      || product.productCustomId
+      || product.variationId;
+    const segments = [`${product.name} · ${identity}`];
+
+    if (product.includeStoreContext && product.storeName) {
+      segments.push(product.storeName);
+    }
+
+    if (product.includeTenantContext && product.tenantLabel) {
+      segments.push(product.tenantLabel);
+    }
+
+    return segments.join(' · ');
   }
 
   private resolveStoreTransferSuggestion(params: {

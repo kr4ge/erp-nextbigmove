@@ -83,6 +83,8 @@ export function InventoryStockScreen() {
               onTenantChange={inventory.setSelectedTenantId}
               selectedStoreId={inventory.selectedStoreId}
               onStoreChange={inventory.setSelectedStoreId}
+              selectedProductValue={inventory.selectedProductValue}
+              onProductChange={inventory.setSelectedVariationId}
               selectedWarehouseId={inventory.selectedWarehouseId}
               onWarehouseChange={inventory.setSelectedWarehouseId}
               selectedStatus={inventory.selectedStatus}

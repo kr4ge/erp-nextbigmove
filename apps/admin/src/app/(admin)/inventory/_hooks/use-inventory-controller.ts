@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
@@ -29,6 +29,7 @@ import type {
   CreateWmsInventoryStoreTransferInput,
   CreateWmsInventoryTransferInput,
   VoidWmsInventoryUnitInput,
+  WmsInventoryOverviewResponse,
   WmsInventoryUnitRecord,
   WmsInventoryUnitStatus,
 } from '../_types/inventory';
@@ -47,6 +48,12 @@ type StoreTransferModalState = {
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
+
+function buildInventoryProductFilterValue(
+  product: WmsInventoryOverviewResponse['filters']['products'][number],
+) {
+  return `${product.tenantId}::${product.storeId}::${product.variationId}`;
+}
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
@@ -78,6 +85,8 @@ export function useInventoryController() {
   const [selectedTenantId, setSelectedTenantIdState] = useState<string | undefined>();
   const [selectedStoreId, setSelectedStoreIdState] = useState<string | undefined>();
   const [selectedWarehouseId, setSelectedWarehouseIdState] = useState<string | undefined>();
+  const [selectedVariationId, setSelectedVariationId] = useState<string | undefined>();
+  const [selectedProductValue, setSelectedProductValue] = useState<string | undefined>();
   const [selectedStatus, setSelectedStatus] = useState<WmsInventoryUnitStatus | undefined>();
   const [currentPage, setCurrentPage] = useState(1);
   const [searchText, setSearchText] = useState('');
@@ -111,6 +120,7 @@ export function useInventoryController() {
       selectedTenantId ?? 'default-tenant',
       selectedStoreId ?? 'all-stores',
       selectedWarehouseId ?? 'all-warehouses',
+      selectedVariationId ?? 'all-products',
       selectedStatus ?? 'all-statuses',
       debouncedSearchText,
     ],
@@ -120,12 +130,13 @@ export function useInventoryController() {
         tenantId: selectedTenantId,
         storeId: selectedStoreId,
         warehouseId: selectedWarehouseId,
+        variationId: selectedVariationId,
         search: debouncedSearchText || undefined,
         status: selectedStatus,
       }),
   });
 
-  const { setSelectedTenantId, setSelectedStoreId, setSelectedWarehouseId } = useWmsScopeFilters({
+  const scopeFilters = useWmsScopeFilters({
     filters: overviewQuery.data?.filters,
     selectedTenantId,
     setSelectedTenantIdState,
@@ -136,6 +147,39 @@ export function useInventoryController() {
     includeWarehouse: true,
     allowAllTenants: true,
   });
+
+  const handleTenantChange = useCallback((tenantId: string | undefined) => {
+    setSelectedVariationId(undefined);
+    setSelectedProductValue(undefined);
+    scopeFilters.setSelectedTenantId(tenantId);
+    setSelectedStatus(undefined);
+  }, [scopeFilters]);
+
+  const handleStoreChange = useCallback((storeId: string | undefined) => {
+    setSelectedVariationId(undefined);
+    setSelectedProductValue(undefined);
+    scopeFilters.setSelectedStoreId(storeId);
+  }, [scopeFilters]);
+
+  const handleWarehouseChange = useCallback((warehouseId: string | undefined) => {
+    setSelectedVariationId(undefined);
+    setSelectedProductValue(undefined);
+    scopeFilters.setSelectedWarehouseId(warehouseId);
+  }, [scopeFilters]);
+
+  const handleProductChange = useCallback((
+    product: WmsInventoryOverviewResponse['filters']['products'][number] | undefined,
+  ) => {
+    if (!product) {
+      setSelectedVariationId(undefined);
+      setSelectedProductValue(undefined);
+      return;
+    }
+
+    setSelectedVariationId(product.variationId);
+    setSelectedProductValue(buildInventoryProductFilterValue(product));
+    scopeFilters.setSelectedStoreId(product.storeId);
+  }, [scopeFilters]);
 
   useEffect(() => {
     if (!selectedStatus) {
@@ -155,9 +199,37 @@ export function useInventoryController() {
   }, [overviewQuery.data?.filters.statuses, selectedStatus]);
 
   useEffect(() => {
+    if (!selectedProductValue) {
+      return;
+    }
+
+    const products = overviewQuery.data?.filters.products;
+    if (!products) {
+      return;
+    }
+
+    const stillExists = products.some(
+      (product) => buildInventoryProductFilterValue(product) === selectedProductValue,
+    );
+
+    if (!stillExists) {
+      setSelectedVariationId(undefined);
+      setSelectedProductValue(undefined);
+    }
+  }, [overviewQuery.data?.filters.products, selectedProductValue]);
+
+  useEffect(() => {
     setCurrentPage(1);
     setSelectedUnitIds([]);
-  }, [selectedTenantId, selectedStoreId, selectedWarehouseId, selectedStatus, debouncedSearchText]);
+  }, [
+    selectedTenantId,
+    selectedStoreId,
+    selectedWarehouseId,
+    selectedVariationId,
+    selectedProductValue,
+    selectedStatus,
+    debouncedSearchText,
+  ]);
 
   const errorMessage = useMemo(() => {
     if (!overviewQuery.error) {
@@ -491,6 +563,8 @@ export function useInventoryController() {
     selectedTenantId,
     selectedStoreId,
     selectedWarehouseId,
+    selectedVariationId,
+    selectedProductValue,
     selectedStatus,
     currentPage,
     totalPages,
@@ -536,12 +610,10 @@ export function useInventoryController() {
     isTransferringStoreUnits: createStoreTransferMutation.isPending,
     isAdjustingUnit: createAdjustmentMutation.isPending,
     isVoidingUnit: voidUnitMutation.isPending,
-    setSelectedTenantId: (tenantId: string | undefined) => {
-      setSelectedTenantId(tenantId);
-      setSelectedStatus(undefined);
-    },
-    setSelectedStoreId,
-    setSelectedWarehouseId,
+    setSelectedTenantId: handleTenantChange,
+    setSelectedStoreId: handleStoreChange,
+    setSelectedWarehouseId: handleWarehouseChange,
+    setSelectedVariationId: handleProductChange,
     setSelectedStatus,
     setCurrentPage,
     setSearchText,

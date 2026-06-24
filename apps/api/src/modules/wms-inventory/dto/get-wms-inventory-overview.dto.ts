@@ -19,6 +19,10 @@ export class GetWmsInventoryOverviewDto {
   warehouseId?: string;
 
   @IsOptional()
+  @IsUUID()
+  variationId?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(100)
   search?: string;

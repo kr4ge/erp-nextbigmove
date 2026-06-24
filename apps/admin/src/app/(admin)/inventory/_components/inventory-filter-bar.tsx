@@ -1,7 +1,6 @@
 'use client';
 
 import { Search, X } from 'lucide-react';
-import { WmsScopeFilterFields } from '../../_components/wms-scope-filter-fields';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import type { WmsInventoryOverviewResponse, WmsInventoryUnitStatus } from '../_types/inventory';
 
@@ -13,11 +12,19 @@ type InventoryFilterBarProps = {
   onTenantChange: (value: string | undefined) => void;
   selectedStoreId?: string;
   onStoreChange: (value: string | undefined) => void;
+  selectedProductValue?: string;
+  onProductChange: (product: WmsInventoryOverviewResponse['filters']['products'][number] | undefined) => void;
   selectedWarehouseId?: string;
   onWarehouseChange: (value: string | undefined) => void;
   selectedStatus?: WmsInventoryUnitStatus;
   onStatusChange: (value: WmsInventoryUnitStatus | undefined) => void;
 };
+
+function buildInventoryProductFilterValue(
+  product: WmsInventoryOverviewResponse['filters']['products'][number],
+) {
+  return `${product.tenantId}::${product.storeId}::${product.variationId}`;
+}
 
 export function InventoryFilterBar({
   filters,
@@ -27,11 +34,15 @@ export function InventoryFilterBar({
   onTenantChange,
   selectedStoreId,
   onStoreChange,
+  selectedProductValue,
+  onProductChange,
   selectedWarehouseId,
   onWarehouseChange,
   selectedStatus,
   onStatusChange,
 }: InventoryFilterBarProps) {
+  const products = filters?.products ?? [];
+
   return (
     <div className="flex w-full min-w-0 flex-wrap items-center gap-2.5">
       <div className="relative min-w-[240px] flex-[1_1_20rem]">
@@ -55,29 +66,70 @@ export function InventoryFilterBar({
         ) : null}
       </div>
 
-      <WmsScopeFilterFields
-        allowAllTenants
-        tenantOptions={(filters?.tenants ?? []).map((tenant) => ({
+      <WmsSearchableSelect
+        label="Partner"
+        value={selectedTenantId ?? ''}
+        onChange={(value) => onTenantChange(value || undefined)}
+        options={(filters?.tenants ?? []).map((tenant) => ({
           value: tenant.id,
           label: tenant.label,
         }))}
-        selectedTenantId={selectedTenantId}
-        onTenantChange={onTenantChange}
-        storeOptions={(filters?.stores ?? []).map((store) => ({
+        placeholder="Search partners…"
+        allLabel="All partners"
+        hideInlineLabel={true}
+      />
+
+      <WmsSearchableSelect
+        label="Store"
+        value={selectedStoreId ?? ''}
+        onChange={(value) => onStoreChange(value || undefined)}
+        options={(filters?.stores ?? []).map((store) => ({
           value: store.id,
           label: store.label,
           selectedLabel: store.name,
           hint: store.unitCount,
         }))}
-        selectedStoreId={selectedStoreId}
-        onStoreChange={onStoreChange}
-        warehouseOptions={(filters?.warehouses ?? []).map((warehouse) => ({
+        placeholder="Search stores…"
+        allLabel="All stores"
+        hideInlineLabel={true}
+      />
+
+      <WmsSearchableSelect
+        label="Product"
+        value={selectedProductValue ?? ''}
+        onChange={(value) => {
+          if (!value) {
+            onProductChange(undefined);
+            return;
+          }
+
+          onProductChange(
+            products.find((product) => buildInventoryProductFilterValue(product) === value),
+          );
+        }}
+        options={products.map((product) => ({
+          value: buildInventoryProductFilterValue(product),
+          label: product.label,
+          selectedLabel: product.selectedLabel,
+          hint: product.unitCount,
+        }))}
+        placeholder="Search products…"
+        allLabel="All products"
+        hideInlineLabel={true}
+      />
+
+      <WmsSearchableSelect
+        label="Warehouse"
+        value={selectedWarehouseId ?? ''}
+        onChange={(value) => onWarehouseChange(value || undefined)}
+        options={(filters?.warehouses ?? []).map((warehouse) => ({
           value: warehouse.id,
           label: warehouse.label,
           hint: warehouse.unitCount,
         }))}
-        selectedWarehouseId={selectedWarehouseId}
-        onWarehouseChange={onWarehouseChange}
+        placeholder="Search warehouses…"
+        allLabel="All warehouses"
+        hideInlineLabel={true}
       />
 
       <WmsSearchableSelect

@@ -197,6 +197,19 @@ export type WmsInventoryOverviewResponse = {
       label: string;
       unitCount: number;
     }>;
+    products: Array<{
+      tenantId: string;
+      tenantLabel: string;
+      storeId: string;
+      storeName: string;
+      variationId: string;
+      name: string;
+      label: string;
+      selectedLabel: string;
+      variationDisplayId: string | null;
+      productCustomId: string | null;
+      unitCount: number;
+    }>;
     statuses: Array<{
       value: WmsInventoryUnitStatus;
       label: string;
@@ -205,6 +218,7 @@ export type WmsInventoryOverviewResponse = {
     activeTenantId: string | null;
     activeStoreId: string | null;
     activeWarehouseId: string | null;
+    activeVariationId: string | null;
     activeStatus: WmsInventoryUnitStatus | null;
   };
   units: WmsInventoryUnitRecord[];
@@ -240,6 +254,7 @@ export type GetWmsInventoryOverviewParams = {
   tenantId?: string;
   storeId?: string;
   warehouseId?: string;
+  variationId?: string;
   search?: string;
   status?: WmsInventoryUnitStatus;
 };
