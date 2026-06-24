@@ -248,6 +248,11 @@ const ACTIVE_PICK_RESERVATION_STATUSES = [
   WmsPickReservationStatus.PICKED,
 ] as const;
 
+const ACTIVE_BASKET_UNIT_HOLD_STATUSES = [
+  WmsBasketUnitStatus.PICKED,
+  WmsBasketUnitStatus.PACKED,
+] as const;
+
 const VOID_BLOCKED_FULFILLMENT_ORDER_STATUSES = new Set<WmsFulfillmentOrderStatus>([
   WmsFulfillmentOrderStatus.IN_PICKING,
   WmsFulfillmentOrderStatus.READY_FOR_PACK,
@@ -2041,6 +2046,19 @@ export class WmsInventoryService {
             },
           },
         },
+        basketUnits: {
+          where: {
+            status: {
+              in: [...ACTIVE_BASKET_UNIT_HOLD_STATUSES],
+            },
+          },
+          select: {
+            id: true,
+            status: true,
+            fulfillmentOrderId: true,
+            fulfillmentLineId: true,
+          },
+        },
       },
     });
 
@@ -2175,6 +2193,12 @@ export class WmsInventoryService {
       }
 
       for (const unit of units) {
+        await this.releaseOrphanBasketUnitHoldsTx(tx, {
+          unit,
+          actorId,
+          now,
+        });
+
         if (body.targetStatus === WmsInventoryUnitStatus.ARCHIVED && unit.pickReservations.length > 0) {
           await tx.wmsPickReservation.updateMany({
             where: {
@@ -2357,6 +2381,19 @@ export class WmsInventoryService {
               },
             },
           },
+          basketUnits: {
+            where: {
+              status: {
+                in: [...ACTIVE_BASKET_UNIT_HOLD_STATUSES],
+              },
+            },
+            select: {
+              id: true,
+              status: true,
+              fulfillmentOrderId: true,
+              fulfillmentLineId: true,
+            },
+          },
         },
       });
 
@@ -2400,6 +2437,12 @@ export class WmsInventoryService {
           },
         });
       }
+
+      await this.releaseOrphanBasketUnitHoldsTx(tx, {
+        unit,
+        actorId,
+        now,
+      });
 
       await tx.wmsInventoryUnit.update({
         where: { id: unit.id },
@@ -3856,6 +3899,59 @@ export class WmsInventoryService {
         issueReason: totalQuantity === 0 ? order.issueReason ?? 'Order has no pickable variation items' : null,
       },
     });
+  }
+
+  private async releaseOrphanBasketUnitHoldsTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      unit: {
+        id: string;
+        status: WmsInventoryUnitStatus;
+        basketUnits: Array<{
+          id: string;
+          status: WmsBasketUnitStatus;
+          fulfillmentOrderId: string | null;
+          fulfillmentLineId: string | null;
+        }>;
+      };
+      actorId: string | null;
+      now: Date;
+    },
+  ) {
+    if (
+      params.unit.status === WmsInventoryUnitStatus.PICKED
+      || params.unit.status === WmsInventoryUnitStatus.PACKED
+    ) {
+      return 0;
+    }
+
+    const orphanBasketUnitIds = params.unit.basketUnits
+      .filter((basketUnit) => !basketUnit.fulfillmentOrderId && !basketUnit.fulfillmentLineId)
+      .map((basketUnit) => basketUnit.id);
+
+    if (orphanBasketUnitIds.length === 0) {
+      return 0;
+    }
+
+    const released = await tx.wmsBasketUnit.updateMany({
+      where: {
+        id: {
+          in: orphanBasketUnitIds,
+        },
+        status: {
+          in: [...ACTIVE_BASKET_UNIT_HOLD_STATUSES],
+        },
+        fulfillmentOrderId: null,
+        fulfillmentLineId: null,
+      },
+      data: {
+        status: WmsBasketUnitStatus.REMOVED,
+        removedById: params.actorId ?? undefined,
+        removedAt: params.now,
+      },
+    });
+
+    return released.count;
   }
 
   private resolveFulfillmentLineStatusAfterInventoryVoid(

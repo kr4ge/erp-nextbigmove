@@ -1408,6 +1408,39 @@ export class WmsFulfillmentOpsService {
       throw new BadRequestException('Demand basket was not found');
     }
 
+    const staleOrphanBasketUnits = basket.basketUnits.filter((basketUnit) => (
+      !basketUnit.fulfillmentOrderId
+      && !basketUnit.fulfillmentLineId
+      && basketUnit.inventoryUnit.status !== WmsInventoryUnitStatus.PICKED
+      && basketUnit.inventoryUnit.status !== WmsInventoryUnitStatus.PACKED
+    ));
+    if (staleOrphanBasketUnits.length > 0) {
+      await tx.wmsBasketUnit.updateMany({
+        where: {
+          id: {
+            in: staleOrphanBasketUnits.map((basketUnit) => basketUnit.id),
+          },
+          status: {
+            in: [...ACTIVE_BASKET_UNIT_STATUSES],
+          },
+          fulfillmentOrderId: null,
+          fulfillmentLineId: null,
+        },
+        data: {
+          status: WmsBasketUnitStatus.REMOVED,
+          removedById: params.actorId ?? undefined,
+          removedAt: params.now,
+        },
+      });
+    }
+
+    const staleOrphanBasketUnitIdSet = new Set(
+      staleOrphanBasketUnits.map((basketUnit) => basketUnit.id),
+    );
+    const activeBasketUnits = basket.basketUnits.filter(
+      (basketUnit) => !staleOrphanBasketUnitIdSet.has(basketUnit.id),
+    );
+
     const selectedOrderIdSet = new Set(params.orderIds);
     const selectedOrders = basket.fulfillmentOrders.filter((order) => selectedOrderIdSet.has(order.id));
     if (selectedOrders.length !== selectedOrderIdSet.size) {
@@ -1449,7 +1482,7 @@ export class WmsFulfillmentOpsService {
       (order) => (order.posOrder?.status ?? null) !== CANCELED_POS_ORDER_STATUS,
     );
 
-    const selectedPackedUnits = basket.basketUnits.filter((basketUnit) => (
+    const selectedPackedUnits = activeBasketUnits.filter((basketUnit) => (
       basketUnit.status === WmsBasketUnitStatus.PACKED
       && basketUnit.fulfillmentOrderId
       && selectedOrderIdSet.has(basketUnit.fulfillmentOrderId)
@@ -1468,7 +1501,7 @@ export class WmsFulfillmentOpsService {
     const retainedOrderIdSet = new Set(retainedOrders.map((order) => order.id));
     const packedCountByRetainedLineId = new Map<string, number>();
 
-    for (const basketUnit of basket.basketUnits) {
+    for (const basketUnit of activeBasketUnits) {
       if (
         basketUnit.status !== WmsBasketUnitStatus.PACKED
         || !basketUnit.fulfillmentLineId
@@ -1510,7 +1543,7 @@ export class WmsFulfillmentOpsService {
     }
 
     const openPickedUnitsByVariation = new Map<string, typeof basket.basketUnits>();
-    for (const basketUnit of basket.basketUnits) {
+    for (const basketUnit of activeBasketUnits) {
       if (basketUnit.status !== WmsBasketUnitStatus.PICKED || basketUnit.fulfillmentOrderId) {
         continue;
       }
