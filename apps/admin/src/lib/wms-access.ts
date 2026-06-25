@@ -122,7 +122,7 @@ export const WMS_NAV_ITEMS: WmsNavItem[] = [
     permission: ['wms.dispatch.read', 'wms.rts.read'],
   },
   {
-    href: '/reports',
+    href: '/forecast',
     label: 'Forecast',
     icon: FileSpreadsheet,
     permission: 'wms.forecast.read',

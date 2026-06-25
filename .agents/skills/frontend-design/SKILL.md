@@ -1,147 +1,292 @@
 ---
 name: frontend-design
-description: Create distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics. Use when the user asks to build web components, pages, artifacts, posters, or applications, or when any design skill requires project context.
-license: Apache 2.0. Based on Anthropic's frontend-design skill. See NOTICE.md for attribution.
+description: Apply the ERP frontend style guide for apps/admin and apps/web. Use when Codex edits frontend UI, builds pages or components, refactors styling, adjusts layout, updates design primitives, or needs to choose tokens, aliases, Tailwind classes, buttons, cards, panels, forms, typography, spacing, status states, or shared UI patterns.
 ---
 
-This skill guides creation of distinctive, production-grade frontend interfaces that avoid generic "AI slop" aesthetics. Implement real working code with exceptional attention to aesthetic details and creative choices.
+# Frontend Style Guide
 
-## Context Gathering Protocol
+## Purpose
 
-Design skills produce generic output without project context. You MUST have confirmed design context before doing any design work.
+- Use this for frontend work in `apps/admin` and `apps/web`.
+- Shared semantics. Per-app values live in each app's token files.
+- Prefer shared primitives over raw utility strings.
+- Keep this doc skill-friendly: rules, references, sample structure.
 
-**Required context** — every design skill needs at minimum:
-- **Target audience**: Who uses this product and in what context?
-- **Use cases**: What jobs are they trying to get done?
-- **Brand personality/tone**: How should the interface feel?
+## Source Of Truth
 
-Individual skills may require additional context — check the skill's preparation section for specifics.
+- Tokens + aliases:
+  - `apps/admin/src/app/globals.css`
+  - `apps/web/src/app/globals.css`
+  - `apps/admin/tailwind.config.ts`
+  - `apps/web/tailwind.config.ts`
+- Button reference:
+  - `apps/web/src/components/ui/button.tsx`
+- Card reference:
+  - `ExecutiveOverviewCard` in `apps/web/src/app/(dashboard)/dashboard/page.tsx`
+- Panel references:
+  - `apps/admin/src/app/(admin)/_components/wms-compact-panel.tsx`
+  - `apps/admin/src/app/(admin)/_components/wms-workspace-card.tsx`
 
-**CRITICAL**: You cannot infer this context by reading the codebase. Code tells you what was built, not who it's for or what it should feel like. Only the creator can provide this context.
+## Core Rules
 
-**Gathering order:**
-1. **Check current instructions (instant)**: If your loaded instructions already contain a **Design Context** section, proceed immediately.
-2. **Check .impeccable.md (fast)**: If not in instructions, read `.impeccable.md` from the project root. If it exists and contains the required context, proceed.
-3. **Run teach-impeccable (REQUIRED)**: If neither source has context, you MUST run /teach-impeccable NOW before doing anything else. Do NOT skip this step. Do NOT attempt to infer context from the codebase instead.
+- Prefer semantic tokens for shared UI primitives and heavily repeated styles.
+- Raw Tailwind colors are allowed when the styling is local/contextual and not worth promoting to a shared token yet.
+- In practice: buttons, panels, cards, inputs, and shared states should favor tokens; one-screen accents, dense table/detail states, and local data viz framing may use raw Tailwind colors.
+- Never use specific or arbitrary values for color, font size, radius, spacing, border, shadow, tracking, or height unless explicitly told.
+- Avoid `text-[...]`, `bg-[#...]`, `rounded-[...]`, `border-[#...]`, `tracking-[...]` unless:
+    - Required by a product requirement.
+    - Matching an external asset or image dimension.
+    - Solving a layout issue that cannot be expressed through the existing scale.
+- Use semantic tokens, named scale values, and shared aliases/components.
+- Cards and panels default to `rounded-xl`.
+- Gradients only for surfaces.
+- Body text uses `foreground`.
+- Secondary/supporting text uses `muted`.
+- Do not use `primary` for normal body copy.
+- Primary buttons for main actions.
+- Ghost buttons for cancel and neutral actions.
+- Destructive styles only for destructive actions.
 
----
+## Token Rules
 
-## Design Direction
+- Foundation tokens:
+  - `background`
+  - `background-secondary`
+  - `surface`
+  - `foreground`
+  - `border`
+- Action/status tokens:
+  - `primary`
+  - `secondary`
+  - `muted`
+  - `info`
+  - `success`
+  - `warning`
+  - `destructive`
+- Soft variants and surface tints:
+  - `primary-soft`
+  - `info-soft`
+  - `success-soft`
+  - `warning-soft`
+  - `destructive-soft`
+  - `surface-warm`
+  - `surface-warm-soft`
+- Do not update both apps' `globals.css` by default.
+- Add to `globals.css` + `tailwind.config.ts` only when the token/alias is genuinely reusable, cross-component, or repeated enough to become a design primitive.
+- Do not add one-off colors or one-off styles to `globals.css`.
+- If the need is local and isolated, keep it in feature code with raw Tailwind classes.
 
-Commit to a BOLD aesthetic direction:
-- **Purpose**: What problem does this interface solve? Who uses it?
-- **Tone**: Pick an extreme: brutally minimal, maximalist chaos, retro-futuristic, organic/natural, luxury/refined, playful/toy-like, editorial/magazine, brutalist/raw, art deco/geometric, soft/pastel, industrial/utilitarian, etc. There are so many flavors to choose from. Use these for inspiration but design one that is true to the aesthetic direction.
-- **Constraints**: Technical requirements (framework, performance, accessibility).
-- **Differentiation**: What makes this UNFORGETTABLE? What's the one thing someone will remember?
+## Typography Rules
 
-**CRITICAL**: Choose a clear conceptual direction and execute it with precision. Bold maximalism and refined minimalism both work—the key is intentionality, not intensity.
+- Use the configured scale:
+  - `text-xs-tight`
+  - `text-xs`
+  - `text-sm`
+  - `text-sm-custom`
+  - `text-base`
+  - `text-lg-loose`
+  - `text-xl-loose`
+- `text-xs-tight` and `text-xs`: labels, eyebrows, dense meta.
+- `text-sm` and `text-sm-custom`: support text, table meta, helper copy.
+- `text-base`: default content.
+- `text-lg-loose` and `text-xl-loose`: KPI values, large numeric emphasis.
+- Do not introduce `text-[...]` unless explicitly requested.
 
-Then implement working code that is:
-- Production-grade and functional
-- Visually striking and memorable
-- Cohesive with a clear aesthetic point-of-view
-- Meticulously refined in every detail
+## Aliases
 
-## Frontend Aesthetics Guidelines
+- Do not maintain a giant "one alias = full utility dump" list in this doc.
+- This doc should define alias intent and usage, not reprint implementation.
+- Current shared alias families:
+  - Buttons: `btn`, `btn-sm`, `btn-md`, `btn-lg`, `btn-primary`, `btn-primary-soft`, `btn-secondary`, `btn-outline`, `btn-ghost`, `btn-destructive`
+  - Panels: `panel`, `panel-header`, `panel-title`, `panel-content`, `panel-icon`
+  - Cards: `card`, `card-label`, `card-value`
+  - Forms: `form-label`, `input`, `read-only-input`
+  - Pills: `pill` and tone variants
+- If a pattern repeats, extract or adjust the alias in `globals.css`.
+- Alias classes may be extended or selectively overridden in local context when needed.
+- Override for composition or local layout/state adjustments, not to fight the base primitive on every use.
+- If the same override pattern repeats, move it into the alias/component instead of copying it around.
 
-### Typography
-→ *Consult [typography reference](reference/typography.md) for scales, pairing, and loading strategies.*
+## Component Defaults
 
-Choose fonts that are beautiful, unique, and interesting. Pair a distinctive display font with a refined body font.
+- Buttons:
+  - Use `Button` first.
+  - `className` can adjust layout, density, and local context styling when needed.
+  - If you keep overriding the same button behavior, promote that into the component or alias.
+- Cards:
+  - Match `ExecutiveOverviewCard` structure.
+  - Use `card`, `card-label`, `card-value`.
+  - Keep the icon/action block compact and `rounded-xl`.
+- Panels:
+  - Match `DashboardSection` or `WmsWorkspaceCard` based on context.
+  - Use `panel`, `panel-header`, `panel-title`, `panel-content`.
+- Panel headers may include right-side meta, actions, filters, or utility controls.
+- If the header needs extra controls, follow the `WmsCompactPanel` `headerActions` pattern instead of inventing a new header layout.
 
-**DO**: Use a modular type scale with fluid sizing (clamp)
-**DO**: Vary font weights and sizes to create clear visual hierarchy
-**DON'T**: Use overused fonts—Inter, Roboto, Arial, Open Sans, system defaults
-**DON'T**: Use monospace typography as lazy shorthand for "technical/developer" vibes
-**DON'T**: Put large icons with rounded corners above every heading—they rarely add value and make sites look templated
+## Table Rules
 
-### Color & Theme
-→ *Consult [color reference](reference/color-and-contrast.md) for OKLCH, palettes, and dark mode.*
+- For WMS admin data tables, match the visual language of:
+  - `apps/admin/src/app/(admin)/inventory/_components/inventory-units-table.tsx`
+  - `apps/admin/src/app/(admin)/inventory/_components/inventory-transfer-history-table.tsx`
+  - `apps/admin/src/app/(admin)/shipments/_components/dispatch-table.tsx`
+- Use `overflow-x-auto` around dense tables.
+- Prefer flat rows over card rows for WMS records.
+- Default structure:
+  - `table`: `min-w-full border-separate border-spacing-0` or `min-w-full text-left`
+  - `thead`: soft slate/secondary surface with a clear bottom border when needed
+  - `th`: `px-5 py-3` or `px-5 py-4`, uppercase, dense label type, muted text
+  - `tbody`: white surface
+  - `tr`: bottom border, subtle hover state for selectable rows
+  - `td`: `px-5 py-3.5` or `px-5 py-4`, `text-sm-custom` or `text-sm`
+- Keep status values as compact pills.
+- Right-align action columns.
+- Use table-specific helper components such as `HeaderCell` and `BodyCell` when a table has more than a few columns.
+- Do not use rounded card rows, large row gaps, or heavy shadows for WMS list tables unless explicitly requested.
 
-Commit to a cohesive palette. Dominant colors with sharp accents outperform timid, evenly-distributed palettes.
+## Sample Structure
 
-**DO**: Use modern CSS color functions (oklch, color-mix, light-dark) for perceptually uniform, maintainable palettes
-**DO**: Tint your neutrals toward your brand hue—even a subtle hint creates subconscious cohesion
-**DON'T**: Use gray text on colored backgrounds—it looks washed out; use a shade of the background color instead
-**DON'T**: Use pure black (#000) or pure white (#fff)—always tint; pure black/white never appears in nature
-**DON'T**: Use the AI color palette: cyan-on-dark, purple-to-blue gradients, neon accents on dark backgrounds
-**DON'T**: Use gradient text for "impact"—especially on metrics or headings; it's decorative rather than meaningful
-**DON'T**: Default to dark mode with glowing accents—it looks "cool" without requiring actual design decisions
+### Button
 
-### Layout & Space
-→ *Consult [spatial reference](reference/spatial-design.md) for grids, rhythm, and container queries.*
+```tsx
+<Button variant="primary" size="md">
+  Save changes
+</Button>
 
-Create visual rhythm through varied spacing—not the same padding everywhere. Embrace asymmetry and unexpected compositions. Break the grid intentionally for emphasis.
+<Button variant="ghost" size="md">
+  Cancel
+</Button>
 
-**DO**: Create visual rhythm through varied spacing—tight groupings, generous separations
-**DO**: Use fluid spacing with clamp() that breathes on larger screens
-**DO**: Use asymmetry and unexpected compositions; break the grid intentionally for emphasis
-**DON'T**: Wrap everything in cards—not everything needs a container
-**DON'T**: Nest cards inside cards—visual noise, flatten the hierarchy
-**DON'T**: Use identical card grids—same-sized cards with icon + heading + text, repeated endlessly
-**DON'T**: Use the hero metric layout template—big number, small label, supporting stats, gradient accent
-**DON'T**: Center everything—left-aligned text with asymmetric layouts feels more designed
-**DON'T**: Use the same spacing everywhere—without rhythm, layouts feel monotonous
+<Button variant="danger" size="md">
+  Delete
+</Button>
 
-### Visual Details
-**DO**: Use intentional, purposeful decorative elements that reinforce brand
-**DON'T**: Use glassmorphism everywhere—blur effects, glass cards, glow borders used decoratively rather than purposefully
-**DON'T**: Use rounded elements with thick colored border on one side—a lazy accent that almost never looks intentional
-**DON'T**: Use sparklines as decoration—tiny charts that look sophisticated but convey nothing meaningful
-**DON'T**: Use rounded rectangles with generic drop shadows—safe, forgettable, could be any AI output
-**DON'T**: Use modals unless there's truly no better alternative—modals are lazy
+<Button
+  variant="primary"
+  size="md"
+  iconLeft={<RefreshCcw className="h-4 w-4" />}
+>
+  Refresh
+</Button>
+```
 
-### Motion
-→ *Consult [motion reference](reference/motion-design.md) for timing, easing, and reduced motion.*
+### KPI Card
 
-Focus on high-impact moments: one well-orchestrated page load with staggered reveals creates more delight than scattered micro-interactions.
+```tsx
+<div className="card">
+  <div className="flex items-start justify-between">
+    <div>
+      <p className="card-label">Open orders</p>
+      <p className="card-value">128</p>
+      <p className="text-sm text-muted">
+        ord: <span className="font-semibold text-foreground">37</span>
+      </p>
+    </div>
 
-**DO**: Use motion to convey state changes—entrances, exits, feedback
-**DO**: Use exponential easing (ease-out-quart/quint/expo) for natural deceleration
-**DO**: For height animations, use grid-template-rows transitions instead of animating height directly
-**DON'T**: Animate layout properties (width, height, padding, margin)—use transform and opacity only
-**DON'T**: Use bounce or elastic easing—they feel dated and tacky; real objects decelerate smoothly
+    {iconSlot}
+  </div>
+</div>
+```
 
-### Interaction
-→ *Consult [interaction reference](reference/interaction-design.md) for forms, focus, and loading patterns.*
+### Panel: DashboardSection shape
 
-Make interactions feel fast. Use optimistic UI—update immediately, sync later.
+```tsx
+<section className="panel panel-content">
+  <div className="panel-header">
+    <ChartBar className="panel-icon" />
+    <h4 className="panel-title">Sales performance</h4>
+    <span className="ml-auto hidden min-w-0 text-xs-tight text-slate-500 sm:inline">
+      Last 7 days
+    </span>
+  </div>
 
-**DO**: Use progressive disclosure—start simple, reveal sophistication through interaction (basic options first, advanced behind expandable sections; hover states that reveal secondary actions)
-**DO**: Design empty states that teach the interface, not just say "nothing here"
-**DO**: Make every interactive surface feel intentional and responsive
-**DON'T**: Repeat the same information—redundant headers, intros that restate the heading
-**DON'T**: Make every button primary—use ghost buttons, text links, secondary styles; hierarchy matters
+  <div className="p-3">
+    {children}
+  </div>
+</section>
+```
 
-### Responsive
-→ *Consult [responsive reference](reference/responsive-design.md) for mobile-first, fluid design, and container queries.*
+### Panel: WmsCompactPanel with headerActions
 
-**DO**: Use container queries (@container) for component-level responsiveness
-**DO**: Adapt the interface for different contexts—don't just shrink it
-**DON'T**: Hide critical functionality on mobile—adapt the interface, don't amputate it
+```tsx
+<section className="panel panel-content">
+  <div className="panel-header flex items-start justify-between gap-4">
+    <div className="flex min-w-0 items-center gap-2">
+      <Container className="panel-icon" />
+      <h4 className="panel-title">Section Overview (12)</h4>
+    </div>
 
-### UX Writing
-→ *Consult [ux-writing reference](reference/ux-writing.md) for labels, errors, and empty states.*
+    <div className="ml-auto shrink-0">
+      <div className="flex items-center gap-2">
+        <button type="button" className="pill pill-ghost flex gap-1.5 rounded-lg">
+          <Edit3 className="h-3.5 w-3.5" />
+          Edit
+        </button>
+        <button type="button" className="pill pill-ghost flex gap-2 rounded-lg">
+          <Plus className="h-3.5 w-3.5" />
+          Add section
+        </button>
+      </div>
+    </div>
+  </div>
 
-**DO**: Make every word earn its place
-**DON'T**: Repeat information users can already see
+  <div className="p-3">
+    {children}
+  </div>
+</section>
+```
 
----
+### Panel: WmsWorkspaceCard shape
 
-## The AI Slop Test
+```tsx
+<section className="panel panel-content">
+  <div className="panel-header flex items-center justify-between gap-3">
+    <div className="flex min-w-0 items-center gap-3">
+      <PackageCheck className="panel-icon" />
+      <h2 className="panel-title">Pick Queue</h2>
+    </div>
 
-**Critical quality check**: If you showed this interface to someone and said "AI made this," would they believe you immediately? If yes, that's the problem.
+    <div className="flex shrink-0 items-center gap-2">
+      <Button variant="ghost" size="sm" iconLeft={<RefreshCcw className="h-4 w-4" />}>
+        Refresh
+      </Button>
+    </div>
+  </div>
 
-A distinctive interface should make someone ask "how was this made?" not "which AI made this?"
+  <div className="w-full min-w-0 border-b border-border/10 bg-secondary/20 px-4 py-3">
+    {filters}
+  </div>
 
-Review the DON'T guidelines above—they are the fingerprints of AI-generated work from 2024-2025.
+  <div className="panel-content">
+    {children}
+  </div>
 
----
+  <div className="border-t border-border/10 bg-surface px-4 py-3">
+    <div className="text-sm text-muted">Showing 1-20 of 54</div>
+  </div>
+</section>
+```
 
-## Implementation Principles
+## Raw Tailwind: Allowed Cases
 
-Match implementation complexity to the aesthetic vision. Maximalist designs need elaborate code with extensive animations and effects. Minimalist or refined designs need restraint, precision, and careful attention to spacing, typography, and subtle details.
+- Supported by current dashboard usage in `apps/web/src/app/(dashboard)/dashboard/page.tsx`.
+- Good uses:
+  - local accent tones like `orange`, `emerald`, `amber`
+  - dense neutral text hierarchy like `slate-*`
+  - local borders/backgrounds for tables, popovers, filters, mini-stats
+  - one-screen emphasis states not yet shared elsewhere
+- Avoid:
+  - replacing shared button/panel/card semantics with raw colors by default
+  - adding raw arbitrary hex/rgb values when a Tailwind scale or token already covers the need
+  - promoting a one-off dashboard color into `globals.css`
 
-Interpret creatively and make unexpected choices that feel genuinely designed for the context. No design should be the same. Vary between light and dark themes, different fonts, different aesthetics. NEVER converge on common choices across generations.
+## Codex Rules
 
-Remember: the model is capable of extraordinary creative work. Don't hold back—show what can truly be created when thinking outside the box and committing fully to a distinctive vision.
+- Before editing frontend UI, inspect:
+  - `globals.css`
+  - `tailwind.config.ts`
+  - shared UI/component references
+- During overhaul, replace repeated/shared hardcoded values with tokens, aliases, or shared components.
+- Do not create new globals unless the style is clearly reusable beyond the local feature.
+- If the same raw pattern appears more than once in the touched area, extract it.
+- Prefer updating the shared primitive over patching many screens.
+- If a screen needs a new look, add semantics first, then apply them.
