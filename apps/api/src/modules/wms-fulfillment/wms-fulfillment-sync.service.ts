@@ -30,6 +30,7 @@ type FulfillmentSyncStore = {
 };
 
 const CONFIRMED_POS_ORDER_STATUS = 1;
+const CANCELED_POS_ORDER_STATUS = 6;
 const PICKING_SYNC_ORDER_LIMIT = 80;
 const ACTIVE_PICK_RESERVATION_STATUSES = [
   WmsPickReservationStatus.RESERVED,
@@ -43,6 +44,12 @@ const ACTIVE_DEMAND_BASKET_STATUSES = [
 const ACTIVE_BASKET_UNIT_STATUSES = [
   WmsBasketUnitStatus.PICKED,
   WmsBasketUnitStatus.PACKED,
+] as const;
+const ACTIVE_BASKET_ORDER_STATUSES = [
+  WmsFulfillmentOrderStatus.IN_PICKING,
+  WmsFulfillmentOrderStatus.READY_FOR_PACK,
+  WmsFulfillmentOrderStatus.PICKED,
+  WmsFulfillmentOrderStatus.PACKING,
 ] as const;
 const AUTO_REALLOCATION_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.RESTOCKING,
@@ -115,6 +122,8 @@ export class WmsFulfillmentSyncService {
     if (scopedStores.length === 0) {
       return { syncedOrders: 0 };
     }
+
+    await this.syncCanceledPickingOrders(params, scopedStores);
 
     const refs = Array.from(
       new Map(
@@ -352,6 +361,199 @@ export class WmsFulfillmentSyncService {
     }
 
     return { syncedOrders };
+  }
+
+  private async syncCanceledPickingOrders(
+    params: {
+      tenantId: string | null;
+      storeId: string | null;
+      stores: FulfillmentSyncStore[];
+      actorId: string | null;
+      posOrderRefs?: Array<{
+        shopId: string;
+        posOrderId: string;
+      }>;
+    },
+    scopedStores: FulfillmentSyncStore[],
+  ) {
+    const refs = Array.from(
+      new Map(
+        (params.posOrderRefs ?? [])
+          .filter((ref) => ref.shopId && ref.posOrderId)
+          .map((ref) => [`${ref.shopId}::${ref.posOrderId}`, ref] as const),
+      ).values(),
+    );
+    const shopIds = Array.from(new Set(scopedStores.map((store) => store.shopId)));
+    const tenantIds = Array.from(new Set(scopedStores.map((store) => store.tenantId)));
+    const tenantGoLiveFilters = await this.buildTenantGoLiveOrderFilters(tenantIds);
+    const canceledPosOrders = await this.prisma.posOrder.findMany({
+      where: {
+        shopId: { in: shopIds },
+        tenantId: params.tenantId ? params.tenantId : { in: tenantIds },
+        OR: [
+          { status: CANCELED_POS_ORDER_STATUS },
+          { isVoid: true },
+        ],
+        AND: [
+          {
+            OR: tenantGoLiveFilters,
+          },
+          ...(refs.length > 0
+            ? [{
+                OR: refs.map((ref) => ({
+                  shopId: ref.shopId,
+                  posOrderId: ref.posOrderId,
+                })),
+              }]
+            : []),
+        ],
+        wmsFulfillmentOrders: {
+          some: {
+            status: {
+              in: [
+                WmsFulfillmentOrderStatus.READY,
+                WmsFulfillmentOrderStatus.RESTOCKING,
+                WmsFulfillmentOrderStatus.PARTIAL,
+                WmsFulfillmentOrderStatus.IN_PICKING,
+                WmsFulfillmentOrderStatus.READY_FOR_PACK,
+                WmsFulfillmentOrderStatus.PICKED,
+                WmsFulfillmentOrderStatus.PACKING,
+                WmsFulfillmentOrderStatus.PACKED,
+              ],
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (canceledPosOrders.length === 0) {
+      return { cleanedOrders: 0 };
+    }
+
+    const now = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const fulfillmentOrders = await tx.wmsFulfillmentOrder.findMany({
+        where: {
+          posOrderDbId: {
+            in: canceledPosOrders.map((order) => order.id),
+          },
+          status: {
+            not: WmsFulfillmentOrderStatus.CANCELED,
+          },
+        },
+        include: {
+          posOrder: {
+            select: {
+              status: true,
+              isVoid: true,
+            },
+          },
+          lines: true,
+          basketUnits: {
+            where: {
+              status: {
+                in: [...ACTIVE_BASKET_UNIT_STATUSES],
+              },
+            },
+            select: {
+              id: true,
+              basketId: true,
+              tenantId: true,
+              inventoryUnitId: true,
+              sourceLocationId: true,
+              status: true,
+              inventoryUnit: {
+                select: {
+                  id: true,
+                  code: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const affectedBasketIds = new Set<string>();
+      const scopeKeys = new Set<string>();
+
+      for (const order of fulfillmentOrders) {
+        if ((order.posOrder?.status ?? null) !== CANCELED_POS_ORDER_STATUS && !order.posOrder?.isVoid) {
+          continue;
+        }
+
+        if (order.assignmentMode === WmsFulfillmentAssignmentMode.BASKET_DEMAND) {
+          await this.releaseCanceledDemandOrderTx(tx, {
+            order,
+            actorId: params.actorId,
+            now,
+          });
+
+          if (order.basketId) {
+            affectedBasketIds.add(order.basketId);
+          }
+          for (const basketUnit of order.basketUnits ?? []) {
+            if (basketUnit.basketId) {
+              affectedBasketIds.add(basketUnit.basketId);
+            }
+          }
+          scopeKeys.add(`${order.tenantId}::${order.storeId}`);
+          continue;
+        }
+
+        await tx.wmsFulfillmentLine.updateMany({
+          where: {
+            fulfillmentOrderId: order.id,
+          },
+          data: {
+            quantityAllocated: 0,
+            quantityPicked: 0,
+            status: WmsFulfillmentLineStatus.CANCELED,
+            issueReason: 'Order was canceled in POS.',
+          },
+        });
+
+        await tx.wmsFulfillmentOrder.update({
+          where: { id: order.id },
+          data: {
+            status: WmsFulfillmentOrderStatus.CANCELED,
+            issueReason: 'Order was canceled in POS.',
+            allocatedQuantity: 0,
+            pickedQuantity: 0,
+            claimedById: null,
+            claimedAt: null,
+            packedById: null,
+            basketId: null,
+            completedAt: now,
+            lastSyncedAt: now,
+          },
+        });
+      }
+
+      for (const basketId of affectedBasketIds) {
+        await this.refreshDemandBasketStateTx(tx, basketId, now);
+      }
+
+      for (const scopeKey of scopeKeys) {
+        const [tenantId, storeId] = scopeKey.split('::');
+        if (!tenantId || !storeId) {
+          continue;
+        }
+
+        await this.refreshDemandFulfillmentQueueTx(tx, {
+          tenantId,
+          storeId,
+        }, now);
+      }
+
+      return {
+        cleanedOrders: fulfillmentOrders.length,
+      };
+    });
   }
 
   private async buildTenantGoLiveOrderFilters(tenantIds: string[]): Promise<Prisma.PosOrderWhereInput[]> {
@@ -988,6 +1190,232 @@ export class WmsFulfillmentSyncService {
         accumulateVirtualAllocation: true,
       });
     }
+  }
+
+  private async releaseCanceledDemandOrderTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      order: any;
+      actorId: string | null;
+      now: Date;
+    },
+  ) {
+    const basketId = params.order.basketId as string | null;
+    const activeBasketUnits = Array.isArray(params.order.basketUnits) ? params.order.basketUnits : [];
+    const restorableUnitIds = activeBasketUnits
+      .filter((basketUnit: any) => (
+        basketUnit.inventoryUnit?.status === WmsInventoryUnitStatus.PICKED
+        || basketUnit.inventoryUnit?.status === WmsInventoryUnitStatus.PACKED
+      ))
+      .map((basketUnit: any) => basketUnit.inventoryUnitId as string);
+
+    const restoreStateByInventoryUnitId = basketId && restorableUnitIds.length > 0
+      ? await this.loadBasketUnitRestoreStatesTx(tx, basketId, restorableUnitIds)
+      : new Map<string, {
+          fromLocationId: string | null;
+          fromStatus: WmsInventoryUnitStatus | null;
+          warehouseId: string | null;
+        }>();
+
+    const movementRows: Prisma.WmsInventoryMovementCreateManyInput[] = [];
+
+    for (const basketUnit of activeBasketUnits) {
+      const expectedSourceStatus = basketUnit.status === WmsBasketUnitStatus.PACKED
+        ? WmsInventoryUnitStatus.PACKED
+        : WmsInventoryUnitStatus.PICKED;
+      const restoreState = restoreStateByInventoryUnitId.get(basketUnit.inventoryUnitId);
+
+      if (
+        restoreState?.fromLocationId
+        && restoreState.fromStatus
+        && restoreState.warehouseId
+        && basketUnit.inventoryUnit?.status === expectedSourceStatus
+      ) {
+        const restoredNow = await this.restoreInventoryUnitToPriorStateTx(tx, {
+          inventoryUnitId: basketUnit.inventoryUnitId,
+          expectedSourceStatus,
+          restoreState,
+          actorId: params.actorId,
+        });
+
+        if (restoredNow) {
+          movementRows.push({
+            tenantId: basketUnit.tenantId,
+            inventoryUnitId: basketUnit.inventoryUnitId,
+            warehouseId: restoreState.warehouseId,
+            fromLocationId: null,
+            toLocationId: restoreState.fromLocationId,
+            fromStatus: expectedSourceStatus,
+            toStatus: restoreState.fromStatus,
+            movementType: WmsInventoryMovementType.TRANSFER,
+            referenceType: 'WMS_FULFILLMENT_ORDER',
+            referenceId: params.order.id,
+            referenceCode: params.order.posOrderId,
+            notes: `POS canceled order ${params.order.posOrderId} released basket hold`,
+            actorId: params.actorId,
+            createdAt: params.now,
+          });
+        }
+      }
+
+      await tx.wmsBasketUnit.updateMany({
+        where: {
+          id: basketUnit.id,
+          status: basketUnit.status,
+        },
+        data: {
+          status: WmsBasketUnitStatus.REMOVED,
+          removedById: params.actorId ?? undefined,
+          removedAt: params.now,
+        },
+      });
+    }
+
+    if (movementRows.length > 0) {
+      await tx.wmsInventoryMovement.createMany({
+        data: movementRows,
+      });
+    }
+
+    await tx.wmsBasketPickDemand.deleteMany({
+      where: {
+        fulfillmentOrderId: params.order.id,
+      },
+    });
+
+    await tx.wmsFulfillmentLine.updateMany({
+      where: {
+        fulfillmentOrderId: params.order.id,
+      },
+      data: {
+        quantityAllocated: 0,
+        quantityPicked: 0,
+        status: WmsFulfillmentLineStatus.CANCELED,
+        issueReason: 'Order was canceled in POS.',
+      },
+    });
+
+    await tx.wmsFulfillmentOrder.update({
+      where: { id: params.order.id },
+      data: {
+        status: WmsFulfillmentOrderStatus.CANCELED,
+        issueReason: 'Order was canceled in POS.',
+        allocatedQuantity: 0,
+        pickedQuantity: 0,
+        claimedById: null,
+        claimedAt: null,
+        packedById: null,
+        basketId: null,
+        completedAt: params.now,
+        lastSyncedAt: params.now,
+      },
+    });
+  }
+
+  private async loadBasketUnitRestoreStatesTx(
+    tx: Prisma.TransactionClient,
+    basketId: string,
+    inventoryUnitIds: string[],
+  ) {
+    if (inventoryUnitIds.length === 0) {
+      return new Map<string, {
+        fromLocationId: string | null;
+        fromStatus: WmsInventoryUnitStatus | null;
+        warehouseId: string | null;
+      }>();
+    }
+
+    const movements = await tx.wmsInventoryMovement.findMany({
+      where: {
+        inventoryUnitId: {
+          in: inventoryUnitIds,
+        },
+        movementType: WmsInventoryMovementType.PICK,
+        referenceType: 'WMS_BASKET',
+        referenceId: basketId,
+      },
+      select: {
+        inventoryUnitId: true,
+        warehouseId: true,
+        fromLocationId: true,
+        fromStatus: true,
+        createdAt: true,
+      },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+    });
+
+    const restoreStateByInventoryUnitId = new Map<string, {
+      fromLocationId: string | null;
+      fromStatus: WmsInventoryUnitStatus | null;
+      warehouseId: string | null;
+    }>();
+
+    for (const movement of movements) {
+      if (restoreStateByInventoryUnitId.has(movement.inventoryUnitId)) {
+        continue;
+      }
+
+      restoreStateByInventoryUnitId.set(movement.inventoryUnitId, {
+        fromLocationId: movement.fromLocationId ?? null,
+        fromStatus: movement.fromStatus ?? null,
+        warehouseId: movement.warehouseId ?? null,
+      });
+    }
+
+    return restoreStateByInventoryUnitId;
+  }
+
+  private async restoreInventoryUnitToPriorStateTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      inventoryUnitId: string;
+      expectedSourceStatus: WmsInventoryUnitStatus;
+      restoreState: {
+        fromLocationId: string | null;
+        fromStatus: WmsInventoryUnitStatus | null;
+        warehouseId: string | null;
+      };
+      actorId: string | null;
+    },
+  ) {
+    const targetStatus = params.restoreState.fromStatus;
+    if (!targetStatus) {
+      return false;
+    }
+
+    const inventoryUpdate = await tx.wmsInventoryUnit.updateMany({
+      where: {
+        id: params.inventoryUnitId,
+        status: params.expectedSourceStatus,
+      },
+      data: {
+        currentLocationId: params.restoreState.fromLocationId,
+        status: targetStatus,
+        updatedById: params.actorId ?? undefined,
+      },
+    });
+
+    if (inventoryUpdate.count === 1) {
+      return true;
+    }
+
+    const currentUnit = await tx.wmsInventoryUnit.findUnique({
+      where: { id: params.inventoryUnitId },
+      select: {
+        id: true,
+        status: true,
+        currentLocationId: true,
+      },
+    });
+
+    return Boolean(
+      currentUnit
+      && currentUnit.status === targetStatus
+      && currentUnit.currentLocationId === params.restoreState.fromLocationId,
+    );
   }
 
   private async allocateFulfillmentOrderWithOptions(
@@ -1639,6 +2067,99 @@ export class WmsFulfillmentSyncService {
           ? order.completedAt ?? now
           : null,
         issueReason: totalQuantity === 0 ? order.issueReason ?? 'Order has no pickable variation items' : null,
+      },
+    });
+  }
+
+  private async refreshDemandBasketStateTx(
+    tx: Prisma.TransactionClient,
+    basketId: string,
+    now: Date,
+  ) {
+    const basket = await tx.wmsBasket.findUnique({
+      where: { id: basketId },
+      select: {
+        id: true,
+        status: true,
+        assignedPackerId: true,
+        fullAt: true,
+        readyForPackAt: true,
+        fulfillmentOrders: {
+          where: {
+            status: {
+              in: [...ACTIVE_BASKET_ORDER_STATUSES],
+            },
+          },
+          select: {
+            id: true,
+            status: true,
+            pickedQuantity: true,
+            tenantId: true,
+            claimedById: true,
+          },
+          orderBy: [
+            { updatedAt: 'desc' },
+            { createdAt: 'desc' },
+          ],
+        },
+      },
+    });
+
+    if (!basket) {
+      return;
+    }
+
+    const activeOrders = basket.fulfillmentOrders;
+    if (activeOrders.length === 0) {
+      await tx.wmsBasket.update({
+        where: { id: basket.id },
+        data: {
+          tenantId: null,
+          status: WmsBasketStatus.AVAILABLE,
+          assignedPickerId: null,
+          assignedPackerId: null,
+          fulfillmentOrderId: null,
+          claimedAt: null,
+          fullAt: null,
+          readyForPackAt: null,
+        },
+      });
+      return;
+    }
+
+    const hasPackingOrder = activeOrders.some((order) => order.status === WmsFulfillmentOrderStatus.PACKING);
+    const allReadyForPack = activeOrders.every((order) => (
+      order.status === WmsFulfillmentOrderStatus.READY_FOR_PACK
+      || order.status === WmsFulfillmentOrderStatus.PICKED
+    ));
+    const hasPickedWork = activeOrders.some((order) => (
+      order.pickedQuantity > 0
+      || order.status === WmsFulfillmentOrderStatus.IN_PICKING
+    ));
+    const activeTenantIds = Array.from(new Set(activeOrders.map((order) => order.tenantId)));
+    const nextStatus = hasPackingOrder
+      ? WmsBasketStatus.PACKING
+      : allReadyForPack
+        ? WmsBasketStatus.FULL_HELD
+        : hasPickedWork
+          ? WmsBasketStatus.IN_PICKING
+          : WmsBasketStatus.ASSIGNED;
+
+    await tx.wmsBasket.update({
+      where: { id: basket.id },
+      data: {
+        tenantId: activeTenantIds.length === 1 ? activeTenantIds[0] : null,
+        status: nextStatus,
+        assignedPickerId: activeOrders[0]?.claimedById ?? null,
+        assignedPackerId: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
+          ? basket.assignedPackerId
+          : null,
+        fullAt: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
+          ? basket.fullAt ?? now
+          : null,
+        readyForPackAt: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
+          ? basket.readyForPackAt ?? now
+          : null,
       },
     });
   }

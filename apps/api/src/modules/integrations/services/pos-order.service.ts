@@ -729,6 +729,7 @@ export class PosOrderService {
     let upserted = 0;
     const outcomes: PosOrderUpsertOutcome[] = [];
     const fulfillmentCandidates: Array<{ shopId: string; posOrderId: string }> = [];
+    const canceledFulfillmentCandidates: Array<{ shopId: string; posOrderId: string }> = [];
     const dispatchCandidates: Array<{ shopId: string; posOrderId: string }> = [];
 
     const store = await this.prisma.posStore.findFirst({
@@ -903,6 +904,20 @@ export class PosOrderService {
           });
         }
         if (
+          (order.status === 6 || order.isVoid)
+          && order.shopId
+          && order.posOrderId
+          && (
+            !tenant?.wmsFulfillmentGoLiveAt
+            || order.insertedAt >= tenant.wmsFulfillmentGoLiveAt
+          )
+        ) {
+          canceledFulfillmentCandidates.push({
+            shopId: order.shopId,
+            posOrderId: order.posOrderId,
+          });
+        }
+        if (
           (order.status === 2 || order.status === 3)
           && order.shopId
           && order.posOrderId
@@ -975,7 +990,14 @@ export class PosOrderService {
       `;
     }
 
-    if (store && fulfillmentCandidates.length > 0) {
+    const fulfillmentSyncCandidates = Array.from(
+      new Map(
+        [...fulfillmentCandidates, ...canceledFulfillmentCandidates]
+          .map((ref) => [`${ref.shopId}::${ref.posOrderId}`, ref] as const),
+      ).values(),
+    );
+
+    if (store && fulfillmentSyncCandidates.length > 0) {
       await this.wmsFulfillmentSyncService.syncConfirmedPickingOrders({
         tenantId,
         storeId,
@@ -985,7 +1007,7 @@ export class PosOrderService {
           tenantId,
           shopId: store.shopId,
         }],
-        posOrderRefs: fulfillmentCandidates,
+        posOrderRefs: fulfillmentSyncCandidates,
       });
     }
 
