@@ -111,6 +111,9 @@ export function InventoryStockReceivingScreen() {
             onViewBatch={receiving.openLabelsModal}
             canTransferBatch={receiving.canPutAway}
             onTransferBatch={(batch) => openTransfer(batch.id)}
+            canVoidBatch={receiving.canVoidReceivingBatch}
+            isVoidingBatch={receiving.isVoidingReceivingBatch}
+            onVoidBatch={receiving.voidReceivingBatch}
           />
         </WmsWorkspaceCard>
       </WmsPageShell>

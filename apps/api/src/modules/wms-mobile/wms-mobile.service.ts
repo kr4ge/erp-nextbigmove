@@ -681,6 +681,7 @@ export class WmsMobileService {
           status: {
             notIn: [
               WmsInventoryUnitStatus.DISPATCHED,
+              WmsInventoryUnitStatus.DAMAGED,
               WmsInventoryUnitStatus.LOST,
               WmsInventoryUnitStatus.ARCHIVED,
             ],

@@ -13,6 +13,9 @@ type ReceivingBatchesTableProps = {
   onViewBatch: (batch: WmsReceivingBatchRow) => void;
   canTransferBatch?: boolean;
   onTransferBatch?: (batch: WmsReceivingBatchRow) => void;
+  canVoidBatch?: boolean;
+  isVoidingBatch?: boolean;
+  onVoidBatch?: (batch: WmsReceivingBatchRow) => void;
 };
 
 export function ReceivingBatchesTable({
@@ -21,6 +24,9 @@ export function ReceivingBatchesTable({
   onViewBatch,
   canTransferBatch = true,
   onTransferBatch,
+  canVoidBatch = false,
+  isVoidingBatch = false,
+  onVoidBatch,
 }: ReceivingBatchesTableProps) {
   if (isLoading) {
     return <div className="px-4 py-10 text-center text-sm text-[#7b8e9c]">Loading receiving history…</div>;
@@ -87,6 +93,19 @@ export function ReceivingBatchesTable({
               <td className="whitespace-nowrap px-4 py-3 text-sm text-[#4d6677]">{formatShortDate(batch.createdAt)}</td>
               <td className="px-4 py-3 text-right">
                 <div className="flex justify-end gap-2">
+                  {onVoidBatch && canVoidBatch && batch.status === 'STAGED' ? (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onVoidBatch(batch);
+                      }}
+                      disabled={isVoidingBatch}
+                      className="btn btn-sm btn-destructive disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Void
+                    </button>
+                  ) : null}
                   {onTransferBatch && canTransferBatch && batch.status !== 'COMPLETED' && batch.labelPrintCount > 0 ? (
                     <button
                       type="button"

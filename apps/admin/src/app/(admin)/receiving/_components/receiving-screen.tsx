@@ -106,6 +106,9 @@ export function ReceivingScreen() {
               batches={controller.overview?.receivingBatches ?? []}
               isLoading={controller.isLoading}
               onViewBatch={controller.openLabelsModal}
+              canVoidBatch={controller.canVoidReceivingBatch}
+              isVoidingBatch={controller.isVoidingReceivingBatch}
+              onVoidBatch={controller.voidReceivingBatch}
             />
           </div>
         </WmsCompactPanel>

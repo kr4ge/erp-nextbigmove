@@ -6,10 +6,12 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  WmsBasketUnitStatus,
   WmsInventoryMovementType,
   WmsInventoryUnitSourceType,
   WmsInventoryUnitStatus,
   WmsLocationKind,
+  WmsPickReservationStatus,
   WmsProductProfileStatus,
   WmsPurchasingBatchStatus,
   WmsReceivingBatchStatus,
@@ -31,6 +33,7 @@ import { CreateWmsReceivingBatchDto } from './dto/create-wms-receiving-batch.dto
 import { GetWmsReceivingOverviewDto } from './dto/get-wms-receiving-overview.dto';
 import { RecordWmsReceivingBatchLabelPrintDto } from './dto/record-wms-receiving-batch-label-print.dto';
 import { ResetWmsReceivingPutawayDto } from './dto/reset-wms-receiving-putaway.dto';
+import { VoidWmsReceivingBatchDto } from './dto/void-wms-receiving-batch.dto';
 
 type ReceivablePurchasingBatchRecord = Prisma.WmsPurchasingBatchGetPayload<{
   include: {
@@ -1415,6 +1418,229 @@ export class WmsReceivingService {
 
     return {
       updatedUnitCount: validatedUnits.length,
+      batch: result,
+    };
+  }
+
+  async voidBatch(id: string, body: VoidWmsReceivingBatchDto, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const reason = this.cleanOptionalText(body.reason);
+    const notes = this.cleanOptionalText(body.notes);
+
+    if (!reason) {
+      throw new BadRequestException('Void reason is required');
+    }
+
+    const batch = await this.prisma.wmsReceivingBatch.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        code: true,
+        tenantId: true,
+        status: true,
+        notes: true,
+        warehouseId: true,
+        purchasingBatchId: true,
+        lines: {
+          select: {
+            id: true,
+            purchasingBatchLineId: true,
+            receivedQuantity: true,
+          },
+        },
+        inventoryUnits: {
+          select: {
+            id: true,
+            code: true,
+            status: true,
+            warehouseId: true,
+            currentLocationId: true,
+          },
+        },
+      },
+    });
+
+    if (!batch) {
+      throw new NotFoundException('Receiving batch was not found');
+    }
+
+    this.assertTenantScope(batch.tenantId, scope.activeTenantId);
+
+    if (batch.status !== WmsReceivingBatchStatus.STAGED) {
+      throw new BadRequestException('Only staged receiving batches can be voided');
+    }
+
+    const nonStagedUnit = batch.inventoryUnits.find(
+      (unit) => unit.status !== WmsInventoryUnitStatus.STAGED,
+    );
+    if (nonStagedUnit) {
+      throw new BadRequestException(
+        `Only fully staged batches can be voided. Unit ${nonStagedUnit.code} is ${nonStagedUnit.status}.`,
+      );
+    }
+
+    const unitIds = batch.inventoryUnits.map((unit) => unit.id);
+    if (unitIds.length > 0) {
+      const [activeBasketUnitCount, activePickReservationCount] = await Promise.all([
+        this.prisma.wmsBasketUnit.count({
+          where: {
+            inventoryUnitId: { in: unitIds },
+            status: {
+              in: [WmsBasketUnitStatus.PICKED, WmsBasketUnitStatus.PACKED],
+            },
+          },
+        }),
+        this.prisma.wmsPickReservation.count({
+          where: {
+            inventoryUnitId: { in: unitIds },
+            status: {
+              in: [WmsPickReservationStatus.RESERVED, WmsPickReservationStatus.PICKED],
+            },
+          },
+        }),
+      ]);
+
+      if (activeBasketUnitCount > 0 || activePickReservationCount > 0) {
+        throw new BadRequestException('Receiving batch has active fulfillment holds and cannot be voided');
+      }
+    }
+
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (unitIds.length > 0) {
+        const updatedUnits = await tx.wmsInventoryUnit.updateMany({
+          where: {
+            id: { in: unitIds },
+            receivingBatchId: batch.id,
+            status: WmsInventoryUnitStatus.STAGED,
+          },
+          data: {
+            status: WmsInventoryUnitStatus.ARCHIVED,
+            currentLocationId: null,
+            ...(actorId ? { updatedById: actorId } : {}),
+          },
+        });
+
+        if (updatedUnits.count !== unitIds.length) {
+          throw new BadRequestException('Receiving batch changed before void completed');
+        }
+
+        await tx.wmsInventoryMovement.createMany({
+          data: batch.inventoryUnits.map((unit) => ({
+            tenantId: batch.tenantId,
+            inventoryUnitId: unit.id,
+            warehouseId: unit.warehouseId,
+            fromLocationId: unit.currentLocationId,
+            toLocationId: null,
+            fromStatus: WmsInventoryUnitStatus.STAGED,
+            toStatus: WmsInventoryUnitStatus.ARCHIVED,
+            movementType: WmsInventoryMovementType.ADJUSTMENT,
+            referenceType: 'VOID_RECEIVING_BATCH',
+            referenceId: batch.id,
+            referenceCode: batch.code,
+            notes: notes ? `${reason} · ${notes}` : reason,
+            actorId,
+            createdAt: now,
+          })),
+        });
+      }
+
+      const purchasingLineDecrements = batch.lines.filter(
+        (line) => line.purchasingBatchLineId && line.receivedQuantity > 0,
+      );
+
+      for (const line of purchasingLineDecrements) {
+        const updatedLine = await tx.wmsPurchasingBatchLine.updateMany({
+          where: {
+            id: line.purchasingBatchLineId!,
+            receivedQuantity: {
+              gte: line.receivedQuantity,
+            },
+          },
+          data: {
+            receivedQuantity: {
+              decrement: line.receivedQuantity,
+            },
+            ...(actorId ? { updatedById: actorId } : {}),
+          },
+        });
+
+        if (updatedLine.count !== 1) {
+          throw new BadRequestException('Purchasing received quantity changed before void completed');
+        }
+      }
+
+      await tx.wmsReceivingLine.updateMany({
+        where: { batchId: batch.id },
+        data: {
+          receivedQuantity: 0,
+          ...(actorId ? { updatedById: actorId } : {}),
+        },
+      });
+
+      if (batch.purchasingBatchId) {
+        const purchasingLines = await tx.wmsPurchasingBatchLine.findMany({
+          where: { batchId: batch.purchasingBatchId },
+          select: {
+            requestedQuantity: true,
+            approvedQuantity: true,
+            receivedQuantity: true,
+          },
+        });
+        const totalExpected = purchasingLines.reduce(
+          (sum, line) => sum + Math.max(0, line.approvedQuantity ?? line.requestedQuantity),
+          0,
+        );
+        const totalReceived = purchasingLines.reduce(
+          (sum, line) => sum + Math.max(0, line.receivedQuantity),
+          0,
+        );
+        const nextPurchasingStatus =
+          totalReceived <= 0
+            ? WmsPurchasingBatchStatus.RECEIVING_READY
+            : totalReceived >= totalExpected
+              ? WmsPurchasingBatchStatus.STOCKED
+              : WmsPurchasingBatchStatus.RECEIVING;
+
+        await tx.wmsPurchasingBatch.update({
+          where: { id: batch.purchasingBatchId },
+          data: {
+            status: nextPurchasingStatus,
+            ...(actorId ? { updatedById: actorId } : {}),
+          },
+        });
+      }
+
+      const nextNotes = batch.notes
+        ? `${batch.notes}\nVoid: ${reason}${notes ? ` · ${notes}` : ''}`
+        : `Void: ${reason}${notes ? ` · ${notes}` : ''}`;
+
+      const updatedBatch = await tx.wmsReceivingBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: WmsReceivingBatchStatus.CANCELED,
+          completedAt: null,
+          notes: nextNotes,
+          ...(actorId ? { updatedById: actorId } : {}),
+        },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+          updatedAt: true,
+        },
+      });
+
+      return updatedBatch;
+    });
+
+    return {
+      voidedUnitCount: unitIds.length,
       batch: result,
     };
   }

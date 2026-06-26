@@ -4,6 +4,7 @@ import type {
   CreateWmsReceivingBatchInput,
   GetWmsReceivingOverviewParams,
   ResetWmsReceivingPutawayInput,
+  VoidWmsReceivingBatchInput,
   WmsReceivingBatchDetail,
   WmsReceivingBatchLabels,
   WmsReceivingPutawayOptionsResponse,
@@ -125,6 +126,26 @@ export async function resetWmsReceivingPutaway(
       updatedAt: string;
       totalUnits: number;
       putAwayUnits: number;
+    };
+  };
+}
+
+export async function voidWmsReceivingBatch(
+  id: string,
+  input: VoidWmsReceivingBatchInput,
+  tenantId?: string,
+) {
+  const response = await apiClient.post(`/wms/receiving/${id}/void`, input, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as {
+    voidedUnitCount: number;
+    batch: {
+      id: string;
+      code: string;
+      status: string;
+      updatedAt: string;
     };
   };
 }

@@ -7,6 +7,7 @@ import { CreateWmsReceivingBatchDto } from './dto/create-wms-receiving-batch.dto
 import { GetWmsReceivingOverviewDto } from './dto/get-wms-receiving-overview.dto';
 import { RecordWmsReceivingBatchLabelPrintDto } from './dto/record-wms-receiving-batch-label-print.dto';
 import { ResetWmsReceivingPutawayDto } from './dto/reset-wms-receiving-putaway.dto';
+import { VoidWmsReceivingBatchDto } from './dto/void-wms-receiving-batch.dto';
 import { WmsReceivingService } from './wms-receiving.service';
 
 @Controller('wms/receiving')
@@ -75,5 +76,15 @@ export class WmsReceivingController {
     @Query('tenantId') tenantId?: string,
   ) {
     return this.wmsReceivingService.resetPutawayToStage(id, body, tenantId);
+  }
+
+  @Post(':id/void')
+  @Permissions('wms.inventory.delete')
+  async voidBatch(
+    @Param('id') id: string,
+    @Body() body: VoidWmsReceivingBatchDto,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.wmsReceivingService.voidBatch(id, body, tenantId);
   }
 }

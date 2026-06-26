@@ -10,6 +10,7 @@ import {
   WMS_RECEIVING_CREATE_BATCH_PERMISSIONS,
   WMS_RECEIVING_MANUAL_INPUT_PERMISSIONS,
   WMS_RECEIVING_PRINT_LABELS_PERMISSIONS,
+  WMS_INVENTORY_DELETE_PERMISSIONS,
   WMS_TRANSFER_PUTAWAY_PERMISSIONS,
 } from '@/lib/wms-permissions';
 import { fetchWmsProductsOverview } from '../../products/_services/products.service';
@@ -22,12 +23,13 @@ import {
   fetchWmsReceivingPutawayOptions,
   recordWmsReceivingBatchLabelPrint,
   resetWmsReceivingPutaway,
+  voidWmsReceivingBatch,
 } from '../_services/receiving.service';
 import type {
   AssignWmsReceivingPutawayInput,
   CreateWmsReceivingBatchInput,
   ResetWmsReceivingPutawayInput,
-  WmsReceivingBatchLabels,
+  VoidWmsReceivingBatchInput,
   WmsReceivingBatchRow,
   WmsReceivablePurchasingBatch,
 } from '../_types/receiving';
@@ -369,6 +371,37 @@ export function useReceivingController() {
     },
   });
 
+  const voidBatchMutation = useMutation({
+    mutationFn: (input: { batchId: string; payload: VoidWmsReceivingBatchInput; tenantId?: string }) =>
+      voidWmsReceivingBatch(
+        input.batchId,
+        input.payload,
+        input.tenantId ?? selectedTenantId,
+      ),
+    onSuccess: async (result, variables) => {
+      setBanner({
+        tone: 'success',
+        message: `${result.batch.code} voided. ${result.voidedUnitCount.toLocaleString()} staged units archived.`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['wms-receiving-overview'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['wms-receiving-batch', variables.batchId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['wms-receiving-batch-labels', variables.batchId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['wms-receiving-putaway-options', variables.batchId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['wms-receiving-transfer-batch', variables.batchId],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['wms-inventory-overview'] }),
+      ]);
+    },
+  });
+
   const errorMessage = useMemo(() => {
     if (!overviewQuery.error) {
       return null;
@@ -520,6 +553,48 @@ export function useReceivingController() {
     }
   }
 
+  async function voidReceivingBatch(batch: WmsReceivingBatchRow) {
+    if (batch.status !== 'STAGED') {
+      setBanner({
+        tone: 'error',
+        message: 'Only staged receiving batches can be voided.',
+      });
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const reason = window.prompt(`Reason for voiding ${batch.code}?`);
+    const cleanReason = reason?.trim();
+    if (!cleanReason) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Void ${batch.code} and archive ${batch.unitCount.toLocaleString()} staged units? This cannot be undone.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await voidBatchMutation.mutateAsync({
+        batchId: batch.id,
+        tenantId: batch.tenantId,
+        payload: {
+          reason: cleanReason,
+        },
+      });
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: getErrorMessage(error),
+      });
+    }
+  }
+
   const modalTotalUnits = useMemo(() => {
     if (!receiveModal.batch) {
       return 0;
@@ -574,6 +649,11 @@ export function useReceivingController() {
       user?.role ?? null,
       permissions,
       WMS_TRANSFER_PUTAWAY_PERMISSIONS,
+    ),
+    canVoidReceivingBatch: hasAnyAdminPermission(
+      user?.role ?? null,
+      permissions,
+      WMS_INVENTORY_DELETE_PERMISSIONS,
     ),
     selectedTenantId,
     selectedStoreId,
@@ -683,6 +763,7 @@ export function useReceivingController() {
     isLoadingPutawayOptions: putawayOptionsQuery.isLoading || putawayOptionsQuery.isFetching,
     isAssigningPutaway: assignPutawayMutation.isPending,
     isResettingPutaway: resetPutawayMutation.isPending,
+    isVoidingReceivingBatch: voidBatchMutation.isPending,
     openLabelsModal,
     closeLabelsModal,
     selectTransferBatch,
@@ -690,6 +771,7 @@ export function useReceivingController() {
     assignPutawayUnits,
     assignPutawayUnit,
     resetPutawayUnits,
+    voidReceivingBatch,
     submitReceive,
     submitManualReceive,
     isSubmitting: createBatchMutation.isPending,

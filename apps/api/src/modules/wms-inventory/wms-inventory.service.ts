@@ -505,6 +505,7 @@ export class WmsInventoryService {
       status: {
         notIn: [
           WmsInventoryUnitStatus.DISPATCHED,
+          WmsInventoryUnitStatus.DAMAGED,
           WmsInventoryUnitStatus.LOST,
           WmsInventoryUnitStatus.ARCHIVED,
         ],

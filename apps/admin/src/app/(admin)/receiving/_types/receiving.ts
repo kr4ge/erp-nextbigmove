@@ -75,6 +75,11 @@ export type WmsReceivingBatchRow = {
   updatedAt: string;
 };
 
+export type VoidWmsReceivingBatchInput = {
+  reason: string;
+  notes?: string;
+};
+
 export type WmsReceivingBatchLabels = {
   id: string;
   tenantId: string;
