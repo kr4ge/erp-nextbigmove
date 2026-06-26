@@ -17,6 +17,7 @@ type ForecastTableProps = {
 
 export function ForecastTable({ data, isLoading }: ForecastTableProps) {
   const hasSelectedStores = (data?.context.selectedStoreIds.length ?? 0) > 0;
+  const hasSnapshot = Boolean(data?.snapshot);
   const groupedTables = data ? buildStoreGroups(data.rows) : [];
 
   return (
@@ -25,7 +26,9 @@ export function ForecastTable({ data, isLoading }: ForecastTableProps) {
       icon={<FileSpreadsheet className="panel-icon" />}
       meta={
         data
-          ? `${groupedTables.length.toLocaleString()} shops · ${data.rows.length.toLocaleString()} rows · Generated ${formatGeneratedAt(data.generatedAt)}`
+          ? hasSnapshot
+            ? `${groupedTables.length.toLocaleString()} shops · ${data.rows.length.toLocaleString()} rows · Snapshot v${data.snapshot?.version} · Generated ${formatGeneratedAt(data.generatedAt)}`
+            : `${groupedTables.length.toLocaleString()} shops · ${data.rows.length.toLocaleString()} rows · No saved snapshot`
           : undefined
       }
     >
@@ -90,11 +93,17 @@ export function ForecastTable({ data, isLoading }: ForecastTableProps) {
       ) : (
         <div className="rounded-xl border border-dashed border-border bg-secondary/20 px-4 py-10 text-center">
           <p className="text-sm font-semibold text-foreground">
-            {hasSelectedStores ? 'No forecast rows' : 'Select at least one store'}
+            {hasSelectedStores
+              ? hasSnapshot
+                ? 'No forecast rows'
+                : 'No saved snapshot'
+              : 'Select at least one store'}
           </p>
           <p className="mt-2 text-sm-custom text-muted">
             {hasSelectedStores
-              ? 'The selected stores do not have forecastable stock, orders, sales, or returns for this cycle.'
+              ? hasSnapshot
+                ? 'This generated snapshot does not have forecastable stock, orders, sales, or returns for this cycle.'
+                : 'Generate this cycle after selecting stores to save the forecast snapshot.'
               : 'Pick one or more stores to generate per-shop forecast rows.'}
           </p>
         </div>

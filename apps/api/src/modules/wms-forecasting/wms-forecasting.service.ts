@@ -5,6 +5,7 @@ import {
   TenantStatus,
   WmsInventoryUnitStatus,
 } from '@prisma/client';
+import { createHash } from 'crypto';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { GetWmsForecastingDto } from './dto/get-wms-forecasting.dto';
@@ -68,6 +69,71 @@ type ForecastRowDraft = {
   returning: number;
 };
 
+type ForecastRow = {
+  rowId: string;
+  storeId: string | null;
+  storeName: string;
+  tenantId: string | null;
+  tenantName: string | null;
+  shopId: string | null;
+  variationId: string;
+  productId: string | null;
+  productName: string;
+  productDisplayId: string | null;
+  actualStock: number;
+  pendingOrders: number;
+  remainingStocks: number;
+  past3DaySales: number;
+  avgDailySales: number;
+  forecastedDemand: number;
+  safetyStock: number;
+  suggestedOrderQty: number;
+  daysOfStockLeft: number | null;
+  status: {
+    key: 'NO_SALES' | 'REORDER_NOW' | 'LOW_STOCK' | 'ADEQUATE';
+    label: string;
+  };
+  returning: number;
+};
+
+type ForecastContextStore = {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string | null;
+  shopId: string;
+  name: string;
+};
+
+type ForecastResponse = {
+  context: {
+    activeTenantId: string | null;
+    activeTenantName: string | null;
+    selectedStoreIds: string[];
+    stores: ForecastContextStore[];
+    cycleDate: string;
+    cycleWeekday: ForecastCycle['cycleWeekday'];
+    forecastDates: string[];
+    daysForecasted: number;
+    salesWindow: ForecastCycle['salesWindow'];
+    safetyStockPct: number;
+    reorderTriggerDays: number;
+  };
+  rows: ForecastRow[];
+  totals: ReturnType<WmsForecastingService['buildTotals']>;
+  generatedAt: string;
+  snapshot: {
+    id: string;
+    version: number;
+    generatedAt: string;
+    generatedBy: {
+      id: string;
+      email: string;
+      name: string | null;
+    } | null;
+  } | null;
+};
+
 @Injectable()
 export class WmsForecastingService {
   constructor(
@@ -76,6 +142,158 @@ export class WmsForecastingService {
   ) {}
 
   async getForecast(query: GetWmsForecastingDto) {
+    const snapshotLookup = await this.resolveSnapshotLookup(query);
+
+    if (snapshotLookup.selectedStoreIds.length === 0) {
+      return this.buildEmptyResponse(snapshotLookup);
+    }
+
+    const snapshot = await this.prisma.wmsForecastSnapshot.findFirst({
+      where: {
+        scopeKey: snapshotLookup.scopeKey,
+        cycleDate: snapshotLookup.cycle.cycleDate,
+        safetyStockPct: snapshotLookup.safetyStockPct,
+        reorderTriggerDays: snapshotLookup.reorderTriggerDays,
+      },
+      include: {
+        rows: {
+          orderBy: [
+            { tenantName: 'asc' },
+            { storeName: 'asc' },
+            { suggestedOrderQty: 'desc' },
+            { productName: 'asc' },
+          ],
+        },
+        generatedBy: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: [
+        { version: 'desc' },
+        { generatedAt: 'desc' },
+      ],
+    });
+
+    if (!snapshot) {
+      return this.buildEmptyResponse(snapshotLookup);
+    }
+
+    return this.mapSnapshotToResponse(snapshot, snapshotLookup);
+  }
+
+  async generateForecast(query: GetWmsForecastingDto) {
+    const liveForecast = await this.calculateLiveForecast(query);
+
+    if (liveForecast.context.selectedStoreIds.length === 0) {
+      throw new BadRequestException('Select at least one store before generating a forecast snapshot');
+    }
+
+    const scopeKey = this.buildScopeKey(liveForecast.context.selectedStoreIds);
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+
+    const snapshot = await this.prisma.$transaction(async (tx) => {
+      const latest = await tx.wmsForecastSnapshot.findFirst({
+        where: {
+          scopeKey,
+          cycleDate: liveForecast.context.cycleDate,
+        },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+      const version = (latest?.version ?? 0) + 1;
+
+      return tx.wmsForecastSnapshot.create({
+        data: {
+          tenantId: liveForecast.context.activeTenantId,
+          scopeKey,
+          storeIds: liveForecast.context.selectedStoreIds,
+          selectedStores: liveForecast.context.stores,
+          cycleDate: liveForecast.context.cycleDate,
+          cycleWeekday: liveForecast.context.cycleWeekday,
+          forecastDates: liveForecast.context.forecastDates,
+          salesWindowStartDate: liveForecast.context.salesWindow.startDate,
+          salesWindowEndDate: liveForecast.context.salesWindow.endDate,
+          daysForecasted: liveForecast.context.daysForecasted,
+          safetyStockPct: liveForecast.context.safetyStockPct,
+          reorderTriggerDays: liveForecast.context.reorderTriggerDays,
+          version,
+          totalActualStock: liveForecast.totals.actualStock,
+          totalPendingOrders: liveForecast.totals.pendingOrders,
+          totalRemainingStocks: liveForecast.totals.remainingStocks,
+          totalPast3DaySales: liveForecast.totals.past3DaySales,
+          totalAvgDailySales: liveForecast.totals.avgDailySales,
+          totalForecastDemand: liveForecast.totals.forecastedDemand,
+          totalSafetyStock: liveForecast.totals.safetyStock,
+          totalSuggestedOrder: liveForecast.totals.suggestedOrderQty,
+          totalReturning: liveForecast.totals.returning,
+          generatedById: actorId,
+          rows: {
+            create: liveForecast.rows.map((row) => ({
+              tenantId: row.tenantId,
+              storeId: row.storeId,
+              storeName: row.storeName,
+              tenantName: row.tenantName,
+              shopId: row.shopId,
+              rowId: row.rowId,
+              variationId: row.variationId,
+              productId: row.productId,
+              productName: row.productName,
+              productDisplayId: row.productDisplayId,
+              actualStock: row.actualStock,
+              pendingOrders: row.pendingOrders,
+              remainingStocks: row.remainingStocks,
+              past3DaySales: row.past3DaySales,
+              avgDailySales: row.avgDailySales,
+              forecastedDemand: row.forecastedDemand,
+              safetyStock: row.safetyStock,
+              suggestedOrderQty: row.suggestedOrderQty,
+              daysOfStockLeft: row.daysOfStockLeft,
+              statusKey: row.status.key,
+              statusLabel: row.status.label,
+              returning: row.returning,
+            })),
+          },
+        },
+        include: {
+          rows: {
+            orderBy: [
+              { tenantName: 'asc' },
+              { storeName: 'asc' },
+              { suggestedOrderQty: 'desc' },
+              { productName: 'asc' },
+            ],
+          },
+          generatedBy: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+    });
+
+    return this.mapSnapshotToResponse(snapshot, {
+      cycle: this.resolveForecastCycle(liveForecast.context.cycleDate),
+      safetyStockPct: liveForecast.context.safetyStockPct,
+      reorderTriggerDays: liveForecast.context.reorderTriggerDays,
+      scope: {
+        activeTenantId: liveForecast.context.activeTenantId,
+        stores: [],
+      },
+      selectedStoreIds: liveForecast.context.selectedStoreIds,
+      scopeKey,
+    });
+  }
+
+  private async calculateLiveForecast(query: GetWmsForecastingDto): Promise<ForecastResponse> {
     const safetyStockPct = query.safetyStockPct ?? DEFAULT_SAFETY_STOCK_PCT;
     const reorderTriggerDays = query.reorderTriggerDays ?? DEFAULT_REORDER_TRIGGER_DAYS;
     const cycle = this.resolveForecastCycle(query.cycleDate);
@@ -83,31 +301,14 @@ export class WmsForecastingService {
     const selectedStoreIds = Array.from(new Set(query.storeIds ?? []));
 
     if (selectedStoreIds.length === 0) {
-      return {
-        context: {
-          activeTenantId: scope.activeTenantId,
-          activeTenantName: this.resolveActiveTenantName(scope),
-          selectedStoreIds: [],
-          stores: scope.stores.map((store) => ({
-            id: store.id,
-            tenantId: store.tenantId,
-            tenantName: store.tenant.name,
-            tenantSlug: store.tenant.slug,
-            shopId: store.shopId,
-            name: store.shopName || store.name,
-          })),
-          cycleDate: cycle.cycleDate,
-          cycleWeekday: cycle.cycleWeekday,
-          forecastDates: cycle.forecastDates,
-          daysForecasted: cycle.daysForecasted,
-          salesWindow: cycle.salesWindow,
-          safetyStockPct,
-          reorderTriggerDays,
-        },
-        rows: [],
-        totals: this.buildTotals([]),
-        generatedAt: new Date().toISOString(),
-      };
+      return this.buildEmptyResponse({
+        cycle,
+        safetyStockPct,
+        reorderTriggerDays,
+        scope,
+        selectedStoreIds,
+        scopeKey: this.buildScopeKey(selectedStoreIds),
+      });
     }
 
     const storeIds = scope.stores.map((store) => store.id);
@@ -178,18 +379,11 @@ export class WmsForecastingService {
     });
 
     return {
-        context: {
-          activeTenantId: scope.activeTenantId,
-          activeTenantName: this.resolveActiveTenantName(scope),
-          selectedStoreIds,
-          stores: scope.stores.map((store) => ({
-            id: store.id,
-            tenantId: store.tenantId,
-          tenantName: store.tenant.name,
-          tenantSlug: store.tenant.slug,
-          shopId: store.shopId,
-          name: store.shopName || store.name,
-        })),
+      context: {
+        activeTenantId: scope.activeTenantId,
+        activeTenantName: this.resolveActiveTenantName(scope),
+        selectedStoreIds,
+        stores: this.mapScopeStores(scope.stores),
         cycleDate: cycle.cycleDate,
         cycleWeekday: cycle.cycleWeekday,
         forecastDates: cycle.forecastDates,
@@ -201,7 +395,166 @@ export class WmsForecastingService {
       rows,
       totals: this.buildTotals(rows),
       generatedAt: new Date().toISOString(),
+      snapshot: null,
     };
+  }
+
+  private async resolveSnapshotLookup(query: GetWmsForecastingDto) {
+    const safetyStockPct = query.safetyStockPct ?? DEFAULT_SAFETY_STOCK_PCT;
+    const reorderTriggerDays = query.reorderTriggerDays ?? DEFAULT_REORDER_TRIGGER_DAYS;
+    const cycle = this.resolveForecastCycle(query.cycleDate);
+    const scope = await this.resolveScope(query);
+    const selectedStoreIds = Array.from(new Set(query.storeIds ?? []));
+
+    return {
+      cycle,
+      safetyStockPct,
+      reorderTriggerDays,
+      scope,
+      selectedStoreIds,
+      scopeKey: this.buildScopeKey(selectedStoreIds),
+    };
+  }
+
+  private buildEmptyResponse(params: Awaited<ReturnType<WmsForecastingService['resolveSnapshotLookup']>>): ForecastResponse {
+    return {
+      context: {
+        activeTenantId: params.scope.activeTenantId,
+        activeTenantName: this.resolveActiveTenantName(params.scope),
+        selectedStoreIds: params.selectedStoreIds,
+        stores: this.mapScopeStores(params.scope.stores),
+        cycleDate: params.cycle.cycleDate,
+        cycleWeekday: params.cycle.cycleWeekday,
+        forecastDates: params.cycle.forecastDates,
+        daysForecasted: params.cycle.daysForecasted,
+        salesWindow: params.cycle.salesWindow,
+        safetyStockPct: params.safetyStockPct,
+        reorderTriggerDays: params.reorderTriggerDays,
+      },
+      rows: [],
+      totals: this.buildTotals([]),
+      generatedAt: new Date().toISOString(),
+      snapshot: null,
+    };
+  }
+
+  private mapSnapshotToResponse(
+    snapshot: Prisma.WmsForecastSnapshotGetPayload<{
+      include: {
+        rows: true;
+        generatedBy: {
+          select: {
+            id: true;
+            email: true;
+            firstName: true;
+            lastName: true;
+          };
+        };
+      };
+    }>,
+    params: Awaited<ReturnType<WmsForecastingService['resolveSnapshotLookup']>>,
+  ): ForecastResponse {
+    const selectedStores = this.parseSnapshotStores(snapshot.selectedStores, params.scope.stores);
+    const rows = snapshot.rows.map((row) => ({
+      rowId: row.rowId,
+      storeId: row.storeId,
+      storeName: row.storeName,
+      tenantId: row.tenantId,
+      tenantName: row.tenantName,
+      shopId: row.shopId,
+      variationId: row.variationId,
+      productId: row.productId,
+      productName: row.productName,
+      productDisplayId: row.productDisplayId,
+      actualStock: row.actualStock,
+      pendingOrders: row.pendingOrders,
+      remainingStocks: row.remainingStocks,
+      past3DaySales: row.past3DaySales,
+      avgDailySales: row.avgDailySales,
+      forecastedDemand: row.forecastedDemand,
+      safetyStock: row.safetyStock,
+      suggestedOrderQty: row.suggestedOrderQty,
+      daysOfStockLeft: row.daysOfStockLeft,
+      status: {
+        key: row.statusKey as ForecastRow['status']['key'],
+        label: row.statusLabel,
+      },
+      returning: row.returning,
+    }));
+
+    return {
+      context: {
+        activeTenantId: snapshot.tenantId,
+        activeTenantName: this.resolveActiveTenantNameFromStores(snapshot.tenantId, selectedStores),
+        selectedStoreIds: snapshot.storeIds,
+        stores: selectedStores,
+        cycleDate: snapshot.cycleDate,
+        cycleWeekday: snapshot.cycleWeekday as ForecastCycle['cycleWeekday'],
+        forecastDates: snapshot.forecastDates,
+        daysForecasted: snapshot.daysForecasted,
+        salesWindow: {
+          startDate: snapshot.salesWindowStartDate,
+          endDate: snapshot.salesWindowEndDate,
+        },
+        safetyStockPct: snapshot.safetyStockPct,
+        reorderTriggerDays: snapshot.reorderTriggerDays,
+      },
+      rows,
+      totals: {
+        actualStock: snapshot.totalActualStock,
+        pendingOrders: snapshot.totalPendingOrders,
+        remainingStocks: snapshot.totalRemainingStocks,
+        past3DaySales: snapshot.totalPast3DaySales,
+        avgDailySales: snapshot.totalAvgDailySales,
+        forecastedDemand: snapshot.totalForecastDemand,
+        safetyStock: snapshot.totalSafetyStock,
+        suggestedOrderQty: snapshot.totalSuggestedOrder,
+        returning: snapshot.totalReturning,
+      },
+      generatedAt: snapshot.generatedAt.toISOString(),
+      snapshot: {
+        id: snapshot.id,
+        version: snapshot.version,
+        generatedAt: snapshot.generatedAt.toISOString(),
+        generatedBy: snapshot.generatedBy
+          ? {
+              id: snapshot.generatedBy.id,
+              email: snapshot.generatedBy.email,
+              name: this.formatUserName(snapshot.generatedBy.firstName, snapshot.generatedBy.lastName),
+            }
+          : null,
+      },
+    };
+  }
+
+  private parseSnapshotStores(value: Prisma.JsonValue, fallbackStores: ForecastScopeStore[]) {
+    if (Array.isArray(value)) {
+      return value.filter((entry): entry is ForecastContextStore => (
+        typeof entry === 'object'
+        && entry !== null
+        && 'id' in entry
+        && 'tenantId' in entry
+        && 'name' in entry
+      ));
+    }
+
+    return this.mapScopeStores(fallbackStores);
+  }
+
+  private mapScopeStores(stores: ForecastScopeStore[]): ForecastContextStore[] {
+    return stores.map((store) => ({
+      id: store.id,
+      tenantId: store.tenantId,
+      tenantName: store.tenant.name,
+      tenantSlug: store.tenant.slug,
+      shopId: store.shopId,
+      name: store.shopName || store.name,
+    }));
+  }
+
+  private buildScopeKey(storeIds: string[]) {
+    const normalizedStoreIds = Array.from(new Set(storeIds)).sort();
+    return createHash('sha256').update(normalizedStoreIds.join('|')).digest('hex');
   }
 
   private async resolveScope(query: GetWmsForecastingDto): Promise<ForecastScope> {
@@ -487,7 +840,7 @@ export class WmsForecastingService {
     daysOfStockLeft: number | null,
     avgDailySales: number,
     reorderTriggerDays: number,
-  ) {
+  ): ForecastRow['status'] {
     if (avgDailySales <= 0 || daysOfStockLeft === null) {
       return {
         key: 'NO_SALES',
@@ -515,7 +868,7 @@ export class WmsForecastingService {
     };
   }
 
-  private buildTotals(rows: ReturnType<WmsForecastingService['mapForecastRow']>[]) {
+  private buildTotals(rows: ForecastRow[]) {
     return rows.reduce(
       (totals, row) => ({
         actualStock: totals.actualStock + row.actualStock,
@@ -570,6 +923,19 @@ export class WmsForecastingService {
     }
 
     return scope.stores.find((store) => store.tenantId === scope.activeTenantId)?.tenant.name ?? null;
+  }
+
+  private resolveActiveTenantNameFromStores(tenantId: string | null, stores: ForecastContextStore[]) {
+    if (!tenantId) {
+      return null;
+    }
+
+    return stores.find((store) => store.tenantId === tenantId)?.tenantName ?? null;
+  }
+
+  private formatUserName(firstName: string | null, lastName: string | null) {
+    const name = [firstName, lastName].filter(Boolean).join(' ').trim();
+    return name.length > 0 ? name : null;
   }
 
   private resolveForecastCycle(cycleDate: string): ForecastCycle {

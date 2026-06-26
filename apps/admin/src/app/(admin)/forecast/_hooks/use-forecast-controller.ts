@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchWmsForecasting } from '../_services/forecast.service';
+import { fetchWmsForecasting, generateWmsForecasting } from '../_services/forecast.service';
 import type {
   WmsForecastStoreOption,
   WmsForecastTenantOption,
@@ -38,6 +38,7 @@ export function useForecastController() {
   const [safetyStockPct, setSafetyStockPct] = useState(DEFAULT_SAFETY_STOCK_PCT);
   const [reorderTriggerDays, setReorderTriggerDays] = useState(DEFAULT_REORDER_TRIGGER_DAYS);
   const [isLoading, setIsLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cycleSnapshots = useMemo(() => getForecastCycleSnapshots(2), []);
 
@@ -145,6 +146,65 @@ export function useForecastController() {
     selectedTenantId,
   ]);
 
+  const generateSnapshot = useCallback(async () => {
+    if (!isForecastCycleDate(cycleDate)) {
+      setError('Cycle date must be Monday, Wednesday, or Friday.');
+      return;
+    }
+
+    if (selectedStoreIds.length === 0) {
+      setError('Select at least one store before generating a forecast snapshot.');
+      return;
+    }
+
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setIsGenerating(true);
+    setError(null);
+
+    try {
+      const response = await generateWmsForecasting({
+        tenantId: selectedTenantId,
+        storeIds: selectedStoreIds,
+        cycleDate,
+        safetyStockPct,
+        reorderTriggerDays,
+      });
+
+      if (requestIdRef.current !== requestId) {
+        return;
+      }
+
+      setData(response);
+      setOptionMaps((current) => {
+        const nextStores = new Map(current.stores);
+        for (const store of response.context.stores) {
+          nextStores.set(store.id, store);
+        }
+
+        return {
+          stores: nextStores,
+        };
+      });
+    } catch (generateError) {
+      if (requestIdRef.current !== requestId) {
+        return;
+      }
+
+      setError(resolveErrorMessage(generateError));
+    } finally {
+      if (requestIdRef.current === requestId) {
+        setIsGenerating(false);
+      }
+    }
+  }, [
+    cycleDate,
+    reorderTriggerDays,
+    safetyStockPct,
+    selectedStoreIds,
+    selectedTenantId,
+  ]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -182,6 +242,7 @@ export function useForecastController() {
     data,
     error,
     isLoading,
+    isGenerating,
     selectedTenantId,
     selectedStoreIds,
     cycleDate,
@@ -197,6 +258,7 @@ export function useForecastController() {
     setSafetyStockPct,
     setReorderTriggerDays,
     refresh,
+    generateSnapshot,
   };
 }
 

@@ -82,6 +82,16 @@ export type WmsForecastingResponse = {
   rows: WmsForecastingRow[];
   totals: WmsForecastingTotals;
   generatedAt: string;
+  snapshot: {
+    id: string;
+    version: number;
+    generatedAt: string;
+    generatedBy: {
+      id: string;
+      email: string;
+      name: string | null;
+    } | null;
+  } | null;
 };
 
 export type GetWmsForecastingParams = {

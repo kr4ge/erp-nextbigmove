@@ -21,3 +21,19 @@ export async function fetchWmsForecasting(params: GetWmsForecastingParams) {
 
   return response.data as WmsForecastingResponse;
 }
+
+export async function generateWmsForecasting(params: GetWmsForecastingParams) {
+  const response = await apiClient.post('/wms/forecasting/generate', {
+    ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+    storeIds: params.storeIds ?? [],
+    cycleDate: params.cycleDate,
+    ...(params.safetyStockPct !== undefined
+      ? { safetyStockPct: params.safetyStockPct }
+      : {}),
+    ...(params.reorderTriggerDays !== undefined
+      ? { reorderTriggerDays: params.reorderTriggerDays }
+      : {}),
+  });
+
+  return response.data as WmsForecastingResponse;
+}

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
@@ -14,5 +14,11 @@ export class WmsForecastingController {
   @Permissions('wms.forecast.read')
   async getForecast(@Query() query: GetWmsForecastingDto) {
     return this.wmsForecastingService.getForecast(query);
+  }
+
+  @Post('generate')
+  @Permissions('wms.forecast.read')
+  async generateForecast(@Body() body: GetWmsForecastingDto) {
+    return this.wmsForecastingService.generateForecast(body);
   }
 }

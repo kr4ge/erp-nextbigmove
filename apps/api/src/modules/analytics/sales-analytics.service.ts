@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import * as dayjs from 'dayjs';
@@ -158,23 +159,21 @@ export class SalesAnalyticsService {
 
   private buildVolumeGrowthTrend(
     rows: Array<{
-      date: Date;
-      _sum: {
-        shippedCount: number | null;
-        deliveredCount: number | null;
-        rtsCount: number | null;
-      };
+      date: string;
+      shipped: number | null;
+      delivered: number | null;
+      rts: number | null;
     }>,
     startStr: string,
     endStr: string,
   ) {
     const byDate = new Map(
       rows.map((row) => [
-        dayjs.utc(row.date).format('YYYY-MM-DD'),
+        (row.date || '').toString(),
         {
-          shipped: this.toNumber(row._sum?.shippedCount),
-          delivered: this.toNumber(row._sum?.deliveredCount),
-          rts: this.toNumber(row._sum?.rtsCount),
+          shipped: this.toNumber(row.shipped),
+          delivered: this.toNumber(row.delivered),
+          rts: this.toNumber(row.rts),
         },
       ]),
     );
@@ -548,7 +547,7 @@ export class SalesAnalyticsService {
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
     const cacheTeamIds = effectiveTeamIds ? [...effectiveTeamIds].sort() : teamId ? [teamId] : [];
     const cacheKeyPayload = {
-      responseShapeVersion: 2,
+      responseShapeVersion: 3,
       tenantId,
       teamIds: cacheTeamIds,
       start: startStr,
@@ -566,6 +565,30 @@ export class SalesAnalyticsService {
       return cached;
     }
     this.logger.log(`CACHE MISS ${cacheKey}`);
+
+    const volumeGrowthWhere: Prisma.Sql[] = [
+      Prisma.sql`"tenantId" = ${tenantId}::uuid`,
+      Prisma.sql`"status" IS DISTINCT FROM 7`,
+    ];
+    if (Array.isArray(effectiveTeamIds)) {
+      if (effectiveTeamIds.length === 0) {
+        volumeGrowthWhere.push(Prisma.sql`1 = 0`);
+      } else {
+        volumeGrowthWhere.push(
+          Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`,
+        );
+      }
+    }
+    if (normalizedMappings.length > 0) {
+      const mappingConditions = normalizedMappings
+        .filter((m) => m !== this.normalize('__null__'))
+        .map((m) => Prisma.sql`LOWER(BTRIM(COALESCE("mapping", ''))) = LOWER(BTRIM(${m}))`);
+      if (includeNull) {
+        mappingConditions.push(Prisma.sql`"mapping" IS NULL`);
+      }
+      volumeGrowthWhere.push(Prisma.sql`(${Prisma.join(mappingConditions, ' OR ')})`);
+    }
+    const volumeGrowthWhereClause = Prisma.sql`WHERE ${Prisma.join(volumeGrowthWhere, ' AND ')}`;
 
     const [
       agg,
@@ -736,18 +759,71 @@ export class SalesAnalyticsService {
           status: 5,
         },
       }),
-      this.prisma.reconcileSales.groupBy({
-        by: ['date'],
-        where,
-        _sum: {
-          shippedCount: true,
-          deliveredCount: true,
-          rtsCount: true,
-        },
-        orderBy: {
-          date: 'asc',
-        },
-      }),
+      this.prisma.$queryRaw<Array<{ date: string; shipped: number; delivered: number; rts: number }>>(Prisma.sql`
+        WITH dates AS (
+          SELECT generate_series(${startStr}::date, ${endStr}::date, interval '1 day')::date AS d
+        ),
+        scoped_orders AS (
+          SELECT
+            id,
+            "statusHistory",
+            "deliveredAt",
+            "rtsAt"
+          FROM "pos_orders"
+          ${volumeGrowthWhereClause}
+        ),
+        shipped_events AS (
+          SELECT
+            so.id,
+            MIN((entry.value->>'updated_at')::timestamptz) AS shipped_at
+          FROM scoped_orders so
+          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(so."statusHistory"::jsonb, '[]'::jsonb)) AS entry(value)
+          WHERE entry.value->>'status' = '2'
+            AND COALESCE(entry.value->>'updated_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}'
+          GROUP BY so.id
+        ),
+        movement_events AS (
+          SELECT
+            (shipped_at AT TIME ZONE ${TIMEZONE})::date AS d,
+            'shipped'::text AS kind
+          FROM shipped_events
+          WHERE shipped_at IS NOT NULL
+
+          UNION ALL
+
+          SELECT
+            (("deliveredAt" AT TIME ZONE 'UTC') AT TIME ZONE ${TIMEZONE})::date AS d,
+            'delivered'::text AS kind
+          FROM scoped_orders
+          WHERE "deliveredAt" IS NOT NULL
+
+          UNION ALL
+
+          SELECT
+            (("rtsAt" AT TIME ZONE 'UTC') AT TIME ZONE ${TIMEZONE})::date AS d,
+            'rts'::text AS kind
+          FROM scoped_orders
+          WHERE "rtsAt" IS NOT NULL
+        ),
+        counts AS (
+          SELECT
+            d,
+            COUNT(*) FILTER (WHERE kind = 'shipped')::int AS shipped,
+            COUNT(*) FILTER (WHERE kind = 'delivered')::int AS delivered,
+            COUNT(*) FILTER (WHERE kind = 'rts')::int AS rts
+          FROM movement_events
+          WHERE d BETWEEN ${startStr}::date AND ${endStr}::date
+          GROUP BY d
+        )
+        SELECT
+          TO_CHAR(dates.d, 'YYYY-MM-DD') AS date,
+          COALESCE(counts.shipped, 0)::int AS shipped,
+          COALESCE(counts.delivered, 0)::int AS delivered,
+          COALESCE(counts.rts, 0)::int AS rts
+        FROM dates
+        LEFT JOIN counts ON counts.d = dates.d
+        ORDER BY dates.d
+      `),
       this.prisma.reconcileSales.findMany({
         where: {
           ...baseWhere,

@@ -75,6 +75,8 @@ model Tenant {
   wmsLabelPrintLogs                   WmsLabelPrintLog[]
   wmsStaffActivities                  WmsStaffActivity[]
   wmsInventoryCountSessions           WmsInventoryCountSession[]
+  wmsForecastSnapshots                WmsForecastSnapshot[]
+  wmsForecastSnapshotRows             WmsForecastSnapshotRow[]
   notificationStates                  NotificationState[]
   reconcileMarketing                  ReconcileMarketing[]
   reconcileSales                      ReconcileSales[]
@@ -362,6 +364,7 @@ model User {
   wmsBasketUnitsPicked                      WmsBasketUnit[]            @relation("WmsBasketUnitPickedBy")
   wmsBasketUnitsPacked                      WmsBasketUnit[]            @relation("WmsBasketUnitPackedBy")
   wmsBasketUnitsRemoved                     WmsBasketUnit[]            @relation("WmsBasketUnitRemovedBy")
+  wmsForecastSnapshotsGenerated             WmsForecastSnapshot[]      @relation("WmsForecastSnapshotGeneratedBy")
   wmsStaffAssignmentsManaged                WmsStaffAssignment[]       @relation("WmsStaffAssignmentAssignedBy")
   readNotificationStates                    NotificationState[]        @relation("NotificationStateReadBy")
 
@@ -500,6 +503,7 @@ model PosStore {
   wmsFulfillmentOrders    WmsFulfillmentOrder[]
   wmsBasketPickDemands    WmsBasketPickDemand[]
   wmsBasketUnits          WmsBasketUnit[]
+  wmsForecastSnapshotRows WmsForecastSnapshotRow[]
 
   @@index([tenantId])
   @@index([tenantId, teamId])
@@ -1994,6 +1998,80 @@ model WmsBasketUnit {
   @@index([fulfillmentLineId, status])
   @@index([sourceLocationId])
   @@map("wms_basket_units")
+}
+
+model WmsForecastSnapshot {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tenantId             String?  @db.Uuid
+  tenant               Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  scopeKey             String
+  storeIds             String[] @default([])
+  selectedStores       Json     @default("[]")
+  cycleDate            String
+  cycleWeekday         String
+  forecastDates        String[] @default([])
+  salesWindowStartDate String
+  salesWindowEndDate   String
+  daysForecasted       Int
+  safetyStockPct       Float
+  reorderTriggerDays   Float
+  version              Int
+  totalActualStock     Int      @default(0)
+  totalPendingOrders   Int      @default(0)
+  totalRemainingStocks Int      @default(0)
+  totalPast3DaySales   Int      @default(0)
+  totalAvgDailySales   Float    @default(0)
+  totalForecastDemand  Float    @default(0)
+  totalSafetyStock     Float    @default(0)
+  totalSuggestedOrder  Int      @default(0)
+  totalReturning       Int      @default(0)
+  generatedById        String?  @db.Uuid
+  generatedBy          User?    @relation("WmsForecastSnapshotGeneratedBy", fields: [generatedById], references: [id], onDelete: SetNull)
+  generatedAt          DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  rows WmsForecastSnapshotRow[]
+
+  @@unique([scopeKey, cycleDate, version])
+  @@index([tenantId, cycleDate, generatedAt])
+  @@index([scopeKey, cycleDate, generatedAt])
+  @@map("wms_forecast_snapshots")
+}
+
+model WmsForecastSnapshotRow {
+  id                String              @id @default(uuid()) @db.Uuid
+  snapshotId        String              @db.Uuid
+  snapshot          WmsForecastSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  tenantId          String?             @db.Uuid
+  tenant            Tenant?             @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  storeId           String?             @db.Uuid
+  store             PosStore?           @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  storeName         String
+  tenantName        String?
+  shopId            String?
+  rowId             String
+  variationId       String
+  productId         String?
+  productName       String
+  productDisplayId  String?
+  actualStock       Int                 @default(0)
+  pendingOrders     Int                 @default(0)
+  remainingStocks   Int                 @default(0)
+  past3DaySales     Int                 @default(0)
+  avgDailySales     Float               @default(0)
+  forecastedDemand  Float               @default(0)
+  safetyStock       Float               @default(0)
+  suggestedOrderQty Int                 @default(0)
+  daysOfStockLeft   Float?
+  statusKey         String
+  statusLabel       String
+  returning         Int                 @default(0)
+  createdAt         DateTime            @default(now())
+
+  @@index([snapshotId])
+  @@index([tenantId, storeId, variationId])
+  @@map("wms_forecast_snapshot_rows")
 }
 
 model WmsPickReservation {

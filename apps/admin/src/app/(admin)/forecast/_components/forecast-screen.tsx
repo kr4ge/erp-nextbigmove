@@ -17,17 +17,28 @@ export function ForecastScreen() {
     <WmsPageShell
       title="Forecast"
       breadcrumb="WMS Forecast"
-      description="Smart ordering forecast from live WMS and POS data."
+      description="Saved smart ordering snapshots from selected WMS stores."
       actions={
-        <button
-          type="button"
-          onClick={() => void controller.refresh()}
-          disabled={controller.isLoading}
-          className="btn btn-md btn-primary btn-icon"
-        >
-          <RefreshCw className={`h-4 w-4 ${controller.isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void controller.refresh()}
+            disabled={controller.isLoading || controller.isGenerating}
+            className="btn btn-md btn-secondary btn-icon"
+          >
+            <RefreshCw className={`h-4 w-4 ${controller.isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => void controller.generateSnapshot()}
+            disabled={controller.selectedStoreIds.length === 0 || controller.isGenerating}
+            className="btn btn-md btn-primary btn-icon"
+          >
+            <RefreshCw className={`h-4 w-4 ${controller.isGenerating ? 'animate-spin' : ''}`} />
+            {controller.data?.snapshot ? 'Regenerate' : 'Generate'}
+          </button>
+        </div>
       }
     >
       <div className="space-y-4">
