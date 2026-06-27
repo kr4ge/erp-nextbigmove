@@ -2600,18 +2600,7 @@ export class WmsFulfillmentSyncService {
         },
       },
     };
-
-    if (!params.posWarehouseRef) {
-      return baseWhere;
-    }
-
-    return {
-      ...baseWhere,
-      OR: [
-        { posWarehouseRef: params.posWarehouseRef },
-        { posWarehouseRef: null },
-      ],
-    };
+    return baseWhere;
   }
 
   private async countActiveDemandHeldQuantity(
