@@ -62,6 +62,11 @@ type GetAgingOrdersSummaryParams = {
   thresholdDays?: number;
 };
 
+type GetOrderStatusSummaryParams = {
+  dateLocal?: string;
+  shopIds?: string | string[];
+};
+
 type PosStoreAccessRow = {
   id: string;
   shopId: string;
@@ -122,6 +127,39 @@ type AgingOrdersSummaryRow = {
   waiting_pickup: number;
   shipped: number;
   rts: number;
+};
+
+type OrderStatusSummaryRow = {
+  shop_id: string;
+  shop_name: string;
+  total_orders: number;
+  new_orders: number;
+  restocking: number;
+  confirmed: number;
+  printed: number;
+  waiting_pickup: number;
+  shipped: number;
+  delivered: number;
+  returning: number;
+  returned: number;
+  cancelled: number;
+  deleted: number;
+};
+
+type OrderStatusSummaryQueryRow = {
+  shopId: string;
+  newOrders: number;
+  restockingOrders: number;
+  confirmedOrders: number;
+  printedOrders: number;
+  waitingPickupOrders: number;
+  shippedOrders: number;
+  deliveredOrders: number;
+  returningOrders: number;
+  returnedOrders: number;
+  cancelledOrders: number;
+  deletedOrders: number;
+  totalOrders: number;
 };
 
 type AgingOrdersBucketQueryRow = {
@@ -1286,6 +1324,101 @@ export class OrdersService {
       },
       generated_at: generatedAt,
       notification_cells: this.buildAgingOrdersNotificationCells(unreadStates),
+    };
+  }
+
+  async getOrderStatusSummary(params: GetOrderStatusSummaryParams) {
+    const generatedAt = new Date().toISOString();
+    const selectedDate = this.normalizeDateLocal(params.dateLocal, this.getTodayDateLocal());
+
+    const {
+      tenantId,
+      accessibleShopIds,
+      shopDisplayMap,
+    } = await this.resolveAccessibleAgingOrderScope();
+
+    const accessibleShopSet = new Set(accessibleShopIds);
+    const requestedShopIds = this.parseShopIds(params.shopIds);
+    const selectedShopIds = requestedShopIds.filter((shopId) => accessibleShopSet.has(shopId));
+    const effectiveShopIds = selectedShopIds.length > 0 ? selectedShopIds : accessibleShopIds;
+
+    const shops = accessibleShopIds.map((shopId) => ({
+      shop_id: shopId,
+      shop_name: shopDisplayMap.get(shopId) || shopId,
+    }));
+
+    if (effectiveShopIds.length === 0) {
+      return {
+        items: [] as OrderStatusSummaryRow[],
+        filters: { shops },
+        selected: {
+          date_local: selectedDate,
+          shop_ids: selectedShopIds,
+        },
+        generated_at: generatedAt,
+      };
+    }
+
+    const rows = await this.prisma.$queryRaw<OrderStatusSummaryQueryRow[]>(Prisma.sql`
+      SELECT
+        o."shopId" AS "shopId",
+        COUNT(*) FILTER (WHERE o."status" = 0)::int AS "newOrders",
+        COUNT(*) FILTER (WHERE o."status" = 11)::int AS "restockingOrders",
+        COUNT(*) FILTER (WHERE o."status" = 1)::int AS "confirmedOrders",
+        COUNT(*) FILTER (WHERE o."status" = 13)::int AS "printedOrders",
+        COUNT(*) FILTER (WHERE o."status" = 9)::int AS "waitingPickupOrders",
+        COUNT(*) FILTER (WHERE o."status" = 2)::int AS "shippedOrders",
+        COUNT(*) FILTER (WHERE o."status" = 3)::int AS "deliveredOrders",
+        COUNT(*) FILTER (WHERE o."status" = 4)::int AS "returningOrders",
+        COUNT(*) FILTER (WHERE o."status" = 5)::int AS "returnedOrders",
+        COUNT(*) FILTER (WHERE o."status" = 6)::int AS "cancelledOrders",
+        COUNT(*) FILTER (WHERE o."status" = 7)::int AS "deletedOrders",
+        COUNT(*) FILTER (WHERE o."status" IN (0, 11, 1, 13, 9, 2, 3, 4, 5, 6, 7))::int AS "totalOrders"
+      FROM "pos_orders" o
+      WHERE o."tenantId" = CAST(${tenantId} AS uuid)
+        AND o."dateLocal" = ${selectedDate}
+        AND o."shopId" IN (${Prisma.join(effectiveShopIds)})
+      GROUP BY o."shopId"
+      ORDER BY "totalOrders" DESC, o."shopId" ASC
+    `);
+
+    const countsByShopId = new Map(rows.map((row) => [row.shopId, row]));
+
+    const items = effectiveShopIds
+      .map((shopId) => {
+        const row = countsByShopId.get(shopId);
+        return {
+          shop_id: shopId,
+          shop_name: shopDisplayMap.get(shopId) || shopId,
+          total_orders: Number(row?.totalOrders || 0),
+          new_orders: Number(row?.newOrders || 0),
+          restocking: Number(row?.restockingOrders || 0),
+          confirmed: Number(row?.confirmedOrders || 0),
+          printed: Number(row?.printedOrders || 0),
+          waiting_pickup: Number(row?.waitingPickupOrders || 0),
+          shipped: Number(row?.shippedOrders || 0),
+          delivered: Number(row?.deliveredOrders || 0),
+          returning: Number(row?.returningOrders || 0),
+          returned: Number(row?.returnedOrders || 0),
+          cancelled: Number(row?.cancelledOrders || 0),
+          deleted: Number(row?.deletedOrders || 0),
+        };
+      })
+      .sort((left, right) => {
+        if (right.total_orders !== left.total_orders) {
+          return right.total_orders - left.total_orders;
+        }
+        return left.shop_name.localeCompare(right.shop_name);
+      });
+
+    return {
+      items,
+      filters: { shops },
+      selected: {
+        date_local: selectedDate,
+        shop_ids: selectedShopIds,
+      },
+      generated_at: generatedAt,
     };
   }
 

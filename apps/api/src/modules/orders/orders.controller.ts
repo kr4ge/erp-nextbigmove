@@ -15,6 +15,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { OrdersService } from './orders.service';
 import { GetAgingOrdersSummaryQueryDto } from './dto/get-aging-orders-summary-query.dto';
+import { GetOrderStatusSummaryQueryDto } from './dto/get-order-status-summary-query.dto';
 import { MarkAgingOrdersSummaryNotificationReadDto } from './dto/mark-aging-orders-summary-notification-read.dto';
 import { UpdateConfirmationOrderStatusDto } from './dto/update-confirmation-order-status.dto';
 
@@ -28,6 +29,15 @@ export class OrdersController {
   async getAgingOrdersSummary(@Query() query: GetAgingOrdersSummaryQueryDto) {
     return this.ordersService.getAgingOrdersSummary({
       thresholdDays: query.threshold_days,
+    });
+  }
+
+  @Get('summary/status')
+  @Permissions('orders.summary.read')
+  async getOrderStatusSummary(@Query() query: GetOrderStatusSummaryQueryDto) {
+    return this.ordersService.getOrderStatusSummary({
+      dateLocal: query.date_local,
+      shopIds: query.shop_id,
     });
   }
 

@@ -11,14 +11,17 @@ type UseOrderSummaryRealtimeOptions = {
   enabled?: boolean;
   onUpdate: (payload: OrderSummaryRealtimePayload) => void;
   tenantId?: string | null;
+  events?: string[];
 };
 
 export function useOrderSummaryRealtime({
   enabled = true,
   onUpdate,
   tenantId,
+  events = ['orders:summary:aging:updated'],
 }: UseOrderSummaryRealtimeOptions) {
   const onUpdateRef = useRef(onUpdate);
+  const eventsKey = events.join('|');
 
   useEffect(() => {
     onUpdateRef.current = onUpdate;
@@ -62,10 +65,14 @@ export function useOrderSummaryRealtime({
       onUpdateRef.current(payload);
     };
 
-    socket.on('orders:summary:aging:updated', handler);
+    events.forEach((eventName) => {
+      socket.on(eventName, handler);
+    });
 
     return () => {
-      socket.off('orders:summary:aging:updated', handler);
+      events.forEach((eventName) => {
+        socket.off(eventName, handler);
+      });
     };
-  }, [enabled, tenantId]);
+  }, [enabled, events, eventsKey, tenantId]);
 }

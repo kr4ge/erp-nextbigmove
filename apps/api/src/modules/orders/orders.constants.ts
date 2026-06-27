@@ -3,6 +3,7 @@ export const CONFIRMATION_UPDATE_STATUS_JOB = 'update-status';
 export const AGING_ORDERS_NOTIFICATION_ENTITY_TYPE = 'AGING_ORDER_BUCKET';
 export const AGING_ORDERS_NOTIFICATION_THRESHOLD_DAYS = 2;
 export const ORDERS_AGING_NOTIFICATION_UPDATED_EVENT = 'orders:summary:aging:updated';
+export const ORDERS_STATUS_SUMMARY_UPDATED_EVENT = 'orders:summary:status:updated';
 
 export const AGING_ORDERS_NOTIFICATION_BUCKET_KEYS = [
   'new_orders',

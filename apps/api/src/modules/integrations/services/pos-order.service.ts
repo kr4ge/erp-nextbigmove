@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -7,6 +7,8 @@ import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import { WmsFulfillmentSyncService } from '../../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../../wms-inventory/wms-inventory.service';
+import { WorkflowExecutionGateway } from '../../workflows/gateways/workflow-execution.gateway';
+import { ORDERS_STATUS_SUMMARY_UPDATED_EVENT } from '../../orders/orders.constants';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -87,7 +89,27 @@ export class PosOrderService {
     private readonly prisma: PrismaService,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
     private readonly wmsInventoryService: WmsInventoryService,
+    @Optional()
+    private readonly workflowExecutionGateway?: WorkflowExecutionGateway,
   ) {}
+
+  private emitOrderStatusSummaryUpdate(params: {
+    tenantId: string;
+    source: 'pos_upsert';
+    changedOrderCount: number;
+  }) {
+    this.workflowExecutionGateway?.emitTenantEvent(
+      params.tenantId,
+      null,
+      ORDERS_STATUS_SUMMARY_UPDATED_EVENT,
+      {
+        tenantId: params.tenantId,
+        source: params.source,
+        changedOrderCount: params.changedOrderCount,
+        updatedAt: new Date().toISOString(),
+      },
+    );
+  }
 
   private extractStatusTimestampFromHistory(
     status: number | null | undefined,
@@ -1031,6 +1053,18 @@ export class PosOrderService {
         tenantId,
         storeId,
         posOrderRefs: wmsCogsCandidates,
+      });
+    }
+
+    const changedSummaryCount = outcomes.filter((outcome) => (
+      outcome.upsertStatus === 'UPSERTED' || outcome.upsertStatus === 'DELETED'
+    )).length;
+
+    if (changedSummaryCount > 0) {
+      this.emitOrderStatusSummaryUpdate({
+        tenantId,
+        source: 'pos_upsert',
+        changedOrderCount: changedSummaryCount,
       });
     }
 

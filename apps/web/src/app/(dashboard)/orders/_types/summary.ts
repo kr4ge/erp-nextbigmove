@@ -37,3 +37,32 @@ export type AgingOrdersSummaryResponse = {
 export type AgingOrdersSummaryUnreadNotificationCountResponse = {
   count: number;
 };
+
+export type OrderStatusSummaryRow = {
+  shop_id: string;
+  shop_name: string;
+  total_orders: number;
+  new_orders: number;
+  restocking: number;
+  confirmed: number;
+  printed: number;
+  waiting_pickup: number;
+  shipped: number;
+  delivered: number;
+  returning: number;
+  returned: number;
+  cancelled: number;
+  deleted: number;
+};
+
+export type OrderStatusSummaryResponse = {
+  items: OrderStatusSummaryRow[];
+  filters: {
+    shops: ShopOption[];
+  };
+  selected: {
+    date_local: string;
+    shop_ids: string[];
+  };
+  generated_at: string;
+};
