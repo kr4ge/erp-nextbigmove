@@ -2196,6 +2196,7 @@ export class WmsInventoryService {
       for (const unit of units) {
         await this.releaseOrphanBasketUnitHoldsTx(tx, {
           unit,
+          nextStatus: body.targetStatus,
           actorId,
           now,
         });
@@ -2441,6 +2442,7 @@ export class WmsInventoryService {
 
       await this.releaseOrphanBasketUnitHoldsTx(tx, {
         unit,
+        nextStatus: WmsInventoryUnitStatus.ARCHIVED,
         actorId,
         now,
       });
@@ -3915,13 +3917,15 @@ export class WmsInventoryService {
           fulfillmentLineId: string | null;
         }>;
       };
+      nextStatus?: WmsInventoryUnitStatus;
       actorId: string | null;
       now: Date;
     },
   ) {
+    const effectiveStatus = params.nextStatus ?? params.unit.status;
     if (
-      params.unit.status === WmsInventoryUnitStatus.PICKED
-      || params.unit.status === WmsInventoryUnitStatus.PACKED
+      effectiveStatus === WmsInventoryUnitStatus.PICKED
+      || effectiveStatus === WmsInventoryUnitStatus.PACKED
     ) {
       return 0;
     }
