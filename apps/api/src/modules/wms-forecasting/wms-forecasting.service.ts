@@ -22,6 +22,7 @@ const DEFAULT_REORDER_TRIGGER_DAYS = 4;
 const DEFAULT_PAST_SALES_WINDOW_DAYS = 3;
 const PENDING_POS_STATUSES = [0, 1, 12];
 const RETURNING_POS_STATUS = 4;
+const EXCLUDED_PAST_SALES_POS_STATUSES = [7];
 const STOCK_STATUSES = [
   WmsInventoryUnitStatus.PUTAWAY,
   WmsInventoryUnitStatus.PICKED,
@@ -349,6 +350,7 @@ export class WmsForecastingService {
         status: { in: PENDING_POS_STATUSES },
       }),
       this.getScopedPosOrders(scope, {
+        status: { notIn: EXCLUDED_PAST_SALES_POS_STATUSES },
         dateLocal: {
           gte: cycle.salesWindow.startDate,
           lte: cycle.salesWindow.endDate,
