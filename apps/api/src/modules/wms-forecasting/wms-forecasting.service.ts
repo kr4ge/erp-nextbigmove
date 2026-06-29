@@ -19,6 +19,7 @@ import {
 
 const DEFAULT_SAFETY_STOCK_PCT = 20;
 const DEFAULT_REORDER_TRIGGER_DAYS = 4;
+const DEFAULT_PAST_SALES_WINDOW_DAYS = 3;
 const PENDING_POS_STATUSES = [0, 1, 12];
 const RETURNING_POS_STATUS = 4;
 const STOCK_STATUSES = [
@@ -31,6 +32,7 @@ type ForecastCycle = {
   cycleDate: string;
   cycleWeekday: 'MONDAY' | 'WEDNESDAY' | 'FRIDAY';
   daysForecasted: number;
+  pastSalesWindowDays: number;
   forecastDates: string[];
   salesWindow: {
     startDate: string;
@@ -115,6 +117,7 @@ type ForecastResponse = {
     cycleWeekday: ForecastCycle['cycleWeekday'];
     forecastDates: string[];
     daysForecasted: number;
+    pastSalesWindowDays: number;
     salesWindow: ForecastCycle['salesWindow'];
     safetyStockPct: number;
     reorderTriggerDays: number;
@@ -152,6 +155,7 @@ export class WmsForecastingService {
       where: {
         scopeKey: snapshotLookup.scopeKey,
         cycleDate: snapshotLookup.cycle.cycleDate,
+        pastSalesWindowDays: snapshotLookup.pastSalesWindowDays,
         safetyStockPct: snapshotLookup.safetyStockPct,
         reorderTriggerDays: snapshotLookup.reorderTriggerDays,
       },
@@ -218,6 +222,7 @@ export class WmsForecastingService {
           forecastDates: liveForecast.context.forecastDates,
           salesWindowStartDate: liveForecast.context.salesWindow.startDate,
           salesWindowEndDate: liveForecast.context.salesWindow.endDate,
+          pastSalesWindowDays: liveForecast.context.pastSalesWindowDays,
           daysForecasted: liveForecast.context.daysForecasted,
           safetyStockPct: liveForecast.context.safetyStockPct,
           reorderTriggerDays: liveForecast.context.reorderTriggerDays,
@@ -281,7 +286,11 @@ export class WmsForecastingService {
     });
 
     return this.mapSnapshotToResponse(snapshot, {
-      cycle: this.resolveForecastCycle(liveForecast.context.cycleDate),
+      cycle: this.resolveForecastCycle(
+        liveForecast.context.cycleDate,
+        liveForecast.context.pastSalesWindowDays,
+      ),
+      pastSalesWindowDays: liveForecast.context.pastSalesWindowDays,
       safetyStockPct: liveForecast.context.safetyStockPct,
       reorderTriggerDays: liveForecast.context.reorderTriggerDays,
       scope: {
@@ -296,13 +305,15 @@ export class WmsForecastingService {
   private async calculateLiveForecast(query: GetWmsForecastingDto): Promise<ForecastResponse> {
     const safetyStockPct = query.safetyStockPct ?? DEFAULT_SAFETY_STOCK_PCT;
     const reorderTriggerDays = query.reorderTriggerDays ?? DEFAULT_REORDER_TRIGGER_DAYS;
-    const cycle = this.resolveForecastCycle(query.cycleDate);
+    const pastSalesWindowDays = query.pastSalesWindowDays ?? DEFAULT_PAST_SALES_WINDOW_DAYS;
+    const cycle = this.resolveForecastCycle(query.cycleDate, pastSalesWindowDays);
     const scope = await this.resolveScope(query);
     const selectedStoreIds = Array.from(new Set(query.storeIds ?? []));
 
     if (selectedStoreIds.length === 0) {
       return this.buildEmptyResponse({
         cycle,
+        pastSalesWindowDays,
         safetyStockPct,
         reorderTriggerDays,
         scope,
@@ -336,7 +347,6 @@ export class WmsForecastingService {
       this.getActualStockGroups(scope),
       this.getScopedPosOrders(scope, {
         status: { in: PENDING_POS_STATUSES },
-        dateLocal: cycle.cycleDate,
       }),
       this.getScopedPosOrders(scope, {
         dateLocal: {
@@ -374,6 +384,7 @@ export class WmsForecastingService {
       pastSalesByVariation,
       returningByVariation,
       daysForecasted: cycle.daysForecasted,
+      pastSalesWindowDays: cycle.pastSalesWindowDays,
       safetyStockPct,
       reorderTriggerDays,
     });
@@ -387,10 +398,11 @@ export class WmsForecastingService {
         cycleDate: cycle.cycleDate,
         cycleWeekday: cycle.cycleWeekday,
         forecastDates: cycle.forecastDates,
-        daysForecasted: cycle.daysForecasted,
-        salesWindow: cycle.salesWindow,
-        safetyStockPct,
-        reorderTriggerDays,
+      daysForecasted: cycle.daysForecasted,
+      pastSalesWindowDays: cycle.pastSalesWindowDays,
+      salesWindow: cycle.salesWindow,
+      safetyStockPct,
+      reorderTriggerDays,
       },
       rows,
       totals: this.buildTotals(rows),
@@ -402,12 +414,14 @@ export class WmsForecastingService {
   private async resolveSnapshotLookup(query: GetWmsForecastingDto) {
     const safetyStockPct = query.safetyStockPct ?? DEFAULT_SAFETY_STOCK_PCT;
     const reorderTriggerDays = query.reorderTriggerDays ?? DEFAULT_REORDER_TRIGGER_DAYS;
-    const cycle = this.resolveForecastCycle(query.cycleDate);
+    const pastSalesWindowDays = query.pastSalesWindowDays ?? DEFAULT_PAST_SALES_WINDOW_DAYS;
+    const cycle = this.resolveForecastCycle(query.cycleDate, pastSalesWindowDays);
     const scope = await this.resolveScope(query);
     const selectedStoreIds = Array.from(new Set(query.storeIds ?? []));
 
     return {
       cycle,
+      pastSalesWindowDays,
       safetyStockPct,
       reorderTriggerDays,
       scope,
@@ -427,6 +441,7 @@ export class WmsForecastingService {
         cycleWeekday: params.cycle.cycleWeekday,
         forecastDates: params.cycle.forecastDates,
         daysForecasted: params.cycle.daysForecasted,
+        pastSalesWindowDays: params.cycle.pastSalesWindowDays,
         salesWindow: params.cycle.salesWindow,
         safetyStockPct: params.safetyStockPct,
         reorderTriggerDays: params.reorderTriggerDays,
@@ -492,6 +507,7 @@ export class WmsForecastingService {
         cycleWeekday: snapshot.cycleWeekday as ForecastCycle['cycleWeekday'],
         forecastDates: snapshot.forecastDates,
         daysForecasted: snapshot.daysForecasted,
+        pastSalesWindowDays: snapshot.pastSalesWindowDays,
         salesWindow: {
           startDate: snapshot.salesWindowStartDate,
           endDate: snapshot.salesWindowEndDate,
@@ -671,6 +687,7 @@ export class WmsForecastingService {
     pastSalesByVariation: Map<string, ForecastItemAggregate>;
     returningByVariation: Map<string, ForecastItemAggregate>;
     daysForecasted: number;
+    pastSalesWindowDays: number;
     safetyStockPct: number;
     reorderTriggerDays: number;
   }) {
@@ -795,13 +812,14 @@ export class WmsForecastingService {
 
   private mapForecastRow(row: ForecastRowDraft, params: {
     daysForecasted: number;
+    pastSalesWindowDays: number;
     safetyStockPct: number;
     reorderTriggerDays: number;
   }) {
     const grossPendingOrders = row.pendingOrders;
     const remainingStocks = Math.max(0, row.actualStock - grossPendingOrders);
     const uncoveredPendingOrders = Math.max(0, grossPendingOrders - row.actualStock);
-    const avgDailySales = row.past3DaySales / 3;
+    const avgDailySales = row.past3DaySales / params.pastSalesWindowDays;
     const forecastedDemand = avgDailySales * params.daysForecasted;
     const safetyStock = forecastedDemand * (params.safetyStockPct / 100);
     const suggestedOrderQty = Math.max(
@@ -938,7 +956,7 @@ export class WmsForecastingService {
     return name.length > 0 ? name : null;
   }
 
-  private resolveForecastCycle(cycleDate: string): ForecastCycle {
+  private resolveForecastCycle(cycleDate: string, pastSalesWindowDays: number): ForecastCycle {
     const date = this.parseDateOnly(cycleDate);
     const weekday = date.getUTCDay();
 
@@ -947,12 +965,13 @@ export class WmsForecastingService {
         cycleDate,
         cycleWeekday: 'MONDAY',
         daysForecasted: 2,
+        pastSalesWindowDays,
         forecastDates: [
           this.addDays(cycleDate, 2),
           this.addDays(cycleDate, 3),
         ],
         salesWindow: {
-          startDate: this.addDays(cycleDate, -3),
+          startDate: this.addDays(cycleDate, -pastSalesWindowDays),
           endDate: this.addDays(cycleDate, -1),
         },
       };
@@ -963,13 +982,14 @@ export class WmsForecastingService {
         cycleDate,
         cycleWeekday: 'WEDNESDAY',
         daysForecasted: 3,
+        pastSalesWindowDays,
         forecastDates: [
           this.addDays(cycleDate, 2),
           this.addDays(cycleDate, 3),
           this.addDays(cycleDate, 4),
         ],
         salesWindow: {
-          startDate: this.addDays(cycleDate, -3),
+          startDate: this.addDays(cycleDate, -pastSalesWindowDays),
           endDate: this.addDays(cycleDate, -1),
         },
       };
@@ -980,12 +1000,13 @@ export class WmsForecastingService {
         cycleDate,
         cycleWeekday: 'FRIDAY',
         daysForecasted: 2,
+        pastSalesWindowDays,
         forecastDates: [
           this.addDays(cycleDate, 3),
           this.addDays(cycleDate, 4),
         ],
         salesWindow: {
-          startDate: this.addDays(cycleDate, -3),
+          startDate: this.addDays(cycleDate, -pastSalesWindowDays),
           endDate: this.addDays(cycleDate, -1),
         },
       };

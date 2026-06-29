@@ -90,6 +90,21 @@ export function ForecastScreen() {
                 />
               </ForecastRuleInput>
 
+              <ForecastRuleInput label="Sales">
+                <select
+                  value={controller.pastSalesWindowDays}
+                  onChange={(event) => {
+                    const nextValue = Number(event.currentTarget.value);
+                    controller.setPastSalesWindowDays([2, 3, 4].includes(nextValue) ? nextValue : 3);
+                  }}
+                  className="bg-transparent pr-5 text-sm-custom font-semibold text-foreground outline-none"
+                >
+                  <option value={2}>2d</option>
+                  <option value={3}>3d</option>
+                  <option value={4}>4d</option>
+                </select>
+              </ForecastRuleInput>
+
               <ForecastRuleInput label="Trigger" suffix="d">
                 <input
                   type="number"
@@ -126,14 +141,16 @@ function ForecastRuleInput({
   children,
 }: {
   label: string;
-  suffix: string;
+  suffix?: string;
   children: ReactNode;
 }) {
   return (
     <label className="wms-pill-control flex shrink-0 items-center gap-2 rounded-2xl border border-[#d7e0e7] bg-white px-3 text-primary shadow-sm">
       <span className="card-label">{label}</span>
       {children}
-      <span className="text-sm-custom font-semibold text-muted">{suffix}</span>
+      {suffix ? (
+        <span className="text-sm-custom font-semibold text-muted">{suffix}</span>
+      ) : null}
     </label>
   );
 }

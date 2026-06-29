@@ -33,6 +33,7 @@ export type WmsForecastingContext = {
   cycleWeekday: 'MONDAY' | 'WEDNESDAY' | 'FRIDAY';
   forecastDates: string[];
   daysForecasted: number;
+  pastSalesWindowDays: number;
   salesWindow: {
     startDate: string;
     endDate: string;
@@ -100,4 +101,5 @@ export type GetWmsForecastingParams = {
   cycleDate: string;
   safetyStockPct?: number;
   reorderTriggerDays?: number;
+  pastSalesWindowDays?: number;
 };

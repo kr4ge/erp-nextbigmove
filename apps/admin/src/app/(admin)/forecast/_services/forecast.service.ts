@@ -16,6 +16,9 @@ export async function fetchWmsForecasting(params: GetWmsForecastingParams) {
       ...(params.reorderTriggerDays !== undefined
         ? { reorderTriggerDays: params.reorderTriggerDays }
         : {}),
+      ...(params.pastSalesWindowDays !== undefined
+        ? { pastSalesWindowDays: params.pastSalesWindowDays }
+        : {}),
     },
   });
 
@@ -32,6 +35,9 @@ export async function generateWmsForecasting(params: GetWmsForecastingParams) {
       : {}),
     ...(params.reorderTriggerDays !== undefined
       ? { reorderTriggerDays: params.reorderTriggerDays }
+      : {}),
+    ...(params.pastSalesWindowDays !== undefined
+      ? { pastSalesWindowDays: params.pastSalesWindowDays }
       : {}),
   });
 

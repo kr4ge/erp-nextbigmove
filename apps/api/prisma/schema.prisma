@@ -2012,6 +2012,7 @@ model WmsForecastSnapshot {
   forecastDates        String[] @default([])
   salesWindowStartDate String
   salesWindowEndDate   String
+  pastSalesWindowDays  Int
   daysForecasted       Int
   safetyStockPct       Float
   reorderTriggerDays   Float

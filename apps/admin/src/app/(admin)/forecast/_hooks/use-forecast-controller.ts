@@ -19,6 +19,7 @@ type ForecastOptionMaps = {
 
 const DEFAULT_SAFETY_STOCK_PCT = 20;
 const DEFAULT_REORDER_TRIGGER_DAYS = 4;
+const DEFAULT_PAST_SALES_WINDOW_DAYS = 3;
 
 export function useForecastController() {
   const requestIdRef = useRef(0);
@@ -37,6 +38,7 @@ export function useForecastController() {
   const [cycleDate, setCycleDate] = useState(getDefaultCycleDate);
   const [safetyStockPct, setSafetyStockPct] = useState(DEFAULT_SAFETY_STOCK_PCT);
   const [reorderTriggerDays, setReorderTriggerDays] = useState(DEFAULT_REORDER_TRIGGER_DAYS);
+  const [pastSalesWindowDays, setPastSalesWindowDays] = useState(DEFAULT_PAST_SALES_WINDOW_DAYS);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +99,7 @@ export function useForecastController() {
         tenantId: selectedTenantId,
         storeIds: selectedStoreIds,
         cycleDate,
+        pastSalesWindowDays,
         safetyStockPct,
         reorderTriggerDays,
       });
@@ -140,6 +143,7 @@ export function useForecastController() {
     }
   }, [
     cycleDate,
+    pastSalesWindowDays,
     reorderTriggerDays,
     safetyStockPct,
     selectedStoreIds,
@@ -167,6 +171,7 @@ export function useForecastController() {
         tenantId: selectedTenantId,
         storeIds: selectedStoreIds,
         cycleDate,
+        pastSalesWindowDays,
         safetyStockPct,
         reorderTriggerDays,
       });
@@ -199,6 +204,7 @@ export function useForecastController() {
     }
   }, [
     cycleDate,
+    pastSalesWindowDays,
     reorderTriggerDays,
     safetyStockPct,
     selectedStoreIds,
@@ -249,6 +255,7 @@ export function useForecastController() {
     cycleSnapshots,
     safetyStockPct,
     reorderTriggerDays,
+    pastSalesWindowDays,
     tenantOptions,
     storeOptions,
     changeTenant,
@@ -257,6 +264,7 @@ export function useForecastController() {
     setCycleDate,
     setSafetyStockPct,
     setReorderTriggerDays,
+    setPastSalesWindowDays,
     refresh,
     generateSnapshot,
   };

@@ -19,6 +19,8 @@ export function ForecastTable({ data, isLoading }: ForecastTableProps) {
   const hasSelectedStores = (data?.context.selectedStoreIds.length ?? 0) > 0;
   const hasSnapshot = Boolean(data?.snapshot);
   const groupedTables = data ? buildStoreGroups(data.rows) : [];
+  const pastSalesWindowDays = data?.context.pastSalesWindowDays ?? 3;
+  const pastSalesLabel = `Past ${pastSalesWindowDays}-day sales`;
 
   return (
     <WmsCompactPanel
@@ -55,7 +57,7 @@ export function ForecastTable({ data, isLoading }: ForecastTableProps) {
                       <HeaderCell align="left" className="sticky left-0 z-30 bg-slate-50 shadow-[1px_0_0_0_rgba(15,23,42,0.06)]">Item</HeaderCell>
                       <HeaderCell align="center">Remaining stocks</HeaderCell>
                       <HeaderCell align="center">Pending orders</HeaderCell>
-                      <HeaderCell align="center">Past 3-day sales</HeaderCell>
+                      <HeaderCell align="center">{pastSalesLabel}</HeaderCell>
                       <HeaderCell align="center">Avg daily sales</HeaderCell>
                       <HeaderCell align="center">Forecasted demand</HeaderCell>
                       <HeaderCell align="center">Safety stock</HeaderCell>
@@ -103,7 +105,7 @@ export function ForecastTable({ data, isLoading }: ForecastTableProps) {
             {hasSelectedStores
               ? hasSnapshot
                 ? 'This generated snapshot does not have forecastable stock, orders, sales, or returns for this cycle.'
-                : 'Generate this cycle after selecting stores to save the forecast snapshot.'
+                : `Generate this cycle after selecting stores to save the forecast snapshot using the selected ${pastSalesWindowDays}-day sales window.`
               : 'Pick one or more stores to generate per-shop forecast rows.'}
           </p>
         </div>

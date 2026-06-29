@@ -14,6 +14,7 @@ type ForecastSummaryGridProps = {
 
 export function ForecastSummaryGrid({ data, isLoading }: ForecastSummaryGridProps) {
   const totals = data?.totals;
+  const pastSalesWindowDays = data?.context.pastSalesWindowDays ?? 3;
 
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -30,7 +31,7 @@ export function ForecastSummaryGrid({ data, isLoading }: ForecastSummaryGridProp
         isLoading={isLoading && !data}
       />
       <ForecastMetricCard
-        label="Past 3-day sales"
+        label={`Past ${pastSalesWindowDays}-day sales`}
         value={totals ? formatForecastNumber(totals.past3DaySales) : '0'}
         icon={<TrendingUp className="h-4 w-4" />}
         isLoading={isLoading && !data}

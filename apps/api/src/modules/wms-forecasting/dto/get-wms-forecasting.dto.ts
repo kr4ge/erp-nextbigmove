@@ -55,4 +55,11 @@ export class GetWmsForecastingDto {
   @Min(0)
   @Max(365)
   reorderTriggerDays?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(30)
+  pastSalesWindowDays?: number;
 }
