@@ -1,17 +1,35 @@
 'use client';
 
-import { AlertCircle, CalendarDays, RefreshCw } from 'lucide-react';
+import { AlertCircle, CalendarDays, Download, RefreshCw } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import { useForecastController } from '../_hooks/use-forecast-controller';
+import { exportForecastWorkbook } from '../_utils/export-forecast-workbook';
 import { ForecastCycleSelector } from './forecast-cycle-selector';
 import { ForecastStoreMultiSelect } from './forecast-store-multi-select';
 import { ForecastTable } from './forecast-table';
 
 export function ForecastScreen() {
   const controller = useForecastController();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const canExport = Boolean(controller.data?.rows.length);
+
+  const handleExport = async () => {
+    if (!controller.data || controller.data.rows.length === 0) {
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      await exportForecastWorkbook(controller.data);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <WmsPageShell
@@ -22,8 +40,17 @@ export function ForecastScreen() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => void handleExport()}
+            disabled={!canExport || isExporting || controller.isLoading}
+            className="btn btn-md btn-secondary btn-icon"
+          >
+            <Download className="h-4 w-4" />
+            {isExporting ? 'Exporting' : 'Export'}
+          </button>
+          <button
+            type="button"
             onClick={() => void controller.refresh()}
-            disabled={controller.isLoading || controller.isGenerating}
+            disabled={controller.isLoading || controller.isGenerating || isExporting}
             className="btn btn-md btn-secondary btn-icon"
           >
             <RefreshCw className={`h-4 w-4 ${controller.isLoading ? 'animate-spin' : ''}`} />
@@ -32,7 +59,7 @@ export function ForecastScreen() {
           <button
             type="button"
             onClick={() => void controller.generateSnapshot()}
-            disabled={controller.selectedStoreIds.length === 0 || controller.isGenerating}
+            disabled={controller.selectedStoreIds.length === 0 || controller.isGenerating || isExporting}
             className="btn btn-md btn-primary btn-icon"
           >
             <RefreshCw className={`h-4 w-4 ${controller.isGenerating ? 'animate-spin' : ''}`} />

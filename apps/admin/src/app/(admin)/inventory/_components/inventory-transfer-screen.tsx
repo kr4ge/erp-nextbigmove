@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, History } from 'lucide-react';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
+import { InventoryOperationsFilterBar } from './inventory-operations-filter-bar';
 import { useReceivingController } from '../../receiving/_hooks/use-receiving-controller';
 import { InventoryTransfersTab } from './inventory-transfers-tab';
 import { useTransferBatchRouteSync } from '../_hooks/use-transfer-batch-route-sync';
@@ -49,6 +50,22 @@ export function InventoryTransferScreen() {
 
         {activeView === 'putaway' ? (
           <>
+            <section className="panel overflow-hidden">
+              <div className="border-b border-border/10 bg-secondary/20 px-4 py-3">
+                <InventoryOperationsFilterBar
+                  filters={receiving.overview?.filters}
+                  searchText={receiving.searchText}
+                  onSearchTextChange={receiving.setSearchText}
+                  selectedTenantId={receiving.selectedTenantId}
+                  onTenantChange={receiving.setSelectedTenantId}
+                  selectedStoreId={receiving.selectedStoreId}
+                  onStoreChange={receiving.setSelectedStoreId}
+                  selectedWarehouseId={receiving.selectedWarehouseId}
+                  onWarehouseChange={receiving.setSelectedWarehouseId}
+                />
+              </div>
+            </section>
+
             {receiving.errorMessage ? (
               <WmsInlineNotice tone="error">
                 {receiving.errorMessage}

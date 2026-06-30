@@ -99,11 +99,20 @@ function parseOptionalCost(value: string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function readInitialTenantScope() {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  const tenantId = localStorage.getItem('current_tenant_id');
+  return tenantId || undefined;
+}
+
 export function useReceivingController() {
   const queryClient = useQueryClient();
   const user = useMemo(() => readStoredAdminUser(), []);
   const permissions = useMemo(() => readStoredPermissions(), []);
-  const [selectedTenantId, setSelectedTenantIdState] = useState<string | undefined>();
+  const [selectedTenantId, setSelectedTenantIdState] = useState<string | undefined>(readInitialTenantScope);
   const [selectedStoreId, setSelectedStoreIdState] = useState<string | undefined>();
   const [selectedWarehouseId, setSelectedWarehouseIdState] = useState<string | undefined>();
   const [searchText, setSearchText] = useState('');
