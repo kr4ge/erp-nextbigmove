@@ -9,6 +9,7 @@ import type {
 } from '../_types/forecast';
 import {
   getTodayDateValue,
+  getTomorrowDateValue,
   getDefaultCycleDate,
   getForecastCycleSnapshots,
   isForecastCycleDate,
@@ -23,7 +24,7 @@ const DEFAULT_REORDER_TRIGGER_DAYS = 4;
 const DEFAULT_PAST_SALES_WINDOW_DAYS = 3;
 
 function getDefaultCustomForecastRange() {
-  const startDate = getTodayDateValue();
+  const startDate = getTomorrowDateValue();
   const end = new Date(`${startDate}T00:00:00`);
   end.setDate(end.getDate() + 6);
   const endDate = [
@@ -59,6 +60,7 @@ export function useForecastController() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cycleSnapshots = useMemo(() => getForecastCycleSnapshots(2), []);
+  const minCustomForecastDate = getTomorrowDateValue();
 
   const storeOptions = useMemo(() => {
     const stores = Array.from(optionMaps.stores.values());
@@ -107,6 +109,18 @@ export function useForecastController() {
 
     if (mode === 'CUSTOM' && customForecastRange.endDate < customForecastRange.startDate) {
       setError('Forecast end date must be on or after the forecast start date.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (
+      mode === 'CUSTOM'
+      && (
+        customForecastRange.startDate < minCustomForecastDate
+        || customForecastRange.endDate < minCustomForecastDate
+      )
+    ) {
+      setError('Custom forecast dates must start from tomorrow onward.');
       setIsLoading(false);
       return;
     }
@@ -170,6 +184,7 @@ export function useForecastController() {
     cycleDate,
     customForecastRange.endDate,
     customForecastRange.startDate,
+    minCustomForecastDate,
     mode,
     pastSalesWindowDays,
     reorderTriggerDays,
@@ -186,6 +201,17 @@ export function useForecastController() {
 
     if (mode === 'CUSTOM' && customForecastRange.endDate < customForecastRange.startDate) {
       setError('Forecast end date must be on or after the forecast start date.');
+      return;
+    }
+
+    if (
+      mode === 'CUSTOM'
+      && (
+        customForecastRange.startDate < minCustomForecastDate
+        || customForecastRange.endDate < minCustomForecastDate
+      )
+    ) {
+      setError('Custom forecast dates must start from tomorrow onward.');
       return;
     }
 
@@ -242,6 +268,7 @@ export function useForecastController() {
     cycleDate,
     customForecastRange.endDate,
     customForecastRange.startDate,
+    minCustomForecastDate,
     mode,
     pastSalesWindowDays,
     reorderTriggerDays,
@@ -253,6 +280,17 @@ export function useForecastController() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (
+      customForecastRange.startDate >= minCustomForecastDate
+      && customForecastRange.endDate >= minCustomForecastDate
+    ) {
+      return;
+    }
+
+    setCustomForecastRange(getDefaultCustomForecastRange());
+  }, [customForecastRange.endDate, customForecastRange.startDate, minCustomForecastDate]);
 
   const changeTenant = useCallback((tenantId: string | undefined) => {
     setSelectedTenantId(tenantId);
@@ -293,6 +331,7 @@ export function useForecastController() {
     mode,
     cycleDate,
     customForecastRange,
+    minCustomForecastDate,
     cycleSnapshots,
     safetyStockPct,
     reorderTriggerDays,

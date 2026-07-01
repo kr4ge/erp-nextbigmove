@@ -216,8 +216,6 @@ export class WmsForecastingService {
           scopeKey,
           mode: liveForecast.context.mode,
           cycleDate: liveForecast.context.cycleDate,
-          forecastStartDate: liveForecast.context.forecastStartDate,
-          forecastEndDate: liveForecast.context.forecastEndDate,
         },
         orderBy: { version: 'desc' },
         select: { version: true },

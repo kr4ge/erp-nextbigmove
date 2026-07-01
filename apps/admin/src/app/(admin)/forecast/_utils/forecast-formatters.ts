@@ -38,6 +38,13 @@ const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 });
 
+const SHORT_WEEKDAY_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short',
+  month: '2-digit',
+  day: '2-digit',
+  year: 'numeric',
+});
+
 export function formatForecastNumber(value: number) {
   return NUMBER_FORMATTER.format(value);
 }
@@ -64,6 +71,15 @@ export function formatForecastShortDate(value: string) {
   return SHORT_DATE_FORMATTER.format(date);
 }
 
+export function formatForecastShortWeekdayDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return SHORT_WEEKDAY_DATE_FORMATTER.format(date);
+}
+
 export function formatForecastDateList(values: string[]) {
   return values.map(formatForecastDate).join(', ');
 }
@@ -78,6 +94,12 @@ export function formatCycleWeekday(value: string) {
 
 export function getTodayDateValue() {
   return toDateInputValue(new Date());
+}
+
+export function getTomorrowDateValue() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return toDateInputValue(tomorrow);
 }
 
 export function getForecastStatusClassName(status: WmsForecastStatusKey) {

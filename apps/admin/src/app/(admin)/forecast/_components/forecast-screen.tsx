@@ -9,7 +9,7 @@ import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import { useForecastController } from '../_hooks/use-forecast-controller';
 import { exportForecastWorkbook } from '../_utils/export-forecast-workbook';
-import { formatForecastShortDate } from '../_utils/forecast-formatters';
+import { formatForecastShortWeekdayDate } from '../_utils/forecast-formatters';
 import { ForecastCycleSelector } from './forecast-cycle-selector';
 import { ForecastStoreMultiSelect } from './forecast-store-multi-select';
 import { ForecastTable } from './forecast-table';
@@ -140,6 +140,7 @@ export function ForecastScreen() {
                     readOnly
                     displayFormat="MM/DD/YYYY"
                     separator=" - "
+                    minDate={parseYmdToLocalDate(controller.minCustomForecastDate)}
                     inputClassName="h-10 w-full cursor-pointer rounded-2xl border-0 bg-transparent p-0 text-transparent caret-transparent placeholder:text-transparent focus:outline-none focus:ring-0"
                     containerClassName="w-full"
                     popupClassName={(defaultClass: string) => `${defaultClass} z-[9999]`}
@@ -147,11 +148,11 @@ export function ForecastScreen() {
                       <span className="flex w-full items-center gap-2 overflow-hidden px-1">
                         <CalendarDays className="h-3.5 w-3.5 shrink-0 text-primary" />
                         <span className="whitespace-nowrap text-sm-custom font-semibold text-primary">
-                          {formatForecastShortDate(controller.customForecastRange.startDate)}
+                          {formatForecastShortWeekdayDate(controller.customForecastRange.startDate)}
                         </span>
                         <span className="text-sm-custom text-muted">to</span>
                         <span className="whitespace-nowrap text-sm-custom text-muted">
-                          {formatForecastShortDate(controller.customForecastRange.endDate)}
+                          {formatForecastShortWeekdayDate(controller.customForecastRange.endDate)}
                         </span>
                       </span>
                     )}
