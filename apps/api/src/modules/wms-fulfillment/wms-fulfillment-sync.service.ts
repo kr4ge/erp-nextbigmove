@@ -107,7 +107,7 @@ export class WmsFulfillmentSyncService {
     return Math.floor(configuredSize);
   }
 
-  private getDemandQueueRefreshTransactionOptions(): Prisma.TransactionOptions {
+  private getDemandQueueRefreshTransactionOptions() {
     const configuredTimeout = Number(process.env.WMS_DEMAND_QUEUE_REFRESH_TX_TIMEOUT_MS ?? 90000);
     const configuredMaxWait = Number(process.env.WMS_DEMAND_QUEUE_REFRESH_TX_MAX_WAIT_MS ?? 10000);
 
