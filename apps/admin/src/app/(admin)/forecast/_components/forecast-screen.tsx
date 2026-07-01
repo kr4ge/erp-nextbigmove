@@ -9,7 +9,11 @@ import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import { useForecastController } from '../_hooks/use-forecast-controller';
 import { exportForecastWorkbook } from '../_utils/export-forecast-workbook';
-import { formatForecastShortWeekdayDate } from '../_utils/forecast-formatters';
+import {
+  formatForecastShortDate,
+  formatForecastWeekday,
+  getTodayDateValue,
+} from '../_utils/forecast-formatters';
 import { ForecastCycleSelector } from './forecast-cycle-selector';
 import { ForecastStoreMultiSelect } from './forecast-store-multi-select';
 import { ForecastTable } from './forecast-table';
@@ -148,11 +152,15 @@ export function ForecastScreen() {
                       <span className="flex w-full items-center gap-2 overflow-hidden px-1">
                         <CalendarDays className="h-3.5 w-3.5 shrink-0 text-primary" />
                         <span className="whitespace-nowrap text-sm-custom font-semibold text-primary">
-                          {formatForecastShortWeekdayDate(controller.customForecastRange.startDate)}
+                          {formatForecastWeekday(getTodayDateValue())}
+                        </span>
+                        <span className="text-sm-custom text-muted">forecast</span>
+                        <span className="whitespace-nowrap text-sm-custom font-semibold text-primary">
+                          {formatForecastShortDate(controller.customForecastRange.startDate)}
                         </span>
                         <span className="text-sm-custom text-muted">to</span>
                         <span className="whitespace-nowrap text-sm-custom text-muted">
-                          {formatForecastShortWeekdayDate(controller.customForecastRange.endDate)}
+                          {formatForecastShortDate(controller.customForecastRange.endDate)}
                         </span>
                       </span>
                     )}
@@ -203,13 +211,16 @@ export function ForecastScreen() {
                   value={controller.pastSalesWindowDays}
                   onChange={(event) => {
                     const nextValue = Number(event.currentTarget.value);
-                    controller.setPastSalesWindowDays([2, 3, 4].includes(nextValue) ? nextValue : 3);
+                    controller.setPastSalesWindowDays([2, 3, 4, 5, 6, 7].includes(nextValue) ? nextValue : 3);
                   }}
                   className="bg-transparent pr-5 text-sm-custom font-semibold text-foreground outline-none"
                 >
                   <option value={2}>2d</option>
                   <option value={3}>3d</option>
                   <option value={4}>4d</option>
+                  <option value={5}>5d</option>
+                  <option value={6}>6d</option>
+                  <option value={7}>7d</option>
                 </select>
               </ForecastRuleInput>
 

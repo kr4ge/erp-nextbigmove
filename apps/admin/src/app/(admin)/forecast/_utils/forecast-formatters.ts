@@ -45,6 +45,10 @@ const SHORT_WEEKDAY_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 });
 
+const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short',
+});
+
 export function formatForecastNumber(value: number) {
   return NUMBER_FORMATTER.format(value);
 }
@@ -78,6 +82,15 @@ export function formatForecastShortWeekdayDate(value: string) {
   }
 
   return SHORT_WEEKDAY_DATE_FORMATTER.format(date);
+}
+
+export function formatForecastWeekday(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return WEEKDAY_FORMATTER.format(date);
 }
 
 export function formatForecastDateList(values: string[]) {
