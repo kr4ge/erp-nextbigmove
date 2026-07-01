@@ -104,8 +104,8 @@ export function ForecastTable({ data, isLoading }: ForecastTableProps) {
           <p className="mt-2 text-sm-custom text-muted">
             {hasSelectedStores
               ? hasSnapshot
-                ? 'This generated snapshot does not have forecastable stock, orders, sales, or returns for this cycle.'
-                : `Generate this cycle after selecting stores to save the forecast snapshot using the selected ${pastSalesWindowDays}-day sales window.`
+                ? 'This generated snapshot does not have forecastable stock, orders, sales, or returns.'
+                : `Generate after selecting stores to save the forecast snapshot using the selected ${pastSalesWindowDays}-day sales window.`
               : 'Pick one or more stores to generate per-shop forecast rows.'}
           </p>
         </div>

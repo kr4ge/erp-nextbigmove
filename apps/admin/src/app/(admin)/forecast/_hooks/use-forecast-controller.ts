@@ -8,6 +8,7 @@ import type {
   WmsForecastingResponse,
 } from '../_types/forecast';
 import {
+  getTodayDateValue,
   getDefaultCycleDate,
   getForecastCycleSnapshots,
   isForecastCycleDate,
@@ -20,6 +21,19 @@ type ForecastOptionMaps = {
 const DEFAULT_SAFETY_STOCK_PCT = 20;
 const DEFAULT_REORDER_TRIGGER_DAYS = 4;
 const DEFAULT_PAST_SALES_WINDOW_DAYS = 3;
+
+function getDefaultCustomForecastRange() {
+  const startDate = getTodayDateValue();
+  const end = new Date(`${startDate}T00:00:00`);
+  end.setDate(end.getDate() + 6);
+  const endDate = [
+    end.getFullYear(),
+    String(end.getMonth() + 1).padStart(2, '0'),
+    String(end.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  return { startDate, endDate };
+}
 
 export function useForecastController() {
   const requestIdRef = useRef(0);
@@ -35,7 +49,9 @@ export function useForecastController() {
     return localStorage.getItem('current_tenant_id') ?? undefined;
   });
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  const [mode, setMode] = useState<'CYCLE' | 'CUSTOM'>('CYCLE');
   const [cycleDate, setCycleDate] = useState(getDefaultCycleDate);
+  const [customForecastRange, setCustomForecastRange] = useState(getDefaultCustomForecastRange);
   const [safetyStockPct, setSafetyStockPct] = useState(DEFAULT_SAFETY_STOCK_PCT);
   const [reorderTriggerDays, setReorderTriggerDays] = useState(DEFAULT_REORDER_TRIGGER_DAYS);
   const [pastSalesWindowDays, setPastSalesWindowDays] = useState(DEFAULT_PAST_SALES_WINDOW_DAYS);
@@ -83,8 +99,14 @@ export function useForecastController() {
   }, [data?.context.activeTenantId, data?.context.activeTenantName, optionMaps.stores]);
 
   const refresh = useCallback(async () => {
-    if (!isForecastCycleDate(cycleDate)) {
+    if (mode === 'CYCLE' && !isForecastCycleDate(cycleDate)) {
       setError('Cycle date must be Monday, Wednesday, or Friday.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (mode === 'CUSTOM' && customForecastRange.endDate < customForecastRange.startDate) {
+      setError('Forecast end date must be on or after the forecast start date.');
       setIsLoading(false);
       return;
     }
@@ -98,7 +120,10 @@ export function useForecastController() {
       const response = await fetchWmsForecasting({
         tenantId: selectedTenantId,
         storeIds: selectedStoreIds,
-        cycleDate,
+        mode,
+        cycleDate: mode === 'CUSTOM' ? getTodayDateValue() : cycleDate,
+        forecastStartDate: mode === 'CUSTOM' ? customForecastRange.startDate : undefined,
+        forecastEndDate: mode === 'CUSTOM' ? customForecastRange.endDate : undefined,
         pastSalesWindowDays,
         safetyStockPct,
         reorderTriggerDays,
@@ -143,6 +168,9 @@ export function useForecastController() {
     }
   }, [
     cycleDate,
+    customForecastRange.endDate,
+    customForecastRange.startDate,
+    mode,
     pastSalesWindowDays,
     reorderTriggerDays,
     safetyStockPct,
@@ -151,8 +179,13 @@ export function useForecastController() {
   ]);
 
   const generateSnapshot = useCallback(async () => {
-    if (!isForecastCycleDate(cycleDate)) {
+    if (mode === 'CYCLE' && !isForecastCycleDate(cycleDate)) {
       setError('Cycle date must be Monday, Wednesday, or Friday.');
+      return;
+    }
+
+    if (mode === 'CUSTOM' && customForecastRange.endDate < customForecastRange.startDate) {
+      setError('Forecast end date must be on or after the forecast start date.');
       return;
     }
 
@@ -170,7 +203,10 @@ export function useForecastController() {
       const response = await generateWmsForecasting({
         tenantId: selectedTenantId,
         storeIds: selectedStoreIds,
-        cycleDate,
+        mode,
+        cycleDate: mode === 'CUSTOM' ? getTodayDateValue() : cycleDate,
+        forecastStartDate: mode === 'CUSTOM' ? customForecastRange.startDate : undefined,
+        forecastEndDate: mode === 'CUSTOM' ? customForecastRange.endDate : undefined,
         pastSalesWindowDays,
         safetyStockPct,
         reorderTriggerDays,
@@ -204,6 +240,9 @@ export function useForecastController() {
     }
   }, [
     cycleDate,
+    customForecastRange.endDate,
+    customForecastRange.startDate,
+    mode,
     pastSalesWindowDays,
     reorderTriggerDays,
     safetyStockPct,
@@ -251,7 +290,9 @@ export function useForecastController() {
     isGenerating,
     selectedTenantId,
     selectedStoreIds,
+    mode,
     cycleDate,
+    customForecastRange,
     cycleSnapshots,
     safetyStockPct,
     reorderTriggerDays,
@@ -261,7 +302,9 @@ export function useForecastController() {
     changeTenant,
     toggleStore,
     clearStores,
+    setMode,
     setCycleDate,
+    setCustomForecastRange,
     setSafetyStockPct,
     setReorderTriggerDays,
     setPastSalesWindowDays,

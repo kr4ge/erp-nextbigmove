@@ -30,8 +30,11 @@ const STOCK_STATUSES = [
 ];
 
 type ForecastCycle = {
+  mode: 'CYCLE' | 'CUSTOM';
   cycleDate: string;
-  cycleWeekday: 'MONDAY' | 'WEDNESDAY' | 'FRIDAY';
+  cycleWeekday: 'MONDAY' | 'WEDNESDAY' | 'FRIDAY' | 'CUSTOM';
+  forecastStartDate: string;
+  forecastEndDate: string;
   daysForecasted: number;
   pastSalesWindowDays: number;
   forecastDates: string[];
@@ -110,12 +113,15 @@ type ForecastContextStore = {
 
 type ForecastResponse = {
   context: {
+    mode: 'CYCLE' | 'CUSTOM';
     activeTenantId: string | null;
     activeTenantName: string | null;
     selectedStoreIds: string[];
     stores: ForecastContextStore[];
     cycleDate: string;
     cycleWeekday: ForecastCycle['cycleWeekday'];
+    forecastStartDate: string;
+    forecastEndDate: string;
     forecastDates: string[];
     daysForecasted: number;
     pastSalesWindowDays: number;
@@ -155,7 +161,10 @@ export class WmsForecastingService {
     const snapshot = await this.prisma.wmsForecastSnapshot.findFirst({
       where: {
         scopeKey: snapshotLookup.scopeKey,
+        mode: snapshotLookup.cycle.mode,
         cycleDate: snapshotLookup.cycle.cycleDate,
+        forecastStartDate: snapshotLookup.cycle.forecastStartDate,
+        forecastEndDate: snapshotLookup.cycle.forecastEndDate,
         pastSalesWindowDays: snapshotLookup.pastSalesWindowDays,
         safetyStockPct: snapshotLookup.safetyStockPct,
         reorderTriggerDays: snapshotLookup.reorderTriggerDays,
@@ -205,7 +214,10 @@ export class WmsForecastingService {
       const latest = await tx.wmsForecastSnapshot.findFirst({
         where: {
           scopeKey,
+          mode: liveForecast.context.mode,
           cycleDate: liveForecast.context.cycleDate,
+          forecastStartDate: liveForecast.context.forecastStartDate,
+          forecastEndDate: liveForecast.context.forecastEndDate,
         },
         orderBy: { version: 'desc' },
         select: { version: true },
@@ -218,8 +230,11 @@ export class WmsForecastingService {
           scopeKey,
           storeIds: liveForecast.context.selectedStoreIds,
           selectedStores: liveForecast.context.stores,
+          mode: liveForecast.context.mode,
           cycleDate: liveForecast.context.cycleDate,
           cycleWeekday: liveForecast.context.cycleWeekday,
+          forecastStartDate: liveForecast.context.forecastStartDate,
+          forecastEndDate: liveForecast.context.forecastEndDate,
           forecastDates: liveForecast.context.forecastDates,
           salesWindowStartDate: liveForecast.context.salesWindow.startDate,
           salesWindowEndDate: liveForecast.context.salesWindow.endDate,
@@ -287,8 +302,13 @@ export class WmsForecastingService {
     });
 
     return this.mapSnapshotToResponse(snapshot, {
-      cycle: this.resolveForecastCycle(
-        liveForecast.context.cycleDate,
+      cycle: this.resolveForecastWindow(
+        {
+          mode: liveForecast.context.mode,
+          cycleDate: liveForecast.context.cycleDate,
+          forecastStartDate: liveForecast.context.forecastStartDate,
+          forecastEndDate: liveForecast.context.forecastEndDate,
+        },
         liveForecast.context.pastSalesWindowDays,
       ),
       pastSalesWindowDays: liveForecast.context.pastSalesWindowDays,
@@ -307,7 +327,7 @@ export class WmsForecastingService {
     const safetyStockPct = query.safetyStockPct ?? DEFAULT_SAFETY_STOCK_PCT;
     const reorderTriggerDays = query.reorderTriggerDays ?? DEFAULT_REORDER_TRIGGER_DAYS;
     const pastSalesWindowDays = query.pastSalesWindowDays ?? DEFAULT_PAST_SALES_WINDOW_DAYS;
-    const cycle = this.resolveForecastCycle(query.cycleDate, pastSalesWindowDays);
+    const cycle = this.resolveForecastWindow(query, pastSalesWindowDays);
     const scope = await this.resolveScope(query);
     const selectedStoreIds = Array.from(new Set(query.storeIds ?? []));
 
@@ -393,18 +413,21 @@ export class WmsForecastingService {
 
     return {
       context: {
+        mode: cycle.mode,
         activeTenantId: scope.activeTenantId,
         activeTenantName: this.resolveActiveTenantName(scope),
         selectedStoreIds,
         stores: this.mapScopeStores(scope.stores),
         cycleDate: cycle.cycleDate,
         cycleWeekday: cycle.cycleWeekday,
+        forecastStartDate: cycle.forecastStartDate,
+        forecastEndDate: cycle.forecastEndDate,
         forecastDates: cycle.forecastDates,
-      daysForecasted: cycle.daysForecasted,
-      pastSalesWindowDays: cycle.pastSalesWindowDays,
-      salesWindow: cycle.salesWindow,
-      safetyStockPct,
-      reorderTriggerDays,
+        daysForecasted: cycle.daysForecasted,
+        pastSalesWindowDays: cycle.pastSalesWindowDays,
+        salesWindow: cycle.salesWindow,
+        safetyStockPct,
+        reorderTriggerDays,
       },
       rows,
       totals: this.buildTotals(rows),
@@ -417,7 +440,7 @@ export class WmsForecastingService {
     const safetyStockPct = query.safetyStockPct ?? DEFAULT_SAFETY_STOCK_PCT;
     const reorderTriggerDays = query.reorderTriggerDays ?? DEFAULT_REORDER_TRIGGER_DAYS;
     const pastSalesWindowDays = query.pastSalesWindowDays ?? DEFAULT_PAST_SALES_WINDOW_DAYS;
-    const cycle = this.resolveForecastCycle(query.cycleDate, pastSalesWindowDays);
+    const cycle = this.resolveForecastWindow(query, pastSalesWindowDays);
     const scope = await this.resolveScope(query);
     const selectedStoreIds = Array.from(new Set(query.storeIds ?? []));
 
@@ -435,12 +458,15 @@ export class WmsForecastingService {
   private buildEmptyResponse(params: Awaited<ReturnType<WmsForecastingService['resolveSnapshotLookup']>>): ForecastResponse {
     return {
       context: {
+        mode: params.cycle.mode,
         activeTenantId: params.scope.activeTenantId,
         activeTenantName: this.resolveActiveTenantName(params.scope),
         selectedStoreIds: params.selectedStoreIds,
         stores: this.mapScopeStores(params.scope.stores),
         cycleDate: params.cycle.cycleDate,
         cycleWeekday: params.cycle.cycleWeekday,
+        forecastStartDate: params.cycle.forecastStartDate,
+        forecastEndDate: params.cycle.forecastEndDate,
         forecastDates: params.cycle.forecastDates,
         daysForecasted: params.cycle.daysForecasted,
         pastSalesWindowDays: params.cycle.pastSalesWindowDays,
@@ -501,12 +527,15 @@ export class WmsForecastingService {
 
     return {
       context: {
+        mode: snapshot.mode as ForecastCycle['mode'],
         activeTenantId: snapshot.tenantId,
         activeTenantName: this.resolveActiveTenantNameFromStores(snapshot.tenantId, selectedStores),
         selectedStoreIds: snapshot.storeIds,
         stores: selectedStores,
         cycleDate: snapshot.cycleDate,
         cycleWeekday: snapshot.cycleWeekday as ForecastCycle['cycleWeekday'],
+        forecastStartDate: snapshot.forecastStartDate,
+        forecastEndDate: snapshot.forecastEndDate,
         forecastDates: snapshot.forecastDates,
         daysForecasted: snapshot.daysForecasted,
         pastSalesWindowDays: snapshot.pastSalesWindowDays,
@@ -958,63 +987,110 @@ export class WmsForecastingService {
     return name.length > 0 ? name : null;
   }
 
-  private resolveForecastCycle(cycleDate: string, pastSalesWindowDays: number): ForecastCycle {
+  private resolveForecastWindow(
+    query: Pick<GetWmsForecastingDto, 'mode' | 'cycleDate' | 'forecastStartDate' | 'forecastEndDate'>,
+    pastSalesWindowDays: number,
+  ): ForecastCycle {
+    const mode = query.mode ?? 'CYCLE';
+
+    if (mode === 'CUSTOM') {
+      const cycleDate = this.getManilaDateValue();
+      const forecastStartDate = query.forecastStartDate;
+      const forecastEndDate = query.forecastEndDate;
+
+      if (!forecastStartDate || !forecastEndDate) {
+        throw new BadRequestException('Custom forecast requires forecastStartDate and forecastEndDate');
+      }
+
+      this.parseDateOnly(forecastStartDate);
+      this.parseDateOnly(forecastEndDate);
+
+      if (forecastEndDate < forecastStartDate) {
+        throw new BadRequestException('forecastEndDate must be on or after forecastStartDate');
+      }
+
+      const forecastDates = this.buildDateRange(forecastStartDate, forecastEndDate);
+      const daysForecasted = forecastDates.length;
+
+      if (daysForecasted <= 0) {
+        throw new BadRequestException('Custom forecast must include at least one forecast day');
+      }
+
+      return {
+        mode: 'CUSTOM',
+        cycleDate,
+        cycleWeekday: 'CUSTOM',
+        forecastStartDate,
+        forecastEndDate,
+        daysForecasted,
+        pastSalesWindowDays,
+        forecastDates,
+        salesWindow: {
+          startDate: this.addDays(cycleDate, -pastSalesWindowDays),
+          endDate: this.addDays(cycleDate, -1),
+        },
+      };
+    }
+
+    const cycleDate = query.cycleDate;
     const date = this.parseDateOnly(cycleDate);
     const weekday = date.getUTCDay();
 
     if (weekday === 1) {
-      return {
-        cycleDate,
-        cycleWeekday: 'MONDAY',
-        daysForecasted: 2,
-        pastSalesWindowDays,
-        forecastDates: [
-          this.addDays(cycleDate, 2),
-          this.addDays(cycleDate, 3),
-        ],
-        salesWindow: {
-          startDate: this.addDays(cycleDate, -pastSalesWindowDays),
-          endDate: this.addDays(cycleDate, -1),
-        },
-      };
+      return this.buildCycleForecastWindow(cycleDate, 'MONDAY', pastSalesWindowDays, [2, 3]);
     }
 
     if (weekday === 3) {
-      return {
-        cycleDate,
-        cycleWeekday: 'WEDNESDAY',
-        daysForecasted: 3,
-        pastSalesWindowDays,
-        forecastDates: [
-          this.addDays(cycleDate, 2),
-          this.addDays(cycleDate, 3),
-          this.addDays(cycleDate, 4),
-        ],
-        salesWindow: {
-          startDate: this.addDays(cycleDate, -pastSalesWindowDays),
-          endDate: this.addDays(cycleDate, -1),
-        },
-      };
+      return this.buildCycleForecastWindow(cycleDate, 'WEDNESDAY', pastSalesWindowDays, [2, 3, 4]);
     }
 
     if (weekday === 5) {
-      return {
-        cycleDate,
-        cycleWeekday: 'FRIDAY',
-        daysForecasted: 2,
-        pastSalesWindowDays,
-        forecastDates: [
-          this.addDays(cycleDate, 3),
-          this.addDays(cycleDate, 4),
-        ],
-        salesWindow: {
-          startDate: this.addDays(cycleDate, -pastSalesWindowDays),
-          endDate: this.addDays(cycleDate, -1),
-        },
-      };
+      return this.buildCycleForecastWindow(cycleDate, 'FRIDAY', pastSalesWindowDays, [3, 4]);
     }
 
     throw new BadRequestException('cycleDate must be a Monday, Wednesday, or Friday');
+  }
+
+  private buildCycleForecastWindow(
+    cycleDate: string,
+    cycleWeekday: 'MONDAY' | 'WEDNESDAY' | 'FRIDAY',
+    pastSalesWindowDays: number,
+    offsets: number[],
+  ): ForecastCycle {
+    const forecastDates = offsets.map((offset) => this.addDays(cycleDate, offset));
+
+    return {
+      mode: 'CYCLE',
+      cycleDate,
+      cycleWeekday,
+      forecastStartDate: forecastDates[0] ?? cycleDate,
+      forecastEndDate: forecastDates[forecastDates.length - 1] ?? cycleDate,
+      daysForecasted: forecastDates.length,
+      pastSalesWindowDays,
+      forecastDates,
+      salesWindow: {
+        startDate: this.addDays(cycleDate, -pastSalesWindowDays),
+        endDate: this.addDays(cycleDate, -1),
+      },
+    };
+  }
+
+  private buildDateRange(startDate: string, endDate: string) {
+    const start = this.parseDateOnly(startDate);
+    const end = this.parseDateOnly(endDate);
+    const dates: string[] = [];
+    const cursor = new Date(start);
+
+    while (cursor.getTime() <= end.getTime()) {
+      dates.push([
+        cursor.getUTCFullYear(),
+        String(cursor.getUTCMonth() + 1).padStart(2, '0'),
+        String(cursor.getUTCDate()).padStart(2, '0'),
+      ].join('-'));
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    return dates;
   }
 
   private parseDateOnly(value: string) {
@@ -1047,6 +1123,24 @@ export class WmsForecastingService {
       String(date.getUTCMonth() + 1).padStart(2, '0'),
       String(date.getUTCDate()).padStart(2, '0'),
     ].join('-');
+  }
+
+  private getManilaDateValue() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+
+    if (!year || !month || !day) {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    return `${year}-${month}-${day}`;
   }
 
   private roundTo(value: number, digits: number) {

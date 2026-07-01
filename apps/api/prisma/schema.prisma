@@ -2007,8 +2007,11 @@ model WmsForecastSnapshot {
   scopeKey             String
   storeIds             String[] @default([])
   selectedStores       Json     @default("[]")
+  mode                 String   @default("CYCLE")
   cycleDate            String
   cycleWeekday         String
+  forecastStartDate    String   @default("")
+  forecastEndDate      String   @default("")
   forecastDates        String[] @default([])
   salesWindowStartDate String
   salesWindowEndDate   String
@@ -2034,9 +2037,9 @@ model WmsForecastSnapshot {
 
   rows WmsForecastSnapshotRow[]
 
-  @@unique([scopeKey, cycleDate, version])
+  @@unique([scopeKey, mode, cycleDate, forecastStartDate, forecastEndDate, version])
   @@index([tenantId, cycleDate, generatedAt])
-  @@index([scopeKey, cycleDate, generatedAt])
+  @@index([scopeKey, mode, cycleDate, generatedAt])
   @@map("wms_forecast_snapshots")
 }
 

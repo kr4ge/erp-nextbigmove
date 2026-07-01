@@ -69,7 +69,15 @@ export function formatForecastDateList(values: string[]) {
 }
 
 export function formatCycleWeekday(value: string) {
+  if (value === 'CUSTOM') {
+    return 'Custom';
+  }
+
   return value.toLowerCase().replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+export function getTodayDateValue() {
+  return toDateInputValue(new Date());
 }
 
 export function getForecastStatusClassName(status: WmsForecastStatusKey) {
@@ -142,6 +150,28 @@ export function resolveForecastCycleSnapshot(cycleDate: string): ForecastCycleSn
   }
 
   throw new Error('Forecast cycle date must be Monday, Wednesday, or Friday');
+}
+
+export function countForecastDaysInclusive(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return 0;
+  }
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  return Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1;
+}
+
+export function buildForecastDateRange(startDate: string, endDate: string) {
+  const totalDays = countForecastDaysInclusive(startDate, endDate);
+
+  if (totalDays <= 0) {
+    return [];
+  }
+
+  return Array.from({ length: totalDays }, (_, index) => addDays(startDate, index));
 }
 
 export function getTotalsRow(totals: WmsForecastingTotals): WmsForecastingRow {

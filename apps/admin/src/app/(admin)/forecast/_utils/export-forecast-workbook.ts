@@ -41,11 +41,12 @@ export async function exportForecastWorkbook(data: WmsForecastingResponse) {
   const salesLabel = `Past ${data.context.pastSalesWindowDays}-day sales`;
   const forecastDates = data.context.forecastDates.join(', ');
   const generatedDate = formatDate(data.generatedAt);
+  const requestDateLabel = data.context.mode === 'CUSTOM' ? 'Generated Date:' : 'Purchase Request Date:';
 
   worksheetData.push([`${partnerLabel} — SMART ORDER FORECASTING`]);
   worksheetData.push([]);
   worksheetData.push(['Client:', partnerLabel, '', '', '', '', 'Forecasted Ordering Dates:', forecastDates]);
-  worksheetData.push(['Purchase Request Date:', generatedDate, '', '', '', '', 'Days Forecasted:', data.context.daysForecasted]);
+  worksheetData.push([requestDateLabel, generatedDate, '', '', '', '', 'Days Forecasted:', data.context.daysForecasted]);
   worksheetData.push(['Safety Stock Buffer (%):', data.context.safetyStockPct, '', '', '', '', 'Reorder Trigger (days of stock left):', data.context.reorderTriggerDays]);
   worksheetData.push(['Sales Window:', `${formatDate(data.context.salesWindow.startDate)} to ${formatDate(data.context.salesWindow.endDate)}`, '', '', '', '', 'Past Sales Range:', `${data.context.pastSalesWindowDays} days`]);
   worksheetData.push([]);
@@ -176,7 +177,10 @@ function buildFileName(data: WmsForecastingResponse) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return `${partner || 'forecast'}-${data.context.cycleDate}.xlsx`;
+  const dateKey = data.context.mode === 'CUSTOM'
+    ? `${data.context.forecastStartDate}-to-${data.context.forecastEndDate}`
+    : data.context.cycleDate;
+  return `${partner || 'forecast'}-${data.context.mode.toLowerCase()}-${dateKey}.xlsx`;
 }
 
 function formatDate(value: string) {

@@ -25,12 +25,15 @@ export type WmsForecastStatus = {
 };
 
 export type WmsForecastingContext = {
+  mode: 'CYCLE' | 'CUSTOM';
   activeTenantId: string | null;
   activeTenantName: string | null;
   selectedStoreIds: string[];
   stores: WmsForecastStoreOption[];
   cycleDate: string;
-  cycleWeekday: 'MONDAY' | 'WEDNESDAY' | 'FRIDAY';
+  cycleWeekday: 'MONDAY' | 'WEDNESDAY' | 'FRIDAY' | 'CUSTOM';
+  forecastStartDate: string;
+  forecastEndDate: string;
   forecastDates: string[];
   daysForecasted: number;
   pastSalesWindowDays: number;
@@ -99,6 +102,9 @@ export type GetWmsForecastingParams = {
   tenantId?: string;
   storeIds?: string[];
   cycleDate: string;
+  mode?: 'CYCLE' | 'CUSTOM';
+  forecastStartDate?: string;
+  forecastEndDate?: string;
   safetyStockPct?: number;
   reorderTriggerDays?: number;
   pastSalesWindowDays?: number;

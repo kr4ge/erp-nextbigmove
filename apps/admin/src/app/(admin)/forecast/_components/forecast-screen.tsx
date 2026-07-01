@@ -3,14 +3,23 @@
 import { AlertCircle, CalendarDays, Download, RefreshCw } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import { useForecastController } from '../_hooks/use-forecast-controller';
 import { exportForecastWorkbook } from '../_utils/export-forecast-workbook';
+import { formatForecastShortDate } from '../_utils/forecast-formatters';
 import { ForecastCycleSelector } from './forecast-cycle-selector';
 import { ForecastStoreMultiSelect } from './forecast-store-multi-select';
 import { ForecastTable } from './forecast-table';
+
+const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
+
+type ForecastDateValue = {
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
+} | null;
 
 export function ForecastScreen() {
   const controller = useForecastController();
@@ -73,13 +82,84 @@ export function ForecastScreen() {
           title="Forecast Filters"
           icon={<CalendarDays className="panel-icon" />}
         >
-          <div>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => controller.setMode('CYCLE')}
+                className={`inline-flex h-10 items-center rounded-t-xl border-b-2 px-3 text-sm-custom font-semibold transition ${
+                  controller.mode === 'CYCLE'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted hover:text-primary'
+                }`}
+              >
+                Cycle Forecast
+              </button>
+              <button
+                type="button"
+                onClick={() => controller.setMode('CUSTOM')}
+                className={`inline-flex h-10 items-center rounded-t-xl border-b-2 px-3 text-sm-custom font-semibold transition ${
+                  controller.mode === 'CUSTOM'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted hover:text-primary'
+                }`}
+              >
+                Custom Forecast
+              </button>
+            </div>
+
             <div className="flex w-full min-w-0 items-center gap-2.5 overflow-x-auto pb-1">
-              <ForecastCycleSelector
-                cycles={controller.cycleSnapshots}
-                selectedCycleDate={controller.cycleDate}
-                onCycleChange={controller.setCycleDate}
-              />
+              {controller.mode === 'CYCLE' ? (
+                <ForecastCycleSelector
+                  cycles={controller.cycleSnapshots}
+                  selectedCycleDate={controller.cycleDate}
+                  onCycleChange={controller.setCycleDate}
+                />
+              ) : (
+                <div className="wms-pill-control relative flex min-w-[320px] flex-1 items-center rounded-2xl border border-[#d7e0e7] bg-white px-2 text-primary shadow-sm">
+                  <Datepicker
+                    value={{
+                      startDate: parseYmdToLocalDate(controller.customForecastRange.startDate),
+                      endDate: parseYmdToLocalDate(controller.customForecastRange.endDate),
+                    }}
+                    onChange={(value: ForecastDateValue) => {
+                      if (!value?.startDate || !value?.endDate) {
+                        return;
+                      }
+
+                      controller.setCustomForecastRange({
+                        startDate: normalizeDatepickerValue(value.startDate, controller.customForecastRange.startDate),
+                        endDate: normalizeDatepickerValue(value.endDate, controller.customForecastRange.endDate),
+                      });
+                    }}
+                    useRange={false}
+                    asSingle={false}
+                    showShortcuts={false}
+                    showFooter={false}
+                    primaryColor="orange"
+                    readOnly
+                    displayFormat="MM/DD/YYYY"
+                    separator=" - "
+                    inputClassName="h-10 w-full cursor-pointer rounded-2xl border-0 bg-transparent p-0 text-transparent caret-transparent placeholder:text-transparent focus:outline-none focus:ring-0"
+                    containerClassName="w-full"
+                    popupClassName={(defaultClass: string) => `${defaultClass} z-[80]`}
+                    toggleIcon={() => (
+                      <span className="flex w-full items-center gap-2 overflow-hidden px-1">
+                        <CalendarDays className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="whitespace-nowrap text-sm-custom font-semibold text-primary">
+                          {formatForecastShortDate(controller.customForecastRange.startDate)}
+                        </span>
+                        <span className="text-sm-custom text-muted">to</span>
+                        <span className="whitespace-nowrap text-sm-custom text-muted">
+                          {formatForecastShortDate(controller.customForecastRange.endDate)}
+                        </span>
+                      </span>
+                    )}
+                    toggleClassName="absolute inset-0 flex items-center rounded-2xl px-2 text-slate-600"
+                    placeholder=" "
+                  />
+                </div>
+              )}
 
               <WmsSearchableSelect
                 label="Partner"
@@ -117,7 +197,7 @@ export function ForecastScreen() {
                 />
               </ForecastRuleInput>
 
-              <ForecastRuleInput label="Sales">
+              <ForecastRuleInput label="Past sales">
                 <select
                   value={controller.pastSalesWindowDays}
                   onChange={(event) => {
@@ -160,6 +240,31 @@ export function ForecastScreen() {
       </div>
     </WmsPageShell>
   );
+}
+
+function parseYmdToLocalDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) {
+    return new Date();
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function normalizeDatepickerValue(value: Date | string, fallbackYmd: string) {
+  if (typeof value === 'string') {
+    return value.slice(0, 10);
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return [
+      value.getFullYear(),
+      String(value.getMonth() + 1).padStart(2, '0'),
+      String(value.getDate()).padStart(2, '0'),
+    ].join('-');
+  }
+
+  return fallbackYmd;
 }
 
 function ForecastRuleInput({

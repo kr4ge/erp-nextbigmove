@@ -9,7 +9,10 @@ export async function fetchWmsForecasting(params: GetWmsForecastingParams) {
     params: {
       ...(params.tenantId ? { tenantId: params.tenantId } : {}),
       ...(params.storeIds?.length ? { storeIds: params.storeIds.join(',') } : {}),
+      ...(params.mode ? { mode: params.mode } : {}),
       cycleDate: params.cycleDate,
+      ...(params.forecastStartDate ? { forecastStartDate: params.forecastStartDate } : {}),
+      ...(params.forecastEndDate ? { forecastEndDate: params.forecastEndDate } : {}),
       ...(params.safetyStockPct !== undefined
         ? { safetyStockPct: params.safetyStockPct }
         : {}),
@@ -29,7 +32,10 @@ export async function generateWmsForecasting(params: GetWmsForecastingParams) {
   const response = await apiClient.post('/wms/forecasting/generate', {
     ...(params.tenantId ? { tenantId: params.tenantId } : {}),
     storeIds: params.storeIds ?? [],
+    ...(params.mode ? { mode: params.mode } : {}),
     cycleDate: params.cycleDate,
+    ...(params.forecastStartDate ? { forecastStartDate: params.forecastStartDate } : {}),
+    ...(params.forecastEndDate ? { forecastEndDate: params.forecastEndDate } : {}),
     ...(params.safetyStockPct !== undefined
       ? { safetyStockPct: params.safetyStockPct }
       : {}),
