@@ -108,7 +108,7 @@ export function ForecastScreen() {
               </button>
             </div>
 
-            <div className="flex w-full min-w-0 items-center gap-2.5 overflow-x-auto pb-1">
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2.5 overflow-visible">
               {controller.mode === 'CYCLE' ? (
                 <ForecastCycleSelector
                   cycles={controller.cycleSnapshots}
@@ -116,7 +116,7 @@ export function ForecastScreen() {
                   onCycleChange={controller.setCycleDate}
                 />
               ) : (
-                <div className="wms-pill-control relative flex min-w-[320px] flex-1 items-center rounded-2xl border border-[#d7e0e7] bg-white px-2 text-primary shadow-sm">
+                <div className="wms-pill-control relative z-50 flex min-w-[320px] flex-1 items-center rounded-2xl border border-[#d7e0e7] bg-white px-2 text-primary shadow-sm">
                   <Datepicker
                     value={{
                       startDate: parseYmdToLocalDate(controller.customForecastRange.startDate),
@@ -142,7 +142,7 @@ export function ForecastScreen() {
                     separator=" - "
                     inputClassName="h-10 w-full cursor-pointer rounded-2xl border-0 bg-transparent p-0 text-transparent caret-transparent placeholder:text-transparent focus:outline-none focus:ring-0"
                     containerClassName="w-full"
-                    popupClassName={(defaultClass: string) => `${defaultClass} z-[80]`}
+                    popupClassName={(defaultClass: string) => `${defaultClass} z-[9999]`}
                     toggleIcon={() => (
                       <span className="flex w-full items-center gap-2 overflow-hidden px-1">
                         <CalendarDays className="h-3.5 w-3.5 shrink-0 text-primary" />
