@@ -52,6 +52,9 @@ export default Joi.object({
   WMS_PICKING_HANDOFF_QUEUE_ATTEMPTS: Joi.number().integer().min(1).default(4),
   WMS_PICKING_HANDOFF_QUEUE_BACKOFF_MS: Joi.number().integer().min(100).default(3000),
   WMS_PICKING_HANDOFF_QUEUE_TIMEOUT_MS: Joi.number().integer().min(1000).default(45000),
+  WMS_DEMAND_QUEUE_REFRESH_CHUNK_SIZE: Joi.number().integer().min(1).default(25),
+  WMS_DEMAND_QUEUE_REFRESH_TX_TIMEOUT_MS: Joi.number().integer().min(1000).default(90000),
+  WMS_DEMAND_QUEUE_REFRESH_TX_MAX_WAIT_MS: Joi.number().integer().min(1000).default(10000),
 
   // WMS feature rollout
   WMS_BASKET_DEMAND_PICKING_ENABLED: Joi.string().valid('true', 'false').default('true'),

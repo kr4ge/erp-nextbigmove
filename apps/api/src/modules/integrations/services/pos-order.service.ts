@@ -958,6 +958,9 @@ export class PosOrderService {
         });
       } catch (error: any) {
         const message = error?.message || 'Unknown error';
+        if (this.isTransientDbError(error)) {
+          throw error;
+        }
         if (message === 'skip_abandoned_checkout') {
           outcomes.push({
             shopId,
@@ -1069,6 +1072,24 @@ export class PosOrderService {
     }
 
     return { upserted, outcomes };
+  }
+
+  private isTransientDbError(error: any): boolean {
+    const message = (error?.message || '').toString().toLowerCase();
+    const code = (error?.code || '').toString().toUpperCase();
+    const metaCode = (error?.meta?.code || '').toString().toUpperCase();
+
+    return (
+      code === 'P2034' ||
+      code === '40001' ||
+      code === '40P01' ||
+      metaCode === '40P01' ||
+      metaCode === '40001' ||
+      message.includes('deadlock detected') ||
+      message.includes('40p01') ||
+      message.includes('could not serialize access due to') ||
+      message.includes('40001')
+    );
   }
 
   /**

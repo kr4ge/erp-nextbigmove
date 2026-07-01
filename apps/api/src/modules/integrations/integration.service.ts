@@ -1291,6 +1291,55 @@ export class IntegrationService {
     };
   }
 
+  private isTransientDbError(error: any): boolean {
+    const message = (error?.message || '').toString().toLowerCase();
+    const code = (error?.code || '').toString().toUpperCase();
+    const metaCode = (error?.meta?.code || '').toString().toUpperCase();
+
+    return (
+      code === 'P2034' ||
+      code === '40001' ||
+      code === '40P01' ||
+      metaCode === '40P01' ||
+      metaCode === '40001' ||
+      message.includes('deadlock detected') ||
+      message.includes('40p01') ||
+      message.includes('could not serialize access due to') ||
+      message.includes('40001')
+    );
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async withTransientDbRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    maxAttempts = 3,
+  ): Promise<T> {
+    let attempt = 0;
+
+    while (attempt < maxAttempts) {
+      attempt += 1;
+      try {
+        return await operation();
+      } catch (error: any) {
+        if (!this.isTransientDbError(error) || attempt >= maxAttempts) {
+          throw error;
+        }
+
+        const delayMs = Math.min(1000, 150 * attempt);
+        this.logger.warn(
+          `${operationName} hit transient DB error; retrying attempt ${attempt + 1}/${maxAttempts} in ${delayMs}ms: ${error?.message || 'Unknown error'}`,
+        );
+        await this.sleep(delayMs);
+      }
+    }
+
+    throw new Error(`${operationName} failed after ${maxAttempts} attempts`);
+  }
+
   private buildPancakeWebhookReconcileJobId(
     tenantId: string,
     dateLocal: string,
@@ -1523,11 +1572,14 @@ export class IntegrationService {
       }
 
       try {
-        const result = await this.posOrderService.upsertPosOrdersWithOutcomes(
-          tenant.id,
-          store.id,
-          orders,
-          store.teamId,
+        const result = await this.withTransientDbRetry(
+          () => this.posOrderService.upsertPosOrdersWithOutcomes(
+            tenant.id,
+            store.id,
+            orders,
+            store.teamId,
+          ),
+          `pancake webhook upsert shop_id=${shopId}`,
         );
         upserted += result.upserted;
         outcomes.push(...result.outcomes);
@@ -1550,6 +1602,10 @@ export class IntegrationService {
           warnings.push(...reportsWarnings);
         }
       } catch (error: any) {
+        if (this.isTransientDbError(error)) {
+          throw error;
+        }
+
         warnings.push(
           `Failed to upsert shop_id=${shopId}: ${error?.message || 'Unknown error'}`,
         );

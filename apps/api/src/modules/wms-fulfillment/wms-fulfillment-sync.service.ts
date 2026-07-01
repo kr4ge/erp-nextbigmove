@@ -98,6 +98,29 @@ export class WmsFulfillmentSyncService {
     return process.env.WMS_BASKET_DEMAND_PICKING_ENABLED === 'true';
   }
 
+  private getDemandQueueRefreshChunkSize() {
+    const configuredSize = Number(process.env.WMS_DEMAND_QUEUE_REFRESH_CHUNK_SIZE ?? 25);
+    if (!Number.isFinite(configuredSize) || configuredSize < 1) {
+      return 25;
+    }
+
+    return Math.floor(configuredSize);
+  }
+
+  private getDemandQueueRefreshTransactionOptions(): Prisma.TransactionOptions {
+    const configuredTimeout = Number(process.env.WMS_DEMAND_QUEUE_REFRESH_TX_TIMEOUT_MS ?? 90000);
+    const configuredMaxWait = Number(process.env.WMS_DEMAND_QUEUE_REFRESH_TX_MAX_WAIT_MS ?? 10000);
+
+    return {
+      timeout: Number.isFinite(configuredTimeout) && configuredTimeout >= 1000
+        ? Math.floor(configuredTimeout)
+        : 90000,
+      maxWait: Number.isFinite(configuredMaxWait) && configuredMaxWait >= 1000
+        ? Math.floor(configuredMaxWait)
+        : 10000,
+    };
+  }
+
   private resolveNewFulfillmentAssignmentMode() {
     return this.isBasketDemandPickingEnabled()
       ? WmsFulfillmentAssignmentMode.BASKET_DEMAND
@@ -1106,9 +1129,110 @@ export class WmsFulfillmentSyncService {
     variationIds?: string[] | null;
     limit?: number | null;
   }) {
-    await this.prisma.$transaction(async (tx) => {
-      await this.refreshDemandFulfillmentQueueTx(tx, params, new Date());
+    const now = new Date();
+    const variationIds = Array.from(new Set(
+      (params.variationIds ?? [])
+        .map((variationId) => variationId?.trim())
+        .filter((variationId): variationId is string => Boolean(variationId)),
+    ));
+    const orderedQueue = await this.prisma.wmsFulfillmentOrder.findMany({
+      where: {
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        storeId: params.storeId,
+        assignmentMode: WmsFulfillmentAssignmentMode.BASKET_DEMAND,
+        status: {
+          in: [...DEMAND_QUEUE_ORDER_STATUSES],
+        },
+        posOrder: {
+          is: {
+            status: CONFIRMED_POS_ORDER_STATUS,
+            isVoid: false,
+          },
+        },
+        ...(variationIds.length > 0
+          ? {
+              lines: {
+                some: {
+                  variationId: {
+                    in: variationIds,
+                  },
+                  quantityRequired: {
+                    gt: 0,
+                  },
+                },
+              },
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        posOrder: {
+          select: {
+            dateLocal: true,
+          },
+        },
+      },
+      orderBy: [
+        { posOrder: { dateLocal: 'asc' } },
+        { id: 'asc' },
+      ],
+      ...(typeof params.limit === 'number' && params.limit > 0 ? { take: params.limit } : {}),
     });
+    const orderedQueueIds = orderedQueue
+      .sort((left, right) => {
+        const leftDateLocal = left.posOrder?.dateLocal ?? '';
+        const rightDateLocal = right.posOrder?.dateLocal ?? '';
+        if (leftDateLocal !== rightDateLocal) {
+          return leftDateLocal.localeCompare(rightDateLocal);
+        }
+
+        return left.id.localeCompare(right.id);
+      })
+      .map((order) => order.id);
+
+    if (orderedQueueIds.length === 0) {
+      return;
+    }
+
+    const virtualAllocatedByWarehouseVariation = new Map<string, number>();
+    const chunkSize = this.getDemandQueueRefreshChunkSize();
+
+    for (let index = 0; index < orderedQueueIds.length; index += chunkSize) {
+      const chunkIds = orderedQueueIds.slice(index, index + chunkSize);
+      await this.prisma.$transaction(async (tx) => {
+        const batchOrders = await tx.wmsFulfillmentOrder.findMany({
+          where: {
+            id: {
+              in: chunkIds,
+            },
+          },
+          include: {
+            posOrder: {
+              select: {
+                status: true,
+                isVoid: true,
+                dateLocal: true,
+              },
+            },
+            lines: true,
+          },
+        });
+        const orderById = new Map(batchOrders.map((order) => [order.id, order]));
+
+        for (const orderId of chunkIds) {
+          const order = orderById.get(orderId);
+          if (!order) {
+            continue;
+          }
+
+          await this.refreshDemandFulfillmentOrderReadinessTx(tx, order.id, now, {
+            order,
+            virtualAllocatedByWarehouseVariation,
+            accumulateVirtualAllocation: true,
+          });
+        }
+      }, this.getDemandQueueRefreshTransactionOptions());
+    }
   }
 
   private async refreshDemandFulfillmentQueueTx(
