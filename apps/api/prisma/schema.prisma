@@ -2418,6 +2418,7 @@ model ReconcileMarketing {
   processedPurchasesPos Int       @default(0)
   repurchaseCount       Int       @default(0)
   repurchaseProcessedPurchasesPos Int @default(0)
+  repurchaseCodPos      Decimal   @default(0) @db.Decimal(12, 2)
   cogsPos               Decimal   @default(0) @db.Decimal(12, 2)
   repurchaseCogsPos     Decimal   @default(0) @db.Decimal(12, 2)
   cogsCanceledPos       Decimal   @default(0) @db.Decimal(12, 2)
