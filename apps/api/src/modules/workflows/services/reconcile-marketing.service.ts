@@ -12,10 +12,71 @@ interface PosOrderLite {
   status?: number | null;
   isVoid?: boolean | null;
   isAbandoned?: boolean | null;
+  isRepurchase?: boolean | null;
   cogs?: any;
   tracking?: string | null;
   mapping?: string | null;
 }
+
+type PosAggregateBucket = {
+  purchasesPos: number;
+  processedPurchasesPos: number;
+  codPos: number;
+  cogsPos: number;
+  cogsCanceledPos: number;
+  cogsRestockingPos: number;
+  cogsRtsPos: number;
+  cogsDeliveredPos: number;
+  confirmedCount: number;
+  unconfirmedCount: number;
+  printedCount: number;
+  deletedCount: number;
+  restockingCount: number;
+  abandonedCount: number;
+  waitingPickupCount: number;
+  shippedCount: number;
+  deliveredCount: number;
+  canceledCount: number;
+  rtsCount: number;
+  confirmedCodPos: number;
+  unconfirmedCodPos: number;
+  abandonedCodPos: number;
+  canceledCodPos: number;
+  restockingCodPos: number;
+  rtsCodPos: number;
+  deliveredCodPos: number;
+  shippedCodPos: number;
+  waitingPickupCodPos: number;
+  repurchaseCount: number;
+  repurchaseProcessedPurchasesPos: number;
+  repurchaseCodPos: number;
+  repurchaseCogsPos: number;
+  repurchaseCogsCanceledPos: number;
+  repurchaseCogsRestockingPos: number;
+  repurchaseCogsRtsPos: number;
+  repurchaseCogsDeliveredPos: number;
+  repurchaseConfirmedCount: number;
+  repurchaseUnconfirmedCount: number;
+  repurchasePrintedCount: number;
+  repurchaseDeletedCount: number;
+  repurchaseRestockingCount: number;
+  repurchaseAbandonedCount: number;
+  repurchaseWaitingPickupCount: number;
+  repurchaseShippedCount: number;
+  repurchaseDeliveredCount: number;
+  repurchaseCanceledCount: number;
+  repurchaseRtsCount: number;
+  repurchaseConfirmedCodPos: number;
+  repurchaseUnconfirmedCodPos: number;
+  repurchaseAbandonedCodPos: number;
+  repurchaseCanceledCodPos: number;
+  repurchaseRestockingCodPos: number;
+  repurchaseRtsCodPos: number;
+  repurchaseDeliveredCodPos: number;
+  repurchaseShippedCodPos: number;
+  repurchaseWaitingPickupCodPos: number;
+  orders: PosOrderLite[];
+};
 
 @Injectable()
 export class ReconcileMarketingService {
@@ -34,6 +95,197 @@ export class ReconcileMarketingService {
 
   private async bumpAnalyticsCacheVersion(tenantId: string): Promise<void> {
     await this.redis.incr(`analytics:${tenantId}:version`);
+  }
+
+  private createEmptyPosAggregateBucket(): PosAggregateBucket {
+    return {
+      purchasesPos: 0,
+      processedPurchasesPos: 0,
+      codPos: 0,
+      cogsPos: 0,
+      cogsCanceledPos: 0,
+      cogsRestockingPos: 0,
+      cogsRtsPos: 0,
+      cogsDeliveredPos: 0,
+      confirmedCount: 0,
+      unconfirmedCount: 0,
+      printedCount: 0,
+      deletedCount: 0,
+      restockingCount: 0,
+      abandonedCount: 0,
+      waitingPickupCount: 0,
+      shippedCount: 0,
+      deliveredCount: 0,
+      canceledCount: 0,
+      rtsCount: 0,
+      confirmedCodPos: 0,
+      unconfirmedCodPos: 0,
+      abandonedCodPos: 0,
+      canceledCodPos: 0,
+      restockingCodPos: 0,
+      rtsCodPos: 0,
+      deliveredCodPos: 0,
+      shippedCodPos: 0,
+      waitingPickupCodPos: 0,
+      repurchaseCount: 0,
+      repurchaseProcessedPurchasesPos: 0,
+      repurchaseCodPos: 0,
+      repurchaseCogsPos: 0,
+      repurchaseCogsCanceledPos: 0,
+      repurchaseCogsRestockingPos: 0,
+      repurchaseCogsRtsPos: 0,
+      repurchaseCogsDeliveredPos: 0,
+      repurchaseConfirmedCount: 0,
+      repurchaseUnconfirmedCount: 0,
+      repurchasePrintedCount: 0,
+      repurchaseDeletedCount: 0,
+      repurchaseRestockingCount: 0,
+      repurchaseAbandonedCount: 0,
+      repurchaseWaitingPickupCount: 0,
+      repurchaseShippedCount: 0,
+      repurchaseDeliveredCount: 0,
+      repurchaseCanceledCount: 0,
+      repurchaseRtsCount: 0,
+      repurchaseConfirmedCodPos: 0,
+      repurchaseUnconfirmedCodPos: 0,
+      repurchaseAbandonedCodPos: 0,
+      repurchaseCanceledCodPos: 0,
+      repurchaseRestockingCodPos: 0,
+      repurchaseRtsCodPos: 0,
+      repurchaseDeliveredCodPos: 0,
+      repurchaseShippedCodPos: 0,
+      repurchaseWaitingPickupCodPos: 0,
+      orders: [],
+    };
+  }
+
+  private accumulatePosOrder(bucket: PosAggregateBucket, order: PosOrderLite): void {
+    const status = order.status ?? -1;
+    const codVal = parseFloat(order.cod ?? '0') || 0;
+    const cogsVal = parseFloat(order.cogs ?? '0') || 0;
+    const isRepurchase = order.isRepurchase === true;
+    const isAbandoned = order.isAbandoned === true;
+    const isVoidOrder = order.isVoid === true;
+    const isDeleted = status === 7;
+    const isPrinted = status === 13;
+
+    if (isDeleted || (isPrinted && isVoidOrder)) {
+      if (isDeleted) {
+        bucket.deletedCount += 1;
+        if (isRepurchase) bucket.repurchaseDeletedCount += 1;
+      }
+      if (isPrinted) {
+        bucket.printedCount += 1;
+        if (isRepurchase) bucket.repurchasePrintedCount += 1;
+      }
+      bucket.orders.push(order);
+      return;
+    }
+
+    bucket.purchasesPos += 1;
+    bucket.codPos += codVal;
+    bucket.cogsPos += cogsVal;
+    if (order.tracking && order.tracking !== '') {
+      bucket.processedPurchasesPos += 1;
+    }
+
+    if (isRepurchase) {
+      bucket.repurchaseCount += 1;
+      bucket.repurchaseCodPos += codVal;
+      bucket.repurchaseCogsPos += cogsVal;
+      if (order.tracking && order.tracking !== '') {
+        bucket.repurchaseProcessedPurchasesPos += 1;
+      }
+    }
+
+    if (status === 0) {
+      bucket.unconfirmedCount += 1;
+      bucket.unconfirmedCodPos += codVal;
+      if (isRepurchase) {
+        bucket.repurchaseUnconfirmedCount += 1;
+        bucket.repurchaseUnconfirmedCodPos += codVal;
+      }
+    }
+    if (isAbandoned) {
+      bucket.abandonedCount += 1;
+      bucket.abandonedCodPos += codVal;
+      if (isRepurchase) {
+        bucket.repurchaseAbandonedCount += 1;
+        bucket.repurchaseAbandonedCodPos += codVal;
+      }
+    }
+    if (status === 1) {
+      bucket.confirmedCount += 1;
+      bucket.confirmedCodPos += codVal;
+      if (isRepurchase) {
+        bucket.repurchaseConfirmedCount += 1;
+        bucket.repurchaseConfirmedCodPos += codVal;
+      }
+    }
+    if (status === 13) {
+      bucket.printedCount += 1;
+      if (isRepurchase) {
+        bucket.repurchasePrintedCount += 1;
+      }
+    }
+    if (status === 11) {
+      bucket.restockingCount += 1;
+      bucket.restockingCodPos += codVal;
+      bucket.cogsRestockingPos += cogsVal;
+      if (isRepurchase) {
+        bucket.repurchaseRestockingCount += 1;
+        bucket.repurchaseRestockingCodPos += codVal;
+        bucket.repurchaseCogsRestockingPos += cogsVal;
+      }
+    }
+    if (status === 9) {
+      bucket.waitingPickupCount += 1;
+      bucket.waitingPickupCodPos += codVal;
+      if (isRepurchase) {
+        bucket.repurchaseWaitingPickupCount += 1;
+        bucket.repurchaseWaitingPickupCodPos += codVal;
+      }
+    }
+    if (status === 2) {
+      bucket.shippedCount += 1;
+      bucket.shippedCodPos += codVal;
+      if (isRepurchase) {
+        bucket.repurchaseShippedCount += 1;
+        bucket.repurchaseShippedCodPos += codVal;
+      }
+    }
+    if (status === 3) {
+      bucket.deliveredCount += 1;
+      bucket.deliveredCodPos += codVal;
+      bucket.cogsDeliveredPos += cogsVal;
+      if (isRepurchase) {
+        bucket.repurchaseDeliveredCount += 1;
+        bucket.repurchaseDeliveredCodPos += codVal;
+        bucket.repurchaseCogsDeliveredPos += cogsVal;
+      }
+    }
+    if (status === 6) {
+      bucket.canceledCount += 1;
+      bucket.canceledCodPos += codVal;
+      bucket.cogsCanceledPos += cogsVal;
+      if (isRepurchase) {
+        bucket.repurchaseCanceledCount += 1;
+        bucket.repurchaseCanceledCodPos += codVal;
+        bucket.repurchaseCogsCanceledPos += cogsVal;
+      }
+    }
+    if (status === 4 || status === 5) {
+      bucket.rtsCount += 1;
+      bucket.rtsCodPos += codVal;
+      bucket.cogsRtsPos += cogsVal;
+      if (isRepurchase) {
+        bucket.repurchaseRtsCount += 1;
+        bucket.repurchaseRtsCodPos += codVal;
+        bucket.repurchaseCogsRtsPos += cogsVal;
+      }
+    }
+
+    bucket.orders.push(order);
   }
 
   /**
@@ -87,6 +339,7 @@ export class ReconcileMarketingService {
         status: true,
         isVoid: true,
         isAbandoned: true,
+        isRepurchase: true,
         cogs: true,
         tracking: true,
         mapping: true,
@@ -103,147 +356,14 @@ export class ReconcileMarketingService {
     }
 
     // Aggregate POS by normalized ad id
-    const posAgg: Record<
-      string,
-      {
-        purchasesPos: number;
-        processedPurchasesPos: number;
-        codPos: number;
-        cogsPos: number;
-        cogsCanceledPos: number;
-        cogsRestockingPos: number;
-        cogsRtsPos: number;
-        cogsDeliveredPos: number;
-        confirmedCount: number;
-        unconfirmedCount: number; // status 0
-        printedCount: number; // status 13
-        deletedCount: number; // status 7
-        restockingCount: number; // status 11
-        abandonedCount: number; // status 0 + ABANDONED tag
-        waitingPickupCount: number;
-        shippedCount: number;
-        deliveredCount: number;
-        canceledCount: number;
-        rtsCount: number;
-        confirmedCodPos: number;
-        unconfirmedCodPos: number;
-        abandonedCodPos: number;
-        canceledCodPos: number;
-        restockingCodPos: number;
-        rtsCodPos: number;
-        deliveredCodPos: number;
-        shippedCodPos: number;
-        waitingPickupCodPos: number;
-        orders: PosOrderLite[];
-      }
-    > = {};
+    const posAgg: Record<string, PosAggregateBucket> = {};
     for (const order of posOrders) {
       const norm = normalizeAdId(order.pUtmContent || '');
       if (!norm) continue;
       if (!posAgg[norm]) {
-        posAgg[norm] = {
-          purchasesPos: 0,
-          processedPurchasesPos: 0,
-          codPos: 0,
-          cogsPos: 0,
-          cogsCanceledPos: 0,
-          cogsRestockingPos: 0,
-          cogsRtsPos: 0,
-          confirmedCount: 0,
-          unconfirmedCount: 0,
-          printedCount: 0,
-          deletedCount: 0,
-          confirmedCodPos: 0,
-          unconfirmedCodPos: 0,
-          restockingCount: 0,
-          abandonedCount: 0,
-          abandonedCodPos: 0,
-          waitingPickupCount: 0,
-          shippedCount: 0,
-          deliveredCount: 0,
-          canceledCount: 0,
-          rtsCount: 0,
-          canceledCodPos: 0,
-          restockingCodPos: 0,
-          rtsCodPos: 0,
-          deliveredCodPos: 0,
-          shippedCodPos: 0,
-          waitingPickupCodPos: 0,
-          cogsDeliveredPos: 0,
-          orders: [],
-        };
+        posAgg[norm] = this.createEmptyPosAggregateBucket();
       }
-      const agg = posAgg[norm];
-      const status = order.status ?? -1;
-      const isVoidOrder = order.isVoid === true;
-      const isDeleted = status === 7;
-      const isPrinted = status === 13;
-
-      if (isDeleted || (isPrinted && isVoidOrder)) {
-        if (isDeleted) {
-          agg.deletedCount += 1;
-        }
-        if (isPrinted) {
-          agg.printedCount += 1;
-        }
-        agg.orders.push(order);
-        continue;
-      }
-
-      agg.purchasesPos += 1;
-      const codVal = parseFloat(order.cod ?? '0') || 0;
-      const cogsVal = parseFloat(order.cogs ?? '0') || 0;
-      const isAbandoned = order.isAbandoned === true;
-      agg.codPos += codVal;
-      agg.cogsPos += cogsVal;
-      if (order.tracking && order.tracking !== '') {
-        agg.processedPurchasesPos += 1;
-      }
-      if (status === 0) {
-        agg.unconfirmedCount += 1;
-        agg.unconfirmedCodPos += codVal;
-      }
-      if (isAbandoned) {
-        agg.abandonedCount += 1;
-        agg.abandonedCodPos += codVal;
-      }
-      if (status === 1) {
-        agg.confirmedCount += 1;
-        agg.confirmedCodPos += codVal;
-      }
-      if (status === 13) {
-        agg.printedCount += 1;
-      }
-      if (status === 11) {
-        agg.restockingCount += 1;
-        agg.restockingCodPos += codVal;
-        agg.cogsRestockingPos += cogsVal;
-      }
-      if (status === 9) {
-        agg.waitingPickupCount += 1;
-        agg.waitingPickupCodPos += codVal;
-      }
-      if (status === 2) {
-        agg.shippedCount += 1;
-        agg.shippedCodPos += codVal;
-      }
-      if (status === 3) {
-        agg.deliveredCount += 1;
-        agg.deliveredCodPos += codVal;
-        agg.cogsDeliveredPos += cogsVal;
-      }
-      if (status === 6) {
-        agg.canceledCount += 1;
-        agg.canceledCodPos += codVal;
-        agg.cogsCanceledPos += cogsVal;
-      }
-      if (status === 4 || status === 5) {
-        agg.rtsCount += 1;
-        agg.rtsCodPos += codVal;
-        agg.cogsRtsPos += cogsVal;
-      }
-
-      agg.orders.push(order);
+      this.accumulatePosOrder(posAgg[norm], order);
     }
 
     // Upsert reconciled rows for matched insights
@@ -261,18 +381,31 @@ export class ReconcileMarketingService {
           : [];
 
       const nonCanceled = agg ? Math.max(agg.purchasesPos - agg.canceledCount, 0) : 0;
+      const repurchaseNonCanceled = agg ? Math.max(agg.repurchaseCount - agg.repurchaseCanceledCount, 0) : 0;
       const sf = nonCanceled * 60;
+      const repurchaseSf = repurchaseNonCanceled * 60;
       const ff = nonCanceled * 25;
+      const repurchaseFf = repurchaseNonCanceled * 25;
       const inf = nonCanceled * 5;
+      const repurchaseIf = repurchaseNonCanceled * 5;
       const sdr = agg ? agg.shippedCount + agg.deliveredCount + agg.rtsCount : 0;
+      const repurchaseSdr = agg ? agg.repurchaseShippedCount + agg.repurchaseDeliveredCount + agg.repurchaseRtsCount : 0;
       const sfSdr = sdr * 60;
+      const repurchaseSfSdr = repurchaseSdr * 60;
       const ffSdr = sdr * 25;
+      const repurchaseFfSdr = repurchaseSdr * 25;
       const infSdr = sdr * 5;
+      const repurchaseIfSdr = repurchaseSdr * 5;
       const eligibleCod = agg
         ? Math.max(agg.codPos - agg.rtsCodPos - agg.canceledCodPos, 0)
         : 0;
+      const repurchaseEligibleCod = agg
+        ? Math.max(agg.repurchaseCodPos - agg.repurchaseRtsCodPos - agg.repurchaseCanceledCodPos, 0)
+        : 0;
       const codFee = eligibleCod * 0.0224;
+      const repurchaseCodFee = repurchaseEligibleCod * 0.0224;
       const codFeeDelivered = (agg?.deliveredCodPos ?? 0) * 0.0224;
+      const repurchaseCodFeeDelivered = (agg?.repurchaseDeliveredCodPos ?? 0) * 0.0224;
       const metaDateCreated =
         insight.dateCreated && typeof insight.dateCreated === 'string'
           ? new Date(insight.dateCreated)
@@ -311,39 +444,74 @@ export class ReconcileMarketingService {
           purchasesPos: agg?.purchasesPos || 0,
           codPos: agg?.codPos || 0,
           processedPurchasesPos: agg?.processedPurchasesPos || 0,
+          repurchaseCount: agg?.repurchaseCount || 0,
+          repurchaseProcessedPurchasesPos: agg?.repurchaseProcessedPurchasesPos || 0,
           cogsPos: agg?.cogsPos || 0,
+          repurchaseCogsPos: agg?.repurchaseCogsPos || 0,
           cogsCanceledPos: agg?.cogsCanceledPos || 0,
+          repurchaseCogsCanceledPos: agg?.repurchaseCogsCanceledPos || 0,
           cogsRestockingPos: agg?.cogsRestockingPos || 0,
+          repurchaseCogsRestockingPos: agg?.repurchaseCogsRestockingPos || 0,
           cogsRtsPos: agg?.cogsRtsPos || 0,
+          repurchaseCogsRtsPos: agg?.repurchaseCogsRtsPos || 0,
           cogsDeliveredPos: agg?.cogsDeliveredPos || 0,
+          repurchaseCogsDeliveredPos: agg?.repurchaseCogsDeliveredPos || 0,
           sfPos: sf,
+          repurchaseSfPos: repurchaseSf,
           ffPos: ff,
+          repurchaseFfPos: repurchaseFf,
           ifPos: inf,
+          repurchaseIfPos: repurchaseIf,
           sfSdrPos: sfSdr,
+          repurchaseSfSdrPos: repurchaseSfSdr,
           ffSdrPos: ffSdr,
+          repurchaseFfSdrPos: repurchaseFfSdr,
           ifSdrPos: infSdr,
+          repurchaseIfSdrPos: repurchaseIfSdr,
           codFeePos: codFee,
+          repurchaseCodFeePos: repurchaseCodFee,
           codFeeDeliveredPos: codFeeDelivered,
+          repurchaseCodFeeDeliveredPos: repurchaseCodFeeDelivered,
           canceledCodPos: agg?.canceledCodPos || 0,
+          repurchaseCanceledCodPos: agg?.repurchaseCanceledCodPos || 0,
           rtsCodPos: agg?.rtsCodPos || 0,
+          repurchaseRtsCodPos: agg?.repurchaseRtsCodPos || 0,
           deliveredCodPos: agg?.deliveredCodPos || 0,
+          repurchaseDeliveredCodPos: agg?.repurchaseDeliveredCodPos || 0,
           shippedCodPos: agg?.shippedCodPos || 0,
+          repurchaseShippedCodPos: agg?.repurchaseShippedCodPos || 0,
           waitingPickupCodPos: agg?.waitingPickupCodPos || 0,
+          repurchaseWaitingPickupCodPos: agg?.repurchaseWaitingPickupCodPos || 0,
           restockingCodPos: agg?.restockingCodPos || 0,
+          repurchaseRestockingCodPos: agg?.repurchaseRestockingCodPos || 0,
           confirmedCodPos: agg?.confirmedCodPos || 0,
+          repurchaseConfirmedCodPos: agg?.repurchaseConfirmedCodPos || 0,
           unconfirmedCodPos: agg?.unconfirmedCodPos || 0,
+          repurchaseUnconfirmedCodPos: agg?.repurchaseUnconfirmedCodPos || 0,
           abandonedCodPos: agg?.abandonedCodPos || 0,
+          repurchaseAbandonedCodPos: agg?.repurchaseAbandonedCodPos || 0,
           confirmedCount: agg?.confirmedCount || 0,
+          repurchaseConfirmedCount: agg?.repurchaseConfirmedCount || 0,
           unconfirmedCount: agg?.unconfirmedCount || 0,
+          repurchaseUnconfirmedCount: agg?.repurchaseUnconfirmedCount || 0,
           printedCount: agg?.printedCount || 0,
+          repurchasePrintedCount: agg?.repurchasePrintedCount || 0,
           deletedCount: agg?.deletedCount || 0,
+          repurchaseDeletedCount: agg?.repurchaseDeletedCount || 0,
           abandonedCount: agg?.abandonedCount || 0,
+          repurchaseAbandonedCount: agg?.repurchaseAbandonedCount || 0,
           restockingCount: agg?.restockingCount || 0,
+          repurchaseRestockingCount: agg?.repurchaseRestockingCount || 0,
           waitingPickupCount: agg?.waitingPickupCount || 0,
+          repurchaseWaitingPickupCount: agg?.repurchaseWaitingPickupCount || 0,
           shippedCount: agg?.shippedCount || 0,
+          repurchaseShippedCount: agg?.repurchaseShippedCount || 0,
           deliveredCount: agg?.deliveredCount || 0,
+          repurchaseDeliveredCount: agg?.repurchaseDeliveredCount || 0,
           canceledCount: agg?.canceledCount || 0,
+          repurchaseCanceledCount: agg?.repurchaseCanceledCount || 0,
           rtsCount: agg?.rtsCount || 0,
+          repurchaseRtsCount: agg?.repurchaseRtsCount || 0,
           matchedOrders,
           shops,
         },
@@ -364,39 +532,74 @@ export class ReconcileMarketingService {
           purchasesPos: agg?.purchasesPos || 0,
           codPos: agg?.codPos || 0,
           processedPurchasesPos: agg?.processedPurchasesPos || 0,
+          repurchaseCount: agg?.repurchaseCount || 0,
+          repurchaseProcessedPurchasesPos: agg?.repurchaseProcessedPurchasesPos || 0,
           cogsPos: agg?.cogsPos || 0,
+          repurchaseCogsPos: agg?.repurchaseCogsPos || 0,
           cogsCanceledPos: agg?.cogsCanceledPos || 0,
+          repurchaseCogsCanceledPos: agg?.repurchaseCogsCanceledPos || 0,
           cogsRestockingPos: agg?.cogsRestockingPos || 0,
+          repurchaseCogsRestockingPos: agg?.repurchaseCogsRestockingPos || 0,
           cogsRtsPos: agg?.cogsRtsPos || 0,
+          repurchaseCogsRtsPos: agg?.repurchaseCogsRtsPos || 0,
           cogsDeliveredPos: agg?.cogsDeliveredPos || 0,
+          repurchaseCogsDeliveredPos: agg?.repurchaseCogsDeliveredPos || 0,
           sfPos: sf,
+          repurchaseSfPos: repurchaseSf,
           ffPos: ff,
+          repurchaseFfPos: repurchaseFf,
           ifPos: inf,
+          repurchaseIfPos: repurchaseIf,
           sfSdrPos: sfSdr,
+          repurchaseSfSdrPos: repurchaseSfSdr,
           ffSdrPos: ffSdr,
+          repurchaseFfSdrPos: repurchaseFfSdr,
           ifSdrPos: infSdr,
+          repurchaseIfSdrPos: repurchaseIfSdr,
           codFeePos: codFee,
+          repurchaseCodFeePos: repurchaseCodFee,
           codFeeDeliveredPos: codFeeDelivered,
+          repurchaseCodFeeDeliveredPos: repurchaseCodFeeDelivered,
           canceledCodPos: agg?.canceledCodPos || 0,
+          repurchaseCanceledCodPos: agg?.repurchaseCanceledCodPos || 0,
           rtsCodPos: agg?.rtsCodPos || 0,
+          repurchaseRtsCodPos: agg?.repurchaseRtsCodPos || 0,
           deliveredCodPos: agg?.deliveredCodPos || 0,
+          repurchaseDeliveredCodPos: agg?.repurchaseDeliveredCodPos || 0,
           shippedCodPos: agg?.shippedCodPos || 0,
+          repurchaseShippedCodPos: agg?.repurchaseShippedCodPos || 0,
           waitingPickupCodPos: agg?.waitingPickupCodPos || 0,
+          repurchaseWaitingPickupCodPos: agg?.repurchaseWaitingPickupCodPos || 0,
           restockingCodPos: agg?.restockingCodPos || 0,
+          repurchaseRestockingCodPos: agg?.repurchaseRestockingCodPos || 0,
           confirmedCodPos: agg?.confirmedCodPos || 0,
+          repurchaseConfirmedCodPos: agg?.repurchaseConfirmedCodPos || 0,
           unconfirmedCodPos: agg?.unconfirmedCodPos || 0,
+          repurchaseUnconfirmedCodPos: agg?.repurchaseUnconfirmedCodPos || 0,
           abandonedCodPos: agg?.abandonedCodPos || 0,
+          repurchaseAbandonedCodPos: agg?.repurchaseAbandonedCodPos || 0,
           confirmedCount: agg?.confirmedCount || 0,
+          repurchaseConfirmedCount: agg?.repurchaseConfirmedCount || 0,
           unconfirmedCount: agg?.unconfirmedCount || 0,
+          repurchaseUnconfirmedCount: agg?.repurchaseUnconfirmedCount || 0,
           printedCount: agg?.printedCount || 0,
+          repurchasePrintedCount: agg?.repurchasePrintedCount || 0,
           deletedCount: agg?.deletedCount || 0,
+          repurchaseDeletedCount: agg?.repurchaseDeletedCount || 0,
           abandonedCount: agg?.abandonedCount || 0,
+          repurchaseAbandonedCount: agg?.repurchaseAbandonedCount || 0,
           restockingCount: agg?.restockingCount || 0,
+          repurchaseRestockingCount: agg?.repurchaseRestockingCount || 0,
           waitingPickupCount: agg?.waitingPickupCount || 0,
+          repurchaseWaitingPickupCount: agg?.repurchaseWaitingPickupCount || 0,
           shippedCount: agg?.shippedCount || 0,
+          repurchaseShippedCount: agg?.repurchaseShippedCount || 0,
           deliveredCount: agg?.deliveredCount || 0,
+          repurchaseDeliveredCount: agg?.repurchaseDeliveredCount || 0,
           canceledCount: agg?.canceledCount || 0,
+          repurchaseCanceledCount: agg?.repurchaseCanceledCount || 0,
           rtsCount: agg?.rtsCount || 0,
+          repurchaseRtsCount: agg?.repurchaseRtsCount || 0,
           matchedOrders,
           shops,
           updatedAt: new Date(),
@@ -412,34 +615,46 @@ export class ReconcileMarketingService {
         continue; // matched already
       }
       const syntheticAdId = `${order.shopId}-${order.posOrderId}`;
-      const codVal = parseFloat(order.cod ?? '0') || 0;
-      const cogsVal = parseFloat(order.cogs ?? '0') || 0;
-      const statusNum = Number.isFinite(order.status as any) ? Number(order.status) : -1;
-      const isUnconfirmed = statusNum === 0;
-      const isAbandoned = order.isAbandoned === true;
-      const isWaitingPickup = statusNum === 9;
-      const isShipped = statusNum === 2;
-      const isDelivered = statusNum === 3;
-      const isCanceled = statusNum === 6;
-      const isDeleted = statusNum === 7;
-      const isRts = statusNum === 4 || statusNum === 5;
-      const isSdr = isShipped || isDelivered || isRts;
-      const isConfirmed = statusNum === 1;
-      const isPrinted = statusNum === 13;
-      const isVoidOrder = order.isVoid === true;
-      const isCountOnly = isDeleted || (isPrinted && isVoidOrder);
-      const codFee = !isRts && !isCanceled && !isCountOnly ? codVal * 0.0224 : 0;
-      const codFeeDelivered = isDelivered ? codVal * 0.0224 : 0;
-      const nonCanceled = isCanceled || isCountOnly ? 0 : 1;
-      const includedOrderCount = isCountOnly ? 0 : 1;
-      const includedCod = isCountOnly ? 0 : codVal;
-      const includedCogs = isCountOnly ? 0 : cogsVal;
+      const syntheticAgg = this.createEmptyPosAggregateBucket();
+      this.accumulatePosOrder(syntheticAgg, order);
+      const nonCanceled = Math.max(syntheticAgg.purchasesPos - syntheticAgg.canceledCount, 0);
+      const repurchaseNonCanceled = Math.max(
+        syntheticAgg.repurchaseCount - syntheticAgg.repurchaseCanceledCount,
+        0,
+      );
       const sf = nonCanceled * 60;
+      const repurchaseSf = repurchaseNonCanceled * 60;
       const ff = nonCanceled * 25;
+      const repurchaseFf = repurchaseNonCanceled * 25;
       const inf = nonCanceled * 5;
-      const sfSdr = isSdr ? 60 : 0;
-      const ffSdr = isSdr ? 25 : 0;
-      const infSdr = isSdr ? 5 : 0;
+      const repurchaseIf = repurchaseNonCanceled * 5;
+      const sdr =
+        syntheticAgg.shippedCount + syntheticAgg.deliveredCount + syntheticAgg.rtsCount;
+      const repurchaseSdr =
+        syntheticAgg.repurchaseShippedCount +
+        syntheticAgg.repurchaseDeliveredCount +
+        syntheticAgg.repurchaseRtsCount;
+      const sfSdr = sdr * 60;
+      const repurchaseSfSdr = repurchaseSdr * 60;
+      const ffSdr = sdr * 25;
+      const repurchaseFfSdr = repurchaseSdr * 25;
+      const infSdr = sdr * 5;
+      const repurchaseIfSdr = repurchaseSdr * 5;
+      const eligibleCod = Math.max(
+        syntheticAgg.codPos - syntheticAgg.rtsCodPos - syntheticAgg.canceledCodPos,
+        0,
+      );
+      const repurchaseEligibleCod = Math.max(
+        syntheticAgg.repurchaseCodPos -
+          syntheticAgg.repurchaseRtsCodPos -
+          syntheticAgg.repurchaseCanceledCodPos,
+        0,
+      );
+      const codFee = eligibleCod * 0.0224;
+      const repurchaseCodFee = repurchaseEligibleCod * 0.0224;
+      const codFeeDelivered = syntheticAgg.deliveredCodPos * 0.0224;
+      const repurchaseCodFeeDelivered = syntheticAgg.repurchaseDeliveredCodPos * 0.0224;
+      const codVal = parseFloat(order.cod ?? '0') || 0;
       await this.prisma.reconcileMarketing.upsert({
         where: {
           tenantId_date_adId: {
@@ -467,42 +682,77 @@ export class ReconcileMarketingService {
           linkClicks: 0,
           impressions: 0,
           leads: 0,
-          purchasesPos: includedOrderCount,
-          codPos: includedCod,
-          processedPurchasesPos: !isCountOnly && order.tracking ? 1 : 0,
-          cogsPos: includedCogs,
-          cogsCanceledPos: !isCountOnly && isCanceled ? cogsVal : 0,
-          cogsRestockingPos: !isCountOnly && isWaitingPickup ? 0 : (!isCountOnly && statusNum === 11 ? cogsVal : 0),
-          cogsRtsPos: !isCountOnly && isRts ? cogsVal : 0,
-          cogsDeliveredPos: !isCountOnly && isDelivered ? cogsVal : 0,
+          purchasesPos: syntheticAgg.purchasesPos,
+          codPos: syntheticAgg.codPos,
+          processedPurchasesPos: syntheticAgg.processedPurchasesPos,
+          repurchaseCount: syntheticAgg.repurchaseCount,
+          repurchaseProcessedPurchasesPos: syntheticAgg.repurchaseProcessedPurchasesPos,
+          cogsPos: syntheticAgg.cogsPos,
+          repurchaseCogsPos: syntheticAgg.repurchaseCogsPos,
+          cogsCanceledPos: syntheticAgg.cogsCanceledPos,
+          repurchaseCogsCanceledPos: syntheticAgg.repurchaseCogsCanceledPos,
+          cogsRestockingPos: syntheticAgg.cogsRestockingPos,
+          repurchaseCogsRestockingPos: syntheticAgg.repurchaseCogsRestockingPos,
+          cogsRtsPos: syntheticAgg.cogsRtsPos,
+          repurchaseCogsRtsPos: syntheticAgg.repurchaseCogsRtsPos,
+          cogsDeliveredPos: syntheticAgg.cogsDeliveredPos,
+          repurchaseCogsDeliveredPos: syntheticAgg.repurchaseCogsDeliveredPos,
           sfPos: sf,
+          repurchaseSfPos: repurchaseSf,
           ffPos: ff,
+          repurchaseFfPos: repurchaseFf,
           ifPos: inf,
+          repurchaseIfPos: repurchaseIf,
           sfSdrPos: sfSdr,
+          repurchaseSfSdrPos: repurchaseSfSdr,
           ffSdrPos: ffSdr,
+          repurchaseFfSdrPos: repurchaseFfSdr,
           ifSdrPos: infSdr,
+          repurchaseIfSdrPos: repurchaseIfSdr,
           codFeePos: codFee,
+          repurchaseCodFeePos: repurchaseCodFee,
           codFeeDeliveredPos: codFeeDelivered,
-          canceledCodPos: !isCountOnly && isCanceled ? codVal : 0,
-          rtsCodPos: !isCountOnly && isRts ? codVal : 0,
-          deliveredCodPos: !isCountOnly && isDelivered ? codVal : 0,
-          shippedCodPos: !isCountOnly && isShipped ? codVal : 0,
-          waitingPickupCodPos: !isCountOnly && isWaitingPickup ? codVal : 0,
-          restockingCodPos: !isCountOnly && statusNum === 11 ? codVal : 0,
-          confirmedCodPos: !isCountOnly && isConfirmed ? codVal : 0,
-          unconfirmedCodPos: !isCountOnly && isUnconfirmed ? codVal : 0,
-          abandonedCodPos: !isCountOnly && isAbandoned ? codVal : 0,
-          confirmedCount: statusNum === 1 ? 1 : 0,
-          unconfirmedCount: isUnconfirmed ? 1 : 0,
-          printedCount: isPrinted ? 1 : 0,
-          deletedCount: isDeleted ? 1 : 0,
-          abandonedCount: isAbandoned ? 1 : 0,
-          restockingCount: statusNum === 11 ? 1 : 0,
-          waitingPickupCount: isWaitingPickup ? 1 : 0,
-          shippedCount: isShipped ? 1 : 0,
-          deliveredCount: isDelivered ? 1 : 0,
-          canceledCount: isCanceled ? 1 : 0,
-          rtsCount: isRts ? 1 : 0,
+          repurchaseCodFeeDeliveredPos: repurchaseCodFeeDelivered,
+          canceledCodPos: syntheticAgg.canceledCodPos,
+          repurchaseCanceledCodPos: syntheticAgg.repurchaseCanceledCodPos,
+          rtsCodPos: syntheticAgg.rtsCodPos,
+          repurchaseRtsCodPos: syntheticAgg.repurchaseRtsCodPos,
+          deliveredCodPos: syntheticAgg.deliveredCodPos,
+          repurchaseDeliveredCodPos: syntheticAgg.repurchaseDeliveredCodPos,
+          shippedCodPos: syntheticAgg.shippedCodPos,
+          repurchaseShippedCodPos: syntheticAgg.repurchaseShippedCodPos,
+          waitingPickupCodPos: syntheticAgg.waitingPickupCodPos,
+          repurchaseWaitingPickupCodPos: syntheticAgg.repurchaseWaitingPickupCodPos,
+          restockingCodPos: syntheticAgg.restockingCodPos,
+          repurchaseRestockingCodPos: syntheticAgg.repurchaseRestockingCodPos,
+          confirmedCodPos: syntheticAgg.confirmedCodPos,
+          repurchaseConfirmedCodPos: syntheticAgg.repurchaseConfirmedCodPos,
+          unconfirmedCodPos: syntheticAgg.unconfirmedCodPos,
+          repurchaseUnconfirmedCodPos: syntheticAgg.repurchaseUnconfirmedCodPos,
+          abandonedCodPos: syntheticAgg.abandonedCodPos,
+          repurchaseAbandonedCodPos: syntheticAgg.repurchaseAbandonedCodPos,
+          confirmedCount: syntheticAgg.confirmedCount,
+          repurchaseConfirmedCount: syntheticAgg.repurchaseConfirmedCount,
+          unconfirmedCount: syntheticAgg.unconfirmedCount,
+          repurchaseUnconfirmedCount: syntheticAgg.repurchaseUnconfirmedCount,
+          printedCount: syntheticAgg.printedCount,
+          repurchasePrintedCount: syntheticAgg.repurchasePrintedCount,
+          deletedCount: syntheticAgg.deletedCount,
+          repurchaseDeletedCount: syntheticAgg.repurchaseDeletedCount,
+          abandonedCount: syntheticAgg.abandonedCount,
+          repurchaseAbandonedCount: syntheticAgg.repurchaseAbandonedCount,
+          restockingCount: syntheticAgg.restockingCount,
+          repurchaseRestockingCount: syntheticAgg.repurchaseRestockingCount,
+          waitingPickupCount: syntheticAgg.waitingPickupCount,
+          repurchaseWaitingPickupCount: syntheticAgg.repurchaseWaitingPickupCount,
+          shippedCount: syntheticAgg.shippedCount,
+          repurchaseShippedCount: syntheticAgg.repurchaseShippedCount,
+          deliveredCount: syntheticAgg.deliveredCount,
+          repurchaseDeliveredCount: syntheticAgg.repurchaseDeliveredCount,
+          canceledCount: syntheticAgg.canceledCount,
+          repurchaseCanceledCount: syntheticAgg.repurchaseCanceledCount,
+          rtsCount: syntheticAgg.rtsCount,
+          repurchaseRtsCount: syntheticAgg.repurchaseRtsCount,
           matchedOrders: [
             {
               shopId: order.shopId,
@@ -514,44 +764,79 @@ export class ReconcileMarketingService {
         },
         update: {
           teamId: order.teamId ?? teamId ?? null,
-          purchasesPos: includedOrderCount,
-          codPos: includedCod,
-          processedPurchasesPos: !isCountOnly && order.tracking ? 1 : 0,
-          cogsPos: includedCogs,
-          cogsCanceledPos: !isCountOnly && isCanceled ? cogsVal : 0,
-          cogsRestockingPos: !isCountOnly && statusNum === 11 ? cogsVal : 0,
-          cogsRtsPos: !isCountOnly && isRts ? cogsVal : 0,
-          cogsDeliveredPos: !isCountOnly && isDelivered ? cogsVal : 0,
+          purchasesPos: syntheticAgg.purchasesPos,
+          codPos: syntheticAgg.codPos,
+          processedPurchasesPos: syntheticAgg.processedPurchasesPos,
+          repurchaseCount: syntheticAgg.repurchaseCount,
+          repurchaseProcessedPurchasesPos: syntheticAgg.repurchaseProcessedPurchasesPos,
+          cogsPos: syntheticAgg.cogsPos,
+          repurchaseCogsPos: syntheticAgg.repurchaseCogsPos,
+          cogsCanceledPos: syntheticAgg.cogsCanceledPos,
+          repurchaseCogsCanceledPos: syntheticAgg.repurchaseCogsCanceledPos,
+          cogsRestockingPos: syntheticAgg.cogsRestockingPos,
+          repurchaseCogsRestockingPos: syntheticAgg.repurchaseCogsRestockingPos,
+          cogsRtsPos: syntheticAgg.cogsRtsPos,
+          repurchaseCogsRtsPos: syntheticAgg.repurchaseCogsRtsPos,
+          cogsDeliveredPos: syntheticAgg.cogsDeliveredPos,
+          repurchaseCogsDeliveredPos: syntheticAgg.repurchaseCogsDeliveredPos,
           dateCreated: null,
           mapping: order.mapping ?? null,
           sfPos: sf,
+          repurchaseSfPos: repurchaseSf,
           ffPos: ff,
+          repurchaseFfPos: repurchaseFf,
           ifPos: inf,
+          repurchaseIfPos: repurchaseIf,
           sfSdrPos: sfSdr,
+          repurchaseSfSdrPos: repurchaseSfSdr,
           ffSdrPos: ffSdr,
+          repurchaseFfSdrPos: repurchaseFfSdr,
           ifSdrPos: infSdr,
+          repurchaseIfSdrPos: repurchaseIfSdr,
           codFeePos: codFee,
+          repurchaseCodFeePos: repurchaseCodFee,
           codFeeDeliveredPos: codFeeDelivered,
-          canceledCodPos: !isCountOnly && isCanceled ? codVal : 0,
-          rtsCodPos: !isCountOnly && isRts ? codVal : 0,
-          deliveredCodPos: !isCountOnly && isDelivered ? codVal : 0,
-          shippedCodPos: !isCountOnly && isShipped ? codVal : 0,
-          waitingPickupCodPos: !isCountOnly && isWaitingPickup ? codVal : 0,
-          restockingCodPos: !isCountOnly && statusNum === 11 ? codVal : 0,
-          confirmedCodPos: !isCountOnly && isConfirmed ? codVal : 0,
-          unconfirmedCodPos: !isCountOnly && isUnconfirmed ? codVal : 0,
-          abandonedCodPos: !isCountOnly && isAbandoned ? codVal : 0,
-          confirmedCount: statusNum === 1 ? 1 : 0,
-          unconfirmedCount: isUnconfirmed ? 1 : 0,
-          printedCount: isPrinted ? 1 : 0,
-          deletedCount: isDeleted ? 1 : 0,
-          abandonedCount: isAbandoned ? 1 : 0,
-          restockingCount: statusNum === 11 ? 1 : 0,
-          waitingPickupCount: isWaitingPickup ? 1 : 0,
-          shippedCount: isShipped ? 1 : 0,
-          deliveredCount: isDelivered ? 1 : 0,
-          canceledCount: isCanceled ? 1 : 0,
-          rtsCount: isRts ? 1 : 0,
+          repurchaseCodFeeDeliveredPos: repurchaseCodFeeDelivered,
+          canceledCodPos: syntheticAgg.canceledCodPos,
+          repurchaseCanceledCodPos: syntheticAgg.repurchaseCanceledCodPos,
+          rtsCodPos: syntheticAgg.rtsCodPos,
+          repurchaseRtsCodPos: syntheticAgg.repurchaseRtsCodPos,
+          deliveredCodPos: syntheticAgg.deliveredCodPos,
+          repurchaseDeliveredCodPos: syntheticAgg.repurchaseDeliveredCodPos,
+          shippedCodPos: syntheticAgg.shippedCodPos,
+          repurchaseShippedCodPos: syntheticAgg.repurchaseShippedCodPos,
+          waitingPickupCodPos: syntheticAgg.waitingPickupCodPos,
+          repurchaseWaitingPickupCodPos: syntheticAgg.repurchaseWaitingPickupCodPos,
+          restockingCodPos: syntheticAgg.restockingCodPos,
+          repurchaseRestockingCodPos: syntheticAgg.repurchaseRestockingCodPos,
+          confirmedCodPos: syntheticAgg.confirmedCodPos,
+          repurchaseConfirmedCodPos: syntheticAgg.repurchaseConfirmedCodPos,
+          unconfirmedCodPos: syntheticAgg.unconfirmedCodPos,
+          repurchaseUnconfirmedCodPos: syntheticAgg.repurchaseUnconfirmedCodPos,
+          abandonedCodPos: syntheticAgg.abandonedCodPos,
+          repurchaseAbandonedCodPos: syntheticAgg.repurchaseAbandonedCodPos,
+          confirmedCount: syntheticAgg.confirmedCount,
+          repurchaseConfirmedCount: syntheticAgg.repurchaseConfirmedCount,
+          unconfirmedCount: syntheticAgg.unconfirmedCount,
+          repurchaseUnconfirmedCount: syntheticAgg.repurchaseUnconfirmedCount,
+          printedCount: syntheticAgg.printedCount,
+          repurchasePrintedCount: syntheticAgg.repurchasePrintedCount,
+          deletedCount: syntheticAgg.deletedCount,
+          repurchaseDeletedCount: syntheticAgg.repurchaseDeletedCount,
+          abandonedCount: syntheticAgg.abandonedCount,
+          repurchaseAbandonedCount: syntheticAgg.repurchaseAbandonedCount,
+          restockingCount: syntheticAgg.restockingCount,
+          repurchaseRestockingCount: syntheticAgg.repurchaseRestockingCount,
+          waitingPickupCount: syntheticAgg.waitingPickupCount,
+          repurchaseWaitingPickupCount: syntheticAgg.repurchaseWaitingPickupCount,
+          shippedCount: syntheticAgg.shippedCount,
+          repurchaseShippedCount: syntheticAgg.repurchaseShippedCount,
+          deliveredCount: syntheticAgg.deliveredCount,
+          repurchaseDeliveredCount: syntheticAgg.repurchaseDeliveredCount,
+          canceledCount: syntheticAgg.canceledCount,
+          repurchaseCanceledCount: syntheticAgg.repurchaseCanceledCount,
+          rtsCount: syntheticAgg.rtsCount,
+          repurchaseRtsCount: syntheticAgg.repurchaseRtsCount,
           matchedOrders: [
             {
               shopId: order.shopId,

@@ -820,6 +820,7 @@ export default function SalesByTeamAnalyticsPage() {
       [
         'cm_rts_forecast',
         'ar_pct',
+        'cancellation_rate_pct',
         'aov',
         'cpp',
         'processed_cpp',

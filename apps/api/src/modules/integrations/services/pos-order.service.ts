@@ -29,6 +29,7 @@ interface PosOrderData {
   forUpsell?: boolean;
   isRiskConfirmation?: boolean;
   isAbandoned?: boolean;
+  isRepurchase?: boolean;
   isVoid?: boolean;
   pUtmCampaign?: string;
   pUtmContent?: string;
@@ -455,6 +456,7 @@ export class PosOrderService {
           )
       : [];
     const hasRiskConfirmationTag = this.hasTagNameInList(tags, ['risk confirmation']);
+    const isRepurchase = this.hasTagNameInList(tags, ['repurchase']);
 
     // RTS reason: split returned_reason_name by "/"
     let rtsReason: { l1: string | null; l2: string | null; l3: string | null } | null = null;
@@ -694,6 +696,7 @@ export class PosOrderService {
       forUpsell,
       isRiskConfirmation,
       isAbandoned,
+      isRepurchase,
       isVoid: normalizedStatus === 7,
       pUtmCampaign: rawOrder.p_utm_campaign,
       pUtmContent: rawOrder.p_utm_content,
@@ -847,6 +850,7 @@ export class PosOrderService {
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
             isAbandoned: !!order.isAbandoned,
+            isRepurchase: !!order.isRepurchase,
             isVoid: !!order.isVoid,
             confirmationUpdateRequestedAt: null,
             confirmationUpdateTargetStatus: null,
@@ -884,6 +888,7 @@ export class PosOrderService {
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
             isAbandoned: !!order.isAbandoned,
+            isRepurchase: !!order.isRepurchase,
             isVoid: !!order.isVoid,
             confirmationUpdateRequestedAt: null,
             confirmationUpdateTargetStatus: null,

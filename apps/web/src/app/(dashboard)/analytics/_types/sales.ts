@@ -135,6 +135,7 @@ export type SalesOverviewResponse = {
     restocking_cod?: number;
     rts_cod?: number;
     abandoned_cod?: number;
+    cm_rts_forecast?: number;
   }>;
   deliveryStatuses?: Array<{
     mapping: string | null;
@@ -181,6 +182,7 @@ export const salesSecondaryMetricDefinitions: Array<{
   { key: 'cm_rts_forecast', label: 'CM (RTS 20%)', format: 'currency' },
   { key: 'ar_pct', label: 'AR (%)', format: 'percent' },
   { key: 'aov', label: 'AOV (₱)', format: 'currency' },
+  { key: 'cancellation_rate_pct', label: 'Cancellation Rate (%)', format: 'percent' },
   { key: 'cpp', label: 'CPP (₱)', format: 'currency' },
   { key: 'processed_cpp', label: 'Processed CPP (₱)', format: 'currency' },
   { key: 'rts_pct', label: 'RTS (%)', format: 'percent' },

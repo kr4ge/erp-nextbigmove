@@ -20,6 +20,7 @@ export class SalesAnalyticsController {
     @Query('exclude_restocking') excludeRestocking?: string,
     @Query('exclude_abandoned') excludeAbandoned?: string,
     @Query('exclude_rts') excludeRts?: string,
+    @Query('exclude_repurchase') excludeRepurchase?: string,
     @Query('include_tax_12') includeTax12?: string,
     @Query('include_tax_1') includeTax1?: string,
   ) {
@@ -41,6 +42,7 @@ export class SalesAnalyticsController {
       excludeRestocking: parseBool(excludeRestocking, true),
       excludeAbandoned: parseBool(excludeAbandoned, true),
       excludeRts: parseBool(excludeRts, true),
+      excludeRepurchase: parseBool(excludeRepurchase, false),
       includeTax12: parseBool(includeTax12, false),
       includeTax1: parseBool(includeTax1, false),
     });
@@ -56,6 +58,7 @@ export class SalesAnalyticsController {
     @Query('exclude_restocking') excludeRestocking?: string,
     @Query('exclude_abandoned') excludeAbandoned?: string,
     @Query('exclude_rts') excludeRts?: string,
+    @Query('exclude_repurchase') excludeRepurchase?: string,
     @Query('include_tax_12') includeTax12?: string,
     @Query('include_tax_1') includeTax1?: string,
   ) {
@@ -77,6 +80,7 @@ export class SalesAnalyticsController {
       excludeRestocking: parseBool(excludeRestocking, true),
       excludeAbandoned: parseBool(excludeAbandoned, true),
       excludeRts: parseBool(excludeRts, true),
+      excludeRepurchase: parseBool(excludeRepurchase, false),
       includeTax12: parseBool(includeTax12, false),
       includeTax1: parseBool(includeTax1, false),
     });
