@@ -42,7 +42,7 @@ export class SalesAnalyticsController {
       excludeRestocking: parseBool(excludeRestocking, true),
       excludeAbandoned: parseBool(excludeAbandoned, true),
       excludeRts: parseBool(excludeRts, true),
-      excludeRepurchase: parseBool(excludeRepurchase, false),
+      excludeRepurchase: parseBool(excludeRepurchase, true),
       includeTax12: parseBool(includeTax12, false),
       includeTax1: parseBool(includeTax1, false),
     });
@@ -80,7 +80,7 @@ export class SalesAnalyticsController {
       excludeRestocking: parseBool(excludeRestocking, true),
       excludeAbandoned: parseBool(excludeAbandoned, true),
       excludeRts: parseBool(excludeRts, true),
-      excludeRepurchase: parseBool(excludeRepurchase, false),
+      excludeRepurchase: parseBool(excludeRepurchase, true),
       includeTax12: parseBool(includeTax12, false),
       includeTax1: parseBool(includeTax1, false),
     });

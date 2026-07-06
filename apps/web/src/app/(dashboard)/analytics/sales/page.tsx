@@ -186,7 +186,7 @@ export default function SalesAnalyticsPage() {
   const [excludeRestocking, setExcludeRestocking] = useState(true);
   const [excludeAbandoned, setExcludeAbandoned] = useState(true);
   const [excludeRts, setExcludeRts] = useState(true);
-  const [excludeRepurchase, setExcludeRepurchase] = useState(false);
+  const [excludeRepurchase, setExcludeRepurchase] = useState(true);
   const [includeTax12, setIncludeTax12] = useState(true);
   const [includeTax1, setIncludeTax1] = useState(true);
   const [rtsForecastPct, setRtsForecastPct] = useState<number>(20);

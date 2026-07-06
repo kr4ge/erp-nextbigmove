@@ -637,7 +637,7 @@ export class SalesAnalyticsService {
   }
 
   async getOverview(params: { startDate?: string; endDate?: string; mappings?: string[]; excludeCancel?: boolean; excludeRestocking?: boolean; excludeAbandoned?: boolean; excludeRts?: boolean; excludeRepurchase?: boolean; includeTax12?: boolean; includeTax1?: boolean }) {
-    const { startDate, endDate, mappings = [], excludeCancel = true, excludeRestocking = true, excludeAbandoned = true, excludeRts = true, excludeRepurchase = false, includeTax12 = false, includeTax1 = false } = params;
+    const { startDate, endDate, mappings = [], excludeCancel = true, excludeRestocking = true, excludeAbandoned = true, excludeRts = true, excludeRepurchase = true, includeTax12 = false, includeTax1 = false } = params;
 
     const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
     const endStr = (endDate && endDate.trim()) || startStr;
