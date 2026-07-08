@@ -274,6 +274,9 @@ export function usePurchasingController() {
     setCurrentPage,
     openBatch: (batchId: string) => setSelectedBatchId(batchId),
     closeBatch: () => setSelectedBatchId(null),
+    refetchSelectedBatch: async () => {
+      await batchDetailQuery.refetch();
+    },
     applyStatus: async (status: WmsPurchasingBatchStatus, message?: string) => {
       await updateStatusMutation.mutateAsync({
         status,

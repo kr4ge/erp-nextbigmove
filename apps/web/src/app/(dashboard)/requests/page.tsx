@@ -9,6 +9,7 @@ import { RequestDetailPanel } from './_components/request-detail-panel';
 import { RequestsQueuePanel } from './_components/requests-queue-panel';
 import { RequestsSummaryStrip } from './_components/requests-summary-strip';
 import { useRequestsController } from './_hooks/use-requests-controller';
+import { printInvoiceDocument } from './_utils/invoice-print';
 
 export default function RequestsPage() {
   const {
@@ -66,6 +67,12 @@ export default function RequestsPage() {
     isRespondingToRevision,
     markSelfBuyShipment,
     isMarkingSelfBuyShipment,
+    linkedInvoice,
+    isLoadingLinkedInvoice,
+    linkedInvoiceError,
+    isPrintingLinkedInvoice,
+    loadLinkedInvoice,
+    printLinkedInvoice,
   } = useRequestsController();
 
   if (isLoadingOverview) {
@@ -173,6 +180,18 @@ export default function RequestsPage() {
             }
             isMarkingSelfBuyShipment={isMarkingSelfBuyShipment}
             onMarkSelfBuyShipment={markSelfBuyShipment}
+            linkedInvoice={linkedInvoice}
+            isLoadingLinkedInvoice={isLoadingLinkedInvoice}
+            linkedInvoiceError={linkedInvoiceError}
+            isPrintingLinkedInvoice={isPrintingLinkedInvoice}
+            onLoadLinkedInvoice={loadLinkedInvoice}
+            onPrintLinkedInvoice={async () => {
+              const payload = await printLinkedInvoice();
+              if (!payload) {
+                return;
+              }
+              printInvoiceDocument(payload);
+            }}
           />
         </div>
       </div>

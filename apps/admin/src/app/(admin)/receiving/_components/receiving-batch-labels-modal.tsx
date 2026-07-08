@@ -21,8 +21,11 @@ type ReceivingBatchLabelsModalProps = {
   errorMessage?: string | null;
   canPrintLabels?: boolean;
   canOpenTransfer?: boolean;
+  isEnsuringInvoice?: boolean;
   onRecordPrint: (batchId: string, action: 'PRINT' | 'REPRINT') => Promise<void>;
   onOpenTransfer?: (batchId: string) => void;
+  onOpenInvoice?: (invoiceId: string) => void;
+  onEnsureInvoice?: (batchId: string) => Promise<void>;
   onClose: () => void;
 };
 
@@ -34,8 +37,11 @@ export function ReceivingBatchLabelsModal({
   errorMessage = null,
   canPrintLabels = true,
   canOpenTransfer = true,
+  isEnsuringInvoice = false,
   onRecordPrint,
   onOpenTransfer,
+  onOpenInvoice,
+  onEnsureInvoice,
   onClose,
 }: ReceivingBatchLabelsModalProps) {
   const [printError, setPrintError] = useState<string | null>(null);
@@ -183,6 +189,40 @@ export function ReceivingBatchLabelsModal({
               {batch.warehouse.code} · {batch.warehouse.name}
               {batch.stagingLocation ? ` · ${batch.stagingLocation.code} · ${batch.stagingLocation.name}` : ''}
             </p>
+          </div>
+
+          <div className="card">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="card-label">Linked Invoice</p>
+                <p className="mt-1 text-sm font-semibold text-primary">
+                  {batch.linkedInvoice?.invoiceNumber ?? 'Not created'}
+                </p>
+                <p className="mt-1 text-[12px] text-[#5f7483]">
+                  {batch.linkedInvoice
+                    ? `${formatStatusLabel(batch.linkedInvoice.status)} · ${batch.linkedInvoice.currency} ${batch.linkedInvoice.amountDue.toLocaleString()} due`
+                    : 'Manual receiving batches can open a linked invoice from Purchasing.'}
+                </p>
+              </div>
+              {batch.linkedInvoice ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenInvoice?.(batch.linkedInvoice!.id)}
+                  className="btn btn-sm btn-outline shrink-0"
+                >
+                  Open
+                </button>
+              ) : !batch.sourceRequestId ? (
+                <button
+                  type="button"
+                  onClick={() => void onEnsureInvoice?.(batch.id)}
+                  disabled={isEnsuringInvoice}
+                  className="btn btn-sm btn-outline shrink-0"
+                >
+                  {isEnsuringInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Create'}
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {batch.units.length > LABEL_PREVIEW_PAGE_SIZE ? (

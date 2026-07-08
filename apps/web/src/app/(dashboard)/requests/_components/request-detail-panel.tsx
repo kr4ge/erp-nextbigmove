@@ -11,6 +11,7 @@ import type {
   RespondWmsPurchasingRevisionInput,
   SubmitWmsPurchasingPaymentProofInput,
   UploadedWmsPurchasingProofImage,
+  WmsInvoiceDetail,
   WmsPurchasingBatchDetail,
 } from '../_types/request';
 import {
@@ -37,6 +38,12 @@ interface RequestDetailPanelProps {
   canMarkSelfBuyShipment: boolean;
   isMarkingSelfBuyShipment: boolean;
   onMarkSelfBuyShipment: (input: MarkWmsSelfBuyShipmentInput) => Promise<void>;
+  linkedInvoice: WmsInvoiceDetail | null;
+  isLoadingLinkedInvoice: boolean;
+  linkedInvoiceError: string | null;
+  isPrintingLinkedInvoice: boolean;
+  onLoadLinkedInvoice: () => Promise<WmsInvoiceDetail | null>;
+  onPrintLinkedInvoice: () => Promise<void>;
 }
 
 type ImageSize = {
@@ -75,6 +82,12 @@ export function RequestDetailPanel({
   canMarkSelfBuyShipment,
   isMarkingSelfBuyShipment,
   onMarkSelfBuyShipment,
+  linkedInvoice,
+  isLoadingLinkedInvoice,
+  linkedInvoiceError,
+  isPrintingLinkedInvoice,
+  onLoadLinkedInvoice,
+  onPrintLinkedInvoice,
 }: RequestDetailPanelProps) {
   const [proofAssetId, setProofAssetId] = useState<string | null>(null);
   const [proofPreviewUrl, setProofPreviewUrl] = useState('');
@@ -83,6 +96,7 @@ export function RequestDetailPanel({
   const [shipmentReference, setShipmentReference] = useState('');
   const [shipmentMessage, setShipmentMessage] = useState('');
   const [activeProofImageUrl, setActiveProofImageUrl] = useState<string | null>(null);
+  const [isInvoicePreviewOpen, setIsInvoicePreviewOpen] = useState(false);
   const [isProofImageZoomed, setIsProofImageZoomed] = useState(false);
   const [proofImageBaseSize, setProofImageBaseSize] = useState<ImageSize | null>(null);
   const [proofImageFocusPoint, setProofImageFocusPoint] = useState<ImageFocusPoint | null>(null);
@@ -96,6 +110,7 @@ export function RequestDetailPanel({
     setShipmentReference('');
     setShipmentMessage('');
     setActiveProofImageUrl(null);
+    setIsInvoicePreviewOpen(false);
     setIsProofImageZoomed(false);
     setProofImageBaseSize(null);
     setProofImageFocusPoint(null);
@@ -155,6 +170,7 @@ export function RequestDetailPanel({
 
   const billTo = batch.store.name;
   const bank = batch.invoice.bankDetails;
+  const linkedInvoiceSummary = batch.invoice.linked;
   const isSelfBuy = batch.requestType === 'SELF_BUY';
   const paymentProofImageUrl = getSafeImageUrl(batch.paymentProofImageUrl);
   const lineItemsTotal = batch.lines.reduce((sum, line) => {
@@ -288,6 +304,51 @@ export function RequestDetailPanel({
                   {bank?.paymentInstructions ? <p>Instructions: {bank.paymentInstructions}</p> : null}
                 </div>
               </div>
+
+              {linkedInvoiceSummary ? (
+                <div className="card">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="card-label">Linked Invoice</p>
+                      <p className="mt-1 text-sm font-semibold text-forergound">
+                        {linkedInvoiceSummary.invoiceNumber}
+                      </p>
+                      <p className="mt-1 text-xs text-[#6d8191] dark:text-slate-300">
+                        {formatShortDate(linkedInvoiceSummary.issueDate)} to {formatShortDate(linkedInvoiceSummary.dueDate)}
+                        {' · '}
+                        {formatMoney(linkedInvoiceSummary.amountDue)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={isLoadingLinkedInvoice}
+                        onClick={() => {
+                          void onLoadLinkedInvoice().then((invoice) => {
+                            if (invoice) {
+                              setIsInvoicePreviewOpen(true);
+                            }
+                          });
+                        }}
+                        className="btn btn-sm btn-secondary"
+                      >
+                        {isLoadingLinkedInvoice ? 'Opening...' : 'Preview'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isPrintingLinkedInvoice}
+                        onClick={() => void onPrintLinkedInvoice()}
+                        className="btn btn-sm btn-primary-soft"
+                      >
+                        {isPrintingLinkedInvoice ? 'Preparing...' : 'Print / Save PDF'}
+                      </button>
+                    </div>
+                  </div>
+                  {linkedInvoiceError ? (
+                    <p className="mt-2 text-xs text-[#b42318]">{linkedInvoiceError}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </>
           ) : (
             <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3 text-sm text-forergound">
@@ -602,6 +663,96 @@ export function RequestDetailPanel({
           </div>
           </div>
         ) : null}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={isInvoicePreviewOpen} onOpenChange={setIsInvoicePreviewOpen}>
+      <DialogContent
+        className="max-w-[min(96vw,1080px)] border-[#E2E8F0] bg-white p-4 sm:p-5"
+        closeButtonClassName="data-[state=open]:bg-[#F1F5F9]"
+        overlayClassName="backdrop-blur-[1.5px]"
+      >
+        <DialogHeader>
+          <DialogTitle className="text-[#0F172A]">
+            {linkedInvoice?.invoiceNumber ?? linkedInvoiceSummary?.invoiceNumber ?? 'Invoice Preview'}
+          </DialogTitle>
+          <DialogDescription className="text-[#64748B]">
+            Preview the procurement invoice before downloading or printing.
+          </DialogDescription>
+        </DialogHeader>
+
+        {linkedInvoice ? (
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3">
+                <p className="card-label">Status</p>
+                <p className="mt-1 text-sm font-semibold text-forergound">{linkedInvoice.status.replaceAll('_', ' ')}</p>
+              </div>
+              <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3">
+                <p className="card-label">Issue Date</p>
+                <p className="mt-1 text-sm font-semibold text-forergound">{formatShortDate(linkedInvoice.issueDate)}</p>
+              </div>
+              <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-3">
+                <p className="card-label">Amount Due</p>
+                <p className="mt-1 text-sm font-semibold text-forergound">{formatMoney(linkedInvoice.amountDue)}</p>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-[#e3e9ef] dark:border-border">
+              <table className="min-w-full divide-y divide-[#edf2f7] text-sm dark:divide-border">
+                <thead className="bg-[#eff3f6] text-left text-[10px] font-semibold uppercase tracking-[0.2em] text-[#7b8ba1] dark:bg-background-secondary dark:text-slate-300">
+                  <tr>
+                    <th className="px-3 py-2">#</th>
+                    <th className="px-3 py-2">Item</th>
+                    <th className="px-3 py-2 text-right">Qty</th>
+                    <th className="px-3 py-2 text-right">Rate</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#edf2f7] bg-white dark:divide-border dark:bg-surface">
+                  {linkedInvoice.lines.map((line) => (
+                    <tr key={line.id}>
+                      <td className="px-3 py-2.5 text-[#4d6677] dark:text-slate-300">{line.lineNo}</td>
+                      <td className="px-3 py-2.5 font-medium text-forergound">
+                        <div>{line.description}</div>
+                        {line.store?.name ? (
+                          <div className="mt-1 text-xs font-normal text-[#6d8191] dark:text-slate-400">
+                            {line.store.name}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-forergound">{line.quantity}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-forergound">{formatMoney(line.unitRate)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-forergound">{formatMoney(line.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsInvoicePreviewOpen(false)}
+                className="btn btn-sm btn-secondary"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={isPrintingLinkedInvoice}
+                onClick={() => void onPrintLinkedInvoice()}
+                className="btn btn-sm btn-primary-soft"
+              >
+                {isPrintingLinkedInvoice ? 'Preparing...' : 'Print / Save PDF'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-[#e3e9ef] bg-[#fbfdff] p-4 text-sm text-[#5a7184]">
+            {isLoadingLinkedInvoice ? 'Loading invoice...' : linkedInvoiceError || 'Invoice preview is not available.'}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
     </>

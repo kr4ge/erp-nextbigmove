@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsScopeFilterFields } from '../../_components/wms-scope-filter-fields';
 import { useReceivingController } from '../_hooks/use-receiving-controller';
@@ -9,6 +10,7 @@ import { ReceivingBatchLabelsModal } from './receiving-batch-labels-modal';
 import { ReceivingBatchesTable } from './receiving-batches-table';
 
 export function ReceivingScreen() {
+  const router = useRouter();
   const controller = useReceivingController();
   const summary = controller.overview?.summary;
 
@@ -136,9 +138,33 @@ export function ReceivingScreen() {
         open={controller.labelsModal.open}
         isLoading={controller.isLoadingLabelsBatch}
         isRecordingPrint={controller.isRecordingBatchLabelPrint}
+        isEnsuringInvoice={controller.isEnsuringBatchInvoice}
         batch={controller.labelsModal.batch}
         canPrintLabels={controller.canPrintLabels}
         onRecordPrint={controller.recordBatchLabelPrint}
+        onOpenInvoice={(invoiceId) => {
+          const tenantId = controller.labelsModal.batch?.tenantId ?? controller.selectedTenantId;
+          const query = new URLSearchParams({
+            tab: 'invoices',
+            invoiceId,
+            ...(tenantId ? { tenantId } : {}),
+          });
+          router.push(`/purchasing?${query.toString()}`);
+        }}
+        onEnsureInvoice={async (batchId) => {
+          const invoice = await controller.ensureBatchInvoice(
+            batchId,
+            controller.labelsModal.batch?.tenantId ?? controller.selectedTenantId,
+          );
+          const query = new URLSearchParams({
+            tab: 'invoices',
+            invoiceId: invoice.id,
+            ...(controller.labelsModal.batch?.tenantId || controller.selectedTenantId
+              ? { tenantId: controller.labelsModal.batch?.tenantId ?? controller.selectedTenantId! }
+              : {}),
+          });
+          router.push(`/purchasing?${query.toString()}`);
+        }}
         onClose={controller.closeLabelsModal}
       />
     </div>

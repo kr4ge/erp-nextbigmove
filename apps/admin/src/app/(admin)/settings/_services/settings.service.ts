@@ -1,11 +1,15 @@
 import apiClient from '@/lib/api-client';
 import type {
   CreateWmsStoxReleaseInput,
+  UpdateWmsInvoicePartnerBillingInput,
   CreateWmsSettingsRoleInput,
   CreateWmsSettingsUserInput,
+  UpdateWmsInvoiceSettingsInput,
   UpdateWmsSettingsProfileInput,
   UpdateWmsSettingsRoleInput,
   UpdateWmsSettingsUserInput,
+  WmsInvoiceSettingsResponse,
+  WmsInvoicePartnersResponse,
   WmsSettingsProfile,
   WmsSettingsRoleOptions,
   WmsSettingsUserOptions,
@@ -67,6 +71,58 @@ export async function updateWmsSettingsRole(id: string, input: UpdateWmsSettings
 export async function deleteWmsSettingsRole(id: string) {
   const response = await apiClient.delete(`/wms/settings/roles/${id}`);
   return response.data;
+}
+
+export async function fetchWmsInvoiceSettings() {
+  const response = await apiClient.get<WmsInvoiceSettingsResponse>('/wms/settings/invoice');
+  return response.data;
+}
+
+export async function updateWmsInvoiceSettings(input: UpdateWmsInvoiceSettingsInput) {
+  const response = await apiClient.patch<WmsInvoiceSettingsResponse>(
+    '/wms/settings/invoice',
+    input,
+  );
+  return response.data;
+}
+
+export async function fetchWmsInvoicePartners() {
+  const response = await apiClient.get<WmsInvoicePartnersResponse>('/wms/settings/invoice/partners');
+  return response.data;
+}
+
+export async function updateWmsInvoicePartnerBilling(
+  tenantId: string,
+  input: UpdateWmsInvoicePartnerBillingInput,
+) {
+  const response = await apiClient.patch<{ partner: WmsInvoicePartnersResponse['partners'][number] }>(
+    `/wms/settings/invoice/partners/${tenantId}`,
+    input,
+  );
+  return response.data.partner;
+}
+
+export async function uploadWmsInvoiceLogo(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.post<{
+    asset: {
+      id: string;
+      imageUrl: string;
+      contentType: string;
+      byteSize: number;
+      width: number | null;
+      height: number | null;
+      originalFileName: string | null;
+    };
+  }>('/wms/settings/invoice/logo-upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return response.data.asset;
 }
 
 export async function fetchWmsStoxReleases() {

@@ -1,5 +1,26 @@
 export type WmsPurchasingRequestType = 'PROCUREMENT' | 'SELF_BUY';
 
+export type WmsInvoiceSourceType = 'MANUAL' | 'MANUAL_RECEIVING' | 'PROCUREMENT';
+
+export type WmsInvoiceStatus =
+  | 'DRAFT'
+  | 'ISSUED'
+  | 'PAID_PENDING_VERIFY'
+  | 'PAID_VERIFIED'
+  | 'CANCELED';
+
+export type WmsLinkedInvoiceSummary = {
+  id: string;
+  sourceType: WmsInvoiceSourceType;
+  status: WmsInvoiceStatus;
+  invoiceNumber: string;
+  currency: string;
+  issueDate: string | null;
+  dueDate: string | null;
+  totalAmount: number;
+  amountDue: number;
+};
+
 export type WmsPurchasingBatchStatus =
   | 'UNDER_REVIEW'
   | 'REVISION'
@@ -49,10 +70,11 @@ export type WmsPurchasingBatchDetail = WmsPurchasingBatchRow & {
   invoice: {
     number: string | null;
     amount: number | null;
+    linked: WmsLinkedInvoiceSummary | null;
     bankDetails: {
-      warehouseId: string;
-      warehouseCode: string;
-      warehouseName: string;
+      warehouseId: string | null;
+      warehouseCode: string | null;
+      warehouseName: string | null;
       billingCompanyName: string | null;
       billingAddress: string | null;
       bankName: string | null;
@@ -62,6 +84,13 @@ export type WmsPurchasingBatchDetail = WmsPurchasingBatchRow & {
       bankBranch: string | null;
       paymentInstructions: string | null;
     } | null;
+    billTo?: {
+      tenantId: string;
+      tenantName: string;
+      tenantSlug: string;
+      companyName: string;
+      billingAddress: string | null;
+    };
   };
   paymentProofSubmittedBy: {
     id: string;
@@ -258,6 +287,84 @@ export type CreateWmsPurchasingBatchInput = {
   paymentProofAssetId?: string;
   paymentVerifiedAt?: string;
   lines: CreateWmsPurchasingBatchLineInput[];
+};
+
+export type WmsInvoiceDetail = {
+  id: string;
+  tenantId: string;
+  sourceType: WmsInvoiceSourceType;
+  sourceRefId: string | null;
+  sourceRefCode: string | null;
+  status: WmsInvoiceStatus;
+  invoiceNumber: string;
+  issueDate: string | null;
+  dueDate: string | null;
+  currency: string;
+  notes: string | null;
+  lineCount: number;
+  totalQuantity: number;
+  totalAmount: number;
+  amountDue: number;
+  createdAt: string;
+  updatedAt: string;
+  issuer: Record<string, unknown>;
+  billTo: Record<string, unknown>;
+  totals: {
+    lineCount: number | null;
+    totalQuantity: number | null;
+    subtotal: number | null;
+    totalAmount: number | null;
+    amountDue: number | null;
+  };
+  lines: Array<{
+    id: string;
+    lineNo: number;
+    storeId: string | null;
+    store: {
+      id: string;
+      name: string;
+    } | null;
+    productId: string | null;
+    variationId: string | null;
+    description: string;
+    quantity: number;
+    unitRate: number;
+    amount: number;
+    rateSource: string | null;
+    lineSnapshot: Record<string, unknown> | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+};
+
+export type WmsInvoiceDocumentResponse = {
+  invoice: WmsInvoiceDetail;
+  document: {
+    title: string;
+    tenant: {
+      id: string;
+      name: string;
+      slug: string;
+    };
+    issuer: Record<string, unknown> & {
+      logoUrl?: string | null;
+    };
+    billTo: Record<string, unknown>;
+    payment: {
+      bankName: string | null;
+      bankAccountName: string | null;
+      bankAccountNumber: string | null;
+      bankAccountType: string | null;
+      bankBranch: string | null;
+      paymentInstructions: string | null;
+      footerNotes: string | null;
+    };
+    source: {
+      type: WmsInvoiceSourceType;
+      referenceCode: string | null;
+    };
+    generatedAt: string;
+  };
 };
 
 export type SubmitWmsPurchasingPaymentProofInput = {

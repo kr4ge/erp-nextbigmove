@@ -1,5 +1,12 @@
 import apiClient from '@/lib/api-client';
 import type {
+  CreateWmsInvoiceInput,
+  GetWmsInvoiceOverviewParams,
+  UpdateWmsInvoiceInput,
+  UpdateWmsInvoiceStatusInput,
+  WmsInvoiceDetail,
+  WmsInvoiceDocumentResponse,
+  WmsInvoiceOverviewResponse,
   GetWmsPurchasingOverviewParams,
   UpdateWmsPurchasingLineInput,
   UpdateWmsPurchasingStatusInput,
@@ -29,6 +36,85 @@ export async function fetchWmsPurchasingBatch(id: string, tenantId?: string) {
   });
 
   return response.data as { batch: WmsPurchasingBatchDetail };
+}
+
+export async function fetchWmsInvoiceOverview(params: GetWmsInvoiceOverviewParams = {}) {
+  const response = await apiClient.get('/wms/purchasing/invoices/overview', {
+    params: {
+      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      ...(params.sourceType ? { sourceType: params.sourceType } : {}),
+      ...(params.status ? { status: params.status } : {}),
+      ...(params.search ? { search: params.search } : {}),
+      ...(params.page ? { page: params.page } : {}),
+      ...(params.pageSize ? { pageSize: params.pageSize } : {}),
+    },
+  });
+
+  return response.data as WmsInvoiceOverviewResponse;
+}
+
+export async function fetchWmsInvoiceDetail(id: string, tenantId?: string) {
+  const response = await apiClient.get(`/wms/purchasing/invoices/${id}`, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as { invoice: WmsInvoiceDetail };
+}
+
+export async function fetchWmsInvoiceDocument(id: string, tenantId?: string) {
+  const response = await apiClient.get(`/wms/purchasing/invoices/${id}/document`, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as WmsInvoiceDocumentResponse;
+}
+
+export async function createManualWmsInvoice(input: CreateWmsInvoiceInput, tenantId?: string) {
+  const response = await apiClient.post('/wms/purchasing/invoices/manual', input, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as { invoice: WmsInvoiceDetail };
+}
+
+export async function updateWmsInvoice(id: string, input: UpdateWmsInvoiceInput, tenantId?: string) {
+  const response = await apiClient.patch(`/wms/purchasing/invoices/${id}`, input, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as { invoice: WmsInvoiceDetail };
+}
+
+export async function updateWmsInvoiceStatus(
+  id: string,
+  input: UpdateWmsInvoiceStatusInput,
+  tenantId?: string,
+) {
+  const response = await apiClient.patch(`/wms/purchasing/invoices/${id}/status`, input, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as { invoice: WmsInvoiceDetail };
+}
+
+export async function ensureProcurementLinkedInvoice(id: string, tenantId?: string) {
+  const response = await apiClient.post(`/wms/purchasing/${id}/invoice/ensure`, undefined, {
+    params: tenantId ? { tenantId } : undefined,
+  });
+
+  return response.data as { invoice: WmsInvoiceDetail };
+}
+
+export async function ensureManualReceivingLinkedInvoice(receivingBatchId: string, tenantId?: string) {
+  const response = await apiClient.post(
+    `/wms/purchasing/invoices/manual-receiving/${receivingBatchId}/ensure`,
+    undefined,
+    {
+      params: tenantId ? { tenantId } : undefined,
+    },
+  );
+
+  return response.data as { invoice: WmsInvoiceDetail };
 }
 
 export async function fetchWmsPurchasingUnreadNotificationCount(tenantId?: string) {

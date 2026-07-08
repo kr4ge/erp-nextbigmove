@@ -27,10 +27,13 @@ type PurchasingBatchModalProps = {
   isUpdatingStatus: boolean;
   isUpdatingLine: boolean;
   isCreatingReceiving: boolean;
+  isEnsuringInvoice?: boolean;
   onClose: () => void;
   onApplyStatus: (status: WmsPurchasingBatchStatus, message?: string) => Promise<void>;
   onUpdateLine: (lineId: string, payload: UpdateWmsPurchasingLineInput) => Promise<void>;
   onCreateReceiving: () => void;
+  onOpenLinkedInvoice?: (invoiceId: string) => void;
+  onEnsureLinkedInvoice?: () => Promise<void>;
 };
 
 type LineDraft = {
@@ -68,10 +71,13 @@ export function PurchasingBatchModal({
   isUpdatingStatus,
   isUpdatingLine,
   isCreatingReceiving,
+  isEnsuringInvoice = false,
   onClose,
   onApplyStatus,
   onUpdateLine,
   onCreateReceiving,
+  onOpenLinkedInvoice,
+  onEnsureLinkedInvoice,
 }: PurchasingBatchModalProps) {
   const [lineDrafts, setLineDrafts] = useState<Record<string, LineDraft>>({});
   const [activeProofImageUrl, setActiveProofImageUrl] = useState<string | null>(null);
@@ -170,6 +176,19 @@ export function PurchasingBatchModal({
 
   const editableLines = canEdit && (batch?.status === 'UNDER_REVIEW' || batch?.status === 'REVISION');
   const isSelfBuy = batch?.requestType === 'SELF_BUY';
+  const canCreateLinkedInvoice = Boolean(
+    batch
+    && !isSelfBuy
+    && [
+      'PENDING_PAYMENT',
+      'PAYMENT_REVIEW',
+      'RECEIVING_READY',
+      'RECEIVING',
+      'STOCKED',
+      'REJECTED',
+      'CANCELED',
+    ].includes(batch.status),
+  );
   const showSupplierCogs = !isSelfBuy;
   const paymentProofImageUrl = getSafeImageUrl(batch?.paymentProofImageUrl);
   const pendingLineUpdates = useMemo(() => {
@@ -726,6 +745,44 @@ export function PurchasingBatchModal({
               </div>
             )}
 
+            {!isSelfBuy ? (
+              <div className="rounded-2xl border border-[#dce4ea] bg-white px-3.5 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8193a0]">
+                      Linked Invoice
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-primary">
+                      {batch.invoice.linked?.invoiceNumber ?? batch.invoice.number ?? 'Not created'}
+                    </p>
+                    <p className="mt-1 text-[12px] text-[#5f7483]">
+                      {batch.invoice.linked
+                        ? `${formatGenericStatusLabel(batch.invoice.linked.status)} · ${formatMoney(batch.invoice.linked.amountDue)} due`
+                        : 'Create the linked invoice record for this procurement batch.'}
+                    </p>
+                  </div>
+                  {batch.invoice.linked ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenLinkedInvoice?.(batch.invoice.linked!.id)}
+                      className="btn btn-sm btn-outline shrink-0"
+                    >
+                      Open
+                    </button>
+                  ) : canCreateLinkedInvoice ? (
+                    <button
+                      type="button"
+                      onClick={() => void onEnsureLinkedInvoice?.()}
+                      disabled={isEnsuringInvoice}
+                      className="btn btn-sm btn-outline shrink-0"
+                    >
+                      {isEnsuringInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Create'}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
           </div>
         </div>
       )}
@@ -886,4 +943,11 @@ function getActionClassName(tone: 'primary' | 'secondary' | 'danger') {
   }
 
   return 'btn btn-md btn-outline w-full';
+}
+
+function formatGenericStatusLabel(value: string) {
+  return value
+    .split('_')
+    .map((token) => token.charAt(0) + token.slice(1).toLowerCase())
+    .join(' ');
 }

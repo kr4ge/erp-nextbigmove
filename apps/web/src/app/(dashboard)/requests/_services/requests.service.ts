@@ -8,6 +8,8 @@ import type {
   SubmitWmsPurchasingPaymentProofInput,
   UploadedWmsPurchasingProofImage,
   WmsPurchasingBatchDetail,
+  WmsInvoiceDetail,
+  WmsInvoiceDocumentResponse,
   WmsPurchasingProductOptionsResponse,
   WmsPurchasingOverviewResponse,
 } from '../_types/request';
@@ -32,6 +34,16 @@ export async function fetchWmsPurchasingOverview(params: GetWmsPurchasingOvervie
 export async function fetchWmsPurchasingBatch(id: string) {
   const response = await apiClient.get(`${STOCK_REQUESTS_API_PATH}/${id}`);
   return response.data as { batch: WmsPurchasingBatchDetail };
+}
+
+export async function fetchWmsPurchasingLinkedInvoice(id: string) {
+  const response = await apiClient.get(`${STOCK_REQUESTS_API_PATH}/${id}/invoice`);
+  return response.data as { invoice: WmsInvoiceDetail };
+}
+
+export async function fetchWmsPurchasingLinkedInvoiceDocument(id: string) {
+  const response = await apiClient.get(`${STOCK_REQUESTS_API_PATH}/${id}/invoice/document`);
+  return response.data as WmsInvoiceDocumentResponse;
 }
 
 export async function fetchStockRequestUnreadNotificationCount() {

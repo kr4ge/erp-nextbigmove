@@ -30,6 +30,10 @@ export class MediaAssetsService {
     process.env.OBJECT_STORAGE_PAYMENT_PROOF_MAX_FILE_MB,
     8,
   );
+  private readonly invoiceLogoMaxFileMb = this.parsePositiveInt(
+    process.env.OBJECT_STORAGE_INVOICE_LOGO_MAX_FILE_MB,
+    4,
+  );
 
   constructor(
     private readonly prisma: PrismaService,
@@ -41,8 +45,89 @@ export class MediaAssetsService {
     file: UploadedImageFile | undefined,
     tenantId: string,
   ): Promise<UploadedAssetView> {
+    return this.uploadImageAsset({
+      file,
+      tenantId,
+      kind: MediaAssetKind.PAYMENT_PROOF_IMAGE,
+      maxFileMb: this.paymentProofMaxFileMb,
+      objectPrefix: 'payment-proofs',
+      requiredMessage: 'Payment proof image file is required',
+      tooLargeLabel: 'Payment proof image',
+    });
+  }
+
+  async uploadInvoiceLogoImage(
+    file: UploadedImageFile | undefined,
+    tenantId?: string | null,
+  ): Promise<UploadedAssetView> {
+    return this.uploadImageAsset({
+      file,
+      tenantId,
+      kind: MediaAssetKind.INVOICE_LOGO_IMAGE,
+      maxFileMb: this.invoiceLogoMaxFileMb,
+      objectPrefix: 'invoice-logos',
+      requiredMessage: 'Invoice logo image file is required',
+      tooLargeLabel: 'Invoice logo image',
+    });
+  }
+
+  async assertTenantOwnedPaymentProofAsset(assetId: string, tenantId: string) {
+    return this.assertTenantOwnedImageAsset(
+      assetId,
+      tenantId,
+      MediaAssetKind.PAYMENT_PROOF_IMAGE,
+      'Uploaded proof image was not found',
+      'Uploaded proof image does not belong to the active tenant',
+      'Uploaded asset is not a payment proof image',
+    );
+  }
+
+  async assertGlobalInvoiceLogoAsset(assetId: string) {
+    return this.assertImageAsset(
+      assetId,
+      MediaAssetKind.INVOICE_LOGO_IMAGE,
+      'Uploaded invoice logo was not found',
+      'Uploaded asset is not an invoice logo image',
+      {
+        requireTenantId: null,
+      },
+    );
+  }
+
+  async createSignedAssetUrl(asset: { objectKey: string } | null | undefined) {
+    if (!asset) {
+      return null;
+    }
+
+    if (!this.objectStorageService.isConfigured()) {
+      this.logger.warn(`Object storage is not configured; cannot sign asset URL for ${asset.objectKey}`);
+      return null;
+    }
+
+    return this.objectStorageService.createSignedReadUrl(asset.objectKey);
+  }
+
+  private async uploadImageAsset(params: {
+    file: UploadedImageFile | undefined;
+    tenantId?: string | null;
+    kind: MediaAssetKind;
+    maxFileMb: number;
+    objectPrefix: string;
+    requiredMessage: string;
+    tooLargeLabel: string;
+  }): Promise<UploadedAssetView> {
+    const {
+      file,
+      tenantId = null,
+      kind,
+      maxFileMb,
+      objectPrefix,
+      requiredMessage,
+      tooLargeLabel,
+    } = params;
+
     if (!file) {
-      throw new BadRequestException('Payment proof image file is required');
+      throw new BadRequestException(requiredMessage);
     }
 
     if (!this.objectStorageService.isConfigured()) {
@@ -54,9 +139,9 @@ export class MediaAssetsService {
       throw new BadRequestException('Only PNG, JPEG, or WebP images are supported');
     }
 
-    const maxBytes = this.paymentProofMaxFileMb * 1024 * 1024;
+    const maxBytes = maxFileMb * 1024 * 1024;
     if (file.size > maxBytes) {
-      throw new BadRequestException(`Payment proof image must be ${this.paymentProofMaxFileMb}MB or smaller`);
+      throw new BadRequestException(`${tooLargeLabel} must be ${maxFileMb}MB or smaller`);
     }
 
     const optimized = await sharp(file.buffer)
@@ -76,7 +161,8 @@ export class MediaAssetsService {
     const now = new Date();
     const year = `${now.getUTCFullYear()}`;
     const month = `${now.getUTCMonth() + 1}`.padStart(2, '0');
-    const objectKey = `tenants/${tenantId}/payment-proofs/${year}/${month}/${randomUUID()}.webp`;
+    const tenantScope = tenantId ? `tenants/${tenantId}` : 'platform/wms';
+    const objectKey = `${tenantScope}/${objectPrefix}/${year}/${month}/${randomUUID()}.webp`;
     const checksumSha256 = createHash('sha256').update(optimized.data).digest('hex');
     const actorId = (this.cls.get('userId') as string | undefined) ?? null;
 
@@ -86,15 +172,15 @@ export class MediaAssetsService {
       contentType: 'image/webp',
       cacheControl: 'private, max-age=31536000, immutable',
       metadata: {
-        tenantId,
-        assetKind: MediaAssetKind.PAYMENT_PROOF_IMAGE,
+        tenantId: tenantId ?? 'global-wms',
+        assetKind: kind,
       },
     });
 
     const asset = await this.prisma.mediaAsset.create({
       data: {
         tenantId,
-        kind: MediaAssetKind.PAYMENT_PROOF_IMAGE,
+        kind,
         storageProvider: this.objectStorageService.getProviderName(),
         bucket: this.objectStorageService.getBucketName(),
         objectKey,
@@ -119,37 +205,59 @@ export class MediaAssetsService {
     };
   }
 
-  async assertTenantOwnedPaymentProofAsset(assetId: string, tenantId: string) {
+  private async assertTenantOwnedImageAsset(
+    assetId: string,
+    tenantId: string,
+    kind: MediaAssetKind,
+    notFoundMessage: string,
+    wrongTenantMessage: string,
+    wrongKindMessage: string,
+  ) {
     const asset = await this.prisma.mediaAsset.findUnique({
       where: { id: assetId },
     });
 
     if (!asset) {
-      throw new NotFoundException('Uploaded proof image was not found');
+      throw new NotFoundException(notFoundMessage);
     }
 
     if (asset.tenantId !== tenantId) {
-      throw new ForbiddenException('Uploaded proof image does not belong to the active tenant');
+      throw new ForbiddenException(wrongTenantMessage);
     }
 
-    if (asset.kind !== MediaAssetKind.PAYMENT_PROOF_IMAGE) {
-      throw new BadRequestException('Uploaded asset is not a payment proof image');
+    if (asset.kind !== kind) {
+      throw new BadRequestException(wrongKindMessage);
     }
 
     return asset;
   }
 
-  async createSignedAssetUrl(asset: { objectKey: string } | null | undefined) {
+  private async assertImageAsset(
+    assetId: string,
+    kind: MediaAssetKind,
+    notFoundMessage: string,
+    wrongKindMessage: string,
+    options?: {
+      requireTenantId?: string | null;
+    },
+  ) {
+    const asset = await this.prisma.mediaAsset.findUnique({
+      where: { id: assetId },
+    });
+
     if (!asset) {
-      return null;
+      throw new NotFoundException(notFoundMessage);
     }
 
-    if (!this.objectStorageService.isConfigured()) {
-      this.logger.warn(`Object storage is not configured; cannot sign asset URL for ${asset.objectKey}`);
-      return null;
+    if (asset.kind !== kind) {
+      throw new BadRequestException(wrongKindMessage);
     }
 
-    return this.objectStorageService.createSignedReadUrl(asset.objectKey);
+    if (options && 'requireTenantId' in options && asset.tenantId !== options.requireTenantId) {
+      throw new ForbiddenException('Uploaded invoice logo does not match the expected WMS scope');
+    }
+
+    return asset;
   }
 
   private normalizeImageMimeType(mimeType?: string | null) {

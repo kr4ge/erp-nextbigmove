@@ -559,13 +559,9 @@ export function useDispatchController() {
         storeId: selectedStoreIdState,
         reason: params.reason,
       });
-      const syncSummary = response.posStatusUpdate.queued > 0
-        ? ` POS reset queued for ${response.posStatusUpdate.queued} order${response.posStatusUpdate.queued === 1 ? '' : 's'}.`
-        : '';
-
       setSuccessMessage(response.resolution === 'CANCELED'
         ? `Dispatch void restored ${response.restoredPackedUnits} packed unit${response.restoredPackedUnits === 1 ? '' : 's'} for cancelled order #${response.posOrderId} and marked it cancelled in WMS.`
-        : `Dispatch void returned order #${response.posOrderId} with ${response.restoredPackedUnits} packed unit${response.restoredPackedUnits === 1 ? '' : 's'} back to picking.${syncSummary}`);
+        : `Dispatch void returned order #${response.posOrderId} with ${response.restoredPackedUnits} packed unit${response.restoredPackedUnits === 1 ? '' : 's'} back to picking.`);
       setSelectedTaskId(null);
       await Promise.all([
         loadSummary(true),

@@ -48,6 +48,8 @@ const updateTenantSchema = z.object({
   maxUsers: z.number().min(1).max(10000),
   maxIntegrations: z.number().min(1).max(100),
   wmsFulfillmentGoLiveAt: z.string().nullable().optional(),
+  billingCompanyName: z.string().max(160).nullable().optional(),
+  billingAddress: z.string().max(600).nullable().optional(),
 });
 
 type UpdateTenantForm = z.infer<typeof updateTenantSchema>;
@@ -127,6 +129,8 @@ export default function TenantDetailsPage() {
         setValue('maxUsers', tenantData.maxUsers);
         setValue('maxIntegrations', tenantData.maxIntegrations);
         setValue('wmsFulfillmentGoLiveAt', toDateTimeLocalInputValue(tenantData.wmsFulfillmentGoLiveAt));
+        setValue('billingCompanyName', tenantData.billingCompanyName ?? '');
+        setValue('billingAddress', tenantData.billingAddress ?? '');
       } catch (error: unknown) {
         setError(getErrorMessage(error, 'Failed to load tenant'));
       } finally {
@@ -159,6 +163,8 @@ export default function TenantDetailsPage() {
       await apiClient.patch(`/tenants/${tenantId}`, {
         ...data,
         wmsFulfillmentGoLiveAt: toIsoDateTimeOrNull(data.wmsFulfillmentGoLiveAt),
+        billingCompanyName: data.billingCompanyName?.trim() || null,
+        billingAddress: data.billingAddress?.trim() || null,
       }, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -398,6 +404,43 @@ export default function TenantDetailsPage() {
               <p className="text-[12px] leading-5 text-[#6f8290]">
                 Existing legacy fulfillment rows are not deleted by this setting. It prevents pre-go-live orders from entering or appearing in active WMS pick and pack queues.
               </p>
+            </div>
+          </WmsCompactPanel>
+
+          <WmsCompactPanel title="Invoice bill-to" icon={<Building2 className='panel-icon' />}>
+            <div className="grid gap-4 p-5">
+              <div>
+                <WmsFormField
+                  label="Billing company name"
+                  hint="This becomes the default bill-to company name for this partner on WMS invoices."
+                >
+                  <input
+                    {...register('billingCompanyName')}
+                    type="text"
+                    className="input"
+                    placeholder="Defaults to tenant name if left blank"
+                  />
+                </WmsFormField>
+                {errors.billingCompanyName ? (
+                  <p className="mt-1.5 text-[12px] text-rose-600">{errors.billingCompanyName.message}</p>
+                ) : null}
+              </div>
+
+              <div>
+                <WmsFormField
+                  label="Billing address"
+                  hint="Shown in the invoice bill-to block for this partner."
+                >
+                  <textarea
+                    {...register('billingAddress')}
+                    className="input min-h-[120px] py-3"
+                    placeholder="Partner billing address"
+                  />
+                </WmsFormField>
+                {errors.billingAddress ? (
+                  <p className="mt-1.5 text-[12px] text-rose-600">{errors.billingAddress.message}</p>
+                ) : null}
+              </div>
             </div>
           </WmsCompactPanel>
 

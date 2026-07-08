@@ -1,10 +1,15 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, RbacWorkspace, RoleScope, UserStatus, WmsStaffAssignmentTaskType } from '@prisma/client';
 import type { Request } from 'express';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { MediaAssetsService, type UploadedImageFile } from '../../common/services/media-assets.service';
 import { CreateWmsSettingsRoleDto, UpdateWmsSettingsRoleDto } from './dto/wms-settings-role.dto';
 import { CreateWmsSettingsUserDto, UpdateWmsSettingsUserDto } from './dto/wms-settings-user.dto';
+import {
+  UpdateWmsInvoiceSettingsDto,
+  UpdateWmsInvoiceTenantBillingDto,
+} from './dto/update-wms-invoice-settings.dto';
 
 type WmsSettingsUser = {
   id?: string;
@@ -17,6 +22,8 @@ type WmsSettingsScope = {
   isPlatformAdmin: boolean;
   tenantId: string | null;
 };
+
+const GLOBAL_WMS_INVOICE_SETTINGS_SCOPE = 'GLOBAL';
 
 type WmsSettingsRoleRecord = Prisma.RoleGetPayload<{
   include: {
@@ -62,7 +69,10 @@ const WMS_INVENTORY_ASSIGNMENT_PERMISSIONS = [
 
 @Injectable()
 export class WmsSettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mediaAssetsService: MediaAssetsService,
+  ) {}
 
   async listUsers(user: WmsSettingsUser, request?: Request) {
     const scope = this.resolveScope(user, request);
@@ -640,6 +650,251 @@ export class WmsSettingsService {
     return { user: this.mapUserRecord(record) };
   }
 
+  async getInvoiceSettings(
+    user: WmsSettingsUser,
+    _requestedTenantId?: string,
+    request?: Request,
+  ) {
+    const scope = this.resolveScope(user, request);
+    const settings = await this.prisma.wmsInvoiceSettings.findUnique({
+      where: { scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE },
+      include: {
+        logoAsset: {
+          select: {
+            id: true,
+            objectKey: true,
+            contentType: true,
+            byteSize: true,
+            width: true,
+            height: true,
+            originalFileName: true,
+          },
+        },
+      },
+    });
+
+    return {
+      scope,
+      settings: {
+        companyName: settings?.companyName ?? null,
+        companyAddress: settings?.companyAddress ?? null,
+        logoAsset: settings?.logoAsset
+          ? {
+              id: settings.logoAsset.id,
+              imageUrl: await this.mediaAssetsService.createSignedAssetUrl(settings.logoAsset),
+              contentType: settings.logoAsset.contentType,
+              byteSize: settings.logoAsset.byteSize,
+              width: settings.logoAsset.width ?? null,
+              height: settings.logoAsset.height ?? null,
+              originalFileName: settings.logoAsset.originalFileName ?? null,
+            }
+          : null,
+        invoicePrefix: settings?.invoicePrefix ?? 'INV',
+        bankName: settings?.bankName ?? null,
+        bankAccountName: settings?.bankAccountName ?? null,
+        bankAccountNumber: settings?.bankAccountNumber ?? null,
+        bankAccountType: settings?.bankAccountType ?? null,
+        bankBranch: settings?.bankBranch ?? null,
+        paymentInstructions: settings?.paymentInstructions ?? null,
+        footerNotes: settings?.footerNotes ?? null,
+      },
+    };
+  }
+
+  async listInvoicePartners(user: WmsSettingsUser, request?: Request) {
+    const scope = this.resolveScope(user, request);
+    const tenants = await this.prisma.tenant.findMany({
+      where: scope.tenantId ? { id: scope.tenantId } : undefined,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        billingCompanyName: true,
+        billingAddress: true,
+      },
+      orderBy: [
+        { name: 'asc' },
+        { slug: 'asc' },
+      ],
+    });
+
+    return {
+      scope,
+      partners: tenants.map((tenant) => ({
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        billingCompanyName: tenant.billingCompanyName ?? null,
+        billingAddress: tenant.billingAddress ?? null,
+      })),
+    };
+  }
+
+  async updateInvoiceSettings(
+    user: WmsSettingsUser,
+    dto: UpdateWmsInvoiceSettingsDto,
+    _requestedTenantId?: string,
+    request?: Request,
+  ) {
+    const scope = this.resolveScope(user, request);
+    const actorId = user.userId ?? user.id ?? null;
+
+    const logoAsset = dto.logoAssetId !== undefined && dto.logoAssetId !== null
+      ? await this.mediaAssetsService.assertGlobalInvoiceLogoAsset(dto.logoAssetId)
+      : null;
+
+    const updated = await this.prisma.wmsInvoiceSettings.upsert({
+      where: { scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE },
+      update: {
+        companyName:
+          dto.companyName !== undefined ? this.cleanOptionalText(dto.companyName) : undefined,
+        companyAddress:
+          dto.companyAddress !== undefined ? this.cleanOptionalText(dto.companyAddress) : undefined,
+        logoAssetId:
+          dto.logoAssetId !== undefined ? (logoAsset?.id ?? null) : undefined,
+        invoicePrefix:
+          dto.invoicePrefix !== undefined
+            ? this.normalizeInvoicePrefix(dto.invoicePrefix)
+            : undefined,
+        bankName:
+          dto.bankName !== undefined ? this.cleanOptionalText(dto.bankName) : undefined,
+        bankAccountName:
+          dto.bankAccountName !== undefined
+            ? this.cleanOptionalText(dto.bankAccountName)
+            : undefined,
+        bankAccountNumber:
+          dto.bankAccountNumber !== undefined
+            ? this.cleanOptionalText(dto.bankAccountNumber)
+            : undefined,
+        bankAccountType:
+          dto.bankAccountType !== undefined
+            ? this.cleanOptionalText(dto.bankAccountType)
+            : undefined,
+        bankBranch:
+          dto.bankBranch !== undefined ? this.cleanOptionalText(dto.bankBranch) : undefined,
+        paymentInstructions:
+          dto.paymentInstructions !== undefined
+            ? this.cleanOptionalText(dto.paymentInstructions)
+            : undefined,
+        footerNotes:
+          dto.footerNotes !== undefined ? this.cleanOptionalText(dto.footerNotes) : undefined,
+        updatedById: actorId,
+      },
+      create: {
+        scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE,
+        companyName: this.cleanOptionalText(dto.companyName),
+        companyAddress: this.cleanOptionalText(dto.companyAddress),
+        logoAssetId: logoAsset?.id ?? null,
+        invoicePrefix: this.normalizeInvoicePrefix(dto.invoicePrefix),
+        bankName: this.cleanOptionalText(dto.bankName),
+        bankAccountName: this.cleanOptionalText(dto.bankAccountName),
+        bankAccountNumber: this.cleanOptionalText(dto.bankAccountNumber),
+        bankAccountType: this.cleanOptionalText(dto.bankAccountType),
+        bankBranch: this.cleanOptionalText(dto.bankBranch),
+        paymentInstructions: this.cleanOptionalText(dto.paymentInstructions),
+        footerNotes: this.cleanOptionalText(dto.footerNotes),
+        createdById: actorId,
+        updatedById: actorId,
+      },
+      include: {
+        logoAsset: {
+          select: {
+            id: true,
+            objectKey: true,
+            contentType: true,
+            byteSize: true,
+            width: true,
+            height: true,
+            originalFileName: true,
+          },
+        },
+      },
+    });
+
+    return {
+      scope,
+      settings: {
+        companyName: updated.companyName ?? null,
+        companyAddress: updated.companyAddress ?? null,
+        logoAsset: updated.logoAsset
+          ? {
+              id: updated.logoAsset.id,
+              imageUrl: await this.mediaAssetsService.createSignedAssetUrl(updated.logoAsset),
+              contentType: updated.logoAsset.contentType,
+              byteSize: updated.logoAsset.byteSize,
+              width: updated.logoAsset.width ?? null,
+              height: updated.logoAsset.height ?? null,
+              originalFileName: updated.logoAsset.originalFileName ?? null,
+            }
+          : null,
+        invoicePrefix: updated.invoicePrefix,
+        bankName: updated.bankName ?? null,
+        bankAccountName: updated.bankAccountName ?? null,
+        bankAccountNumber: updated.bankAccountNumber ?? null,
+        bankAccountType: updated.bankAccountType ?? null,
+        bankBranch: updated.bankBranch ?? null,
+        paymentInstructions: updated.paymentInstructions ?? null,
+        footerNotes: updated.footerNotes ?? null,
+      },
+    };
+  }
+
+  async updateInvoicePartnerBilling(
+    user: WmsSettingsUser,
+    tenantId: string,
+    dto: UpdateWmsInvoiceTenantBillingDto,
+    request?: Request,
+  ) {
+    const scope = this.resolveScope(user, request);
+    if (scope.tenantId && scope.tenantId !== tenantId) {
+      throw new ForbiddenException('Selected partner is outside your WMS scope');
+    }
+
+    const updated = await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        billingCompanyName:
+          dto.billingCompanyName !== undefined
+            ? this.cleanOptionalText(dto.billingCompanyName)
+            : undefined,
+        billingAddress:
+          dto.billingAddress !== undefined
+            ? this.cleanOptionalText(dto.billingAddress)
+            : undefined,
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        billingCompanyName: true,
+        billingAddress: true,
+      },
+    });
+
+    return {
+      partner: {
+        id: updated.id,
+        name: updated.name,
+        slug: updated.slug,
+        billingCompanyName: updated.billingCompanyName ?? null,
+        billingAddress: updated.billingAddress ?? null,
+      },
+    };
+  }
+
+  async uploadInvoiceLogo(
+    user: WmsSettingsUser,
+    file: UploadedImageFile | undefined,
+    _requestedTenantId?: string,
+    request?: Request,
+  ) {
+    this.resolveScope(user, request);
+
+    return {
+      asset: await this.mediaAssetsService.uploadInvoiceLogoImage(file, null),
+    };
+  }
+
   private resolveScope(user: WmsSettingsUser, _request?: Request): WmsSettingsScope {
     const isPlatformAdmin = user.role === 'SUPER_ADMIN';
 
@@ -732,6 +987,16 @@ export class WmsSettingsService {
       .replace(/_+/g, '_');
 
     return normalized.startsWith('WMS_') ? normalized : `WMS_${normalized}`;
+  }
+
+  private normalizeInvoicePrefix(value?: string | null) {
+    const normalized = value?.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    return normalized || 'INV';
+  }
+
+  private cleanOptionalText(value?: string | null) {
+    const normalized = value?.trim();
+    return normalized ? normalized : null;
   }
 
   private async resolveWmsPermissionKeys(permissionKeys: string[]) {

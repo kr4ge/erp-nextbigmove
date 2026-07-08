@@ -53,4 +53,14 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsDateString()
   wmsFulfillmentGoLiveAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  billingCompanyName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(600)
+  billingAddress?: string | null;
 }

@@ -3057,10 +3057,12 @@ export class WmsMobileService {
         include: this.pickingTaskInclude(),
         orderBy: query.status
           ? [
+              { priorityOverrideAt: 'desc' },
               { posOrder: { dateLocal: 'asc' } },
               { id: 'asc' },
             ]
           : [
+              { priorityOverrideAt: 'desc' },
               { status: 'asc' },
               { posOrder: { dateLocal: 'asc' } },
               { id: 'asc' },
@@ -5238,6 +5240,11 @@ export class WmsMobileService {
       }
 
       await this.lockBasketForUpdate(tx, existingBasket.id);
+      await this.releaseReusableOrphanBasketUnitsTx(tx, {
+        basketId: existingBasket.id,
+        actorId: userId,
+        now,
+      });
       existingBasket = await tx.wmsBasket.findUnique({
         where: { id: existingBasket.id },
         include: this.mobileBasketInclude(),
@@ -5471,6 +5478,10 @@ export class WmsMobileService {
       const orderedTasks = taskIds
         .map((taskId) => orderById.get(taskId))
         .filter((order): order is (typeof orders)[number] => Boolean(order));
+      const prioritizedTargetIds = orderedTasks
+        .filter((order) => Boolean(order.priorityOverrideAt))
+        .map((order) => order.id);
+      const priorityRefreshScopes = new Map<string, Set<string>>();
 
       if (orderedTasks.length !== taskIds.length) {
         throw new NotFoundException('One or more selected pick tasks were not found');
@@ -5518,6 +5529,11 @@ export class WmsMobileService {
       }
 
       await this.lockBasketForUpdate(tx, basket.id);
+      await this.releaseReusableOrphanBasketUnitsTx(tx, {
+        basketId: basket.id,
+        actorId: userId,
+        now,
+      });
       basket = await tx.wmsBasket.findUnique({
         where: { id: basket.id },
         include: this.mobileBasketInclude(),
@@ -5582,6 +5598,25 @@ export class WmsMobileService {
       }
 
       if (assignmentMode === WmsFulfillmentAssignmentMode.BASKET_DEMAND) {
+        for (const order of orderedTasks) {
+          if (!prioritizedTargetIds.includes(order.id)) {
+            continue;
+          }
+
+          const scopeKey = `${order.tenantId}::${order.storeId}`;
+          const variationIds = priorityRefreshScopes.get(scopeKey) ?? new Set<string>();
+          for (const line of order.lines ?? []) {
+            if (line.status === WmsFulfillmentLineStatus.CANCELED) {
+              continue;
+            }
+
+            if ((line.quantityRequired ?? 0) > 0) {
+              variationIds.add(line.variationId);
+            }
+          }
+          priorityRefreshScopes.set(scopeKey, variationIds);
+        }
+
         for (const order of orderedTasks) {
           if (order.warehouseId && order.warehouseId !== basket.warehouseId) {
             throw new ConflictException(`Order ${order.posOrderId} is already locked to another warehouse`);
@@ -5653,6 +5688,12 @@ export class WmsMobileService {
         throw new ConflictException('One or more selected pick tasks changed before basket assignment');
       }
 
+      if (prioritizedTargetIds.length > 0) {
+        await this.wmsFulfillmentSyncService.clearPriorityOverridesTx(tx, {
+          targetOrderIds: prioritizedTargetIds,
+        });
+      }
+
       const updatedTasks = await tx.wmsFulfillmentOrder.findMany({
         where: {
           id: {
@@ -5700,8 +5741,28 @@ export class WmsMobileService {
         storeId: nextBasketStoreIds.length === 1 ? nextBasketStoreIds[0] : null,
         warehouseId: basket.warehouseId ?? firstOrder.warehouseId ?? null,
         posOrderIds: orderedTasks.map((order) => order.posOrderId),
+        priorityRefreshScopes: Array.from(priorityRefreshScopes.entries()).map(([scopeKey, variationIds]) => {
+          const [tenantId, storeId] = scopeKey.split('::');
+          return {
+            tenantId,
+            storeId,
+            variationIds: Array.from(variationIds),
+          };
+        }),
       };
     });
+
+    for (const scope of result.priorityRefreshScopes ?? []) {
+      if (!scope.tenantId || !scope.storeId) {
+        continue;
+      }
+
+      await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
+        tenantId: scope.tenantId,
+        storeId: scope.storeId,
+        variationIds: scope.variationIds,
+      });
+    }
 
     await this.recordStockActivity(user, request, {
       tenantId: result.tenantId,
@@ -7873,6 +7934,11 @@ export class WmsMobileService {
     now: Date,
   ) {
     await this.lockBasketForUpdate(tx, basketId);
+    await this.releaseReusableOrphanBasketUnitsTx(tx, {
+      basketId,
+      actorId: null,
+      now,
+    });
 
     const basket = await tx.wmsBasket.findUnique({
       where: { id: basketId },
@@ -7961,6 +8027,61 @@ export class WmsMobileService {
           : null,
       },
     });
+  }
+
+  private async releaseReusableOrphanBasketUnitsTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      basketId: string;
+      actorId: string | null;
+      now: Date;
+    },
+  ) {
+    const staleBasketUnits = await tx.wmsBasketUnit.findMany({
+      where: {
+        basketId: params.basketId,
+        status: {
+          in: [...ACTIVE_BASKET_UNIT_STATUSES],
+        },
+        fulfillmentOrderId: null,
+        fulfillmentLineId: null,
+        inventoryUnit: {
+          status: {
+            notIn: [
+              WmsInventoryUnitStatus.PICKED,
+              WmsInventoryUnitStatus.PACKED,
+            ],
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (staleBasketUnits.length === 0) {
+      return 0;
+    }
+
+    const updateResult = await tx.wmsBasketUnit.updateMany({
+      where: {
+        id: {
+          in: staleBasketUnits.map((basketUnit) => basketUnit.id),
+        },
+        status: {
+          in: [...ACTIVE_BASKET_UNIT_STATUSES],
+        },
+        fulfillmentOrderId: null,
+        fulfillmentLineId: null,
+      },
+      data: {
+        status: WmsBasketUnitStatus.REMOVED,
+        removedById: params.actorId ?? undefined,
+        removedAt: params.now,
+      },
+    });
+
+    return updateResult.count;
   }
 
   private async lockBasketForUpdate(tx: Prisma.TransactionClient, basketId: string) {
@@ -8833,6 +8954,8 @@ export class WmsMobileService {
     if (order.basket.status !== WmsBasketStatus.FULL_HELD && order.basket.status !== WmsBasketStatus.PACKING) {
       throw new BadRequestException(`Basket ${order.basket.barcode} is ${this.formatEnumLabel(order.basket.status)} and cannot be packed`);
     }
+
+    this.assertPackOrderItemsMatchPos(order);
   }
 
   private assertPackingTaskInProgress(order: any) {
@@ -8847,6 +8970,8 @@ export class WmsMobileService {
     if (order.basket.status !== WmsBasketStatus.PACKING) {
       throw new BadRequestException(`Basket ${order.basket.barcode} is not in packing state`);
     }
+
+    this.assertPackOrderItemsMatchPos(order);
   }
 
   private assertDemandPackingBasket(basket: any) {
@@ -8902,6 +9027,186 @@ export class WmsMobileService {
     if (posStatus === CANCELED_POS_ORDER_STATUS || order.posOrder?.isVoid) {
       throw new ConflictException(`Order ${order.posOrderId} was canceled in POS. Void it from PACK before continuing`);
     }
+  }
+
+  private assertPackOrderItemsMatchPos(order: any) {
+    const itemChange = this.resolveFulfillmentOrderItemChange(order);
+    if (!itemChange?.hasChanged) {
+      return;
+    }
+
+    throw new ConflictException(
+      itemChange.message
+      ?? `Order ${order.posOrderId} items changed in POS. Void it from PACK before continuing`,
+    );
+  }
+
+  private resolveFulfillmentOrderItemChange(order: any) {
+    if (!order || !Array.isArray(order.lines) || !order.posOrder?.orderSnapshot) {
+      return null;
+    }
+
+    const activeLines = order.lines.filter((line: any) => (
+      line.status !== WmsFulfillmentLineStatus.CANCELED
+      && Math.max(line.quantityRequired ?? 0, 0) > 0
+    ));
+
+    if (activeLines.length === 0) {
+      return null;
+    }
+
+    const currentSignature = this.buildOrderSnapshotDemandSignature(order.posOrder.orderSnapshot);
+    const fulfillmentSignature = this.buildFulfillmentLineDemandSignature(activeLines);
+
+    if (this.areDemandSignaturesEqual(currentSignature, fulfillmentSignature)) {
+      return {
+        hasChanged: false,
+        message: null,
+      };
+    }
+
+    const activeExecutionStatuses = new Set<WmsFulfillmentOrderStatus>([
+      WmsFulfillmentOrderStatus.IN_PICKING,
+      WmsFulfillmentOrderStatus.READY_FOR_PACK,
+      WmsFulfillmentOrderStatus.PICKED,
+      WmsFulfillmentOrderStatus.PACKING,
+      WmsFulfillmentOrderStatus.PACKED,
+    ]);
+
+    return {
+      hasChanged: true,
+      message: activeExecutionStatuses.has(order.status)
+        ? `Order ${order.posOrderId} items changed in POS. Void this order and rebuild it from the latest POS items.`
+        : `Order ${order.posOrderId} items changed in POS. Refresh fulfillment requirements before claiming it.`,
+    };
+  }
+
+  private buildOrderSnapshotDemandSignature(orderSnapshot: Prisma.JsonValue | null) {
+    const signature = new Map<string, number>();
+    const snapshot = this.asJsonRecord(orderSnapshot);
+    const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+
+    for (const rawItem of items) {
+      const item = this.asJsonRecord(rawItem);
+      if (!item) {
+        continue;
+      }
+
+      const variationInfo = this.asJsonRecord(item.variation_info);
+      const quantity = this.readPositiveInt(item.quantity);
+      const returnedQuantity =
+        this.readPositiveInt(item.returned_count)
+        + this.readPositiveInt(item.return_quantity)
+        + this.readPositiveInt(item.returning_quantity);
+      const requiredQuantity = Math.max(quantity - returnedQuantity, 0);
+      if (requiredQuantity <= 0) {
+        continue;
+      }
+
+      const comparisonKey = this.buildDemandComparisonKey({
+        variationId: this.readString(item.variation_id) ?? this.readString(item.variationId) ?? null,
+        productId: this.readString(item.product_id) ?? this.readString(item.productId) ?? null,
+        productDisplayId:
+          this.readString(item.product_display_id)
+          ?? this.readString(item.productDisplayId)
+          ?? this.readString(variationInfo?.display_id)
+          ?? this.readString(variationInfo?.product_display_id)
+          ?? this.readString(variationInfo?.barcode)
+          ?? null,
+        productName:
+          this.readString(variationInfo?.name)
+          ?? this.readString(item.note_product)
+          ?? this.readString(item.name)
+          ?? null,
+      });
+
+      signature.set(comparisonKey, (signature.get(comparisonKey) ?? 0) + requiredQuantity);
+    }
+
+    return signature;
+  }
+
+  private buildFulfillmentLineDemandSignature(lines: any[]) {
+    const signature = new Map<string, number>();
+
+    for (const line of lines) {
+      const lineSnapshot = this.asJsonRecord(line.lineSnapshot);
+      const sourceItem = this.asJsonRecord(lineSnapshot?.sourceItem);
+      const variationInfo = this.asJsonRecord(sourceItem?.variation_info);
+      const quantity = Math.max(line.quantityRequired ?? 0, 0);
+      if (quantity <= 0) {
+        continue;
+      }
+
+      const comparisonKey = this.buildDemandComparisonKey({
+        variationId:
+          this.readString(lineSnapshot?.sourceVariationId)
+          ?? this.readString(sourceItem?.variation_id)
+          ?? this.readString(sourceItem?.variationId)
+          ?? line.variationId
+          ?? null,
+        productId:
+          this.readString(lineSnapshot?.sourceProductId)
+          ?? this.readString(sourceItem?.product_id)
+          ?? this.readString(sourceItem?.productId)
+          ?? line.productId
+          ?? null,
+        productDisplayId:
+          this.readString(lineSnapshot?.productDisplayId)
+          ?? this.readString(sourceItem?.product_display_id)
+          ?? this.readString(sourceItem?.productDisplayId)
+          ?? this.readString(variationInfo?.display_id)
+          ?? this.readString(variationInfo?.product_display_id)
+          ?? this.readString(variationInfo?.barcode)
+          ?? line.productDisplayId
+          ?? null,
+        productName:
+          this.readString(variationInfo?.name)
+          ?? this.readString(lineSnapshot?.productName)
+          ?? this.readString(sourceItem?.note_product)
+          ?? line.productName
+          ?? null,
+      });
+
+      signature.set(comparisonKey, (signature.get(comparisonKey) ?? 0) + quantity);
+    }
+
+    return signature;
+  }
+
+  private buildDemandComparisonKey(params: {
+    variationId: string | null;
+    productId: string | null;
+    productDisplayId: string | null;
+    productName: string | null;
+  }) {
+    return [
+      params.variationId?.trim() ?? '',
+      params.productId?.trim() ?? '',
+      params.productDisplayId?.trim().toLowerCase() ?? '',
+      this.normalizeDemandComparisonText(params.productName),
+    ].join('::');
+  }
+
+  private normalizeDemandComparisonText(value: string | null | undefined) {
+    return (value ?? '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  }
+
+  private areDemandSignaturesEqual(left: Map<string, number>, right: Map<string, number>) {
+    if (left.size !== right.size) {
+      return false;
+    }
+
+    for (const [key, value] of left.entries()) {
+      if ((right.get(key) ?? null) !== value) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private assertOrderHasTracking(order: any) {
@@ -9348,6 +9653,7 @@ export class WmsMobileService {
           insertedAt: true,
           dateLocal: true,
           deliveredAt: true,
+          orderSnapshot: true,
           status: true,
           statusName: true,
           tracking: true,
@@ -9670,6 +9976,7 @@ export class WmsMobileService {
       : reservations.filter(
           (reservation: any) => this.isPackedEquivalentInventoryStatus(reservation.inventoryUnit.status),
         ).length;
+    const itemChange = this.resolveFulfillmentOrderItemChange(task);
 
     return {
       id: task.id,
@@ -9707,6 +10014,13 @@ export class WmsMobileService {
       orderDateLocal: task.posOrder?.dateLocal ?? null,
       tracking: task.posOrder?.tracking ?? null,
       delivery: this.mapTaskDelivery(task),
+      itemChange,
+      priority: {
+        isPrioritized: Boolean(task.priorityOverrideAt),
+        prioritizedAt: task.priorityOverrideAt ?? null,
+        reason: task.priorityOverrideReason ?? null,
+        donorReleasedForOrderId: task.priorityReleasedForOrderId ?? null,
+      },
       createdAt: task.createdAt,
       basket: task.basket ? this.mapMobilePickBasket(task.basket) : null,
       lines: lines.map((line: any) => ({

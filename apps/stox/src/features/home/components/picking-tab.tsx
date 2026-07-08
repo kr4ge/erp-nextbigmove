@@ -76,6 +76,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
   const [selectedPickTaskIds, setSelectedPickTaskIds] = useState<string[]>([]);
   const [claimReviewTaskIds, setClaimReviewTaskIds] = useState<string[]>([]);
   const [activeBatchTaskIds, setActiveBatchTaskIds] = useState<string[]>([]);
+  const [searchInput, setSearchInput] = useState('');
   const {
     activeBin,
     activeTask,
@@ -106,6 +107,11 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     assignTasksToBasket,
     statusFilter,
   } = usePickingWorkspace({ bootstrap, device, session });
+  const normalizedSearch = searchInput.trim();
+
+  useEffect(() => {
+    setSearchInput(filters.search);
+  }, [filters.search]);
 
   const filterOptions = useMemo(
     () => buildPickingFilterOptions(activeFilter, picking, bootstrap, bootstrap.user.role === 'SUPER_ADMIN'),
@@ -222,7 +228,33 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     setSelectedPickTaskIds([]);
     setClaimReviewTaskIds([]);
     setActiveBatchTaskIds([]);
-  }, [activeTab, filters.storeId, filters.tenantId, selectedDateKey, statusFilter]);
+  }, [activeTab, filters.search, filters.storeId, filters.tenantId, selectedDateKey, statusFilter]);
+
+  useEffect(() => {
+    const nextSearch = searchInput.trim();
+    const timer = setTimeout(() => {
+      setFilters((current) => {
+        if (current.search === nextSearch) {
+          return current;
+        }
+
+        return {
+          ...current,
+          search: nextSearch,
+        };
+      });
+    }, 320);
+
+    return () => clearTimeout(timer);
+  }, [searchInput, setFilters]);
+
+  useEffect(() => {
+    if (!normalizedSearch || selectedDateKey === null) {
+      return;
+    }
+
+    setSelectedDateKey(null);
+  }, [normalizedSearch, selectedDateKey]);
 
   useEffect(() => {
     setActiveBatchTaskIds((current) => current.filter((taskId) => pickTaskById.has(taskId)));
@@ -364,6 +396,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
         return {
           tenantId: value,
           storeId: null,
+          search: current.search,
         };
       }
 
@@ -427,6 +460,14 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
               value={activeStoreName}
               onPress={() => setActiveFilter('store')}
             />
+
+            {activeTab === 'list' ? (
+              <PickOrderSearchCard
+                value={searchInput}
+                onChangeText={setSearchInput}
+                onClear={() => setSearchInput('')}
+              />
+            ) : null}
           </View>
         </>
       ) : null}
@@ -486,6 +527,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
                     isLoadingMore={isLoadingMore}
                     loadedCount={taskPool.length}
                     onClearDateFilter={() => setSelectedDateKey(null)}
+                    searchQuery={normalizedSearch}
                     tasks={filteredTaskPool}
                     total={totalPickTasks}
                     onLoadMore={loadMore}
@@ -542,6 +584,7 @@ function PickTaskList({
   isLoadingMore,
   loadedCount,
   onClearDateFilter,
+  searchQuery,
   tasks,
   total,
   onLoadMore,
@@ -556,6 +599,7 @@ function PickTaskList({
   isLoadingMore: boolean;
   loadedCount: number;
   onClearDateFilter: () => void;
+  searchQuery: string;
   tasks: WmsMobilePickingTask[];
   total: number;
   onLoadMore: () => void | Promise<void>;
@@ -569,10 +613,12 @@ function PickTaskList({
     <>
       <TaskCollectionSection
         activeTaskId={activeTaskId}
-        emptyCopy={hiddenCount > 0
-          ? 'Loaded orders are currently hidden by the selected date. Show all loaded dates or choose another day.'
-          : 'Confirmed orders will show here after sync.'}
-        emptyTitle={hiddenCount > 0 ? 'No tasks on this date' : 'No pick tasks'}
+        emptyCopy={searchQuery
+          ? 'No queued order matches this order ID in the current store and status filters.'
+          : hiddenCount > 0
+            ? 'Loaded orders are currently hidden by the selected date. Show all loaded dates or choose another day.'
+            : 'Confirmed orders will show here after sync.'}
+        emptyTitle={searchQuery ? 'No matching order' : hiddenCount > 0 ? 'No tasks on this date' : 'No pick tasks'}
         showHeader={false}
         currentUserEmail={currentUserEmail}
         selectionEnabled
@@ -1175,6 +1221,44 @@ function ScopeDropdownCard({
         <Feather name="chevron-down" size={18} color="#2B2836" />
       </SurfaceCard>
     </Pressable>
+  );
+}
+
+function PickOrderSearchCard({
+  value,
+  onChangeText,
+  onClear,
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <SurfaceCard style={styles.searchCard}>
+      <View style={styles.searchIconWrap}>
+        <Feather name="search" size={15} color="#F55DB8" />
+      </View>
+      <TextInput
+        autoCapitalize="none"
+        autoCorrect={false}
+        clearButtonMode="never"
+        keyboardType="number-pad"
+        onChangeText={onChangeText}
+        placeholder="Search order ID"
+        placeholderTextColor="#8F8AAB"
+        returnKeyType="search"
+        style={styles.searchInput}
+        value={value}
+      />
+      {value ? (
+        <Pressable
+          hitSlop={10}
+          onPress={onClear}
+          style={({ pressed }) => [styles.searchClearButton, pressed ? styles.pressed : null]}>
+          <Feather name="x" size={15} color="#7A719F" />
+        </Pressable>
+      ) : null}
+    </SurfaceCard>
   );
 }
 
@@ -2930,6 +3014,42 @@ const styles = StyleSheet.create({
   queueFilterStack: {
     gap: 12,
     marginBottom: 4,
+  },
+  searchCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    shadowColor: '#A38BFF',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+  },
+  searchIconWrap: {
+    alignItems: 'center',
+    backgroundColor: '#FFE1F2',
+    borderRadius: 12,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  searchInput: {
+    color: '#24232D',
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    minHeight: 24,
+    padding: 0,
+  },
+  searchClearButton: {
+    alignItems: 'center',
+    borderRadius: 999,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
   },
   scopeDropdownWrap: {
     borderRadius: 24,

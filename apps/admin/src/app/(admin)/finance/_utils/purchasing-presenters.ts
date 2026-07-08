@@ -1,4 +1,6 @@
 import type {
+  WmsInvoiceSourceType,
+  WmsInvoiceStatus,
   WmsPurchasingBatchStatus,
   WmsPurchasingRequestType,
 } from '../_types/purchasing';
@@ -56,6 +58,43 @@ export function getStatusClasses(value: WmsPurchasingBatchStatus) {
       return 'border border-[#1f6f45] bg-[#1f6f45] text-white';
     case 'REJECTED':
       return 'border border-[#f1c7cc] bg-[#fff1f3] text-[#9f1d35]';
+    case 'CANCELED':
+      return 'border border-[#e2e8ee] bg-[#f4f7f9] text-[#607381]';
+    default:
+      return 'border border-[#dce4ea] bg-[#fbfcfc] text-[#4d6677]';
+  }
+}
+
+export function formatInvoiceStatusLabel(value: WmsInvoiceStatus) {
+  return value
+    .split('_')
+    .map((part) => part[0] + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+export function formatInvoiceSourceTypeLabel(value: WmsInvoiceSourceType) {
+  switch (value) {
+    case 'MANUAL':
+      return 'Manual';
+    case 'MANUAL_RECEIVING':
+      return 'Manual receiving';
+    case 'PROCUREMENT':
+      return 'Procurement';
+    default:
+      return value;
+  }
+}
+
+export function getInvoiceStatusClasses(value: WmsInvoiceStatus) {
+  switch (value) {
+    case 'DRAFT':
+      return 'border border-[#d8def3] bg-[#f4f6fe] text-[#43538a]';
+    case 'ISSUED':
+      return 'border border-[#cfe0f3] bg-[#eef6ff] text-[#2b5b8a]';
+    case 'PAID_PENDING_VERIFY':
+      return 'border border-[#d8d2fd] bg-[#f5f2ff] text-[#5b3aa5]';
+    case 'PAID_VERIFIED':
+      return 'border border-[#1f6f45] bg-[#1f6f45] text-white';
     case 'CANCELED':
       return 'border border-[#e2e8ee] bg-[#f4f7f9] text-[#607381]';
     default:

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UploadedFile,
   UseGuards,
@@ -22,8 +23,13 @@ import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { CreateWmsSettingsRoleDto, UpdateWmsSettingsRoleDto } from './dto/wms-settings-role.dto';
 import { CreateWmsStoxReleaseDto, ImportWmsStoxReleaseDto } from './dto/wms-stox-release.dto';
 import { CreateWmsSettingsUserDto, UpdateWmsSettingsUserDto } from './dto/wms-settings-user.dto';
+import {
+  UpdateWmsInvoiceSettingsDto,
+  UpdateWmsInvoiceTenantBillingDto,
+} from './dto/update-wms-invoice-settings.dto';
 import { WmsSettingsService } from './wms-settings.service';
 import { UploadedBinaryFile, WmsStoxReleasesService } from './wms-stox-releases.service';
+import type { UploadedImageFile } from '../../common/services/media-assets.service';
 
 @Controller('wms/settings')
 @UseGuards(JwtAuthGuard, WmsAccessGuard)
@@ -127,6 +133,53 @@ export class WmsSettingsController {
   @Permissions('wms.roles.write')
   async deleteRole(@Request() req, @Param('id') id: string) {
     return this.wmsSettingsService.deleteRole(req.user, id, req);
+  }
+
+  @Get('invoice')
+  @Permissions('wms.invoice.read')
+  async getInvoiceSettings(@Request() req, @Query('tenantId') tenantId?: string) {
+    return this.wmsSettingsService.getInvoiceSettings(req.user, tenantId, req);
+  }
+
+  @Get('invoice/partners')
+  @Permissions('wms.invoice.read')
+  async listInvoicePartners(@Request() req) {
+    return this.wmsSettingsService.listInvoicePartners(req.user, req);
+  }
+
+  @Patch('invoice')
+  @Permissions('wms.invoice.edit')
+  async updateInvoiceSettings(
+    @Request() req,
+    @Body() body: UpdateWmsInvoiceSettingsDto,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.wmsSettingsService.updateInvoiceSettings(req.user, body, tenantId, req);
+  }
+
+  @Patch('invoice/partners/:tenantId')
+  @Permissions('wms.invoice.edit')
+  async updateInvoicePartnerBilling(
+    @Request() req,
+    @Param('tenantId') tenantId: string,
+    @Body() body: UpdateWmsInvoiceTenantBillingDto,
+  ) {
+    return this.wmsSettingsService.updateInvoicePartnerBilling(req.user, tenantId, body, req);
+  }
+
+  @Post('invoice/logo-upload')
+  @Permissions('wms.invoice.edit')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: {
+      fileSize: Math.max(1, Number(process.env.OBJECT_STORAGE_INVOICE_LOGO_MAX_FILE_MB || '4')) * 1024 * 1024,
+    },
+  }))
+  async uploadInvoiceLogo(
+    @Request() req,
+    @UploadedFile() file: UploadedImageFile,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.wmsSettingsService.uploadInvoiceLogo(req.user, file, tenantId, req);
   }
 
   @Get('stox/releases')

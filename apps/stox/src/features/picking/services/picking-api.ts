@@ -244,6 +244,10 @@ function buildPickingPath(params: {
     query.push(`storeId=${encodeURIComponent(params.filters.storeId)}`);
   }
 
+  if (params.filters.search.trim()) {
+    query.push(`search=${encodeURIComponent(params.filters.search.trim())}`);
+  }
+
   if (params.status) {
     query.push(`status=${encodeURIComponent(params.status)}`);
   }

@@ -14,6 +14,7 @@ import {
   WMS_TRANSFER_PUTAWAY_PERMISSIONS,
 } from '@/lib/wms-permissions';
 import { fetchWmsProductsOverview } from '../../products/_services/products.service';
+import { ensureManualReceivingLinkedInvoice } from '../../finance/_services/purchasing.service';
 import {
   assignWmsReceivingPutaway,
   createWmsReceivingBatch,
@@ -314,6 +315,24 @@ export function useReceivingController() {
     },
   });
 
+  const ensureInvoiceMutation = useMutation({
+    mutationFn: (input: { batchId: string; tenantId?: string | null }) =>
+      ensureManualReceivingLinkedInvoice(input.batchId, input.tenantId ?? selectedTenantId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['wms-receiving-batch-labels'] }),
+        queryClient.invalidateQueries({ queryKey: ['wms-invoice-overview'] }),
+        queryClient.invalidateQueries({ queryKey: ['wms-invoice-detail'] }),
+      ]);
+    },
+    onError: (error) => {
+      setBanner({
+        tone: 'error',
+        message: getErrorMessage(error),
+      });
+    },
+  });
+
   const labelsBatchQuery = useQuery({
     queryKey: ['wms-receiving-batch-labels', labelsModalState.batchId, labelsModalState.tenantId ?? selectedTenantId ?? 'default-tenant'],
     queryFn: () => fetchWmsReceivingBatchLabels(labelsModalState.batchId!, labelsModalState.tenantId ?? selectedTenantId),
@@ -521,6 +540,19 @@ export function useReceivingController() {
   async function recordBatchLabelPrint(batchId: string, action: 'PRINT' | 'REPRINT') {
     try {
       await recordBatchLabelPrintMutation.mutateAsync({ batchId, action });
+    } catch (error) {
+      throw new Error(getErrorMessage(error));
+    }
+  }
+
+  async function ensureBatchInvoice(batchId: string, tenantId?: string | null) {
+    try {
+      const response = await ensureInvoiceMutation.mutateAsync({ batchId, tenantId });
+      setBanner({
+        tone: 'success',
+        message: `Invoice ${response.invoice.invoiceNumber} is ready`,
+      });
+      return response.invoice;
     } catch (error) {
       throw new Error(getErrorMessage(error));
     }
@@ -762,6 +794,7 @@ export function useReceivingController() {
     isLoadingLabelsBatch: labelsBatchQuery.isLoading || labelsBatchQuery.isFetching,
     labelsErrorMessage: labelsBatchQuery.error ? getErrorMessage(labelsBatchQuery.error) : null,
     isRecordingBatchLabelPrint: recordBatchLabelPrintMutation.isPending,
+    isEnsuringBatchInvoice: ensureInvoiceMutation.isPending,
     transferWorkspace: {
       selectedBatchId: transferWorkspaceState.batchId,
       selectedBatch:
@@ -777,6 +810,7 @@ export function useReceivingController() {
     closeLabelsModal,
     selectTransferBatch,
     recordBatchLabelPrint,
+    ensureBatchInvoice,
     assignPutawayUnits,
     assignPutawayUnit,
     resetPutawayUnits,

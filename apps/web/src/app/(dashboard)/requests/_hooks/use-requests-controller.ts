@@ -12,6 +12,8 @@ import { useToast } from '@/components/ui/toast';
 import {
   createWmsPurchasingBatch,
   fetchWmsPurchasingBatch,
+  fetchWmsPurchasingLinkedInvoice,
+  fetchWmsPurchasingLinkedInvoiceDocument,
   fetchWmsPurchasingOverview,
   fetchWmsPurchasingProductOptions,
   markStockRequestNotificationsRead,
@@ -27,6 +29,8 @@ import type {
   RespondWmsPurchasingRevisionInput,
   SubmitWmsPurchasingPaymentProofInput,
   UploadedWmsPurchasingProofImage,
+  WmsInvoiceDetail,
+  WmsInvoiceDocumentResponse,
   WmsPurchasingBatchDetail,
   WmsPurchasingBatchStatus,
   WmsPurchasingOverviewResponse,
@@ -87,6 +91,10 @@ export function useRequestsController() {
   const [isUploadingPaymentProofImage, setIsUploadingPaymentProofImage] = useState(false);
   const [isRespondingToRevision, setIsRespondingToRevision] = useState(false);
   const [isMarkingSelfBuyShipment, setIsMarkingSelfBuyShipment] = useState(false);
+  const [linkedInvoice, setLinkedInvoice] = useState<WmsInvoiceDetail | null>(null);
+  const [isLoadingLinkedInvoice, setIsLoadingLinkedInvoice] = useState(false);
+  const [linkedInvoiceError, setLinkedInvoiceError] = useState<string | null>(null);
+  const [isPrintingLinkedInvoice, setIsPrintingLinkedInvoice] = useState(false);
   const markedNotificationRef = useRef<string | null>(null);
 
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
@@ -151,6 +159,8 @@ export function useRequestsController() {
       markedNotificationRef.current = null;
       setSelectedBatch(null);
       setBatchError(null);
+      setLinkedInvoice(null);
+      setLinkedInvoiceError(null);
       return;
     }
 
@@ -531,6 +541,47 @@ export function useRequestsController() {
     [addToast, refreshOverview, selectedBatchId],
   );
 
+  const loadLinkedInvoice = useCallback(async () => {
+    if (!selectedBatchId) {
+      addToast('error', 'Select a request first');
+      return null;
+    }
+
+    setIsLoadingLinkedInvoice(true);
+    setLinkedInvoiceError(null);
+
+    try {
+      const response = await fetchWmsPurchasingLinkedInvoice(selectedBatchId);
+      setLinkedInvoice(response.invoice);
+      return response.invoice;
+    } catch (error) {
+      const message = parseRequestError(error, 'Failed to load invoice');
+      setLinkedInvoiceError(message);
+      addToast('error', message);
+      return null;
+    } finally {
+      setIsLoadingLinkedInvoice(false);
+    }
+  }, [addToast, selectedBatchId]);
+
+  const printLinkedInvoice = useCallback(async (): Promise<WmsInvoiceDocumentResponse | null> => {
+    if (!selectedBatchId) {
+      addToast('error', 'Select a request first');
+      return null;
+    }
+
+    setIsPrintingLinkedInvoice(true);
+
+    try {
+      return await fetchWmsPurchasingLinkedInvoiceDocument(selectedBatchId);
+    } catch (error) {
+      addToast('error', parseRequestError(error, 'Failed to generate invoice document'));
+      return null;
+    } finally {
+      setIsPrintingLinkedInvoice(false);
+    }
+  }, [addToast, selectedBatchId]);
+
   const handleRealtimeUpdate = useCallback((payload: { batchId?: string }) => {
     void refreshOverview();
 
@@ -574,6 +625,12 @@ export function useRequestsController() {
     isRespondingToRevision,
     markSelfBuyShipment,
     isMarkingSelfBuyShipment,
+    linkedInvoice,
+    isLoadingLinkedInvoice,
+    linkedInvoiceError,
+    isPrintingLinkedInvoice,
+    loadLinkedInvoice,
+    printLinkedInvoice,
     createStoreScopeId,
     createRequestType,
     createPartnerNotes,

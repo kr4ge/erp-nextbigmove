@@ -773,6 +773,7 @@ function DemandBasketPackExecutionPanel({
     () => new Map((basketView?.tasks ?? []).map((basketTask) => [basketTask.id, basketTask] as const)),
     [basketView?.tasks],
   );
+  const selectedOrderTask = selectedOrder ? orderTaskMap.get(selectedOrder.id) ?? null : null;
   const basketComplete = Boolean(plan && plan.totals.remaining === 0 && plan.orderProgress.remaining === 0);
   const activeOrderReadyToComplete = Boolean(
     selectedOrder
@@ -788,6 +789,7 @@ function DemandBasketPackExecutionPanel({
       const orderTask = orderTaskMap.get(order.id) ?? null;
       const deliveryStatus = orderTask?.delivery?.status ?? null;
       const canceledInPos = deliveryStatus === 'CANCELED';
+      const changedInPos = orderTask?.itemChange?.hasChanged === true;
       const inDispatch = deliveryStatus === 'SHIPPED'
         || deliveryStatus === 'DELIVERED'
         || deliveryStatus === 'RETURNING'
@@ -795,7 +797,9 @@ function DemandBasketPackExecutionPanel({
       const selectable = (order.status === 'PICKED' || order.status === 'PACKING') && !inDispatch;
       state.set(order.id, {
         selectable,
-        reason: canceledInPos
+        reason: changedInPos
+          ? orderTask?.itemChange?.message ?? 'Items changed in POS · void this order'
+          : canceledInPos
           ? 'Cancelled in POS · void this order'
           : inDispatch
             ? orderTask?.delivery?.label ?? 'In dispatch'
@@ -1031,10 +1035,25 @@ function DemandBasketPackExecutionPanel({
                   </div>
                 ) : null}
 
+                {selectedOrderTask?.itemChange?.hasChanged ? (
+                  <div className="mt-3 rounded-[16px] border border-[#ffd8cc] bg-[#fff4f1] px-4 py-3">
+                    <div className="flex items-start gap-2">
+                      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[#c2410c]" />
+                      <div>
+                        <p className="text-[12px] font-semibold text-[#9a3412]">POS items changed for this order.</p>
+                        <p className="mt-1 text-[12px] text-[#9a3412]">
+                          {selectedOrderTask.itemChange.message ?? 'Void this order and rebuild it from the latest POS items before packing continues.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <DemandPackOrderPlanList
                   activeOrderId={selectedOrder?.id ?? null}
                   orders={plan.orders}
                   orderStateById={voidStateByOrderId}
+                  orderTaskById={orderTaskMap}
                   selectableOrderIds={selectedVoidOrderIdSet}
                   onToggleOrder={(orderId) => {
                     const isSelectable = voidStateByOrderId.get(orderId)?.selectable;
@@ -1499,12 +1518,14 @@ function DemandPackOrderPlanList({
   activeOrderId,
   orders,
   orderStateById,
+  orderTaskById,
   selectableOrderIds,
   onToggleOrder,
 }: {
   activeOrderId: string | null;
   orders: WmsFulfillmentBasketPackPlan['orders'];
   orderStateById: Map<string, { selectable: boolean; reason: string | null }>;
+  orderTaskById: Map<string, WmsFulfillmentQueueTask>;
   selectableOrderIds: Set<string>;
   onToggleOrder: (orderId: string) => void;
 }) {
@@ -1521,7 +1542,12 @@ function DemandPackOrderPlanList({
           selectable: order.status === 'PICKED' || order.status === 'PACKING',
           reason: null,
         };
+        const orderTask = orderTaskById.get(order.id) ?? null;
         const selectable = orderState.selectable;
+        const itemChanged = orderTask?.itemChange?.hasChanged === true;
+        const helperText = itemChanged
+          ? orderTask?.itemChange?.message ?? 'Items changed in POS · void this order'
+          : orderState.reason ?? order.tracking ?? order.customerName ?? order.statusLabel;
 
         return (
           <button
@@ -1559,6 +1585,10 @@ function DemandPackOrderPlanList({
                   <span className="rounded-full bg-[#ede9ff] px-2 py-0.5 text-[10px] font-semibold text-[#6b4eff]">
                     Active
                   </span>
+                ) : itemChanged ? (
+                  <span className="rounded-full bg-[#fff1eb] px-2 py-0.5 text-[10px] font-semibold text-[#c2410c]">
+                    Changed
+                  </span>
                 ) : !selectable && orderState.reason ? (
                   <span className="rounded-full bg-[#eef3f6] px-2 py-0.5 text-[10px] font-semibold text-[#607482]">
                     Locked
@@ -1566,7 +1596,7 @@ function DemandPackOrderPlanList({
                 ) : null}
               </div>
               <p className="truncate text-[10px] text-[#6f8290]">
-                {orderState.reason ?? order.tracking ?? order.customerName ?? order.statusLabel}
+                {helperText}
               </p>
             </div>
             <div className="shrink-0 text-right">

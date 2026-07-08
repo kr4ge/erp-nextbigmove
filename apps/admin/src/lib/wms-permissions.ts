@@ -2,6 +2,19 @@ export const WMS_PURCHASING_EDIT_PERMISSIONS = [
   'wms.purchasing.edit',
 ] as const;
 
+export const WMS_INVOICE_SETTINGS_READ_PERMISSIONS = [
+  'wms.invoice.read',
+  'wms.invoice.edit',
+] as const;
+
+export const WMS_INVOICE_SETTINGS_WRITE_PERMISSIONS = [
+  'wms.invoice.edit',
+] as const;
+
+export const WMS_INVOICE_EDIT_PERMISSIONS = [
+  'wms.invoice.edit',
+] as const;
+
 export const WMS_PURCHASING_POST_RECEIVING_PERMISSIONS = [
   'wms.purchasing.post_receiving',
   'wms.receiving.write',

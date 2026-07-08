@@ -39,6 +39,7 @@ export function usePickingWorkspace({
   const [filters, setFilters] = useState<PickingFilters>({
     tenantId: bootstrap.tenant?.id ?? null,
     storeId: null,
+    search: '',
   });
   const [picking, setPicking] = useState<WmsMobilePickingResponse | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);

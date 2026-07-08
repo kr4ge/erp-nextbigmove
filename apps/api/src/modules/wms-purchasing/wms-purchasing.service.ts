@@ -8,11 +8,12 @@ import {
   NotificationDomain,
   NotificationSystem,
   Prisma,
+  WmsInvoiceSourceType,
+  WmsInvoiceStatus,
   WmsPurchasingBatchStatus,
   WmsProductProfileStatus,
   WmsPurchasingRequestType,
   WmsPurchasingSourceType,
-  WmsWarehouseStatus,
 } from '@prisma/client';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -23,11 +24,18 @@ import {
   CreateWmsPurchasingBatchDto,
   type CreateWmsPurchasingBatchLineInput,
 } from './dto/create-wms-purchasing-batch.dto';
+import {
+  CreateWmsInvoiceDto,
+  type CreateWmsInvoiceLineInput,
+} from './dto/create-wms-invoice.dto';
+import { GetWmsInvoicesOverviewDto } from './dto/get-wms-invoices-overview.dto';
 import { GetWmsPurchasingOverviewDto } from './dto/get-wms-purchasing-overview.dto';
 import { GetWmsPurchasingProductOptionsDto } from './dto/get-wms-purchasing-product-options.dto';
 import { MarkWmsSelfBuyShipmentDto } from './dto/mark-wms-self-buy-shipment.dto';
 import { RespondWmsPurchasingRevisionDto } from './dto/respond-wms-purchasing-revision.dto';
 import { SubmitWmsPurchasingPaymentProofDto } from './dto/submit-wms-purchasing-payment-proof.dto';
+import { UpdateWmsInvoiceDto, type UpdateWmsInvoiceLineInput } from './dto/update-wms-invoice.dto';
+import { UpdateWmsInvoiceStatusDto } from './dto/update-wms-invoice-status.dto';
 import { UpdateWmsPurchasingLineDto } from './dto/update-wms-purchasing-line.dto';
 import { UpdateWmsPurchasingStatusDto } from './dto/update-wms-purchasing-status.dto';
 
@@ -50,6 +58,38 @@ const STATUS_ORDER: WmsPurchasingBatchStatus[] = [
   WmsPurchasingBatchStatus.REJECTED,
   WmsPurchasingBatchStatus.CANCELED,
 ];
+
+const INVOICE_SOURCE_ORDER: WmsInvoiceSourceType[] = [
+  WmsInvoiceSourceType.MANUAL,
+  WmsInvoiceSourceType.MANUAL_RECEIVING,
+  WmsInvoiceSourceType.PROCUREMENT,
+];
+
+const INVOICE_STATUS_ORDER: WmsInvoiceStatus[] = [
+  WmsInvoiceStatus.DRAFT,
+  WmsInvoiceStatus.ISSUED,
+  WmsInvoiceStatus.PAID_PENDING_VERIFY,
+  WmsInvoiceStatus.PAID_VERIFIED,
+  WmsInvoiceStatus.CANCELED,
+];
+
+const INVOICE_STATUS_TRANSITIONS: Record<WmsInvoiceStatus, readonly WmsInvoiceStatus[]> = {
+  [WmsInvoiceStatus.DRAFT]: [WmsInvoiceStatus.ISSUED, WmsInvoiceStatus.CANCELED],
+  [WmsInvoiceStatus.ISSUED]: [
+    WmsInvoiceStatus.PAID_PENDING_VERIFY,
+    WmsInvoiceStatus.PAID_VERIFIED,
+    WmsInvoiceStatus.CANCELED,
+  ],
+  [WmsInvoiceStatus.PAID_PENDING_VERIFY]: [
+    WmsInvoiceStatus.ISSUED,
+    WmsInvoiceStatus.PAID_VERIFIED,
+    WmsInvoiceStatus.CANCELED,
+  ],
+  [WmsInvoiceStatus.PAID_VERIFIED]: [],
+  [WmsInvoiceStatus.CANCELED]: [],
+};
+
+const GLOBAL_WMS_INVOICE_SETTINGS_SCOPE = 'GLOBAL';
 
 const PROCUREMENT_STATUS_TRANSITIONS: Record<
   WmsPurchasingBatchStatus,
@@ -140,6 +180,15 @@ type PurchasingBatchListRecord = Prisma.WmsPurchasingBatchGetPayload<{
 
 type PurchasingBatchDetailRecord = Prisma.WmsPurchasingBatchGetPayload<{
   include: {
+    tenant: {
+      select: {
+        id: true;
+        name: true;
+        slug: true;
+        billingCompanyName: true;
+        billingAddress: true;
+      };
+    };
     store: {
       select: {
         id: true;
@@ -202,11 +251,13 @@ type PurchasingBatchDetailRecord = Prisma.WmsPurchasingBatchGetPayload<{
 }>;
 
 type InvoiceBankDetailsRecord = {
-  id: string;
-  code: string;
-  name: string;
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
   billingCompanyName: string | null;
   billingAddress: string | null;
+  issuerCompanyName: string | null;
+  issuerCompanyAddress: string | null;
   bankName: string | null;
   bankAccountName: string | null;
   bankAccountNumber: string | null;
@@ -214,6 +265,68 @@ type InvoiceBankDetailsRecord = {
   bankBranch: string | null;
   paymentInstructions: string | null;
 };
+
+type WmsInvoiceListRecord = Prisma.WmsInvoiceGetPayload<{
+  include: {
+    lines: {
+      select: {
+        quantity: true;
+        amount: true;
+      };
+    };
+  };
+}>;
+
+type WmsInvoiceDetailRecord = Prisma.WmsInvoiceGetPayload<{
+  include: {
+    lines: {
+      orderBy: {
+        lineNo: 'asc';
+      };
+      include: {
+        store: {
+          select: {
+            id: true;
+            name: true;
+            shopName: true;
+          };
+        };
+      };
+    };
+  };
+}>;
+
+type WmsInvoiceActivityRecord = Prisma.WmsStaffActivityGetPayload<{
+  include: {
+    actor: {
+      select: {
+        id: true;
+        firstName: true;
+        lastName: true;
+        email: true;
+      };
+    };
+  };
+}>;
+
+type LinkedInvoiceSummary = {
+  id: string;
+  sourceType: WmsInvoiceSourceType;
+  status: WmsInvoiceStatus;
+  invoiceNumber: string;
+  currency: string;
+  issueDate: Date | null;
+  dueDate: Date | null;
+  totalAmount: number;
+  amountDue: number;
+};
+
+const INVOICE_MUTABLE_STATUSES = new Set<WmsInvoiceStatus>([WmsInvoiceStatus.DRAFT]);
+const INVOICE_REISSUABLE_STATUSES = new Set<WmsInvoiceStatus>([
+  WmsInvoiceStatus.ISSUED,
+  WmsInvoiceStatus.PAID_PENDING_VERIFY,
+  WmsInvoiceStatus.CANCELED,
+]);
 
 @Injectable()
 export class WmsPurchasingService {
@@ -443,6 +556,903 @@ export class WmsPurchasingService {
     };
   }
 
+  async getInvoiceOverview(query: GetWmsInvoicesOverviewDto) {
+    const scope = await this.resolveTenantScope(query.tenantId);
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(5, query.pageSize ?? 10));
+
+    if (!scope.activeTenantId) {
+      return {
+        tenantReady: false,
+        summary: {
+          invoices: 0,
+          draft: 0,
+          issued: 0,
+          paidPendingVerify: 0,
+          paidVerified: 0,
+          canceled: 0,
+          totalBilledAmount: 0,
+          totalAmountDue: 0,
+          draftAmount: 0,
+          issuedAmount: 0,
+          paidPendingVerifyAmount: 0,
+          paidVerifiedAmount: 0,
+          canceledAmount: 0,
+        },
+        filters: {
+          tenants: scope.tenants,
+          statuses: INVOICE_STATUS_ORDER.map((status) => ({
+            value: status,
+            label: this.formatInvoiceStatusLabel(status),
+            invoiceCount: 0,
+          })),
+          sourceTypes: INVOICE_SOURCE_ORDER.map((sourceType) => ({
+            value: sourceType,
+            label: this.formatInvoiceSourceTypeLabel(sourceType),
+            invoiceCount: 0,
+          })),
+          activeTenantId: null,
+          activeStatus: null,
+          activeSourceType: null,
+        },
+        pagination: {
+          page,
+          pageSize,
+          total: 0,
+          totalPages: 1,
+        },
+        invoices: [],
+      };
+    }
+
+    const normalizedSearch = this.cleanOptionalText(query.search);
+    const where: Prisma.WmsInvoiceWhereInput = {
+      tenantId: scope.activeTenantId,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.sourceType ? { sourceType: query.sourceType } : {}),
+      ...(normalizedSearch
+        ? {
+            OR: [
+              { invoiceNumber: { contains: normalizedSearch, mode: 'insensitive' } },
+              { sourceRefCode: { contains: normalizedSearch, mode: 'insensitive' } },
+              { notes: { contains: normalizedSearch, mode: 'insensitive' } },
+              {
+                lines: {
+                  some: {
+                    OR: [
+                      { description: { contains: normalizedSearch, mode: 'insensitive' } },
+                      { productId: { contains: normalizedSearch, mode: 'insensitive' } },
+                      { variationId: { contains: normalizedSearch, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [listTotal, invoices, summaryInvoices, statusCounts, sourceTypeCounts] = await Promise.all([
+      this.prisma.wmsInvoice.count({ where }),
+      this.prisma.wmsInvoice.findMany({
+        where,
+        include: {
+          lines: {
+            select: {
+              quantity: true,
+              amount: true,
+            },
+          },
+        },
+        orderBy: [
+          { createdAt: 'desc' },
+          { invoiceNumber: 'desc' },
+        ],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.wmsInvoice.findMany({
+        where,
+        select: {
+          status: true,
+          totalsSnapshot: true,
+        },
+      }),
+      this.prisma.wmsInvoice.groupBy({
+        by: ['status'],
+        where: {
+          tenantId: scope.activeTenantId,
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      this.prisma.wmsInvoice.groupBy({
+        by: ['sourceType'],
+        where: {
+          tenantId: scope.activeTenantId,
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+    ]);
+
+    const statusCountMap = new Map(statusCounts.map((row) => [row.status, row._count._all]));
+    const sourceTypeCountMap = new Map(
+      sourceTypeCounts.map((row) => [row.sourceType, row._count._all]),
+    );
+    const summary = summaryInvoices.reduce<{
+      invoices: number;
+      draft: number;
+      issued: number;
+      paidPendingVerify: number;
+      paidVerified: number;
+      canceled: number;
+      totalBilledAmount: number;
+      totalAmountDue: number;
+      draftAmount: number;
+      issuedAmount: number;
+      paidPendingVerifyAmount: number;
+      paidVerifiedAmount: number;
+      canceledAmount: number;
+    }>(
+      (acc, invoice) => {
+        const totals = this.readInvoiceTotals(invoice.totalsSnapshot);
+        const totalAmount = totals.totalAmount ?? 0;
+        const amountDue = totals.amountDue ?? totalAmount;
+
+        acc.invoices += 1;
+        acc.totalBilledAmount += totalAmount;
+        acc.totalAmountDue += amountDue;
+
+        switch (invoice.status) {
+          case WmsInvoiceStatus.DRAFT:
+            acc.draft += 1;
+            acc.draftAmount += totalAmount;
+            break;
+          case WmsInvoiceStatus.ISSUED:
+            acc.issued += 1;
+            acc.issuedAmount += totalAmount;
+            break;
+          case WmsInvoiceStatus.PAID_PENDING_VERIFY:
+            acc.paidPendingVerify += 1;
+            acc.paidPendingVerifyAmount += totalAmount;
+            break;
+          case WmsInvoiceStatus.PAID_VERIFIED:
+            acc.paidVerified += 1;
+            acc.paidVerifiedAmount += totalAmount;
+            break;
+          case WmsInvoiceStatus.CANCELED:
+            acc.canceled += 1;
+            acc.canceledAmount += totalAmount;
+            break;
+          default:
+            break;
+        }
+
+        return acc;
+      },
+      {
+        invoices: 0,
+        draft: 0,
+        issued: 0,
+        paidPendingVerify: 0,
+        paidVerified: 0,
+        canceled: 0,
+        totalBilledAmount: 0,
+        totalAmountDue: 0,
+        draftAmount: 0,
+        issuedAmount: 0,
+        paidPendingVerifyAmount: 0,
+        paidVerifiedAmount: 0,
+        canceledAmount: 0,
+      },
+    );
+
+    return {
+      tenantReady: true,
+      summary,
+      filters: {
+        tenants: scope.tenants,
+        statuses: INVOICE_STATUS_ORDER.map((status) => ({
+          value: status,
+          label: this.formatInvoiceStatusLabel(status),
+          invoiceCount: statusCountMap.get(status) ?? 0,
+        })),
+        sourceTypes: INVOICE_SOURCE_ORDER.map((sourceType) => ({
+          value: sourceType,
+          label: this.formatInvoiceSourceTypeLabel(sourceType),
+          invoiceCount: sourceTypeCountMap.get(sourceType) ?? 0,
+        })),
+        activeTenantId: scope.activeTenantId,
+        activeStatus: query.status ?? null,
+        activeSourceType: query.sourceType ?? null,
+      },
+      pagination: {
+        page,
+        pageSize,
+        total: listTotal,
+        totalPages: Math.max(1, Math.ceil(listTotal / pageSize)),
+      },
+      invoices: invoices.map((invoice) => this.mapInvoiceListRow(invoice)),
+    };
+  }
+
+  async getInvoiceById(id: string, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const invoice = await this.prisma.wmsInvoice.findUnique({
+      where: { id },
+      include: {
+        lines: {
+          orderBy: { lineNo: 'asc' },
+          include: {
+            store: {
+              select: {
+                id: true,
+                name: true,
+                shopName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice was not found');
+    }
+
+    if (invoice.tenantId !== scope.activeTenantId) {
+      throw new ForbiddenException('Selected invoice is outside your WMS scope');
+    }
+
+    const activities = await this.prisma.wmsStaffActivity.findMany({
+      where: {
+        tenantId: invoice.tenantId,
+        resourceType: 'WMS_INVOICE',
+        resourceId: invoice.id,
+      },
+      include: {
+        actor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 50,
+    });
+
+    return {
+      invoice: this.mapInvoiceDetail(invoice, activities),
+    };
+  }
+
+  async getInvoiceDocument(id: string, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const invoice = await this.prisma.wmsInvoice.findUnique({
+      where: { id },
+      include: {
+        lines: {
+          orderBy: { lineNo: 'asc' },
+          include: {
+            store: {
+              select: {
+                id: true,
+                name: true,
+                shopName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice was not found');
+    }
+
+    if (invoice.tenantId !== scope.activeTenantId) {
+      throw new ForbiddenException('Selected invoice is outside your WMS scope');
+    }
+
+    const [tenant, settings] = await Promise.all([
+      this.requireInvoiceTenant(invoice.tenantId),
+      this.findEffectiveInvoiceSettingsWithLogo(invoice.tenantId),
+    ]);
+
+    const invoiceDetail = this.mapInvoiceDetail(invoice);
+    const logoUrl = settings?.logoAsset
+      ? await this.mediaAssetsService.createSignedAssetUrl(settings.logoAsset)
+      : null;
+
+    return {
+      invoice: invoiceDetail,
+      document: {
+        title: 'Billing Statement',
+        tenant: {
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+        },
+        issuer: {
+          ...(invoiceDetail.issuer ?? {}),
+          logoUrl,
+        },
+        billTo: invoiceDetail.billTo ?? {},
+        payment: {
+          bankName: this.readJsonString(invoiceDetail.issuer, 'bankName'),
+          bankAccountName: this.readJsonString(invoiceDetail.issuer, 'bankAccountName'),
+          bankAccountNumber: this.readJsonString(invoiceDetail.issuer, 'bankAccountNumber'),
+          bankAccountType: this.readJsonString(invoiceDetail.issuer, 'bankAccountType'),
+          bankBranch: this.readJsonString(invoiceDetail.issuer, 'bankBranch'),
+          paymentInstructions: this.readJsonString(invoiceDetail.issuer, 'paymentInstructions'),
+          footerNotes: this.readJsonString(invoiceDetail.issuer, 'footerNotes'),
+        },
+        source: {
+          type: invoiceDetail.sourceType,
+          referenceCode: invoiceDetail.sourceRefCode,
+        },
+        generatedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  async createManualInvoice(body: CreateWmsInvoiceDto, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    if (!body.lines.length) {
+      throw new BadRequestException('At least one invoice line is required');
+    }
+
+    const tenant = await this.requireInvoiceTenant(scope.activeTenantId);
+    const status = body.status ?? WmsInvoiceStatus.DRAFT;
+    if (status !== WmsInvoiceStatus.DRAFT && status !== WmsInvoiceStatus.ISSUED) {
+      throw new BadRequestException('Manual invoice can only start as draft or issued');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const explicitInvoiceNumber = this.cleanOptionalText(body.invoiceNumber);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const created = await this.prisma.$transaction(async (tx) => {
+          const normalizedLines = await this.prepareInvoiceLines(
+            tx,
+            scope.activeTenantId!,
+            body.lines,
+          );
+          const totals = this.computeInvoiceTotals(normalizedLines);
+          const invoiceSettings = await this.getInvoiceSettingsRecordTx(tx, scope.activeTenantId!);
+          const invoiceNumber = explicitInvoiceNumber
+            ?? await this.generateNextInvoiceNumberTx(
+              tx,
+              scope.activeTenantId!,
+              invoiceSettings?.invoicePrefix ?? 'INV',
+            );
+          const issueDate = this.parseOptionalDate(body.issueDate);
+          const dueDate = this.parseOptionalDate(body.dueDate);
+          const now = new Date();
+
+          const invoice = await tx.wmsInvoice.create({
+            data: {
+              tenantId: scope.activeTenantId!,
+              sourceType: WmsInvoiceSourceType.MANUAL,
+              status,
+              invoiceNumber,
+              issueDate: status === WmsInvoiceStatus.ISSUED ? (issueDate ?? now) : issueDate,
+              dueDate,
+              currency: this.normalizeInvoiceCurrency(body.currency),
+              issuerSnapshot: this.buildIssuerSnapshot(invoiceSettings, tenant),
+              billToSnapshot: this.buildBillToSnapshot(tenant),
+              totalsSnapshot: totals as Prisma.InputJsonValue,
+              notes: this.cleanOptionalText(body.notes),
+              createdById: actorId,
+              updatedById: actorId,
+              lines: {
+                create: normalizedLines.map((line, index) => ({
+                  tenantId: scope.activeTenantId!,
+                  lineNo: index + 1,
+                  storeId: line.storeId ?? null,
+                  productId: line.productId ?? null,
+                  variationId: line.variationId ?? null,
+                  description: line.description,
+                  quantity: line.quantity,
+                  unitRate: new Prisma.Decimal(line.unitRate.toFixed(2)),
+                  amount: new Prisma.Decimal(line.amount.toFixed(2)),
+                  rateSource: line.rateSource ?? null,
+                  lineSnapshot: this.buildInvoiceLineSnapshot(line),
+                })),
+              },
+            },
+            include: {
+              lines: {
+                orderBy: { lineNo: 'asc' },
+                include: {
+                  store: {
+                    select: {
+                      id: true,
+                      name: true,
+                      shopName: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+          await this.recordInvoiceActivityTx(tx, {
+            tenantId: scope.activeTenantId!,
+            actorId,
+            actionType: 'WMS_INVOICE_CREATED',
+            resourceId: invoice.id,
+            toStatus: invoice.status,
+            metadata: this.toJsonValue({
+              sourceType: invoice.sourceType,
+              sourceRefId: invoice.sourceRefId,
+              sourceRefCode: invoice.sourceRefCode,
+              invoiceNumber: invoice.invoiceNumber,
+              totalAmount: this.readInvoiceTotals(invoice.totalsSnapshot).totalAmount ?? 0,
+              origin: 'MANUAL',
+            }),
+          });
+
+          return invoice;
+        });
+
+        return {
+          invoice: this.mapInvoiceDetail(created),
+        };
+      } catch (error) {
+        if (
+          explicitInvoiceNumber
+          && error instanceof Prisma.PrismaClientKnownRequestError
+          && error.code === 'P2002'
+        ) {
+          throw new BadRequestException('Invoice number is already used in this tenant');
+        }
+
+        if (
+          !explicitInvoiceNumber
+          && attempt < 2
+          && error instanceof Prisma.PrismaClientKnownRequestError
+          && error.code === 'P2002'
+        ) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new BadRequestException('Unable to generate a unique invoice number');
+  }
+
+  async updateInvoice(id: string, body: UpdateWmsInvoiceDto, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+
+    const updatedId = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.wmsInvoice.findUnique({
+        where: { id },
+        include: {
+          lines: {
+            orderBy: { lineNo: 'asc' },
+          },
+        },
+      });
+
+      if (!current) {
+        throw new NotFoundException('Invoice was not found');
+      }
+
+      if (current.tenantId !== scope.activeTenantId) {
+        throw new ForbiddenException('Selected invoice is outside your WMS scope');
+      }
+
+      if (current.status !== WmsInvoiceStatus.DRAFT) {
+        throw new BadRequestException('Only draft invoices can be edited');
+      }
+
+      let totalsSnapshot: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput =
+        current.totalsSnapshot === null
+          ? Prisma.JsonNull
+          : current.totalsSnapshot as Prisma.InputJsonValue;
+      if (body.lines) {
+        if (!body.lines.length) {
+          throw new BadRequestException('At least one invoice line is required');
+        }
+
+        const normalizedLines = await this.prepareInvoiceLines(
+          tx,
+          scope.activeTenantId!,
+          body.lines,
+        );
+        const totals = this.computeInvoiceTotals(normalizedLines);
+        totalsSnapshot = totals as Prisma.InputJsonValue;
+
+        await tx.wmsInvoiceLine.deleteMany({
+          where: {
+            invoiceId: current.id,
+          },
+        });
+
+        await tx.wmsInvoiceLine.createMany({
+          data: normalizedLines.map((line, index) => ({
+            invoiceId: current.id,
+            tenantId: scope.activeTenantId!,
+            lineNo: index + 1,
+            storeId: line.storeId ?? null,
+            productId: line.productId ?? null,
+            variationId: line.variationId ?? null,
+            description: line.description,
+            quantity: line.quantity,
+            unitRate: new Prisma.Decimal(line.unitRate.toFixed(2)),
+            amount: new Prisma.Decimal(line.amount.toFixed(2)),
+            rateSource: line.rateSource ?? null,
+            lineSnapshot: this.buildInvoiceLineSnapshot(line),
+          })),
+        });
+      }
+
+      const updated = await tx.wmsInvoice.update({
+        where: { id: current.id },
+        data: {
+          issueDate:
+            body.issueDate !== undefined ? this.parseOptionalDate(body.issueDate) : undefined,
+          dueDate:
+            body.dueDate !== undefined ? this.parseOptionalDate(body.dueDate) : undefined,
+          currency:
+            body.currency !== undefined ? this.normalizeInvoiceCurrency(body.currency) : undefined,
+          notes:
+            body.notes !== undefined ? this.cleanOptionalText(body.notes) : undefined,
+          totalsSnapshot,
+          updatedById: actorId,
+        },
+      });
+
+      await this.recordInvoiceActivityTx(tx, {
+        tenantId: scope.activeTenantId!,
+        actorId,
+        actionType: 'WMS_INVOICE_UPDATED',
+        resourceId: updated.id,
+        fromStatus: current.status,
+        toStatus: updated.status,
+        metadata: this.toJsonValue({
+          invoiceNumber: current.invoiceNumber,
+          lineCount: body.lines?.length ?? current.lines.length,
+          noteChanged: body.notes !== undefined,
+          currencyChanged: body.currency !== undefined,
+          dueDateChanged: body.dueDate !== undefined,
+          issueDateChanged: body.issueDate !== undefined,
+        }),
+      });
+
+      return updated.id;
+    });
+
+    const updated = await this.prisma.wmsInvoice.findUnique({
+      where: { id: updatedId },
+      include: {
+        lines: {
+          orderBy: { lineNo: 'asc' },
+          include: {
+            store: {
+              select: {
+                id: true,
+                name: true,
+                shopName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!updated) {
+      throw new NotFoundException('Invoice was not found after update');
+    }
+
+    return {
+      invoice: this.mapInvoiceDetail(updated),
+    };
+  }
+
+  async updateInvoiceStatus(id: string, body: UpdateWmsInvoiceStatusDto, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+
+    const updatedId = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.wmsInvoice.findUnique({
+        where: { id },
+        include: {
+          lines: {
+            orderBy: { lineNo: 'asc' },
+            include: {
+              store: {
+                select: {
+                  id: true,
+                  name: true,
+                  shopName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!current) {
+        throw new NotFoundException('Invoice was not found');
+      }
+
+      if (current.tenantId !== scope.activeTenantId) {
+        throw new ForbiddenException('Selected invoice is outside your WMS scope');
+      }
+
+      if (current.status === body.status) {
+        return current.id;
+      }
+
+      const allowedTransitions = INVOICE_STATUS_TRANSITIONS[current.status] ?? [];
+      if (!allowedTransitions.includes(body.status)) {
+        throw new BadRequestException(
+          `Cannot move invoice from ${current.status} to ${body.status}`,
+        );
+      }
+
+      const nextIssueDate = body.status === WmsInvoiceStatus.ISSUED
+        ? this.parseOptionalDate(body.issueDate) ?? current.issueDate ?? new Date()
+        : body.issueDate !== undefined
+          ? this.parseOptionalDate(body.issueDate)
+          : undefined;
+      const currentTotals = this.readInvoiceTotals(current.totalsSnapshot);
+      const totalAmount = currentTotals.totalAmount ?? 0;
+      const nextAmountDue =
+        body.status === WmsInvoiceStatus.PAID_VERIFIED || body.status === WmsInvoiceStatus.CANCELED
+          ? 0
+          : totalAmount;
+
+      const updated = await tx.wmsInvoice.update({
+        where: { id: current.id },
+        data: {
+          status: body.status,
+          issueDate: nextIssueDate,
+          dueDate:
+            body.dueDate !== undefined ? this.parseOptionalDate(body.dueDate) : undefined,
+          notes:
+            body.notes !== undefined ? this.cleanOptionalText(body.notes) : undefined,
+          totalsSnapshot: {
+            ...currentTotals,
+            amountDue: nextAmountDue,
+          } as Prisma.InputJsonValue,
+          updatedById: actorId,
+        },
+      });
+
+      await this.recordInvoiceActivityTx(tx, {
+        tenantId: scope.activeTenantId!,
+        actorId,
+        actionType: 'WMS_INVOICE_STATUS_CHANGED',
+        resourceId: updated.id,
+        fromStatus: current.status,
+        toStatus: updated.status,
+        metadata: this.toJsonValue({
+          invoiceNumber: current.invoiceNumber,
+          sourceType: current.sourceType,
+          sourceRefId: current.sourceRefId,
+          sourceRefCode: current.sourceRefCode,
+        }),
+      });
+
+      return updated.id;
+    });
+
+    const updated = await this.prisma.wmsInvoice.findUnique({
+      where: { id: updatedId },
+      include: {
+        lines: {
+          orderBy: { lineNo: 'asc' },
+          include: {
+            store: {
+              select: {
+                id: true,
+                name: true,
+                shopName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!updated) {
+      throw new NotFoundException('Invoice was not found after status update');
+    }
+
+    return {
+      invoice: this.mapInvoiceDetail(updated),
+    };
+  }
+
+  async ensureProcurementInvoice(id: string, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const invoiceId = await this.prisma.$transaction(async (tx) => {
+      const batch = await tx.wmsPurchasingBatch.findUnique({
+        where: { id },
+        include: {
+          tenant: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              billingCompanyName: true,
+              billingAddress: true,
+            },
+          },
+          lines: {
+            orderBy: { lineNo: 'asc' },
+            include: {
+              store: {
+                select: {
+                  id: true,
+                  name: true,
+                  shopName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!batch) {
+        throw new NotFoundException('Purchasing batch was not found');
+      }
+
+      this.assertBatchTenantScope(batch.tenantId, scope.activeTenantId!);
+
+      if (batch.requestType !== WmsPurchasingRequestType.PROCUREMENT) {
+        throw new BadRequestException('Linked invoices are only available for procurement batches');
+      }
+
+      return this.syncProcurementInvoiceForBatchTx(tx, batch);
+    });
+
+    return this.getInvoiceById(invoiceId, scope.activeTenantId);
+  }
+
+  async getProcurementInvoiceByBatchId(id: string, requestedTenantId?: string) {
+    const invoiceId = await this.getLinkedProcurementInvoiceIdByBatchId(id, requestedTenantId);
+    return this.getInvoiceById(invoiceId, requestedTenantId);
+  }
+
+  async getProcurementInvoiceDocumentByBatchId(id: string, requestedTenantId?: string) {
+    const invoiceId = await this.getLinkedProcurementInvoiceIdByBatchId(id, requestedTenantId);
+    return this.getInvoiceDocument(invoiceId, requestedTenantId);
+  }
+
+  async ensureManualReceivingInvoice(receivingBatchId: string, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const invoiceId = await this.prisma.$transaction(async (tx) => {
+      const receivingBatch = await tx.wmsReceivingBatch.findUnique({
+        where: { id: receivingBatchId },
+        include: {
+          tenant: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              billingCompanyName: true,
+              billingAddress: true,
+            },
+          },
+          lines: {
+            orderBy: { lineNo: 'asc' },
+            include: {
+              store: {
+                select: {
+                  id: true,
+                  name: true,
+                  shopName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!receivingBatch) {
+        throw new NotFoundException('Receiving batch was not found');
+      }
+
+      if (receivingBatch.tenantId !== scope.activeTenantId) {
+        throw new ForbiddenException('Selected receiving batch is outside your WMS scope');
+      }
+
+      if (receivingBatch.purchasingBatchId) {
+        throw new BadRequestException(
+          'Linked receiving invoices can only be created for manual receiving batches',
+        );
+      }
+
+      return this.syncManualReceivingInvoiceForBatchTx(tx, receivingBatch);
+    });
+
+    return this.getInvoiceById(invoiceId, scope.activeTenantId);
+  }
+
+  private async getLinkedProcurementInvoiceIdByBatchId(id: string, requestedTenantId?: string) {
+    const scope = await this.resolveTenantScope(requestedTenantId);
+    if (!scope.activeTenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const batch = await this.prisma.wmsPurchasingBatch.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        tenantId: true,
+        requestType: true,
+      },
+    });
+
+    if (!batch) {
+      throw new NotFoundException('Purchasing batch was not found');
+    }
+
+    this.assertBatchTenantScope(batch.tenantId, scope.activeTenantId);
+
+    if (batch.requestType !== WmsPurchasingRequestType.PROCUREMENT) {
+      throw new BadRequestException('Linked invoices are only available for procurement batches');
+    }
+
+    const invoice = await this.prisma.wmsInvoice.findFirst({
+      where: {
+        tenantId: batch.tenantId,
+        sourceType: WmsInvoiceSourceType.PROCUREMENT,
+        sourceRefId: batch.id,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException('Linked invoice was not found for this procurement request');
+    }
+
+    return invoice.id;
+  }
+
   async getProductOptions(query: GetWmsPurchasingProductOptionsDto) {
     const scope = await this.resolveTenantScope(query.tenantId);
     const page = Math.max(1, query.page ?? 1);
@@ -605,6 +1615,15 @@ export class WmsPurchasingService {
     const batch = await this.prisma.wmsPurchasingBatch.findUnique({
       where: { id },
       include: {
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            billingCompanyName: true,
+            billingAddress: true,
+          },
+        },
         store: {
           select: {
             id: true,
@@ -667,10 +1686,17 @@ export class WmsPurchasingService {
     }
 
     this.assertBatchTenantScope(batch.tenantId, scope.activeTenantId);
-    const invoiceBankDetails = await this.resolveInvoiceBankDetails();
+    const [invoiceBankDetails, linkedInvoice] = await Promise.all([
+      this.resolveInvoiceBankDetails(batch.tenantId),
+      this.findLinkedInvoiceSummary({
+        tenantId: batch.tenantId,
+        sourceType: WmsInvoiceSourceType.PROCUREMENT,
+        sourceRefId: batch.id,
+      }),
+    ]);
 
     return {
-      batch: await this.mapBatchDetail(batch, invoiceBankDetails),
+      batch: await this.mapBatchDetail(batch, invoiceBankDetails, linkedInvoice),
     };
   }
 
@@ -1375,6 +2401,45 @@ export class WmsPurchasingService {
         },
       });
 
+      const refreshedBatch = await tx.wmsPurchasingBatch.findUnique({
+        where: { id: current.id },
+        include: {
+          tenant: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              billingCompanyName: true,
+              billingAddress: true,
+            },
+          },
+          lines: {
+            orderBy: { lineNo: 'asc' },
+            include: {
+              store: {
+                select: {
+                  id: true,
+                  name: true,
+                  shopName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!refreshedBatch) {
+        throw new NotFoundException('Purchasing batch was not found after status update');
+      }
+
+      const invoiceStatus = this.mapProcurementBatchStatusToInvoiceStatus(refreshedBatch.status);
+      if (
+        refreshedBatch.requestType === WmsPurchasingRequestType.PROCUREMENT
+        && invoiceStatus
+      ) {
+        await this.syncProcurementInvoiceForBatchTx(tx, refreshedBatch);
+      }
+
       const productProfileCostsSynced = shouldSyncAcceptedLineProfileCosts
         ? await this.syncAcceptedLineProfileCosts(tx, current.lines)
         : false;
@@ -1800,6 +2865,7 @@ export class WmsPurchasingService {
   private async mapBatchDetail(
     batch: PurchasingBatchDetailRecord,
     invoiceBankDetails: InvoiceBankDetailsRecord | null,
+    linkedInvoice: LinkedInvoiceSummary | null,
   ) {
     const listRow = {
       ...this.mapBatchListRow(batch),
@@ -1817,13 +2883,14 @@ export class WmsPurchasingService {
       invoice: {
         number: listRow.invoiceNumber,
         amount: listRow.invoiceAmount,
+        linked: linkedInvoice,
         bankDetails: invoiceBankDetails
           ? {
-              warehouseId: invoiceBankDetails.id,
-              warehouseCode: invoiceBankDetails.code,
-              warehouseName: invoiceBankDetails.name,
-              billingCompanyName: invoiceBankDetails.billingCompanyName,
-              billingAddress: invoiceBankDetails.billingAddress,
+              warehouseId: null,
+              warehouseCode: null,
+              warehouseName: null,
+              billingCompanyName: invoiceBankDetails.issuerCompanyName,
+              billingAddress: invoiceBankDetails.issuerCompanyAddress,
               bankName: invoiceBankDetails.bankName,
               bankAccountName: invoiceBankDetails.bankAccountName,
               bankAccountNumber: invoiceBankDetails.bankAccountNumber,
@@ -1832,6 +2899,19 @@ export class WmsPurchasingService {
               paymentInstructions: invoiceBankDetails.paymentInstructions,
             }
           : null,
+        billTo: {
+          tenantId: batch.tenant.id,
+          tenantName: batch.tenant.name,
+          tenantSlug: batch.tenant.slug,
+          companyName:
+            batch.tenant.billingCompanyName
+            ?? invoiceBankDetails?.billingCompanyName
+            ?? batch.tenant.name,
+          billingAddress:
+            batch.tenant.billingAddress
+            ?? invoiceBankDetails?.billingAddress
+            ?? null,
+        },
       },
       paymentProofSubmittedBy: batch.paymentProofSubmittedBy
         ? {
@@ -1895,6 +2975,619 @@ export class WmsPurchasingService {
     };
   }
 
+  private async syncProcurementInvoiceForBatchTx(
+    tx: Prisma.TransactionClient,
+    batch: Prisma.WmsPurchasingBatchGetPayload<{
+      include: {
+        tenant: {
+          select: {
+            id: true;
+            name: true;
+            slug: true;
+            billingCompanyName: true;
+            billingAddress: true;
+          };
+        };
+        lines: {
+          orderBy: {
+            lineNo: 'asc';
+          };
+          include: {
+            store: {
+              select: {
+                id: true;
+                name: true;
+                shopName: true;
+              };
+            };
+          };
+        };
+      };
+    }>,
+  ) {
+    const targetStatus = this.mapProcurementBatchStatusToInvoiceStatus(batch.status);
+    if (!targetStatus) {
+      throw new BadRequestException('This procurement batch is not yet eligible for invoice creation');
+    }
+
+    const settings = await this.getInvoiceSettingsRecordTx(tx, batch.tenantId);
+    const prefix = settings?.invoicePrefix ?? 'INV';
+    const existing = await tx.wmsInvoice.findFirst({
+      where: {
+        tenantId: batch.tenantId,
+        sourceType: WmsInvoiceSourceType.PROCUREMENT,
+        sourceRefId: batch.id,
+      },
+      include: {
+        lines: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const normalizedLines = batch.lines.map((line, index) => {
+      const quantity = Math.max(0, line.approvedQuantity ?? line.requestedQuantity);
+      const unitRate = this.toNumber(line.partnerUnitCost) ?? 0;
+      return {
+        lineNo: line.lineNo ?? index + 1,
+        storeId: line.storeId,
+        productId: this.cleanOptionalText(line.productId),
+        variationId: this.cleanOptionalText(line.variationId),
+        description:
+          this.cleanOptionalText(line.requestedProductName)
+          ?? `Purchasing line ${line.lineNo ?? index + 1}`,
+        quantity,
+        unitRate,
+        amount: Number((quantity * unitRate).toFixed(2)),
+        rateSource: 'INHOUSE_COGS',
+      };
+    });
+
+    const totals = this.computeInvoiceTotals(normalizedLines);
+    return this.upsertLinkedInvoiceTx(tx, {
+      existingInvoiceId: existing?.id ?? null,
+      tenant: batch.tenant,
+      settings,
+      sourceType: WmsInvoiceSourceType.PROCUREMENT,
+      sourceRefId: batch.id,
+      sourceRefCode: batch.sourceRequestId ?? batch.requestTitle ?? batch.id,
+      invoiceNumber:
+        this.cleanOptionalText(batch.invoiceNumber)
+        ?? existing?.invoiceNumber
+        ?? await this.generateNextInvoiceNumberTx(tx, batch.tenantId, prefix),
+      status: targetStatus,
+      issueDate:
+        targetStatus === WmsInvoiceStatus.ISSUED
+          ? existing?.issueDate ?? new Date()
+          : existing?.issueDate ?? null,
+      dueDate: existing?.dueDate ?? null,
+      currency: existing?.currency ?? 'PHP',
+      notes: batch.wmsNotes ?? existing?.notes ?? null,
+      allowReissueOnChange: true,
+      lines: normalizedLines,
+      totals,
+    });
+  }
+
+  private async syncManualReceivingInvoiceForBatchTx(
+    tx: Prisma.TransactionClient,
+    batch: Prisma.WmsReceivingBatchGetPayload<{
+      include: {
+        tenant: {
+          select: {
+            id: true;
+            name: true;
+            slug: true;
+            billingCompanyName: true;
+            billingAddress: true;
+          };
+        };
+        lines: {
+          orderBy: {
+            lineNo: 'asc';
+          };
+          include: {
+            store: {
+              select: {
+                id: true;
+                name: true;
+                shopName: true;
+              };
+            };
+          };
+        };
+      };
+    }>,
+  ) {
+    const settings = await this.getInvoiceSettingsRecordTx(tx, batch.tenantId);
+    const prefix = settings?.invoicePrefix ?? 'INV';
+    const existing = await tx.wmsInvoice.findFirst({
+      where: {
+        tenantId: batch.tenantId,
+        sourceType: WmsInvoiceSourceType.MANUAL_RECEIVING,
+        sourceRefId: batch.id,
+      },
+      include: {
+        lines: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const normalizedLines = batch.lines.map((line, index) => {
+      const quantity = Math.max(0, line.receivedQuantity || line.expectedQuantity);
+      const unitRate = this.toNumber(line.unitCost) ?? 0;
+      return {
+        lineNo: line.lineNo ?? index + 1,
+        storeId: line.storeId,
+        productId: this.cleanOptionalText(line.productId),
+        variationId: this.cleanOptionalText(line.variationId),
+        description:
+          this.cleanOptionalText(line.requestedProductName)
+          ?? `Manual receiving line ${line.lineNo ?? index + 1}`,
+        quantity,
+        unitRate,
+        amount: Number((quantity * unitRate).toFixed(2)),
+        rateSource: 'MANUAL_RECEIVING_COGS',
+      };
+    });
+
+    const totals = this.computeInvoiceTotals(normalizedLines);
+    return this.upsertLinkedInvoiceTx(tx, {
+      existingInvoiceId: existing?.id ?? null,
+      tenant: batch.tenant,
+      settings,
+      sourceType: WmsInvoiceSourceType.MANUAL_RECEIVING,
+      sourceRefId: batch.id,
+      sourceRefCode: batch.code,
+      invoiceNumber:
+        existing?.invoiceNumber
+        ?? await this.generateNextInvoiceNumberTx(tx, batch.tenantId, prefix),
+      status: existing?.status ?? WmsInvoiceStatus.ISSUED,
+      issueDate: existing?.issueDate ?? batch.receivedAt ?? new Date(),
+      dueDate: existing?.dueDate ?? null,
+      currency: existing?.currency ?? 'PHP',
+      notes: batch.notes ?? existing?.notes ?? null,
+      allowReissueOnChange: true,
+      lines: normalizedLines,
+      totals,
+    });
+  }
+
+  private async upsertLinkedInvoiceTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      existingInvoiceId: string | null;
+      tenant: {
+        id: string;
+        name: string;
+        slug: string;
+        billingCompanyName: string | null;
+        billingAddress: string | null;
+      };
+      settings: Awaited<ReturnType<WmsPurchasingService['getInvoiceSettingsRecordTx']>>;
+      sourceType: WmsInvoiceSourceType;
+      sourceRefId: string;
+      sourceRefCode: string;
+      invoiceNumber: string;
+      status: WmsInvoiceStatus;
+      issueDate: Date | null;
+      dueDate: Date | null;
+      currency: string;
+      notes: string | null;
+      allowReissueOnChange?: boolean;
+      lines: Array<{
+        lineNo: number;
+        storeId: string | null;
+        productId: string | null;
+        variationId: string | null;
+        description: string;
+        quantity: number;
+        unitRate: number;
+        amount: number;
+        rateSource: string | null;
+      }>;
+      totals: {
+        lineCount: number;
+        totalQuantity: number;
+        subtotal: number;
+        totalAmount: number;
+        amountDue: number;
+      };
+    },
+  ) {
+    const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const totals = {
+      ...input.totals,
+      amountDue:
+        input.status === WmsInvoiceStatus.PAID_VERIFIED || input.status === WmsInvoiceStatus.CANCELED
+          ? 0
+          : input.totals.amountDue,
+    };
+
+    const sharedData = {
+      sourceType: input.sourceType,
+      sourceRefId: input.sourceRefId,
+      sourceRefCode: input.sourceRefCode,
+      status: input.status,
+      invoiceNumber: input.invoiceNumber,
+      issueDate: input.issueDate,
+      dueDate: input.dueDate,
+      currency: input.currency,
+      notes: input.notes,
+      issuerSnapshot: this.buildIssuerSnapshot(input.settings, input.tenant),
+      billToSnapshot: this.buildBillToSnapshot(input.tenant),
+      totalsSnapshot: totals as Prisma.InputJsonValue,
+      updatedById: actorId,
+    } satisfies Prisma.WmsInvoiceUncheckedUpdateInput;
+
+    if (input.existingInvoiceId) {
+      const existing = await tx.wmsInvoice.findUnique({
+        where: { id: input.existingInvoiceId },
+        include: {
+          lines: {
+            orderBy: { lineNo: 'asc' },
+          },
+        },
+      });
+
+      if (!existing) {
+        throw new NotFoundException('Linked invoice was not found');
+      }
+
+      const hasMaterialChanges = this.hasLinkedInvoiceMaterialChanges(existing, input);
+
+      if (!hasMaterialChanges && existing.status === input.status) {
+        return existing.id;
+      }
+
+      if (INVOICE_MUTABLE_STATUSES.has(existing.status)) {
+        await tx.wmsInvoiceLine.deleteMany({
+          where: { invoiceId: input.existingInvoiceId },
+        });
+
+        await tx.wmsInvoice.update({
+          where: { id: input.existingInvoiceId },
+          data: {
+            ...sharedData,
+            lines: {
+              create: input.lines.map((line) => ({
+                tenantId: input.tenant.id,
+                lineNo: line.lineNo,
+                storeId: line.storeId,
+                productId: line.productId,
+                variationId: line.variationId,
+                description: line.description,
+                quantity: line.quantity,
+                unitRate: new Prisma.Decimal(line.unitRate.toFixed(2)),
+                amount: new Prisma.Decimal(line.amount.toFixed(2)),
+                rateSource: line.rateSource,
+                lineSnapshot: this.buildInvoiceLineSnapshot(line),
+              })),
+            },
+          },
+        });
+
+        await this.recordInvoiceActivityTx(tx, {
+          tenantId: input.tenant.id,
+          actorId,
+          actionType: hasMaterialChanges ? 'WMS_INVOICE_SYNCED' : 'WMS_INVOICE_STATUS_CHANGED',
+          resourceId: existing.id,
+          fromStatus: existing.status,
+          toStatus: input.status,
+          metadata: this.toJsonValue({
+            sourceType: input.sourceType,
+            sourceRefId: input.sourceRefId,
+            sourceRefCode: input.sourceRefCode,
+            invoiceNumber: input.invoiceNumber,
+            materialChange: hasMaterialChanges,
+            syncMode: 'UPDATE_DRAFT',
+          }),
+        });
+
+        return input.existingInvoiceId;
+      }
+
+      if (hasMaterialChanges) {
+        if (!input.allowReissueOnChange) {
+          throw new BadRequestException(
+            'Issued linked invoices cannot be changed automatically. Cancel or reissue the invoice first.',
+          );
+        }
+
+        if (!INVOICE_REISSUABLE_STATUSES.has(existing.status)) {
+          throw new BadRequestException(
+            'This linked invoice cannot be changed automatically after payment verification.',
+          );
+        }
+
+        await tx.wmsInvoice.update({
+          where: { id: existing.id },
+          data: {
+            status: WmsInvoiceStatus.CANCELED,
+            updatedById: actorId,
+            totalsSnapshot: {
+              ...this.readInvoiceTotals(existing.totalsSnapshot),
+              amountDue: 0,
+            } as Prisma.InputJsonValue,
+          },
+        });
+
+        await this.recordInvoiceActivityTx(tx, {
+          tenantId: input.tenant.id,
+          actorId,
+          actionType: 'WMS_INVOICE_REISSUED',
+          resourceId: existing.id,
+          fromStatus: existing.status,
+          toStatus: WmsInvoiceStatus.CANCELED,
+          metadata: this.toJsonValue({
+            sourceType: input.sourceType,
+            sourceRefId: input.sourceRefId,
+            sourceRefCode: input.sourceRefCode,
+            invoiceNumber: existing.invoiceNumber,
+            syncMode: 'CANCEL_AND_REISSUE',
+          }),
+        });
+
+        input = {
+          ...input,
+          existingInvoiceId: null,
+          invoiceNumber: await this.generateNextInvoiceNumberTx(
+            tx,
+            input.tenant.id,
+            input.settings?.invoicePrefix ?? 'INV',
+          ),
+        };
+      } else {
+        await tx.wmsInvoice.update({
+          where: { id: existing.id },
+          data: {
+            status: input.status,
+            issueDate: input.issueDate,
+            dueDate: input.dueDate,
+            notes: input.notes,
+            updatedById: actorId,
+            totalsSnapshot: totals as Prisma.InputJsonValue,
+          },
+        });
+
+        await this.recordInvoiceActivityTx(tx, {
+          tenantId: input.tenant.id,
+          actorId,
+          actionType: 'WMS_INVOICE_STATUS_CHANGED',
+          resourceId: existing.id,
+          fromStatus: existing.status,
+          toStatus: input.status,
+          metadata: this.toJsonValue({
+            sourceType: input.sourceType,
+            sourceRefId: input.sourceRefId,
+            sourceRefCode: input.sourceRefCode,
+            invoiceNumber: existing.invoiceNumber,
+            materialChange: false,
+            syncMode: 'STATUS_ONLY',
+          }),
+        });
+
+        return existing.id;
+      }
+    }
+
+    const created = await tx.wmsInvoice.create({
+      data: {
+        tenantId: input.tenant.id,
+        createdById: actorId,
+        ...sharedData,
+        lines: {
+          create: input.lines.map((line) => ({
+            tenantId: input.tenant.id,
+            lineNo: line.lineNo,
+            storeId: line.storeId,
+            productId: line.productId,
+            variationId: line.variationId,
+            description: line.description,
+            quantity: line.quantity,
+            unitRate: new Prisma.Decimal(line.unitRate.toFixed(2)),
+            amount: new Prisma.Decimal(line.amount.toFixed(2)),
+            rateSource: line.rateSource,
+            lineSnapshot: this.buildInvoiceLineSnapshot(line),
+          })),
+        },
+      },
+      select: { id: true },
+    });
+
+    await this.recordInvoiceActivityTx(tx, {
+      tenantId: input.tenant.id,
+      actorId,
+      actionType: 'WMS_INVOICE_CREATED',
+      resourceId: created.id,
+      toStatus: input.status,
+      metadata: this.toJsonValue({
+        sourceType: input.sourceType,
+        sourceRefId: input.sourceRefId,
+        sourceRefCode: input.sourceRefCode,
+        invoiceNumber: input.invoiceNumber,
+        lineCount: input.lines.length,
+        totalAmount: totals.totalAmount,
+        origin: 'LINKED',
+      }),
+    });
+
+    return created.id;
+  }
+
+  private mapProcurementBatchStatusToInvoiceStatus(status: WmsPurchasingBatchStatus) {
+    switch (status) {
+      case WmsPurchasingBatchStatus.PENDING_PAYMENT:
+        return WmsInvoiceStatus.ISSUED;
+      case WmsPurchasingBatchStatus.PAYMENT_REVIEW:
+        return WmsInvoiceStatus.PAID_PENDING_VERIFY;
+      case WmsPurchasingBatchStatus.RECEIVING_READY:
+      case WmsPurchasingBatchStatus.RECEIVING:
+      case WmsPurchasingBatchStatus.STOCKED:
+        return WmsInvoiceStatus.PAID_VERIFIED;
+      case WmsPurchasingBatchStatus.REJECTED:
+      case WmsPurchasingBatchStatus.CANCELED:
+        return WmsInvoiceStatus.CANCELED;
+      default:
+        return null;
+    }
+  }
+
+  private hasLinkedInvoiceMaterialChanges(
+    existing: Prisma.WmsInvoiceGetPayload<{
+      include: {
+        lines: true;
+      };
+    }>,
+    input: {
+      sourceType: WmsInvoiceSourceType;
+      sourceRefId: string;
+      sourceRefCode: string;
+      currency: string;
+      notes: string | null;
+      lines: Array<{
+        lineNo: number;
+        storeId: string | null;
+        productId: string | null;
+        variationId: string | null;
+        description: string;
+        quantity: number;
+        unitRate: number;
+        amount: number;
+        rateSource: string | null;
+      }>;
+      totals: {
+        lineCount: number;
+        totalQuantity: number;
+        subtotal: number;
+        totalAmount: number;
+        amountDue: number;
+      };
+    },
+  ) {
+    if (
+      existing.sourceType !== input.sourceType
+      || existing.sourceRefId !== input.sourceRefId
+      || existing.sourceRefCode !== input.sourceRefCode
+      || existing.currency !== input.currency
+      || (existing.notes ?? null) !== (input.notes ?? null)
+    ) {
+      return true;
+    }
+
+    const existingLines = existing.lines
+      .map((line) => ({
+        lineNo: line.lineNo,
+        storeId: line.storeId ?? null,
+        productId: line.productId ?? null,
+        variationId: line.variationId ?? null,
+        description: line.description,
+        quantity: line.quantity,
+        unitRate: this.toNumber(line.unitRate) ?? 0,
+        amount: this.toNumber(line.amount) ?? 0,
+        rateSource: line.rateSource ?? null,
+      }))
+      .sort((left, right) => left.lineNo - right.lineNo);
+    const nextLines = [...input.lines].sort((left, right) => left.lineNo - right.lineNo);
+
+    if (existingLines.length !== nextLines.length) {
+      return true;
+    }
+
+    for (let index = 0; index < existingLines.length; index += 1) {
+      const left = existingLines[index];
+      const right = nextLines[index];
+      if (
+        left.lineNo !== right.lineNo
+        || left.storeId !== right.storeId
+        || left.productId !== right.productId
+        || left.variationId !== right.variationId
+        || left.description !== right.description
+        || left.quantity !== right.quantity
+        || left.unitRate !== right.unitRate
+        || left.amount !== right.amount
+        || left.rateSource !== right.rateSource
+      ) {
+        return true;
+      }
+    }
+
+    const existingTotals = this.readInvoiceTotals(existing.totalsSnapshot);
+    return (
+      (existingTotals.lineCount ?? 0) !== input.totals.lineCount
+      || (existingTotals.totalQuantity ?? 0) !== input.totals.totalQuantity
+      || (existingTotals.subtotal ?? 0) !== input.totals.subtotal
+      || (existingTotals.totalAmount ?? 0) !== input.totals.totalAmount
+    );
+  }
+
+  private async recordInvoiceActivityTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      tenantId: string;
+      actorId: string | null;
+      actionType: string;
+      resourceId: string;
+      fromStatus?: string | null;
+      toStatus?: string | null;
+      metadata?: Prisma.InputJsonValue;
+    },
+  ) {
+    await tx.wmsStaffActivity.create({
+      data: {
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        actionType: input.actionType,
+        resourceType: 'WMS_INVOICE',
+        resourceId: input.resourceId,
+        fromStatus: input.fromStatus ?? null,
+        toStatus: input.toStatus ?? null,
+        metadata: input.metadata ?? undefined,
+      },
+    });
+  }
+
+  private async findLinkedInvoiceSummary(input: {
+    tenantId: string;
+    sourceType: WmsInvoiceSourceType;
+    sourceRefId: string;
+  }) {
+    const invoice = await this.prisma.wmsInvoice.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        sourceType: input.sourceType,
+        sourceRefId: input.sourceRefId,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        sourceType: true,
+        status: true,
+        invoiceNumber: true,
+        currency: true,
+        issueDate: true,
+        dueDate: true,
+        totalsSnapshot: true,
+      },
+    });
+
+    if (!invoice) {
+      return null;
+    }
+
+    const totals = this.readInvoiceTotals(invoice.totalsSnapshot);
+    return {
+      id: invoice.id,
+      sourceType: invoice.sourceType,
+      status: invoice.status,
+      invoiceNumber: invoice.invoiceNumber,
+      currency: invoice.currency,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      totalAmount: totals.totalAmount ?? 0,
+      amountDue: totals.amountDue ?? totals.totalAmount ?? 0,
+    } satisfies LinkedInvoiceSummary;
+  }
+
   private async resolvePaymentProofAsset(assetId: string | null | undefined, tenantId: string) {
     const normalized = this.cleanOptionalText(assetId);
     if (!normalized) {
@@ -1904,26 +3597,42 @@ export class WmsPurchasingService {
     return this.mediaAssetsService.assertTenantOwnedPaymentProofAsset(normalized, tenantId);
   }
 
-  private async resolveInvoiceBankDetails(): Promise<InvoiceBankDetailsRecord | null> {
-    return this.prisma.wmsWarehouse.findFirst({
-      where: {
-        status: WmsWarehouseStatus.ACTIVE,
-      },
-      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        billingCompanyName: true,
-        billingAddress: true,
-        bankName: true,
-        bankAccountName: true,
-        bankAccountNumber: true,
-        bankAccountType: true,
-        bankBranch: true,
-        paymentInstructions: true,
-      },
-    });
+  private async resolveInvoiceBankDetails(
+    tenantId: string,
+  ): Promise<InvoiceBankDetailsRecord | null> {
+    const [tenant, settings] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          billingCompanyName: true,
+          billingAddress: true,
+        },
+      }),
+      this.findEffectiveInvoiceSettingsRecord(tenantId),
+    ]);
+
+    if (!tenant && !settings) {
+      return null;
+    }
+
+    return {
+      tenantId: tenant?.id ?? tenantId,
+      tenantName: tenant?.name ?? '',
+      tenantSlug: tenant?.slug ?? '',
+      billingCompanyName: tenant?.billingCompanyName ?? null,
+      billingAddress: tenant?.billingAddress ?? null,
+      issuerCompanyName: settings?.companyName ?? null,
+      issuerCompanyAddress: settings?.companyAddress ?? null,
+      bankName: settings?.bankName ?? null,
+      bankAccountName: settings?.bankAccountName ?? null,
+      bankAccountNumber: settings?.bankAccountNumber ?? null,
+      bankAccountType: settings?.bankAccountType ?? null,
+      bankBranch: settings?.bankBranch ?? null,
+      paymentInstructions: settings?.paymentInstructions ?? null,
+    };
   }
 
   private generateInvoiceNumber() {
@@ -2415,6 +4124,418 @@ export class WmsPurchasingService {
     }
   }
 
+  private mapInvoiceListRow(invoice: WmsInvoiceListRecord) {
+    const totals = this.readInvoiceTotals(invoice.totalsSnapshot);
+    const totalQuantity = invoice.lines.reduce((sum, line) => sum + line.quantity, 0);
+    const totalAmount = invoice.lines.reduce(
+      (sum, line) => sum + (this.toNumber(line.amount) ?? 0),
+      0,
+    );
+
+    return {
+      id: invoice.id,
+      tenantId: invoice.tenantId,
+      sourceType: invoice.sourceType,
+      sourceRefId: invoice.sourceRefId,
+      sourceRefCode: invoice.sourceRefCode,
+      status: invoice.status,
+      invoiceNumber: invoice.invoiceNumber,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      currency: invoice.currency,
+      notes: invoice.notes,
+      lineCount: invoice.lines.length,
+      totalQuantity,
+      totalAmount: totals.totalAmount ?? totalAmount,
+      amountDue: totals.amountDue ?? totalAmount,
+      createdAt: invoice.createdAt,
+      updatedAt: invoice.updatedAt,
+    };
+  }
+
+  private mapInvoiceDetail(
+    invoice: WmsInvoiceDetailRecord,
+    activities: WmsInvoiceActivityRecord[] = [],
+  ) {
+    const totals = this.readInvoiceTotals(invoice.totalsSnapshot);
+    const issuerSnapshot = this.asJsonRecord(invoice.issuerSnapshot) ?? {};
+    const billToSnapshot = this.asJsonRecord(invoice.billToSnapshot) ?? {};
+
+    return {
+      ...this.mapInvoiceListRow(invoice),
+      issuer: issuerSnapshot,
+      billTo: billToSnapshot,
+      totals,
+      lines: invoice.lines.map((line) => ({
+        id: line.id,
+        lineNo: line.lineNo,
+        storeId: line.storeId,
+        store: line.store
+          ? {
+              id: line.store.id,
+              name: line.store.shopName || line.store.name,
+            }
+          : null,
+        productId: line.productId,
+        variationId: line.variationId,
+        description: line.description,
+        quantity: line.quantity,
+        unitRate: this.toNumber(line.unitRate) ?? 0,
+        amount: this.toNumber(line.amount) ?? 0,
+        rateSource: line.rateSource,
+        lineSnapshot: line.lineSnapshot,
+        createdAt: line.createdAt,
+        updatedAt: line.updatedAt,
+      })),
+      activities: activities.map((activity) => ({
+        id: activity.id,
+        actionType: activity.actionType,
+        fromStatus: activity.fromStatus,
+        toStatus: activity.toStatus,
+        metadata: activity.metadata,
+        actor: activity.actor
+          ? {
+              id: activity.actor.id,
+              name: this.formatUserName(activity.actor.firstName, activity.actor.lastName),
+              email: activity.actor.email,
+            }
+          : null,
+        createdAt: activity.createdAt,
+      })),
+    };
+  }
+
+  private async requireInvoiceTenant(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        billingCompanyName: true,
+        billingAddress: true,
+      },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant was not found');
+    }
+
+    return tenant;
+  }
+
+  private async getInvoiceSettingsRecordTx(tx: Prisma.TransactionClient, tenantId: string) {
+    const globalSettings = await tx.wmsInvoiceSettings.findFirst({
+      where: {
+        scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE,
+      },
+      select: {
+        companyName: true,
+        companyAddress: true,
+        invoicePrefix: true,
+        bankName: true,
+        bankAccountName: true,
+        bankAccountNumber: true,
+        bankAccountType: true,
+        bankBranch: true,
+        paymentInstructions: true,
+        footerNotes: true,
+        partnerBillingCompanyName: true,
+        partnerBillingAddress: true,
+      },
+    });
+
+    if (globalSettings) {
+      return globalSettings;
+    }
+
+    return tx.wmsInvoiceSettings.findFirst({
+      where: {
+        tenantId,
+      },
+      select: {
+        companyName: true,
+        companyAddress: true,
+        invoicePrefix: true,
+        bankName: true,
+        bankAccountName: true,
+        bankAccountNumber: true,
+        bankAccountType: true,
+        bankBranch: true,
+        paymentInstructions: true,
+        footerNotes: true,
+        partnerBillingCompanyName: true,
+        partnerBillingAddress: true,
+      },
+    });
+  }
+
+  private async findEffectiveInvoiceSettingsRecord(tenantId: string) {
+    const globalSettings = await this.prisma.wmsInvoiceSettings.findFirst({
+      where: {
+        scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE,
+      },
+    });
+
+    if (globalSettings) {
+      return globalSettings;
+    }
+
+    return this.prisma.wmsInvoiceSettings.findFirst({
+      where: {
+        tenantId,
+      },
+    });
+  }
+
+  private async findEffectiveInvoiceSettingsWithLogo(tenantId: string) {
+    const globalSettings = await this.prisma.wmsInvoiceSettings.findFirst({
+      where: {
+        scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE,
+      },
+      include: {
+        logoAsset: {
+          select: {
+            id: true,
+            objectKey: true,
+            contentType: true,
+            byteSize: true,
+            width: true,
+            height: true,
+            originalFileName: true,
+          },
+        },
+      },
+    });
+
+    if (globalSettings) {
+      return globalSettings;
+    }
+
+    return this.prisma.wmsInvoiceSettings.findFirst({
+      where: {
+        tenantId,
+      },
+      include: {
+        logoAsset: {
+          select: {
+            id: true,
+            objectKey: true,
+            contentType: true,
+            byteSize: true,
+            width: true,
+            height: true,
+            originalFileName: true,
+          },
+        },
+      },
+    });
+  }
+
+  private buildIssuerSnapshot(
+    settings: Awaited<ReturnType<WmsPurchasingService['getInvoiceSettingsRecordTx']>>,
+    tenant: {
+      id: string;
+      name: string;
+      slug: string;
+    },
+  ) {
+    return {
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      tenantSlug: tenant.slug,
+      companyName: settings?.companyName ?? null,
+      companyAddress: settings?.companyAddress ?? null,
+      invoicePrefix: settings?.invoicePrefix ?? 'INV',
+      bankName: settings?.bankName ?? null,
+      bankAccountName: settings?.bankAccountName ?? null,
+      bankAccountNumber: settings?.bankAccountNumber ?? null,
+      bankAccountType: settings?.bankAccountType ?? null,
+      bankBranch: settings?.bankBranch ?? null,
+      paymentInstructions: settings?.paymentInstructions ?? null,
+      footerNotes: settings?.footerNotes ?? null,
+    } as Prisma.InputJsonValue;
+  }
+
+  private buildBillToSnapshot(tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    billingCompanyName: string | null;
+    billingAddress: string | null;
+  }) {
+    return {
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      tenantSlug: tenant.slug,
+      companyName: tenant.billingCompanyName ?? tenant.name,
+      billingAddress: tenant.billingAddress ?? null,
+    } as Prisma.InputJsonValue;
+  }
+
+  private readJsonString(input: Record<string, unknown> | null | undefined, key: string) {
+    const value = input?.[key];
+    return typeof value === 'string' && value.trim().length ? value : null;
+  }
+
+  private async generateNextInvoiceNumberTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    prefix: string,
+  ) {
+    const latest = await tx.wmsInvoice.findFirst({
+      where: {
+        tenantId,
+        invoiceNumber: {
+          startsWith: `${prefix}-`,
+        },
+      },
+      select: {
+        invoiceNumber: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const currentSequence = latest
+      ? this.extractInvoiceSequence(latest.invoiceNumber, prefix)
+      : 0;
+
+    return `${prefix}-${String(currentSequence + 1).padStart(6, '0')}`;
+  }
+
+  private extractInvoiceSequence(invoiceNumber: string, prefix: string) {
+    const normalized = invoiceNumber.trim();
+    const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`);
+    const match = normalized.match(pattern);
+    if (!match) {
+      return 0;
+    }
+
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private async prepareInvoiceLines(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    lines: CreateWmsInvoiceLineInput[] | UpdateWmsInvoiceLineInput[],
+  ) {
+    const storeIds = Array.from(
+      new Set(
+        lines
+          .map((line) => this.cleanOptionalText('storeId' in line ? String(line.storeId ?? '') : ''))
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+
+    if (storeIds.length) {
+      const validStores = await tx.posStore.findMany({
+        where: {
+          tenantId,
+          id: {
+            in: storeIds,
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (validStores.length !== storeIds.length) {
+        throw new BadRequestException('One or more invoice lines use a store outside tenant scope');
+      }
+    }
+
+    return lines.map((line, index) => {
+      const description = this.cleanOptionalText(line.description);
+      if (!description) {
+        throw new BadRequestException(`Invoice line ${index + 1} is missing description`);
+      }
+
+      const quantity = Number(line.quantity);
+      const unitRate = Number(line.unitRate);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new BadRequestException(`Invoice line ${index + 1} has invalid quantity`);
+      }
+      if (!Number.isFinite(unitRate) || unitRate < 0) {
+        throw new BadRequestException(`Invoice line ${index + 1} has invalid rate`);
+      }
+
+      const amount = Number((quantity * unitRate).toFixed(2));
+
+      return {
+        lineNo: line.lineNo ?? index + 1,
+        storeId: line.storeId ?? null,
+        productId: this.cleanOptionalText(line.productId ?? null),
+        variationId: this.cleanOptionalText(line.variationId ?? null),
+        description,
+        quantity,
+        unitRate: Number(unitRate.toFixed(2)),
+        amount,
+        rateSource: this.cleanOptionalText(line.rateSource ?? null),
+      };
+    });
+  }
+
+  private computeInvoiceTotals(
+    lines: Array<{
+      quantity: number;
+      amount: number;
+    }>,
+  ) {
+    const subtotal = Number(lines.reduce((sum, line) => sum + line.amount, 0).toFixed(2));
+    const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
+
+    return {
+      lineCount: lines.length,
+      totalQuantity,
+      subtotal,
+      totalAmount: subtotal,
+      amountDue: subtotal,
+    };
+  }
+
+  private buildInvoiceLineSnapshot(line: {
+    storeId: string | null;
+    productId: string | null;
+    variationId: string | null;
+    description: string;
+    quantity: number;
+    unitRate: number;
+    amount: number;
+    rateSource: string | null;
+  }) {
+    return {
+      storeId: line.storeId,
+      productId: line.productId,
+      variationId: line.variationId,
+      description: line.description,
+      quantity: line.quantity,
+      unitRate: line.unitRate,
+      amount: line.amount,
+      rateSource: line.rateSource,
+    } as Prisma.InputJsonValue;
+  }
+
+  private readInvoiceTotals(value: Prisma.JsonValue | null | undefined) {
+    const snapshot = this.asJsonRecord(value);
+    const lineCount = this.jsonNumber(snapshot?.lineCount);
+    const totalQuantity = this.jsonNumber(snapshot?.totalQuantity);
+    const subtotal = this.jsonNumber(snapshot?.subtotal);
+    const totalAmount = this.jsonNumber(snapshot?.totalAmount);
+    const amountDue = this.jsonNumber(snapshot?.amountDue);
+
+    return {
+      lineCount,
+      totalQuantity,
+      subtotal,
+      totalAmount,
+      amountDue,
+    };
+  }
+
   private async resolveTenantScope(requestedTenantId?: string) {
     const clsTenantId = this.cls.get('tenantId') as string | undefined;
     const userRole = this.cls.get('userRole') as string | undefined;
@@ -2494,6 +4615,27 @@ export class WmsPurchasingService {
     return Number(value);
   }
 
+  private jsonNumber(value: unknown) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+  }
+
+  private asJsonRecord(value: unknown): Record<string, any> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    return value as Record<string, any>;
+  }
+
   private isLegacyVariationMapping(productId: string, variationId: string | null | undefined) {
     return Boolean(variationId) && variationId === productId;
   }
@@ -2541,6 +4683,10 @@ export class WmsPurchasingService {
     return cleaned ? cleaned : null;
   }
 
+  private normalizeInvoiceCurrency(value: string | null | undefined) {
+    return this.cleanOptionalText(value)?.toUpperCase() ?? 'PHP';
+  }
+
   private toJsonValue(value: Record<string, unknown> | undefined) {
     if (!value) {
       return undefined;
@@ -2558,6 +4704,25 @@ export class WmsPurchasingService {
       .split('_')
       .map((part) => part[0] + part.slice(1).toLowerCase())
       .join(' ');
+  }
+
+  private formatInvoiceStatusLabel(status: WmsInvoiceStatus) {
+    return status
+      .split('_')
+      .map((part) => part[0] + part.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  private formatInvoiceSourceTypeLabel(sourceType: WmsInvoiceSourceType) {
+    if (sourceType === WmsInvoiceSourceType.MANUAL) {
+      return 'Manual';
+    }
+
+    if (sourceType === WmsInvoiceSourceType.MANUAL_RECEIVING) {
+      return 'Manual receiving';
+    }
+
+    return 'Procurement';
   }
 
   private formatUserName(firstName: string | null, lastName: string | null) {

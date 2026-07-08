@@ -7,6 +7,8 @@ export type TenantRecord = {
   slug: string;
   status: TenantStatus;
   planType: TenantPlan;
+  billingCompanyName: string | null;
+  billingAddress: string | null;
   maxUsers: number;
   maxIntegrations: number;
   wmsFulfillmentGoLiveAt: string | null;

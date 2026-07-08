@@ -791,6 +791,17 @@ function validateBasketPackResponse(
     issues.push('One or more pack tasks still reference a different basket.');
   }
 
+  const changedTasks = result.tasks.filter((task) => task.itemChange?.hasChanged);
+  if (changedTasks.length > 0) {
+    const sampleOrders = changedTasks
+      .slice(0, 3)
+      .map((task) => `#${task.posOrderId}`)
+      .join(', ');
+    issues.push(
+      `POS items changed after WMS picked these orders: ${sampleOrders}${changedTasks.length > 3 ? ', ...' : ''}. Void and rebuild them before packing continues.`,
+    );
+  }
+
   if (result.plan.orderProgress.total !== result.plan.orders.length) {
     issues.push('Basket order total does not match the number of orders in the active pack plan.');
   }

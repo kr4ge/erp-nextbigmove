@@ -19,7 +19,6 @@ import { GetWmsDispatchReturnsDto } from './dto/get-wms-dispatch-returns.dto';
 import { GetWmsDispatchSummaryDto } from './dto/get-wms-dispatch-summary.dto';
 import { ReconcileWmsDispatchOutboundDto } from './dto/reconcile-wms-dispatch-outbound.dto';
 import { VoidWmsDispatchOutboundDto } from './dto/void-wms-dispatch-outbound.dto';
-import { OrdersService } from '../orders/orders.service';
 import { WmsFulfillmentOpsService } from '../wms-fulfillment/wms-fulfillment-ops.service';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
 
@@ -192,16 +191,12 @@ const DISPATCH_REPORT_ACTIVITY_TYPES = [
   'ORDER_RTS_DISPOSITION',
 ] as const;
 const MANILA_TIME_ZONE = 'Asia/Manila';
-const CONFIRMED_POS_ORDER_STATUS = 1;
-const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
-
 @Injectable()
 export class WmsDispatchService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly wmsInventoryService: WmsInventoryService,
     private readonly wmsFulfillmentOpsService: WmsFulfillmentOpsService,
-    private readonly ordersService: OrdersService,
   ) {}
 
   async getSummary(query: GetWmsDispatchSummaryDto) {
@@ -764,25 +759,6 @@ export class WmsDispatchService {
       request,
     );
 
-    const posStatusUpdate = releaseResult.resolution === 'RETURNED_TO_PICKING'
-      ? await this.enqueueVoidedDispatchOrdersConfirmedStatus([
-          {
-            tenantId: releaseResult.tenantId,
-            storeId: releaseResult.storeId,
-            posOrderDbId: releaseResult.posOrderDbId,
-            shopId: releaseResult.shopId,
-            posOrderId: releaseResult.posOrderId,
-            warehouseId: releaseResult.warehouseId,
-          },
-        ])
-      : {
-          targetStatus: CONFIRMED_POS_ORDER_STATUS,
-          queued: 0,
-          skipped: 0,
-          failed: 0,
-          results: [],
-        };
-
     return {
       success: true,
       taskId: releaseResult.fulfillmentOrderId,
@@ -790,85 +766,14 @@ export class WmsDispatchService {
       resolution: releaseResult.resolution,
       restoredPackedUnits: releaseResult.restoredPackedUnits,
       affectedBasketIds: releaseResult.affectedBasketIds,
-      posStatusUpdate,
+      posStatusUpdate: {
+        targetStatus: null,
+        queued: 0,
+        skipped: 0,
+        failed: 0,
+        results: [],
+      },
     };
-  }
-
-  private async enqueueVoidedDispatchOrdersConfirmedStatus(
-    orders: Array<{
-      tenantId: string;
-      storeId: string;
-      posOrderDbId: string;
-      shopId: string;
-      posOrderId: string;
-      warehouseId: string | null;
-    }>,
-  ) {
-    const summary = {
-      targetStatus: CONFIRMED_POS_ORDER_STATUS,
-      queued: 0,
-      skipped: 0,
-      failed: 0,
-      results: [] as Array<{
-        posOrderId: string;
-        outcome: 'queued' | 'skipped' | 'failed';
-        reason: string;
-        currentStatus?: number | null;
-      }>,
-    };
-
-    if (orders.length === 0) {
-      return summary;
-    }
-
-    const results = await Promise.all(orders.map(async (order) => {
-      try {
-        const result = await this.ordersService.enqueueSystemPosOrderStatusUpdate({
-          tenantId: order.tenantId,
-          orderRowId: order.posOrderDbId,
-          shopId: order.shopId,
-          posOrderId: order.posOrderId,
-          targetStatus: CONFIRMED_POS_ORDER_STATUS,
-          allowedCurrentStatuses: [WAITING_FOR_PRINTING_POS_ORDER_STATUS],
-          source: 'wms_picking',
-        });
-
-        if (result.skipped) {
-          return {
-            posOrderId: order.posOrderId,
-            outcome: 'skipped' as const,
-            reason: result.reason,
-            currentStatus: result.currentStatus,
-          };
-        }
-
-        return {
-          posOrderId: order.posOrderId,
-          outcome: 'queued' as const,
-          reason: result.reason,
-          currentStatus: result.currentStatus,
-        };
-      } catch (error) {
-        return {
-          posOrderId: order.posOrderId,
-          outcome: 'failed' as const,
-          reason: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
-        };
-      }
-    }));
-
-    for (const result of results) {
-      summary.results.push(result);
-      if (result.outcome === 'queued') {
-        summary.queued += 1;
-      } else if (result.outcome === 'skipped') {
-        summary.skipped += 1;
-      } else {
-        summary.failed += 1;
-      }
-    }
-
-    return summary;
   }
 
   private async resolveScope(query: GetWmsDispatchSummaryDto): Promise<DispatchScope> {

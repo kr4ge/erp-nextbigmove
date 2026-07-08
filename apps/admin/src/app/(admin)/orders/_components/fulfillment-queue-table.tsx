@@ -2,9 +2,15 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { WmsSidePanel } from '../../_components/wms-side-panel';
+import {
+  fetchWmsFulfillmentPriorityPreview,
+  prioritizeWmsFulfillmentOrder,
+  releaseWmsFulfillmentPriority,
+} from '../_services/fulfillment.service';
 import type {
   WmsFulfillmentHeldBasket,
   WmsFulfillmentQueueMode,
+  WmsFulfillmentPriorityPreviewResponse,
   WmsFulfillmentQueueTask,
 } from '../_types/fulfillment';
 import {
@@ -24,6 +30,7 @@ type FulfillmentQueueTableProps = {
   canVoidPickBaskets?: boolean;
   isVoidingPickBasket?: boolean;
   onVoidPickBasket?: (basketId: string) => Promise<boolean> | boolean;
+  onRefresh?: () => Promise<unknown> | unknown;
 };
 
 type PickQueueView = 'orders' | 'baskets';
@@ -52,9 +59,17 @@ export function FulfillmentQueueTable({
   canVoidPickBaskets = false,
   isVoidingPickBasket = false,
   onVoidPickBasket,
+  onRefresh,
 }: FulfillmentQueueTableProps) {
   const [selection, setSelection] = useState<{ kind: 'task' | 'basket'; id: string } | null>(null);
   const [confirmVoidBasketId, setConfirmVoidBasketId] = useState<string | null>(null);
+  const [priorityPreview, setPriorityPreview] = useState<WmsFulfillmentPriorityPreviewResponse | null>(null);
+  const [priorityError, setPriorityError] = useState<string | null>(null);
+  const [priorityNotice, setPriorityNotice] = useState<string | null>(null);
+  const [selectedDonorIds, setSelectedDonorIds] = useState<string[]>([]);
+  const [isPriorityPreviewLoading, setIsPriorityPreviewLoading] = useState(false);
+  const [isApplyingPriority, setIsApplyingPriority] = useState(false);
+  const [isReleasingPriority, setIsReleasingPriority] = useState(false);
   const actorHeader = mode === 'pick' ? 'Picker' : 'Packer';
   const basketRows = useMemo(
     () => (mode === 'pick'
@@ -155,6 +170,31 @@ export function FulfillmentQueueTable({
       return leftOrder.localeCompare(rightOrder, undefined, { numeric: true });
     });
   }, [selectedBasket]);
+
+  const canPrioritizeSelectedTask = mode === 'pick' && Boolean(
+    selectedTask
+    && (
+      selectedTask.status === 'RESTOCKING'
+      || selectedTask.status === 'PARTIAL'
+      || selectedTask.priority?.isPrioritized
+    ),
+  );
+  const selectedPrioritySuggestedQty = useMemo(() => {
+    if (!priorityPreview) {
+      return 0;
+    }
+
+    return priorityPreview.donors
+      .filter((donor) => selectedDonorIds.includes(donor.id))
+      .reduce((sum, donor) => sum + donor.suggestedGiveQty, 0);
+  }, [priorityPreview, selectedDonorIds]);
+
+  useEffect(() => {
+    setPriorityPreview(null);
+    setPriorityError(null);
+    setPriorityNotice(null);
+    setSelectedDonorIds([]);
+  }, [selectedTask?.id]);
 
   return (
     <>
@@ -400,6 +440,189 @@ export function FulfillmentQueueTable({
               <SummaryTile label="Remaining" value={selectedTask.totals.remaining} />
             </div>
 
+            {canPrioritizeSelectedTask ? (
+              <DetailSection
+                title="Priority allocation"
+                description="Move soft allocation from selected ready orders so this order can become claimable first."
+              >
+                {priorityError ? (
+                  <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {priorityError}
+                  </div>
+                ) : null}
+
+                {priorityNotice ? (
+                  <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {priorityNotice}
+                  </div>
+                ) : null}
+
+                {priorityPreview ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <LineMetric label="Shortage" value={priorityPreview.summary.targetShortage} />
+                      <LineMetric label="Selected cover" value={selectedPrioritySuggestedQty} />
+                      <LineMetric label="Donors" value={priorityPreview.donors.length} />
+                    </div>
+
+                    <div className="rounded-[18px] border border-[#e6edf1] bg-[#fbfcfc] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-primary">Recommended donor orders</p>
+                          <p className="mt-1 text-[13px] text-[#667a88]">
+                            Select enough ready orders to cover {priorityPreview.summary.targetShortage} unit{priorityPreview.summary.targetShortage === 1 ? '' : 's'}.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPriorityPreview(null);
+                            setSelectedDonorIds([]);
+                            setPriorityError(null);
+                            setPriorityNotice(null);
+                          }}
+                          className="text-[13px] font-semibold text-[#4d6677] transition hover:text-primary"
+                        >
+                          Clear
+                        </button>
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        {priorityPreview.donors.map((donor) => {
+                          const checked = selectedDonorIds.includes(donor.id);
+                          return (
+                            <label
+                              key={donor.id}
+                              className="flex cursor-pointer items-start gap-3 rounded-[16px] border border-[#e3eaef] bg-white px-3 py-3"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => {
+                                  setSelectedDonorIds((current) => (
+                                    event.target.checked
+                                      ? [...current, donor.id]
+                                      : current.filter((value) => value !== donor.id)
+                                  ));
+                                }}
+                                className="mt-1 h-4 w-4 rounded border-[#c6d4dd] text-[#12384b] focus:ring-[#12384b]"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-sm font-semibold text-primary">Order #{donor.posOrderId}</p>
+                                  <p className="text-[12px] font-semibold text-[#4d6677]">
+                                    Suggested {donor.suggestedGiveQty} / Releasable {donor.releasableQty}
+                                  </p>
+                                </div>
+                                <p className="mt-1 text-[13px] text-[#667a88]">
+                                  {donor.customerName ?? 'Customer unavailable'} · {donor.dateLocal ?? 'No order date'}
+                                </p>
+                                <p className="mt-1 text-[12px] text-[#8193a0]">
+                                  {donor.lines.map((line) => `${line.productName} (${line.suggestedGiveQty}/${line.releasableQty})`).join(' · ')}
+                                </p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {selectedPrioritySuggestedQty < priorityPreview.summary.targetShortage ? (
+                      <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        Selected donors cover only {selectedPrioritySuggestedQty} of {priorityPreview.summary.targetShortage} required unit{priorityPreview.summary.targetShortage === 1 ? '' : 's'}.
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {selectedTask.priority?.isPrioritized ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleReleasePriority({
+                            selectedTask,
+                            onRefresh,
+                            setIsReleasingPriority,
+                            setPriorityError,
+                            setPriorityNotice,
+                            setPriorityPreview,
+                            setSelectedDonorIds,
+                          })}
+                          disabled={isReleasingPriority || isApplyingPriority}
+                          className="btn btn-md btn-outline"
+                        >
+                          {isReleasingPriority ? 'Releasing…' : 'Release priority'}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void handleApplyPriority({
+                          selectedTask,
+                          selectedDonorIds,
+                          onRefresh,
+                          setIsApplyingPriority,
+                          setPriorityError,
+                          setPriorityNotice,
+                          setPriorityPreview,
+                          setSelectedDonorIds,
+                        })}
+                        disabled={isApplyingPriority || selectedDonorIds.length === 0 || selectedPrioritySuggestedQty < priorityPreview.summary.targetShortage}
+                        className="btn btn-md btn-primary"
+                      >
+                        {isApplyingPriority ? 'Prioritizing…' : 'Prioritize order'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#e6edf1] bg-[#fbfcfc] px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-primary">
+                        {selectedTask.priority?.isPrioritized ? 'Priority override is active' : 'Preview donor orders'}
+                      </p>
+                      <p className="mt-1 text-[13px] text-[#667a88]">
+                        {selectedTask.priority?.isPrioritized
+                          ? 'This order already has priority. Load the donor list to review or release it.'
+                          : 'Load ready donor orders first, then choose which ones should give up their soft allocation.'}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedTask.priority?.isPrioritized ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleReleasePriority({
+                            selectedTask,
+                            onRefresh,
+                            setIsReleasingPriority,
+                            setPriorityError,
+                            setPriorityNotice,
+                            setPriorityPreview,
+                            setSelectedDonorIds,
+                          })}
+                          disabled={isReleasingPriority || isPriorityPreviewLoading}
+                          className="btn btn-md btn-outline"
+                        >
+                          {isReleasingPriority ? 'Releasing…' : 'Release priority'}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void handleLoadPriorityPreview({
+                          selectedTask,
+                          setIsPriorityPreviewLoading,
+                          setPriorityError,
+                          setPriorityNotice,
+                          setPriorityPreview,
+                          setSelectedDonorIds,
+                        })}
+                        disabled={isPriorityPreviewLoading || isReleasingPriority}
+                        className="btn btn-md btn-primary"
+                      >
+                        {isPriorityPreviewLoading ? 'Loading…' : 'Load donors'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </DetailSection>
+            ) : null}
+
             <DetailSection title="Order summary" description="Core order details and current queue assignment.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <InfoCard label="Customer" value={selectedTask.customer.name ?? 'Unavailable'} />
@@ -456,6 +679,104 @@ export function FulfillmentQueueTable({
       </WmsSidePanel>
     </>
   );
+}
+
+async function handleLoadPriorityPreview(params: {
+  selectedTask: WmsFulfillmentQueueTask;
+  setIsPriorityPreviewLoading: (value: boolean) => void;
+  setPriorityError: (value: string | null) => void;
+  setPriorityNotice: (value: string | null) => void;
+  setPriorityPreview: (value: WmsFulfillmentPriorityPreviewResponse | null) => void;
+  setSelectedDonorIds: (value: string[]) => void;
+}) {
+  params.setIsPriorityPreviewLoading(true);
+  params.setPriorityError(null);
+  params.setPriorityNotice(null);
+
+  try {
+    const preview = await fetchWmsFulfillmentPriorityPreview({
+      orderId: params.selectedTask.id,
+      tenantId: params.selectedTask.store?.tenantId ?? null,
+    });
+
+    params.setPriorityPreview(preview);
+    params.setSelectedDonorIds(
+      preview.donors
+        .filter((donor) => donor.suggestedGiveQty > 0)
+        .map((donor) => donor.id),
+    );
+  } catch (error) {
+    params.setPriorityError(resolveQueueActionError(error));
+  } finally {
+    params.setIsPriorityPreviewLoading(false);
+  }
+}
+
+async function handleApplyPriority(params: {
+  selectedTask: WmsFulfillmentQueueTask;
+  selectedDonorIds: string[];
+  onRefresh?: (() => Promise<unknown> | unknown) | undefined;
+  setIsApplyingPriority: (value: boolean) => void;
+  setPriorityError: (value: string | null) => void;
+  setPriorityNotice: (value: string | null) => void;
+  setPriorityPreview: (value: WmsFulfillmentPriorityPreviewResponse | null) => void;
+  setSelectedDonorIds: (value: string[]) => void;
+}) {
+  params.setIsApplyingPriority(true);
+  params.setPriorityError(null);
+  params.setPriorityNotice(null);
+
+  try {
+    const result = await prioritizeWmsFulfillmentOrder({
+      orderId: params.selectedTask.id,
+      donorOrderIds: params.selectedDonorIds,
+      tenantId: params.selectedTask.store?.tenantId ?? null,
+      reason: `Priority override applied to order #${params.selectedTask.posOrderId}`,
+    });
+
+    await Promise.resolve(params.onRefresh?.());
+    params.setPriorityPreview(null);
+    params.setSelectedDonorIds([]);
+    params.setPriorityNotice(
+      `Order #${result.targetPosOrderId} prioritized. ${result.summary.totalSuggestedQty} unit(s) were released from ${result.summary.donorOrders} donor order(s).`,
+    );
+  } catch (error) {
+    params.setPriorityError(resolveQueueActionError(error));
+  } finally {
+    params.setIsApplyingPriority(false);
+  }
+}
+
+async function handleReleasePriority(params: {
+  selectedTask: WmsFulfillmentQueueTask;
+  onRefresh?: (() => Promise<unknown> | unknown) | undefined;
+  setIsReleasingPriority: (value: boolean) => void;
+  setPriorityError: (value: string | null) => void;
+  setPriorityNotice: (value: string | null) => void;
+  setPriorityPreview: (value: WmsFulfillmentPriorityPreviewResponse | null) => void;
+  setSelectedDonorIds: (value: string[]) => void;
+}) {
+  params.setIsReleasingPriority(true);
+  params.setPriorityError(null);
+  params.setPriorityNotice(null);
+
+  try {
+    const result = await releaseWmsFulfillmentPriority({
+      orderId: params.selectedTask.id,
+      tenantId: params.selectedTask.store?.tenantId ?? null,
+    });
+
+    await Promise.resolve(params.onRefresh?.());
+    params.setPriorityPreview(null);
+    params.setSelectedDonorIds([]);
+    params.setPriorityNotice(
+      `Priority override released for order #${result.targetPosOrderId}. Donor orders can be allocated again.`,
+    );
+  } catch (error) {
+    params.setPriorityError(resolveQueueActionError(error));
+  } finally {
+    params.setIsReleasingPriority(false);
+  }
 }
 
 function TaskRow({
@@ -822,6 +1143,42 @@ function getStatusTone(statusLabel: string) {
   }
 
   return 'bg-slate-100 text-slate-700';
+}
+
+function resolveQueueActionError(error: unknown) {
+  const fallback = 'Unable to complete the queue action right now.';
+
+  if (typeof error !== 'object' || error === null) {
+    return fallback;
+  }
+
+  const maybeResponse = (error as {
+    response?: {
+      data?: {
+        message?: string | string[];
+        error?: string;
+      };
+    };
+    message?: string;
+  }).response?.data;
+
+  if (Array.isArray(maybeResponse?.message) && maybeResponse.message.length > 0) {
+    return maybeResponse.message.join(' ');
+  }
+
+  if (typeof maybeResponse?.message === 'string' && maybeResponse.message.trim()) {
+    return maybeResponse.message;
+  }
+
+  if (typeof maybeResponse?.error === 'string' && maybeResponse.error.trim()) {
+    return maybeResponse.error;
+  }
+
+  if (typeof (error as { message?: string }).message === 'string' && (error as { message?: string }).message?.trim()) {
+    return (error as { message: string }).message;
+  }
+
+  return fallback;
 }
 
 const ACTIVE_PICK_BASKET_STATUSES = new Set(['ASSIGNED', 'IN_PICKING', 'FULL_HELD']);

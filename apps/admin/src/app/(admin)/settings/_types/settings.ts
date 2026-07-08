@@ -186,6 +186,67 @@ export type WmsStoxReleasesResponse = {
   releases: WmsStoxRelease[];
 };
 
+export type WmsInvoiceSettingsLogoAsset = {
+  id: string;
+  imageUrl: string;
+  contentType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  originalFileName: string | null;
+};
+
+export type WmsInvoiceSettingsRecord = {
+  companyName: string | null;
+  companyAddress: string | null;
+  logoAsset: WmsInvoiceSettingsLogoAsset | null;
+  invoicePrefix: string;
+  bankName: string | null;
+  bankAccountName: string | null;
+  bankAccountNumber: string | null;
+  bankAccountType: string | null;
+  bankBranch: string | null;
+  paymentInstructions: string | null;
+  footerNotes: string | null;
+};
+
+export type WmsInvoiceSettingsResponse = {
+  scope: WmsSettingsScope;
+  settings: WmsInvoiceSettingsRecord;
+};
+
+export type UpdateWmsInvoiceSettingsInput = {
+  companyName?: string | null;
+  companyAddress?: string | null;
+  logoAssetId?: string | null;
+  invoicePrefix?: string | null;
+  bankName?: string | null;
+  bankAccountName?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountType?: string | null;
+  bankBranch?: string | null;
+  paymentInstructions?: string | null;
+  footerNotes?: string | null;
+};
+
+export type WmsInvoicePartnerBillingRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  billingCompanyName: string | null;
+  billingAddress: string | null;
+};
+
+export type WmsInvoicePartnersResponse = {
+  scope: WmsSettingsScope;
+  partners: WmsInvoicePartnerBillingRecord[];
+};
+
+export type UpdateWmsInvoicePartnerBillingInput = {
+  billingCompanyName?: string | null;
+  billingAddress?: string | null;
+};
+
 export type CreateWmsStoxReleaseInput = {
   version: string;
   buildNumber: number;

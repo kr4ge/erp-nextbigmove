@@ -74,6 +74,21 @@ export class StockRequestsController {
     return this.wmsPurchasingService.getBatchById(id, this.getTenantId(req));
   }
 
+  @Get(':id/invoice')
+  @Permissions('stock_request.read')
+  async getLinkedInvoice(@Request() req: TenantRequest, @Param('id') id: string) {
+    return this.wmsPurchasingService.getProcurementInvoiceByBatchId(id, this.getTenantId(req));
+  }
+
+  @Get(':id/invoice/document')
+  @Permissions('stock_request.read')
+  async getLinkedInvoiceDocument(@Request() req: TenantRequest, @Param('id') id: string) {
+    return this.wmsPurchasingService.getProcurementInvoiceDocumentByBatchId(
+      id,
+      this.getTenantId(req),
+    );
+  }
+
   @Post('batches')
   @Permissions('stock_request.write')
   async createBatch(@Request() req: TenantRequest, @Body() body: CreateWmsPurchasingBatchDto) {

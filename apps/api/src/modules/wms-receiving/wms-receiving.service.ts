@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  WmsInvoiceSourceType,
+  WmsInvoiceStatus,
   WmsBasketUnitStatus,
   WmsInventoryMovementType,
   WmsInventoryUnitSourceType,
@@ -22,6 +24,7 @@ import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { NotificationStateService } from '../../common/services/notification-state.service';
 import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
+import { WmsPurchasingService } from '../wms-purchasing/wms-purchasing.service';
 import { WorkflowExecutionGateway } from '../workflows/gateways/workflow-execution.gateway';
 import {
   deriveReceivingBatchStatus,
@@ -217,6 +220,7 @@ type ReceivingBatchLabelsRecord = Prisma.WmsReceivingBatchGetPayload<{
     lastLabelPrintedAt: true;
     purchasingBatch: {
       select: {
+        id: true;
         sourceRequestId: true;
         requestTitle: true;
       };
@@ -289,6 +293,18 @@ type PutawayStructureMaps = {
   binsByRackId: Map<string, StructuralLocationRecord[]>;
 };
 
+type LinkedInvoiceSummary = {
+  id: string;
+  sourceType: WmsInvoiceSourceType;
+  status: WmsInvoiceStatus;
+  invoiceNumber: string;
+  currency: string;
+  issueDate: Date | null;
+  dueDate: Date | null;
+  totalAmount: number;
+  amountDue: number;
+};
+
 @Injectable()
 export class WmsReceivingService {
   constructor(
@@ -297,6 +313,7 @@ export class WmsReceivingService {
     private readonly notificationStateService: NotificationStateService,
     private readonly workflowExecutionGateway: WorkflowExecutionGateway,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
+    private readonly wmsPurchasingService: WmsPurchasingService,
   ) {}
 
   async getOverview(query: GetWmsReceivingOverviewDto) {
@@ -734,8 +751,16 @@ export class WmsReceivingService {
       inventoryUnits: this.sortReceivingBatchUnits(batch.inventoryUnits),
     };
 
+    const linkedInvoice = await this.findLinkedInvoiceSummary({
+      tenantId: batch.tenantId,
+      sourceType: batch.purchasingBatchId
+        ? WmsInvoiceSourceType.PROCUREMENT
+        : WmsInvoiceSourceType.MANUAL_RECEIVING,
+      sourceRefId: batch.purchasingBatchId ?? batch.id,
+    });
+
     return {
-      batch: this.mapReceivingBatchDetail(sortedBatch),
+      batch: this.mapReceivingBatchDetail(sortedBatch, linkedInvoice),
     };
   }
 
@@ -757,6 +782,7 @@ export class WmsReceivingService {
         lastLabelPrintedAt: true,
         purchasingBatch: {
           select: {
+            id: true,
             sourceRequestId: true,
             requestTitle: true,
           },
@@ -821,8 +847,16 @@ export class WmsReceivingService {
       inventoryUnits: this.sortReceivingBatchUnits(batch.inventoryUnits),
     };
 
+    const linkedInvoice = await this.findLinkedInvoiceSummary({
+      tenantId: batch.tenantId,
+      sourceType: batch.purchasingBatch?.id
+        ? WmsInvoiceSourceType.PROCUREMENT
+        : WmsInvoiceSourceType.MANUAL_RECEIVING,
+      sourceRefId: batch.purchasingBatch?.id ?? batch.id,
+    });
+
     return {
-      batch: this.mapReceivingBatchLabels(sortedBatch),
+      batch: this.mapReceivingBatchLabels(sortedBatch, linkedInvoice),
     };
   }
 
@@ -2271,6 +2305,8 @@ export class WmsReceivingService {
       return receivingBatch.id;
     });
 
+    await this.wmsPurchasingService.ensureManualReceivingInvoice(created, tenantId);
+
     return this.getBatchById(created, tenantId);
   }
 
@@ -2695,7 +2731,10 @@ export class WmsReceivingService {
     };
   }
 
-  private mapReceivingBatchLabels(batch: ReceivingBatchLabelsRecord) {
+  private mapReceivingBatchLabels(
+    batch: ReceivingBatchLabelsRecord,
+    linkedInvoice: LinkedInvoiceSummary | null,
+  ) {
     const status = this.deriveReceivingBatchStatusFromUnits(batch.inventoryUnits, batch.status);
 
     return {
@@ -2720,6 +2759,7 @@ export class WmsReceivingService {
             name: batch.stagingLocation.name,
           }
         : null,
+      linkedInvoice,
       units: batch.inventoryUnits.map((unit) => ({
         id: unit.id,
         code: unit.code,
@@ -2747,7 +2787,10 @@ export class WmsReceivingService {
     };
   }
 
-  private mapReceivingBatchDetail(batch: ReceivingBatchDetailRecord) {
+  private mapReceivingBatchDetail(
+    batch: ReceivingBatchDetailRecord,
+    linkedInvoice: LinkedInvoiceSummary | null,
+  ) {
     const status = this.deriveReceivingBatchStatusFromUnits(batch.inventoryUnits, batch.status);
 
     return {
@@ -2780,6 +2823,7 @@ export class WmsReceivingService {
             name: batch.stagingLocation.name,
           }
         : null,
+      linkedInvoice,
       lines: batch.lines.map((line) => ({
         id: line.id,
         lineNo: line.lineNo,
@@ -2832,6 +2876,48 @@ export class WmsReceivingService {
       createdAt: batch.createdAt,
       updatedAt: batch.updatedAt,
     };
+  }
+
+  private async findLinkedInvoiceSummary(input: {
+    tenantId: string;
+    sourceType: WmsInvoiceSourceType;
+    sourceRefId: string;
+  }) {
+    const invoice = await this.prisma.wmsInvoice.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        sourceType: input.sourceType,
+        sourceRefId: input.sourceRefId,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        sourceType: true,
+        status: true,
+        invoiceNumber: true,
+        currency: true,
+        issueDate: true,
+        dueDate: true,
+        totalsSnapshot: true,
+      },
+    });
+
+    if (!invoice) {
+      return null;
+    }
+
+    const totals = this.readInvoiceTotals(invoice.totalsSnapshot);
+    return {
+      id: invoice.id,
+      sourceType: invoice.sourceType,
+      status: invoice.status,
+      invoiceNumber: invoice.invoiceNumber,
+      currency: invoice.currency,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      totalAmount: totals.totalAmount ?? 0,
+      amountDue: totals.amountDue ?? totals.totalAmount ?? 0,
+    } satisfies LinkedInvoiceSummary;
   }
 
   private buildReceivingCode() {
@@ -3126,6 +3212,24 @@ export class WmsReceivingService {
       )
       && unit.currentLocation?.kind === WmsLocationKind.BIN
     );
+  }
+
+  private readInvoiceTotals(value: Prisma.JsonValue | null | undefined) {
+    const snapshot = this.asJsonRecord(value);
+    return {
+      totalAmount: this.jsonNumber(snapshot?.totalAmount),
+      amountDue: this.jsonNumber(snapshot?.amountDue),
+    };
+  }
+
+  private asJsonRecord(value: Prisma.JsonValue | null | undefined) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  private jsonNumber(value: unknown) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
   }
 
   private toNumber(value: Prisma.Decimal | number | null | undefined) {

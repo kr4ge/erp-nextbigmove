@@ -1,3 +1,5 @@
+import type { WmsLinkedInvoiceSummary } from '../../finance/_types/purchasing';
+
 export type WmsReceivingBatchStatus =
   | 'DRAFT'
   | 'ARRIVED'
@@ -100,6 +102,7 @@ export type WmsReceivingBatchLabels = {
     code: string;
     name: string;
   } | null;
+  linkedInvoice: WmsLinkedInvoiceSummary | null;
   units: Array<{
     id: string;
     code: string;
@@ -152,6 +155,7 @@ export type WmsReceivingBatchDetail = {
     code: string;
     name: string;
   } | null;
+  linkedInvoice: WmsLinkedInvoiceSummary | null;
   lines: Array<{
     id: string;
     lineNo: number;

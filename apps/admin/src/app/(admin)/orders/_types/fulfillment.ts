@@ -68,6 +68,16 @@ export type WmsFulfillmentQueueTask = {
     label: string | null;
     deliveredAt: string | null;
   } | null;
+  itemChange: {
+    hasChanged: boolean;
+    message: string | null;
+  } | null;
+  priority: {
+    isPrioritized: boolean;
+    prioritizedAt: string | null;
+    reason: string | null;
+    donorReleasedForOrderId: string | null;
+  } | null;
   createdAt: string;
   basket: {
     id: string;
@@ -201,6 +211,59 @@ export type WmsFulfillmentQueueResponse = {
   summary: Record<string, number>;
   heldBaskets?: WmsFulfillmentHeldBasket[];
   tasks: WmsFulfillmentQueueTask[];
+};
+
+export type WmsFulfillmentPriorityPreviewResponse = {
+  success: boolean;
+  target: {
+    id: string;
+    posOrderId: string;
+    status: string;
+    statusLabel: string;
+    tenantId: string;
+    storeId: string;
+    storeName: string | null;
+    tenantName: string | null;
+    orderDateLocal: string | null;
+    isPrioritized: boolean;
+    prioritizedAt: string | null;
+    priorityReason: string | null;
+    lines: Array<{
+      id: string;
+      variationId: string;
+      productName: string;
+      productDisplayId: string | null;
+      required: number;
+      allocated: number;
+      picked: number;
+      shortage: number;
+      status: string;
+      issueReason: string | null;
+    }>;
+  };
+  donors: Array<{
+    id: string;
+    posOrderId: string;
+    dateLocal: string | null;
+    customerName: string | null;
+    releasableQty: number;
+    suggestedGiveQty: number;
+    lines: Array<{
+      id: string;
+      variationId: string;
+      productName: string;
+      productDisplayId: string | null;
+      releasableQty: number;
+      suggestedGiveQty: number;
+    }>;
+  }>;
+  summary: {
+    donorOrders: number;
+    targetShortage: number;
+    totalSuggestedQty: number;
+    canFullyPrioritize: boolean;
+    remainingShortage: number;
+  };
 };
 
 export type WmsFulfillmentBasketPackPlanLine = {

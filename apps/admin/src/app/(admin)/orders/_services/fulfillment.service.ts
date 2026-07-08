@@ -6,6 +6,7 @@ import type {
   WmsFulfillmentBasketPackWaybillResponse,
   WmsFulfillmentPackStatus,
   WmsFulfillmentPickStatus,
+  WmsFulfillmentPriorityPreviewResponse,
   WmsFulfillmentQueueTask,
   WmsFulfillmentQueueResponse,
 } from '../_types/fulfillment';
@@ -93,6 +94,67 @@ export async function voidWmsPickBasket(params: {
     resetOrders: number;
     canceledOrders: number;
     refreshedScopes: number;
+  };
+}
+
+export async function fetchWmsFulfillmentPriorityPreview(params: {
+  orderId: string;
+  tenantId?: string | null;
+}) {
+  const response = await apiClient.get('/wms/fulfillment/ops/priority-preview', {
+    params: {
+      orderId: params.orderId,
+      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+    },
+  });
+
+  return response.data as WmsFulfillmentPriorityPreviewResponse;
+}
+
+export async function prioritizeWmsFulfillmentOrder(params: {
+  orderId: string;
+  donorOrderIds: string[];
+  tenantId?: string | null;
+  reason?: string | null;
+}) {
+  const response = await apiClient.post('/wms/fulfillment/ops/prioritize-order', {
+    orderId: params.orderId,
+    donorOrderIds: params.donorOrderIds,
+    tenantId: params.tenantId,
+    reason: params.reason,
+  });
+
+  return response.data as {
+    success: boolean;
+    targetOrderId: string;
+    targetPosOrderId: string;
+    donorOrderIds: string[];
+    donorPosOrderIds: string[];
+    summary: {
+      donorOrders: number;
+      targetShortage: number;
+      totalSuggestedQty: number;
+      canFullyPrioritize: boolean;
+      remainingShortage: number;
+    };
+  };
+}
+
+export async function releaseWmsFulfillmentPriority(params: {
+  orderId: string;
+  tenantId?: string | null;
+}) {
+  const response = await apiClient.post('/wms/fulfillment/ops/release-priority', {
+    orderId: params.orderId,
+    tenantId: params.tenantId,
+  });
+
+  return response.data as {
+    success: boolean;
+    targetOrderId: string;
+    targetPosOrderId: string;
+    clearedTargets: number;
+    clearedDonors: number;
   };
 }
 

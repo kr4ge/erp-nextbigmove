@@ -21,8 +21,12 @@ import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
 import { GetWmsFulfillmentOpsSnapshotDto } from './dto/get-wms-fulfillment-ops-snapshot.dto';
+import { GetWmsFulfillmentPriorityPreviewDto } from './dto/get-wms-fulfillment-priority-preview.dto';
+import { PrioritizeWmsFulfillmentOrderDto } from './dto/prioritize-wms-fulfillment-order.dto';
 import { RecalculateWmsDemandCountsDto } from './dto/recalculate-wms-demand-counts.dto';
+import { ReleaseWmsFulfillmentPriorityDto } from './dto/release-wms-fulfillment-priority.dto';
 import { RepairWmsDemandBasketsDto } from './dto/repair-wms-demand-baskets.dto';
+import { WmsFulfillmentSyncService } from './wms-fulfillment-sync.service';
 
 const DEFAULT_OPS_LIMIT = 25;
 const DEFAULT_STALE_MINUTES = 180;
@@ -162,6 +166,7 @@ export class WmsFulfillmentOpsService {
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
+    private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
   ) {}
 
   async getOpsHealth(query: GetWmsFulfillmentOpsSnapshotDto) {
@@ -481,6 +486,193 @@ export class WmsFulfillmentOpsService {
       demandMismatches: mismatchState.mismatches
         .sort((left, right) => left.basketUpdatedAt.getTime() - right.basketUpdatedAt.getTime())
         .slice(0, limit),
+    };
+  }
+
+  async getPriorityPreview(query: GetWmsFulfillmentPriorityPreviewDto) {
+    const scope = await this.resolveTenantScope(query.tenantId);
+    const scopedTenantId = this.requireScopedTenantId(scope.activeTenantId);
+    const targetOrder = await this.loadPriorityTargetOrder(this.prisma, query.orderId, scopedTenantId);
+    const donorOrders = await this.loadPriorityDonorOrders(this.prisma, targetOrder);
+    const preview = this.buildPriorityPreview(targetOrder, donorOrders);
+
+    return {
+      success: true,
+      ...preview,
+    };
+  }
+
+  async prioritizeOrder(
+    user: { userId?: string; id?: string; sessionId?: string | null },
+    body: PrioritizeWmsFulfillmentOrderDto,
+    request?: Request,
+  ) {
+    const scope = await this.resolveTenantScope(body.tenantId);
+    const scopedTenantId = this.requireScopedTenantId(scope.activeTenantId);
+    const actorId = this.resolveActorId(user);
+    const sessionId = this.resolveSessionId(user);
+    const reason = body.reason?.trim() || `Priority override applied to order #${body.orderId}`;
+    const now = new Date();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const targetOrder = await this.loadPriorityTargetOrder(tx, body.orderId, scopedTenantId);
+      const donorOrders = await this.loadPriorityDonorOrders(tx, targetOrder);
+      const selectedDonorIds = new Set(body.donorOrderIds);
+      const selectedPlan = this.buildPriorityPreview(targetOrder, donorOrders, selectedDonorIds);
+      const selectedOrderIds = selectedPlan.donors.map((donor) => donor.id);
+
+      if (selectedOrderIds.length !== selectedDonorIds.size) {
+        throw new BadRequestException('One or more selected donor orders are no longer eligible for priority release.');
+      }
+
+      if (!selectedPlan.summary.canFullyPrioritize) {
+        throw new BadRequestException(
+          `Selected donors can only release ${selectedPlan.summary.totalSuggestedQty} of ${selectedPlan.summary.targetShortage} required unit(s).`,
+        );
+      }
+
+      await this.lockFulfillmentOrdersForUpdate(tx, [targetOrder.id, ...selectedOrderIds]);
+
+      await tx.wmsFulfillmentOrder.update({
+        where: { id: targetOrder.id },
+        data: {
+          priorityOverrideAt: now,
+          priorityOverrideReason: reason,
+          priorityReleasedForOrderId: null,
+        },
+      });
+
+      await tx.wmsFulfillmentOrder.updateMany({
+        where: {
+          priorityReleasedForOrderId: targetOrder.id,
+          ...(selectedOrderIds.length > 0
+            ? {
+                id: {
+                  notIn: selectedOrderIds,
+                },
+              }
+            : {}),
+        },
+        data: {
+          priorityReleasedForOrderId: null,
+        },
+      });
+
+      await tx.wmsFulfillmentOrder.updateMany({
+        where: {
+          id: {
+            in: selectedOrderIds,
+          },
+        },
+        data: {
+          priorityReleasedForOrderId: targetOrder.id,
+        },
+      });
+
+      await this.wmsStaffActivityService.recordFromRequest({
+        request,
+        tenantId: targetOrder.tenantId,
+        actorId,
+        sessionId,
+        actionType: 'FULFILLMENT_PRIORITY_APPLY',
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: targetOrder.id,
+        metadata: {
+          mode: 'BASKET_DEMAND',
+          targetOrderId: targetOrder.id,
+          targetPosOrderId: targetOrder.posOrderId,
+          donorOrderIds: selectedOrderIds,
+          donorPosOrderIds: selectedPlan.donors.map((donor) => donor.posOrderId),
+          totalFreedUnits: selectedPlan.summary.totalSuggestedQty,
+          targetShortage: selectedPlan.summary.targetShortage,
+          reason,
+        } as Prisma.InputJsonValue,
+      });
+
+      return {
+        targetOrder,
+        summary: selectedPlan.summary,
+        donorOrderIds: selectedOrderIds,
+        donorPosOrderIds: selectedPlan.donors.map((donor) => donor.posOrderId),
+        variationIds: selectedPlan.target.lines
+          .filter((line) => line.shortage > 0)
+          .map((line) => line.variationId),
+      };
+    });
+
+    await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
+      tenantId: result.targetOrder.tenantId,
+      storeId: result.targetOrder.storeId,
+      variationIds: result.variationIds,
+    });
+
+    return {
+      success: true,
+      targetOrderId: result.targetOrder.id,
+      targetPosOrderId: result.targetOrder.posOrderId,
+      donorOrderIds: result.donorOrderIds,
+      donorPosOrderIds: result.donorPosOrderIds,
+      summary: result.summary,
+    };
+  }
+
+  async releasePriority(
+    user: { userId?: string; id?: string; sessionId?: string | null },
+    body: ReleaseWmsFulfillmentPriorityDto,
+    request?: Request,
+  ) {
+    const scope = await this.resolveTenantScope(body.tenantId);
+    const scopedTenantId = this.requireScopedTenantId(scope.activeTenantId);
+    const actorId = this.resolveActorId(user);
+    const sessionId = this.resolveSessionId(user);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const targetOrder = await this.loadPriorityTargetOrder(tx, body.orderId, scopedTenantId);
+      const preview = this.buildPriorityPreview(targetOrder, await this.loadPriorityDonorOrders(tx, targetOrder));
+      const clearResult = await this.wmsFulfillmentSyncService.clearPriorityOverridesTx(tx, {
+        targetOrderIds: [targetOrder.id],
+      });
+
+      await this.wmsStaffActivityService.recordFromRequest({
+        request,
+        tenantId: targetOrder.tenantId,
+        actorId,
+        sessionId,
+        actionType: 'FULFILLMENT_PRIORITY_RELEASE',
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: targetOrder.id,
+        metadata: {
+          mode: 'BASKET_DEMAND',
+          targetOrderId: targetOrder.id,
+          targetPosOrderId: targetOrder.posOrderId,
+          donorOrderIds: preview.donors.map((donor) => donor.id),
+          donorPosOrderIds: preview.donors.map((donor) => donor.posOrderId),
+          clearedTargets: clearResult.clearedTargets,
+          clearedDonors: clearResult.clearedDonors,
+        } as Prisma.InputJsonValue,
+      });
+
+      return {
+        targetOrder,
+        clearResult,
+        variationIds: preview.target.lines
+          .filter((line) => line.shortage > 0 || line.allocated > 0)
+          .map((line) => line.variationId),
+      };
+    });
+
+    await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
+      tenantId: result.targetOrder.tenantId,
+      storeId: result.targetOrder.storeId,
+      variationIds: result.variationIds,
+    });
+
+    return {
+      success: true,
+      targetOrderId: result.targetOrder.id,
+      targetPosOrderId: result.targetOrder.posOrderId,
+      clearedTargets: result.clearResult.clearedTargets,
+      clearedDonors: result.clearResult.clearedDonors,
     };
   }
 
@@ -3464,6 +3656,292 @@ export class WmsFulfillmentOpsService {
     }
 
     return WmsFulfillmentOrderStatus.RESTOCKING;
+  }
+
+  private requireScopedTenantId(tenantId: string | null) {
+    if (!tenantId) {
+      throw new BadRequestException('Select a tenant first.');
+    }
+
+    return tenantId;
+  }
+
+  private async loadPriorityTargetOrder(
+    client: Prisma.TransactionClient | PrismaService,
+    orderId: string,
+    tenantId: string,
+  ) {
+    const order = await client.wmsFulfillmentOrder.findFirst({
+      where: {
+        id: orderId,
+        tenantId,
+        assignmentMode: WmsFulfillmentAssignmentMode.BASKET_DEMAND,
+      },
+      include: {
+        store: {
+          select: {
+            id: true,
+            name: true,
+            shopName: true,
+            tenantId: true,
+            tenant: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        posOrder: {
+          select: {
+            status: true,
+            isVoid: true,
+            dateLocal: true,
+          },
+        },
+        lines: {
+          orderBy: [
+            { createdAt: 'asc' },
+            { id: 'asc' },
+          ],
+        },
+      },
+    });
+
+    if (!order) {
+      throw new BadRequestException('Fulfillment order was not found in the selected tenant.');
+    }
+
+    if (
+      order.status !== WmsFulfillmentOrderStatus.RESTOCKING
+      && order.status !== WmsFulfillmentOrderStatus.PARTIAL
+      && order.status !== WmsFulfillmentOrderStatus.READY
+    ) {
+      throw new BadRequestException(
+        `Order ${order.posOrderId} is ${this.formatEnumLabel(order.status)} and cannot be prioritized.`,
+      );
+    }
+
+    if (order.claimedById || order.basketId) {
+      throw new ConflictException(`Order ${order.posOrderId} is already in execution and cannot be prioritized.`);
+    }
+
+    if (order.posOrder.status !== CONFIRMED_POS_ORDER_STATUS || order.posOrder.isVoid) {
+      throw new ConflictException(`Order ${order.posOrderId} is no longer confirmed and cannot be prioritized.`);
+    }
+
+    return order;
+  }
+
+  private async loadPriorityDonorOrders(
+    client: Prisma.TransactionClient | PrismaService,
+    targetOrder: Awaited<ReturnType<WmsFulfillmentOpsService['loadPriorityTargetOrder']>>,
+  ) {
+    const targetVariationIds = Array.from(new Set(
+      targetOrder.lines
+        .filter((line) => (
+          line.status !== WmsFulfillmentLineStatus.CANCELED
+          && Math.max(line.quantityRequired, 0) > Math.max(line.quantityAllocated, 0)
+        ))
+        .map((line) => line.variationId),
+    ));
+
+    if (targetVariationIds.length === 0) {
+      return [];
+    }
+
+    const donors = await client.wmsFulfillmentOrder.findMany({
+      where: {
+        tenantId: targetOrder.tenantId,
+        storeId: targetOrder.storeId,
+        assignmentMode: WmsFulfillmentAssignmentMode.BASKET_DEMAND,
+        status: WmsFulfillmentOrderStatus.READY,
+        claimedById: null,
+        basketId: null,
+        pickedQuantity: 0,
+        id: {
+          not: targetOrder.id,
+        },
+        priorityOverrideAt: null,
+        OR: [
+          { priorityReleasedForOrderId: null },
+          { priorityReleasedForOrderId: targetOrder.id },
+        ],
+        posOrder: {
+          is: {
+            status: CONFIRMED_POS_ORDER_STATUS,
+            isVoid: false,
+          },
+        },
+        lines: {
+          some: {
+            variationId: {
+              in: targetVariationIds,
+            },
+            status: {
+              not: WmsFulfillmentLineStatus.CANCELED,
+            },
+            quantityAllocated: {
+              gt: 0,
+            },
+          },
+        },
+      },
+      include: {
+        posOrder: {
+          select: {
+            dateLocal: true,
+          },
+        },
+        lines: {
+          where: {
+            variationId: {
+              in: targetVariationIds,
+            },
+            status: {
+              not: WmsFulfillmentLineStatus.CANCELED,
+            },
+          },
+          orderBy: [
+            { createdAt: 'asc' },
+            { id: 'asc' },
+          ],
+        },
+      },
+      orderBy: [
+        { posOrder: { dateLocal: 'desc' } },
+        { id: 'desc' },
+      ],
+    });
+
+    return donors;
+  }
+
+  private buildPriorityPreview(
+    targetOrder: Awaited<ReturnType<WmsFulfillmentOpsService['loadPriorityTargetOrder']>>,
+    donorOrders: Awaited<ReturnType<WmsFulfillmentOpsService['loadPriorityDonorOrders']>>,
+    selectedDonorIds?: Set<string>,
+  ) {
+    const targetLines = targetOrder.lines
+      .filter((line) => line.status !== WmsFulfillmentLineStatus.CANCELED)
+      .map((line) => {
+        const required = Math.max(line.quantityRequired, 0);
+        const allocated = Math.max(line.quantityAllocated, 0);
+        const picked = Math.max(line.quantityPicked, 0);
+        return {
+          id: line.id,
+          variationId: line.variationId,
+          productName: line.productName,
+          productDisplayId: line.productDisplayId,
+          required,
+          allocated,
+          picked,
+          shortage: Math.max(required - allocated, 0),
+          status: line.status,
+          issueReason: line.issueReason,
+        };
+      });
+
+    const shortageRemaining = new Map<string, number>();
+    for (const line of targetLines) {
+      if (line.shortage <= 0) {
+        continue;
+      }
+
+      shortageRemaining.set(
+        line.variationId,
+        (shortageRemaining.get(line.variationId) ?? 0) + line.shortage,
+      );
+    }
+
+    const donors = donorOrders
+      .filter((order) => !selectedDonorIds || selectedDonorIds.has(order.id))
+      .map((order) => {
+        let releasableQty = 0;
+        let suggestedGiveQty = 0;
+        const lines = order.lines
+          .map((line) => {
+            const releasable = Math.max(Math.min(line.quantityAllocated, line.quantityRequired) - line.quantityPicked, 0);
+            if (releasable <= 0) {
+              return null;
+            }
+
+            releasableQty += releasable;
+            const remainingShortage = shortageRemaining.get(line.variationId) ?? 0;
+            const suggested = Math.min(releasable, remainingShortage);
+            if (suggested > 0) {
+              shortageRemaining.set(line.variationId, Math.max(remainingShortage - suggested, 0));
+              suggestedGiveQty += suggested;
+            }
+
+            return {
+              id: line.id,
+              variationId: line.variationId,
+              productName: line.productName,
+              productDisplayId: line.productDisplayId,
+              releasableQty: releasable,
+              suggestedGiveQty: suggested,
+            };
+          })
+          .filter((line): line is NonNullable<typeof line> => Boolean(line));
+
+        if (releasableQty <= 0) {
+          return null;
+        }
+
+        return {
+          id: order.id,
+          posOrderId: order.posOrderId,
+          dateLocal: order.posOrder?.dateLocal ?? null,
+          customerName: order.customerName ?? null,
+          releasableQty,
+          suggestedGiveQty,
+          lines,
+        };
+      })
+      .filter((order): order is NonNullable<typeof order> => Boolean(order));
+
+    const targetShortage = targetLines.reduce((sum, line) => sum + line.shortage, 0);
+    const totalSuggestedQty = donors.reduce((sum, donor) => sum + donor.suggestedGiveQty, 0);
+
+    return {
+      target: {
+        id: targetOrder.id,
+        posOrderId: targetOrder.posOrderId,
+        status: targetOrder.status,
+        statusLabel: this.formatEnumLabel(targetOrder.status),
+        tenantId: targetOrder.tenantId,
+        storeId: targetOrder.storeId,
+        storeName: targetOrder.store?.shopName || targetOrder.store?.name || null,
+        tenantName: targetOrder.store?.tenant?.name ?? null,
+        orderDateLocal: targetOrder.posOrder?.dateLocal ?? null,
+        isPrioritized: Boolean(targetOrder.priorityOverrideAt),
+        prioritizedAt: targetOrder.priorityOverrideAt ?? null,
+        priorityReason: targetOrder.priorityOverrideReason ?? null,
+        lines: targetLines,
+      },
+      donors,
+      summary: {
+        donorOrders: donors.length,
+        targetShortage,
+        totalSuggestedQty,
+        canFullyPrioritize: targetShortage > 0 && totalSuggestedQty >= targetShortage,
+        remainingShortage: Math.max(targetShortage - totalSuggestedQty, 0),
+      },
+    };
+  }
+
+  private async lockFulfillmentOrdersForUpdate(
+    tx: Prisma.TransactionClient,
+    orderIds: string[],
+  ) {
+    const scopedIds = Array.from(new Set(orderIds.filter(Boolean)));
+    if (scopedIds.length === 0) {
+      return;
+    }
+
+    await tx.$queryRaw(
+      Prisma.sql`SELECT id FROM wms_fulfillment_orders WHERE id IN (${Prisma.join(scopedIds)}) FOR UPDATE`,
+    );
   }
 
   private async resolveTenantScope(requestedTenantId?: string, forceAllTenants = false) {

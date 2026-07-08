@@ -224,6 +224,7 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
             canVoidPickBaskets={isPick && queue.queueScope === 'all'}
             isVoidingPickBasket={queue.isVoidingBasket}
             onVoidPickBasket={queue.voidPickBasket}
+            onRefresh={queue.refresh}
           />
         </WmsWorkspaceCard>
       </WmsPageShell>

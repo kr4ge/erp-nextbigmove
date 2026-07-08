@@ -18,6 +18,8 @@ const config: Config = {
         primary: {
           DEFAULT: 'rgb(var(--primary))',
           foreground: 'rgb(var(--primary-foreground))',
+          soft: 'rgb(var(--primary-soft))',
+          'soft-foreground': 'rgb(var(--primary-soft-foreground))',
         },
         secondary: {
           DEFAULT: 'rgb(var(--secondary))',

@@ -81,6 +81,7 @@ type DemandFulfillmentReadinessRecord = Prisma.WmsFulfillmentOrderGetPayload<{
       select: {
         status: true;
         isVoid: true;
+        dateLocal: true;
       };
     };
     lines: true;
@@ -119,6 +120,54 @@ export class WmsFulfillmentSyncService {
         ? Math.floor(configuredMaxWait)
         : 10000,
     };
+  }
+
+  private getDemandPriorityBucket(order: {
+    priorityOverrideAt?: Date | null;
+    priorityReleasedForOrderId?: string | null;
+  }) {
+    if (order.priorityOverrideAt) {
+      return 0;
+    }
+
+    if (order.priorityReleasedForOrderId) {
+      return 2;
+    }
+
+    return 1;
+  }
+
+  private sortDemandQueueOrders<T extends {
+    id: string;
+    priorityOverrideAt?: Date | null;
+    priorityReleasedForOrderId?: string | null;
+    posOrder?: {
+      dateLocal?: string | null;
+    } | null;
+  }>(orders: T[]) {
+    return [...orders].sort((left, right) => {
+      const leftBucket = this.getDemandPriorityBucket(left);
+      const rightBucket = this.getDemandPriorityBucket(right);
+      if (leftBucket !== rightBucket) {
+        return leftBucket - rightBucket;
+      }
+
+      if (leftBucket === 0) {
+        const leftPriorityAt = left.priorityOverrideAt?.getTime() ?? 0;
+        const rightPriorityAt = right.priorityOverrideAt?.getTime() ?? 0;
+        if (leftPriorityAt !== rightPriorityAt) {
+          return rightPriorityAt - leftPriorityAt;
+        }
+      }
+
+      const leftDateLocal = left.posOrder?.dateLocal ?? '';
+      const rightDateLocal = right.posOrder?.dateLocal ?? '';
+      if (leftDateLocal !== rightDateLocal) {
+        return leftDateLocal.localeCompare(rightDateLocal);
+      }
+
+      return left.id.localeCompare(right.id);
+    });
   }
 
   private resolveNewFulfillmentAssignmentMode() {
@@ -1011,6 +1060,55 @@ export class WmsFulfillmentSyncService {
     await this.refreshDemandFulfillmentQueue(params);
   }
 
+  async clearPriorityOverridesTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      targetOrderIds: string[];
+    },
+  ) {
+    const targetOrderIds = Array.from(new Set(
+      params.targetOrderIds
+        .map((orderId) => orderId?.trim())
+        .filter((orderId): orderId is string => Boolean(orderId)),
+    ));
+
+    if (targetOrderIds.length === 0) {
+      return {
+        clearedTargets: 0,
+        clearedDonors: 0,
+      };
+    }
+
+    const [targetUpdate, donorUpdate] = await Promise.all([
+      tx.wmsFulfillmentOrder.updateMany({
+        where: {
+          id: {
+            in: targetOrderIds,
+          },
+        },
+        data: {
+          priorityOverrideAt: null,
+          priorityOverrideReason: null,
+        },
+      }),
+      tx.wmsFulfillmentOrder.updateMany({
+        where: {
+          priorityReleasedForOrderId: {
+            in: targetOrderIds,
+          },
+        },
+        data: {
+          priorityReleasedForOrderId: null,
+        },
+      }),
+    ]);
+
+    return {
+      clearedTargets: targetUpdate.count,
+      clearedDonors: donorUpdate.count,
+    };
+  }
+
   async repairReleasedDemandOrders(params: {
     orderIds: string[];
     actorId: string | null;
@@ -1166,6 +1264,8 @@ export class WmsFulfillmentSyncService {
       },
       select: {
         id: true,
+        priorityOverrideAt: true,
+        priorityReleasedForOrderId: true,
         posOrder: {
           select: {
             dateLocal: true,
@@ -1178,17 +1278,7 @@ export class WmsFulfillmentSyncService {
       ],
       ...(typeof params.limit === 'number' && params.limit > 0 ? { take: params.limit } : {}),
     });
-    const orderedQueueIds = orderedQueue
-      .sort((left, right) => {
-        const leftDateLocal = left.posOrder?.dateLocal ?? '';
-        const rightDateLocal = right.posOrder?.dateLocal ?? '';
-        if (leftDateLocal !== rightDateLocal) {
-          return leftDateLocal.localeCompare(rightDateLocal);
-        }
-
-        return left.id.localeCompare(right.id);
-      })
-      .map((order) => order.id);
+    const orderedQueueIds = this.sortDemandQueueOrders(orderedQueue).map((order) => order.id);
 
     if (orderedQueueIds.length === 0) {
       return;
@@ -1289,22 +1379,10 @@ export class WmsFulfillmentSyncService {
         },
         lines: true,
       },
-      orderBy: [
-        { posOrder: { dateLocal: 'asc' } },
-        { id: 'asc' },
-      ],
       ...(typeof params.limit === 'number' && params.limit > 0 ? { take: params.limit } : {}),
     });
 
-    const orderedQueue = queueOrders.sort((left, right) => {
-      const leftDateLocal = left.posOrder?.dateLocal ?? '';
-      const rightDateLocal = right.posOrder?.dateLocal ?? '';
-      if (leftDateLocal !== rightDateLocal) {
-        return leftDateLocal.localeCompare(rightDateLocal);
-      }
-
-      return left.id.localeCompare(right.id);
-    });
+    const orderedQueue = this.sortDemandQueueOrders(queueOrders);
     const virtualAllocatedByWarehouseVariation = new Map<string, number>();
 
     for (const order of orderedQueue) {
@@ -2311,6 +2389,7 @@ export class WmsFulfillmentSyncService {
           select: {
             status: true,
             isVoid: true,
+            dateLocal: true,
           },
         },
         lines: true,

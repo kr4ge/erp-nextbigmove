@@ -1,6 +1,7 @@
 export type PickingFilters = {
   tenantId: string | null;
   storeId: string | null;
+  search: string;
 };
 
 export type PickingStatus =

@@ -10,5 +10,6 @@ import { WmsPurchasingService } from './wms-purchasing.service';
   imports: [WorkflowModule],
   controllers: [WmsPurchasingController, StockRequestsController],
   providers: [WmsPurchasingService, TenantGuard, PermissionsGuard],
+  exports: [WmsPurchasingService],
 })
 export class WmsPurchasingModule {}

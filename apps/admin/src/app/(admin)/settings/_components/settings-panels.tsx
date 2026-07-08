@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { readStoredAdminUser, readStoredPermissions, type StoredAdminUser } from '@/lib/admin-session';
 import {
   hasAnyAdminPermission,
+  WMS_INVOICE_SETTINGS_READ_PERMISSIONS,
   WMS_ROLES_READ_PERMISSIONS,
   WMS_STOX_READ_PERMISSIONS,
   WMS_USERS_READ_PERMISSIONS,
@@ -69,6 +70,11 @@ function SettingsTabs() {
         href: '/settings/stox',
         label: 'STOX',
         visible: hasAnyAdminPermission(role, permissions, WMS_STOX_READ_PERMISSIONS),
+      },
+      {
+        href: '/settings/invoice',
+        label: 'Invoice',
+        visible: hasAnyAdminPermission(role, permissions, WMS_INVOICE_SETTINGS_READ_PERMISSIONS),
       },
     ];
 

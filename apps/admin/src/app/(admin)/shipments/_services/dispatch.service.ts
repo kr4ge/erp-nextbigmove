@@ -142,7 +142,7 @@ export async function voidWmsDispatchOutboundTask(params: {
     restoredPackedUnits: number;
     affectedBasketIds: string[];
     posStatusUpdate: {
-      targetStatus: number;
+      targetStatus: number | null;
       queued: number;
       skipped: number;
       failed: number;
