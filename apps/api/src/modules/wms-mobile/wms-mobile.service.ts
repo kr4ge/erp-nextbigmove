@@ -9180,12 +9180,8 @@ export class WmsMobileService {
     productDisplayId: string | null;
     productName: string | null;
   }) {
-    return [
-      params.variationId?.trim() ?? '',
-      params.productId?.trim() ?? '',
-      params.productDisplayId?.trim().toLowerCase() ?? '',
-      this.normalizeDemandComparisonText(params.productName),
-    ].join('::');
+    const variationId = params.variationId?.trim();
+    return `variation::${variationId ?? ''}`;
   }
 
   private normalizeDemandComparisonText(value: string | null | undefined) {
