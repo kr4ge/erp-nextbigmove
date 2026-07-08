@@ -23,6 +23,11 @@ type GetPosOrdersReportParams = {
 type PosOrdersReportRow = {
   shopId: string;
   totalOrders: number;
+  newOrders: number;
+  confirmedOrders: number;
+  waitingPickupOrders: number;
+  waitPrintOrders: number;
+  printedOrders: number;
   shippedOrders: number;
   deliveredOrders: number;
   cancelledOrders: number;
@@ -31,6 +36,11 @@ type PosOrdersReportRow = {
   restockingOrders: number;
   inProcessOrders: number;
   totalRevenue: number;
+  newRevenue: number;
+  confirmedRevenue: number;
+  waitingPickupRevenue: number;
+  waitPrintRevenue: number;
+  printedRevenue: number;
   shippedRevenue: number;
   deliveredRevenue: number;
   cancelledRevenue: number;
@@ -97,6 +107,11 @@ export class ReportsService {
       SELECT
         "shopId" AS "shopId",
         COUNT(*) FILTER (WHERE "status" IS DISTINCT FROM 7)::int AS "totalOrders",
+        COUNT(*) FILTER (WHERE "status" = 0)::int AS "newOrders",
+        COUNT(*) FILTER (WHERE "status" = 1)::int AS "confirmedOrders",
+        COUNT(*) FILTER (WHERE "status" = 9)::int AS "waitingPickupOrders",
+        COUNT(*) FILTER (WHERE "status" = 12)::int AS "waitPrintOrders",
+        COUNT(*) FILTER (WHERE "status" = 13)::int AS "printedOrders",
         COUNT(*) FILTER (WHERE "status" = 2)::int AS "shippedOrders",
         COUNT(*) FILTER (WHERE "status" = 3)::int AS "deliveredOrders",
         COUNT(*) FILTER (WHERE "status" = 6)::int AS "cancelledOrders",
@@ -105,6 +120,11 @@ export class ReportsService {
         COUNT(*) FILTER (WHERE "status" = 11)::int AS "restockingOrders",
         COUNT(*) FILTER (WHERE "status" IN (${Prisma.join(this.inProcessStatuses)}))::int AS "inProcessOrders",
         COALESCE(SUM(COALESCE("cod", 0)::double precision) FILTER (WHERE "status" IS DISTINCT FROM 7), 0)::double precision AS "totalRevenue",
+        COALESCE(SUM(CASE WHEN "status" = 0 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "newRevenue",
+        COALESCE(SUM(CASE WHEN "status" = 1 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "confirmedRevenue",
+        COALESCE(SUM(CASE WHEN "status" = 9 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "waitingPickupRevenue",
+        COALESCE(SUM(CASE WHEN "status" = 12 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "waitPrintRevenue",
+        COALESCE(SUM(CASE WHEN "status" = 13 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "printedRevenue",
         COALESCE(SUM(CASE WHEN "status" = 2 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "shippedRevenue",
         COALESCE(SUM(CASE WHEN "status" = 3 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "deliveredRevenue",
         COALESCE(SUM(CASE WHEN "status" = 6 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "cancelledRevenue",
@@ -147,6 +167,11 @@ export class ReportsService {
 
     const items = rows.map((row) => {
       const totalOrders = this.toNumber(row.totalOrders);
+      const newOrders = this.toNumber(row.newOrders);
+      const confirmedOrders = this.toNumber(row.confirmedOrders);
+      const waitingPickupOrders = this.toNumber(row.waitingPickupOrders);
+      const waitPrintOrders = this.toNumber(row.waitPrintOrders);
+      const printedOrders = this.toNumber(row.printedOrders);
       const shippedOrders = this.toNumber(row.shippedOrders);
       const deliveredOrders = this.toNumber(row.deliveredOrders);
       const cancelledOrders = this.toNumber(row.cancelledOrders);
@@ -162,6 +187,11 @@ export class ReportsService {
         pos_store_name: storeNameByShopId.get(row.shopId) || row.shopId,
         qty: {
           all_orders: totalOrders,
+          new_orders: newOrders,
+          confirmed: confirmedOrders,
+          waiting_pickup: waitingPickupOrders,
+          wait_print: waitPrintOrders,
+          printed: printedOrders,
           shipped: shippedOrders,
           delivered: deliveredOrders,
           cancelled: cancelledOrders,
@@ -175,6 +205,11 @@ export class ReportsService {
         },
         revenue: {
           all_orders: this.toNumber(row.totalRevenue),
+          new_orders: this.toNumber(row.newRevenue),
+          confirmed: this.toNumber(row.confirmedRevenue),
+          waiting_pickup: this.toNumber(row.waitingPickupRevenue),
+          wait_print: this.toNumber(row.waitPrintRevenue),
+          printed: this.toNumber(row.printedRevenue),
           shipped: this.toNumber(row.shippedRevenue),
           delivered: this.toNumber(row.deliveredRevenue),
           cancelled: this.toNumber(row.cancelledRevenue),

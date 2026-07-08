@@ -1,5 +1,10 @@
 export type PosOrdersReportQtyBlock = {
   all_orders: number;
+  new_orders: number;
+  confirmed: number;
+  waiting_pickup: number;
+  wait_print: number;
+  printed: number;
   shipped: number;
   delivered: number;
   cancelled: number;
@@ -14,6 +19,11 @@ export type PosOrdersReportQtyBlock = {
 
 export type PosOrdersReportRevenueBlock = {
   all_orders: number;
+  new_orders: number;
+  confirmed: number;
+  waiting_pickup: number;
+  wait_print: number;
+  printed: number;
   shipped: number;
   delivered: number;
   cancelled: number;
