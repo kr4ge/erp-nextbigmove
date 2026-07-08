@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import {
   Prisma,
@@ -162,6 +163,8 @@ type RepairResultRecord = {
 
 @Injectable()
 export class WmsFulfillmentOpsService {
+  private readonly logger = new Logger(WmsFulfillmentOpsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
@@ -569,6 +572,13 @@ export class WmsFulfillmentOpsService {
         },
       });
 
+      await this.applyPriorityReallocationPlanTx(tx, {
+        targetOrder,
+        selectedPlan,
+        reason,
+        now,
+      });
+
       await this.wmsStaffActivityService.recordFromRequest({
         request,
         tenantId: targetOrder.tenantId,
@@ -594,16 +604,7 @@ export class WmsFulfillmentOpsService {
         summary: selectedPlan.summary,
         donorOrderIds: selectedOrderIds,
         donorPosOrderIds: selectedPlan.donors.map((donor) => donor.posOrderId),
-        variationIds: selectedPlan.target.lines
-          .filter((line) => line.shortage > 0)
-          .map((line) => line.variationId),
       };
-    });
-
-    await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
-      tenantId: result.targetOrder.tenantId,
-      storeId: result.targetOrder.storeId,
-      variationIds: result.variationIds,
     });
 
     return {
@@ -614,6 +615,173 @@ export class WmsFulfillmentOpsService {
       donorPosOrderIds: result.donorPosOrderIds,
       summary: result.summary,
     };
+  }
+
+  private async applyPriorityReallocationPlanTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      targetOrder: Awaited<ReturnType<WmsFulfillmentOpsService['loadPriorityTargetOrder']>>;
+      selectedPlan: ReturnType<WmsFulfillmentOpsService['buildPriorityPreview']>;
+      reason: string;
+      now: Date;
+    },
+  ) {
+    const targetTransferByVariation = new Map<string, number>();
+    const donorLineReleaseById = new Map<string, number>();
+    const donorOrderReleaseById = new Map<string, number>();
+
+    for (const donor of params.selectedPlan.donors) {
+      let donorReleasedQty = 0;
+
+      for (const line of donor.lines) {
+        if (line.suggestedGiveQty <= 0) {
+          continue;
+        }
+
+        donorLineReleaseById.set(line.id, line.suggestedGiveQty);
+        donorReleasedQty += line.suggestedGiveQty;
+        targetTransferByVariation.set(
+          line.variationId,
+          (targetTransferByVariation.get(line.variationId) ?? 0) + line.suggestedGiveQty,
+        );
+      }
+
+      if (donorReleasedQty > 0) {
+        donorOrderReleaseById.set(donor.id, donorReleasedQty);
+      }
+    }
+
+    for (const line of params.targetOrder.lines) {
+      if (line.status === WmsFulfillmentLineStatus.CANCELED) {
+        continue;
+      }
+
+      const required = Math.max(line.quantityRequired, 0);
+      const picked = Math.max(line.quantityPicked, 0);
+      const currentAllocated = Math.max(line.quantityAllocated, 0);
+      const addedAllocation = targetTransferByVariation.get(line.variationId) ?? 0;
+      const nextAllocated = Math.min(required, currentAllocated + addedAllocation);
+      const nextStatus = this.resolvePriorityLineStatus({
+        required,
+        picked,
+        allocated: nextAllocated,
+      });
+
+      await tx.wmsFulfillmentLine.update({
+        where: { id: line.id },
+        data: {
+          quantityAllocated: nextAllocated,
+          status: nextStatus,
+          issueReason: nextAllocated > 0 ? null : line.issueReason,
+        },
+      });
+    }
+
+    const targetAllocatedQuantity = params.targetOrder.lines.reduce((sum, line) => (
+      sum + Math.min(
+        Math.max(line.quantityRequired, 0),
+        Math.max(line.quantityAllocated, 0) + (targetTransferByVariation.get(line.variationId) ?? 0),
+      )
+    ), 0);
+
+    await tx.wmsFulfillmentOrder.update({
+      where: { id: params.targetOrder.id },
+      data: {
+        status: targetAllocatedQuantity >= params.targetOrder.totalQuantity
+          ? WmsFulfillmentOrderStatus.READY
+          : targetAllocatedQuantity > 0
+            ? WmsFulfillmentOrderStatus.PARTIAL
+            : WmsFulfillmentOrderStatus.RESTOCKING,
+        allocatedQuantity: targetAllocatedQuantity,
+        issueReason: null,
+        lastSyncedAt: params.now,
+      },
+    });
+
+    if (donorOrderReleaseById.size === 0) {
+      return;
+    }
+
+    const donorOrders = await tx.wmsFulfillmentOrder.findMany({
+      where: {
+        id: {
+          in: Array.from(donorOrderReleaseById.keys()),
+        },
+      },
+      include: {
+        lines: {
+          orderBy: [
+            { createdAt: 'asc' },
+            { id: 'asc' },
+          ],
+        },
+      },
+    });
+
+    for (const donorOrder of donorOrders) {
+      const releasedQty = donorOrderReleaseById.get(donorOrder.id) ?? 0;
+
+      for (const line of donorOrder.lines) {
+        if (line.status === WmsFulfillmentLineStatus.CANCELED) {
+          continue;
+        }
+
+        const currentAllocated = Math.max(line.quantityAllocated, 0);
+        const releasedLineQty = donorLineReleaseById.get(line.id) ?? 0;
+        const nextAllocated = Math.max(0, currentAllocated - releasedLineQty);
+        const nextStatus = this.resolvePriorityLineStatus({
+          required: Math.max(line.quantityRequired, 0),
+          picked: Math.max(line.quantityPicked, 0),
+          allocated: nextAllocated,
+        });
+
+        await tx.wmsFulfillmentLine.update({
+          where: { id: line.id },
+          data: {
+            quantityAllocated: nextAllocated,
+            status: nextStatus,
+            issueReason: nextAllocated > 0 ? null : `Released for priority order #${params.targetOrder.posOrderId}`,
+          },
+        });
+      }
+
+      const nextAllocatedQuantity = Math.max(0, donorOrder.allocatedQuantity - releasedQty);
+      const nextStatus = nextAllocatedQuantity >= donorOrder.totalQuantity
+        ? WmsFulfillmentOrderStatus.READY
+        : nextAllocatedQuantity > 0
+          ? WmsFulfillmentOrderStatus.PARTIAL
+          : WmsFulfillmentOrderStatus.RESTOCKING;
+
+      await tx.wmsFulfillmentOrder.update({
+        where: { id: donorOrder.id },
+        data: {
+          status: nextStatus,
+          allocatedQuantity: nextAllocatedQuantity,
+          issueReason: nextAllocatedQuantity > 0 ? null : `Released for priority order #${params.targetOrder.posOrderId}`,
+          lastSyncedAt: params.now,
+        },
+      });
+    }
+  }
+
+  private resolvePriorityLineStatus(params: {
+    required: number;
+    allocated: number;
+    picked: number;
+  }) {
+    if (params.picked >= params.required && params.required > 0) {
+      return WmsFulfillmentLineStatus.PICKED;
+    }
+
+    if (params.allocated >= params.required && params.required > 0) {
+      return WmsFulfillmentLineStatus.READY;
+    }
+
+    if (params.allocated > 0) {
+      return WmsFulfillmentLineStatus.PARTIAL;
+    }
+
+    return WmsFulfillmentLineStatus.RESTOCKING;
   }
 
   async releasePriority(
