@@ -4108,7 +4108,12 @@ export class WmsFulfillmentOpsService {
     }
 
     await tx.$queryRaw(
-      Prisma.sql`SELECT id FROM wms_fulfillment_orders WHERE id IN (${Prisma.join(scopedIds)}) FOR UPDATE`,
+      Prisma.sql`
+        SELECT id
+        FROM wms_fulfillment_orders
+        WHERE id IN (${Prisma.join(scopedIds.map((id) => Prisma.sql`${id}::uuid`))})
+        FOR UPDATE
+      `,
     );
   }
 
