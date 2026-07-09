@@ -108,7 +108,7 @@ export async function uploadWmsInvoiceLogo(file: File) {
 
   const response = await apiClient.post<{
     asset: {
-      id: string;
+      assetId: string;
       imageUrl: string;
       contentType: string;
       byteSize: number;
@@ -122,7 +122,15 @@ export async function uploadWmsInvoiceLogo(file: File) {
     },
   });
 
-  return response.data.asset;
+  return {
+    id: response.data.asset.assetId,
+    imageUrl: response.data.asset.imageUrl,
+    contentType: response.data.asset.contentType,
+    byteSize: response.data.asset.byteSize,
+    width: response.data.asset.width,
+    height: response.data.asset.height,
+    originalFileName: response.data.asset.originalFileName,
+  };
 }
 
 export async function fetchWmsStoxReleases() {

@@ -76,4 +76,14 @@ export class CreateTenantDto {
   @Min(0)
   @Max(365)
   trialDays?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  billingCompanyName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(600)
+  billingAddress?: string | null;
 }

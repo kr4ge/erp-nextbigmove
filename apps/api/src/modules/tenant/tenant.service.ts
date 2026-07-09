@@ -30,6 +30,8 @@ export class TenantService {
       maxUsers,
       maxIntegrations,
       trialDays,
+      billingCompanyName,
+      billingAddress,
     } = createTenantDto;
 
     // Check if tenant slug already exists
@@ -67,6 +69,8 @@ export class TenantService {
           planType,
           maxUsers,
           maxIntegrations,
+          billingCompanyName: billingCompanyName?.trim() || null,
+          billingAddress: billingAddress?.trim() || null,
         },
       });
 

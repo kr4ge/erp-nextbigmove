@@ -17,15 +17,11 @@ import {
 } from '../_components/settings-panels';
 import {
   fetchWmsInvoiceSettings,
-  fetchWmsInvoicePartners,
   updateWmsInvoiceSettings,
-  updateWmsInvoicePartnerBilling,
   uploadWmsInvoiceLogo,
 } from '../_services/settings.service';
 import type {
-  UpdateWmsInvoicePartnerBillingInput,
   UpdateWmsInvoiceSettingsInput,
-  WmsInvoicePartnerBillingRecord,
   WmsInvoiceSettingsRecord,
   WmsInvoiceSettingsResponse,
 } from '../_types/settings';
@@ -58,14 +54,6 @@ const EMPTY_FORM: InvoiceSettingsForm = {
   footerNotes: '',
 };
 
-type PartnerBillingDraft = {
-  id: string;
-  name: string;
-  slug: string;
-  billingCompanyName: string;
-  billingAddress: string;
-};
-
 export default function SettingsInvoicePage() {
   const [user, setUser] = useState<StoredAdminUser | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
@@ -73,11 +61,9 @@ export default function SettingsInvoicePage() {
   const [data, setData] = useState<WmsInvoiceSettingsResponse | null>(null);
   const [form, setForm] = useState<InvoiceSettingsForm>(EMPTY_FORM);
   const [logoPreview, setLogoPreview] = useState<WmsInvoiceSettingsRecord['logoAsset'] | null>(null);
-  const [partners, setPartners] = useState<PartnerBillingDraft[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
-  const [savingPartnerId, setSavingPartnerId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -110,14 +96,10 @@ export default function SettingsInvoicePage() {
   );
 
   const loadSettings = useCallback(async () => {
-    const [response, partnersResponse] = await Promise.all([
-      fetchWmsInvoiceSettings(),
-      fetchWmsInvoicePartners(),
-    ]);
+    const response = await fetchWmsInvoiceSettings();
     setData(response);
     setForm(mapSettingsToForm(response.settings));
     setLogoPreview(response.settings.logoAsset);
-    setPartners(partnersResponse.partners.map(mapPartnerToDraft));
   }, []);
 
   useEffect(() => {
@@ -246,52 +228,6 @@ export default function SettingsInvoicePage() {
       ...current,
       logoAssetId: null,
     }));
-  };
-
-  const setPartnerField = (tenantId: string, key: keyof Pick<PartnerBillingDraft, 'billingCompanyName' | 'billingAddress'>, value: string) => {
-    setPartners((current) =>
-      current.map((partner) => (
-        partner.id === tenantId
-          ? {
-              ...partner,
-              [key]: value,
-            }
-          : partner
-      )),
-    );
-  };
-
-  const handlePartnerBillingSave = async (partner: PartnerBillingDraft) => {
-    if (!canWrite || savingPartnerId) {
-      return;
-    }
-
-    setSavingPartnerId(partner.id);
-    setMessage(null);
-    setError(null);
-
-    const payload: UpdateWmsInvoicePartnerBillingInput = {
-      billingCompanyName: partner.billingCompanyName.trim() || null,
-      billingAddress: partner.billingAddress.trim() || null,
-    };
-
-    try {
-      const updated = await updateWmsInvoicePartnerBilling(partner.id, payload);
-      setPartners((current) =>
-        current.map((item) => (item.id === updated.id ? mapPartnerToDraft(updated) : item)),
-      );
-      setMessage({
-        tone: 'success',
-        text: `Updated bill-to defaults for ${updated.name}.`,
-      });
-    } catch (saveError: unknown) {
-      setMessage({
-        tone: 'danger',
-        text: getErrorMessage(saveError, `Unable to update bill-to defaults for ${partner.name}.`),
-      });
-    } finally {
-      setSavingPartnerId(null);
-    }
   };
 
   return (
@@ -515,69 +451,6 @@ export default function SettingsInvoicePage() {
               </div>
             </div>
 
-            <WmsCompactPanel
-              title="Partner Bill-To Defaults"
-              icon={<Building2 className="panel-icon" />}
-              meta={`${partners.length} partners`}
-            >
-              <div className="space-y-4">
-                <p className="text-sm text-muted">
-                  These values are stored on each partner record and become the default bill-to company name and address for invoice generation.
-                </p>
-
-                <div className="space-y-4">
-                  {partners.map((partner) => {
-                    const isSavingPartner = savingPartnerId === partner.id;
-                    return (
-                      <div
-                        key={partner.id}
-                        className="rounded-xl border border-border bg-background-secondary/40 p-4"
-                      >
-                        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-foreground">{partner.name}</p>
-                            <p className="text-xs text-muted">{partner.slug}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => void handlePartnerBillingSave(partner)}
-                            disabled={!canWrite || isSavingPartner}
-                            className="btn btn-sm btn-outline"
-                          >
-                            {isSavingPartner ? 'Saving...' : 'Save partner'}
-                          </button>
-                        </div>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <WmsFormField label="Billing company name">
-                            <input
-                              value={partner.billingCompanyName}
-                              onChange={(event) => setPartnerField(partner.id, 'billingCompanyName', event.target.value)}
-                              className="input"
-                              disabled={!canWrite}
-                              placeholder="Defaults to partner name if blank"
-                            />
-                          </WmsFormField>
-
-                          <div className="md:col-span-2">
-                            <WmsFormField label="Billing address">
-                              <textarea
-                                value={partner.billingAddress}
-                                onChange={(event) => setPartnerField(partner.id, 'billingAddress', event.target.value)}
-                                className="input min-h-24 resize-y py-3"
-                                disabled={!canWrite}
-                                placeholder="Partner billing address"
-                              />
-                            </WmsFormField>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </WmsCompactPanel>
-
             {canWrite ? (
               <div className="flex items-center justify-end gap-2">
                 <button
@@ -617,16 +490,6 @@ function mapSettingsToForm(settings: WmsInvoiceSettingsRecord): InvoiceSettingsF
     bankBranch: settings.bankBranch ?? '',
     paymentInstructions: settings.paymentInstructions ?? '',
     footerNotes: settings.footerNotes ?? '',
-  };
-}
-
-function mapPartnerToDraft(partner: WmsInvoicePartnerBillingRecord): PartnerBillingDraft {
-  return {
-    id: partner.id,
-    name: partner.name,
-    slug: partner.slug,
-    billingCompanyName: partner.billingCompanyName ?? '',
-    billingAddress: partner.billingAddress ?? '',
   };
 }
 

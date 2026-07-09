@@ -37,6 +37,8 @@ const createTenantSchema = z.object({
   maxUsers: z.number().min(1).max(10000),
   maxIntegrations: z.number().min(1).max(100),
   trialDays: z.number().min(1).max(14).optional(),
+  billingCompanyName: z.string().max(160).nullable().optional(),
+  billingAddress: z.string().max(600).nullable().optional(),
 });
 
 type CreateTenantForm = z.infer<typeof createTenantSchema>;
@@ -430,6 +432,43 @@ export default function CreateTenantPage() {
                   className="input"
                 />
               </WmsFormField>
+            </div>
+          </div>
+        </WmsCompactPanel>
+
+        <WmsCompactPanel title="Invoice bill-to" icon={<Building2 className='panel-icon' />}>
+          <div className="grid gap-4 p-5">
+            <div>
+              <WmsFormField
+                label="Billing company name"
+                hint="Default bill-to company name used when WMS generates invoices for this partner."
+              >
+                <input
+                  {...register('billingCompanyName')}
+                  type="text"
+                  className="input"
+                  placeholder="Defaults to organization name if left blank"
+                />
+              </WmsFormField>
+              {errors.billingCompanyName ? (
+                <p className="mt-1.5 text-[12px] text-rose-600">{errors.billingCompanyName.message}</p>
+              ) : null}
+            </div>
+
+            <div>
+              <WmsFormField
+                label="Billing address"
+                hint="Default bill-to address shown on WMS invoices for this partner."
+              >
+                <textarea
+                  {...register('billingAddress')}
+                  className="input min-h-[120px] py-3"
+                  placeholder="Partner billing address"
+                />
+              </WmsFormField>
+              {errors.billingAddress ? (
+                <p className="mt-1.5 text-[12px] text-rose-600">{errors.billingAddress.message}</p>
+              ) : null}
             </div>
           </div>
         </WmsCompactPanel>
