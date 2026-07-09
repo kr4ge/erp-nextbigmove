@@ -6,6 +6,7 @@ type WmsPageShellProps = {
   description?: string;
   actions?: ReactNode;
   toolbar?: ReactNode;
+  toolbarClassName?: string;
   children: ReactNode;
   className?: string;
 };
@@ -16,6 +17,7 @@ export function WmsPageShell({
   description,
   actions,
   toolbar,
+  toolbarClassName,
   children,
   className = '',
 }: WmsPageShellProps) {
@@ -38,7 +40,7 @@ export function WmsPageShell({
         </div>
 
         {toolbar ? (
-          <div className="rounded-[20px] border border-[#dce4ea] bg-white px-4 py-3">
+          <div className={toolbarClassName ?? 'rounded-[20px] border border-[#dce4ea] bg-white px-4 py-3'}>
             {toolbar}
           </div>
         ) : null}

@@ -112,31 +112,34 @@ export function PurchasingScreen() {
     <div className="space-y-5">
       <WmsPageShell
         title="Purchasing"
+        toolbarClassName="px-0 py-0"
         toolbar={(
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-8 border-b border-border/10">
-              <button
-                type="button"
-                onClick={() => setActiveTab('requests')}
-                className={`border-b-4 pb-3 pt-1 text-lg font-semibold transition ${
-                  activeTab === 'requests'
-                    ? 'border-[#ff6b00] text-[#ff6b00]'
-                    : 'border-transparent text-[#536b7a] hover:text-primary'
-                }`}
-              >
-                Requests
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('invoices')}
-                className={`border-b-4 pb-3 pt-1 text-lg font-semibold transition ${
-                  activeTab === 'invoices'
-                    ? 'border-[#ff6b00] text-[#ff6b00]'
-                    : 'border-transparent text-[#536b7a] hover:text-primary'
-                }`}
-              >
-                Invoices
-              </button>
+            <div className="overflow-x-auto lg:flex-1">
+              <nav className="flex min-w-max gap-6 border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('requests')}
+                  className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
+                    activeTab === 'requests'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Requests
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('invoices')}
+                  className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
+                    activeTab === 'invoices'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Invoices
+                </button>
+              </nav>
             </div>
 
             {activeTab === 'invoices' && invoiceController.canEdit ? (
