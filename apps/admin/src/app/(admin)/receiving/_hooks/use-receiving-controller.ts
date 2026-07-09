@@ -53,6 +53,7 @@ type LabelsModalState = {
 
 type ManualReceiveLineState = {
   id: string;
+  storeId: string;
   profileId: string;
   quantity: number;
   unitCost: number | null;
@@ -193,19 +194,6 @@ export function useReceivingController() {
     () => overviewQuery.data?.warehouseOptions.find((option) => option.id === manualWarehouseId) ?? null,
     [manualWarehouseId, overviewQuery.data?.warehouseOptions],
   );
-  const manualStoreId = useMemo(() => {
-    if (selectedStoreId) {
-      return selectedStoreId;
-    }
-
-    const stores = overviewQuery.data?.filters.stores ?? [];
-    return stores.length === 1 ? stores[0]?.id : undefined;
-  }, [overviewQuery.data?.filters.stores, selectedStoreId]);
-  const manualStoreName = useMemo(() => {
-    const stores = overviewQuery.data?.filters.stores ?? [];
-    return stores.find((store) => store.id === manualStoreId)?.label ?? null;
-  }, [manualStoreId, overviewQuery.data?.filters.stores]);
-
   useEffect(() => {
     if (!receiveModal.open || !receiveModal.batch) {
       return;
@@ -261,13 +249,12 @@ export function useReceivingController() {
   }, [manualStagingLocationId, selectedManualWarehouseOption]);
 
   const manualProductsQuery = useQuery({
-    queryKey: ['wms-manual-receiving-products', selectedTenantId ?? 'default-tenant', manualStoreId ?? 'no-store'],
+    queryKey: ['wms-manual-receiving-products', selectedTenantId ?? 'no-tenant'],
     queryFn: () =>
       fetchWmsProductsOverview({
         tenantId: selectedTenantId,
-        storeId: manualStoreId,
       }),
-    enabled: Boolean(manualReceiveModal.open && manualStoreId),
+    enabled: Boolean(manualReceiveModal.open && selectedTenantId),
   });
 
   const createBatchMutation = useMutation({
@@ -518,19 +505,19 @@ export function useReceivingController() {
   }
 
   async function submitManualReceive() {
-    if (!manualStoreId) {
-      throw new Error('Select a store before manual stock input');
+    if (!selectedTenantId) {
+      throw new Error('Select a partner before manual stock input');
     }
 
     await createBatchMutation.mutateAsync({
-      storeId: manualStoreId,
       warehouseId: manualWarehouseId,
       stagingLocationId: manualStagingLocationId,
       notes: manualNotes.trim() || undefined,
       lines: manualLines
-        .filter((line) => line.profileId && line.quantity > 0)
+        .filter((line) => line.profileId && line.quantity > 0 && line.storeId)
         .map((line) => ({
           profileId: line.profileId,
+          storeId: line.storeId,
           receiveQuantity: Math.max(0, Math.floor(line.quantity)),
           unitCost: line.unitCost ?? undefined,
         })),
@@ -656,6 +643,8 @@ export function useReceivingController() {
         .filter((product) => product.isStockable && product.status !== 'ARCHIVED')
         .map((product) => ({
           id: product.id,
+          storeId: product.store.id,
+          storeLabel: product.store.name,
           label: product.name,
           variationLabel: product.variationDisplayId ?? product.variationId ?? 'No variation',
           customId: product.productCustomId ?? product.customId ?? null,
@@ -713,8 +702,6 @@ export function useReceivingController() {
     lineQuantities,
     modalTotalUnits,
     manualReceiveModal,
-    manualStoreId,
-    manualStoreName,
     manualWarehouseId,
     manualStagingLocationId,
     manualNotes,
@@ -741,11 +728,12 @@ export function useReceivingController() {
     addManualLine: () =>
       setManualLines((current) => [
         ...current,
-        { id: `manual-${Date.now()}-${current.length}`, profileId: '', quantity: 1, unitCost: null },
+        { id: `manual-${Date.now()}-${current.length}`, storeId: '', profileId: '', quantity: 1, unitCost: null },
       ]),
     addManualProduct: (profileId: string) =>
       setManualLines((current) => {
-        const existingLine = current.find((line) => line.profileId === profileId);
+        const product = manualProductOptions.find((option) => option.id === profileId);
+        const existingLine = current.find((line) => line.profileId === profileId && line.storeId === product?.storeId);
         if (existingLine) {
           return current.map((line) =>
             line.id === existingLine.id
@@ -754,11 +742,11 @@ export function useReceivingController() {
           );
         }
 
-        const product = manualProductOptions.find((option) => option.id === profileId);
         return [
           ...current,
           {
             id: `manual-${Date.now()}-${current.length}`,
+            storeId: product?.storeId ?? '',
             profileId,
             quantity: 1,
             unitCost: product?.defaultUnitCost ?? null,
@@ -769,7 +757,19 @@ export function useReceivingController() {
       setManualLines((current) => current.filter((line) => line.id !== lineId)),
     setManualLineProfile: (lineId: string, profileId: string) =>
       setManualLines((current) =>
-        current.map((line) => (line.id === lineId ? { ...line, profileId } : line)),
+        current.map((line) => {
+          if (line.id !== lineId) {
+            return line;
+          }
+
+          const product = manualProductOptions.find((option) => option.id === profileId);
+          return {
+            ...line,
+            profileId,
+            storeId: product?.storeId ?? line.storeId,
+            unitCost: line.unitCost ?? product?.defaultUnitCost ?? null,
+          };
+        }),
       ),
     setManualLineQuantity: (lineId: string, quantity: number) =>
       setManualLines((current) =>

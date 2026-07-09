@@ -53,8 +53,10 @@ export type WmsReceivingBatchRow = {
   sourceRequestId: string | null;
   requestTitle: string | null;
   store: {
-    id: string;
+    id: string | null;
     name: string;
+    isMixed: boolean;
+    storeCount: number;
   };
   warehouse: {
     id: string;
@@ -142,8 +144,10 @@ export type WmsReceivingBatchDetail = {
   requestType: 'PROCUREMENT' | 'SELF_BUY' | null;
   purchasingStatus: string | null;
   store: {
-    id: string;
+    id: string | null;
     name: string;
+    isMixed: boolean;
+    storeCount: number;
   };
   warehouse: {
     id: string;
@@ -159,6 +163,10 @@ export type WmsReceivingBatchDetail = {
   lines: Array<{
     id: string;
     lineNo: number;
+    store: {
+      id: string;
+      name: string;
+    };
     requestedProductName: string | null;
     productId: string | null;
     variationId: string | null;
@@ -264,6 +272,7 @@ export type CreateWmsReceivingBatchInput = {
   lines?: Array<{
     purchasingBatchLineId?: string;
     profileId?: string;
+    storeId?: string;
     receiveQuantity: number;
     unitCost?: number;
     notes?: string;

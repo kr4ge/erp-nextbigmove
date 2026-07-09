@@ -1720,8 +1720,8 @@ model WmsReceivingBatch {
   code                String                  @unique
   tenantId            String                  @db.Uuid
   tenant              Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeId             String                  @db.Uuid
-  store               PosStore                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId             String?                 @db.Uuid
+  store               PosStore?               @relation(fields: [storeId], references: [id], onDelete: Cascade)
   purchasingBatchId   String?                 @db.Uuid
   purchasingBatch     WmsPurchasingBatch?     @relation(fields: [purchasingBatchId], references: [id], onDelete: SetNull)
   warehouseId         String                  @db.Uuid

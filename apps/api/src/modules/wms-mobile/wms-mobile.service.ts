@@ -719,6 +719,17 @@ export class WmsMobileService {
               shopName: true,
             },
           },
+          lines: {
+            select: {
+              store: {
+                select: {
+                  id: true,
+                  name: true,
+                  shopName: true,
+                },
+              },
+            },
+          },
           warehouse: {
             select: {
               id: true,
@@ -951,22 +962,26 @@ export class WmsMobileService {
         dispatchedUnits: dispatchedUnitCount,
         warehouseCapacity,
       },
-      putawayQueue: putawayQueue.map((batch) => ({
-        id: batch.id,
-        code: batch.code,
-        status: batch.status,
-        statusLabel: this.formatEnumLabel(batch.status),
-        unitCount: batch._count.inventoryUnits,
-        store: {
-          id: batch.store.id,
-          name: batch.store.shopName || batch.store.name,
-        },
-        warehouse: batch.warehouse,
-        stagingLocation: batch.stagingLocation
-          ? this.mapLocation(batch.stagingLocation)
-          : null,
-        updatedAt: batch.updatedAt,
-      })),
+      putawayQueue: putawayQueue.map((batch) => {
+        const storeSummary = this.summarizeMobileReceivingBatchStore({
+          fallbackStore: batch.store,
+          lines: batch.lines,
+        });
+
+        return {
+          id: batch.id,
+          code: batch.code,
+          status: batch.status,
+          statusLabel: this.formatEnumLabel(batch.status),
+          unitCount: batch._count.inventoryUnits,
+          store: storeSummary,
+          warehouse: batch.warehouse,
+          stagingLocation: batch.stagingLocation
+            ? this.mapLocation(batch.stagingLocation)
+            : null,
+          updatedAt: batch.updatedAt,
+        };
+      }),
       movableUnits: movableUnits.map((unit) => ({
         id: unit.id,
         code: unit.code,
@@ -12963,6 +12978,17 @@ export class WmsMobileService {
           shopName: true,
         },
       },
+      lines: {
+        select: {
+          store: {
+            select: {
+              id: true,
+              name: true,
+              shopName: true,
+            },
+          },
+        },
+      },
       warehouse: {
         select: {
           id: true,
@@ -13005,6 +13031,52 @@ export class WmsMobileService {
         },
       },
     } satisfies Prisma.WmsReceivingBatchInclude;
+  }
+
+  private summarizeMobileReceivingBatchStore(input: {
+    fallbackStore?: {
+      id: string;
+      name: string;
+      shopName: string | null;
+    } | null;
+    lines?: Array<{
+      store?: {
+        id: string;
+        name: string;
+        shopName: string | null;
+      } | null;
+    }> | null;
+  }) {
+    const seen = new Map<string, { id: string | null; name: string }>();
+
+    for (const line of input.lines ?? []) {
+      const store = line.store;
+      if (!store || seen.has(store.id)) {
+        continue;
+      }
+
+      seen.set(store.id, {
+        id: store.id,
+        name: store.shopName || store.name,
+      });
+    }
+
+    if (!seen.size && input.fallbackStore) {
+      seen.set(input.fallbackStore.id, {
+        id: input.fallbackStore.id,
+        name: input.fallbackStore.shopName || input.fallbackStore.name,
+      });
+    }
+
+    const stores = Array.from(seen.values()).sort((left, right) => left.name.localeCompare(right.name));
+    if (stores.length === 1) {
+      return stores[0];
+    }
+
+    return {
+      id: null,
+      name: stores.length > 1 ? `${stores.length} stores` : 'No store',
+    };
   }
 
   private mapMobileUnitDetail(unit: any) {
@@ -13110,6 +13182,11 @@ export class WmsMobileService {
   }
 
   private mapMobileBatchDetail(batch: any) {
+    const storeSummary = this.summarizeMobileReceivingBatchStore({
+      fallbackStore: batch.store,
+      lines: batch.lines,
+    });
+
     return {
       id: batch.id,
       tenantId: batch.tenantId,
@@ -13117,10 +13194,7 @@ export class WmsMobileService {
       code: batch.code,
       status: batch.status,
       statusLabel: this.formatEnumLabel(batch.status),
-      store: {
-        id: batch.store.id,
-        name: batch.store.shopName || batch.store.name,
-      },
+      store: storeSummary,
       warehouse: batch.warehouse,
       stagingLocation: batch.stagingLocation ? this.mapLocation(batch.stagingLocation) : null,
       unitCount: batch._count?.inventoryUnits ?? batch.inventoryUnits?.length ?? 0,

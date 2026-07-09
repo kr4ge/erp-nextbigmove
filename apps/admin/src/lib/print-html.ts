@@ -73,8 +73,12 @@ export function printHtmlDocument(input: PrintHtmlInput) {
   }
 
   const onLoaded = () => {
-    // Allow a short tick so layout settles before print preview starts.
-    window.setTimeout(printFrame, 40);
+    void waitForPrintableAssets(printDoc)
+      .catch(() => null)
+      .finally(() => {
+        // Allow a short tick so layout settles before print preview starts.
+        window.setTimeout(printFrame, 40);
+      });
   };
 
   if (printDoc.readyState === 'complete') {
@@ -82,6 +86,37 @@ export function printHtmlDocument(input: PrintHtmlInput) {
   } else {
     printWindow.addEventListener('load', onLoaded, { once: true });
   }
+}
+
+async function waitForPrintableAssets(printDoc: Document, timeoutMs = 4000) {
+  const images = Array.from(printDoc.images).filter((image) => image.src);
+  if (!images.length) {
+    return;
+  }
+
+  await Promise.race([
+    Promise.all(images.map((image) => waitForImage(image))),
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, timeoutMs);
+    }),
+  ]);
+}
+
+function waitForImage(image: HTMLImageElement) {
+  if (image.complete && image.naturalWidth > 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      image.removeEventListener('load', done);
+      image.removeEventListener('error', done);
+      resolve();
+    };
+
+    image.addEventListener('load', done, { once: true });
+    image.addEventListener('error', done, { once: true });
+  });
 }
 
 function escapeHtml(value: string) {

@@ -100,7 +100,7 @@ export function PurchasingScreen() {
         invoiceId,
         invoiceController.selectedTenantId,
       );
-      printInvoiceDocument(documentPayload);
+      await printInvoiceDocument(documentPayload);
     } catch (error) {
       setInvoicePrintError(getErrorMessage(error));
     } finally {

@@ -16,6 +16,10 @@ class CreateWmsReceivingLineDto {
   @IsUUID()
   profileId?: string;
 
+  @IsOptional()
+  @IsUUID()
+  storeId?: string;
+
   @IsUUID()
   @IsOptional()
   purchasingBatchLineId?: string;

@@ -7,6 +7,7 @@ import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 
 type ManualReceivingLine = {
   id: string;
+  storeId: string;
   profileId: string;
   quantity: number;
   unitCost: number | null;
@@ -14,6 +15,8 @@ type ManualReceivingLine = {
 
 type ManualReceivingProductOption = {
   id: string;
+  storeId: string;
+  storeLabel: string;
   label: string;
   variationLabel: string;
   customId: string | number | null;
@@ -27,7 +30,6 @@ type SelectedManualReceivingLine = ManualReceivingLine & {
 
 type ManualReceivingModalProps = {
   open: boolean;
-  storeName: string | null;
   warehouseOptions: Array<{
     id: string;
     code: string;
@@ -59,7 +61,6 @@ type ManualReceivingModalProps = {
 
 export function ManualReceivingModal({
   open,
-  storeName,
   warehouseOptions,
   warehouseId,
   stagingLocationId,
@@ -269,7 +270,7 @@ export function ManualReceivingModal({
                   Products
                 </p>
                 <p className="mt-1 text-[12px] text-[#637786]">
-                  {selectedProducts.length} lines · {totalUnits} units
+                  {selectedProducts.length} lines · {totalUnits} units · {new Set(selectedProducts.map((line) => line.storeId)).size} stores
                 </p>
               </div>
             </div>
@@ -279,6 +280,7 @@ export function ManualReceivingModal({
                 <table className="min-w-full divide-y divide-[#edf2f6] text-[13px]">
                   <thead className="bg-[#f8fafb] text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7a8f9d]">
                     <tr>
+                      <th className="px-4 py-2.5">Store</th>
                       <th className="px-4 py-2.5">Product</th>
                       <th className="px-4 py-2.5">Reference</th>
                       <th className="px-4 py-2.5 text-right">Qty</th>
@@ -289,6 +291,9 @@ export function ManualReceivingModal({
                   <tbody className="divide-y divide-[#edf2f6] bg-white">
                     {selectedProducts.map((line) => (
                       <tr key={line.id} className="align-top">
+                        <td className="px-4 py-3 text-[12px] font-semibold text-[#4d6677]">
+                          {line.product.storeLabel}
+                        </td>
                         <td className="px-4 py-3">
                           <p className="font-semibold text-primary">{line.product.label}</p>
                           <p className="mt-0.5 text-[12px] text-[#708492]">{line.product.variationLabel}</p>
@@ -357,7 +362,7 @@ export function ManualReceivingModal({
                     <input
                       value={productSearchText}
                       onChange={(event) => setProductSearchText(event.target.value)}
-                      placeholder="Search products in the selected store"
+                      placeholder="Search products across this partner"
                       className="h-10 w-full rounded-[12px] border border-[#d7e0e7] bg-white pl-9 pr-3 text-[13px] text-primary outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
                     />
                   </label>
@@ -388,7 +393,7 @@ export function ManualReceivingModal({
                             <div className="min-w-0">
                               <p className="truncate text-[13px] font-semibold text-primary">{product.label}</p>
                               <p className="mt-0.5 truncate text-[12px] text-[#708492]">
-                                {product.variationLabel}
+                                {product.storeLabel} · {product.variationLabel}
                                 {product.customId ? ` · ${product.customId}` : ''}
                               </p>
                             </div>

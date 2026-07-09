@@ -113,6 +113,13 @@ type ReceivingBatchRecord = Prisma.WmsReceivingBatchGetPayload<{
         id: true;
         expectedQuantity: true;
         receivedQuantity: true;
+        store: {
+          select: {
+            id: true;
+            name: true;
+            shopName: true;
+          };
+        };
       };
     };
     inventoryUnits: {
@@ -166,6 +173,13 @@ type ReceivingBatchDetailRecord = Prisma.WmsReceivingBatchGetPayload<{
         lineNo: 'asc';
       };
       include: {
+        store: {
+          select: {
+            id: true;
+            name: true;
+            shopName: true;
+          };
+        };
         resolvedPosProduct: {
           select: {
             id: true;
@@ -567,6 +581,13 @@ export class WmsReceivingService {
                 id: true,
                 expectedQuantity: true,
                 receivedQuantity: true,
+                store: {
+                  select: {
+                    id: true,
+                    name: true,
+                    shopName: true,
+                  },
+                },
               },
             },
             inventoryUnits: {
@@ -699,6 +720,13 @@ export class WmsReceivingService {
         lines: {
           orderBy: [{ lineNo: 'asc' }],
           include: {
+            store: {
+              select: {
+                id: true,
+                name: true,
+                shopName: true,
+              },
+            },
             resolvedPosProduct: {
               select: {
                 id: true,
@@ -1771,7 +1799,7 @@ export class WmsReceivingService {
         .map((line) => [line.purchasingBatchLineId as string, line]),
     );
 
-    const selectedLines = purchasingBatch.lines
+    const normalizedSelectedLines = purchasingBatch.lines
       .map((line) => {
         const expectedQuantity = line.approvedQuantity ?? line.requestedQuantity;
         const remainingQuantity = Math.max(expectedQuantity - line.receivedQuantity, 0);
@@ -1779,6 +1807,7 @@ export class WmsReceivingService {
         const receiveQuantity = requestLine ? requestLine.receiveQuantity : remainingQuantity;
 
         return {
+          originalLineNo: line.lineNo,
           purchasingLine: line,
           remainingQuantity,
           receiveQuantity,
@@ -1794,6 +1823,44 @@ export class WmsReceivingService {
         };
       })
       .filter((line) => line.receiveQuantity > 0);
+
+    const selectedLines = [...normalizedSelectedLines].sort((left, right) => {
+      const leftVariationId =
+        left.purchasingLine.variationId
+        ?? left.purchasingLine.resolvedProfile?.variationId
+        ?? '';
+      const rightVariationId =
+        right.purchasingLine.variationId
+        ?? right.purchasingLine.resolvedProfile?.variationId
+        ?? '';
+      const variationCompare = leftVariationId.localeCompare(rightVariationId, undefined, {
+        sensitivity: 'base',
+      });
+      if (variationCompare !== 0) {
+        return variationCompare;
+      }
+
+      const productCompare = (left.purchasingLine.resolvedPosProduct?.name ?? left.purchasingLine.requestedProductName ?? '')
+        .localeCompare(
+          right.purchasingLine.resolvedPosProduct?.name ?? right.purchasingLine.requestedProductName ?? '',
+          undefined,
+          { sensitivity: 'base' },
+        );
+      if (productCompare !== 0) {
+        return productCompare;
+      }
+
+      const customIdCompare = (left.purchasingLine.resolvedPosProduct?.customId ?? '').localeCompare(
+        right.purchasingLine.resolvedPosProduct?.customId ?? '',
+        undefined,
+        { sensitivity: 'base' },
+      );
+      if (customIdCompare !== 0) {
+        return customIdCompare;
+      }
+
+      return left.originalLineNo - right.originalLineNo;
+    });
 
     if (!selectedLines.length) {
       throw new BadRequestException('Select at least one receiving line with quantity greater than zero');
@@ -2078,13 +2145,29 @@ export class WmsReceivingService {
   }) {
     const { body, tenantId, actorId, warehouse, stagingLocation } = input;
 
-    if (!body.storeId) {
-      throw new BadRequestException('Store is required for manual stock receiving');
+    const requestedLines = (body.lines ?? []).filter((line) => line.profileId && line.receiveQuantity > 0);
+
+    if (!requestedLines.length) {
+      throw new BadRequestException('Select at least one product and quantity for manual stock input');
     }
 
-    const store = await this.prisma.posStore.findFirst({
+    const requestedStoreIds = Array.from(
+      new Set(
+        requestedLines
+          .map((line) => line.storeId ?? body.storeId)
+          .filter((storeId): storeId is string => Boolean(storeId)),
+      ),
+    );
+
+    if (!requestedStoreIds.length) {
+      throw new BadRequestException('Select at least one store for manual stock input');
+    }
+
+    const stores = await this.prisma.posStore.findMany({
       where: {
-        id: body.storeId,
+        id: {
+          in: requestedStoreIds,
+        },
         tenantId,
       },
       select: {
@@ -2094,17 +2177,11 @@ export class WmsReceivingService {
       },
     });
 
-    if (!store) {
-      throw new BadRequestException('Selected store is not valid for manual stock receiving');
+    if (stores.length !== requestedStoreIds.length) {
+      throw new BadRequestException('One or more selected stores are not valid for manual stock receiving');
     }
 
-    const requestedLines = (body.lines ?? []).filter(
-      (line) => line.profileId && line.receiveQuantity > 0,
-    );
-
-    if (!requestedLines.length) {
-      throw new BadRequestException('Select at least one product and quantity for manual stock input');
-    }
+    const storeMap = new Map(stores.map((store) => [store.id, store]));
 
     const profileIds = Array.from(
       new Set(requestedLines.map((line) => line.profileId).filter(Boolean) as string[]),
@@ -2116,7 +2193,9 @@ export class WmsReceivingService {
           in: profileIds,
         },
         tenantId,
-        storeId: store.id,
+        storeId: {
+          in: requestedStoreIds,
+        },
       },
       include: {
         posProduct: {
@@ -2136,11 +2215,22 @@ export class WmsReceivingService {
     }
 
     const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
-    const selectedLines = requestedLines.map((line, index) => {
+    const normalizedSelectedLines = requestedLines.map((line, index) => {
       const profile = profileMap.get(line.profileId!);
+      const resolvedStoreId = line.storeId ?? body.storeId ?? profile?.storeId;
 
       if (!profile) {
         throw new BadRequestException(`Manual receiving line ${index + 1} has an invalid product`);
+      }
+
+      if (!resolvedStoreId) {
+        throw new BadRequestException(`Manual receiving line ${index + 1} is missing a store`);
+      }
+
+      if (profile.storeId !== resolvedStoreId) {
+        throw new BadRequestException(
+          `Manual receiving line ${index + 1} does not match the selected store for ${profile.posProduct.name}`,
+        );
       }
 
       if (profile.status === WmsProductProfileStatus.ARCHIVED) {
@@ -2162,8 +2252,15 @@ export class WmsReceivingService {
         );
       }
 
+      const store = storeMap.get(resolvedStoreId);
+
       return {
-        lineNo: index + 1,
+        originalIndex: index,
+        storeId: resolvedStoreId,
+        storeName: store?.shopName || store?.name || '',
+        productName: profile.posProduct.name,
+        productCustomId: profile.posProduct.customId ?? '',
+        variationId: profile.variationId,
         profile,
         receiveQuantity: Math.max(0, Math.floor(line.receiveQuantity)),
         unitCost:
@@ -2173,8 +2270,45 @@ export class WmsReceivingService {
       };
     });
 
+    const selectedLines = [...normalizedSelectedLines]
+      .sort((left, right) => {
+        const storeCompare = left.storeName.localeCompare(right.storeName, undefined, { sensitivity: 'base' });
+        if (storeCompare !== 0) {
+          return storeCompare;
+        }
+
+        const variationCompare = left.variationId.localeCompare(right.variationId, undefined, {
+          sensitivity: 'base',
+        });
+        if (variationCompare !== 0) {
+          return variationCompare;
+        }
+
+        const productCompare = left.productName.localeCompare(right.productName, undefined, { sensitivity: 'base' });
+        if (productCompare !== 0) {
+          return productCompare;
+        }
+
+        const customIdCompare = left.productCustomId.localeCompare(
+          right.productCustomId,
+          undefined,
+          { sensitivity: 'base' },
+        );
+        if (customIdCompare !== 0) {
+          return customIdCompare;
+        }
+
+        return left.originalIndex - right.originalIndex;
+      })
+      .map(({ originalIndex: _originalIndex, storeName: _storeName, productName: _productName, productCustomId: _productCustomId, variationId: _variationId, ...entry }, index) => ({
+        ...entry,
+        lineNo: index + 1,
+      }));
+
     const receivingCode = this.buildReceivingCode();
     const now = new Date();
+    const distinctStoreIds = Array.from(new Set(selectedLines.map((line) => line.storeId)));
+    const batchStoreId = distinctStoreIds.length === 1 ? distinctStoreIds[0] : null;
     const tenantRecord = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: {
@@ -2187,8 +2321,8 @@ export class WmsReceivingService {
       tenantName: tenantRecord?.name ?? null,
       requestTitle: 'Manual stock input',
       sourceRequestId: null,
-      storeShopName: store.shopName,
-      storeName: store.name,
+      storeShopName: batchStoreId ? (storeMap.get(batchStoreId)?.shopName ?? null) : null,
+      storeName: batchStoreId ? (storeMap.get(batchStoreId)?.name ?? null) : null,
     });
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -2196,7 +2330,7 @@ export class WmsReceivingService {
         data: {
           code: receivingCode,
           tenantId,
-          storeId: store.id,
+          storeId: batchStoreId,
           warehouseId: warehouse.id,
           stagingLocationId: stagingLocation.id,
           status: WmsReceivingBatchStatus.STAGED,
@@ -2208,7 +2342,7 @@ export class WmsReceivingService {
             createMany: {
               data: selectedLines.map((entry) => ({
                 tenantId,
-                storeId: store.id,
+                storeId: entry.storeId,
                 lineNo: entry.lineNo,
                 resolvedPosProductId: entry.profile.posProductId,
                 resolvedProfileId: entry.profile.id,
@@ -2243,7 +2377,7 @@ export class WmsReceivingService {
 
           return {
             tenantId,
-            storeId: store.id,
+            storeId: entry.storeId,
             posProductId: entry.profile.posProductId,
             productProfileId: entry.profile.id,
             warehouseId: warehouse.id,
@@ -2310,6 +2444,60 @@ export class WmsReceivingService {
     await this.wmsPurchasingService.ensureManualReceivingInvoice(created, tenantId);
 
     return this.getBatchById(created, tenantId);
+  }
+
+  private summarizeReceivingBatchStores(input: {
+    fallbackStore?: {
+      id: string;
+      name: string;
+      shopName: string | null;
+    } | null;
+    lines: Array<{
+      store?: {
+        id: string;
+        name: string;
+        shopName: string | null;
+      } | null;
+    }>;
+  }) {
+    const seen = new Map<string, { id: string; name: string }>();
+
+    for (const line of input.lines) {
+      const store = line.store;
+      if (!store) {
+        continue;
+      }
+      if (!seen.has(store.id)) {
+        seen.set(store.id, {
+          id: store.id,
+          name: store.shopName || store.name,
+        });
+      }
+    }
+
+    if (!seen.size && input.fallbackStore) {
+      seen.set(input.fallbackStore.id, {
+        id: input.fallbackStore.id,
+        name: input.fallbackStore.shopName || input.fallbackStore.name,
+      });
+    }
+
+    const stores = Array.from(seen.values()).sort((left, right) => left.name.localeCompare(right.name));
+    if (stores.length === 1) {
+      return {
+        id: stores[0].id,
+        name: stores[0].name,
+        isMixed: false,
+        storeCount: 1,
+      };
+    }
+
+    return {
+      id: null,
+      name: stores.length > 1 ? `${stores.length} stores` : 'No store',
+      isMixed: stores.length > 1,
+      storeCount: stores.length,
+    };
   }
 
   private async resolveReceivingDestination(warehouseId: string, stagingLocationId: string) {
@@ -2697,6 +2885,10 @@ export class WmsReceivingService {
 
   private mapReceivingBatchRow(batch: ReceivingBatchRecord) {
     const status = this.deriveReceivingBatchStatusFromUnits(batch.inventoryUnits, batch.status);
+    const storeSummary = this.summarizeReceivingBatchStores({
+      fallbackStore: batch.store,
+      lines: batch.lines,
+    });
 
     return {
       id: batch.id,
@@ -2705,10 +2897,7 @@ export class WmsReceivingService {
       status,
       sourceRequestId: batch.purchasingBatch?.sourceRequestId ?? null,
       requestTitle: batch.purchasingBatch?.requestTitle ?? null,
-      store: {
-        id: batch.store.id,
-        name: batch.store.shopName || batch.store.name,
-      },
+      store: storeSummary,
       warehouse: {
         id: batch.warehouse.id,
         code: batch.warehouse.code,
@@ -2809,10 +2998,10 @@ export class WmsReceivingService {
       requestTitle: batch.purchasingBatch?.requestTitle ?? null,
       requestType: batch.purchasingBatch?.requestType ?? null,
       purchasingStatus: batch.purchasingBatch?.status ?? null,
-      store: {
-        id: batch.store.id,
-        name: batch.store.shopName || batch.store.name,
-      },
+      store: this.summarizeReceivingBatchStores({
+        fallbackStore: batch.store,
+        lines: batch.lines,
+      }),
       warehouse: {
         id: batch.warehouse.id,
         code: batch.warehouse.code,
@@ -2829,6 +3018,10 @@ export class WmsReceivingService {
       lines: batch.lines.map((line) => ({
         id: line.id,
         lineNo: line.lineNo,
+        store: {
+          id: line.store.id,
+          name: line.store.shopName || line.store.name,
+        },
         requestedProductName: line.requestedProductName,
         productId: line.productId,
         variationId: line.variationId,

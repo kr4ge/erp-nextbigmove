@@ -55,11 +55,11 @@ export function InventoryStockReceivingScreen() {
     router.push(`/inventory/transfer?batch=${batchId}`);
   }
 
-  const manualInputDisabled = !receiving.canManualInput || !receiving.manualStoreId;
+  const manualInputDisabled = !receiving.canManualInput || !receiving.selectedTenantId;
   const manualInputTitle = !receiving.canManualInput
     ? 'This account does not have manual stock input permission.'
-    : !receiving.manualStoreId
-      ? 'Select a store to enable manual stock input.'
+    : !receiving.selectedTenantId
+      ? 'Select a partner to enable manual stock input.'
       : undefined;
 
   return (
@@ -133,7 +133,6 @@ export function InventoryStockReceivingScreen() {
 
       <ManualReceivingModal
         open={receiving.manualReceiveModal.open}
-        storeName={receiving.manualStoreName}
         warehouseOptions={receiving.overview?.warehouseOptions ?? []}
         warehouseId={receiving.manualWarehouseId}
         stagingLocationId={receiving.manualStagingLocationId}
