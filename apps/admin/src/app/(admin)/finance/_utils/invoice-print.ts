@@ -104,7 +104,7 @@ export function printInvoiceDocument(payload: WmsInvoiceDocumentResponse) {
             <span>Total</span>
             <strong>${escapeHtml(formatMoney(invoice.totals.totalAmount ?? invoice.totalAmount))}</strong>
           </div>
-          <div class="total-row total-strip">
+          <div class="total-row total-strip amount-due-row">
             <span>Amount Due</span>
             <strong>${escapeHtml(formatMoney(invoice.totals.amountDue ?? invoice.amountDue))}</strong>
           </div>
@@ -153,7 +153,7 @@ const INVOICE_PRINT_STYLES = `
 
   .invoice-page {
     width: 100%;
-    padding: 8mm 10mm 0;
+    padding: 10mm 9mm 0;
   }
 
   .invoice-header,
@@ -165,19 +165,22 @@ const INVOICE_PRINT_STYLES = `
 
   .invoice-header {
     align-items: flex-start;
-    margin-bottom: 54px;
+    margin-bottom: 64px;
   }
 
   .issuer-brand {
-    min-height: 150px;
+    width: 290px;
+    min-height: 190px;
     display: flex;
     align-items: flex-start;
   }
 
   .issuer-logo {
-    max-width: 220px;
-    max-height: 170px;
+    width: 240px;
+    max-width: 240px;
+    max-height: 190px;
     object-fit: contain;
+    object-position: left top;
   }
 
   .issuer-fallback {
@@ -187,27 +190,27 @@ const INVOICE_PRINT_STYLES = `
   }
 
   .invoice-meta {
-    min-width: 260px;
+    min-width: 330px;
     text-align: right;
   }
 
   .invoice-title {
-    font-size: 34px;
+    font-size: 36px;
     font-weight: 700;
-    line-height: 1.04;
+    line-height: 1.02;
     color: #000000;
   }
 
   .invoice-number {
-    margin-top: 4px;
-    font-size: 18px;
+    margin-top: 6px;
+    font-size: 17px;
     font-weight: 700;
     color: #4e4e4e;
   }
 
   .invoice-status {
     margin-top: 4px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 400;
     color: #ff3b30;
     text-transform: uppercase;
@@ -225,7 +228,7 @@ const INVOICE_PRINT_STYLES = `
 
   .details-grid {
     align-items: flex-start;
-    margin-bottom: 40px;
+    margin-bottom: 34px;
   }
 
   .issuer-block,
@@ -238,11 +241,11 @@ const INVOICE_PRINT_STYLES = `
   }
 
   .issuer-block {
-    width: 44%;
+    width: 47%;
   }
 
   .billto-block {
-    width: 40%;
+    width: 41%;
     text-align: right;
   }
 
@@ -254,7 +257,7 @@ const INVOICE_PRINT_STYLES = `
 
   .party-name {
     margin-bottom: 4px;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 700;
     line-height: 1.35;
   }
@@ -272,20 +275,20 @@ const INVOICE_PRINT_STYLES = `
   .invoice-table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 90px;
+    margin-bottom: 76px;
   }
 
   .invoice-table thead th {
-    background: #39424e;
+    background: #3c4551;
     color: #ffffff;
-    padding: 10px 14px;
+    padding: 12px 16px;
     font-size: 11px;
     font-weight: 700;
     text-align: left;
   }
 
   .invoice-table tbody td {
-    padding: 12px 14px;
+    padding: 11px 16px;
     border-bottom: 0;
     font-size: 11px;
     color: #111111;
@@ -303,6 +306,7 @@ const INVOICE_PRINT_STYLES = `
 
   .item-title {
     font-weight: 700;
+    line-height: 1.3;
   }
 
   .item-meta {
@@ -320,18 +324,18 @@ const INVOICE_PRINT_STYLES = `
   .totals-wrap {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 48px;
+    margin-bottom: 54px;
   }
 
   .totals-card {
-    width: 360px;
+    width: 372px;
   }
 
   .total-row {
     display: flex;
     justify-content: space-between;
     gap: 16px;
-    padding: 7px 12px;
+    padding: 7px 14px;
     font-size: 11px;
   }
 
@@ -341,11 +345,15 @@ const INVOICE_PRINT_STYLES = `
   }
 
   .total-strip {
-    background: #efefef;
+    background: #ececec;
+  }
+
+  .amount-due-row {
+    background: #e4e4e4;
   }
 
   .payment-block {
-    width: 58%;
+    width: 62%;
   }
 
   .payment-heading,
