@@ -351,6 +351,205 @@ export class WmsIntegrationsService {
     );
   }
 
+  async removePosStore(
+    tenantId: string,
+    storeId: string,
+    baseUrl: string,
+  ) {
+    const store = await this.prisma.posStore.findFirst({
+      where: { id: storeId, tenantId },
+      select: {
+        id: true,
+        shopId: true,
+        shopName: true,
+        name: true,
+        integrationId: true,
+      },
+    });
+
+    if (!store) {
+      throw new NotFoundException('POS store not found');
+    }
+
+    const [impactedFulfillmentOrders, impactedDemandBaskets, impactedUnitBaskets] = await Promise.all([
+      this.prisma.wmsFulfillmentOrder.findMany({
+        where: {
+          tenantId,
+          storeId: store.id,
+        },
+        select: {
+          id: true,
+          basketId: true,
+        },
+      }),
+      this.prisma.wmsBasketPickDemand.findMany({
+        where: {
+          tenantId,
+          storeId: store.id,
+        },
+        select: {
+          basketId: true,
+        },
+      }),
+      this.prisma.wmsBasketUnit.findMany({
+        where: {
+          tenantId,
+          storeId: store.id,
+        },
+        select: {
+          basketId: true,
+        },
+      }),
+    ]);
+
+    const impactedOrderIds = impactedFulfillmentOrders.map((order) => order.id);
+    const impactedBasketIds = new Set(
+      impactedFulfillmentOrders
+        .map((order) => order.basketId)
+        .filter((basketId): basketId is string => Boolean(basketId)),
+    );
+
+    for (const demand of impactedDemandBaskets) {
+      impactedBasketIds.add(demand.basketId);
+    }
+
+    for (const basketUnit of impactedUnitBaskets) {
+      impactedBasketIds.add(basketUnit.basketId);
+    }
+
+    if (impactedOrderIds.length > 0) {
+      const legacyBaskets = await this.prisma.wmsBasket.findMany({
+        where: {
+          fulfillmentOrderId: { in: impactedOrderIds },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      for (const basket of legacyBaskets) {
+        impactedBasketIds.add(basket.id);
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const deletedWebhookOrderLogs = await tx.pancakeWebhookLogOrder.deleteMany({
+        where: {
+          shopId: store.shopId,
+          log: {
+            tenantId,
+          },
+        },
+      });
+
+      const deletedPosOrders = await tx.posOrder.deleteMany({
+        where: {
+          tenantId,
+          shopId: store.shopId,
+        },
+      });
+
+      await tx.posStore.delete({
+        where: {
+          id: store.id,
+        },
+      });
+
+      let resetBasketCount = 0;
+
+      if (impactedBasketIds.size > 0) {
+        for (const basketId of impactedBasketIds) {
+          const basketState = await tx.wmsBasket.findUnique({
+            where: { id: basketId },
+            select: {
+              id: true,
+              fulfillmentOrderId: true,
+              _count: {
+                select: {
+                  fulfillmentOrders: true,
+                  pickDemands: true,
+                  pickDemandBins: true,
+                  basketUnits: {
+                    where: {
+                      status: {
+                        in: ['PICKED', 'PACKED'],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+          if (!basketState) {
+            continue;
+          }
+
+          const hasActiveLinks =
+            Boolean(basketState.fulfillmentOrderId)
+            || basketState._count.fulfillmentOrders > 0
+            || basketState._count.pickDemands > 0
+            || basketState._count.pickDemandBins > 0
+            || basketState._count.basketUnits > 0;
+
+          if (hasActiveLinks) {
+            continue;
+          }
+
+          await tx.wmsBasket.update({
+            where: { id: basketId },
+            data: {
+              tenantId: null,
+              status: 'AVAILABLE',
+              assignedPickerId: null,
+              assignedPackerId: null,
+              fulfillmentOrderId: null,
+              claimedAt: null,
+              fullAt: null,
+              readyForPackAt: null,
+            },
+          });
+          resetBasketCount += 1;
+        }
+      }
+
+      let deletedIntegrationId: string | null = null;
+
+      if (store.integrationId) {
+        const remainingStores = await tx.posStore.count({
+          where: {
+            tenantId,
+            integrationId: store.integrationId,
+          },
+        });
+
+        if (remainingStores === 0) {
+          await tx.integration.delete({
+            where: { id: store.integrationId },
+          });
+          deletedIntegrationId = store.integrationId;
+        }
+      }
+
+      return {
+        storeId: store.id,
+        storeName: store.shopName || store.name,
+        shopId: store.shopId,
+        deletedPosOrders: deletedPosOrders.count,
+        deletedWebhookOrderLogs: deletedWebhookOrderLogs.count,
+        resetBasketCount,
+        deletedIntegrationId,
+      };
+    });
+
+    return this.buildActionResponse(
+      tenantId,
+      baseUrl,
+      'posStores.remove',
+      result,
+    );
+  }
+
   async updateWebhook(
     tenantId: string,
     dto: UpdatePancakeWebhookDto,

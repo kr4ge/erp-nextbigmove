@@ -113,6 +113,31 @@ export class ObjectStorageService implements OnModuleInit {
     });
   }
 
+  async downloadObjectBuffer(key: string) {
+    const client = this.getClient();
+    const response = await client.send(new GetObjectCommand({
+      Bucket: this.getBucketName(),
+      Key: key,
+    }));
+
+    if (!response.Body) {
+      throw new Error(`Object storage returned an empty body for ${key}`);
+    }
+
+    if (typeof response.Body.transformToByteArray === 'function') {
+      const bytes = await response.Body.transformToByteArray();
+      return Buffer.from(bytes);
+    }
+
+    const stream = response.Body as Readable;
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+
+    return Buffer.concat(chunks);
+  }
+
   private getClient() {
     if (!this.isConfigured()) {
       throw new Error('Object storage is not configured');

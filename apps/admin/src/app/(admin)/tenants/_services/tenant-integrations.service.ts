@@ -83,6 +83,15 @@ export async function updatePartnerPosStore(
   return response.data as PartnerIntegrationActionResponse;
 }
 
+export async function removePartnerPosStore(tenantId: string, storeId: string) {
+  const response = await apiClient.delete(
+    `/wms/partners/${tenantId}/integrations/pos-stores/${storeId}`,
+    { params: { tenantId } },
+  );
+
+  return response.data as PartnerIntegrationActionResponse;
+}
+
 export async function updatePartnerWebhook(
   tenantId: string,
   input: UpdatePartnerWebhookInput,

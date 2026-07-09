@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -99,6 +99,20 @@ export class WmsIntegrationsController {
       tenantId,
       storeId,
       body,
+      this.getBaseUrl(req),
+    );
+  }
+
+  @Delete('pos-stores/:storeId')
+  @Permissions('wms.integrations.write')
+  async removePosStore(
+    @Param('tenantId') tenantId: string,
+    @Param('storeId') storeId: string,
+    @Req() req: Request,
+  ) {
+    return this.wmsIntegrationsService.removePosStore(
+      tenantId,
+      storeId,
       this.getBaseUrl(req),
     );
   }

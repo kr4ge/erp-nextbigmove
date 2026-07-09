@@ -107,6 +107,23 @@ export class MediaAssetsService {
     return this.objectStorageService.createSignedReadUrl(asset.objectKey);
   }
 
+  async createAssetDataUrl(
+    asset: { objectKey: string; contentType?: string | null } | null | undefined,
+  ) {
+    if (!asset) {
+      return null;
+    }
+
+    if (!this.objectStorageService.isConfigured()) {
+      this.logger.warn(`Object storage is not configured; cannot inline asset for ${asset.objectKey}`);
+      return null;
+    }
+
+    const contentType = asset.contentType?.trim() || 'application/octet-stream';
+    const bytes = await this.objectStorageService.downloadObjectBuffer(asset.objectKey);
+    return `data:${contentType};base64,${bytes.toString('base64')}`;
+  }
+
   private async uploadImageAsset(params: {
     file: UploadedImageFile | undefined;
     tenantId?: string | null;

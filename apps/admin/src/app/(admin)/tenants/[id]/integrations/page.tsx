@@ -39,6 +39,7 @@ import {
   bulkImportPartnerPosStores,
   fetchPartnerIntegrationOverview,
   rotatePartnerWebhookApiKey,
+  removePartnerPosStore,
   syncPartnerPosStoreAll,
   syncPartnerPosStoreProducts,
   syncPartnerPosStoreTags,
@@ -281,6 +282,22 @@ export default function PartnerIntegrationsPage() {
     );
   };
 
+  const removeStore = async (store: PartnerPosStoreIntegration) => {
+    if (!window.confirm(
+      `Remove ${store.name}? This deletes the connected store data, matching POS orders, and related WMS records for this shop.`,
+    )) {
+      return;
+    }
+
+    setEditingStoreId((current) => (current === store.id ? null : current));
+
+    await runIntegrationAction(
+      getStoreActionKey(store.id, 'remove'),
+      () => removePartnerPosStore(tenantId, store.id),
+      (response) => summarizeStoreRemovalResult(store, response.result),
+    );
+  };
+
   if (isLoading) {
     return (
       <WmsPageShell title="Partner integrations" breadcrumb="Partners">
@@ -404,6 +421,7 @@ export default function PartnerIntegrationsPage() {
             access={access}
             onSyncStore={syncStore}
             onEditStore={(store) => setEditingStoreId((current) => current === store.id ? null : store.id)}
+            onRemoveStore={removeStore}
             onCloseEdit={() => setEditingStoreId(null)}
             onSaveStore={saveStoreSettings}
             onOpenImport={() => setIsImportOpen(true)}
@@ -535,6 +553,7 @@ function PosStoresTable({
   access,
   onSyncStore,
   onEditStore,
+  onRemoveStore,
   onCloseEdit,
   onSaveStore,
   onOpenImport,
@@ -545,6 +564,7 @@ function PosStoresTable({
   access: IntegrationAccess;
   onSyncStore: (store: PartnerPosStoreIntegration, target: StoreSyncTarget) => void;
   onEditStore: (store: PartnerPosStoreIntegration) => void;
+  onRemoveStore: (store: PartnerPosStoreIntegration) => void;
   onCloseEdit: () => void;
   onSaveStore: (store: PartnerPosStoreIntegration, input: UpdatePartnerPosStoreInput) => void;
   onOpenImport: () => void;
@@ -648,6 +668,7 @@ function PosStoresTable({
                         access={access}
                         onSyncStore={onSyncStore}
                         onEditStore={onEditStore}
+                        onRemoveStore={onRemoveStore}
                       />
                     </BodyCell>
                   </tr>
@@ -697,6 +718,7 @@ function StoreSyncActions({
   access,
   onSyncStore,
   onEditStore,
+  onRemoveStore,
 }: {
   store: PartnerPosStoreIntegration;
   pendingAction: string | null;
@@ -704,9 +726,11 @@ function StoreSyncActions({
   access: IntegrationAccess;
   onSyncStore: (store: PartnerPosStoreIntegration, target: StoreSyncTarget) => void;
   onEditStore: (store: PartnerPosStoreIntegration) => void;
+  onRemoveStore: (store: PartnerPosStoreIntegration) => void;
 }) {
   const isBusy = Boolean(pendingAction);
-  const hasActions = access.canEdit || access.canSync;
+  const hasActions = access.canEdit || access.canSync || access.canWrite;
+  const isRemoving = pendingAction === getStoreActionKey(store.id, 'remove');
 
   return (
     <div className="flex min-w-[260px] flex-wrap gap-2">
@@ -719,6 +743,16 @@ function StoreSyncActions({
           className="btn btn-sm btn-outline"
         >
           {isEditing ? 'Close' : 'Edit'}
+        </button>
+      ) : null}
+      {access.canWrite ? (
+        <button
+          type="button"
+          onClick={() => onRemoveStore(store)}
+          disabled={isBusy}
+          className="btn btn-sm btn-outline text-rose-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-800"
+        >
+          {isRemoving ? 'Removing' : 'Remove'}
         </button>
       ) : null}
       {access.canSync
@@ -1438,7 +1472,7 @@ function buildIntegrationAccess(
 }
 
 type StoreSyncTarget = 'all' | 'products' | 'tags' | 'warehouses';
-type StoreActionTarget = StoreSyncTarget | 'edit';
+type StoreActionTarget = StoreSyncTarget | 'edit' | 'remove';
 type StoreStatus = NonNullable<UpdatePartnerPosStoreInput['status']>;
 
 const POS_STORES_PAGE_SIZE = 10;
@@ -1456,6 +1490,23 @@ function getStoreActionKey(storeId: string, target: StoreActionTarget) {
 
 function getStoreSyncLabel(target: StoreSyncTarget) {
   return STORE_SYNC_LABELS[target];
+}
+
+function summarizeStoreRemovalResult(
+  store: PartnerPosStoreIntegration,
+  result: unknown,
+) {
+  const payload = typeof result === 'object' && result !== null
+    ? result as {
+        deletedPosOrders?: number;
+        deletedIntegrationId?: string | null;
+      }
+    : null;
+
+  const deletedOrders = payload?.deletedPosOrders ?? 0;
+  const removedIntegration = Boolean(payload?.deletedIntegrationId);
+
+  return `${store.name} removed. Deleted ${deletedOrders.toLocaleString()} POS orders${removedIntegration ? ' and pruned the orphan integration connection' : ''}.`;
 }
 
 function normalizeStoreStatus(status: string): StoreStatus {

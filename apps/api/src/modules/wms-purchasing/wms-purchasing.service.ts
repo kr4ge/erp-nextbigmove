@@ -877,7 +877,7 @@ export class WmsPurchasingService {
 
     const invoiceDetail = this.mapInvoiceDetail(invoice);
     const logoUrl = settings?.logoAsset
-      ? await this.mediaAssetsService.createSignedAssetUrl(settings.logoAsset)
+      ? await this.mediaAssetsService.createAssetDataUrl(settings.logoAsset)
       : null;
     const issuerDocument = {
       ...(invoiceDetail.issuer ?? {}),
