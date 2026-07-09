@@ -85,6 +85,17 @@ export function useWmsScopeFilters({
       return;
     }
 
+    if (tenants && selectedTenantId && !selectedTenantExists) {
+      syncTenantScopeStorage(undefined);
+      setSelectedTenantIdState(undefined);
+      setSelectedStoreIdState(undefined);
+      if (includeWarehouse) {
+        setSelectedWarehouseIdState?.(undefined);
+      }
+      tenantSelectionInitializedRef.current = true;
+      return;
+    }
+
     if (tenants) {
       tenantSelectionInitializedRef.current = true;
     }

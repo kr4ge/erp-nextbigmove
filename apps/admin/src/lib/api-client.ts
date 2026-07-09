@@ -7,6 +7,15 @@ const apiClient = axios.create({
   },
 });
 
+function clearTenantScope() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.removeItem('current_tenant_id');
+  window.dispatchEvent(new CustomEvent('wmsTenantScopeChanged', { detail: null }));
+}
+
 // Request interceptor - Add auth token and tenant ID
 apiClient.interceptors.request.use(
   (config) => {
@@ -32,6 +41,31 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
+    if (
+      error.response?.status === 403
+      && typeof window !== 'undefined'
+      && typeof error.config?.url === 'string'
+      && error.config.url.includes('/wms/')
+    ) {
+      const message =
+        error.response?.data?.message
+        ?? error.response?.data?.error
+        ?? '';
+      const shouldResetTenantScope =
+        typeof message === 'string'
+        && (message.includes('Partner account is not active')
+          || message.includes('Tenant account is not active'));
+
+      if (shouldResetTenantScope && !error.config.__tenantScopeRetried) {
+        clearTenantScope();
+        error.config.__tenantScopeRetried = true;
+        if (error.config.headers) {
+          delete error.config.headers['X-Tenant-ID'];
+        }
+        return apiClient.request(error.config);
+      }
+    }
+
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('access_token');

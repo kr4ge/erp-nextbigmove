@@ -8,6 +8,7 @@ import {
   NotificationDomain,
   NotificationSystem,
   Prisma,
+  TenantStatus,
   WmsInvoiceSourceType,
   WmsInvoiceStatus,
   WmsPurchasingBatchStatus,
@@ -88,6 +89,7 @@ const INVOICE_STATUS_TRANSITIONS: Record<WmsInvoiceStatus, readonly WmsInvoiceSt
   [WmsInvoiceStatus.PAID_VERIFIED]: [],
   [WmsInvoiceStatus.CANCELED]: [],
 };
+const ACTIVE_WMS_TENANT_STATUSES = [TenantStatus.ACTIVE, TenantStatus.TRIAL] as const;
 
 const GLOBAL_WMS_INVOICE_SETTINGS_SCOPE = 'GLOBAL';
 
@@ -877,6 +879,37 @@ export class WmsPurchasingService {
     const logoUrl = settings?.logoAsset
       ? await this.mediaAssetsService.createSignedAssetUrl(settings.logoAsset)
       : null;
+    const issuerDocument = {
+      ...(invoiceDetail.issuer ?? {}),
+      companyName: settings?.companyName ?? this.readJsonString(invoiceDetail.issuer, 'companyName'),
+      companyAddress:
+        settings?.companyAddress ?? this.readJsonString(invoiceDetail.issuer, 'companyAddress'),
+      bankName: settings?.bankName ?? this.readJsonString(invoiceDetail.issuer, 'bankName'),
+      bankAccountName:
+        settings?.bankAccountName
+        ?? this.readJsonString(invoiceDetail.issuer, 'bankAccountName'),
+      bankAccountNumber:
+        settings?.bankAccountNumber
+        ?? this.readJsonString(invoiceDetail.issuer, 'bankAccountNumber'),
+      bankAccountType:
+        settings?.bankAccountType
+        ?? this.readJsonString(invoiceDetail.issuer, 'bankAccountType'),
+      bankBranch: settings?.bankBranch ?? this.readJsonString(invoiceDetail.issuer, 'bankBranch'),
+      paymentInstructions:
+        settings?.paymentInstructions
+        ?? this.readJsonString(invoiceDetail.issuer, 'paymentInstructions'),
+      footerNotes: settings?.footerNotes ?? this.readJsonString(invoiceDetail.issuer, 'footerNotes'),
+      logoUrl,
+    };
+    const billToDocument = {
+      ...(invoiceDetail.billTo ?? {}),
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      tenantSlug: tenant.slug,
+      companyName: tenant.billingCompanyName ?? tenant.name,
+      billingAddress:
+        tenant.billingAddress ?? this.readJsonString(invoiceDetail.billTo, 'billingAddress'),
+    };
 
     return {
       invoice: invoiceDetail,
@@ -887,19 +920,16 @@ export class WmsPurchasingService {
           name: tenant.name,
           slug: tenant.slug,
         },
-        issuer: {
-          ...(invoiceDetail.issuer ?? {}),
-          logoUrl,
-        },
-        billTo: invoiceDetail.billTo ?? {},
+        issuer: issuerDocument,
+        billTo: billToDocument,
         payment: {
-          bankName: this.readJsonString(invoiceDetail.issuer, 'bankName'),
-          bankAccountName: this.readJsonString(invoiceDetail.issuer, 'bankAccountName'),
-          bankAccountNumber: this.readJsonString(invoiceDetail.issuer, 'bankAccountNumber'),
-          bankAccountType: this.readJsonString(invoiceDetail.issuer, 'bankAccountType'),
-          bankBranch: this.readJsonString(invoiceDetail.issuer, 'bankBranch'),
-          paymentInstructions: this.readJsonString(invoiceDetail.issuer, 'paymentInstructions'),
-          footerNotes: this.readJsonString(invoiceDetail.issuer, 'footerNotes'),
+          bankName: this.readJsonString(issuerDocument, 'bankName'),
+          bankAccountName: this.readJsonString(issuerDocument, 'bankAccountName'),
+          bankAccountNumber: this.readJsonString(issuerDocument, 'bankAccountNumber'),
+          bankAccountType: this.readJsonString(issuerDocument, 'bankAccountType'),
+          bankBranch: this.readJsonString(issuerDocument, 'bankBranch'),
+          paymentInstructions: this.readJsonString(issuerDocument, 'paymentInstructions'),
+          footerNotes: this.readJsonString(issuerDocument, 'footerNotes'),
         },
         source: {
           type: invoiceDetail.sourceType,
@@ -4544,6 +4574,11 @@ export class WmsPurchasingService {
 
     if (isPlatformUser || hasGlobalWmsAccess) {
       const tenants = await this.prisma.tenant.findMany({
+        where: {
+          status: {
+            in: [...ACTIVE_WMS_TENANT_STATUSES],
+          },
+        },
         select: {
           id: true,
           name: true,
@@ -4582,8 +4617,13 @@ export class WmsPurchasingService {
       throw new ForbiddenException('Selected tenant is outside your WMS scope');
     }
 
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: clsTenantId },
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        id: clsTenantId,
+        status: {
+          in: [...ACTIVE_WMS_TENANT_STATUSES],
+        },
+      },
       select: {
         id: true,
         name: true,
@@ -4593,7 +4633,7 @@ export class WmsPurchasingService {
     });
 
     return {
-      activeTenantId: clsTenantId,
+      activeTenantId: tenant?.id ?? null,
       tenants: tenant
         ? [
             {

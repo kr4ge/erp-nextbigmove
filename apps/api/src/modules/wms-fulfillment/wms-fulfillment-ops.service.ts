@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  TenantStatus,
   WmsBasketStatus,
   WmsBasketUnitStatus,
   WmsFulfillmentAssignmentMode,
@@ -61,6 +62,7 @@ const FULFILLABLE_UNIT_STATUSES = [
 const CONFIRMED_POS_ORDER_STATUS = 1;
 const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
 const CANCELED_POS_ORDER_STATUS = 6;
+const ACTIVE_WMS_TENANT_STATUSES = [TenantStatus.ACTIVE, TenantStatus.TRIAL] as const;
 
 type BasketUnitRestoreState = {
   fromLocationId: string | null;
@@ -4125,6 +4127,11 @@ export class WmsFulfillmentOpsService {
 
     if (isPlatformUser || hasGlobalWmsAccess) {
       const tenants = await this.prisma.tenant.findMany({
+        where: {
+          status: {
+            in: [...ACTIVE_WMS_TENANT_STATUSES],
+          },
+        },
         select: {
           id: true,
           name: true,
@@ -4141,7 +4148,7 @@ export class WmsFulfillmentOpsService {
             ? null
             : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
               ? clsTenantId
-              : null;
+              : tenants[0]?.id ?? null;
 
       return {
         activeTenantId,
@@ -4167,8 +4174,13 @@ export class WmsFulfillmentOpsService {
       throw new ForbiddenException('Selected tenant is outside your WMS scope');
     }
 
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: clsTenantId },
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        id: clsTenantId,
+        status: {
+          in: [...ACTIVE_WMS_TENANT_STATUSES],
+        },
+      },
       select: {
         id: true,
         name: true,
@@ -4178,7 +4190,7 @@ export class WmsFulfillmentOpsService {
     });
 
     return {
-      activeTenantId: clsTenantId,
+      activeTenantId: tenant?.id ?? null,
       canAccessAllTenants: false,
       tenants: tenant
         ? [

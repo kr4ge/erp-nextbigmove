@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  TenantStatus,
   WmsLocationKind,
   WmsProductProfileStatus,
 } from '@prisma/client';
@@ -17,6 +18,7 @@ import { GetWmsVariationIntegrityAuditDto } from './dto/get-wms-variation-integr
 import { UpdateWmsProductProfileDto } from './dto/update-wms-product-profile.dto';
 
 const PRODUCT_SECTION_LOCATION_KINDS = [WmsLocationKind.SECTION] as const;
+const ACTIVE_WMS_TENANT_STATUSES = [TenantStatus.ACTIVE, TenantStatus.TRIAL] as const;
 
 type ProductProfileRecord = Prisma.WmsProductProfileGetPayload<{
   include: {
@@ -898,6 +900,11 @@ export class WmsProductsService {
 
     if (isPlatformUser || hasGlobalWmsAccess) {
       const tenants = await this.prisma.tenant.findMany({
+        where: {
+          status: {
+            in: [...ACTIVE_WMS_TENANT_STATUSES],
+          },
+        },
         select: {
           id: true,
           name: true,
@@ -914,7 +921,7 @@ export class WmsProductsService {
             ? null
             : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
               ? clsTenantId
-              : null;
+              : tenants[0]?.id ?? null;
 
       return {
         activeTenantId,
@@ -940,8 +947,13 @@ export class WmsProductsService {
       throw new ForbiddenException('Selected tenant is outside your WMS scope');
     }
 
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: clsTenantId },
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        id: clsTenantId,
+        status: {
+          in: [...ACTIVE_WMS_TENANT_STATUSES],
+        },
+      },
       select: {
         id: true,
         name: true,
@@ -951,7 +963,7 @@ export class WmsProductsService {
     });
 
     return {
-      activeTenantId: clsTenantId,
+      activeTenantId: tenant?.id ?? null,
       canAccessAllTenants: false,
       tenants: tenant
         ? [

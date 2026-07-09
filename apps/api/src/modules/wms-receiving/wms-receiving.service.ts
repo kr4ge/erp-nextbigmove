@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  TenantStatus,
   WmsInvoiceSourceType,
   WmsInvoiceStatus,
   WmsBasketUnitStatus,
@@ -75,6 +76,7 @@ type ReceivablePurchasingBatchRecord = Prisma.WmsPurchasingBatchGetPayload<{
     };
   };
 }>;
+const ACTIVE_WMS_TENANT_STATUSES = [TenantStatus.ACTIVE, TenantStatus.TRIAL] as const;
 
 type ReceivingBatchRecord = Prisma.WmsReceivingBatchGetPayload<{
   include: {
@@ -3262,6 +3264,11 @@ export class WmsReceivingService {
 
     if (isPlatformUser || hasGlobalWmsAccess) {
       const tenants = await this.prisma.tenant.findMany({
+        where: {
+          status: {
+            in: [...ACTIVE_WMS_TENANT_STATUSES],
+          },
+        },
         select: {
           id: true,
           name: true,
@@ -3278,7 +3285,7 @@ export class WmsReceivingService {
             ? null
             : clsTenantId && tenants.some((tenant) => tenant.id === clsTenantId)
               ? clsTenantId
-              : null;
+              : tenants[0]?.id ?? null;
 
       return {
         activeTenantId,
@@ -3304,8 +3311,13 @@ export class WmsReceivingService {
       throw new ForbiddenException('Selected tenant is outside your WMS scope');
     }
 
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: clsTenantId },
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        id: clsTenantId,
+        status: {
+          in: [...ACTIVE_WMS_TENANT_STATUSES],
+        },
+      },
       select: {
         id: true,
         name: true,
@@ -3315,7 +3327,7 @@ export class WmsReceivingService {
     });
 
     return {
-      activeTenantId: clsTenantId,
+      activeTenantId: tenant?.id ?? null,
       canAccessAllTenants: false,
       tenants: tenant
         ? [
