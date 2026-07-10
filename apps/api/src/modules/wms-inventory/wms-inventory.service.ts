@@ -45,6 +45,14 @@ const UNIT_STATUS_ORDER: WmsInventoryUnitStatus[] = [
   WmsInventoryUnitStatus.LOST,
   WmsInventoryUnitStatus.ARCHIVED,
 ];
+const UNIT_ON_HAND_EXCLUDED_STATUSES: WmsInventoryUnitStatus[] = [
+  WmsInventoryUnitStatus.RECEIVED,
+  WmsInventoryUnitStatus.STAGED,
+  WmsInventoryUnitStatus.DISPATCHED,
+  WmsInventoryUnitStatus.DAMAGED,
+  WmsInventoryUnitStatus.LOST,
+  WmsInventoryUnitStatus.ARCHIVED,
+];
 const ACTIVE_WMS_TENANT_STATUSES = [TenantStatus.ACTIVE, TenantStatus.TRIAL] as const;
 
 type InventoryUnitRecord = Prisma.WmsInventoryUnitGetPayload<{
@@ -505,12 +513,7 @@ export class WmsInventoryService {
     const stockControlScope: Prisma.WmsInventoryUnitWhereInput = {
       ...statusCountScope,
       status: {
-        notIn: [
-          WmsInventoryUnitStatus.DISPATCHED,
-          WmsInventoryUnitStatus.DAMAGED,
-          WmsInventoryUnitStatus.LOST,
-          WmsInventoryUnitStatus.ARCHIVED,
-        ],
+        notIn: UNIT_ON_HAND_EXCLUDED_STATUSES,
       },
     };
 

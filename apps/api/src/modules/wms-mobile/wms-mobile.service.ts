@@ -133,6 +133,14 @@ const STOCK_TRANSFERABLE_UNIT_STATUSES = [
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
 ] as const;
+const MOBILE_UNITS_ON_HAND_EXCLUDED_STATUSES = [
+  WmsInventoryUnitStatus.RECEIVED,
+  WmsInventoryUnitStatus.STAGED,
+  WmsInventoryUnitStatus.DISPATCHED,
+  WmsInventoryUnitStatus.DAMAGED,
+  WmsInventoryUnitStatus.LOST,
+  WmsInventoryUnitStatus.ARCHIVED,
+] as const;
 const FULFILLABLE_UNIT_STATUSES = [
   WmsInventoryUnitStatus.PUTAWAY,
   WmsInventoryUnitStatus.DEADSTOCK,
@@ -679,12 +687,7 @@ export class WmsMobileService {
         where: {
           ...unitScope,
           status: {
-            notIn: [
-              WmsInventoryUnitStatus.DISPATCHED,
-              WmsInventoryUnitStatus.DAMAGED,
-              WmsInventoryUnitStatus.LOST,
-              WmsInventoryUnitStatus.ARCHIVED,
-            ],
+            notIn: [...MOBILE_UNITS_ON_HAND_EXCLUDED_STATUSES],
           },
         },
       }),
@@ -1129,11 +1132,7 @@ export class WmsMobileService {
         where: {
           ...scope,
           status: {
-            notIn: [
-              WmsInventoryUnitStatus.DISPATCHED,
-              WmsInventoryUnitStatus.LOST,
-              WmsInventoryUnitStatus.ARCHIVED,
-            ],
+            notIn: [...MOBILE_UNITS_ON_HAND_EXCLUDED_STATUSES],
           },
         },
       }),
