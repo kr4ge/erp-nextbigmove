@@ -2855,7 +2855,7 @@ export default function DashboardPage() {
           {[
             { label: "Marketer leaderboard", href: "#marketer" },
             { label: "Team leaderboard", href: "#team" },
-            { label: "Marketing analytics", href: "/analytics/marketing" },
+            { label: "Marketing analytics", href: "/analytics/team-performance/marketing" },
           ].map((link) => (
             <a
               key={`${link.href}-${link.label}`}

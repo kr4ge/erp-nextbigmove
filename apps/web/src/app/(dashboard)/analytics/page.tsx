@@ -2,7 +2,7 @@
 
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
-import { BarChart3, TrendingUp, ShoppingCart, LineChart, Users } from 'lucide-react';
+import { BarChart3, ShoppingCart, LineChart, Users } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AnalyticsLandingPage() {
@@ -13,7 +13,7 @@ export default function AnalyticsLandingPage() {
         description="Choose a report area to view insights and performance metrics."
       />
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
         <Link href="/analytics/sales">
           <Card className="cursor-pointer transition-all hover:border-[#CBD5E1] hover:shadow-md">
             <div className="flex items-start gap-4">
@@ -30,16 +30,16 @@ export default function AnalyticsLandingPage() {
           </Card>
         </Link>
 
-        <Link href="/analytics/sales-by-team">
+        <Link href="/analytics/team-performance">
           <Card className="cursor-pointer transition-all hover:border-[#CBD5E1] hover:shadow-md">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#F5F3FF] text-[#7C3AED]">
                 <Users className="h-6 w-6" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-[#0F172A]">Sales by Team</h2>
+                <h2 className="text-lg font-semibold text-[#0F172A]">Team Performance</h2>
                 <p className="mt-1 text-sm text-[#475569]">
-                  Review sales attribution by team code and mapping without changing the canonical sales dashboard.
+                  Review sales-by-team and marketing performance inside one module with tabbed views.
                 </p>
               </div>
             </div>
@@ -56,22 +56,6 @@ export default function AnalyticsLandingPage() {
                 <h2 className="text-lg font-semibold text-[#0F172A]">Sales Performance</h2>
                 <p className="mt-1 text-sm text-[#475569]">
                   Track performance by sales assignee and shop to see upsell impact over time.
-                </p>
-              </div>
-            </div>
-          </Card>
-        </Link>
-
-        <Link href="/analytics/marketing">
-          <Card className="cursor-pointer transition-all hover:border-[#CBD5E1] hover:shadow-md">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB]">
-                <TrendingUp className="h-6 w-6" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-[#0F172A]">Marketing Analytics</h2>
-                <p className="mt-1 text-sm text-[#475569]">
-                  Track ad campaign performance, spend metrics, and ROI from Meta Ads integrations.
                 </p>
               </div>
             </div>

@@ -60,9 +60,8 @@ const baseNavigation: NavLink[] = [
     ),
     children: [
       { href: '/analytics/sales', label: 'Business Performance', icon: <StoreIcon className="h-4 w-4" /> },
-      { href: '/analytics/sales-by-team', label: 'Team Performance', icon: <Users className="h-4 w-4" /> },
+      { href: '/analytics/team-performance', label: 'Team Performance', icon: <Users className="h-4 w-4" /> },
       { href: '/analytics/sales-performance', label: 'Sales Operations', icon: <BarChart3 className="h-4 w-4" /> },
-      { href: '/analytics/marketing', label: 'Marketing Operations', icon: <Network className="h-4 w-4" /> },
     ],
   },
   {
@@ -266,9 +265,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       }
 
       const children = (link.children || []).filter((child) => {
-        if (child.href === '/analytics/marketing') return hasMarketing;
         if (child.href === '/analytics/sales') return hasSales;
-        if (child.href === '/analytics/sales-by-team') return hasSales;
+        if (child.href === '/analytics/team-performance') return hasSales || hasMarketing;
         if (child.href === '/analytics/sales-performance') return hasSalesPerformance;
         return false;
       });
