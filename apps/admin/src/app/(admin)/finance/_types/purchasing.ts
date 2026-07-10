@@ -9,6 +9,8 @@ export type WmsInvoiceStatus =
   | 'PAID_VERIFIED'
   | 'CANCELED';
 
+export type WmsInvoiceLineType = 'SOURCE' | 'CUSTOM';
+
 export type WmsLinkedInvoiceSummary = {
   id: string;
   sourceType: WmsInvoiceSourceType;
@@ -246,6 +248,7 @@ export type WmsInvoiceDetail = WmsInvoiceRow & {
   lines: Array<{
     id: string;
     lineNo: number;
+    lineType: WmsInvoiceLineType;
     storeId: string | null;
     store: {
       id: string;
@@ -372,6 +375,7 @@ export type WmsInvoiceLineInput = {
   quantity: number;
   unitRate: number;
   rateSource?: string;
+  lineType?: WmsInvoiceLineType;
 };
 
 export type CreateWmsInvoiceInput = {

@@ -376,9 +376,11 @@ export function PurchasingScreen() {
         isLoading={invoiceController.isLoadingInvoice}
         canEdit={invoiceController.canEdit}
         isUpdatingStatus={invoiceController.isUpdatingStatus}
+        isSavingInvoice={invoiceController.isSavingEditor}
         isPrinting={isPrintingInvoice}
         onClose={invoiceController.closeInvoice}
         onEditDraft={invoiceController.openEditModal}
+        onSaveLines={(invoiceId, lines) => invoiceController.updateInvoice(invoiceId, { lines })}
         onApplyStatus={(invoiceId, status) => invoiceController.updateInvoiceStatus(invoiceId, { status })}
         onPrint={handlePrintInvoice}
       />

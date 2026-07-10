@@ -1,4 +1,4 @@
-import { WmsInvoiceStatus } from '@prisma/client';
+import { WmsInvoiceLineType, WmsInvoiceStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -53,6 +53,10 @@ class CreateWmsInvoiceLineDto {
   @IsString()
   @MaxLength(80)
   rateSource?: string;
+
+  @IsOptional()
+  @IsEnum(WmsInvoiceLineType)
+  lineType?: WmsInvoiceLineType;
 }
 
 export class CreateWmsInvoiceDto {

@@ -9,6 +9,7 @@ import {
   NotificationSystem,
   Prisma,
   TenantStatus,
+  WmsInvoiceLineType,
   WmsInvoiceSourceType,
   WmsInvoiceStatus,
   WmsPurchasingBatchStatus,
@@ -324,6 +325,10 @@ type LinkedInvoiceSummary = {
 };
 
 const INVOICE_MUTABLE_STATUSES = new Set<WmsInvoiceStatus>([WmsInvoiceStatus.DRAFT]);
+const INVOICE_EDITABLE_STATUSES = new Set<WmsInvoiceStatus>([
+  WmsInvoiceStatus.DRAFT,
+  WmsInvoiceStatus.ISSUED,
+]);
 const INVOICE_REISSUABLE_STATUSES = new Set<WmsInvoiceStatus>([
   WmsInvoiceStatus.ISSUED,
   WmsInvoiceStatus.PAID_PENDING_VERIFY,
@@ -998,6 +1003,7 @@ export class WmsPurchasingService {
                 create: normalizedLines.map((line, index) => ({
                   tenantId: scope.activeTenantId!,
                   lineNo: index + 1,
+                  lineType: line.lineType,
                   storeId: line.storeId ?? null,
                   productId: line.productId ?? null,
                   variationId: line.variationId ?? null,
@@ -1099,8 +1105,8 @@ export class WmsPurchasingService {
         throw new ForbiddenException('Selected invoice is outside your WMS scope');
       }
 
-      if (current.status !== WmsInvoiceStatus.DRAFT) {
-        throw new BadRequestException('Only draft invoices can be edited');
+      if (!INVOICE_EDITABLE_STATUSES.has(current.status)) {
+        throw new BadRequestException('Only draft or issued invoices can be edited');
       }
 
       let totalsSnapshot: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput =
@@ -1117,7 +1123,10 @@ export class WmsPurchasingService {
           scope.activeTenantId!,
           body.lines,
         );
-        const totals = this.computeInvoiceTotals(normalizedLines);
+        const totals = this.applyInvoiceStatusToTotals(
+          this.computeInvoiceTotals(normalizedLines),
+          current.status,
+        );
         totalsSnapshot = totals as Prisma.InputJsonValue;
 
         await tx.wmsInvoiceLine.deleteMany({
@@ -1131,6 +1140,7 @@ export class WmsPurchasingService {
             invoiceId: current.id,
             tenantId: scope.activeTenantId!,
             lineNo: index + 1,
+            lineType: line.lineType,
             storeId: line.storeId ?? null,
             productId: line.productId ?? null,
             variationId: line.variationId ?? null,
@@ -3059,6 +3069,7 @@ export class WmsPurchasingService {
       const unitRate = this.toNumber(line.partnerUnitCost) ?? 0;
       return {
         lineNo: line.lineNo ?? index + 1,
+        lineType: WmsInvoiceLineType.SOURCE,
         storeId: line.storeId,
         productId: this.cleanOptionalText(line.productId),
         variationId: this.cleanOptionalText(line.variationId),
@@ -3147,6 +3158,7 @@ export class WmsPurchasingService {
       const unitRate = this.toNumber(line.unitCost) ?? 0;
       return {
         lineNo: line.lineNo ?? index + 1,
+        lineType: WmsInvoiceLineType.SOURCE,
         storeId: line.storeId,
         productId: this.cleanOptionalText(line.productId),
         variationId: this.cleanOptionalText(line.variationId),
@@ -3206,6 +3218,7 @@ export class WmsPurchasingService {
       allowReissueOnChange?: boolean;
       lines: Array<{
         lineNo: number;
+        lineType: WmsInvoiceLineType;
         storeId: string | null;
         productId: string | null;
         variationId: string | null;
@@ -3225,29 +3238,6 @@ export class WmsPurchasingService {
     },
   ) {
     const actorId = (this.cls.get('userId') as string | undefined) ?? null;
-    const totals = {
-      ...input.totals,
-      amountDue:
-        input.status === WmsInvoiceStatus.PAID_VERIFIED || input.status === WmsInvoiceStatus.CANCELED
-          ? 0
-          : input.totals.amountDue,
-    };
-
-    const sharedData = {
-      sourceType: input.sourceType,
-      sourceRefId: input.sourceRefId,
-      sourceRefCode: input.sourceRefCode,
-      status: input.status,
-      invoiceNumber: input.invoiceNumber,
-      issueDate: input.issueDate,
-      dueDate: input.dueDate,
-      currency: input.currency,
-      notes: input.notes,
-      issuerSnapshot: this.buildIssuerSnapshot(input.settings, input.tenant),
-      billToSnapshot: this.buildBillToSnapshot(input.tenant),
-      totalsSnapshot: totals as Prisma.InputJsonValue,
-      updatedById: actorId,
-    } satisfies Prisma.WmsInvoiceUncheckedUpdateInput;
 
     if (input.existingInvoiceId) {
       const existing = await tx.wmsInvoice.findUnique({
@@ -3262,6 +3252,34 @@ export class WmsPurchasingService {
       if (!existing) {
         throw new NotFoundException('Linked invoice was not found');
       }
+
+      const existingCustomLines = this.extractCustomInvoiceLines(existing.lines);
+      const combinedLines = this.resequenceInvoiceLines([
+        ...input.lines.map((line) => ({
+          ...line,
+          lineType: WmsInvoiceLineType.SOURCE,
+        })),
+        ...existingCustomLines,
+      ]);
+      const totals = this.applyInvoiceStatusToTotals(
+        this.computeInvoiceTotals(combinedLines),
+        input.status,
+      );
+      const sharedData = {
+        sourceType: input.sourceType,
+        sourceRefId: input.sourceRefId,
+        sourceRefCode: input.sourceRefCode,
+        status: input.status,
+        invoiceNumber: input.invoiceNumber,
+        issueDate: input.issueDate,
+        dueDate: input.dueDate,
+        currency: input.currency,
+        notes: input.notes,
+        issuerSnapshot: this.buildIssuerSnapshot(input.settings, input.tenant),
+        billToSnapshot: this.buildBillToSnapshot(input.tenant),
+        totalsSnapshot: totals as Prisma.InputJsonValue,
+        updatedById: actorId,
+      } satisfies Prisma.WmsInvoiceUncheckedUpdateInput;
 
       const hasMaterialChanges = this.hasLinkedInvoiceMaterialChanges(existing, input);
 
@@ -3279,9 +3297,10 @@ export class WmsPurchasingService {
           data: {
             ...sharedData,
             lines: {
-              create: input.lines.map((line) => ({
+              create: combinedLines.map((line) => ({
                 tenantId: input.tenant.id,
                 lineNo: line.lineNo,
+                lineType: line.lineType,
                 storeId: line.storeId,
                 productId: line.productId,
                 variationId: line.variationId,
@@ -3360,6 +3379,8 @@ export class WmsPurchasingService {
         input = {
           ...input,
           existingInvoiceId: null,
+          lines: combinedLines,
+          totals,
           invoiceNumber: await this.generateNextInvoiceNumberTx(
             tx,
             input.tenant.id,
@@ -3400,15 +3421,42 @@ export class WmsPurchasingService {
       }
     }
 
+    const createdLines = this.resequenceInvoiceLines(
+      input.lines.map((line) => ({
+        ...line,
+        lineType: line.lineType ?? WmsInvoiceLineType.SOURCE,
+      })),
+    );
+    const totals = this.applyInvoiceStatusToTotals(
+      this.computeInvoiceTotals(createdLines),
+      input.status,
+    );
+    const sharedData = {
+      sourceType: input.sourceType,
+      sourceRefId: input.sourceRefId,
+      sourceRefCode: input.sourceRefCode,
+      status: input.status,
+      invoiceNumber: input.invoiceNumber,
+      issueDate: input.issueDate,
+      dueDate: input.dueDate,
+      currency: input.currency,
+      notes: input.notes,
+      issuerSnapshot: this.buildIssuerSnapshot(input.settings, input.tenant),
+      billToSnapshot: this.buildBillToSnapshot(input.tenant),
+      totalsSnapshot: totals as Prisma.InputJsonValue,
+      updatedById: actorId,
+    } satisfies Prisma.WmsInvoiceUncheckedUpdateInput;
+
     const created = await tx.wmsInvoice.create({
       data: {
         tenantId: input.tenant.id,
         createdById: actorId,
         ...sharedData,
         lines: {
-          create: input.lines.map((line) => ({
+          create: createdLines.map((line) => ({
             tenantId: input.tenant.id,
             lineNo: line.lineNo,
+            lineType: line.lineType,
             storeId: line.storeId,
             productId: line.productId,
             variationId: line.variationId,
@@ -3435,7 +3483,7 @@ export class WmsPurchasingService {
         sourceRefId: input.sourceRefId,
         sourceRefCode: input.sourceRefCode,
         invoiceNumber: input.invoiceNumber,
-        lineCount: input.lines.length,
+        lineCount: createdLines.length,
         totalAmount: totals.totalAmount,
         origin: 'LINKED',
       }),
@@ -3476,6 +3524,7 @@ export class WmsPurchasingService {
       notes: string | null;
       lines: Array<{
         lineNo: number;
+        lineType: WmsInvoiceLineType;
         storeId: string | null;
         productId: string | null;
         variationId: string | null;
@@ -3505,6 +3554,7 @@ export class WmsPurchasingService {
     }
 
     const existingLines = existing.lines
+      .filter((line) => line.lineType !== WmsInvoiceLineType.CUSTOM)
       .map((line) => ({
         lineNo: line.lineNo,
         storeId: line.storeId ?? null,
@@ -3541,13 +3591,7 @@ export class WmsPurchasingService {
       }
     }
 
-    const existingTotals = this.readInvoiceTotals(existing.totalsSnapshot);
-    return (
-      (existingTotals.lineCount ?? 0) !== input.totals.lineCount
-      || (existingTotals.totalQuantity ?? 0) !== input.totals.totalQuantity
-      || (existingTotals.subtotal ?? 0) !== input.totals.subtotal
-      || (existingTotals.totalAmount ?? 0) !== input.totals.totalAmount
-    );
+    return false;
   }
 
   private async recordInvoiceActivityTx(
@@ -4199,6 +4243,7 @@ export class WmsPurchasingService {
       lines: invoice.lines.map((line) => ({
         id: line.id,
         lineNo: line.lineNo,
+        lineType: line.lineType,
         storeId: line.storeId,
         store: line.store
           ? {
@@ -4497,6 +4542,7 @@ export class WmsPurchasingService {
 
       return {
         lineNo: line.lineNo ?? index + 1,
+        lineType: line.lineType ?? WmsInvoiceLineType.CUSTOM,
         storeId: line.storeId ?? null,
         productId: this.cleanOptionalText(line.productId ?? null),
         variationId: this.cleanOptionalText(line.variationId ?? null),
@@ -4527,7 +4573,77 @@ export class WmsPurchasingService {
     };
   }
 
+  private applyInvoiceStatusToTotals(
+    totals: {
+      lineCount: number;
+      totalQuantity: number;
+      subtotal: number;
+      totalAmount: number;
+      amountDue: number;
+    },
+    status: WmsInvoiceStatus,
+  ) {
+    return {
+      ...totals,
+      amountDue:
+        status === WmsInvoiceStatus.PAID_VERIFIED || status === WmsInvoiceStatus.CANCELED
+          ? 0
+          : totals.totalAmount,
+    };
+  }
+
+  private resequenceInvoiceLines<
+    T extends {
+      lineNo: number;
+      lineType: WmsInvoiceLineType;
+      storeId: string | null;
+      productId: string | null;
+      variationId: string | null;
+      description: string;
+      quantity: number;
+      unitRate: number;
+      amount: number;
+      rateSource: string | null;
+    },
+  >(lines: T[]) {
+    return lines.map((line, index) => ({
+      ...line,
+      lineNo: index + 1,
+    }));
+  }
+
+  private extractCustomInvoiceLines(
+    lines: Array<{
+      lineNo: number;
+      lineType: WmsInvoiceLineType;
+      storeId: string | null;
+      productId: string | null;
+      variationId: string | null;
+      description: string;
+      quantity: number;
+      unitRate: Prisma.Decimal;
+      amount: Prisma.Decimal;
+      rateSource: string | null;
+    }>,
+  ) {
+    return lines
+      .filter((line) => line.lineType === WmsInvoiceLineType.CUSTOM)
+      .map((line) => ({
+        lineNo: line.lineNo,
+        lineType: WmsInvoiceLineType.CUSTOM,
+        storeId: line.storeId ?? null,
+        productId: line.productId ?? null,
+        variationId: line.variationId ?? null,
+        description: line.description,
+        quantity: line.quantity,
+        unitRate: this.toNumber(line.unitRate) ?? 0,
+        amount: this.toNumber(line.amount) ?? 0,
+        rateSource: line.rateSource ?? null,
+      }));
+  }
+
   private buildInvoiceLineSnapshot(line: {
+    lineType: WmsInvoiceLineType;
     storeId: string | null;
     productId: string | null;
     variationId: string | null;
@@ -4538,6 +4654,7 @@ export class WmsPurchasingService {
     rateSource: string | null;
   }) {
     return {
+      lineType: line.lineType,
       storeId: line.storeId,
       productId: line.productId,
       variationId: line.variationId,

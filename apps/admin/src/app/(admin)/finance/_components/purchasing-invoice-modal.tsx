@@ -1,8 +1,9 @@
 'use client';
 
-import { Download, FileSpreadsheet, PencilLine } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, Download, FilePlus, FileSpreadsheet, PencilLine, X } from 'lucide-react';
 import { WmsModal } from '../../_components/wms-modal';
-import type { WmsInvoiceDetail, WmsInvoiceStatus } from '../_types/purchasing';
+import type { WmsInvoiceDetail, WmsInvoiceLineInput, WmsInvoiceStatus } from '../_types/purchasing';
 import {
   formatDateTime,
   formatInvoiceSourceTypeLabel,
@@ -18,9 +19,11 @@ type PurchasingInvoiceModalProps = {
   isLoading: boolean;
   canEdit: boolean;
   isUpdatingStatus: boolean;
+  isSavingInvoice?: boolean;
   isPrinting?: boolean;
   onClose: () => void;
   onEditDraft: (invoiceId: string) => void;
+  onSaveLines: (invoiceId: string, lines: WmsInvoiceLineInput[]) => Promise<void>;
   onApplyStatus: (invoiceId: string, status: WmsInvoiceStatus) => Promise<void>;
   onPrint?: (invoiceId: string) => Promise<void> | void;
 };
@@ -39,15 +42,86 @@ export function PurchasingInvoiceModal({
   isLoading,
   canEdit,
   isUpdatingStatus,
+  isSavingInvoice = false,
   isPrinting = false,
   onClose,
   onEditDraft,
+  onSaveLines,
   onApplyStatus,
   onPrint,
 }: PurchasingInvoiceModalProps) {
   const issuer = (invoice?.issuer ?? {}) as Record<string, string | null | undefined>;
   const billTo = (invoice?.billTo ?? {}) as Record<string, string | null | undefined>;
   const actions = invoice ? STATUS_ACTIONS[invoice.status] : [];
+  const [isAddingCustomLine, setIsAddingCustomLine] = useState(false);
+  const [customDescription, setCustomDescription] = useState('');
+  const [customQuantity, setCustomQuantity] = useState('1');
+  const [customRate, setCustomRate] = useState('0.00');
+  const [customError, setCustomError] = useState<string | null>(null);
+  const canAddCustomLine = canEdit && invoice !== null && (invoice.status === 'DRAFT' || invoice.status === 'ISSUED');
+  const computedCustomAmount = useMemo(() => {
+    const quantity = Number(customQuantity);
+    const rate = Number(customRate);
+    if (!Number.isFinite(quantity) || !Number.isFinite(rate) || quantity <= 0 || rate < 0) {
+      return 0;
+    }
+
+    return Number((quantity * rate).toFixed(2));
+  }, [customQuantity, customRate]);
+
+  useEffect(() => {
+    setIsAddingCustomLine(false);
+    setCustomDescription('');
+    setCustomQuantity('1');
+    setCustomRate('0.00');
+    setCustomError(null);
+  }, [invoice?.id, open]);
+
+  const handleSaveCustomLine = async () => {
+    if (!invoice) {
+      return;
+    }
+
+    const description = customDescription.trim();
+    const quantity = Number(customQuantity);
+    const unitRate = Number(customRate);
+
+    if (!description) {
+      setCustomError('Item name is required.');
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isInteger(quantity)) {
+      setCustomError('Quantity must be a whole number greater than zero.');
+      return;
+    }
+    if (!Number.isFinite(unitRate) || unitRate < 0) {
+      setCustomError('Rate must be zero or greater.');
+      return;
+    }
+
+    setCustomError(null);
+
+    await onSaveLines(invoice.id, [
+      ...invoice.lines.map((line) => ({
+        lineNo: line.lineNo,
+        lineType: line.lineType,
+        storeId: line.storeId ?? undefined,
+        productId: line.productId ?? undefined,
+        variationId: line.variationId ?? undefined,
+        description: line.description,
+        quantity: line.quantity,
+        unitRate: line.unitRate,
+        rateSource: line.rateSource ?? undefined,
+      })),
+      {
+        description,
+        quantity,
+        unitRate: Number(unitRate.toFixed(2)),
+        lineType: 'CUSTOM',
+        rateSource: 'CUSTOM_ITEM',
+      },
+    ]);
+  };
 
   return (
     <WmsModal
@@ -151,7 +225,7 @@ export function PurchasingInvoiceModal({
                         <div className="space-y-1">
                           <p className="text-sm font-semibold text-primary">{line.description}</p>
                           <p className="text-[12px] text-[#7b8e9c]">
-                            {line.store?.name ?? 'Tenant-wide'}
+                            {line.store?.name ?? (line.lineType === 'CUSTOM' ? 'Custom item' : 'Tenant-wide')}
                             {line.rateSource ? ` · ${line.rateSource}` : ''}
                           </p>
                         </div>
@@ -167,6 +241,92 @@ export function PurchasingInvoiceModal({
                       </td>
                     </tr>
                   ))}
+                  {canAddCustomLine && !isAddingCustomLine ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingCustomLine(true)}
+                          className="btn btn-sm btn-ghost gap-2 rounded-xl"
+                        >
+                          <FilePlus className="h-4 w-4" />
+                          Add custom item
+                        </button>
+                      </td>
+                    </tr>
+                  ) : null}
+                  {canAddCustomLine && isAddingCustomLine ? (
+                    <tr className="bg-[#fbfcfc]">
+                      <td className="px-4 py-3 text-sm text-[#7b8e9c]">New</td>
+                      <td className="px-4 py-3">
+                        <div className="space-y-2">
+                          <input
+                            value={customDescription}
+                            onChange={(event) => setCustomDescription(event.target.value)}
+                            placeholder="Item name"
+                            className="input h-10 w-full"
+                            disabled={isSavingInvoice}
+                          />
+                          {customError ? (
+                            <p className="text-[12px] text-destructive">{customError}</p>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={customQuantity}
+                          onChange={(event) => setCustomQuantity(event.target.value)}
+                          className="input h-10 w-full text-right"
+                          disabled={isSavingInvoice}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={customRate}
+                          onChange={(event) => setCustomRate(event.target.value)}
+                          className="input h-10 w-full text-right"
+                          disabled={isSavingInvoice}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="text-sm font-semibold tabular-nums text-primary">
+                            {formatMoney(computedCustomAmount)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveCustomLine()}
+                            disabled={isSavingInvoice}
+                            className="btn btn-sm btn-primary-soft h-9 w-9 rounded-full p-0"
+                            aria-label="Save custom item"
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddingCustomLine(false);
+                              setCustomDescription('');
+                              setCustomQuantity('1');
+                              setCustomRate('0.00');
+                              setCustomError(null);
+                            }}
+                            disabled={isSavingInvoice}
+                            className="btn btn-sm btn-ghost h-9 w-9 rounded-full p-0"
+                            aria-label="Cancel custom item"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>

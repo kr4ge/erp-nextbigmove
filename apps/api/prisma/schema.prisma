@@ -676,6 +676,11 @@ enum WmsInvoiceStatus {
   CANCELED
 }
 
+enum WmsInvoiceLineType {
+  SOURCE
+  CUSTOM
+}
+
 enum WmsReceivingBatchStatus {
   DRAFT
   ARRIVED
@@ -1523,6 +1528,7 @@ model WmsInvoiceLine {
   invoice      WmsInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   tenantId     String     @db.Uuid
   tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lineType     WmsInvoiceLineType @default(SOURCE)
   storeId      String?    @db.Uuid
   store        PosStore?  @relation(fields: [storeId], references: [id], onDelete: SetNull)
   lineNo       Int
