@@ -23,6 +23,12 @@ import {
   Users,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
+import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
+import {
+  hasAnyAdminPermission,
+  WMS_PARTNERS_EDIT_PERMISSIONS,
+  WMS_PARTNERS_READ_PERMISSIONS,
+} from '@/lib/wms-permissions';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
@@ -74,6 +80,16 @@ export default function TenantDetailsPage() {
   const router = useRouter();
   const params = useParams();
   const tenantId = params.id as string;
+  const user = useMemo(() => readStoredAdminUser(), []);
+  const permissions = useMemo(() => readStoredPermissions(), []);
+  const canRead = useMemo(
+    () => hasAnyAdminPermission(user?.role, permissions, WMS_PARTNERS_READ_PERMISSIONS),
+    [permissions, user?.role],
+  );
+  const canEdit = useMemo(
+    () => hasAnyAdminPermission(user?.role, permissions, WMS_PARTNERS_EDIT_PERMISSIONS),
+    [permissions, user?.role],
+  );
 
   const [tenant, setTenant] = useState<TenantRecord | null>(null);
   const [error, setError] = useState('');
@@ -107,6 +123,11 @@ export default function TenantDetailsPage() {
   };
 
   useEffect(() => {
+    if (!canRead) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchTenant = async () => {
       try {
         const token = localStorage.getItem('access_token');
@@ -139,7 +160,7 @@ export default function TenantDetailsPage() {
     };
 
     fetchTenant();
-  }, [tenantId, router, setValue]);
+  }, [canRead, tenantId, router, setValue]);
 
   const refreshTenant = async () => {
     try {
@@ -154,6 +175,10 @@ export default function TenantDetailsPage() {
   };
 
   const onSubmit = async (data: UpdateTenantForm) => {
+    if (!canEdit) {
+      return;
+    }
+
     setError('');
     setSuccessMessage('');
     setIsSaving(true);
@@ -179,6 +204,10 @@ export default function TenantDetailsPage() {
   };
 
   const handleStatusAction = async (status: TenantStatus, confirmMessage?: string) => {
+    if (!canEdit) {
+      return;
+    }
+
     if (confirmMessage && !confirm(confirmMessage)) {
       return;
     }
@@ -239,7 +268,9 @@ export default function TenantDetailsPage() {
   if (!tenant) {
     return (
       <WmsPageShell title="Tenant" breadcrumb="Tenants">
-        <WmsInlineNotice tone="error">Tenant not found</WmsInlineNotice>
+        <WmsInlineNotice tone="error">
+          {canRead ? 'Tenant not found' : 'You do not have permission to view partners.'}
+        </WmsInlineNotice>
       </WmsPageShell>
     );
   }
@@ -292,6 +323,9 @@ export default function TenantDetailsPage() {
           {successMessage}
         </WmsInlineNotice>
       ) : null}
+      {!canEdit ? (
+        <WmsInlineNotice tone="info">You have read-only access to this partner.</WmsInlineNotice>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,360px)]">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -299,7 +333,7 @@ export default function TenantDetailsPage() {
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <WmsFormField label="Organization name">
-                  <input {...register('name')} type="text" className="input" />
+                  <input {...register('name')} type="text" className="input" disabled={!canEdit} />
                 </WmsFormField>
                 {errors.name ? (
                   <p className="mt-1.5 text-[12px] text-rose-600">{errors.name.message}</p>
@@ -313,6 +347,7 @@ export default function TenantDetailsPage() {
                       {...register('slug')}
                       type="text"
                       className="input font-mono tracking-tight"
+                      disabled={!canEdit}
                     />
                     <button
                       type="button"
@@ -343,7 +378,7 @@ export default function TenantDetailsPage() {
           <WmsCompactPanel title="Plan" icon={<ClipboardList className='panel-icon' />}>
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <WmsFormField label="Plan type">
-                <select {...register('planType')} className="input">
+                <select {...register('planType')} className="input" disabled={!canEdit}>
                   {planOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -353,7 +388,7 @@ export default function TenantDetailsPage() {
               </WmsFormField>
 
               <WmsFormField label="Status">
-                <select {...register('status')} className="input">
+                <select {...register('status')} className="input" disabled={!canEdit}>
                   {statusOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -369,6 +404,7 @@ export default function TenantDetailsPage() {
                   min={1}
                   max={10000}
                   className="input"
+                  disabled={!canEdit}
                 />
               </WmsFormField>
 
@@ -379,6 +415,7 @@ export default function TenantDetailsPage() {
                   min={1}
                   max={100}
                   className="input"
+                  disabled={!canEdit}
                 />
               </WmsFormField>
             </div>
@@ -395,6 +432,7 @@ export default function TenantDetailsPage() {
                     {...register('wmsFulfillmentGoLiveAt')}
                     type="datetime-local"
                     className="input"
+                    disabled={!canEdit}
                   />
                 </WmsFormField>
                 {errors.wmsFulfillmentGoLiveAt ? (
@@ -419,6 +457,7 @@ export default function TenantDetailsPage() {
                     type="text"
                     className="input"
                     placeholder="Defaults to tenant name if left blank"
+                    disabled={!canEdit}
                   />
                 </WmsFormField>
                 {errors.billingCompanyName ? (
@@ -435,6 +474,7 @@ export default function TenantDetailsPage() {
                     {...register('billingAddress')}
                     className="input min-h-[120px] py-3"
                     placeholder="Partner billing address"
+                    disabled={!canEdit}
                   />
                 </WmsFormField>
                 {errors.billingAddress ? (
@@ -450,7 +490,7 @@ export default function TenantDetailsPage() {
             </span>
             <button
               type="submit"
-              disabled={isSaving || !isDirty}
+              disabled={isSaving || !isDirty || !canEdit}
               className="btn btn-md btn-primary"
             >
               {isSaving ? 'Saving…' : 'Save changes'}
@@ -517,6 +557,7 @@ export default function TenantDetailsPage() {
                   label="Activate tenant"
                   onClick={() => handleStatusAction('ACTIVE')}
                   tone="primary"
+                  disabled={!canEdit}
                 />
               ) : null}
               {tenant.status === 'ACTIVE' ? (
@@ -527,6 +568,7 @@ export default function TenantDetailsPage() {
                     handleStatusAction('SUSPENDED', 'Are you sure you want to suspend this tenant?')
                   }
                   tone="warning"
+                  disabled={!canEdit}
                 />
               ) : null}
               <QuickActionButton
@@ -557,6 +599,7 @@ export default function TenantDetailsPage() {
                   )
                 }
                 className="btn btn-md btn-destructive btn-icon mt-3 w-full"
+                disabled={!canEdit}
               >
                 <AlertTriangle className="h-3.5 w-3.5" />
                 Cancel tenant
@@ -662,12 +705,14 @@ function QuickActionButton({
   href,
   onClick,
   tone = 'neutral',
+  disabled = false,
 }: {
   icon: ReactNode;
   label: string;
   href?: string;
   onClick?: () => void;
   tone?: QuickActionTone;
+  disabled?: boolean;
 }) {
   const toneClasses: Record<QuickActionTone, string> = {
     neutral:
@@ -683,7 +728,11 @@ function QuickActionButton({
 
   if (href) {
     return (
-      <Link href={href} className={`${base} ${toneClasses[tone]}`}>
+      <Link
+        href={href}
+        aria-disabled={disabled}
+        className={`${base} ${toneClasses[tone]} ${disabled ? 'pointer-events-none opacity-50' : ''}`}
+      >
         <span className="inline-flex items-center gap-2">
           {icon}
           {label}
@@ -693,7 +742,12 @@ function QuickActionButton({
   }
 
   return (
-    <button type="button" onClick={onClick} className={`${base} ${toneClasses[tone]}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`${base} ${toneClasses[tone]} ${disabled ? 'opacity-50' : ''}`}
+    >
       <span className="inline-flex items-center gap-2">
         {icon}
         {label}

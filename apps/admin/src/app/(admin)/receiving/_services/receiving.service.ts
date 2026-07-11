@@ -54,7 +54,7 @@ export async function fetchWmsReceivingBatchLabels(id: string, tenantId?: string
 
 export async function recordWmsReceivingBatchLabelPrint(
   id: string,
-  input: { action: 'PRINT' | 'REPRINT' },
+  input: { action: 'PRINT' | 'REPRINT'; unitIds?: string[] },
   tenantId?: string,
 ) {
   const response = await apiClient.post(`/wms/receiving/${id}/labels/print`, input, {
@@ -65,6 +65,7 @@ export async function recordWmsReceivingBatchLabelPrint(
     print: {
       action: 'PRINT' | 'REPRINT';
       itemCount: number;
+      scope: 'BATCH' | 'ITEM';
     };
     batch: {
       id: string;

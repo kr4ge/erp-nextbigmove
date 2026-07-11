@@ -32,6 +32,9 @@ const NOTICE_AUTO_DISMISS_MS = 5000;
 export function PurchasingScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const requestedInvoiceId = searchParams.get('invoiceId');
+  const requestedTenantId = searchParams.get('tenantId');
   const [activeTab, setActiveTab] = useState<'requests' | 'invoices'>('requests');
   const [invoicePrintError, setInvoicePrintError] = useState<string | null>(null);
   const [isPrintingInvoice, setIsPrintingInvoice] = useState(false);
@@ -66,26 +69,51 @@ export function PurchasingScreen() {
         invoicePaginationStart + (invoiceController.overview?.invoices.length ?? 0) - 1,
       );
 
-  useEffect(() => {
-    const tab = searchParams.get('tab');
-    const invoiceId = searchParams.get('invoiceId');
-    const tenantId = searchParams.get('tenantId');
+  const closeInvoiceModal = () => {
+    invoiceController.closeInvoice();
 
-    if (tab === 'invoices' || invoiceId) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete('invoiceId');
+
+    if (activeTab !== 'invoices') {
+      nextParams.delete('tab');
+    } else {
+      nextParams.set('tab', 'invoices');
+    }
+
+    const nextUrl = nextParams.toString() ? `/purchasing?${nextParams.toString()}` : '/purchasing';
+    router.replace(nextUrl, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (requestedTab === 'invoices' || requestedInvoiceId) {
       setActiveTab('invoices');
     }
+  }, [requestedInvoiceId, requestedTab]);
 
-    if (tenantId) {
-      invoiceController.setSelectedTenantId(tenantId);
+  useEffect(() => {
+    if (!requestedTenantId) {
+      return;
     }
 
-    if (invoiceId) {
-      invoiceController.openInvoice(invoiceId);
+    if (invoiceController.selectedTenantId === requestedTenantId) {
+      return;
     }
-  }, [
-    invoiceController,
-    searchParams,
-  ]);
+
+    invoiceController.setSelectedTenantId(requestedTenantId);
+  }, [invoiceController, requestedTenantId]);
+
+  useEffect(() => {
+    if (!requestedInvoiceId) {
+      return;
+    }
+
+    if (requestedTenantId && invoiceController.selectedTenantId !== requestedTenantId) {
+      return;
+    }
+
+    invoiceController.openInvoice(requestedInvoiceId);
+  }, [invoiceController, requestedInvoiceId, requestedTenantId]);
 
   const handlePrintInvoice = async (invoiceId: string) => {
     if (isPrintingInvoice) {
@@ -378,7 +406,7 @@ export function PurchasingScreen() {
         isUpdatingStatus={invoiceController.isUpdatingStatus}
         isSavingInvoice={invoiceController.isSavingEditor}
         isPrinting={isPrintingInvoice}
-        onClose={invoiceController.closeInvoice}
+        onClose={closeInvoiceModal}
         onEditDraft={invoiceController.openEditModal}
         onSaveLines={(invoiceId, lines) => invoiceController.updateInvoice(invoiceId, { lines })}
         onApplyStatus={(invoiceId, status) => invoiceController.updateInvoiceStatus(invoiceId, { status })}

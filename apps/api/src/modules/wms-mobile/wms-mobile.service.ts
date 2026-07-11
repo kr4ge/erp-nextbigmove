@@ -12826,7 +12826,13 @@ export class WmsMobileService {
     actorId: string | null,
     now: Date,
   ) {
-    const [totalUnits, completedUnits, stagedUnits] = await Promise.all([
+    const [batch, totalUnits, completedUnits, stagedUnits] = await Promise.all([
+      tx.wmsReceivingBatch.findUnique({
+        where: { id: receivingBatchId },
+        select: {
+          status: true,
+        },
+      }),
       tx.wmsInventoryUnit.count({
         where: {
           receivingBatchId,
@@ -12866,6 +12872,14 @@ export class WmsMobileService {
         },
       }),
     ]);
+
+    if (!batch) {
+      throw new NotFoundException('Receiving batch was not found');
+    }
+
+    if (batch.status === WmsReceivingBatchStatus.CANCELED) {
+      return;
+    }
 
     const nextStatus = deriveReceivingBatchStatus({
       totalUnits,

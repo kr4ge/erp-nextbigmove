@@ -48,7 +48,7 @@ export const WMS_NAV_ITEMS: WmsNavItem[] = [
     href: '/tenants',
     label: 'Partners',
     icon: Building2,
-    platformOnly: true,
+    permission: 'wms.partners.read',
   },
   {
     href: '/purchasing',

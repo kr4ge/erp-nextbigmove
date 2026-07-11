@@ -2576,7 +2576,17 @@ export class WmsReceivingService {
 
     this.assertTenantScope(batch.tenantId, scope.activeTenantId);
 
-    const unitIds = batch.inventoryUnits.map((unit) => unit.id);
+    const batchUnitIds = batch.inventoryUnits.map((unit) => unit.id);
+    const requestedUnitIds = body.unitIds?.filter((unitId) => unitId.trim().length > 0) ?? [];
+    const unitIds = requestedUnitIds.length > 0 ? requestedUnitIds : batchUnitIds;
+
+    if (requestedUnitIds.length > 0) {
+      const allowedUnitIds = new Set(batchUnitIds);
+      const invalidUnitId = requestedUnitIds.find((unitId) => !allowedUnitIds.has(unitId));
+      if (invalidUnitId) {
+        throw new BadRequestException('One or more selected units do not belong to this receiving batch');
+      }
+    }
 
     const updatedBatch = await this.prisma.$transaction(async (tx) => {
       const nextBatch = await tx.wmsReceivingBatch.update({
@@ -2645,6 +2655,7 @@ export class WmsReceivingService {
       print: {
         action,
         itemCount: unitIds.length,
+        scope: requestedUnitIds.length > 0 ? 'ITEM' : 'BATCH',
       },
       batch: updatedBatch,
     };
@@ -3275,7 +3286,13 @@ export class WmsReceivingService {
       now: Date;
     },
   ) {
-    const [totalUnits, putAwayUnits, completedUnits, stagedUnits] = await Promise.all([
+    const [batch, totalUnits, putAwayUnits, completedUnits, stagedUnits] = await Promise.all([
+      tx.wmsReceivingBatch.findUnique({
+        where: { id: params.batchId },
+        select: {
+          status: true,
+        },
+      }),
       tx.wmsInventoryUnit.count({
         where: {
           receivingBatchId: params.batchId,
@@ -3327,6 +3344,27 @@ export class WmsReceivingService {
       }),
     ]);
 
+    if (!batch) {
+      throw new NotFoundException('Receiving batch was not found');
+    }
+
+    if (batch.status === WmsReceivingBatchStatus.CANCELED) {
+      return tx.wmsReceivingBatch.findUniqueOrThrow({
+        where: { id: params.batchId },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+          completedAt: true,
+          updatedAt: true,
+        },
+      }).then((nextBatch) => ({
+        ...nextBatch,
+        totalUnits,
+        putAwayUnits,
+      }));
+    }
+
     const nextStatus = deriveReceivingBatchStatus({
       totalUnits,
       stagedUnits,
@@ -3372,6 +3410,10 @@ export class WmsReceivingService {
     }>,
     fallbackStatus: WmsReceivingBatchStatus,
   ) {
+    if (fallbackStatus === WmsReceivingBatchStatus.CANCELED) {
+      return WmsReceivingBatchStatus.CANCELED;
+    }
+
     if (units.length === 0) {
       return fallbackStatus;
     }

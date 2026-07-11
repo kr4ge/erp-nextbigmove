@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Building, Plus } from 'lucide-react';
 import apiClient from '@/lib/api-client';
+import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
+import {
+  hasAnyAdminPermission,
+  WMS_PARTNERS_READ_PERMISSIONS,
+  WMS_PARTNERS_WRITE_PERMISSIONS,
+} from '@/lib/wms-permissions';
 import { WmsPageShell } from '../_components/wms-page-shell';
 import { WmsInlineNotice } from '../_components/wms-inline-notice';
 import { WmsWorkspaceCard } from '../_components/wms-workspace-card';
@@ -14,6 +20,16 @@ import type { TenantPlan, TenantRecord, TenantStatus } from './_types/tenant';
 
 export default function TenantsPage() {
   const router = useRouter();
+  const user = useMemo(() => readStoredAdminUser(), []);
+  const permissions = useMemo(() => readStoredPermissions(), []);
+  const canRead = useMemo(
+    () => hasAnyAdminPermission(user?.role, permissions, WMS_PARTNERS_READ_PERMISSIONS),
+    [permissions, user?.role],
+  );
+  const canWrite = useMemo(
+    () => hasAnyAdminPermission(user?.role, permissions, WMS_PARTNERS_WRITE_PERMISSIONS),
+    [permissions, user?.role],
+  );
   const [tenants, setTenants] = useState<TenantRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -37,6 +53,11 @@ export default function TenantsPage() {
   };
 
   useEffect(() => {
+    if (!canRead) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchTenants = async () => {
       try {
         const token = localStorage.getItem('access_token');
@@ -58,7 +79,7 @@ export default function TenantsPage() {
     };
 
     fetchTenants();
-  }, [router]);
+  }, [canRead, router]);
 
   const summary = useMemo(() => {
     const total = tenants.length;
@@ -92,15 +113,20 @@ export default function TenantsPage() {
       <WmsPageShell
         title="Tenants"
         actions={
-          <Link
-            href="/tenants/create"
-            className="btn btn-md btn-primary btn-icon"
-          >
-            <Plus className="h-4 w-4" />
-            New Tenant
-          </Link>
+          canWrite ? (
+            <Link
+              href="/tenants/create"
+              className="btn btn-md btn-primary btn-icon"
+            >
+              <Plus className="h-4 w-4" />
+              New Tenant
+            </Link>
+          ) : null
         }
       >
+        {!canRead ? (
+          <WmsInlineNotice tone="error">You do not have permission to view partners.</WmsInlineNotice>
+        ) : null}
         {error ? <WmsInlineNotice tone="error">{error}</WmsInlineNotice> : null}
 
         <div className="grid gap-3 xl:grid-cols-4">

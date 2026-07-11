@@ -122,12 +122,36 @@ export function InventoryStockReceivingScreen() {
         open={receiving.labelsModal.open}
         isLoading={receiving.isLoadingLabelsBatch}
         isRecordingPrint={receiving.isRecordingBatchLabelPrint}
+        isEnsuringInvoice={receiving.isEnsuringBatchInvoice}
         batch={receiving.labelsModal.batch}
         errorMessage={receiving.labelsErrorMessage}
         canPrintLabels={receiving.canPrintLabels}
         canOpenTransfer={receiving.canPutAway}
         onRecordPrint={receiving.recordBatchLabelPrint}
         onOpenTransfer={openTransfer}
+        onOpenInvoice={(invoiceId) => {
+          const tenantId = receiving.labelsModal.batch?.tenantId ?? receiving.selectedTenantId;
+          const query = new URLSearchParams({
+            tab: 'invoices',
+            invoiceId,
+            ...(tenantId ? { tenantId } : {}),
+          });
+          router.push(`/purchasing?${query.toString()}`);
+        }}
+        onEnsureInvoice={async (batchId) => {
+          const invoice = await receiving.ensureBatchInvoice(
+            batchId,
+            receiving.labelsModal.batch?.tenantId ?? receiving.selectedTenantId,
+          );
+          const query = new URLSearchParams({
+            tab: 'invoices',
+            invoiceId: invoice.id,
+            ...(receiving.labelsModal.batch?.tenantId || receiving.selectedTenantId
+              ? { tenantId: receiving.labelsModal.batch?.tenantId ?? receiving.selectedTenantId! }
+              : {}),
+          });
+          router.push(`/purchasing?${query.toString()}`);
+        }}
         onClose={receiving.closeLabelsModal}
       />
 

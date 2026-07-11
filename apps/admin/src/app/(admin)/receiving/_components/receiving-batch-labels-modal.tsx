@@ -22,7 +22,7 @@ type ReceivingBatchLabelsModalProps = {
   canPrintLabels?: boolean;
   canOpenTransfer?: boolean;
   isEnsuringInvoice?: boolean;
-  onRecordPrint: (batchId: string, action: 'PRINT' | 'REPRINT') => Promise<void>;
+  onRecordPrint: (batchId: string, action: 'PRINT' | 'REPRINT', unitIds?: string[]) => Promise<void>;
   onOpenTransfer?: (batchId: string) => void;
   onOpenInvoice?: (invoiceId: string) => void;
   onEnsureInvoice?: (batchId: string) => Promise<void>;
@@ -56,6 +56,47 @@ export function ReceivingBatchLabelsModal({
     () => batch?.units.slice(previewStartIndex, previewEndIndex) ?? [],
     [batch?.units, previewEndIndex, previewStartIndex],
   );
+  const itemGroups = useMemo(() => {
+    if (!batch) {
+      return [];
+    }
+
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        productName: string;
+        productCustomId: string | null;
+        variationId: string;
+        unitIds: string[];
+        unitCount: number;
+        printedUnitCount: number;
+      }
+    >();
+
+    batch.units.forEach((unit) => {
+      const key = unit.variationId || `${unit.productId}:${unit.productName}`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.unitIds.push(unit.id);
+        existing.unitCount += 1;
+        existing.printedUnitCount += unit.labelPrintCount > 0 ? 1 : 0;
+        return;
+      }
+
+      groups.set(key, {
+        key,
+        productName: unit.productName,
+        productCustomId: unit.productCustomId,
+        variationId: unit.variationId,
+        unitIds: [unit.id],
+        unitCount: 1,
+        printedUnitCount: unit.labelPrintCount > 0 ? 1 : 0,
+      });
+    });
+
+    return Array.from(groups.values()).sort((left, right) => left.productName.localeCompare(right.productName));
+  }, [batch]);
 
   const unitsWithMarkup = useMemo(
     () =>
@@ -95,25 +136,32 @@ export function ReceivingBatchLabelsModal({
     setPreviewPage(totalPreviewPages);
   }, [previewPage, totalPreviewPages]);
 
-  const handlePrintBatch = async () => {
+  const handlePrint = async (unitIds?: string[]) => {
     if (!batch || !canPrintLabels) {
       return;
     }
 
     try {
       setPrintError(null);
-      const action: 'PRINT' | 'REPRINT' = batch.labelPrintCount > 0 ? 'REPRINT' : 'PRINT';
+      const scopedUnits = unitIds?.length
+        ? batch.units.filter((unit) => unitIds.includes(unit.id))
+        : batch.units;
+      const action: 'PRINT' | 'REPRINT' = scopedUnits.every((unit) => unit.labelPrintCount > 0) ? 'REPRINT' : 'PRINT';
       printReceivingBatchLabels({
-        batchCode: batch.code,
-        units: batch.units.map((unit) => ({
+        batchCode: unitIds?.length ? `${batch.code} Item` : batch.code,
+        units: scopedUnits.map((unit) => ({
           barcode: normalizeBarcodeValue(unit.barcode),
         })),
       });
-      await onRecordPrint(batch.id, action);
+      await onRecordPrint(batch.id, action, unitIds);
       setDidPrintInSession(true);
     } catch (error) {
       setPrintError(error instanceof Error ? error.message : 'Unable to open print dialog');
     }
+  };
+
+  const handlePrintBatch = async () => {
+    await handlePrint();
   };
 
   if (!open) {
@@ -224,6 +272,55 @@ export function ReceivingBatchLabelsModal({
               ) : null}
             </div>
           </div>
+
+          {itemGroups.length > 1 ? (
+            <div className="card">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="card-label">Items In Batch</p>
+                  <p className="mt-1 text-[12px] text-[#5f7483]">
+                    Print one item group only when operations do not need the full batch sheet.
+                  </p>
+                </div>
+                <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3 py-1 text-[11px] font-semibold text-primary">
+                  {itemGroups.length} items
+                </span>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {itemGroups.map((group) => {
+                  const groupActionLabel = group.printedUnitCount === group.unitCount ? 'Reprint Item' : 'Print Item';
+
+                  return (
+                    <div
+                      key={group.key}
+                      className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dce4ea] bg-[#fbfcfc] px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-primary">{group.productName}</p>
+                        <p className="mt-0.5 text-[11px] text-[#6a7f8e]">
+                          {group.productCustomId ? `SKU ${group.productCustomId} · ` : ''}
+                          {group.unitCount} label{group.unitCount === 1 ? '' : 's'}
+                          {group.printedUnitCount > 0 ? ` · ${group.printedUnitCount} printed before` : ''}
+                        </p>
+                      </div>
+                      {canPrintLabels ? (
+                        <button
+                          type="button"
+                          onClick={() => void handlePrint(group.unitIds)}
+                          disabled={isLoading || isRecordingPrint}
+                          className="btn btn-sm btn-outline btn-icon shrink-0"
+                        >
+                          <Printer className="h-3.5 w-3.5" />
+                          {groupActionLabel}
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {batch.units.length > LABEL_PREVIEW_PAGE_SIZE ? (
             <div className="flex items-center justify-between gap-3 rounded-[16px] border border-[#dce4ea] bg-white px-3 py-2">

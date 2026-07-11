@@ -47,6 +47,10 @@ type StoreTransferModalState = {
   errorMessage: string | null;
 };
 
+type BulkAdjustModalState = {
+  open: boolean;
+};
+
 const SEARCH_DEBOUNCE_MS = 300;
 
 function buildInventoryProductFilterValue(
@@ -102,6 +106,9 @@ export function useInventoryController() {
     targetProfileId: '',
     notes: '',
     errorMessage: null,
+  });
+  const [bulkAdjustModal, setBulkAdjustModal] = useState<BulkAdjustModalState>({
+    open: false,
   });
 
   useEffect(() => {
@@ -261,6 +268,7 @@ export function useInventoryController() {
     const selectedIds = new Set(selectedUnitIds);
     return (overviewQuery.data?.units ?? []).filter((unit) => selectedIds.has(unit.id));
   }, [overviewQuery.data?.units, selectedUnitIds]);
+  const selectedBulkAdjustSourceUnitId = selectedUnits[0]?.id ?? null;
   const selectedSourceProfileId = selectedUnits.length > 0
     ? selectedUnits[0]?.productProfileId
     : undefined;
@@ -294,6 +302,17 @@ export function useInventoryController() {
     queryKey: ['wms-inventory-unit-transfer-options', unitModal.unit?.id ?? null, selectedTenantId ?? 'default-tenant'],
     queryFn: () => fetchWmsInventoryUnitTransferOptions(unitModal.unit!.id, selectedTenantId),
     enabled: Boolean(unitModal.open && unitModal.unit?.id),
+  });
+
+  const bulkAdjustTransferOptionsQuery = useQuery({
+    queryKey: [
+      'wms-inventory-bulk-adjust-transfer-options',
+      selectedBulkAdjustSourceUnitId,
+      selectedTenantId ?? 'default-tenant',
+      bulkAdjustModal.open,
+    ],
+    queryFn: () => fetchWmsInventoryUnitTransferOptions(selectedBulkAdjustSourceUnitId!, selectedTenantId),
+    enabled: Boolean(bulkAdjustModal.open && selectedBulkAdjustSourceUnitId),
   });
 
   const storeTransferOptionsQuery = useQuery({
@@ -535,6 +554,14 @@ export function useInventoryController() {
     });
   }
 
+  function openBulkAdjustModal() {
+    setBulkAdjustModal({ open: true });
+  }
+
+  function closeBulkAdjustModal() {
+    setBulkAdjustModal({ open: false });
+  }
+
   async function submitStoreTransfer() {
     try {
       setStoreTransferModal((current) => ({ ...current, errorMessage: null }));
@@ -571,6 +598,7 @@ export function useInventoryController() {
     searchText,
     unitModal,
     storeTransferModal,
+    bulkAdjustModal,
     canPrintLabels: hasAnyAdminPermission(
       user?.role ?? null,
       permissions,
@@ -594,6 +622,7 @@ export function useInventoryController() {
     isRecordingUnitLabelPrint: recordUnitLabelPrintMutation.isPending,
     unitMovements: unitMovementsQuery.data?.movements ?? [],
     transferOptions: unitTransferOptionsQuery.data ?? null,
+    bulkAdjustTransferOptions: bulkAdjustTransferOptionsQuery.data ?? null,
     storeTransferOptions: storeTransferOptionsQuery.data ?? null,
     storeTransferPreview: storeTransferPreviewQuery.data ?? null,
     storeTransferPreviewErrorMessage: storeTransferPreviewQuery.error
@@ -602,6 +631,8 @@ export function useInventoryController() {
     isLoadingUnitMovements: unitMovementsQuery.isLoading || unitMovementsQuery.isFetching,
     isLoadingUnitTransferOptions:
       unitTransferOptionsQuery.isLoading || unitTransferOptionsQuery.isFetching,
+    isLoadingBulkAdjustTransferOptions:
+      bulkAdjustTransferOptionsQuery.isLoading || bulkAdjustTransferOptionsQuery.isFetching,
     isLoadingStoreTransferOptions:
       storeTransferOptionsQuery.isLoading || storeTransferOptionsQuery.isFetching,
     isLoadingStoreTransferPreview:
@@ -626,6 +657,8 @@ export function useInventoryController() {
     clearUnitSelection: () => setSelectedUnitIds([]),
     openStoreTransferModal,
     closeStoreTransferModal,
+    openBulkAdjustModal,
+    closeBulkAdjustModal,
     setStoreTransferTargetStoreId: (targetStoreId: string) =>
       setStoreTransferModal((current) => ({
         ...current,

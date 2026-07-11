@@ -54,6 +54,9 @@ type RoleDef = {
 
 const WMS_PERMISSION_KEYS = [
   'wms.core.read',
+  'wms.partners.read',
+  'wms.partners.write',
+  'wms.partners.edit',
   'wms.users.read',
   'wms.users.write',
   'wms.roles.read',
@@ -164,6 +167,9 @@ const PERMISSIONS: { key: string; description: string }[] = [
   { key: 'kpi.funnel.read', description: 'Read funnel KPI placeholder pages' },
   { key: 'kpi.sales.read', description: 'Read sales KPI placeholder pages' },
   { key: 'wms.core.read', description: 'Access the WMS workspace shell and stock-truth foundation' },
+  { key: 'wms.partners.read', description: 'Read WMS partner directory and partner details' },
+  { key: 'wms.partners.write', description: 'Create WMS partners' },
+  { key: 'wms.partners.edit', description: 'Edit WMS partner settings and status' },
   { key: 'wms.users.read', description: 'Read WMS staff users and access assignments' },
   { key: 'wms.users.write', description: 'Manage WMS staff users and access assignments' },
   { key: 'wms.roles.read', description: 'Read WMS roles and permissions' },
@@ -366,6 +372,7 @@ const ROLES: RoleDef[] = [
     scope: RoleScope.GLOBAL,
     permissions: [
       'wms.core.read',
+      'wms.partners.read',
       'wms.purchasing.read',
       'wms.purchasing.edit',
       'wms.purchasing.post_receiving',
@@ -410,6 +417,7 @@ const ROLES: RoleDef[] = [
     scope: RoleScope.GLOBAL,
     permissions: [
       'wms.core.read',
+      'wms.partners.read',
       'wms.purchasing.read',
       'wms.invoice.read',
       'wms.warehouses.read',

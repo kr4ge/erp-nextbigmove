@@ -8,6 +8,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { ArrowLeft, Building2, ClipboardCheck, Crown, ShieldCheck, Sparkles, UserCog, User as UserIcon } from 'lucide-react';
 import apiClient from '@/lib/api-client';
+import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
+import {
+  hasAnyAdminPermission,
+  WMS_PARTNERS_WRITE_PERMISSIONS,
+} from '@/lib/wms-permissions';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
@@ -146,6 +151,9 @@ const clampTrialDaysInput = (value: string) => {
 
 export default function CreateTenantPage() {
   const router = useRouter();
+  const user = readStoredAdminUser();
+  const permissions = readStoredPermissions();
+  const canWrite = hasAnyAdminPermission(user?.role, permissions, WMS_PARTNERS_WRITE_PERMISSIONS);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -231,6 +239,9 @@ export default function CreateTenantPage() {
         </Link>
       }
     >
+      {!canWrite ? (
+        <WmsInlineNotice tone="error">You do not have permission to create partners.</WmsInlineNotice>
+      ) : null}
       {error ? <WmsInlineNotice tone="error">{error}</WmsInlineNotice> : null}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -482,7 +493,7 @@ export default function CreateTenantPage() {
           </Link>
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || !canWrite}
             className="btn btn-md btn-primary"
           >
             {isLoading ? 'Creating…' : 'Create tenant'}

@@ -282,10 +282,13 @@ export function useReceivingController() {
   });
 
   const recordBatchLabelPrintMutation = useMutation({
-    mutationFn: (input: { batchId: string; action: 'PRINT' | 'REPRINT' }) =>
+    mutationFn: (input: { batchId: string; action: 'PRINT' | 'REPRINT'; unitIds?: string[] }) =>
       recordWmsReceivingBatchLabelPrint(
         input.batchId,
-        { action: input.action },
+        {
+          action: input.action,
+          ...(input.unitIds?.length ? { unitIds: input.unitIds } : {}),
+        },
         labelsModalState.tenantId ?? selectedTenantId,
       ),
     onSuccess: async (_, variables) => {
@@ -524,9 +527,17 @@ export function useReceivingController() {
     });
   }
 
-  async function recordBatchLabelPrint(batchId: string, action: 'PRINT' | 'REPRINT') {
+  async function recordBatchLabelPrint(
+    batchId: string,
+    action: 'PRINT' | 'REPRINT',
+    unitIds?: string[],
+  ) {
     try {
-      await recordBatchLabelPrintMutation.mutateAsync({ batchId, action });
+      await recordBatchLabelPrintMutation.mutateAsync({
+        batchId,
+        action,
+        ...(unitIds?.length ? { unitIds } : {}),
+      });
     } catch (error) {
       throw new Error(getErrorMessage(error));
     }

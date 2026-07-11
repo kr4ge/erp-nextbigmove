@@ -7,6 +7,7 @@ import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
 import { useInventoryController } from '../_hooks/use-inventory-controller';
 import type { WmsInventoryUnitStatus } from '../_types/inventory';
+import { InventoryBulkAdjustModal } from './inventory-bulk-adjust-modal';
 import { InventoryBulkActionsMenu } from './inventory-bulk-actions-menu';
 import { InventoryBulkArchiveModal } from './inventory-bulk-archive-modal';
 import { InventoryFilterBar } from './inventory-filter-bar';
@@ -29,8 +30,12 @@ const BULK_ARCHIVABLE_STATUSES = new Set<WmsInventoryUnitStatus>([
 export function InventoryStockScreen() {
   const inventory = useInventoryController();
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
+  const selectedUnitCount = inventory.selectedUnitIds.length;
+  const closeBulkAdjustModal = inventory.closeBulkAdjustModal;
   const canSelectUnits = inventory.canTransferUnits || inventory.canAdjustUnits;
   const canTransferSelectedUnits = inventory.canTransferUnits;
+  const canAdjustSelectedUnits = inventory.canAdjustUnits
+    && selectedUnitCount > 0;
   const archiveBlockedUnit = useMemo(
     () => inventory.selectedUnits.find((unit) => !BULK_ARCHIVABLE_STATUSES.has(unit.status)) ?? null,
     [inventory.selectedUnits],
@@ -55,10 +60,22 @@ export function InventoryStockScreen() {
   };
 
   useEffect(() => {
-    if (inventory.selectedUnitIds.length === 0) {
+    if (selectedUnitCount === 0) {
       setBulkArchiveOpen(false);
+      closeBulkAdjustModal();
     }
-  }, [inventory.selectedUnitIds.length]);
+  }, [closeBulkAdjustModal, selectedUnitCount]);
+
+  const handleSubmitBulkAdjust = async (input: {
+    unitIds: string[];
+    targetStatus: 'STAGED' | 'PUTAWAY' | 'DEADSTOCK' | 'RTS' | 'DAMAGED' | 'LOST' | 'ARCHIVED';
+    targetLocationId?: string;
+    notes?: string;
+  }) => {
+    await inventory.adjustUnit(input);
+    inventory.clearUnitSelection();
+    inventory.closeBulkAdjustModal();
+  };
 
   return (
     <div className="space-y-5">
@@ -106,15 +123,18 @@ export function InventoryStockScreen() {
                     className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#d7e0e7] bg-white px-3 text-[12px] font-semibold text-[#4d6677] transition hover:border-[#c6d4dd] hover:bg-[#f8fafb]"
                   >
                     <X className="h-3.5 w-3.5" />
-                    Clear {inventory.selectedUnitIds.length}
+                    Clear {selectedUnitCount}
                   </button>
 
                   <InventoryBulkActionsMenu
-                    selectedCount={inventory.selectedUnitIds.length}
+                    selectedCount={selectedUnitCount}
+                    canAdjust={canAdjustSelectedUnits}
                     canArchive={canArchiveSelectedUnits}
                     canTransfer={canTransferSelectedUnits}
+                    adjustDisabledReason={!inventory.canAdjustUnits ? 'Adjust permission required.' : null}
                     archiveDisabledReason={archiveDisabledReason}
                     transferDisabledReason={!inventory.canTransferUnits ? 'Transfer permission required.' : null}
+                    onAdjust={inventory.openBulkAdjustModal}
                     onArchive={() => setBulkArchiveOpen(true)}
                     onTransfer={inventory.openStoreTransferModal}
                   />
@@ -207,6 +227,17 @@ export function InventoryStockScreen() {
         onNotesChange={inventory.setStoreTransferNotes}
         onSubmit={inventory.submitStoreTransfer}
         onClose={inventory.closeStoreTransferModal}
+      />
+
+      <InventoryBulkAdjustModal
+        open={inventory.bulkAdjustModal.open}
+        units={inventory.selectedUnits}
+        transferOptions={inventory.bulkAdjustTransferOptions}
+        canAdjustUnits={inventory.canAdjustUnits}
+        isLoadingTransferOptions={inventory.isLoadingBulkAdjustTransferOptions}
+        isSubmitting={inventory.isAdjustingUnit}
+        onSubmit={handleSubmitBulkAdjust}
+        onClose={inventory.closeBulkAdjustModal}
       />
 
       <InventoryBulkArchiveModal

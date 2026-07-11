@@ -2,6 +2,21 @@ export const WMS_PURCHASING_EDIT_PERMISSIONS = [
   'wms.purchasing.edit',
 ] as const;
 
+export const WMS_PARTNERS_READ_PERMISSIONS = [
+  'wms.partners.read',
+  'wms.partners.write',
+  'wms.partners.edit',
+] as const;
+
+export const WMS_PARTNERS_WRITE_PERMISSIONS = [
+  'wms.partners.write',
+  'wms.partners.edit',
+] as const;
+
+export const WMS_PARTNERS_EDIT_PERMISSIONS = [
+  'wms.partners.edit',
+] as const;
+
 export const WMS_INVOICE_SETTINGS_READ_PERMISSIONS = [
   'wms.invoice.read',
   'wms.invoice.edit',

@@ -13,65 +13,65 @@ import {
 import { TenantService } from './tenant.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { Permissions } from '../../common/decorators/permissions.decorator';
+import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 
 @Controller('tenants')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, WmsAccessGuard)
 export class TenantController {
   constructor(private readonly tenantService: TenantService) {}
 
   /**
-   * Create a new tenant (super admin only)
+   * Create a new tenant
    */
   @Post()
-  @Roles('SUPER_ADMIN')
+  @Permissions('wms.partners.write')
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createTenantDto: CreateTenantDto) {
     return this.tenantService.createTenant(createTenantDto);
   }
 
   /**
-   * Get all tenants (super admin only)
+   * Get all tenants
    */
   @Get()
-  @Roles('SUPER_ADMIN')
+  @Permissions('wms.partners.read')
   async findAll() {
     return this.tenantService.findAll();
   }
 
   /**
-   * Get tenant statistics (super admin only)
+   * Get tenant statistics
    */
   @Get('stats')
-  @Roles('SUPER_ADMIN')
+  @Permissions('wms.partners.read')
   async getStats() {
     return this.tenantService.getStats();
   }
 
   /**
-   * Get a single tenant (super admin only)
+   * Get a single tenant
    */
   @Get(':id')
-  @Roles('SUPER_ADMIN')
+  @Permissions('wms.partners.read')
   async findOne(@Param('id') id: string) {
     return this.tenantService.findOne(id);
   }
 
   /**
-   * Update a tenant (super admin only)
+   * Update a tenant
    */
   @Patch(':id')
-  @Roles('SUPER_ADMIN')
+  @Permissions('wms.partners.edit')
   async update(@Param('id') id: string, @Body() updateTenantDto: UpdateTenantDto) {
     return this.tenantService.update(id, updateTenantDto);
   }
 
   /**
-   * Delete a tenant (super admin only)
+   * Delete a tenant
    */
   @Delete(':id')
-  @Roles('SUPER_ADMIN')
+  @Permissions('wms.partners.edit')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id') id: string) {
     await this.tenantService.remove(id);

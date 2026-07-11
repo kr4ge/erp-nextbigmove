@@ -1,4 +1,4 @@
-import { IsIn, IsOptional } from 'class-validator';
+import { ArrayUnique, IsArray, IsIn, IsOptional, IsUUID } from 'class-validator';
 
 const LABEL_PRINT_ACTIONS = ['PRINT', 'REPRINT'] as const;
 
@@ -8,4 +8,10 @@ export class RecordWmsReceivingBatchLabelPrintDto {
   @IsOptional()
   @IsIn(LABEL_PRINT_ACTIONS)
   action?: WmsLabelPrintAction;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  unitIds?: string[];
 }

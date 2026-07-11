@@ -1,25 +1,31 @@
 'use client';
 
-import { Archive, ChevronDown, Shuffle } from 'lucide-react';
+import { Archive, ChevronDown, Settings2, Shuffle } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 type InventoryBulkActionsMenuProps = {
   selectedCount: number;
+  canAdjust: boolean;
   canArchive: boolean;
   canTransfer: boolean;
+  adjustDisabledReason?: string | null;
   archiveDisabledReason?: string | null;
   transferDisabledReason?: string | null;
+  onAdjust: () => void;
   onArchive: () => void;
   onTransfer: () => void;
 };
 
 export function InventoryBulkActionsMenu({
   selectedCount,
+  canAdjust,
   canArchive,
   canTransfer,
+  adjustDisabledReason,
   archiveDisabledReason,
   transferDisabledReason,
+  onAdjust,
   onArchive,
   onTransfer,
 }: InventoryBulkActionsMenuProps) {
@@ -122,6 +128,16 @@ export function InventoryBulkActionsMenu({
                 onSelect={() => {
                   setOpen(false);
                   onTransfer();
+                }}
+              />
+              <MenuItem
+                icon={<Settings2 className="h-3.5 w-3.5" />}
+                label="Adjust selected"
+                disabled={!canAdjust}
+                hint={adjustDisabledReason ?? null}
+                onSelect={() => {
+                  setOpen(false);
+                  onAdjust();
                 }}
               />
               <MenuItem
