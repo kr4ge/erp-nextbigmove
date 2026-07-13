@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronsLeft, ChevronsRight, X, type LucideIcon } from 'lucide-react';
 import {
   clearAdminSession,
@@ -13,6 +13,7 @@ import {
   type StoredAdminUser,
 } from '@/lib/admin-session';
 import { hasWmsAccess, WMS_NAV_ITEMS } from '@/lib/wms-access';
+import { isWmsDebugNavEnabled, logWmsDebug } from '@/lib/wms-debug';
 import { ToastProvider } from '@/components/ui/toast';
 import { usePurchasingNotificationCount } from '../finance/_hooks/use-purchasing-notification-count';
 import { WmsSidebarBrand } from './wms-sidebar-brand';
@@ -52,6 +53,8 @@ const SIDEBAR_COLLAPSE_STORAGE_KEY = 'wms.sidebar.collapsed';
 export function WmsShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const previousPathnameRef = useRef<string | null>(null);
+  const mobileSidebarRef = useRef<HTMLElement | null>(null);
   const [state, setState] = useState<WmsShellState | null>(null);
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -68,6 +71,25 @@ export function WmsShell({ children }: { children: ReactNode }) {
     canReadPurchasingQueue,
     activeTenantId,
   );
+
+  const blurMobileSidebarFocus = useCallback(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const activeElement = document.activeElement;
+    if (
+      activeElement instanceof HTMLElement
+      && mobileSidebarRef.current?.contains(activeElement)
+    ) {
+      activeElement.blur();
+    }
+  }, []);
+
+  const closeMobileSidebar = useCallback(() => {
+    blurMobileSidebarFocus();
+    setIsMobileSidebarOpen(false);
+  }, [blurMobileSidebarFocus]);
 
   useEffect(() => {
     const stored = localStorage.getItem(SIDEBAR_COLLAPSE_STORAGE_KEY);
@@ -228,8 +250,39 @@ export function WmsShell({ children }: { children: ReactNode }) {
   }, [isSidebarCollapsed, navItems, pathname]);
 
   useEffect(() => {
-    setIsMobileSidebarOpen(false);
+    closeMobileSidebar();
+  }, [closeMobileSidebar, pathname]);
+
+  useEffect(() => {
+    const previousPathname = previousPathnameRef.current;
+    logWmsDebug('nav', 'route committed', {
+      from: previousPathname,
+      to: pathname,
+    });
+    previousPathnameRef.current = pathname;
   }, [pathname]);
+
+  useEffect(() => {
+    if (!isWmsDebugNavEnabled()) {
+      return;
+    }
+
+    let lastTick = performance.now();
+    const intervalId = window.setInterval(() => {
+      const now = performance.now();
+      const driftMs = Math.round(now - lastTick - 1000);
+
+      if (driftMs > 250) {
+        logWmsDebug('nav', 'main thread delayed', { driftMs });
+      }
+
+      lastTick = now;
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isMobileSidebarOpen) {
@@ -313,10 +366,11 @@ export function WmsShell({ children }: { children: ReactNode }) {
               isMobileSidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
             }`}
             aria-hidden={!isMobileSidebarOpen}
-            onClick={() => setIsMobileSidebarOpen(false)}
+            onClick={closeMobileSidebar}
           >
             <aside
               id="wms-mobile-sidebar"
+              ref={mobileSidebarRef}
               className={`flex h-full w-[min(84vw,320px)] flex-col border-r border-[#214c63] bg-primary text-slate-100 shadow-[0_28px_70px_-34px_rgba(0,0,0,0.6)] transition-transform duration-200 ${
                 isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
@@ -326,7 +380,7 @@ export function WmsShell({ children }: { children: ReactNode }) {
                 <WmsSidebarBrand />
                 <button
                   type="button"
-                  onClick={() => setIsMobileSidebarOpen(false)}
+                  onClick={closeMobileSidebar}
                   className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/88 transition hover:bg-white/10 hover:text-white"
                   aria-label="Close sidebar"
                   title="Close sidebar"
@@ -347,7 +401,7 @@ export function WmsShell({ children }: { children: ReactNode }) {
                       ...current,
                       [label]: nextExpanded,
                     }))}
-                  onNavigate={() => setIsMobileSidebarOpen(false)}
+                  onNavigate={() => closeMobileSidebar()}
                 />
               </nav>
             </aside>
@@ -378,7 +432,7 @@ type WmsSidebarNavProps = {
   expandedItems: Record<string, boolean>;
   purchasingNotificationCount: number;
   onToggleItem: (label: string, nextExpanded: boolean) => void;
-  onNavigate?: () => void;
+  onNavigate?: (href: string) => void;
 };
 
 function WmsSidebarNav({
@@ -390,6 +444,14 @@ function WmsSidebarNav({
   onToggleItem,
   onNavigate,
 }: WmsSidebarNavProps) {
+  const handleNavigate = (href: string) => {
+    logWmsDebug('nav', 'sidebar link clicked', {
+      from: pathname,
+      to: href,
+    });
+    onNavigate?.(href);
+  };
+
   return (
     <div className="space-y-1.5">
       {navItems.map((item) => {
@@ -446,7 +508,7 @@ function WmsSidebarNav({
                         <Link
                           key={child.href}
                           href={child.href}
-                          onClick={onNavigate}
+                          onClick={() => handleNavigate(child.href)}
                           className={`flex items-center gap-2 rounded-[14px] px-3 py-2.5 text-[12px] font-medium transition ${
                             childActive
                               ? 'bg-[#fff7ed] text-[#c2410c]'
@@ -479,7 +541,7 @@ function WmsSidebarNav({
                         <Link
                           key={child.href}
                           href={child.href}
-                          onClick={onNavigate}
+                          onClick={() => handleNavigate(child.href)}
                           className={`mb-1 flex items-center gap-2 rounded-xl px-3 py-2 text-sm-custom font-medium transition hover:bg-white/10 ${
                             childActive
                               ? 'bg-[#f7cf5f] text-primary hover:text-white active:text-white shadow-[0_18px_32px_-28px_rgba(247,207,95,0.9)]'
@@ -506,7 +568,7 @@ function WmsSidebarNav({
           <Link
             key={item.href ?? item.label}
             href={item.href ?? '/'}
-            onClick={onNavigate}
+            onClick={() => handleNavigate(item.href ?? '/')}
             aria-label={item.label}
             title={isSidebarCollapsed ? item.label : undefined}
             className={`relative flex items-center rounded-xl py-3 text-sm-custom font-medium transition hover:bg-white/10 ${
