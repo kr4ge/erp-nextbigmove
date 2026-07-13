@@ -5,7 +5,6 @@ import { Archive, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { WmsPageShell } from '../../_components/wms-page-shell';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
-import { logWmsDebug } from '@/lib/wms-debug';
 import { useInventoryController } from '../_hooks/use-inventory-controller';
 import type { WmsInventoryUnitStatus } from '../_types/inventory';
 import { InventoryBulkAdjustModal } from './inventory-bulk-adjust-modal';
@@ -49,40 +48,6 @@ export function InventoryStockScreen() {
     : archiveBlockedUnit
       ? `${archiveBlockedUnit.code} is ${archiveBlockedUnit.status} and cannot be bulk archived.`
       : null;
-
-  useEffect(() => {
-    logWmsDebug('stock', 'mounted');
-
-    return () => {
-      logWmsDebug('stock', 'unmounted');
-    };
-  }, []);
-
-  useEffect(() => {
-    logWmsDebug('stock', 'query state changed', {
-      isLoading: inventory.isLoading,
-      isFetching: inventory.isFetching,
-      recordsInView: inventory.overview?.summary.units ?? null,
-      page: inventory.currentPage,
-      totalPages: inventory.totalPages,
-      unitsRendered: inventory.units.length,
-      selectedTenantId: inventory.selectedTenantId ?? null,
-      selectedStoreId: inventory.selectedStoreId ?? null,
-      selectedWarehouseId: inventory.selectedWarehouseId ?? null,
-      selectedStatus: inventory.selectedStatus ?? null,
-    });
-  }, [
-    inventory.currentPage,
-    inventory.isFetching,
-    inventory.isLoading,
-    inventory.overview?.summary.units,
-    inventory.selectedStatus,
-    inventory.selectedStoreId,
-    inventory.selectedTenantId,
-    inventory.selectedWarehouseId,
-    inventory.totalPages,
-    inventory.units.length,
-  ]);
 
   const handleSubmitBulkArchive = async (notes?: string) => {
     await inventory.adjustUnit({

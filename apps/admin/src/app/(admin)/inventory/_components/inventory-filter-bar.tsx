@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import type { WmsInventoryOverviewResponse, WmsInventoryUnitStatus } from '../_types/inventory';
@@ -43,6 +43,7 @@ export function InventoryFilterBar({
   onStatusChange,
 }: InventoryFilterBarProps) {
   const products = useMemo(() => filters?.products ?? [], [filters?.products]);
+  const canFilterByProduct = Boolean(selectedTenantId || selectedStoreId);
   const tenantOptions = useMemo(
     () => (filters?.tenants ?? []).map((tenant) => ({
       value: tenant.id,
@@ -84,6 +85,12 @@ export function InventoryFilterBar({
     })),
     [filters?.statuses],
   );
+
+  useEffect(() => {
+    if (!canFilterByProduct && selectedProductValue) {
+      onProductChange(undefined);
+    }
+  }, [canFilterByProduct, onProductChange, selectedProductValue]);
 
   return (
     <div className="flex w-full min-w-0 flex-wrap items-center gap-2.5">
@@ -128,24 +135,26 @@ export function InventoryFilterBar({
         hideInlineLabel={true}
       />
 
-      <WmsSearchableSelect
-        label="Product"
-        value={selectedProductValue ?? ''}
-        onChange={(value) => {
-          if (!value) {
-            onProductChange(undefined);
-            return;
-          }
+      {canFilterByProduct ? (
+        <WmsSearchableSelect
+          label="Product"
+          value={selectedProductValue ?? ''}
+          onChange={(value) => {
+            if (!value) {
+              onProductChange(undefined);
+              return;
+            }
 
-          onProductChange(
-            products.find((product) => buildInventoryProductFilterValue(product) === value),
-          );
-        }}
-        options={productOptions}
-        placeholder="Search products…"
-        allLabel={selectedTenantId || selectedStoreId ? 'All products' : 'Select partner/store first'}
-        hideInlineLabel={true}
-      />
+            onProductChange(
+              products.find((product) => buildInventoryProductFilterValue(product) === value),
+            );
+          }}
+          options={productOptions}
+          placeholder="Search products…"
+          allLabel="All products"
+          hideInlineLabel={true}
+        />
+      ) : null}
 
       <WmsSearchableSelect
         label="Warehouse"

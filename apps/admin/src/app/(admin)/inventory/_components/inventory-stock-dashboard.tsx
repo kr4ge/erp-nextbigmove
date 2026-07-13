@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import { CalendarDays, LineChart, ScatterChart, TrendingDown, TrendingUp, Truck } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import type { WmsInventoryOverviewResponse } from '../_types/inventory';
@@ -16,11 +17,23 @@ type LogisticsDateSelection = {
   endDate: string;
 };
 
+type LogisticsDatePickerValue = {
+  startDate: Date | null;
+  endDate: Date | null;
+};
+
+type LogisticsDatePickerChangeValue = {
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
+} | null;
+
 type InventoryStockDashboardProps = {
   overview: WmsInventoryOverviewResponse | null;
   isFetching: boolean;
   filters?: ReactNode;
 };
+
+const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 
 export function InventoryStockDashboard({
   overview,
@@ -30,29 +43,39 @@ export function InventoryStockDashboard({
   const dashboard = buildInventoryStockDashboard(overview);
   const [logisticsDateRange, setLogisticsDateRange] = useState<LogisticsDateSelection>(() => getTodayDateSelection());
   const today = useMemo(() => formatDateInputValue(new Date()), []);
+  const [datePickerValue, setDatePickerValue] = useState<LogisticsDatePickerValue>(() => ({
+    startDate: parseDateInputValue(logisticsDateRange.startDate),
+    endDate: parseDateInputValue(logisticsDateRange.endDate),
+  }));
   const isTodayRange = logisticsDateRange.startDate === today && logisticsDateRange.endDate === today;
   const dateRangeButtonLabel = formatDateRangeButtonLabel(logisticsDateRange);
 
-  const handleStartDateChange = (value: string) => {
+  const handleLogisticsDateRangeChange = (value: LogisticsDatePickerChangeValue) => {
+    const nextStartYmd = normalizeDatepickerValue(value?.startDate, logisticsDateRange.startDate || today);
+    const rawNextEndYmd = normalizeDatepickerValue(value?.endDate, nextStartYmd);
+    const nextEndYmd = rawNextEndYmd < nextStartYmd ? nextStartYmd : rawNextEndYmd;
+
     setLogisticsDateRange((current) => {
-      const nextStart = value || today;
-      const nextEnd = current.endDate < nextStart ? nextStart : current.endDate;
+      if (current.startDate === nextStartYmd && current.endDate === nextEndYmd) {
+        return current;
+      }
 
       return {
-        startDate: nextStart,
-        endDate: nextEnd,
+        startDate: nextStartYmd,
+        endDate: nextEndYmd,
       };
     });
-  };
 
-  const handleEndDateChange = (value: string) => {
-    setLogisticsDateRange((current) => {
-      const nextEnd = value || current.startDate || today;
-      const nextStart = current.startDate > nextEnd ? nextEnd : current.startDate;
+    setDatePickerValue((current) => {
+      const currentStartYmd = current.startDate ? formatDateInputValue(current.startDate) : '';
+      const currentEndYmd = current.endDate ? formatDateInputValue(current.endDate) : '';
+      if (currentStartYmd === nextStartYmd && currentEndYmd === nextEndYmd) {
+        return current;
+      }
 
       return {
-        startDate: nextStart,
-        endDate: nextEnd,
+        startDate: parseDateInputValue(nextStartYmd),
+        endDate: parseDateInputValue(nextEndYmd),
       };
     });
   };
@@ -71,29 +94,41 @@ export function InventoryStockDashboard({
                 {filters}
               </div>
 
-              <div className="flex shrink-0 items-center gap-2 self-stretch rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                <CalendarDays className="h-4 w-4 shrink-0 text-slate-600" />
-                <span className="sr-only">{dateRangeButtonLabel}</span>
-                <input
-                  type="date"
-                  value={logisticsDateRange.startDate}
-                  onChange={(event) => handleStartDateChange(event.target.value)}
-                  aria-label="Logistics start date"
-                  className="h-6 w-[8.4rem] border-none bg-transparent p-0 text-xs font-semibold text-slate-700 outline-none"
+              <div className="relative flex h-10 shrink-0 items-stretch self-stretch">
+                <Datepicker
+                  value={datePickerValue}
+                  onChange={handleLogisticsDateRangeChange}
+                  useRange={false}
+                  asSingle={false}
+                  showShortcuts={false}
+                  showFooter={false}
+                  primaryColor="orange"
+                  readOnly
+                  inputClassName={`h-full cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm transition-[width] duration-300 ease-out focus:border-[#214c63] focus:outline-none focus:ring-2 focus:ring-[#dce4ea] dark:!border-slate-200 dark:!bg-white dark:!text-transparent ${
+                    isTodayRange ? 'w-10' : 'w-[200px] sm:w-[236px]'
+                  }`}
+                  containerClassName=""
+                  popupClassName={(defaultClass: string) => `${defaultClass} z-50 kpi-datepicker-light`}
+                  displayFormat="MM/DD/YYYY"
+                  separator=" - "
+                  popoverDirection="down"
+                  toggleIcon={() => (
+                    <span className="flex w-full items-center gap-2 overflow-hidden">
+                      <CalendarDays className="h-4 w-4 shrink-0" />
+                      <span
+                        className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out ${
+                          isTodayRange
+                            ? 'max-w-0 -translate-x-1 opacity-0'
+                            : 'max-w-[148px] translate-x-0 opacity-100 sm:max-w-[184px]'
+                        }`}
+                      >
+                        {dateRangeButtonLabel}
+                      </span>
+                    </span>
+                  )}
+                  toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start rounded-xl border border-slate-200 px-3 text-slate-600 hover:text-primary"
+                  placeholder=" "
                 />
-                <span className="text-xs text-slate-400">to</span>
-                <input
-                  type="date"
-                  value={logisticsDateRange.endDate}
-                  onChange={(event) => handleEndDateChange(event.target.value)}
-                  aria-label="Logistics end date"
-                  className="h-6 w-[8.4rem] border-none bg-transparent p-0 text-xs font-semibold text-slate-700 outline-none"
-                />
-                {isTodayRange ? (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                    Today
-                  </span>
-                ) : null}
               </div>
             </div>
           </div>
@@ -174,6 +209,22 @@ function formatDateInputValue(date: Date) {
   const day = String(date.getDate()).padStart(2, '0');
 
   return `${year}-${month}-${day}`;
+}
+
+function normalizeDatepickerValue(value: unknown, fallbackYmd: string) {
+  if (!value) {
+    return fallbackYmd;
+  }
+
+  if (typeof value === 'string') {
+    return value.slice(0, 10);
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return formatDateInputValue(value);
+  }
+
+  return fallbackYmd;
 }
 
 function formatDateRangeButtonLabel(dateRange: LogisticsDateSelection) {
