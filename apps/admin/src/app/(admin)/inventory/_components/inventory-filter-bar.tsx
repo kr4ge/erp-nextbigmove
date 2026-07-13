@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import type { WmsInventoryOverviewResponse, WmsInventoryUnitStatus } from '../_types/inventory';
@@ -41,7 +42,48 @@ export function InventoryFilterBar({
   selectedStatus,
   onStatusChange,
 }: InventoryFilterBarProps) {
-  const products = filters?.products ?? [];
+  const products = useMemo(() => filters?.products ?? [], [filters?.products]);
+  const tenantOptions = useMemo(
+    () => (filters?.tenants ?? []).map((tenant) => ({
+      value: tenant.id,
+      label: tenant.label,
+    })),
+    [filters?.tenants],
+  );
+  const storeOptions = useMemo(
+    () => (filters?.stores ?? []).map((store) => ({
+      value: store.id,
+      label: store.label,
+      selectedLabel: store.name,
+      hint: store.unitCount,
+    })),
+    [filters?.stores],
+  );
+  const productOptions = useMemo(
+    () => products.map((product) => ({
+      value: buildInventoryProductFilterValue(product),
+      label: product.label,
+      selectedLabel: product.selectedLabel,
+      hint: product.unitCount,
+    })),
+    [products],
+  );
+  const warehouseOptions = useMemo(
+    () => (filters?.warehouses ?? []).map((warehouse) => ({
+      value: warehouse.id,
+      label: warehouse.label,
+      hint: warehouse.unitCount,
+    })),
+    [filters?.warehouses],
+  );
+  const statusOptions = useMemo(
+    () => (filters?.statuses ?? []).map((status) => ({
+      value: status.value,
+      label: status.label,
+      hint: status.unitCount,
+    })),
+    [filters?.statuses],
+  );
 
   return (
     <div className="flex w-full min-w-0 flex-wrap items-center gap-2.5">
@@ -70,10 +112,7 @@ export function InventoryFilterBar({
         label="Partner"
         value={selectedTenantId ?? ''}
         onChange={(value) => onTenantChange(value || undefined)}
-        options={(filters?.tenants ?? []).map((tenant) => ({
-          value: tenant.id,
-          label: tenant.label,
-        }))}
+        options={tenantOptions}
         placeholder="Search partners…"
         allLabel="All partners"
         hideInlineLabel={true}
@@ -83,12 +122,7 @@ export function InventoryFilterBar({
         label="Store"
         value={selectedStoreId ?? ''}
         onChange={(value) => onStoreChange(value || undefined)}
-        options={(filters?.stores ?? []).map((store) => ({
-          value: store.id,
-          label: store.label,
-          selectedLabel: store.name,
-          hint: store.unitCount,
-        }))}
+        options={storeOptions}
         placeholder="Search stores…"
         allLabel="All stores"
         hideInlineLabel={true}
@@ -107,14 +141,9 @@ export function InventoryFilterBar({
             products.find((product) => buildInventoryProductFilterValue(product) === value),
           );
         }}
-        options={products.map((product) => ({
-          value: buildInventoryProductFilterValue(product),
-          label: product.label,
-          selectedLabel: product.selectedLabel,
-          hint: product.unitCount,
-        }))}
+        options={productOptions}
         placeholder="Search products…"
-        allLabel="All products"
+        allLabel={selectedTenantId || selectedStoreId ? 'All products' : 'Select partner/store first'}
         hideInlineLabel={true}
       />
 
@@ -122,11 +151,7 @@ export function InventoryFilterBar({
         label="Warehouse"
         value={selectedWarehouseId ?? ''}
         onChange={(value) => onWarehouseChange(value || undefined)}
-        options={(filters?.warehouses ?? []).map((warehouse) => ({
-          value: warehouse.id,
-          label: warehouse.label,
-          hint: warehouse.unitCount,
-        }))}
+        options={warehouseOptions}
         placeholder="Search warehouses…"
         allLabel="All warehouses"
         hideInlineLabel={true}
@@ -136,11 +161,7 @@ export function InventoryFilterBar({
         label="Status"
         value={selectedStatus ?? ''}
         onChange={(value) => onStatusChange((value as WmsInventoryUnitStatus) || undefined)}
-        options={(filters?.statuses ?? []).map((status) => ({
-          value: status.value,
-          label: status.label,
-          hint: status.unitCount,
-        }))}
+        options={statusOptions}
         placeholder="Search statuses…"
         allLabel="All statuses"
         hideInlineLabel={true}

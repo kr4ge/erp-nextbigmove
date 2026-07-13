@@ -404,45 +404,48 @@ export class WmsInventoryService {
       ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
       ...(query.status ? { status: query.status } : {}),
     };
+    const shouldLoadProductOptions = Boolean(scope.activeTenantId || activeStoreId);
 
-    const [productOptions, productCounts] = await Promise.all([
-      this.prisma.wmsInventoryUnit.findMany({
-        where: productFilterScope,
-        distinct: ['storeId', 'variationId'],
-        select: {
-          tenantId: true,
-          storeId: true,
-          store: {
-            select: {
-              name: true,
-              shopName: true,
-              tenant: {
-                select: {
-                  id: true,
-                  name: true,
+    const [productOptions, productCounts] = shouldLoadProductOptions
+      ? await Promise.all([
+        this.prisma.wmsInventoryUnit.findMany({
+          where: productFilterScope,
+          distinct: ['storeId', 'variationId'],
+          select: {
+            tenantId: true,
+            storeId: true,
+            store: {
+              select: {
+                name: true,
+                shopName: true,
+                tenant: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
                 },
               },
             },
-          },
-          variationId: true,
-          posProduct: {
-            select: {
-              name: true,
-              customId: true,
-              productSnapshot: true,
+            variationId: true,
+            posProduct: {
+              select: {
+                name: true,
+                customId: true,
+                productSnapshot: true,
+              },
             },
           },
-        },
-        orderBy: [{ storeId: 'asc' }, { variationId: 'asc' }],
-      }),
-      this.prisma.wmsInventoryUnit.groupBy({
-        by: ['storeId', 'variationId'],
-        where: productFilterScope,
-        _count: {
-          _all: true,
-        },
-      }),
-    ]);
+          orderBy: [{ storeId: 'asc' }, { variationId: 'asc' }],
+        }),
+        this.prisma.wmsInventoryUnit.groupBy({
+          by: ['storeId', 'variationId'],
+          where: productFilterScope,
+          _count: {
+            _all: true,
+          },
+        }),
+      ])
+      : [[], []];
 
     const activeVariationId =
       query.variationId && productOptions.some((product) => product.variationId === query.variationId)
