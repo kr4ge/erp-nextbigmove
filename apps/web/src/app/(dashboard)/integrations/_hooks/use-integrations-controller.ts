@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/toast';
 import type { Integration } from '../types';
 import type { PosShopOption, TeamOption } from '../_types/integration-management';
 import {
+  clearTeamScopeStorage,
   getSelectedTeamIdsFromStorage,
   getTeamScopeFromEvent,
 } from '../_utils/team-scope';
@@ -160,6 +161,15 @@ export function useIntegrationsController() {
   useEffect(() => {
     const teamList = (teamsQuery.data || []) as TeamOption[];
     setTeams(teamList);
+
+    if (teamList.length === 0) {
+      setIntegrationTeamId('');
+      setEditTeamId('ALL_TEAMS');
+      setSharedTeamIds([]);
+      setEditSharedTeamIds([]);
+      clearTeamScopeStorage();
+      return;
+    }
 
     const selected = getSelectedTeamIdsFromStorage();
     const candidate = selected[0] || teamList[0]?.id || '';

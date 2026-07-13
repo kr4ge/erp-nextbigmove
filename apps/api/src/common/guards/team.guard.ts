@@ -32,6 +32,19 @@ export class TeamGuard implements CanActivate {
       throw new ForbiddenException('Tenant context is required');
     }
 
+    const activeTeamCount = await this.prisma.team.count({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+      },
+    });
+
+    if (activeTeamCount === 0) {
+      this.cls.set('teamId', null);
+      this.cls.set('teamIds', []);
+      return true;
+    }
+
     // Check if user has tenant-wide access via permissions (no legacy role fallback)
     const adminPermKeys = new Set(['team.manage', 'permission.assign', 'user.manage', 'team.read_all']);
     let hasTenantWideAccess = false;

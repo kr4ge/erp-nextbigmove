@@ -17,6 +17,13 @@ export const getSelectedTeamIdsFromStorage = () => {
   return single && single !== 'ALL_TEAMS' ? [single] : [];
 };
 
+export const clearTeamScopeStorage = () => {
+  if (typeof window === 'undefined') return;
+
+  localStorage.setItem('current_team_ids', JSON.stringify([]));
+  localStorage.setItem('current_team_id', '');
+};
+
 export const getTeamScopeFromEvent = (event: Event): string[] => {
   const detail = (event as CustomEvent).detail;
   return Array.isArray(detail)

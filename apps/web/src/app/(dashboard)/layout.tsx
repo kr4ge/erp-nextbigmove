@@ -20,6 +20,7 @@ import {
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
 import { filterErpPermissions } from '@/lib/permission-workspace';
+import { clearTeamScopeStorage } from './integrations/_utils/team-scope';
 import { useRequestNotificationCount } from './requests/_hooks/use-request-notification-count';
 
 interface NavLink {
@@ -342,8 +343,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     } else {
       // Default to all teams (empty selection)
       setSelectedTeamIds([]);
-      localStorage.setItem('current_team_ids', JSON.stringify([]));
-      localStorage.setItem('current_team_id', '');
+      clearTeamScopeStorage();
     }
 
     setIsLoading(false);
@@ -389,6 +389,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       .then((res) => {
         const list = Array.isArray(res.data) ? (res.data as DashboardLayoutTeam[]) : [];
         setTeams(list);
+
+        if (list.length === 0) {
+          setSelectedTeamIds([]);
+          clearTeamScopeStorage();
+          return;
+        }
+
         const storedIds = localStorage.getItem('current_team_ids');
         let initialIds: string[] = [];
         if (storedIds) {
@@ -404,13 +411,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         if (initialIds.length === 0) {
           // Default to "All teams" (empty selection means all)
           initialIds = [];
-          localStorage.setItem('current_team_ids', JSON.stringify([]));
-          localStorage.setItem('current_team_id', '');
+          clearTeamScopeStorage();
         }
         setSelectedTeamIds(initialIds);
       })
       .catch(() => {
         setTeams([]);
+        setSelectedTeamIds([]);
       })
       .finally(() => setIsLoadingTeams(false));
   }, [user, canViewAllTeams]);
