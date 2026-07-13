@@ -2565,27 +2565,31 @@ export class IntegrationService {
    * Build an access-aware where clause for integrations, respecting team scope and sharing.
    */
   private async buildIntegrationAccessWhere(additional: any = {}) {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
     const restrictAdminToScope = isAdmin && allowedTeams.length > 0;
-
-    if (!isAdmin && allowedTeams.length === 0) {
-      return { where: null, tenantId, allowedTeams };
-    }
-
     const base: any = { tenantId, ...additional };
 
+    if (!tenantHasTeams) {
+      return { where: base, tenantId, allowedTeams: [], tenantHasTeams };
+    }
+
+    if (!isAdmin && allowedTeams.length === 0) {
+      return { where: null, tenantId, allowedTeams, tenantHasTeams };
+    }
+
     if (isAdmin && !restrictAdminToScope) {
-      return { where: base, tenantId, allowedTeams };
+      return { where: base, tenantId, allowedTeams, tenantHasTeams };
     }
 
     if (allowedTeams.length === 0) {
-      return { where: null, tenantId, allowedTeams };
+      return { where: null, tenantId, allowedTeams, tenantHasTeams };
     }
 
     return {
       tenantId,
       allowedTeams,
+      tenantHasTeams,
       where: {
         ...base,
         OR: [
@@ -2949,12 +2953,12 @@ export class IntegrationService {
   ): Promise<IntegrationResponseDto[]> {
     const { search } = params || {};
 
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
 
     let baseWhere: any = { tenantId };
     const shouldRestrictAdminToScope = isAdmin && allowedTeams.length > 0;
-    if (!isAdmin || shouldRestrictAdminToScope) {
+    if (tenantHasTeams && (!isAdmin || shouldRestrictAdminToScope)) {
       if (allowedTeams.length === 0) {
         return [];
       }
@@ -2993,12 +2997,12 @@ export class IntegrationService {
   ): Promise<any[]> {
     const { search } = params || {};
 
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
 
     // Admins with no scope see all; otherwise restrict to owned or shared integrations
     let where: any = { tenantId };
-    const shouldRestrict = !isAdmin || (isAdmin && allowedTeams.length > 0);
+    const shouldRestrict = tenantHasTeams && (!isAdmin || (isAdmin && allowedTeams.length > 0));
     if (shouldRestrict) {
       if (allowedTeams.length === 0) {
         return [];
@@ -3038,12 +3042,12 @@ export class IntegrationService {
   }
 
   async getPosStore(id: string) {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
 
     // Admins with no scope see all; otherwise restrict to owned or shared integrations
     let where: any = { id, tenantId };
-    const shouldRestrict = !isAdmin || (isAdmin && allowedTeams.length > 0);
+    const shouldRestrict = tenantHasTeams && (!isAdmin || (isAdmin && allowedTeams.length > 0));
     if (shouldRestrict) {
       if (allowedTeams.length === 0) {
         throw new NotFoundException(`Store with ID ${id} not found`);
@@ -3753,12 +3757,12 @@ export class IntegrationService {
    * Get a single integration by ID
    */
   async findOne(id: string): Promise<IntegrationResponseDto> {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
 
     const where: any = { id, tenantId };
     const shouldRestrictAdminToScope = isAdmin && allowedTeams.length > 0;
-    if (!isAdmin || shouldRestrictAdminToScope) {
+    if (tenantHasTeams && (!isAdmin || shouldRestrictAdminToScope)) {
       if (allowedTeams.length === 0) {
         throw new NotFoundException(`Integration with ID ${id} not found`);
       }
@@ -3784,12 +3788,12 @@ export class IntegrationService {
    * Update an integration
    */
   async update(id: string, updateIntegrationDto: UpdateIntegrationDto): Promise<IntegrationResponseDto> {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
 
     const where: any = { id, tenantId };
     const shouldRestrictAdminToScope = isAdmin && allowedTeams.length > 0;
-    if (!isAdmin || shouldRestrictAdminToScope) {
+    if (tenantHasTeams && (!isAdmin || shouldRestrictAdminToScope)) {
       if (allowedTeams.length === 0) {
         throw new NotFoundException(`Integration with ID ${id} not found`);
       }
@@ -3904,12 +3908,12 @@ export class IntegrationService {
    * Delete an integration
    */
   async remove(id: string): Promise<void> {
-    const { teamIds, userTeams, isAdmin, tenantId } = await this.teamContext.getContext();
+    const { teamIds, userTeams, isAdmin, tenantId, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
 
     let where: any = { id, tenantId };
     const shouldRestrictAdminToScope = isAdmin && allowedTeams.length > 0;
-    if (!isAdmin || shouldRestrictAdminToScope) {
+    if (tenantHasTeams && (!isAdmin || shouldRestrictAdminToScope)) {
       if (allowedTeams.length === 0) {
         throw new NotFoundException(`Integration with ID ${id} not found`);
       }
@@ -5129,12 +5133,12 @@ export class IntegrationService {
   }
 
   async fetchPancakeProductsByShopId(shopId: string, overrideApiKey?: string): Promise<any[]> {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
 
     // Build sharing-aware where clause (same logic as listPosStores/getPosStore)
     let where: any = { tenantId, shopId: shopId.toString() };
-    const shouldRestrict = !isAdmin || (isAdmin && allowedTeams.length > 0);
+    const shouldRestrict = tenantHasTeams && (!isAdmin || (isAdmin && allowedTeams.length > 0));
     if (shouldRestrict) {
       if (allowedTeams.length === 0) {
         throw new NotFoundException(`Store with shop ID ${shopId} not found`);

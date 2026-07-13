@@ -1085,7 +1085,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               >
                 {isDarkMode ? <Sun className="h-4 w-4 text-primary" /> : <Moon className="h-4 w-4 text-primary" />}
               </button>
-            {canViewAllTeams ? (
+            {canViewAllTeams && teams.length > 0 ? (
               <div className="relative">
                 {isLoadingTeams ? (
                   <span className="text-sm text-muted">Loading teams…</span>

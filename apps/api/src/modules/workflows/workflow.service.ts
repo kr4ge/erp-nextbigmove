@@ -116,11 +116,17 @@ export class WorkflowService {
   ) {}
 
   private async buildAccessWhere(id?: string) {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
 
+    if (!tenantHasTeams) {
+      const base: any = { tenantId };
+      if (id) base.id = id;
+      return { tenantId, where: base, allowedTeams: [], isAdmin, tenantHasTeams };
+    }
+
     if (!isAdmin && allowedTeams.length === 0) {
-      return { tenantId, where: null, allowedTeams, isAdmin };
+      return { tenantId, where: null, allowedTeams, isAdmin, tenantHasTeams };
     }
 
     const base: any = { tenantId };
@@ -129,13 +135,14 @@ export class WorkflowService {
     const restrictAdminToScope = isAdmin && allowedTeams.length > 0;
 
     if (isAdmin && !restrictAdminToScope) {
-      return { tenantId, where: base, allowedTeams, isAdmin };
+      return { tenantId, where: base, allowedTeams, isAdmin, tenantHasTeams };
     }
 
     return {
       tenantId,
       allowedTeams,
       isAdmin,
+      tenantHasTeams,
       where: {
         ...base,
         OR: [
@@ -175,6 +182,7 @@ export class WorkflowService {
     tenantId: string,
     allowedTeams: string[],
     isAdmin: boolean,
+    tenantHasTeams: boolean,
     integrationId: string,
   ) {
     const base: any = {
@@ -182,6 +190,10 @@ export class WorkflowService {
       tenantId,
       provider: 'META_ADS',
     };
+
+    if (!tenantHasTeams) {
+      return base;
+    }
 
     const restrictAdminToScope = isAdmin && allowedTeams.length > 0;
     if (isAdmin && !restrictAdminToScope) {
@@ -205,12 +217,17 @@ export class WorkflowService {
     tenantId: string,
     allowedTeams: string[],
     isAdmin: boolean,
+    tenantHasTeams: boolean,
     integrationId?: string,
   ) {
     const base: any = {
       tenantId,
       ...(integrationId ? { integrationId } : {}),
     };
+
+    if (!tenantHasTeams) {
+      return base;
+    }
 
     const restrictAdminToScope = isAdmin && allowedTeams.length > 0;
     if (isAdmin && !restrictAdminToScope) {
@@ -616,11 +633,23 @@ export class WorkflowService {
     tenantId: string;
     allowedTeams: string[];
     isAdmin: boolean;
+    tenantHasTeams?: boolean;
     integrationId?: string;
   }): Promise<{
     selectedIntegrationTeamId: string | null;
     accountMap: Map<string, { accountId: string; teamId: string | null; integrationId: string }>;
   }> {
+    const tenantHasTeams =
+      params.tenantHasTeams
+      ?? (
+        await this.prisma.team.count({
+          where: {
+            tenantId: params.tenantId,
+            status: 'ACTIVE',
+          },
+        })
+      ) > 0;
+
     let selectedIntegration: { id: string; teamId: string | null } | null = null;
 
     if (params.integrationId) {
@@ -628,6 +657,7 @@ export class WorkflowService {
         params.tenantId,
         params.allowedTeams,
         params.isAdmin,
+        tenantHasTeams,
         params.integrationId,
       );
 
@@ -652,6 +682,7 @@ export class WorkflowService {
       params.tenantId,
       params.allowedTeams,
       params.isAdmin,
+      tenantHasTeams,
       selectedIntegration?.id,
     );
 
@@ -1017,7 +1048,7 @@ export class WorkflowService {
     reconcileMarketingCompleted: boolean;
     reconcileSalesCompleted: boolean;
   }> {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
     let selectedIntegration: { id: string; teamId: string | null } | null = null;
 
@@ -1026,6 +1057,7 @@ export class WorkflowService {
         tenantId,
         allowedTeams,
         isAdmin,
+        tenantHasTeams,
         payload.integrationId,
       );
 
@@ -1050,6 +1082,7 @@ export class WorkflowService {
       tenantId,
       allowedTeams,
       isAdmin,
+      tenantHasTeams,
       selectedIntegration?.id,
     );
 

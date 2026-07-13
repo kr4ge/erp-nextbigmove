@@ -487,7 +487,12 @@ export class OrdersService {
     tenantId: string,
     allowedTeams: string[],
     isAdmin: boolean,
+    tenantHasTeams: boolean,
   ): Prisma.PosStoreWhereInput | null {
+    if (!tenantHasTeams) {
+      return { tenantId };
+    }
+
     const shouldRestrict = !isAdmin || (isAdmin && allowedTeams.length > 0);
     if (!shouldRestrict) {
       return { tenantId };
@@ -907,9 +912,9 @@ export class OrdersService {
   }
 
   private async resolveAccessibleAgingOrderScope() {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
-    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
+    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin, tenantHasTeams);
 
     if (!storeWhere) {
       return {
@@ -1721,9 +1726,9 @@ export class OrdersService {
     const skip = (page - 1) * limit;
     const search = params.search?.trim() || '';
 
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams = (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
-    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
+    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin, tenantHasTeams);
 
     if (!storeWhere) {
       return {
@@ -2141,10 +2146,10 @@ export class OrdersService {
   }
 
   async listConfirmationOrderTagOptions(orderRowId: string) {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams =
       (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
-    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
+    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin, tenantHasTeams);
     if (!storeWhere) {
       throw new ForbiddenException('No store access for current team scope');
     }
@@ -2232,10 +2237,10 @@ export class OrdersService {
   ) {
     const search = (searchRaw || '').trim();
     const limit = Math.min(this.parseLimit(limitRaw), 50);
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
     const allowedTeams =
       (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
-    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
+    const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin, tenantHasTeams);
     if (!storeWhere) {
       throw new ForbiddenException('No store access for current team scope');
     }
@@ -2453,10 +2458,10 @@ export class OrdersService {
         throw new BadRequestException('Invalid status. Allowed values: 1, 6, 7, 11');
       }
 
-      const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
+      const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.teamContext.getContext();
       const allowedTeams =
         (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
-      const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin);
+      const storeWhere = this.buildPosStoreAccessWhere(tenantId, allowedTeams, isAdmin, tenantHasTeams);
       if (!storeWhere) {
         throw new ForbiddenException('No store access for current team scope');
       }

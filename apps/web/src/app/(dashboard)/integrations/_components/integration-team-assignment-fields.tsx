@@ -23,6 +23,10 @@ export function IntegrationTeamAssignmentFields({
   onTeamIdChange,
   onToggleSharedTeam,
 }: IntegrationTeamAssignmentFieldsProps) {
+  if (teams.length === 0 && !isAdmin) {
+    return null;
+  }
+
   const shareableTeams = teams.filter((team) => team.id !== ownerTeamId);
   const labelClass = 'form-label';
   const controlClass =
@@ -72,4 +76,3 @@ export function IntegrationTeamAssignmentFields({
     </>
   );
 }
-

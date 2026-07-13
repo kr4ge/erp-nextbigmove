@@ -9,6 +9,24 @@ export class TeamContextService {
     private readonly cls: ClsService,
   ) {}
 
+  private async tenantHasActiveTeams(tenantId: string): Promise<boolean> {
+    const cached = this.cls.get('tenantHasActiveTeams');
+    if (typeof cached === 'boolean') {
+      return cached;
+    }
+
+    const count = await this.prisma.team.count({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+      },
+    });
+
+    const hasActiveTeams = count > 0;
+    this.cls.set('tenantHasActiveTeams', hasActiveTeams);
+    return hasActiveTeams;
+  }
+
   /**
    * Get user's team memberships for the current tenant
    */
@@ -18,6 +36,9 @@ export class TeamContextService {
         userId,
         tenantId,
         status: 'ACTIVE',
+        team: {
+          status: 'ACTIVE',
+        },
       },
       select: {
         teamId: true,
@@ -104,6 +125,8 @@ export class TeamContextService {
       throw new ForbiddenException('Tenant context is required');
     }
 
+    const tenantHasTeams = await this.tenantHasActiveTeams(tenantId);
+
     // SUPER_ADMIN is always admin
     if (isSuperAdmin) {
       return {
@@ -114,6 +137,7 @@ export class TeamContextService {
         role,
         isAdmin: true,
         userTeams: [],
+        tenantHasTeams,
       };
     }
 
@@ -136,6 +160,7 @@ export class TeamContextService {
       role,
       isAdmin,
       userTeams,
+      tenantHasTeams,
     };
   }
 
@@ -145,9 +170,13 @@ export class TeamContextService {
    * - For team members: only allow their teams
    */
   async validateAndGetTeamId(payloadTeamId: string | undefined | null): Promise<string | null> {
-    const { tenantId, teamId, teamIds, userId, isAdmin, userTeams } = await this.getContext();
+    const { teamId, isAdmin, userTeams, tenantHasTeams } = await this.getContext();
 
     const candidate = payloadTeamId !== undefined ? payloadTeamId : teamId;
+
+    if (!tenantHasTeams) {
+      return null;
+    }
 
     // Admins can use any team or null
     if (isAdmin) {
@@ -170,12 +199,16 @@ export class TeamContextService {
    * Build where clause for team-scoped queries
    */
   async buildTeamWhereClause(additionalWhere: any = {}, allowedTeamIds?: string[]): Promise<any> {
-    const { tenantId, teamId, teamIds, isAdmin, userTeams } = await this.getContext();
+    const { tenantId, teamIds, isAdmin, userTeams, tenantHasTeams } = await this.getContext();
 
     const where: any = {
       tenantId,
       ...additionalWhere,
     };
+
+    if (!tenantHasTeams) {
+      return where;
+    }
 
     if (Array.isArray(allowedTeamIds) && allowedTeamIds.length > 0) {
       where.teamId = allowedTeamIds.length === 1 ? allowedTeamIds[0] : { in: allowedTeamIds };
@@ -208,7 +241,11 @@ export class TeamContextService {
    * For analytics modules, expand effective teams with shares.
    */
   async getAnalyticsTeamIds(scope: 'sales' | 'marketing' | 'both'): Promise<string[] | null> {
-    const { tenantId, teamIds, userTeams, isAdmin } = await this.getContext();
+    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.getContext();
+
+    if (!tenantHasTeams) {
+      return null;
+    }
 
     // Admin without explicit scope: no restriction needed
     if (isAdmin && (!teamIds || teamIds.length === 0)) {
