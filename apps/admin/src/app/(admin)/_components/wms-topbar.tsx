@@ -102,7 +102,6 @@ export function WmsTopbar({ user, onLogout, onOpenSidebar }: WmsTopbarProps) {
 
                 <Link
                   href="/settings/profile"
-                  prefetch={false}
                   onClick={() => setIsProfileOpen(false)}
                   className="flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-sm font-medium text-primary transition hover:bg-[#f6f8fa]"
                 >

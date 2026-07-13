@@ -291,6 +291,9 @@ export class WmsInventoryService {
   async getOverview(query: GetWmsInventoryOverviewDto) {
     const scope = await this.resolveTenantScope(query.tenantId, query.allTenants === true);
     const isAllTenantScope = scope.canAccessAllTenants && !scope.activeTenantId;
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(Math.max(1, query.pageSize ?? 10), 100);
+    const skip = (page - 1) * pageSize;
 
     if (!scope.activeTenantId && !isAllTenantScope) {
       return {
@@ -323,6 +326,12 @@ export class WmsInventoryService {
           activeWarehouseId: null,
           activeVariationId: null,
           activeStatus: null,
+        },
+        pagination: {
+          page,
+          pageSize,
+          totalItems: 0,
+          totalPages: 1,
         },
         units: [],
       };
@@ -562,6 +571,8 @@ export class WmsInventoryService {
           },
         },
         orderBy: [{ updatedAt: 'desc' }],
+        skip,
+        take: pageSize,
       }),
       this.prisma.wmsInventoryUnit.count({ where }),
       this.prisma.wmsInventoryUnit.count({
@@ -645,6 +656,12 @@ export class WmsInventoryService {
         activeWarehouseId,
         activeVariationId,
         activeStatus: query.status ?? null,
+      },
+      pagination: {
+        page,
+        pageSize,
+        totalItems: totalUnits,
+        totalPages: Math.max(1, Math.ceil(totalUnits / pageSize)),
       },
       units: units.map((unit) => this.mapUnit(unit)),
     };

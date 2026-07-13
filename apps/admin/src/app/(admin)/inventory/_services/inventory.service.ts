@@ -25,6 +25,8 @@ export async function fetchWmsInventoryOverview(params: GetWmsInventoryOverviewP
       ...(params.variationId ? { variationId: params.variationId } : {}),
       ...(params.search ? { search: params.search } : {}),
       ...(params.status ? { status: params.status } : {}),
+      ...(params.page ? { page: params.page } : {}),
+      ...(params.pageSize ? { pageSize: params.pageSize } : {}),
     },
   });
 

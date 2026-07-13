@@ -1,5 +1,6 @@
 import { WmsInventoryUnitStatus } from '@prisma/client';
-import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 export class GetWmsInventoryOverviewDto {
   @IsOptional()
@@ -30,4 +31,17 @@ export class GetWmsInventoryOverviewDto {
   @IsOptional()
   @IsEnum(WmsInventoryUnitStatus)
   status?: WmsInventoryUnitStatus;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
 }

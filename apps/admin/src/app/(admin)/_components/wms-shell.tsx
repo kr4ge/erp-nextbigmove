@@ -446,7 +446,6 @@ function WmsSidebarNav({
                         <Link
                           key={child.href}
                           href={child.href}
-                          prefetch={false}
                           onClick={onNavigate}
                           className={`flex items-center gap-2 rounded-[14px] px-3 py-2.5 text-[12px] font-medium transition ${
                             childActive
@@ -480,7 +479,6 @@ function WmsSidebarNav({
                         <Link
                           key={child.href}
                           href={child.href}
-                          prefetch={false}
                           onClick={onNavigate}
                           className={`mb-1 flex items-center gap-2 rounded-xl px-3 py-2 text-sm-custom font-medium transition hover:bg-white/10 ${
                             childActive
@@ -508,7 +506,6 @@ function WmsSidebarNav({
           <Link
             key={item.href ?? item.label}
             href={item.href ?? '/'}
-            prefetch={false}
             onClick={onNavigate}
             aria-label={item.label}
             title={isSidebarCollapsed ? item.label : undefined}

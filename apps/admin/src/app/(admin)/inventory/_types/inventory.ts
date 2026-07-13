@@ -221,6 +221,12 @@ export type WmsInventoryOverviewResponse = {
     activeVariationId: string | null;
     activeStatus: WmsInventoryUnitStatus | null;
   };
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+  };
   units: WmsInventoryUnitRecord[];
 };
 
@@ -257,6 +263,8 @@ export type GetWmsInventoryOverviewParams = {
   variationId?: string;
   search?: string;
   status?: WmsInventoryUnitStatus;
+  page?: number;
+  pageSize?: number;
 };
 
 export type CreateWmsInventoryTransferInput = {

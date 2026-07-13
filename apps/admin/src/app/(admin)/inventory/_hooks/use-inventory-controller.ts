@@ -130,6 +130,8 @@ export function useInventoryController() {
       selectedVariationId ?? 'all-products',
       selectedStatus ?? 'all-statuses',
       debouncedSearchText,
+      currentPage,
+      pageSize,
     ],
     queryFn: () =>
       fetchWmsInventoryOverview({
@@ -140,6 +142,8 @@ export function useInventoryController() {
         variationId: selectedVariationId,
         search: debouncedSearchText || undefined,
         status: selectedStatus,
+        page: currentPage,
+        pageSize,
       }),
   });
 
@@ -247,9 +251,8 @@ export function useInventoryController() {
   }, [overviewQuery.error]);
 
   const totalPages = useMemo(() => {
-    const totalUnits = overviewQuery.data?.units.length ?? 0;
-    return Math.max(1, Math.ceil(totalUnits / pageSize));
-  }, [overviewQuery.data?.units.length]);
+    return overviewQuery.data?.pagination.totalPages ?? 1;
+  }, [overviewQuery.data?.pagination.totalPages]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -257,17 +260,16 @@ export function useInventoryController() {
     }
   }, [currentPage, totalPages]);
 
-  const paginatedUnits = useMemo(() => {
-    const units = overviewQuery.data?.units ?? [];
-    const startIndex = (currentPage - 1) * pageSize;
+  useEffect(() => {
+    setSelectedUnitIds([]);
+  }, [currentPage]);
 
-    return units.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, overviewQuery.data?.units]);
+  const paginatedUnits = useMemo(() => overviewQuery.data?.units ?? [], [overviewQuery.data?.units]);
 
   const selectedUnits = useMemo(() => {
     const selectedIds = new Set(selectedUnitIds);
-    return (overviewQuery.data?.units ?? []).filter((unit) => selectedIds.has(unit.id));
-  }, [overviewQuery.data?.units, selectedUnitIds]);
+    return paginatedUnits.filter((unit) => selectedIds.has(unit.id));
+  }, [paginatedUnits, selectedUnitIds]);
   const selectedBulkAdjustSourceUnitId = selectedUnits[0]?.id ?? null;
   const selectedSourceProfileId = selectedUnits.length > 0
     ? selectedUnits[0]?.productProfileId
