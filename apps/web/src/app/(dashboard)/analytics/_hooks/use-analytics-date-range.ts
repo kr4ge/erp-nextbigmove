@@ -21,10 +21,14 @@ export function useAnalyticsDateRange(initialYmd?: string) {
 
   const handleDateRangeChange = useCallback(
     (val: { startDate?: Date | string | null; endDate?: Date | string | null } | null) => {
-      const nextStart = val?.startDate || today;
-      const nextEnd = val?.endDate || today;
-      const nextStartYmd = normalizeDatepickerValue(nextStart, today);
-      const nextEndYmd = normalizeDatepickerValue(nextEnd, today);
+      if (!val || (!val.startDate && !val.endDate)) {
+        return;
+      }
+
+      const nextStart = val.startDate ?? val.endDate ?? startDate;
+      const nextEnd = val.endDate ?? val.startDate ?? endDate;
+      const nextStartYmd = normalizeDatepickerValue(nextStart, startDate);
+      const nextEndYmd = normalizeDatepickerValue(nextEnd, endDate);
 
       setStartDate((prev) => (prev === nextStartYmd ? prev : nextStartYmd));
       setEndDate((prev) => (prev === nextEndYmd ? prev : nextEndYmd));
@@ -38,7 +42,7 @@ export function useAnalyticsDateRange(initialYmd?: string) {
         };
       });
     },
-    [today],
+    [endDate, startDate],
   );
 
   const syncDateRangeFromApi = useCallback(

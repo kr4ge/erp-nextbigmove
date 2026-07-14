@@ -2,19 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import apiClient from '@/lib/api-client';
 import { PageHeader } from '@/components/ui/page-header';
-import { AlertBanner } from '@/components/ui/feedback';
-import { useToast } from '@/components/ui/toast';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { BarChart3, CalendarDays, ChevronDown, Gauge, LineChart, Trash2 } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronDown, Gauge, LineChart } from 'lucide-react';
 import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
 import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
@@ -146,10 +135,7 @@ export default function SalesPerformancePage() {
   const { today, range, startDate, endDate, handleDateRangeChange } = useAnalyticsDateRange();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteError, setDeleteError] = useState('');
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshKey] = useState(0);
   const [deliveryViewSelection, setDeliveryViewSelection] =
     useState<'delivery' | 'risk_confirmation' | 'repurchase'>('delivery');
   const [showDeliveryViewMenu, setShowDeliveryViewMenu] = useState(false);
@@ -170,7 +156,6 @@ export default function SalesPerformancePage() {
   const [hasInitializedChartShops, setHasInitializedChartShops] = useState(false);
 
   const lastSunburstHoverKeyRef = useRef<string>('');
-  const { addToast } = useToast();
 
   const resolvedPerformanceShops = useMemo(
     () => (isAllShopsMode ? performanceShopOptions : selectedShops),
@@ -342,32 +327,6 @@ export default function SalesPerformancePage() {
       setIsAllShopsMode(true);
     }
   }, [chartShopOptions, isAllShopsMode, performanceShopOptions, selectedShops]);
-
-  const rangeLabel = startDate === endDate ? startDate : `${startDate} → ${endDate}`;
-
-  const handleDeleteOrders = async () => {
-    if (isDeleting) return;
-    setIsDeleting(true);
-    setDeleteError('');
-    try {
-      const res = await apiClient.post<{ deletedCount: number }>(
-        '/analytics/sales-performance/pos-orders/delete-range',
-        {
-          start_date: startDate,
-          end_date: endDate,
-        },
-      );
-      addToast('success', `Deleted ${res.data.deletedCount} POS orders (${rangeLabel}).`);
-      setRefreshKey((prev) => prev + 1);
-      setShowDeleteModal(false);
-    } catch (error) {
-      console.error('Failed to delete POS orders', error);
-      addToast('error', 'Failed to delete POS orders. Please try again.');
-      setDeleteError('Failed to delete POS orders. Please try again.');
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   const displayShop = useCallback((value: string) => {
     return data?.filters?.shopDisplayMap?.[value] || value;
@@ -1039,17 +998,6 @@ export default function SalesPerformancePage() {
                 placeholder=" "
               />
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setDeleteError('');
-                setShowDeleteModal(true);
-              }}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:border-rose-300 hover:text-rose-700"
-              aria-label="Delete POS orders in range"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1425,60 +1373,6 @@ export default function SalesPerformancePage() {
         </div>
       </DashboardSection>
 
-      <Dialog
-        open={showDeleteModal}
-        onOpenChange={(open) => {
-          if (!open && !isDeleting) {
-            setShowDeleteModal(false);
-            setDeleteError('');
-          }
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete POS Orders</DialogTitle>
-            <DialogDescription>
-              This will permanently delete POS orders for the selected date range and update analytics.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 text-sm text-slate-700">
-            <AlertBanner tone="warning" message="This action cannot be undone." />
-            <div>
-              <span className="text-slate-500">Date range:</span>{' '}
-              <span className="font-semibold text-foreground">{rangeLabel}</span>
-            </div>
-          </div>
-
-          {deleteError && (
-            <AlertBanner tone="error" message={deleteError} />
-          )}
-
-          <div className="flex gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setShowDeleteModal(false);
-                setDeleteError('');
-              }}
-              disabled={isDeleting}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="danger"
-              onClick={handleDeleteOrders}
-              loading={isDeleting}
-              className="flex-1"
-            >
-              {isDeleting ? 'Deleting...' : 'Delete Orders'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
