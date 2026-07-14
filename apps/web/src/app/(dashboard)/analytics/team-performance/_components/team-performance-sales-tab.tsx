@@ -104,26 +104,23 @@ function computeAdjustedCod(
   cod: number,
   canceled: number,
   restocking: number,
-  abandoned: number,
-  opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean },
+  opts: { excludeCancel: boolean; excludeRestocking: boolean },
 ) {
   return (
     cod -
     (opts.excludeCancel ? canceled : 0) -
-    (opts.excludeRestocking ? restocking : 0) -
-    (opts.excludeAbandoned ? abandoned : 0)
+    (opts.excludeRestocking ? restocking : 0)
   );
 }
 
 function computeAdjustedGrossCod(
   kpis: OverviewResponse['kpis'],
-  opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean },
+  opts: { excludeCancel: boolean; excludeRestocking: boolean },
 ) {
   return computeAdjustedCod(
     kpis.gross_cod ?? 0,
     kpis.canceled_cod ?? 0,
     kpis.restocking_cod ?? 0,
-    kpis.abandoned_cod ?? 0,
     opts,
   );
 }
@@ -190,7 +187,6 @@ export default function SalesByTeamAnalyticsPage() {
   const selectedMappingsRef = useRef<string[]>([]);
   const [excludeCanceled, setExcludeCanceled] = useState(true);
   const [excludeRestocking, setExcludeRestocking] = useState(true);
-  const [excludeAbandoned, setExcludeAbandoned] = useState(true);
   const [excludeRts, setExcludeRts] = useState(true);
   const [includeTax12, setIncludeTax12] = useState(true);
   const [includeTax1, setIncludeTax1] = useState(true);
@@ -310,7 +306,6 @@ export default function SalesByTeamAnalyticsPage() {
       }
       params.set('exclude_cancel', String(excludeCanceled));
       params.set('exclude_restocking', String(excludeRestocking));
-      params.set('exclude_abandoned', String(excludeAbandoned));
       params.set('exclude_rts', String(excludeRts));
       params.set('include_tax_12', String(includeTax12));
       params.set('include_tax_1', String(includeTax1));
@@ -343,7 +338,6 @@ export default function SalesByTeamAnalyticsPage() {
     }
   }, [
     endDate,
-    excludeAbandoned,
     excludeCanceled,
     excludeRestocking,
     excludeRts,
@@ -422,7 +416,6 @@ export default function SalesByTeamAnalyticsPage() {
         const adjustedGrossCod = computeAdjustedGrossCod(data.kpis, {
           excludeCancel: excludeCanceled,
           excludeRestocking,
-          excludeAbandoned,
         });
         const purchasesForCmRts =
           (data.counts.purchases ?? 0) + (excludeRts ? data.counts.rts ?? 0 : 0);
@@ -455,7 +448,6 @@ export default function SalesByTeamAnalyticsPage() {
         const adjustedGrossCod = computeAdjustedGrossCod(data.prevKpis, {
           excludeCancel: excludeCanceled,
           excludeRestocking,
-          excludeAbandoned,
         });
         const purchasesForCmRts =
           (data.prevCounts.purchases ?? 0) + (excludeRts ? data.prevCounts.rts ?? 0 : 0);
@@ -490,13 +482,11 @@ export default function SalesByTeamAnalyticsPage() {
     const baseCod = row.cod_raw ?? row.revenue ?? 0;
     const canceledCod = row.canceled_cod ?? 0;
     const restockingCod = row.restocking_cod ?? 0;
-    const abandonedCod = row.abandoned_cod ?? 0;
     const adjustedGrossCod = Math.max(
       0,
-      computeAdjustedCod(baseCod, canceledCod, restockingCod, abandonedCod, {
+      computeAdjustedCod(baseCod, canceledCod, restockingCod, {
         excludeCancel: excludeCanceled,
         excludeRestocking,
-        excludeAbandoned,
       }),
     );
     const purchasesForCmRts =
@@ -852,7 +842,7 @@ export default function SalesByTeamAnalyticsPage() {
       `${startDate} → ${endDate}`,
       selectedTeamCode ? teamDisplay(selectedTeamCode) : 'All teams',
       `${selectedMappings.length || 0}/${mappingOptions.length || 0} mappings`,
-      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, abandoned ${excludeAbandoned ? 'ON' : 'OFF'}, RTS ${excludeRts ? 'ON' : 'OFF'}`,
+      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, RTS ${excludeRts ? 'ON' : 'OFF'}`,
     ].join(' • ');
 
     return (
@@ -939,7 +929,7 @@ export default function SalesByTeamAnalyticsPage() {
       `${startDate} → ${endDate}`,
       selectedTeamCode ? teamDisplay(selectedTeamCode) : 'All teams',
       `${selectedMappings.length || 0}/${mappingOptions.length || 0} mappings`,
-      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, abandoned ${excludeAbandoned ? 'ON' : 'OFF'}, RTS ${excludeRts ? 'ON' : 'OFF'}`,
+      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, RTS ${excludeRts ? 'ON' : 'OFF'}`,
     ].join(' • ');
 
     return (
@@ -994,7 +984,6 @@ export default function SalesByTeamAnalyticsPage() {
     const adjustedGrossCod = computeAdjustedGrossCod(kpis, {
       excludeCancel: excludeCanceled,
       excludeRestocking,
-      excludeAbandoned,
     });
     const purchasesForCmRts =
       (data.counts.purchases ?? 0) + (excludeRts ? data.counts.rts ?? 0 : 0);
@@ -1015,7 +1004,7 @@ export default function SalesByTeamAnalyticsPage() {
       `${startDate} → ${endDate}`,
       selectedTeamCode ? teamDisplay(selectedTeamCode) : 'All teams',
       `${selectedMappings.length || 0}/${mappingOptions.length || 0} mappings`,
-      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}, abandoned ${excludeAbandoned ? 'ON' : 'OFF'}`,
+      `Exclude: cancel ${excludeCanceled ? 'ON' : 'OFF'}, restocking ${excludeRestocking ? 'ON' : 'OFF'}`,
       `RTS %: ${rtsForecastSafe}`,
     ].join(' • ');
 
@@ -1231,15 +1220,6 @@ export default function SalesByTeamAnalyticsPage() {
                       onChange={(event) => setExcludeRestocking(event.target.checked)}
                     />
                     <span className="text-sm text-foreground">Exclude Restocking</span>
-                  </label>
-                  <label className="flex cursor-pointer select-none items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
-                      checked={excludeAbandoned}
-                      onChange={(event) => setExcludeAbandoned(event.target.checked)}
-                    />
-                    <span className="text-sm text-foreground">Exclude Abandoned</span>
                   </label>
                   <label className="flex cursor-pointer select-none items-center gap-2">
                     <input

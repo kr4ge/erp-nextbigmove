@@ -179,6 +179,331 @@ export class SalesPerformanceService {
     };
   }
 
+  private buildEmptyStoreConversionResponse(
+    startStr: string,
+    endStr: string,
+    rangeDays: number,
+    selectedShopIds: string[] = [],
+  ) {
+    const emptySummary = {
+      abandonedOrders: 0,
+      abandonedConvertedOrders: 0,
+      abandonedConvertedRevenue: 0,
+      abandonedConversionRatePct: 0,
+      abandonedDeliveredOrders: 0,
+      abandonedRtsOrders: 0,
+      abandonedDeliveryRatePct: 0,
+      abandonedRtsRatePct: 0,
+      repurchaseOrders: 0,
+      repurchaseConvertedOrders: 0,
+      repurchaseRevenue: 0,
+      repurchaseConversionRatePct: 0,
+      repurchaseDeliveredOrders: 0,
+      repurchaseRtsOrders: 0,
+      repurchaseDeliveryRatePct: 0,
+      repurchaseRtsRatePct: 0,
+    };
+
+    return {
+      summary: emptySummary,
+      prevSummary: emptySummary,
+      rows: [],
+      filters: {
+        shops: [] as string[],
+        shopDisplayMap: {} as Record<string, string>,
+      },
+      selected: {
+        start_date: startStr,
+        end_date: endStr,
+        shop_ids: selectedShopIds,
+      },
+      rangeDays,
+      lastUpdatedAt: null as string | null,
+    };
+  }
+
+  private buildStoreConversionSummary(rows: Array<Record<string, any>>) {
+    const summary = rows.reduce(
+      (acc, row) => {
+        acc.abandonedOrders += this.toNumber(row.abandoned_orders);
+        acc.abandonedConvertedOrders += this.toNumber(row.abandoned_converted_orders);
+        acc.abandonedConvertedRevenue += this.toNumber(row.abandoned_converted_revenue);
+        acc.abandonedDeliveredOrders += this.toNumber(row.abandoned_delivered_orders);
+        acc.abandonedRtsOrders += this.toNumber(row.abandoned_rts_orders);
+        acc.repurchaseOrders += this.toNumber(row.repurchase_orders);
+        acc.repurchaseConvertedOrders += this.toNumber(row.repurchase_converted_orders);
+        acc.repurchaseRevenue += this.toNumber(row.repurchase_revenue);
+        acc.repurchaseDeliveredOrders += this.toNumber(row.repurchase_delivered_orders);
+        acc.repurchaseRtsOrders += this.toNumber(row.repurchase_rts_orders);
+        return acc;
+      },
+      {
+        abandonedOrders: 0,
+        abandonedConvertedOrders: 0,
+        abandonedConvertedRevenue: 0,
+        abandonedDeliveredOrders: 0,
+        abandonedRtsOrders: 0,
+        repurchaseOrders: 0,
+        repurchaseConvertedOrders: 0,
+        repurchaseRevenue: 0,
+        repurchaseDeliveredOrders: 0,
+        repurchaseRtsOrders: 0,
+      },
+    );
+    const abandonedOutcomeTotal = summary.abandonedDeliveredOrders + summary.abandonedRtsOrders;
+    const repurchaseOutcomeTotal = summary.repurchaseDeliveredOrders + summary.repurchaseRtsOrders;
+
+    return {
+      ...summary,
+      abandonedConversionRatePct:
+        summary.abandonedOrders > 0
+          ? (summary.abandonedConvertedOrders / summary.abandonedOrders) * 100
+          : 0,
+      abandonedDeliveryRatePct:
+        abandonedOutcomeTotal > 0
+          ? (summary.abandonedDeliveredOrders / abandonedOutcomeTotal) * 100
+          : 0,
+      abandonedRtsRatePct:
+        abandonedOutcomeTotal > 0
+          ? (summary.abandonedRtsOrders / abandonedOutcomeTotal) * 100
+          : 0,
+      repurchaseConversionRatePct:
+        summary.repurchaseOrders > 0
+          ? (summary.repurchaseConvertedOrders / summary.repurchaseOrders) * 100
+          : 0,
+      repurchaseDeliveryRatePct:
+        repurchaseOutcomeTotal > 0
+          ? (summary.repurchaseDeliveredOrders / repurchaseOutcomeTotal) * 100
+          : 0,
+      repurchaseRtsRatePct:
+        repurchaseOutcomeTotal > 0
+          ? (summary.repurchaseRtsOrders / repurchaseOutcomeTotal) * 100
+          : 0,
+    };
+  }
+
+  async getStoreConversion(params: {
+    startDate?: string;
+    endDate?: string;
+    shopIds?: string[];
+  }) {
+    const { startDate, endDate, shopIds = [] } = params;
+    const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+    const endStr = (endDate && endDate.trim()) || startStr;
+
+    if (!dayjs(startStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid start_date format. Expected YYYY-MM-DD');
+    }
+    if (!dayjs(endStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid end_date format. Expected YYYY-MM-DD');
+    }
+    if (endStr < startStr) {
+      throw new BadRequestException('start_date must be before or equal to end_date');
+    }
+
+    const rangeDays = this.diffDays(startStr, endStr) + 1;
+    const prevEndStr = this.shiftDate(startStr, -1);
+    const prevStartStr = this.shiftDate(startStr, -rangeDays);
+    const normalizedShopIds = (shopIds || [])
+      .map((v) => v?.toString?.().trim?.() || '')
+      .filter((v) => v.length > 0);
+
+    const { tenantId } = await this.teamContext.getContext();
+    const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
+
+    if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length === 0) {
+      return this.buildEmptyStoreConversionResponse(startStr, endStr, rangeDays, normalizedShopIds);
+    }
+
+    const cacheVersion = await this.analyticsCache.getVersion(tenantId);
+    const cacheKeyPayload = {
+      tenantId,
+      teamIds: effectiveTeamIds || [],
+      start: startStr,
+      end: endStr,
+      shopIds: normalizedShopIds.sort(),
+      chart: 'store-conversion',
+    };
+    const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales-performance:store-conversion:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
+    const cached = await this.analyticsCache.get<any>(cacheKey);
+    if (cached) return cached;
+
+    const buildBaseWhere = (start: string, end: string, includeShopFilter = true) => {
+      const where = [
+        Prisma.sql`"tenantId" = ${tenantId}::uuid`,
+        Prisma.sql`"dateLocal" >= ${start}`,
+        Prisma.sql`"dateLocal" <= ${end}`,
+        Prisma.sql`"status" IS DISTINCT FROM 7`,
+        Prisma.sql`(COALESCE("wasAbandonedCart", false) = true OR COALESCE("isRepurchase", false) = true)`,
+      ];
+      if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0) {
+        where.push(Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`);
+      }
+      if (includeShopFilter && normalizedShopIds.length > 0) {
+        where.push(Prisma.sql`"shopId" IN (${Prisma.join(normalizedShopIds)})`);
+      }
+      return where;
+    };
+
+    const buildRowsQuery = (whereClause: Prisma.Sql) => Prisma.sql`
+      SELECT
+        "shopId",
+        COUNT(*) FILTER (WHERE COALESCE("wasAbandonedCart", false) = true)::int AS abandoned_orders,
+        COUNT(*) FILTER (
+          WHERE COALESCE("wasAbandonedCart", false) = true
+            AND "status" NOT IN (0, 6, 7, 11)
+        )::int AS abandoned_converted_orders,
+        COALESCE(SUM(
+          CASE
+            WHEN COALESCE("wasAbandonedCart", false) = true
+              AND "status" NOT IN (0, 6, 7, 11)
+              THEN COALESCE("cod", 0)
+            ELSE 0
+          END
+        ), 0)::numeric AS abandoned_converted_revenue,
+        COUNT(*) FILTER (
+          WHERE COALESCE("wasAbandonedCart", false) = true
+            AND "status" = 3
+        )::int AS abandoned_delivered_orders,
+        COUNT(*) FILTER (
+          WHERE COALESCE("wasAbandonedCart", false) = true
+            AND "status" IN (4, 5)
+        )::int AS abandoned_rts_orders,
+        COUNT(*) FILTER (WHERE COALESCE("isRepurchase", false) = true)::int AS repurchase_orders,
+        COUNT(*) FILTER (
+          WHERE COALESCE("isRepurchase", false) = true
+            AND "status" NOT IN (0, 6, 7, 11)
+        )::int AS repurchase_converted_orders,
+        COALESCE(SUM(
+          CASE
+            WHEN COALESCE("isRepurchase", false) = true
+              AND "status" NOT IN (0, 6, 7, 11)
+              THEN COALESCE("cod", 0)
+            ELSE 0
+          END
+        ), 0)::numeric AS repurchase_revenue,
+        COUNT(*) FILTER (
+          WHERE COALESCE("isRepurchase", false) = true
+            AND "status" = 3
+        )::int AS repurchase_delivered_orders,
+        COUNT(*) FILTER (
+          WHERE COALESCE("isRepurchase", false) = true
+            AND "status" IN (4, 5)
+        )::int AS repurchase_rts_orders
+      FROM "pos_orders"
+      ${whereClause}
+      GROUP BY "shopId"
+      ORDER BY "shopId"
+    `;
+
+    const whereClause = Prisma.sql`WHERE ${Prisma.join(buildBaseWhere(startStr, endStr), ' AND ')}`;
+    const prevWhereClause = Prisma.sql`WHERE ${Prisma.join(buildBaseWhere(prevStartStr, prevEndStr), ' AND ')}`;
+    const optionWhereClause = Prisma.sql`WHERE ${Prisma.join(buildBaseWhere(startStr, endStr, false), ' AND ')}`;
+
+    const [rawRows, prevRawRows, lastUpdatedRows, optionRows] = await Promise.all([
+      this.prisma.$queryRaw<any[]>(buildRowsQuery(whereClause)),
+      this.prisma.$queryRaw<any[]>(buildRowsQuery(prevWhereClause)),
+      this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT MAX("updatedAt") AS "last_updated"
+        FROM "pos_orders"
+        ${whereClause}
+      `),
+      this.prisma.$queryRaw<Array<{ shopId: string }>>(Prisma.sql`
+        SELECT DISTINCT "shopId"
+        FROM "pos_orders"
+        ${optionWhereClause}
+        AND "shopId" IS NOT NULL
+        ORDER BY "shopId"
+      `),
+    ]);
+
+    const rows = rawRows.map((row) => {
+      const abandonedOrders = this.toNumber(row.abandoned_orders);
+      const abandonedConvertedOrders = this.toNumber(row.abandoned_converted_orders);
+      const abandonedConvertedRevenue = this.toNumber(row.abandoned_converted_revenue);
+      const abandonedDeliveredOrders = this.toNumber(row.abandoned_delivered_orders);
+      const abandonedRtsOrders = this.toNumber(row.abandoned_rts_orders);
+      const abandonedOutcomeTotal = abandonedDeliveredOrders + abandonedRtsOrders;
+      const repurchaseOrders = this.toNumber(row.repurchase_orders);
+      const repurchaseConvertedOrders = this.toNumber(row.repurchase_converted_orders);
+      const repurchaseRevenue = this.toNumber(row.repurchase_revenue);
+      const repurchaseDeliveredOrders = this.toNumber(row.repurchase_delivered_orders);
+      const repurchaseRtsOrders = this.toNumber(row.repurchase_rts_orders);
+      const repurchaseOutcomeTotal = repurchaseDeliveredOrders + repurchaseRtsOrders;
+
+      return {
+        shopId: (row.shopId || '').toString(),
+        abandonedOrders,
+        abandonedConvertedOrders,
+        abandonedConvertedRevenue,
+        abandonedConversionRatePct:
+          abandonedOrders > 0 ? (abandonedConvertedOrders / abandonedOrders) * 100 : 0,
+        abandonedDeliveredOrders,
+        abandonedRtsOrders,
+        abandonedDeliveryRatePct:
+          abandonedOutcomeTotal > 0 ? (abandonedDeliveredOrders / abandonedOutcomeTotal) * 100 : 0,
+        abandonedRtsRatePct:
+          abandonedOutcomeTotal > 0 ? (abandonedRtsOrders / abandonedOutcomeTotal) * 100 : 0,
+        repurchaseOrders,
+        repurchaseConvertedOrders,
+        repurchaseRevenue,
+        repurchaseConversionRatePct:
+          repurchaseOrders > 0 ? (repurchaseConvertedOrders / repurchaseOrders) * 100 : 0,
+        repurchaseDeliveredOrders,
+        repurchaseRtsOrders,
+        repurchaseDeliveryRatePct:
+          repurchaseOutcomeTotal > 0 ? (repurchaseDeliveredOrders / repurchaseOutcomeTotal) * 100 : 0,
+        repurchaseRtsRatePct:
+          repurchaseOutcomeTotal > 0 ? (repurchaseRtsOrders / repurchaseOutcomeTotal) * 100 : 0,
+      };
+    });
+
+    const summary = this.buildStoreConversionSummary(rawRows);
+    const prevSummary = this.buildStoreConversionSummary(prevRawRows);
+    const shopIdsList = optionRows.map((row) => row.shopId).filter(Boolean);
+    const shopDisplayMap: Record<string, string> = {};
+
+    if (shopIdsList.length > 0) {
+      const storeWhere: Prisma.PosStoreWhereInput = {
+        tenantId,
+        shopId: { in: shopIdsList },
+      };
+      if (Array.isArray(effectiveTeamIds) && effectiveTeamIds.length > 0) {
+        storeWhere.teamId = { in: effectiveTeamIds };
+      }
+      const stores = await this.prisma.posStore.findMany({
+        where: storeWhere,
+        select: { shopId: true, shopName: true, name: true },
+      });
+      stores.forEach((store) => {
+        const display = store.shopName || store.name || store.shopId;
+        if (display) {
+          shopDisplayMap[store.shopId] = display;
+        }
+      });
+    }
+
+    const response = {
+      summary,
+      prevSummary,
+      rows,
+      filters: {
+        shops: shopIdsList,
+        shopDisplayMap,
+      },
+      selected: {
+        start_date: startStr,
+        end_date: endStr,
+        shop_ids: normalizedShopIds,
+      },
+      rangeDays,
+      lastUpdatedAt: lastUpdatedRows?.[0]?.last_updated ?? null,
+    };
+
+    await this.analyticsCache.set(cacheKey, response);
+    return response;
+  }
+
   async getOverview(params: {
     startDate?: string;
     endDate?: string;

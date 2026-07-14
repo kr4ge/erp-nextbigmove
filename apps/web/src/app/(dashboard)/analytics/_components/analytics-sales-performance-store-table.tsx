@@ -6,16 +6,21 @@ import {
   AnalyticsTableLoadingRows,
   AnalyticsTableShell,
 } from './analytics-table-shell';
-import type { SalesPerformanceRow, SalesPerformanceSortKey } from '../_types/sales-performance';
+import type {
+  SalesPerformanceStoreConversionRow,
+  SalesPerformanceStoreConversionSortKey,
+} from '../_types/sales-performance';
 
 const formatCurrency = (val?: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);
 
 const formatPct = (val?: number) => `${(val || 0).toFixed(2)}%`;
 
+const formatCount = (val?: number) => new Intl.NumberFormat('en-US').format(val ?? 0);
+
 type AnalyticsSalesPerformanceStoreTableProps = {
   isLoading: boolean;
-  rows: SalesPerformanceRow[];
+  rows: SalesPerformanceStoreConversionRow[];
   storeStart: number;
   storeEnd: number;
   totalStoreRows: number;
@@ -25,9 +30,8 @@ type AnalyticsSalesPerformanceStoreTableProps = {
   canNext: boolean;
   onPrevious: () => void;
   onNext: () => void;
-  displayAssignee: (value: string | null) => string;
   displayShop: (value: string) => string;
-  renderSortLabel: (label: string, key: SalesPerformanceSortKey) => ReactNode;
+  renderSortLabel: (label: string, key: SalesPerformanceStoreConversionSortKey) => ReactNode;
 };
 
 export function AnalyticsSalesPerformanceStoreTable({
@@ -42,7 +46,6 @@ export function AnalyticsSalesPerformanceStoreTable({
   canNext,
   onPrevious,
   onNext,
-  displayAssignee,
   displayShop,
   renderSortLabel,
 }: AnalyticsSalesPerformanceStoreTableProps) {
@@ -61,84 +64,78 @@ export function AnalyticsSalesPerformanceStoreTable({
           <thead className="bg-slate-50 dark:bg-background-secondary">
             <tr>
               <th className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-3 text-left dark:bg-background-secondary sm:px-4 lg:px-6">
-                {renderSortLabel('Sales Assignee', 'assignee')}
+                {renderSortLabel('Store', 'shop')}
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('Shop POS', 'shop')}
+              <th className="whitespace-nowrap px-3 py-3 text-right sm:px-4 lg:px-6">
+                {renderSortLabel('Abandoned Revenue', 'abandoned_revenue')}
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('MKTG Cod', 'mktg_cod')}
+              <th className="whitespace-nowrap px-3 py-3 text-right sm:px-4 lg:px-6">
+                {renderSortLabel('Abandoned Conv.', 'abandoned_conversion')}
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('Sales Cod', 'sales_cod')}
+              <th className="whitespace-nowrap px-3 py-3 text-right sm:px-4 lg:px-6">
+                {renderSortLabel('Abandoned Delivery', 'abandoned_delivery')}
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('SMP %', 'smp')}
+              <th className="whitespace-nowrap px-3 py-3 text-right sm:px-4 lg:px-6">
+                {renderSortLabel('Abandoned RTS', 'abandoned_rts')}
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('RTS Rate %', 'rts')}
+              <th className="whitespace-nowrap px-3 py-3 text-right sm:px-4 lg:px-6">
+                {renderSortLabel('Repurchase Revenue', 'repurchase_revenue')}
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('Confirmation Rate %', 'confirmation')}
+              <th className="whitespace-nowrap px-3 py-3 text-right sm:px-4 lg:px-6">
+                {renderSortLabel('Repurchase Conv.', 'repurchase_conversion')}
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('Pending Rate %', 'pending')}
+              <th className="whitespace-nowrap px-3 py-3 text-right sm:px-4 lg:px-6">
+                {renderSortLabel('Repurchase Delivery', 'repurchase_delivery')}
               </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('Cancellation Rate %', 'cancellation')}
-              </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('Upsell Rate %', 'upsell_rate')}
-              </th>
-              <th className="whitespace-nowrap px-3 py-3 text-left sm:px-4 lg:px-6">
-                {renderSortLabel('Sales Upsell', 'upsell_delta')}
+              <th className="whitespace-nowrap px-3 py-3 text-right sm:px-4 lg:px-6">
+                {renderSortLabel('Repurchase RTS', 'repurchase_rts')}
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
             {isLoading ? (
-              <AnalyticsTableLoadingRows colCount={11} />
+              <AnalyticsTableLoadingRows colCount={9} />
             ) : (
               rows.map((row) => (
-                <tr key={`${row.salesAssignee ?? 'unassigned'}-${row.shopId}`} className="bg-white hover:bg-slate-50 dark:bg-surface dark:hover:bg-background-secondary">
+                <tr key={row.shopId} className="bg-white hover:bg-slate-50 dark:bg-surface dark:hover:bg-background-secondary">
                   <td className="sticky left-0 z-10 bg-white px-3 py-4 text-sm text-slate-700 dark:bg-surface dark:text-slate-300 sm:px-4 lg:px-6">
-                    {displayAssignee(row.salesAssignee)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
                     <span className="text-foreground">{displayShop(row.shopId)}</span>
                   </td>
-                  <td className="px-3 py-4 text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
-                    {formatCurrency(row.mktgCod)}
+                  <td className="whitespace-nowrap px-3 py-4 text-right text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
+                    <div className="font-semibold text-foreground">{formatCurrency(row.abandonedConvertedRevenue)}</div>
+                    <div className="text-xs text-muted">{formatCount(row.abandonedConvertedOrders)} / {formatCount(row.abandonedOrders)} ord</div>
                   </td>
-                  <td className="px-3 py-4 text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
-                    {formatCurrency(row.salesCod)}
+                  <td className="whitespace-nowrap px-3 py-4 text-right text-sm font-semibold text-foreground sm:px-4 lg:px-6">
+                    {formatPct(row.abandonedConversionRatePct)}
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
-                    {formatPct(row.salesVsMktgPct)}
+                  <td className="whitespace-nowrap px-3 py-4 text-right text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
+                    <div className="font-semibold text-foreground">{formatPct(row.abandonedDeliveryRatePct)}</div>
+                    <div className="text-xs text-muted">{formatCount(row.abandonedDeliveredOrders)} delivered</div>
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
-                    {formatPct(row.rtsRatePct)}
+                  <td className="whitespace-nowrap px-3 py-4 text-right text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
+                    <div className="font-semibold text-foreground">{formatPct(row.abandonedRtsRatePct)}</div>
+                    <div className="text-xs text-muted">{formatCount(row.abandonedRtsOrders)} RTS</div>
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
-                    {formatPct(row.confirmationRatePct)}
+                  <td className="whitespace-nowrap px-3 py-4 text-right text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
+                    <div className="font-semibold text-foreground">{formatCurrency(row.repurchaseRevenue)}</div>
+                    <div className="text-xs text-muted">{formatCount(row.repurchaseConvertedOrders)} / {formatCount(row.repurchaseOrders)} ord</div>
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
-                    {formatPct(row.pendingRatePct)}
+                  <td className="whitespace-nowrap px-3 py-4 text-right text-sm font-semibold text-foreground sm:px-4 lg:px-6">
+                    {formatPct(row.repurchaseConversionRatePct)}
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
-                    {formatPct(row.cancellationRatePct)}
+                  <td className="whitespace-nowrap px-3 py-4 text-right text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
+                    <div className="font-semibold text-foreground">{formatPct(row.repurchaseDeliveryRatePct)}</div>
+                    <div className="text-xs text-muted">{formatCount(row.repurchaseDeliveredOrders)} delivered</div>
                   </td>
-                  <td className="px-3 py-4 text-sm font-semibold text-foreground sm:px-4 lg:px-6">
-                    {formatPct(row.upsellRatePct)}
-                  </td>
-                  <td className="px-3 py-4 text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
-                    {formatCurrency(row.upsellDelta)}
+                  <td className="whitespace-nowrap px-3 py-4 text-right text-sm text-slate-700 dark:text-slate-300 sm:px-4 lg:px-6">
+                    <div className="font-semibold text-foreground">{formatPct(row.repurchaseRtsRatePct)}</div>
+                    <div className="text-xs text-muted">{formatCount(row.repurchaseRtsOrders)} RTS</div>
                   </td>
                 </tr>
               ))
             )}
             {!isLoading && rows.length === 0 ? (
-              <AnalyticsTableEmptyRow colSpan={11} message="No data available for the selected filters." />
+              <AnalyticsTableEmptyRow colSpan={9} message="No abandoned or repurchase data for the selected range." />
             ) : null}
           </tbody>
         </table>

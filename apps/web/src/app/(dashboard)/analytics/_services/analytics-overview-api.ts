@@ -19,6 +19,10 @@ export const analyticsOverviewApi = {
     return apiClient.get<T>('/analytics/sales-performance/overview', { params });
   },
 
+  getSalesPerformanceStoreConversion<T>(params: QueryParams) {
+    return apiClient.get<T>('/analytics/sales-performance/store-conversion', { params });
+  },
+
   getProblematicDelivery<T>(params: QueryParams) {
     return apiClient.get<T>('/analytics/sales-performance/problematic-delivery', {
       params,

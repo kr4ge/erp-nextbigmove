@@ -24,12 +24,7 @@ import {
   type SalesPerformanceRepurchaseRow,
 } from '../_components/analytics-sales-performance-repurchase-table';
 import { AnalyticsSalesPerformanceStoreTable } from '../_components/analytics-sales-performance-store-table';
-import { AnalyticsSalesPerformanceSummaryTable } from '../_components/analytics-sales-performance-summary-table';
 import { AnalyticsSortToggleLabel } from '../_components/analytics-sort-toggle-label';
-import {
-  AnalyticsTableSelector,
-  type AnalyticsTableSelectorOption,
-} from '../_components/analytics-table-selector';
 import {
   formatDateInTimezone,
 } from '../_utils/date';
@@ -41,11 +36,9 @@ import { analyticsOverviewApi } from '../_services/analytics-overview-api';
 import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import {
   type ProblematicDeliveryResponse,
-  type SalesPerformanceOverviewResponse as OverviewResponse,
-  type SalesPerformanceRow,
-  type SalesPerformanceSortKey as SortKey,
-  type SalesPerformanceSummary,
-  type SalesPerformanceSummaryRow,
+  type SalesPerformanceStoreConversionResponse as OverviewResponse,
+  type SalesPerformanceStoreConversionRow,
+  type SalesPerformanceStoreConversionSortKey as SortKey,
   type SunburstHoverInfo,
   salesPerformanceMetricDefinitions as metricDefinitions,
 } from '../_types/sales-performance';
@@ -55,8 +48,6 @@ const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
 const formatCurrency = (val?: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);
-
-const formatPct = (val?: number) => `${(val || 0).toFixed(2)}%`;
 
 const formatCount = (val?: number) => new Intl.NumberFormat('en-US').format(val ?? 0);
 const formatShortDate = (dateStr: string) => {
@@ -143,27 +134,10 @@ const buildSparklineOption = (
   ],
 });
 
-const TooltipRow = ({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) => (
-  <div className="flex items-center justify-between text-[12px] text-slate-700">
-    <span>{label}</span>
-    <span className={bold ? 'font-semibold text-foreground' : ''}>{value}</span>
-  </div>
-);
-
 const areArraysEqual = (a: string[], b: string[]) => {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
     if (a[i] !== b[i]) return false;
-  }
-  return true;
-};
-
-const areRecordsEqual = (a: Record<string, string>, b: Record<string, string>) => {
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
-  if (aKeys.length !== bKeys.length) return false;
-  for (const key of aKeys) {
-    if (a[key] !== b[key]) return false;
   }
   return true;
 };
@@ -176,57 +150,40 @@ export default function SalesPerformancePage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
-  const [tableSelection, setTableSelection] = useState<'store' | 'summary'>('summary');
   const [deliveryViewSelection, setDeliveryViewSelection] =
     useState<'delivery' | 'risk_confirmation' | 'repurchase'>('delivery');
   const [showDeliveryViewMenu, setShowDeliveryViewMenu] = useState(false);
   const [storePage, setStorePage] = useState(1);
-  const [summaryPage, setSummaryPage] = useState(1);
   const [riskPage, setRiskPage] = useState(1);
   const [repurchasePage, setRepurchasePage] = useState(1);
   const pageSize = 10;
-  const [sortKey, setSortKey] = useState<SortKey>('smp');
+  const [sortKey, setSortKey] = useState<SortKey>('abandoned_revenue');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [problematicData, setProblematicData] = useState<ProblematicDeliveryResponse | null>(null);
   const [sunburstHoverInfo, setSunburstHoverInfo] = useState<SunburstHoverInfo | null>(null);
   const [isProblematicLoading, setIsProblematicLoading] = useState(false);
   const [isChartsDark, setIsChartsDark] = useState(false);
+  const [performanceShopOptions, setPerformanceShopOptions] = useState<string[]>([]);
   const [chartShopOptions, setChartShopOptions] = useState<string[]>([]);
-  const [selectedChartShops, setSelectedChartShops] = useState<string[]>([]);
-  const [isAllChartShopsMode, setIsAllChartShopsMode] = useState(true);
+  const [selectedShops, setSelectedShops] = useState<string[]>([]);
+  const [isAllShopsMode, setIsAllShopsMode] = useState(true);
   const [hasInitializedChartShops, setHasInitializedChartShops] = useState(false);
-
-  const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
-  const [assigneeDisplayMap, setAssigneeDisplayMap] = useState<Record<string, string>>({});
-  const [includeUnassigned, setIncludeUnassigned] = useState(false);
-  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
-  const [isAllAssigneesMode, setIsAllAssigneesMode] = useState(true);
-  const [hasInitializedSelection, setHasInitializedSelection] = useState(false);
 
   const lastSunburstHoverKeyRef = useRef<string>('');
   const { addToast } = useToast();
 
-  const allAssigneeOptions = useMemo(() => {
-    const base = [...assigneeOptions];
-    if (includeUnassigned) base.push('__null__');
-    return base;
-  }, [assigneeOptions, includeUnassigned]);
-
-  const resolvedSelection = useMemo(
-    () => (isAllAssigneesMode ? allAssigneeOptions : selectedAssignees),
-    [isAllAssigneesMode, selectedAssignees, allAssigneeOptions],
+  const resolvedPerformanceShops = useMemo(
+    () => (isAllShopsMode ? performanceShopOptions : selectedShops),
+    [isAllShopsMode, selectedShops, performanceShopOptions],
   );
-
-  const selectedLabel =
-    isAllAssigneesMode ? 'All sales assignees' : `${selectedAssignees.length} selected`;
 
   const resolvedChartShops = useMemo(
-    () => (isAllChartShopsMode ? chartShopOptions : selectedChartShops),
-    [isAllChartShopsMode, selectedChartShops, chartShopOptions],
+    () => (isAllShopsMode ? chartShopOptions : selectedShops),
+    [isAllShopsMode, selectedShops, chartShopOptions],
   );
 
-  const selectedChartShopLabel =
-    isAllChartShopsMode ? 'All shops' : `${selectedChartShops.length} selected`;
+  const selectedShopLabel =
+    isAllShopsMode ? 'All shops' : `${selectedShops.length} selected`;
   const hasChartShopOptions = chartShopOptions.length > 0;
 
   const salesPerformanceDateRangeIsToday = startDate === today && endDate === today;
@@ -290,42 +247,20 @@ export default function SalesPerformancePage() {
           start_date: startDate,
           end_date: endDate,
         };
-        if (!isAllAssigneesMode) {
-          params.sales_assignee =
-            selectedAssignees.length > 0 ? selectedAssignees : ['__no_selection__'];
+        if (!isAllShopsMode) {
+          params.shop_id =
+            selectedShops.length > 0 ? selectedShops : ['__no_selection__'];
         }
 
         const res =
-          await analyticsOverviewApi.getSalesPerformanceOverview<OverviewResponse>(params);
+          await analyticsOverviewApi.getSalesPerformanceStoreConversion<OverviewResponse>(params);
         if (!isMounted) return;
         setData(res.data);
-        const nextAssignees = res.data.filters.salesAssignees || [];
-        const nextAssigneeDisplayMap = res.data.filters.salesAssigneesDisplayMap || {};
-        const nextIncludeUnassigned = !!res.data.filters.includeUnassigned;
-        setAssigneeOptions((prev) => (areArraysEqual(prev, nextAssignees) ? prev : nextAssignees));
-        setAssigneeDisplayMap((prev) =>
-          areRecordsEqual(prev, nextAssigneeDisplayMap) ? prev : nextAssigneeDisplayMap,
-        );
-        setIncludeUnassigned((prev) =>
-          prev === nextIncludeUnassigned ? prev : nextIncludeUnassigned,
-        );
-        const nextAll = [
-          ...(res.data.filters.salesAssignees || []),
-          ...(res.data.filters.includeUnassigned ? ['__null__'] : []),
-        ];
-        if (!hasInitializedSelection || isAllAssigneesMode) {
-          setSelectedAssignees((prev) => (prev.length === 0 ? prev : []));
-        } else {
-          const allowed = new Set(nextAll);
-          setSelectedAssignees((prev) => {
-            const next = prev.filter((v) => allowed.has(v));
-            return areArraysEqual(prev, next) ? prev : next;
-          });
-        }
-        if (!hasInitializedSelection) setHasInitializedSelection(true);
+        const nextShops = res.data.filters.shops || [];
+        setPerformanceShopOptions((prev) => (areArraysEqual(prev, nextShops) ? prev : nextShops));
       } catch (error) {
         if (isMounted) {
-          console.error('Failed to load sales performance overview', error);
+          console.error('Failed to load sales performance store conversion', error);
         }
       } finally {
         if (isMounted) setIsLoading(false);
@@ -337,10 +272,9 @@ export default function SalesPerformancePage() {
     };
   }, [
     endDate,
-    hasInitializedSelection,
-    isAllAssigneesMode,
+    isAllShopsMode,
     refreshKey,
-    selectedAssignees,
+    selectedShops,
     startDate,
   ]);
 
@@ -355,9 +289,9 @@ export default function SalesPerformancePage() {
           start_date: startDate,
           end_date: endDate,
         };
-        if (!isAllChartShopsMode) {
+        if (!isAllShopsMode) {
           params.shop_id =
-            selectedChartShops.length > 0 ? selectedChartShops : ['__no_selection__'];
+            selectedShops.length > 0 ? selectedShops : ['__no_selection__'];
         }
 
         const res = await analyticsOverviewApi.getProblematicDelivery<ProblematicDeliveryResponse>(
@@ -367,18 +301,6 @@ export default function SalesPerformancePage() {
         setProblematicData(res.data);
         const nextShops = res.data.filters.shops || [];
         setChartShopOptions((prev) => (areArraysEqual(prev, nextShops) ? prev : nextShops));
-        if (nextShops.length === 0) {
-          setIsAllChartShopsMode(true);
-          setSelectedChartShops((prev) => (prev.length === 0 ? prev : []));
-        } else if (!hasInitializedChartShops || isAllChartShopsMode) {
-          setSelectedChartShops((prev) => (prev.length === 0 ? prev : []));
-        } else {
-          const allowed = new Set(res.data.filters.shops || []);
-          setSelectedChartShops((prev) => {
-            const next = prev.filter((v) => allowed.has(v));
-            return areArraysEqual(prev, next) ? prev : next;
-          });
-        }
         if (!hasInitializedChartShops) setHasInitializedChartShops(true);
       } catch (error) {
         if (isMounted) {
@@ -395,11 +317,31 @@ export default function SalesPerformancePage() {
   }, [
     endDate,
     hasInitializedChartShops,
-    isAllChartShopsMode,
+    isAllShopsMode,
     refreshKey,
-    selectedChartShops,
+    selectedShops,
     startDate,
   ]);
+
+  useEffect(() => {
+    if (isAllShopsMode) return;
+    const allowed = new Set([...performanceShopOptions, ...chartShopOptions]);
+    if (allowed.size === 0) {
+      if (selectedShops.length > 0) {
+        setSelectedShops([]);
+      }
+      setIsAllShopsMode(true);
+      return;
+    }
+
+    const next = selectedShops.filter((shopId) => allowed.has(shopId));
+    if (!areArraysEqual(selectedShops, next)) {
+      setSelectedShops(next);
+    }
+    if (selectedShops.length > 0 && next.length === 0) {
+      setIsAllShopsMode(true);
+    }
+  }, [chartShopOptions, isAllShopsMode, performanceShopOptions, selectedShops]);
 
   const rangeLabel = startDate === endDate ? startDate : `${startDate} → ${endDate}`;
 
@@ -427,51 +369,22 @@ export default function SalesPerformancePage() {
     }
   };
 
-  const toggleAssignee = (value: string) => {
-    if (isAllAssigneesMode) {
-      setIsAllAssigneesMode(false);
-      setSelectedAssignees(allAssigneeOptions.filter((v) => v !== value));
-      return;
-    }
-    const has = selectedAssignees.includes(value);
-    const next = has
-      ? selectedAssignees.filter((v) => v !== value)
-      : [...selectedAssignees, value];
-    if (allAssigneeOptions.length > 0 && next.length === allAssigneeOptions.length) {
-      setIsAllAssigneesMode(true);
-      setSelectedAssignees([]);
-    } else {
-      setSelectedAssignees(next);
-    }
-  };
-
-  const displayAssignee = useCallback((value: string | null) => {
-    if (!value || value === '__null__') {
-      return assigneeDisplayMap['__null__'] || 'Unassigned';
-    }
-    return (
-      assigneeDisplayMap[value] ||
-      assigneeDisplayMap[value.toLowerCase()] ||
-      value
-    );
-  }, [assigneeDisplayMap]);
-
   const displayShop = useCallback((value: string) => {
     return data?.filters?.shopDisplayMap?.[value] || value;
   }, [data?.filters?.shopDisplayMap]);
 
-  const displayChartShop = (value: string) => {
+  const displayChartShop = useCallback((value: string) => {
     return problematicData?.filters?.shopDisplayMap?.[value] || data?.filters?.shopDisplayMap?.[value] || value;
-  };
-
-  const assigneePickerOptions = allAssigneeOptions.map((value) => ({
-    value,
-    label: displayAssignee(value),
-  }));
+  }, [data?.filters?.shopDisplayMap, problematicData?.filters?.shopDisplayMap]);
 
   const chartShopPickerOptions = chartShopOptions.map((value) => ({
     value,
     label: displayChartShop(value),
+  }));
+
+  const performanceShopPickerOptions = performanceShopOptions.map((value) => ({
+    value,
+    label: displayShop(value),
   }));
 
   const handleSort = (key: SortKey) => {
@@ -480,7 +393,7 @@ export default function SalesPerformancePage() {
       return;
     }
     setSortKey(key);
-    setSortDir(key === 'assignee' || key === 'shop' ? 'asc' : 'desc');
+    setSortDir(key === 'shop' ? 'asc' : 'desc');
   };
 
   const renderSortLabel = (label: string, key: SortKey) => {
@@ -494,51 +407,46 @@ export default function SalesPerformancePage() {
     );
   };
 
-  const getSortValue = useCallback((row: SalesPerformanceRow | SalesPerformanceSummaryRow, key: SortKey, hasShop: boolean) => {
+  const getSortValue = useCallback((row: SalesPerformanceStoreConversionRow, key: SortKey) => {
     switch (key) {
-      case 'assignee':
-        return displayAssignee(row.salesAssignee).toLowerCase();
       case 'shop':
-        if (!hasShop || !('shopId' in row)) return '';
         return displayShop(row.shopId || '').toLowerCase();
-      case 'mktg_cod':
-        return row.mktgCod;
-      case 'sales_cod':
-        return row.salesCod;
-      case 'smp':
-        return row.salesVsMktgPct;
-      case 'rts':
-        return row.rtsRatePct;
-      case 'confirmation':
-        return row.confirmationRatePct;
-      case 'pending':
-        return row.pendingRatePct;
-      case 'cancellation':
-        return row.cancellationRatePct;
-      case 'upsell_rate':
-        return row.upsellRatePct;
-      case 'upsell_delta':
-        return row.upsellDelta;
+      case 'abandoned_revenue':
+        return row.abandonedConvertedRevenue;
+      case 'abandoned_conversion':
+        return row.abandonedConversionRatePct;
+      case 'abandoned_delivery':
+        return row.abandonedDeliveryRatePct;
+      case 'abandoned_rts':
+        return row.abandonedRtsRatePct;
+      case 'repurchase_revenue':
+        return row.repurchaseRevenue;
+      case 'repurchase_conversion':
+        return row.repurchaseConversionRatePct;
+      case 'repurchase_delivery':
+        return row.repurchaseDeliveryRatePct;
+      case 'repurchase_rts':
+        return row.repurchaseRtsRatePct;
       default:
         return 0;
     }
-  }, [displayAssignee, displayShop]);
+  }, [displayShop]);
 
-  const toggleChartShop = (value: string) => {
-    if (isAllChartShopsMode) {
-      setIsAllChartShopsMode(false);
-      setSelectedChartShops(chartShopOptions.filter((v) => v !== value));
+  const toggleShop = (value: string, optionScope: string[]) => {
+    if (isAllShopsMode) {
+      setIsAllShopsMode(false);
+      setSelectedShops(optionScope.filter((option) => option !== value));
       return;
     }
-    const has = selectedChartShops.includes(value);
+    const has = selectedShops.includes(value);
     const next = has
-      ? selectedChartShops.filter((v) => v !== value)
-      : [...selectedChartShops, value];
-    if (chartShopOptions.length > 0 && next.length === chartShopOptions.length) {
-      setIsAllChartShopsMode(true);
-      setSelectedChartShops([]);
+      ? selectedShops.filter((option) => option !== value)
+      : [...selectedShops, value];
+    if (optionScope.length > 0 && next.length === optionScope.length) {
+      setIsAllShopsMode(true);
+      setSelectedShops([]);
     } else {
-      setSelectedChartShops(next);
+      setSelectedShops(next);
     }
   };
 
@@ -559,12 +467,6 @@ export default function SalesPerformancePage() {
       };
     });
   }, [data]);
-
-  const tooltipFooter = (
-    <p className="text-xs text-slate-500">
-      {startDate} → {endDate} • {selectedLabel}
-    </p>
-  );
 
   const sunburstSeriesData = useMemo(() => {
     // Keep one hue family per L1 branch, then vary only lightness/saturation by depth.
@@ -937,188 +839,9 @@ export default function SalesPerformancePage() {
     };
   }, [isChartsDark, trendChartData]);
 
-  const buildSmpTooltip = (summary?: SalesPerformanceSummary | null) => {
-    if (!summary) return null;
-    return (
-      <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-foreground">SMP % inputs</div>
-        <div className="space-y-1">
-          <TooltipRow label="Sales Cod" value={formatCurrency(summary.sales_cod)} />
-          <TooltipRow label="MKTG Cod" value={formatCurrency(summary.mktg_cod)} />
-        </div>
-        <div className="border-t border-slate-100 pt-2">
-          <TooltipRow label="SMP %" value={formatPct(summary.sales_vs_mktg_pct)} bold />
-        </div>
-        {tooltipFooter}
-      </div>
-    );
-  };
-
-  const buildRtsRateTooltip = (summary?: SalesPerformanceSummary | null) => {
-    if (!summary) return null;
-    return (
-      <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-foreground">RTS Rate inputs</div>
-        <div className="space-y-1">
-          <TooltipRow label="RTS Orders" value={formatCount(summary.rts_count)} />
-          <TooltipRow label="Delivered Orders" value={formatCount(summary.delivered_count)} />
-        </div>
-        <div className="border-t border-slate-100 pt-2">
-          <TooltipRow label="RTS Rate %" value={formatPct(summary.rts_rate_pct)} bold />
-        </div>
-        {tooltipFooter}
-      </div>
-    );
-  };
-
-  const buildConfirmationTooltip = (summary?: SalesPerformanceSummary | null) => {
-    if (!summary) return null;
-    return (
-      <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-foreground">Confirmation Rate inputs</div>
-        <div className="space-y-1">
-          <TooltipRow label="Confirmed Orders" value={formatCount(summary.confirmed_count)} />
-          <TooltipRow label="Total Orders" value={formatCount(summary.order_count)} />
-        </div>
-        <div className="border-t border-slate-100 pt-2">
-          <TooltipRow label="Confirmation Rate %" value={formatPct(summary.confirmation_rate_pct)} bold />
-        </div>
-        {tooltipFooter}
-      </div>
-    );
-  };
-
-  const buildPendingTooltip = (summary?: SalesPerformanceSummary | null) => {
-    if (!summary) return null;
-    return (
-      <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-foreground">Pending Rate inputs</div>
-        <div className="space-y-1">
-          <TooltipRow label="Pending Orders" value={formatCount(summary.pending_count)} />
-          <TooltipRow label="Total Orders" value={formatCount(summary.order_count)} />
-        </div>
-        <div className="border-t border-slate-100 pt-2">
-          <TooltipRow label="Pending Rate %" value={formatPct(summary.pending_rate_pct)} bold />
-        </div>
-        {tooltipFooter}
-      </div>
-    );
-  };
-
-  const buildCancellationTooltip = (summary?: SalesPerformanceSummary | null) => {
-    if (!summary) return null;
-    return (
-      <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-foreground">Cancellation Rate inputs</div>
-        <div className="space-y-1">
-          <TooltipRow label="Cancelled Orders" value={formatCount(summary.cancelled_count)} />
-          <TooltipRow label="Total Orders" value={formatCount(summary.order_count)} />
-        </div>
-        <div className="border-t border-slate-100 pt-2">
-          <TooltipRow label="Cancellation Rate %" value={formatPct(summary.cancellation_rate_pct)} bold />
-        </div>
-        {tooltipFooter}
-      </div>
-    );
-  };
-
-  const buildUpsellTooltip = (summary?: SalesPerformanceSummary | null) => {
-    if (!summary) return null;
-    return (
-      <div className="space-y-2">
-        <div className="text-[12px] font-semibold text-foreground">Upsell Rate inputs</div>
-        <div className="space-y-1">
-          <TooltipRow label="Upsell Tag Count" value={formatCount(summary.upsell_tag_count)} />
-          <TooltipRow label="For Upsell Count" value={formatCount(summary.for_upsell_count)} />
-        </div>
-        <div className="border-t border-slate-100 pt-2">
-          <TooltipRow label="Upsell Rate %" value={formatPct(summary.upsell_rate_pct)} bold />
-        </div>
-        {tooltipFooter}
-      </div>
-    );
-  };
-
-  const summaryRows = useMemo(() => {
-    if (!data?.rows?.length) return [];
-    const map = new Map<string, SalesPerformanceSummaryRow>();
-
-    data.rows.forEach((row) => {
-      const key = row.salesAssignee ?? '__null__';
-      const existing = map.get(key);
-      if (!existing) {
-        map.set(key, {
-          salesAssignee: row.salesAssignee ?? null,
-          orderCount: row.orderCount,
-          totalCod: row.totalCod,
-          salesCod: row.salesCod,
-          salesCodCount: row.salesCodCount,
-          mktgCod: row.mktgCod,
-          mktgCodCount: row.mktgCodCount,
-          upsellDelta: row.upsellDelta,
-          confirmedCount: row.confirmedCount,
-          marketingLeadCount: row.marketingLeadCount,
-          forUpsellCount: row.forUpsellCount,
-          upsellTagCount: row.upsellTagCount,
-          deliveredCount: row.deliveredCount,
-          rtsCount: row.rtsCount,
-          pendingCount: row.pendingCount,
-          cancelledCount: row.cancelledCount,
-          upsellCount: row.upsellCount,
-          statusCounts: { ...row.statusCounts },
-          salesVsMktgPct: 0,
-          confirmationRatePct: 0,
-          rtsRatePct: 0,
-          pendingRatePct: 0,
-          cancellationRatePct: 0,
-          upsellRatePct: 0,
-        });
-        return;
-      }
-
-      existing.orderCount += row.orderCount;
-      existing.totalCod += row.totalCod;
-      existing.salesCod += row.salesCod;
-      existing.salesCodCount += row.salesCodCount;
-      existing.mktgCod += row.mktgCod;
-      existing.mktgCodCount += row.mktgCodCount;
-      existing.upsellDelta += row.upsellDelta;
-      existing.confirmedCount += row.confirmedCount;
-      existing.marketingLeadCount += row.marketingLeadCount;
-      existing.forUpsellCount += row.forUpsellCount;
-      existing.upsellTagCount += row.upsellTagCount;
-      existing.deliveredCount += row.deliveredCount;
-      existing.rtsCount += row.rtsCount;
-      existing.pendingCount += row.pendingCount;
-      existing.cancelledCount += row.cancelledCount;
-      existing.upsellCount += row.upsellCount;
-      Object.entries(row.statusCounts || {}).forEach(([status, count]) => {
-        existing.statusCounts[status] = (existing.statusCounts[status] || 0) + count;
-      });
-    });
-
-    return Array.from(map.values()).map((row) => {
-      const rtsDenominator = row.deliveredCount + row.rtsCount;
-      return {
-        ...row,
-        salesVsMktgPct: row.mktgCod > 0 ? (row.salesCod / row.mktgCod) * 100 : 0,
-        confirmationRatePct:
-          row.orderCount > 0 ? (row.confirmedCount / row.orderCount) * 100 : 0,
-        rtsRatePct: rtsDenominator > 0 ? (row.rtsCount / rtsDenominator) * 100 : 0,
-        pendingRatePct: row.orderCount > 0 ? (row.pendingCount / row.orderCount) * 100 : 0,
-        cancellationRatePct: row.orderCount > 0 ? (row.cancelledCount / row.orderCount) * 100 : 0,
-        upsellRatePct: row.forUpsellCount > 0 ? (row.upsellTagCount / row.forUpsellCount) * 100 : 0,
-      };
-    });
-  }, [data?.rows]);
-
   useEffect(() => {
     setStorePage(1);
   }, [data?.rows?.length]);
-
-  useEffect(() => {
-    setSummaryPage(1);
-  }, [summaryRows.length]);
 
   useEffect(() => {
     setRiskPage(1);
@@ -1130,20 +853,7 @@ export default function SalesPerformancePage() {
 
   useEffect(() => {
     setStorePage(1);
-    setSummaryPage(1);
   }, [sortKey, sortDir]);
-
-  useEffect(() => {
-    if (tableSelection === 'summary' && sortKey === 'shop') {
-      setSortKey('assignee');
-      setSortDir('asc');
-    }
-  }, [tableSelection, sortKey]);
-
-  const tableOptions: AnalyticsTableSelectorOption<'store' | 'summary'>[] = [
-    { key: 'summary', label: 'Sales Performance' },
-    { key: 'store', label: 'Sales Performance (Per Store)' },
-  ];
 
   const deliveryViewOptions: Array<{
     key: 'delivery' | 'risk_confirmation' | 'repurchase';
@@ -1158,8 +868,8 @@ export default function SalesPerformancePage() {
     const rows = [...(data?.rows || [])];
     if (rows.length === 0) return rows;
     return rows.sort((a, b) => {
-      const av = getSortValue(a, sortKey, true);
-      const bv = getSortValue(b, sortKey, true);
+      const av = getSortValue(a, sortKey);
+      const bv = getSortValue(b, sortKey);
       if (typeof av === 'string' || typeof bv === 'string') {
         return (sortDir === 'asc' ? 1 : -1) * String(av).localeCompare(String(bv));
       }
@@ -1167,21 +877,7 @@ export default function SalesPerformancePage() {
     });
   }, [data?.rows, getSortValue, sortKey, sortDir]);
 
-  const sortedSummaryRows = useMemo(() => {
-    const rows = [...summaryRows];
-    if (rows.length === 0) return rows;
-    return rows.sort((a, b) => {
-      const av = getSortValue(a, sortKey, false);
-      const bv = getSortValue(b, sortKey, false);
-      if (typeof av === 'string' || typeof bv === 'string') {
-        return (sortDir === 'asc' ? 1 : -1) * String(av).localeCompare(String(bv));
-      }
-      return (sortDir === 'asc' ? 1 : -1) * (Number(av) - Number(bv));
-    });
-  }, [getSortValue, summaryRows, sortKey, sortDir]);
-
   const totalStoreRows = sortedStoreRows.length;
-  const totalSummaryRows = sortedSummaryRows.length;
   const riskRows = problematicData?.riskConfirmationRows || [];
   const repurchaseRows = useMemo<SalesPerformanceRepurchaseRow[]>(() => {
     return (problematicData?.repurchaseByShop || [])
@@ -1237,12 +933,10 @@ export default function SalesPerformancePage() {
   const totalRiskRows = riskRows.length;
   const totalRepurchaseRows = repurchaseRows.length;
   const totalStorePages = Math.max(1, Math.ceil(totalStoreRows / pageSize));
-  const totalSummaryPages = Math.max(1, Math.ceil(totalSummaryRows / pageSize));
   const totalRiskPages = Math.max(1, Math.ceil(totalRiskRows / pageSize));
   const totalRepurchasePages = Math.max(1, Math.ceil(totalRepurchaseRows / pageSize));
 
   const pagedStoreRows = sortedStoreRows.slice((storePage - 1) * pageSize, storePage * pageSize);
-  const pagedSummaryRows = sortedSummaryRows.slice((summaryPage - 1) * pageSize, summaryPage * pageSize);
   const pagedRiskRows = riskRows.slice((riskPage - 1) * pageSize, riskPage * pageSize);
   const pagedRepurchaseRows = repurchaseRows.slice(
     (repurchasePage - 1) * pageSize,
@@ -1251,8 +945,6 @@ export default function SalesPerformancePage() {
 
   const storeStart = totalStoreRows === 0 ? 0 : (storePage - 1) * pageSize + 1;
   const storeEnd = Math.min(storePage * pageSize, totalStoreRows);
-  const summaryStart = totalSummaryRows === 0 ? 0 : (summaryPage - 1) * pageSize + 1;
-  const summaryEnd = Math.min(summaryPage * pageSize, totalSummaryRows);
   const riskStart = totalRiskRows === 0 ? 0 : (riskPage - 1) * pageSize + 1;
   const riskEnd = Math.min(riskPage * pageSize, totalRiskRows);
   const repurchaseStart = totalRepurchaseRows === 0 ? 0 : (repurchasePage - 1) * pageSize + 1;
@@ -1260,14 +952,12 @@ export default function SalesPerformancePage() {
 
   const storeCanPrev = storePage > 1;
   const storeCanNext = storePage < totalStorePages;
-  const summaryCanPrev = summaryPage > 1;
-  const summaryCanNext = summaryPage < totalSummaryPages;
   const riskCanPrev = riskPage > 1;
   const riskCanNext = riskPage < totalRiskPages;
   const repurchaseCanPrev = repurchasePage > 1;
   const repurchaseCanNext = repurchasePage < totalRepurchasePages;
 
-  const activeRowCount = tableSelection === 'summary' ? totalSummaryRows : totalStoreRows;
+  const activeRowCount = totalStoreRows;
   const selectedDeliveryViewLabel =
     deliveryViewOptions.find((opt) => opt.key === deliveryViewSelection)?.label ||
     'Delivery Monitoring';
@@ -1281,7 +971,7 @@ export default function SalesPerformancePage() {
           </span>
         }
         title="Sales Operations"
-        description="Track performance by sales assignee and shop to understand upsell impact."
+        description="Track abandoned-cart and repurchase conversion performance by store."
       />
 
       <DashboardSection
@@ -1294,26 +984,25 @@ export default function SalesPerformancePage() {
         <div className="flex flex-wrap items-center gap-3">
           <AnalyticsMultiSelectPicker
             className="relative"
-            selectedLabel={selectedLabel}
-            selectTitle="Select assignees"
-            options={assigneePickerOptions}
-            allChecked={isAllAssigneesMode}
-            isChecked={(value) => resolvedSelection.includes(value)}
+            selectedLabel={selectedShopLabel}
+            selectTitle="Select shops"
+            options={performanceShopPickerOptions}
+            allChecked={isAllShopsMode}
+            isChecked={(value) => resolvedPerformanceShops.includes(value)}
             onToggleAll={(checked) => {
-              setIsAllAssigneesMode(checked);
-              setSelectedAssignees([]);
+              setIsAllShopsMode(checked);
+              setSelectedShops([]);
             }}
-            onToggle={toggleAssignee}
+            onToggle={(value) => toggleShop(value, performanceShopOptions)}
             onOnly={(value) => {
-              setIsAllAssigneesMode(false);
-              setSelectedAssignees([value]);
+              setIsAllShopsMode(false);
+              setSelectedShops([value]);
             }}
             onClear={() => {
-              setIsAllAssigneesMode(true);
-              setSelectedAssignees([]);
+              setIsAllShopsMode(true);
+              setSelectedShops([]);
             }}
           />
-
           <div className="flex items-center gap-2">
             <div className="relative">
               <Datepicker
@@ -1369,20 +1058,6 @@ export default function SalesPerformancePage() {
                 <AnalyticsMetricCardSkeleton key={idx} />
               ))
             : metrics.map((m) => {
-                const tooltip =
-                  m.key === 'sales_vs_mktg_pct'
-                    ? buildSmpTooltip(data?.summary)
-                    : m.key === 'rts_rate_pct'
-                      ? buildRtsRateTooltip(data?.summary)
-                      : m.key === 'confirmation_rate_pct'
-                        ? buildConfirmationTooltip(data?.summary)
-                        : m.key === 'pending_rate_pct'
-                          ? buildPendingTooltip(data?.summary)
-                          : m.key === 'cancellation_rate_pct'
-                            ? buildCancellationTooltip(data?.summary)
-                            : m.key === 'upsell_rate_pct'
-                              ? buildUpsellTooltip(data?.summary)
-                              : null;
                 return (
                   <AnalyticsMetricCard
                     key={m.key}
@@ -1399,7 +1074,6 @@ export default function SalesPerformancePage() {
                           }
                         : undefined
                     }
-                    tooltip={tooltip}
                     tooltipMode="hover"
                   />
                 );
@@ -1415,59 +1089,25 @@ export default function SalesPerformancePage() {
         contentClassName="space-y-3"
       >
         <div className="flex items-center justify-between">
-          <AnalyticsTableSelector
-            className="relative"
-            options={tableOptions}
-            selectedKey={tableSelection}
-            fallbackLabel="Sales Performance (Per Store)"
-            onSelect={(key) => {
-              setTableSelection(key);
-              if (key === 'summary') {
-                setSummaryPage(1);
-              } else {
-                setStorePage(1);
-              }
-            }}
-          />
+          <h3 className="text-sm font-semibold text-foreground">Store Conversion Breakdown</h3>
           <span className="text-xs text-slate-400">{activeRowCount || 0} rows</span>
         </div>
 
-        {tableSelection === 'store' && (
-          <AnalyticsSalesPerformanceStoreTable
-            isLoading={isLoading}
-            rows={pagedStoreRows}
-            storeStart={storeStart}
-            storeEnd={storeEnd}
-            totalStoreRows={totalStoreRows}
-            currentPage={storePage}
-            totalPages={totalStorePages}
-            canPrevious={storeCanPrev}
-            canNext={storeCanNext}
-            onPrevious={() => setStorePage((p) => Math.max(1, p - 1))}
-            onNext={() => setStorePage((p) => Math.min(totalStorePages, p + 1))}
-            displayAssignee={displayAssignee}
-            displayShop={displayShop}
-            renderSortLabel={renderSortLabel}
-          />
-        )}
-
-        {tableSelection === 'summary' && (
-          <AnalyticsSalesPerformanceSummaryTable
-            isLoading={isLoading}
-            rows={pagedSummaryRows}
-            summaryStart={summaryStart}
-            summaryEnd={summaryEnd}
-            totalSummaryRows={totalSummaryRows}
-            currentPage={summaryPage}
-            totalPages={totalSummaryPages}
-            canPrevious={summaryCanPrev}
-            canNext={summaryCanNext}
-            onPrevious={() => setSummaryPage((p) => Math.max(1, p - 1))}
-            onNext={() => setSummaryPage((p) => Math.min(totalSummaryPages, p + 1))}
-            displayAssignee={displayAssignee}
-            renderSortLabel={renderSortLabel}
-          />
-        )}
+        <AnalyticsSalesPerformanceStoreTable
+          isLoading={isLoading}
+          rows={pagedStoreRows}
+          storeStart={storeStart}
+          storeEnd={storeEnd}
+          totalStoreRows={totalStoreRows}
+          currentPage={storePage}
+          totalPages={totalStorePages}
+          canPrevious={storeCanPrev}
+          canNext={storeCanNext}
+          onPrevious={() => setStorePage((p) => Math.max(1, p - 1))}
+          onNext={() => setStorePage((p) => Math.min(totalStorePages, p + 1))}
+          displayShop={displayShop}
+          renderSortLabel={renderSortLabel}
+        />
       </DashboardSection>
 
       <DashboardSection
@@ -1518,23 +1158,23 @@ export default function SalesPerformancePage() {
             ) : (
               <AnalyticsMultiSelectPicker
                 className="relative"
-                selectedLabel={selectedChartShopLabel}
+                selectedLabel={selectedShopLabel}
                 selectTitle="Select shops"
                 options={chartShopPickerOptions}
-                allChecked={isAllChartShopsMode}
+                allChecked={isAllShopsMode}
                 isChecked={(value) => resolvedChartShops.includes(value)}
                 onToggleAll={(checked) => {
-                  setIsAllChartShopsMode(checked);
-                  setSelectedChartShops([]);
+                  setIsAllShopsMode(checked);
+                  setSelectedShops([]);
                 }}
-                onToggle={toggleChartShop}
+                onToggle={(value) => toggleShop(value, chartShopOptions)}
                 onOnly={(value) => {
-                  setIsAllChartShopsMode(false);
-                  setSelectedChartShops([value]);
+                  setIsAllShopsMode(false);
+                  setSelectedShops([value]);
                 }}
                 onClear={() => {
-                  setIsAllChartShopsMode(true);
-                  setSelectedChartShops([]);
+                  setIsAllShopsMode(true);
+                  setSelectedShops([]);
                 }}
               />
             )}
@@ -1842,4 +1482,3 @@ export default function SalesPerformancePage() {
     </div>
   );
 }
-

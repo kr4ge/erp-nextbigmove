@@ -26,6 +26,56 @@ export type SalesPerformanceRow = {
   upsellRatePct: number;
 };
 
+export type SalesPerformanceStoreConversionRow = {
+  shopId: string;
+  abandonedOrders: number;
+  abandonedConvertedOrders: number;
+  abandonedConvertedRevenue: number;
+  abandonedConversionRatePct: number;
+  abandonedDeliveredOrders: number;
+  abandonedRtsOrders: number;
+  abandonedDeliveryRatePct: number;
+  abandonedRtsRatePct: number;
+  repurchaseOrders: number;
+  repurchaseConvertedOrders: number;
+  repurchaseRevenue: number;
+  repurchaseConversionRatePct: number;
+  repurchaseDeliveredOrders: number;
+  repurchaseRtsOrders: number;
+  repurchaseDeliveryRatePct: number;
+  repurchaseRtsRatePct: number;
+};
+
+export type SalesPerformanceStoreConversionSummary = Omit<SalesPerformanceStoreConversionRow, 'shopId'>;
+
+export type SalesPerformanceStoreConversionResponse = {
+  summary: SalesPerformanceStoreConversionSummary;
+  prevSummary: SalesPerformanceStoreConversionSummary;
+  rows: SalesPerformanceStoreConversionRow[];
+  filters: {
+    shops: string[];
+    shopDisplayMap?: Record<string, string>;
+  };
+  selected: {
+    start_date: string;
+    end_date: string;
+    shop_ids: string[];
+  };
+  rangeDays: number;
+  lastUpdatedAt: string | null;
+};
+
+export type SalesPerformanceStoreConversionSortKey =
+  | 'shop'
+  | 'abandoned_revenue'
+  | 'abandoned_conversion'
+  | 'abandoned_delivery'
+  | 'abandoned_rts'
+  | 'repurchase_revenue'
+  | 'repurchase_conversion'
+  | 'repurchase_delivery'
+  | 'repurchase_rts';
+
 export type SalesPerformanceSummaryRow = Omit<SalesPerformanceRow, 'shopId'>;
 export type SalesPerformanceSortKey =
   | 'assignee'
@@ -170,17 +220,57 @@ export type SunburstHoverInfo = {
 };
 
 export const salesPerformanceMetricDefinitions: {
-  key: keyof SalesPerformanceOverviewResponse['summary'];
+  key: keyof SalesPerformanceStoreConversionResponse['summary'];
   label: string;
   format: 'currency' | 'percent' | 'number';
-  countKey?: keyof SalesPerformanceOverviewResponse['summary'];
+  countKey?: keyof SalesPerformanceStoreConversionResponse['summary'];
 }[] = [
-  { key: 'mktg_cod', label: 'MKTG Cod (₱)', format: 'currency', countKey: 'mktg_cod_count' },
-  { key: 'sales_cod', label: 'Sales Cod (₱)', format: 'currency', countKey: 'sales_cod_count' },
-  { key: 'sales_vs_mktg_pct', label: 'SMP %', format: 'percent' },
-  { key: 'rts_rate_pct', label: 'RTS Rate (%)', format: 'percent' },
-  { key: 'confirmation_rate_pct', label: 'Confirmation Rate (%)', format: 'percent' },
-  { key: 'pending_rate_pct', label: 'Pending Rate (%)', format: 'percent' },
-  { key: 'cancellation_rate_pct', label: 'Cancellation Rate (%)', format: 'percent' },
-  { key: 'upsell_rate_pct', label: 'Upsell Rate (%)', format: 'percent' },
+  {
+    key: 'abandonedConvertedRevenue',
+    label: 'Abandoned Converted Revenue',
+    format: 'currency',
+    countKey: 'abandonedConvertedOrders',
+  },
+  {
+    key: 'abandonedConversionRatePct',
+    label: 'Abandoned Conversion Rate',
+    format: 'percent',
+    countKey: 'abandonedOrders',
+  },
+  {
+    key: 'abandonedDeliveryRatePct',
+    label: 'Abandoned Delivery Rate',
+    format: 'percent',
+    countKey: 'abandonedDeliveredOrders',
+  },
+  {
+    key: 'abandonedRtsRatePct',
+    label: 'Abandoned RTS Rate',
+    format: 'percent',
+    countKey: 'abandonedRtsOrders',
+  },
+  {
+    key: 'repurchaseRevenue',
+    label: 'Repurchase Revenue',
+    format: 'currency',
+    countKey: 'repurchaseConvertedOrders',
+  },
+  {
+    key: 'repurchaseConversionRatePct',
+    label: 'Repurchase Conversion Rate',
+    format: 'percent',
+    countKey: 'repurchaseOrders',
+  },
+  {
+    key: 'repurchaseDeliveryRatePct',
+    label: 'Repurchase Delivery Rate',
+    format: 'percent',
+    countKey: 'repurchaseDeliveredOrders',
+  },
+  {
+    key: 'repurchaseRtsRatePct',
+    label: 'Repurchase RTS Rate',
+    format: 'percent',
+    countKey: 'repurchaseRtsOrders',
+  },
 ];

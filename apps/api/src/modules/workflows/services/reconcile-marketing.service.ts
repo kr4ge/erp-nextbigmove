@@ -317,6 +317,8 @@ export class ReconcileMarketingService {
         tenantId,
         ...(teamId ? { teamId } : {}),
         dateLocal: date,
+        wasAbandonedCart: false,
+        isRepurchase: false,
         AND: [
           {
             OR: [

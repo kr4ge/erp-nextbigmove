@@ -35,6 +35,30 @@ export class SalesPerformanceController {
     });
   }
 
+  @Get('store-conversion')
+  @Permissions('analytics.sales_performance')
+  async getStoreConversion(
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+    @Query('shop_id') shopId?: string | string[],
+  ) {
+    const rawShopIds = Array.isArray(shopId)
+      ? shopId
+      : shopId
+      ? [shopId]
+      : [];
+    const shopIds = rawShopIds
+      .flatMap((value) => (value ? value.toString().split(',') : []))
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+
+    return this.salesPerformanceService.getStoreConversion({
+      startDate,
+      endDate,
+      shopIds,
+    });
+  }
+
   @Get('my-stats')
   @Permissions('dashboard.sales')
   async getMyStats(

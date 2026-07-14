@@ -126,7 +126,6 @@ export default function MarketingAnalyticsPage() {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [excludeCanceled, setExcludeCanceled] = useState(true);
   const [excludeRestocking, setExcludeRestocking] = useState(true);
-  const [excludeAbandoned, setExcludeAbandoned] = useState(true);
   const associatesOptionsRef = useRef<string[]>([]);
   const selectedAssociatesRef = useRef<string[]>([]);
   const isAllAssociatesModeRef = useRef(true);
@@ -195,7 +194,6 @@ export default function MarketingAnalyticsPage() {
       }
       params.set('exclude_cancel', String(excludeCanceled));
       params.set('exclude_restocking', String(excludeRestocking));
-      params.set('exclude_abandoned', String(excludeAbandoned));
       const res = await analyticsOverviewApi.getMarketingOverview<OverviewResponse>(params);
       setData(res.data);
       const options = res.data.filters.associates || [];
@@ -225,7 +223,6 @@ export default function MarketingAnalyticsPage() {
     }
   }, [
     endDate,
-    excludeAbandoned,
     excludeCanceled,
     excludeRestocking,
     startDate,
@@ -450,15 +447,6 @@ export default function MarketingAnalyticsPage() {
                       onChange={(e) => setExcludeRestocking(e.target.checked)}
                     />
                     <span className="text-sm text-foreground">Exclude Restocking</span>
-                  </label>
-                  <label className="flex cursor-pointer select-none items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 accent-primary checked:border-primary checked:bg-primary focus:ring-2 focus:ring-orange-200"
-                      checked={excludeAbandoned}
-                      onChange={(e) => setExcludeAbandoned(e.target.checked)}
-                    />
-                    <span className="text-sm text-foreground">Exclude Abandoned</span>
                   </label>
                 </div>
               )}

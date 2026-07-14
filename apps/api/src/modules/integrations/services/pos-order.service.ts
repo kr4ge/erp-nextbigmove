@@ -29,6 +29,7 @@ interface PosOrderData {
   forUpsell?: boolean;
   isRiskConfirmation?: boolean;
   isAbandoned?: boolean;
+  wasAbandonedCart?: boolean;
   isRepurchase?: boolean;
   isVoid?: boolean;
   pUtmCampaign?: string;
@@ -696,6 +697,7 @@ export class PosOrderService {
       forUpsell,
       isRiskConfirmation,
       isAbandoned,
+      wasAbandonedCart: isWebcakeAbandonedCart,
       isRepurchase,
       isVoid: normalizedStatus === 7,
       pUtmCampaign: rawOrder.p_utm_campaign,
@@ -850,6 +852,7 @@ export class PosOrderService {
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
             isAbandoned: !!order.isAbandoned,
+            wasAbandonedCart: !!order.wasAbandonedCart,
             isRepurchase: !!order.isRepurchase,
             isVoid: !!order.isVoid,
             confirmationUpdateRequestedAt: null,
@@ -888,6 +891,7 @@ export class PosOrderService {
             forUpsell: !!order.forUpsell,
             isRiskConfirmation: !!order.isRiskConfirmation,
             isAbandoned: !!order.isAbandoned,
+            ...(order.wasAbandonedCart ? { wasAbandonedCart: true } : {}),
             isRepurchase: !!order.isRepurchase,
             isVoid: !!order.isVoid,
             confirmationUpdateRequestedAt: null,
