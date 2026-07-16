@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -16,8 +17,14 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { OrdersService } from './orders.service';
 import { GetAgingOrdersSummaryQueryDto } from './dto/get-aging-orders-summary-query.dto';
 import { GetOrderStatusSummaryQueryDto } from './dto/get-order-status-summary-query.dto';
+import { GetUndeliverablesQueryDto } from './dto/get-undeliverables-query.dto';
 import { MarkAgingOrdersSummaryNotificationReadDto } from './dto/mark-aging-orders-summary-notification-read.dto';
+import { CreateUndeliverableOrderRemarkDto } from './dto/create-undeliverable-order-remark.dto';
+import { CreateUndeliverableRemarkOptionDto } from './dto/create-undeliverable-remark-option.dto';
 import { UpdateConfirmationOrderStatusDto } from './dto/update-confirmation-order-status.dto';
+import { UpdateUndeliverableOrderRemarkDto } from './dto/update-undeliverable-order-remark.dto';
+import { UpdateUndeliverableRemarkOptionDto } from './dto/update-undeliverable-remark-option.dto';
+import { UpdateUndeliverableStoreAssignmentsDto } from './dto/update-undeliverable-store-assignments.dto';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
@@ -140,5 +147,85 @@ export class OrdersController {
     @Body() body: UpdateConfirmationOrderStatusDto,
   ) {
     return this.ordersService.updateConfirmationOrderStatus(id, body);
+  }
+
+  @Get('undeliverables')
+  @Permissions('orders.undeliverables.read', 'orders.undeliverables.read_all')
+  async listUndeliverables(@Query() query: GetUndeliverablesQueryDto) {
+    return this.ordersService.listUndeliverables(query);
+  }
+
+  @Get('undeliverables/assignments')
+  @Permissions('orders.undeliverables.read_all', 'orders.undeliverables.assign')
+  async getUndeliverableAssignments() {
+    return this.ordersService.getUndeliverableAssignments();
+  }
+
+  @Put('undeliverables/assignments/:userId')
+  @Permissions('orders.undeliverables.assign')
+  async updateUndeliverableAssignments(
+    @Param('userId') userId: string,
+    @Body() body: UpdateUndeliverableStoreAssignmentsDto,
+  ) {
+    return this.ordersService.updateUndeliverableAssignments(userId, body.storeIds ?? []);
+  }
+
+  @Get('undeliverables/:orderId/remarks')
+  @Permissions('orders.undeliverables.read', 'orders.undeliverables.read_all')
+  async listUndeliverableRemarks(@Param('orderId') orderId: string) {
+    return this.ordersService.listUndeliverableRemarks(orderId);
+  }
+
+  @Get('undeliverables/remark-options')
+  @Permissions('orders.undeliverables.read', 'orders.undeliverables.read_all')
+  async listUndeliverableRemarkOptions() {
+    return this.ordersService.listUndeliverableRemarkOptions();
+  }
+
+  @Post('undeliverables/remark-options')
+  @Permissions('orders.undeliverables.remarks.write')
+  async createUndeliverableRemarkOption(@Body() body: CreateUndeliverableRemarkOptionDto) {
+    return this.ordersService.createUndeliverableRemarkOption(body.remark);
+  }
+
+  @Patch('undeliverables/remark-options/:remarkOptionId')
+  @Permissions('orders.undeliverables.remarks.write')
+  async updateUndeliverableRemarkOption(
+    @Param('remarkOptionId') remarkOptionId: string,
+    @Body() body: UpdateUndeliverableRemarkOptionDto,
+  ) {
+    return this.ordersService.updateUndeliverableRemarkOption(remarkOptionId, body.remark);
+  }
+
+  @Post('undeliverables/remark-options/:remarkOptionId/delete')
+  @HttpCode(200)
+  @Permissions('orders.undeliverables.remarks.write')
+  async deleteUndeliverableRemarkOption(@Param('remarkOptionId') remarkOptionId: string) {
+    return this.ordersService.deleteUndeliverableRemarkOption(remarkOptionId);
+  }
+
+  @Post('undeliverables/:orderId/remarks')
+  @Permissions('orders.undeliverables.remarks.write')
+  async createUndeliverableRemark(
+    @Param('orderId') orderId: string,
+    @Body() body: CreateUndeliverableOrderRemarkDto,
+  ) {
+    return this.ordersService.createUndeliverableRemark(orderId, body.remarkOptionId);
+  }
+
+  @Patch('undeliverables/remarks/:remarkId')
+  @Permissions('orders.undeliverables.remarks.write')
+  async updateUndeliverableRemark(
+    @Param('remarkId') remarkId: string,
+    @Body() body: UpdateUndeliverableOrderRemarkDto,
+  ) {
+    return this.ordersService.updateUndeliverableRemark(remarkId, body.remarkOptionId);
+  }
+
+  @Post('undeliverables/remarks/:remarkId/delete')
+  @HttpCode(200)
+  @Permissions('orders.undeliverables.remarks.write')
+  async deleteUndeliverableRemark(@Param('remarkId') remarkId: string) {
+    return this.ordersService.deleteUndeliverableRemark(remarkId);
   }
 }

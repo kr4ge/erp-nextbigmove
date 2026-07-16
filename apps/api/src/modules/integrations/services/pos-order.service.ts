@@ -20,6 +20,7 @@ interface PosOrderData {
   dateLocal: string;
   deliveredAt?: Date | null;
   rtsAt?: Date | null;
+  undeliverableAt?: Date | null;
   status?: number;
   statusName?: string;
   cod?: number;
@@ -31,6 +32,7 @@ interface PosOrderData {
   isAbandoned?: boolean;
   wasAbandonedCart?: boolean;
   isRepurchase?: boolean;
+  isUndeliverable?: boolean;
   isVoid?: boolean;
   pUtmCampaign?: string;
   pUtmContent?: string;
@@ -146,6 +148,51 @@ export class PosOrderService {
     if (!parsed.isValid()) return null;
 
     return parsed.tz('Asia/Manila').toDate();
+  }
+
+  private parseOrderHistories(rawOrder: any): any[] | null {
+    let histories: any = rawOrder?.histories ?? null;
+    if (isString(histories)) {
+      try {
+        histories = JSON.parse(histories);
+      } catch {
+        histories = null;
+      }
+    }
+
+    return Array.isArray(histories) ? histories : null;
+  }
+
+  private extractUndeliverableState(rawOrder: any) {
+    const histories = this.parseOrderHistories(rawOrder);
+    if (!histories || histories.length === 0) {
+      return {
+        isUndeliverable: false,
+        undeliverableAt: null as Date | null,
+      };
+    }
+
+    const matchingEntries = histories
+      .filter((entry: any) => isObject(entry))
+      .filter((entry: any) => {
+        const partnerStatus = isObject(entry.partner_status) ? entry.partner_status : null;
+        const nextStatus = isString(partnerStatus?.new) ? partnerStatus.new.trim().toLowerCase() : '';
+        return nextStatus === 'undeliverable';
+      })
+      .map((entry: any) => {
+        const updatedRaw = isString(entry.updated_at) ? entry.updated_at.trim() : '';
+        const parsed = updatedRaw ? dayjs.tz(updatedRaw, 'Asia/Manila') : null;
+        return parsed && parsed.isValid() ? parsed : null;
+      })
+      .filter((value): value is dayjs.Dayjs => Boolean(value))
+      .sort((left, right) => left.valueOf() - right.valueOf());
+
+    const firstUndeliverableAt = matchingEntries[0] ?? null;
+
+    return {
+      isUndeliverable: Boolean(firstUndeliverableAt),
+      undeliverableAt: firstUndeliverableAt ? firstUndeliverableAt.toDate() : null,
+    };
   }
 
   /**
@@ -491,6 +538,7 @@ export class PosOrderService {
       statusHistory,
       5,
     );
+    const { isUndeliverable, undeliverableAt } = this.extractUndeliverableState(rawOrder);
 
     // Sales assignee: prefer assigning_seller.fb_id, fallback to latest status_history with status==1
     let salesAssignee: string | null = null;
@@ -688,6 +736,7 @@ export class PosOrderService {
       dateLocal,
       deliveredAt,
       rtsAt,
+      undeliverableAt,
       status: normalizedStatus ?? undefined,
       statusName: rawOrder.status_name,
       cod: codValue,
@@ -699,6 +748,7 @@ export class PosOrderService {
       isAbandoned,
       wasAbandonedCart: isWebcakeAbandonedCart,
       isRepurchase,
+      isUndeliverable,
       isVoid: normalizedStatus === 7,
       pUtmCampaign: rawOrder.p_utm_campaign,
       pUtmContent: rawOrder.p_utm_content,
@@ -843,6 +893,7 @@ export class PosOrderService {
             dateLocal: order.dateLocal,
             deliveredAt: order.deliveredAt,
             rtsAt: order.rtsAt,
+            undeliverableAt: order.undeliverableAt,
             status: order.status,
             statusName: order.statusName,
             cod: order.cod ? new Decimal(order.cod) : null,
@@ -854,6 +905,7 @@ export class PosOrderService {
             isAbandoned: !!order.isAbandoned,
             wasAbandonedCart: !!order.wasAbandonedCart,
             isRepurchase: !!order.isRepurchase,
+            isUndeliverable: !!order.isUndeliverable,
             isVoid: !!order.isVoid,
             confirmationUpdateRequestedAt: null,
             confirmationUpdateTargetStatus: null,
@@ -882,6 +934,7 @@ export class PosOrderService {
             insertedAt: order.insertedAt,
             ...(order.deliveredAt ? { deliveredAt: order.deliveredAt } : {}),
             ...(order.rtsAt ? { rtsAt: order.rtsAt } : {}),
+            undeliverableAt: order.undeliverableAt,
             status: order.status,
             statusName: order.statusName,
             cod: order.cod ? new Decimal(order.cod) : null,
@@ -893,6 +946,7 @@ export class PosOrderService {
             isAbandoned: !!order.isAbandoned,
             ...(order.wasAbandonedCart ? { wasAbandonedCart: true } : {}),
             isRepurchase: !!order.isRepurchase,
+            isUndeliverable: !!order.isUndeliverable,
             isVoid: !!order.isVoid,
             confirmationUpdateRequestedAt: null,
             confirmationUpdateTargetStatus: null,

@@ -7,7 +7,12 @@ import { useOrdersPermissions } from './_hooks/use-orders-permissions';
 
 export default function OrdersPage() {
   const router = useRouter();
-  const { isLoading, canViewOrdersSummary, canViewOrderConfirmation } = useOrdersPermissions();
+  const {
+    isLoading,
+    canViewOrdersSummary,
+    canViewOrderConfirmation,
+    canViewUndeliverables,
+  } = useOrdersPermissions();
 
   useEffect(() => {
     if (isLoading) return;
@@ -22,8 +27,13 @@ export default function OrdersPage() {
       return;
     }
 
+    if (canViewUndeliverables) {
+      router.replace('/orders/undeliverables');
+      return;
+    }
+
     router.replace('/dashboard');
-  }, [canViewOrderConfirmation, canViewOrdersSummary, isLoading, router]);
+  }, [canViewOrderConfirmation, canViewOrdersSummary, canViewUndeliverables, isLoading, router]);
 
   return <LoadingCard label="Loading orders..." />;
 }

@@ -82,12 +82,14 @@ export function ManualReceivingModal({
 }: ManualReceivingModalProps) {
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [productSearchText, setProductSearchText] = useState('');
+  const [selectedProductStoreId, setSelectedProductStoreId] = useState('');
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
   const [unitCostDrafts, setUnitCostDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) {
       setProductSearchText('');
+      setSelectedProductStoreId('');
       setIsProductPickerOpen(false);
       setQuantityDrafts({});
       setUnitCostDrafts({});
@@ -95,6 +97,7 @@ export function ManualReceivingModal({
     }
 
     setProductSearchText('');
+    setSelectedProductStoreId('');
     setIsProductPickerOpen(false);
   }, [open]);
 
@@ -127,23 +130,44 @@ export function ManualReceivingModal({
     [lines, productOptions],
   );
 
+  const productStoreOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          productOptions.map((product) => [
+            product.storeId,
+            {
+              value: product.storeId,
+              label: product.storeLabel,
+              selectedLabel: product.storeLabel,
+            },
+          ]),
+        ).values(),
+      ).sort((left, right) => left.label.localeCompare(right.label)),
+    [productOptions],
+  );
+
   const filteredProductOptions = useMemo(() => {
     const needle = productSearchText.trim().toLowerCase();
-    if (!needle) {
-      return productOptions;
-    }
+    return productOptions.filter((product) => {
+      if (selectedProductStoreId && product.storeId !== selectedProductStoreId) {
+        return false;
+      }
 
-    return productOptions.filter((product) =>
-      [
+      if (!needle) {
+        return true;
+      }
+
+      return [
         product.label,
         product.variationLabel,
         product.customId ? String(product.customId) : '',
       ]
         .join(' ')
         .toLowerCase()
-        .includes(needle),
-    );
-  }, [productOptions, productSearchText]);
+        .includes(needle);
+    });
+  }, [productOptions, productSearchText, selectedProductStoreId]);
 
   function handleOpenPicker() {
     setIsProductPickerOpen(true);
@@ -151,12 +175,14 @@ export function ManualReceivingModal({
 
   function handleClosePicker() {
     setProductSearchText('');
+    setSelectedProductStoreId('');
     setIsProductPickerOpen(false);
   }
 
   function handleAddProduct(profileId: string) {
     onAddProduct(profileId);
     setProductSearchText('');
+    setSelectedProductStoreId('');
     setIsProductPickerOpen(false);
   }
 
@@ -356,16 +382,27 @@ export function ManualReceivingModal({
 
             {isProductPickerOpen ? (
               <div className="px-4 py-4">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center">
                   <label className="relative flex-1">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8193a0]" />
                     <input
                       value={productSearchText}
                       onChange={(event) => setProductSearchText(event.target.value)}
-                      placeholder="Search products across this partner"
+                      placeholder={selectedProductStoreId ? 'Search products in this store' : 'Search products across this partner'}
                       className="h-10 w-full rounded-[12px] border border-[#d7e0e7] bg-white pl-9 pr-3 text-[13px] text-primary outline-none transition placeholder:text-[#94a3b8] focus:border-[#96b4c3]"
                     />
                   </label>
+                  <WmsSearchableSelect
+                    label="Store"
+                    hideInlineLabel
+                    value={selectedProductStoreId}
+                    onChange={setSelectedProductStoreId}
+                    options={productStoreOptions}
+                    allLabel="All stores"
+                    placeholder="Search stores..."
+                    triggerClassName="h-10 min-w-[220px] md:w-[220px]"
+                    valueClassName="max-w-[140px]"
+                  />
                   <button
                     type="button"
                     onClick={handleClosePicker}

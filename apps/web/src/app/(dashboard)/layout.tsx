@@ -73,6 +73,7 @@ const baseNavigation: NavLink[] = [
     children: [
       { href: '/orders/summary', label: 'Orders Summary', icon: <BarChart3 className="h-4 w-4" /> },
       { href: '/orders/confirmation', label: 'Confirmation of Order', icon: <ClipboardList className="h-4 w-4" /> },
+      { href: '/orders/undeliverables', label: 'Undeliverables', icon: <Users className="h-4 w-4" /> },
     ],
   },
   {
@@ -230,6 +231,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       || permissions.includes('stock_request.write');
     const hasOrderSummary = permissions.includes('orders.summary.read');
     const hasOrderConfirmation = permissions.includes('pos.read');
+    const hasUndeliverables =
+      permissions.includes('orders.undeliverables.read')
+      || permissions.includes('orders.undeliverables.read_all');
     const hasReports = permissions.includes('reports.pos_orders.read');
 
     return baseNavigation.flatMap((link) => {
@@ -244,6 +248,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           const children = (link.children || []).filter((child) => {
             if (child.href === '/orders/summary') return hasOrderSummary;
             if (child.href === '/orders/confirmation') return hasOrderConfirmation;
+            if (child.href === '/orders/undeliverables') return hasUndeliverables;
             return false;
           });
           if (children.length === 0) return [];

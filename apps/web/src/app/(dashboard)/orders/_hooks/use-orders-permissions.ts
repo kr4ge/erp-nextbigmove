@@ -33,6 +33,8 @@ export function useOrdersPermissions() {
   const cachedHasOrdersAccess = useMemo(
     () =>
       cachedPermissions.includes('orders.summary.read')
+      || cachedPermissions.includes('orders.undeliverables.read')
+      || cachedPermissions.includes('orders.undeliverables.read_all')
       || cachedPermissions.includes('pos.read'),
     [cachedPermissions],
   );
@@ -47,5 +49,11 @@ export function useOrdersPermissions() {
     isLoading: shouldWaitForFreshPermissions,
     canViewOrdersSummary: permissions.includes('orders.summary.read'),
     canViewOrderConfirmation: permissions.includes('pos.read'),
+    canViewUndeliverables:
+      permissions.includes('orders.undeliverables.read')
+      || permissions.includes('orders.undeliverables.read_all'),
+    canViewAllUndeliverables: permissions.includes('orders.undeliverables.read_all'),
+    canAssignUndeliverables: permissions.includes('orders.undeliverables.assign'),
+    canWriteUndeliverableRemarks: permissions.includes('orders.undeliverables.remarks.write'),
   };
 }

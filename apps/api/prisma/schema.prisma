@@ -54,6 +54,9 @@ model Tenant {
   workflowExecutionLogs               WorkflowExecutionLog[]
   metaAdInsights                      MetaAdInsight[]
   posOrders                           PosOrder[]
+  undeliverableStoreAssignments       UndeliverableStoreAssignment[]
+  undeliverableOrderRemarks           UndeliverableOrderRemark[]
+  undeliverableRemarkOptions          UndeliverableRemarkOption[]
   posTags                             PosTag[]
   marketingKpiTargets                 MarketingKpiTarget[]
   marketingKpiUserCategoryAssignments MarketingKpiUserCategoryAssignment[]
@@ -376,6 +379,7 @@ model User {
   wmsForecastSnapshotsGenerated             WmsForecastSnapshot[]      @relation("WmsForecastSnapshotGeneratedBy")
   wmsStaffAssignmentsManaged                WmsStaffAssignment[]       @relation("WmsStaffAssignmentAssignedBy")
   readNotificationStates                    NotificationState[]        @relation("NotificationStateReadBy")
+  undeliverableStoreAssignments             UndeliverableStoreAssignment[]
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -514,6 +518,8 @@ model PosStore {
   wmsBasketUnits          WmsBasketUnit[]
   wmsInvoiceLines         WmsInvoiceLine[]
   wmsForecastSnapshotRows WmsForecastSnapshotRow[]
+  undeliverableStoreAssignments UndeliverableStoreAssignment[]
+  undeliverableOrderRemarks     UndeliverableOrderRemark[]
 
   @@index([tenantId])
   @@index([tenantId, teamId])
@@ -1196,6 +1202,7 @@ model PosOrder {
   dateLocal   String // Manila-local date (YYYY-MM-DD)
   deliveredAt DateTime?
   rtsAt       DateTime?
+  undeliverableAt DateTime?
 
   // Order details
   status                         Int?
@@ -1209,6 +1216,7 @@ model PosOrder {
   isAbandoned                    Boolean   @default(false)
   wasAbandonedCart               Boolean   @default(false)
   isRepurchase                   Boolean   @default(false)
+  isUndeliverable                Boolean   @default(false)
   isVoid                         Boolean   @default(false)
   confirmationUpdateRequestedAt  DateTime?
   confirmationUpdateTargetStatus Int?
@@ -1245,6 +1253,7 @@ model PosOrder {
   itemData             Json                  @default("[]")
   tags                 Json                  @default("[]")
   wmsFulfillmentOrders WmsFulfillmentOrder[]
+  undeliverableOrderRemarks UndeliverableOrderRemark[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1256,9 +1265,65 @@ model PosOrder {
   @@index([tenantId, status, dateLocal, confirmationUpdateRequestedAt], map: "pos_orders_confirmation_queue_idx")
   @@index([tenantId, teamId, dateLocal, isRiskConfirmation], map: "pos_orders_tenant_team_date_risk_confirmation_idx")
   @@index([tenantId, dateLocal, isVoid], map: "pos_orders_tenant_date_void_idx")
+  @@index([tenantId, isUndeliverable, undeliverableAt, shopId], map: "pos_orders_tenant_undeliverable_at_shop_idx")
   @@index([dateLocal])
   @@index([mapping])
   @@map("pos_orders")
+}
+
+model UndeliverableStoreAssignment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId  String @db.Uuid
+  store    PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  userId   String @db.Uuid
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdById String? @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, storeId, userId])
+  @@index([tenantId, storeId])
+  @@index([tenantId, userId])
+  @@map("undeliverable_store_assignments")
+}
+
+model UndeliverableOrderRemark {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderId  String @db.Uuid
+  order    PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  storeId  String? @db.Uuid
+  store    PosStore? @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  remark      String
+  createdById String @db.Uuid
+  updatedById String? @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, orderId, createdAt])
+  @@index([tenantId, storeId])
+  @@map("undeliverable_order_remarks")
+}
+
+model UndeliverableRemarkOption {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  remark      String
+  createdById String @db.Uuid
+  updatedById String? @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, remark])
+  @@map("undeliverable_remark_options")
 }
 
 model PosTag {

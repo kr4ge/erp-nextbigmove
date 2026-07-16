@@ -22,6 +22,7 @@ import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { EffectiveAccessService } from '../../common/services/effective-access.service';
 import { NotificationStateService } from '../../common/services/notification-state.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import { IntegrationService } from '../integrations/integration.service';
@@ -183,6 +184,41 @@ type AgingOrdersNotificationContext = {
   affectedOrderCount?: number;
 };
 
+type UndeliverableStatus = 2 | 3 | 4 | 5;
+
+type UndeliverableStoreRow = {
+  id: string;
+  shopId: string;
+  shopName: string | null;
+  name: string | null;
+};
+
+type UndeliverablesAccessScope = {
+  tenantId: string;
+  userId: string;
+  permissions: string[];
+  canReadAll: boolean;
+  canAssign: boolean;
+  canWriteRemarks: boolean;
+  accessibleStores: UndeliverableStoreRow[];
+  accessibleShopIds: string[];
+  accessibleStoreIds: string[];
+};
+
+type UndeliverableUserOption = {
+  user_id: string;
+  full_name: string;
+  email: string;
+};
+
+const UNDELIVERABLE_STATUS_VALUES: UndeliverableStatus[] = [2, 3, 4, 5];
+const UNDELIVERABLE_STATUS_LABELS: Record<UndeliverableStatus, string> = {
+  2: 'Shipped',
+  3: 'Delivered',
+  4: 'Returning',
+  5: 'Returned',
+};
+
 type SystemPosOrderStatusUpdateParams = {
   tenantId: string;
   orderRowId: string;
@@ -219,6 +255,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
     private readonly teamContext: TeamContextService,
+    private readonly effectiveAccess: EffectiveAccessService,
     private readonly notificationStateService: NotificationStateService,
     private readonly integrationService: IntegrationService,
     private readonly workflowExecutionGateway: WorkflowExecutionGateway,
@@ -239,6 +276,38 @@ export class OrdersService {
 
   private getTodayDateLocal(): string {
     return dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+  }
+
+  private parseUndeliverableAddress(rawAddress: string | null | undefined) {
+    const parts = (rawAddress ?? '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+
+    if (parts.length === 0) {
+      return {
+        address: null as string | null,
+        barangay: null as string | null,
+        city: null as string | null,
+        province: null as string | null,
+      };
+    }
+
+    if (parts.length >= 4) {
+      return {
+        address: parts.slice(0, -3).join(', ') || null,
+        barangay: parts[parts.length - 3] ?? null,
+        city: parts[parts.length - 2] ?? null,
+        province: parts[parts.length - 1] ?? null,
+      };
+    }
+
+    return {
+      address: parts[0] ?? null,
+      barangay: parts[1] ?? null,
+      city: parts[2] ?? null,
+      province: null,
+    };
   }
 
   private parsePage(raw?: string): number {
@@ -303,6 +372,233 @@ export class OrdersService {
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
     return Array.from(new Set(exploded));
+  }
+
+  private parseUuidArray(raw?: string | string[]): string[] {
+    if (!raw) return [];
+    const list = Array.isArray(raw) ? raw : [raw];
+    const exploded = list
+      .flatMap((entry) => entry.split(','))
+      .map((entry) => entry.trim())
+      .filter((entry) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry));
+
+    return Array.from(new Set(exploded));
+  }
+
+  private parseUndeliverableStatuses(raw?: string | string[]): UndeliverableStatus[] {
+    if (!raw) {
+      return [...UNDELIVERABLE_STATUS_VALUES];
+    }
+
+    const list = Array.isArray(raw) ? raw : [raw];
+    const parsed = list
+      .flatMap((entry) => entry.split(','))
+      .map((entry) => Number.parseInt(entry.trim(), 10))
+      .filter((value): value is UndeliverableStatus => UNDELIVERABLE_STATUS_VALUES.includes(value as UndeliverableStatus));
+
+    return parsed.length > 0 ? Array.from(new Set(parsed)) : [...UNDELIVERABLE_STATUS_VALUES];
+  }
+
+  private getCurrentUserBasePermissions(): string[] {
+    const permissions = this.cls.get('userPermissions');
+    if (!Array.isArray(permissions)) {
+      return [];
+    }
+
+    return permissions.filter((value): value is string => typeof value === 'string');
+  }
+
+  private buildUndeliverableStoreLabel(store: {
+    name: string | null;
+    shopName: string | null;
+    shopId: string;
+  }) {
+    return store.name?.trim() || store.shopName?.trim() || store.shopId;
+  }
+
+  private buildUndeliverableUserLabel(user: {
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+  }) {
+    const fullName = [user.firstName?.trim(), user.lastName?.trim()].filter(Boolean).join(' ').trim();
+    return fullName || user.email.trim();
+  }
+
+  private async resolveUndeliverablesAccessScope(): Promise<UndeliverablesAccessScope> {
+    const { tenantId, userId, teamIds, userTeams } = await this.teamContext.getContext();
+    const requestedTeamIds =
+      (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
+    const basePermissions = this.getCurrentUserBasePermissions();
+    const access = await this.effectiveAccess.resolveUserAccess({
+      userId,
+      tenantId,
+      requestedTeamIds,
+      basePermissions,
+      workspace: 'erp',
+    });
+
+    const canReadAll = access.permissions.includes('orders.undeliverables.read_all');
+    const canAssign = access.permissions.includes('orders.undeliverables.assign');
+    const canWriteRemarks = access.permissions.includes('orders.undeliverables.remarks.write');
+
+    const accessibleStores = canReadAll
+      ? await this.prisma.posStore.findMany({
+          where: { tenantId },
+          select: {
+            id: true,
+            shopId: true,
+            shopName: true,
+            name: true,
+          },
+          orderBy: [{ shopName: 'asc' }, { name: 'asc' }],
+        })
+      : await this.prisma.undeliverableStoreAssignment.findMany({
+          where: {
+            tenantId,
+            userId,
+          },
+          select: {
+            store: {
+              select: {
+                id: true,
+                shopId: true,
+                shopName: true,
+                name: true,
+              },
+            },
+          },
+        }).then((rows) =>
+          rows
+            .map((row) => row.store)
+            .sort((left, right) =>
+              this.buildUndeliverableStoreLabel(left).localeCompare(this.buildUndeliverableStoreLabel(right)),
+            ));
+
+    const uniqueStores = Array.from(
+      new Map(accessibleStores.map((store) => [store.id, store])).values(),
+    );
+
+    return {
+      tenantId,
+      userId,
+      permissions: access.permissions,
+      canReadAll,
+      canAssign,
+      canWriteRemarks,
+      accessibleStores: uniqueStores,
+      accessibleShopIds: Array.from(new Set(uniqueStores.map((store) => store.shopId))).sort((left, right) => left.localeCompare(right)),
+      accessibleStoreIds: uniqueStores.map((store) => store.id),
+    };
+  }
+
+  private async listUndeliverableEligibleUsers(tenantId: string): Promise<UndeliverableUserOption[]> {
+    const users = await this.prisma.user.findMany({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        permissions: true,
+        userRoleAssignments: {
+          where: { tenantId },
+          select: {
+            role: {
+              select: {
+                rolePermissions: {
+                  select: {
+                    permission: {
+                      select: {
+                        key: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        userPermissionAssignments: {
+          where: { tenantId },
+          select: {
+            allow: true,
+            permission: {
+              select: {
+                key: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }, { email: 'asc' }],
+    });
+
+    return users
+      .filter((user) => {
+        const permissions = new Set<string>((user.permissions ?? []).filter((value): value is string => typeof value === 'string'));
+        user.userRoleAssignments.forEach((assignment) => {
+          assignment.role.rolePermissions.forEach((rolePermission) => {
+            permissions.add(rolePermission.permission.key);
+          });
+        });
+        user.userPermissionAssignments.forEach((assignment) => {
+          if (assignment.allow) {
+            permissions.add(assignment.permission.key);
+          } else {
+            permissions.delete(assignment.permission.key);
+          }
+        });
+
+        return (
+          permissions.has('orders.undeliverables.read')
+          || permissions.has('orders.undeliverables.read_all')
+          || permissions.has('orders.undeliverables.assign')
+        );
+      })
+      .map((user) => ({
+        user_id: user.id,
+        full_name: this.buildUndeliverableUserLabel(user),
+        email: user.email,
+      }));
+  }
+
+  private async resolveUndeliverableOrderScope(
+    orderId: string,
+    access: UndeliverablesAccessScope,
+  ) {
+    const order = await this.prisma.posOrder.findFirst({
+      where: {
+        id: orderId,
+        tenantId: access.tenantId,
+      },
+      select: {
+        id: true,
+        shopId: true,
+        posOrderId: true,
+        status: true,
+        statusName: true,
+        tracking: true,
+        dateLocal: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const matchingStore = access.accessibleStores.find((store) => store.shopId === order.shopId);
+    if (!matchingStore) {
+      throw new ForbiddenException('Order store is outside your undeliverables scope');
+    }
+
+    return {
+      order,
+      store: matchingStore,
+    };
   }
 
   private stripPhoneDigits(value: string): string {
@@ -1424,6 +1720,778 @@ export class OrdersService {
         shop_ids: selectedShopIds,
       },
       generated_at: generatedAt,
+    };
+  }
+
+  async listUndeliverables(params: {
+    start_date?: string;
+    end_date?: string;
+    store_id?: string | string[];
+    status?: string | string[];
+    search?: string;
+    page?: string;
+    limit?: string;
+  }) {
+    const today = this.getTodayDateLocal();
+    let startDate = this.normalizeDateLocal(params.start_date, today);
+    let endDate = this.normalizeDateLocal(params.end_date, today);
+    if (startDate > endDate) {
+      [startDate, endDate] = [endDate, startDate];
+    }
+
+    const page = this.parsePage(params.page);
+    const limit = this.parseLimit(params.limit);
+    const skip = (page - 1) * limit;
+    const search = params.search?.trim() || '';
+    const statuses = this.parseUndeliverableStatuses(params.status);
+    const undeliverableStartAt = dayjs.tz(`${startDate}T00:00:00`, TIMEZONE).toDate();
+    const undeliverableEndAt = dayjs.tz(`${endDate}T23:59:59.999`, TIMEZONE).toDate();
+    const access = await this.resolveUndeliverablesAccessScope();
+
+    if (access.accessibleStores.length === 0 || access.accessibleShopIds.length === 0) {
+      return {
+        items: [],
+        pagination: { page, limit, total: 0, pageCount: 0 },
+        filters: {
+          stores: [],
+          statuses: UNDELIVERABLE_STATUS_VALUES.map((status) => ({
+            value: String(status),
+            label: UNDELIVERABLE_STATUS_LABELS[status],
+          })),
+        },
+        selected: {
+          start_date: startDate,
+          end_date: endDate,
+          store_ids: [],
+          statuses: statuses.map(String),
+          search,
+        },
+        scope: {
+          mode: access.canReadAll ? 'all' : 'assigned',
+        },
+      };
+    }
+
+    const requestedStoreIds = this.parseUuidArray(params.store_id);
+    const accessibleStoreIdSet = new Set(access.accessibleStoreIds);
+    const selectedStoreIds = requestedStoreIds.filter((storeId) => accessibleStoreIdSet.has(storeId));
+    const effectiveStores =
+      selectedStoreIds.length > 0
+        ? access.accessibleStores.filter((store) => selectedStoreIds.includes(store.id))
+        : access.accessibleStores;
+    const effectiveShopIds = Array.from(new Set(effectiveStores.map((store) => store.shopId)));
+
+    const baseWhere: Prisma.PosOrderWhereInput = {
+      tenantId: access.tenantId,
+      isUndeliverable: true,
+      undeliverableAt: {
+        gte: undeliverableStartAt,
+        lte: undeliverableEndAt,
+      },
+      status: { in: statuses },
+      shopId: { in: access.accessibleShopIds },
+    };
+
+    const visibleShopIds = new Set(
+      (await this.prisma.posOrder.findMany({
+        where: baseWhere,
+        select: { shopId: true },
+        distinct: ['shopId'],
+      })).map((row) => row.shopId),
+    );
+
+    const filterStores = access.accessibleStores
+      .filter((store) => visibleShopIds.has(store.shopId))
+      .map((store) => ({
+        store_id: store.id,
+        shop_id: store.shopId,
+        store_name: this.buildUndeliverableStoreLabel(store),
+      }));
+
+    if (effectiveShopIds.length === 0) {
+      return {
+        items: [],
+        pagination: { page, limit, total: 0, pageCount: 0 },
+        filters: {
+          stores: filterStores,
+          statuses: UNDELIVERABLE_STATUS_VALUES.map((status) => ({
+            value: String(status),
+            label: UNDELIVERABLE_STATUS_LABELS[status],
+          })),
+        },
+        selected: {
+          start_date: startDate,
+          end_date: endDate,
+          store_ids: selectedStoreIds,
+          statuses: statuses.map(String),
+          search,
+        },
+        scope: {
+          mode: access.canReadAll ? 'all' : 'assigned',
+        },
+      };
+    }
+
+    const where: Prisma.PosOrderWhereInput = {
+      tenantId: access.tenantId,
+      isUndeliverable: true,
+      undeliverableAt: {
+        gte: undeliverableStartAt,
+        lte: undeliverableEndAt,
+      },
+      status: { in: statuses },
+      shopId: { in: effectiveShopIds },
+      ...(search
+        ? {
+            OR: [
+              { posOrderId: { contains: search, mode: 'insensitive' } },
+              { tracking: { contains: search, mode: 'insensitive' } },
+              { customerName: { contains: search, mode: 'insensitive' } },
+              { customerPhone: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, orders] = await this.prisma.$transaction([
+      this.prisma.posOrder.count({ where }),
+      this.prisma.posOrder.findMany({
+        where,
+        orderBy: [{ undeliverableAt: 'asc' }, { updatedAt: 'asc' }],
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          shopId: true,
+          posOrderId: true,
+          dateLocal: true,
+          undeliverableAt: true,
+          status: true,
+          statusName: true,
+          tracking: true,
+          customerName: true,
+          customerPhone: true,
+          customerAddress: true,
+          updatedAt: true,
+        },
+      }),
+    ]);
+
+    const pageCount = total > 0 ? Math.ceil(total / limit) : 0;
+    const orderIds = orders.map((order) => order.id);
+    const shopIdsInPage = Array.from(new Set(orders.map((order) => order.shopId)));
+    const pageStores = access.accessibleStores.filter((store) => shopIdsInPage.includes(store.shopId));
+    const storeByShopId = new Map<string, UndeliverableStoreRow>();
+    pageStores.forEach((store) => {
+      if (!storeByShopId.has(store.shopId)) {
+        storeByShopId.set(store.shopId, store);
+      }
+    });
+
+    const remarks = orderIds.length > 0
+      ? await this.prisma.undeliverableOrderRemark.findMany({
+          where: {
+            tenantId: access.tenantId,
+            orderId: { in: orderIds },
+          },
+          orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        })
+      : [];
+
+    const latestRemarkByOrderId = new Map<string, (typeof remarks)[number]>();
+    remarks.forEach((remark) => {
+      if (!latestRemarkByOrderId.has(remark.orderId)) {
+        latestRemarkByOrderId.set(remark.orderId, remark);
+      }
+    });
+
+    const remarkUserIds = Array.from(
+      new Set(
+        remarks.flatMap((remark) => [remark.createdById, remark.updatedById].filter((value): value is string => !!value)),
+      ),
+    );
+
+    const remarkUsers = remarkUserIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: { id: { in: remarkUserIds } },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        })
+      : [];
+    const remarkUserMap = new Map(
+      remarkUsers.map((user) => [user.id, this.buildUndeliverableUserLabel(user)]),
+    );
+
+    const storeIdsInPage = Array.from(
+      new Set(pageStores.map((store) => store.id)),
+    );
+    const assignments = storeIdsInPage.length > 0
+      ? await this.prisma.undeliverableStoreAssignment.findMany({
+          where: {
+            tenantId: access.tenantId,
+            storeId: { in: storeIdsInPage },
+          },
+          select: {
+            storeId: true,
+            userId: true,
+            user: {
+              select: {
+                email: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        })
+      : [];
+
+    const assignedUsersByStoreId = new Map<string, Array<{ user_id: string; full_name: string; email: string }>>();
+    assignments.forEach((assignment) => {
+      const bucket = assignedUsersByStoreId.get(assignment.storeId) ?? [];
+      bucket.push({
+        user_id: assignment.userId,
+        full_name: this.buildUndeliverableUserLabel(assignment.user),
+        email: assignment.user.email,
+      });
+      assignedUsersByStoreId.set(assignment.storeId, bucket);
+    });
+
+    const items = orders.map((order) => {
+      const store = storeByShopId.get(order.shopId);
+      const latestRemark = latestRemarkByOrderId.get(order.id);
+      const parsedAddress = this.parseUndeliverableAddress(order.customerAddress);
+
+      return {
+        id: order.id,
+        pos_order_id: order.posOrderId,
+        date_local: order.undeliverableAt
+          ? dayjs(order.undeliverableAt).tz(TIMEZONE).format('YYYY-MM-DD')
+          : order.dateLocal,
+        status: order.status,
+        status_name:
+          typeof order.status === 'number' && UNDELIVERABLE_STATUS_VALUES.includes(order.status as UndeliverableStatus)
+            ? UNDELIVERABLE_STATUS_LABELS[order.status as UndeliverableStatus]
+            : order.statusName,
+        tracking: order.tracking,
+        customer_name: order.customerName,
+        customer_phone: order.customerPhone,
+        address: parsedAddress.address,
+        barangay: parsedAddress.barangay,
+        city: parsedAddress.city,
+        province: parsedAddress.province,
+        store_id: store?.id ?? null,
+        store_name: store ? this.buildUndeliverableStoreLabel(store) : order.shopId,
+        shop_id: order.shopId,
+        sa_assigned: store ? (assignedUsersByStoreId.get(store.id) ?? []) : [],
+        latest_remark: latestRemark
+          ? {
+              id: latestRemark.id,
+              remark: latestRemark.remark,
+              created_at: latestRemark.createdAt.toISOString(),
+              updated_at: latestRemark.updatedAt.toISOString(),
+              author_name:
+                remarkUserMap.get(latestRemark.updatedById ?? latestRemark.createdById)
+                || remarkUserMap.get(latestRemark.createdById)
+                || 'Unknown user',
+            }
+          : null,
+      };
+    });
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        pageCount,
+      },
+      filters: {
+        stores: filterStores,
+        statuses: UNDELIVERABLE_STATUS_VALUES.map((status) => ({
+          value: String(status),
+          label: UNDELIVERABLE_STATUS_LABELS[status],
+        })),
+      },
+      selected: {
+        start_date: startDate,
+        end_date: endDate,
+        store_ids: selectedStoreIds,
+        statuses: statuses.map(String),
+        search,
+      },
+      scope: {
+        mode: access.canReadAll ? 'all' : 'assigned',
+      },
+    };
+  }
+
+  async getUndeliverableAssignments() {
+    const access = await this.resolveUndeliverablesAccessScope();
+    if (!access.canReadAll && !access.canAssign) {
+      throw new ForbiddenException('You do not have permission to manage undeliverables assignments');
+    }
+
+    const [stores, users, assignments] = await Promise.all([
+      this.prisma.posStore.findMany({
+        where: {
+          tenantId: access.tenantId,
+        },
+        select: {
+          id: true,
+          shopId: true,
+          shopName: true,
+          name: true,
+        },
+        orderBy: [{ shopName: 'asc' }, { name: 'asc' }],
+      }),
+      this.listUndeliverableEligibleUsers(access.tenantId),
+      this.prisma.undeliverableStoreAssignment.findMany({
+        where: {
+          tenantId: access.tenantId,
+        },
+        select: {
+          userId: true,
+          storeId: true,
+        },
+      }),
+    ]);
+
+    return {
+      users,
+      stores: stores.map((store) => ({
+        store_id: store.id,
+        shop_id: store.shopId,
+        store_name: this.buildUndeliverableStoreLabel(store),
+      })),
+      assignments,
+    };
+  }
+
+  async updateUndeliverableAssignments(userId: string, storeIds: string[]) {
+    const access = await this.resolveUndeliverablesAccessScope();
+    if (!access.canAssign) {
+      throw new ForbiddenException('You do not have permission to manage undeliverables assignments');
+    }
+
+    const normalizedStoreIds = Array.from(new Set(
+      (Array.isArray(storeIds) ? storeIds : []).filter((value) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value),
+      ),
+    ));
+
+    const [targetUser, stores] = await Promise.all([
+      this.prisma.user.findFirst({
+        where: {
+          id: userId,
+          tenantId: access.tenantId,
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      }),
+      normalizedStoreIds.length > 0
+        ? this.prisma.posStore.findMany({
+            where: {
+              tenantId: access.tenantId,
+              id: { in: normalizedStoreIds },
+            },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    if (!targetUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (stores.length !== normalizedStoreIds.length) {
+      throw new BadRequestException('One or more selected stores are invalid for this tenant');
+    }
+
+    const eligibleUsers = await this.listUndeliverableEligibleUsers(access.tenantId);
+    if (!eligibleUsers.some((user) => user.user_id === userId)) {
+      throw new BadRequestException('Selected user does not have undeliverables access');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.undeliverableStoreAssignment.deleteMany({
+        where: {
+          tenantId: access.tenantId,
+          userId,
+        },
+      });
+
+      if (normalizedStoreIds.length > 0) {
+        await tx.undeliverableStoreAssignment.createMany({
+          data: normalizedStoreIds.map((storeId) => ({
+            tenantId: access.tenantId,
+            storeId,
+            userId,
+            createdById: access.userId,
+          })),
+        });
+      }
+    });
+
+    return {
+      success: true,
+      user_id: userId,
+      store_ids: normalizedStoreIds,
+    };
+  }
+
+  async listUndeliverableRemarks(orderId: string) {
+    const access = await this.resolveUndeliverablesAccessScope();
+    const { order, store } = await this.resolveUndeliverableOrderScope(orderId, access);
+
+    const remarks = await this.prisma.undeliverableOrderRemark.findMany({
+      where: {
+        tenantId: access.tenantId,
+        orderId: order.id,
+      },
+      orderBy: [{ createdAt: 'desc' }],
+    });
+
+    const userIds = Array.from(new Set(
+      remarks.flatMap((remark) => [remark.createdById, remark.updatedById].filter((value): value is string => !!value)),
+    ));
+    const users = userIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        })
+      : [];
+    const userMap = new Map(users.map((user) => [user.id, this.buildUndeliverableUserLabel(user)]));
+
+    return {
+      order: {
+        id: order.id,
+        pos_order_id: order.posOrderId,
+        status: order.status,
+        tracking: order.tracking,
+        date_local: order.dateLocal,
+        store_name: this.buildUndeliverableStoreLabel(store),
+      },
+      items: remarks.map((remark) => ({
+        id: remark.id,
+        remark: remark.remark,
+        created_at: remark.createdAt.toISOString(),
+        updated_at: remark.updatedAt.toISOString(),
+        created_by_id: remark.createdById,
+        updated_by_id: remark.updatedById,
+        created_by_name: userMap.get(remark.createdById) || 'Unknown user',
+        updated_by_name: remark.updatedById ? (userMap.get(remark.updatedById) || 'Unknown user') : null,
+      })),
+    };
+  }
+
+  async listUndeliverableRemarkOptions() {
+    const access = await this.resolveUndeliverablesAccessScope();
+    const options = await this.prisma.undeliverableRemarkOption.findMany({
+      where: {
+        tenantId: access.tenantId,
+      },
+      orderBy: [
+        { remark: 'asc' },
+        { createdAt: 'asc' },
+      ],
+    });
+
+    return {
+      items: options.map((option) => ({
+        id: option.id,
+        remark: option.remark,
+        created_at: option.createdAt.toISOString(),
+        updated_at: option.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  async createUndeliverableRemarkOption(remarkRaw: string) {
+    const access = await this.resolveUndeliverablesAccessScope();
+    if (!access.canWriteRemarks) {
+      throw new ForbiddenException('You do not have permission to manage undeliverables remarks');
+    }
+
+    const remark = remarkRaw.trim();
+    if (!remark) {
+      throw new BadRequestException('Remark is required');
+    }
+
+    const duplicate = await this.prisma.undeliverableRemarkOption.findFirst({
+      where: {
+        tenantId: access.tenantId,
+        remark: {
+          equals: remark,
+          mode: 'insensitive',
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (duplicate) {
+      throw new ConflictException('Remark already exists');
+    }
+
+    const created = await this.prisma.undeliverableRemarkOption.create({
+      data: {
+        tenantId: access.tenantId,
+        remark,
+        createdById: access.userId,
+      },
+    });
+
+    return {
+      success: true,
+      item: {
+        id: created.id,
+        remark: created.remark,
+        created_at: created.createdAt.toISOString(),
+        updated_at: created.updatedAt.toISOString(),
+      },
+    };
+  }
+
+  async updateUndeliverableRemarkOption(remarkOptionId: string, remarkRaw: string) {
+    const access = await this.resolveUndeliverablesAccessScope();
+    if (!access.canWriteRemarks) {
+      throw new ForbiddenException('You do not have permission to manage undeliverables remarks');
+    }
+
+    const remark = remarkRaw.trim();
+    if (!remark) {
+      throw new BadRequestException('Remark is required');
+    }
+
+    const existing = await this.prisma.undeliverableRemarkOption.findFirst({
+      where: {
+        id: remarkOptionId,
+        tenantId: access.tenantId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Remark option not found');
+    }
+
+    const duplicate = await this.prisma.undeliverableRemarkOption.findFirst({
+      where: {
+        tenantId: access.tenantId,
+        id: { not: remarkOptionId },
+        remark: {
+          equals: remark,
+          mode: 'insensitive',
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (duplicate) {
+      throw new ConflictException('Remark already exists');
+    }
+
+    const updated = await this.prisma.undeliverableRemarkOption.update({
+      where: {
+        id: remarkOptionId,
+      },
+      data: {
+        remark,
+        updatedById: access.userId,
+      },
+    });
+
+    return {
+      success: true,
+      item: {
+        id: updated.id,
+        remark: updated.remark,
+        created_at: updated.createdAt.toISOString(),
+        updated_at: updated.updatedAt.toISOString(),
+      },
+    };
+  }
+
+  async deleteUndeliverableRemarkOption(remarkOptionId: string) {
+    const access = await this.resolveUndeliverablesAccessScope();
+    if (!access.canWriteRemarks) {
+      throw new ForbiddenException('You do not have permission to manage undeliverables remarks');
+    }
+
+    const existing = await this.prisma.undeliverableRemarkOption.findFirst({
+      where: {
+        id: remarkOptionId,
+        tenantId: access.tenantId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Remark option not found');
+    }
+
+    await this.prisma.undeliverableRemarkOption.delete({
+      where: {
+        id: remarkOptionId,
+      },
+    });
+
+    return {
+      success: true,
+      id: remarkOptionId,
+    };
+  }
+
+  async createUndeliverableRemark(orderId: string, remarkOptionId: string) {
+    const access = await this.resolveUndeliverablesAccessScope();
+    if (!access.canWriteRemarks) {
+      throw new ForbiddenException('You do not have permission to write undeliverables remarks');
+    }
+
+    const remarkOption = await this.prisma.undeliverableRemarkOption.findFirst({
+      where: {
+        id: remarkOptionId,
+        tenantId: access.tenantId,
+      },
+      select: {
+        id: true,
+        remark: true,
+      },
+    });
+
+    if (!remarkOption) {
+      throw new NotFoundException('Remark option not found');
+    }
+
+    const { order, store } = await this.resolveUndeliverableOrderScope(orderId, access);
+    const created = await this.prisma.undeliverableOrderRemark.create({
+      data: {
+        tenantId: access.tenantId,
+        orderId: order.id,
+        storeId: store.id,
+        remark: remarkOption.remark,
+        createdById: access.userId,
+      },
+    });
+
+    return {
+      success: true,
+      item: {
+        id: created.id,
+        remark: created.remark,
+        created_at: created.createdAt.toISOString(),
+        updated_at: created.updatedAt.toISOString(),
+      },
+    };
+  }
+
+  async updateUndeliverableRemark(remarkId: string, remarkOptionId: string) {
+    const access = await this.resolveUndeliverablesAccessScope();
+    if (!access.canWriteRemarks) {
+      throw new ForbiddenException('You do not have permission to update undeliverables remarks');
+    }
+
+    const remarkOption = await this.prisma.undeliverableRemarkOption.findFirst({
+      where: {
+        id: remarkOptionId,
+        tenantId: access.tenantId,
+      },
+      select: {
+        id: true,
+        remark: true,
+      },
+    });
+
+    if (!remarkOption) {
+      throw new NotFoundException('Remark option not found');
+    }
+
+    const existing = await this.prisma.undeliverableOrderRemark.findFirst({
+      where: {
+        id: remarkId,
+        tenantId: access.tenantId,
+      },
+      select: {
+        id: true,
+        orderId: true,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Remark not found');
+    }
+
+    await this.resolveUndeliverableOrderScope(existing.orderId, access);
+
+    const updated = await this.prisma.undeliverableOrderRemark.update({
+      where: {
+        id: existing.id,
+      },
+      data: {
+        remark: remarkOption.remark,
+        updatedById: access.userId,
+      },
+    });
+
+    return {
+      success: true,
+      item: {
+        id: updated.id,
+        remark: updated.remark,
+        created_at: updated.createdAt.toISOString(),
+        updated_at: updated.updatedAt.toISOString(),
+      },
+    };
+  }
+
+  async deleteUndeliverableRemark(remarkId: string) {
+    const access = await this.resolveUndeliverablesAccessScope();
+    if (!access.canWriteRemarks) {
+      throw new ForbiddenException('You do not have permission to delete undeliverables remarks');
+    }
+
+    const existing = await this.prisma.undeliverableOrderRemark.findFirst({
+      where: {
+        id: remarkId,
+        tenantId: access.tenantId,
+      },
+      select: {
+        id: true,
+        orderId: true,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Remark not found');
+    }
+
+    await this.resolveUndeliverableOrderScope(existing.orderId, access);
+    await this.prisma.undeliverableOrderRemark.delete({
+      where: {
+        id: existing.id,
+      },
+    });
+
+    return {
+      success: true,
+      id: existing.id,
     };
   }
 
