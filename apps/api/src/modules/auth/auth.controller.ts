@@ -140,13 +140,6 @@ export class AuthController {
     const userId = user.userId || user.id;
     const tenantId = user.tenantId;
     const workspace = normalizePermissionWorkspace(query.workspace);
-    const headerTeamId = req.headers['x-team-id'] as string | undefined;
-    const requestedTeamIds = headerTeamId
-      ? headerTeamId
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean)
-      : [];
 
     if (!userId || (!tenantId && workspace !== 'wms')) {
       return { permissions: [] };
@@ -156,7 +149,6 @@ export class AuthController {
       userId,
       ...(tenantId ? { tenantId } : {}),
       basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
-      requestedTeamIds,
       workspace,
     });
 

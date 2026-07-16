@@ -37,7 +37,6 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const tenantId = this.cls.get('tenantId') || user.tenantId;
-    const teamId = this.cls.get('teamId') || null;
     if (!tenantId) {
       throw new ForbiddenException('Tenant context is required');
     }
@@ -46,7 +45,6 @@ export class PermissionsGuard implements CanActivate {
       userId: user.userId || user.id,
       tenantId,
       basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
-      requestedTeamIds: teamId ? [teamId] : [],
     });
 
     const effectivePermissionSet = new Set(access.permissions);
