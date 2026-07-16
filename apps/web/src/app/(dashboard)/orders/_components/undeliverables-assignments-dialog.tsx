@@ -151,8 +151,8 @@ export function UndeliverablesAssignmentsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 p-6 lg:grid-cols-[18rem,minmax(0,1fr)]">
-          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50/80 dark:border-border dark:bg-background-secondary">
+        <div className="flex flex-col gap-4 p-6 lg:flex-row lg:items-stretch">
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50/80 dark:border-border dark:bg-background-secondary lg:w-[18rem] lg:flex-none">
             <div className="border-b border-slate-200 px-4 py-4 dark:border-border">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -209,7 +209,7 @@ export function UndeliverablesAssignmentsDialog({
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white dark:border-border dark:bg-surface">
+          <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white dark:border-border dark:bg-surface lg:flex-1">
             <div className="border-b border-slate-200 px-5 py-4 dark:border-border">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                 <div>
@@ -275,7 +275,7 @@ export function UndeliverablesAssignmentsDialog({
               </div>
             ) : (
               <div className="max-h-[28rem] overflow-y-auto p-4">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {filteredStores.map((store) => {
                   const checked = selectedStoreIds.includes(store.store_id);
                   return (

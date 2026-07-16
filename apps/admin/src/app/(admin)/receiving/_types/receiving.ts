@@ -318,6 +318,7 @@ export type WmsReceivingPutawayOptionsResponse = {
     code: string;
     barcode: string;
     receivingSequence: number | null;
+    variationId: string;
     status: string;
     productName: string;
     productCustomId: string | null;

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowRightLeft, ChevronLeft, ChevronRight, Info, Loader2, Tags, Truck } from 'lucide-react';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
+import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
 import type {
   WmsReceivingBatchDetail,
@@ -104,6 +105,7 @@ export function InventoryTransfersTab({
   const [groupDrafts, setGroupDrafts] = useState<Record<string, PutawayDraft>>({});
   const [putawayError, setPutawayError] = useState<string | null>(null);
   const [unitFilter, setUnitFilter] = useState<'all' | 'pending' | 'done'>('pending');
+  const [selectedItemKey, setSelectedItemKey] = useState('');
   const [activeGroupKey, setActiveGroupKey] = useState('');
   const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
   const [lastSavedMessage, setLastSavedMessage] = useState<string | null>(null);
@@ -118,7 +120,7 @@ export function InventoryTransfersTab({
     [sections],
   );
 
-  const filteredUnits = useMemo(() => {
+  const stateFilteredUnits = useMemo(() => {
     const allUnits = putawayOptions?.units ?? [];
 
     if (unitFilter === 'pending') {
@@ -131,6 +133,39 @@ export function InventoryTransfersTab({
 
     return allUnits;
   }, [putawayOptions?.units, unitFilter]);
+
+  const itemFilterOptions = useMemo(() => {
+    const options = stateFilteredUnits.reduce((map, unit) => {
+      const existing = map.get(unit.variationId);
+      if (existing) {
+        existing.hint += 1;
+        return map;
+      }
+
+      map.set(unit.variationId, {
+        value: unit.variationId,
+        label: unit.productName,
+        selectedLabel: unit.productCustomId
+          ? `${unit.productName} · ${unit.productCustomId}`
+          : unit.productName,
+        hint: 1,
+      });
+
+      return map;
+    }, new Map<string, { value: string; label: string; selectedLabel: string; hint: number }>());
+
+    return Array.from(options.values()).sort((left, right) =>
+      left.selectedLabel.localeCompare(right.selectedLabel),
+    );
+  }, [stateFilteredUnits]);
+
+  const filteredUnits = useMemo(() => {
+    if (!selectedItemKey) {
+      return stateFilteredUnits;
+    }
+
+    return stateFilteredUnits.filter((unit) => unit.variationId === selectedItemKey);
+  }, [selectedItemKey, stateFilteredUnits]);
 
   const scrollBatches = (direction: 'left' | 'right') => {
     batchScrollRef.current?.scrollBy({
@@ -214,7 +249,17 @@ export function InventoryTransfersTab({
     setSelectedUnitIds([]);
     setLastSavedMessage(null);
     setPutawayError(null);
-  }, [activeGroupKey, selectedBatchId, unitFilter]);
+  }, [activeGroupKey, selectedBatchId, selectedItemKey, unitFilter]);
+
+  useEffect(() => {
+    if (!selectedItemKey) {
+      return;
+    }
+
+    if (!itemFilterOptions.some((option) => option.value === selectedItemKey)) {
+      setSelectedItemKey('');
+    }
+  }, [itemFilterOptions, selectedItemKey]);
 
   const activeDraft =
     (activeGroup ? groupDrafts[activeGroup.key] : null)
@@ -503,27 +548,41 @@ export function InventoryTransfersTab({
               </div>
 
               <div className="space-y-2">
-                <div className="overflow-x-auto">
-                  <div className="flex min-w-max gap-6 border-b border-slate-200">
-                    {[
-                      ['pending', 'Needs Transfer'],
-                      ['done', 'Transferred'],
-                      ['all', 'All Units'],
-                    ].map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setUnitFilter(value as 'all' | 'pending' | 'done')}
-                        className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
-                          unitFilter === value
-                            ? 'border-primary text-primary'
-                            : 'border-transparent text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="overflow-x-auto">
+                    <div className="flex min-w-max gap-6 border-b border-slate-200">
+                      {[
+                        ['pending', 'Needs Transfer'],
+                        ['done', 'Transferred'],
+                        ['all', 'All Units'],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setUnitFilter(value as 'all' | 'pending' | 'done')}
+                          className={`whitespace-nowrap border-b-2 pb-3 text-sm font-semibold transition-colors ${
+                            unitFilter === value
+                              ? 'border-primary text-primary'
+                              : 'border-transparent text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  <WmsSearchableSelect
+                    label="Item"
+                    hideInlineLabel
+                    value={selectedItemKey}
+                    onChange={setSelectedItemKey}
+                    options={itemFilterOptions}
+                    allLabel="All items"
+                    placeholder="Search items..."
+                    triggerClassName="h-10 min-w-[240px] lg:w-[280px]"
+                    valueClassName="max-w-[200px]"
+                  />
                 </div>
 
                 {groups.length > 0 ? (

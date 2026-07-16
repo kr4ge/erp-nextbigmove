@@ -917,6 +917,7 @@ export class WmsReceivingService {
             code: true,
             barcode: true,
             receivingSequence: true,
+            variationId: true,
             status: true,
             currentLocation: {
               select: {
@@ -1020,6 +1021,7 @@ export class WmsReceivingService {
           code: unit.code,
           barcode: unit.barcode,
           receivingSequence: unit.receivingSequence ?? null,
+          variationId: unit.variationId,
           status: unit.status,
           productName: unit.posProduct.name,
           productCustomId: unit.posProduct.customId,
