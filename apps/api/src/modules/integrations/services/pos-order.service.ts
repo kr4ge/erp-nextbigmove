@@ -8,7 +8,10 @@ import * as timezone from 'dayjs/plugin/timezone';
 import { WmsFulfillmentSyncService } from '../../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../../wms-inventory/wms-inventory.service';
 import { WorkflowExecutionGateway } from '../../workflows/gateways/workflow-execution.gateway';
-import { ORDERS_STATUS_SUMMARY_UPDATED_EVENT } from '../../orders/orders.constants';
+import {
+  ORDERS_STATUS_SUMMARY_UPDATED_EVENT,
+  ORDERS_UNDELIVERABLES_UPDATED_EVENT,
+} from '../../orders/orders.constants';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -106,6 +109,24 @@ export class PosOrderService {
       params.tenantId,
       null,
       ORDERS_STATUS_SUMMARY_UPDATED_EVENT,
+      {
+        tenantId: params.tenantId,
+        source: params.source,
+        changedOrderCount: params.changedOrderCount,
+        updatedAt: new Date().toISOString(),
+      },
+    );
+  }
+
+  private emitUndeliverablesUpdate(params: {
+    tenantId: string;
+    source: 'pos_upsert';
+    changedOrderCount: number;
+  }) {
+    this.workflowExecutionGateway?.emitTenantEvent(
+      params.tenantId,
+      null,
+      ORDERS_UNDELIVERABLES_UPDATED_EVENT,
       {
         tenantId: params.tenantId,
         source: params.source,
@@ -1128,6 +1149,11 @@ export class PosOrderService {
 
     if (changedSummaryCount > 0) {
       this.emitOrderStatusSummaryUpdate({
+        tenantId,
+        source: 'pos_upsert',
+        changedOrderCount: changedSummaryCount,
+      });
+      this.emitUndeliverablesUpdate({
         tenantId,
         source: 'pos_upsert',
         changedOrderCount: changedSummaryCount,

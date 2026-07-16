@@ -36,6 +36,7 @@ import {
   ConfirmationUpdateItemPayload,
   ConfirmationUpdateStatusJobData,
   ORDERS_AGING_NOTIFICATION_UPDATED_EVENT,
+  ORDERS_UNDELIVERABLES_UPDATED_EVENT,
   type AgingOrdersNotificationBucketKey,
 } from './orders.constants';
 
@@ -1481,6 +1482,35 @@ export class OrdersService {
     );
   }
 
+  private emitUndeliverablesUpdated(params: {
+    tenantId: string;
+    source:
+      | 'assignments_updated'
+      | 'remark_created'
+      | 'remark_updated'
+      | 'remark_deleted'
+      | 'remark_option_created'
+      | 'remark_option_updated'
+      | 'remark_option_deleted';
+    changedOrderId?: string | null;
+    changedStoreIds?: string[];
+    changedRemarkOptionId?: string | null;
+  }) {
+    this.workflowExecutionGateway.emitTenantEvent(
+      params.tenantId,
+      null,
+      ORDERS_UNDELIVERABLES_UPDATED_EVENT,
+      {
+        tenantId: params.tenantId,
+        source: params.source,
+        changedOrderId: params.changedOrderId ?? null,
+        changedStoreIds: params.changedStoreIds ?? [],
+        changedRemarkOptionId: params.changedRemarkOptionId ?? null,
+        updatedAt: new Date().toISOString(),
+      },
+    );
+  }
+
   private async ensureAgingOrdersNotificationsFresh(params: {
     tenantId: string;
     shopIds: string[];
@@ -2137,6 +2167,12 @@ export class OrdersService {
       }
     });
 
+    this.emitUndeliverablesUpdated({
+      tenantId: access.tenantId,
+      source: 'assignments_updated',
+      changedStoreIds: normalizedStoreIds,
+    });
+
     return {
       success: true,
       user_id: userId,
@@ -2252,6 +2288,12 @@ export class OrdersService {
       },
     });
 
+    this.emitUndeliverablesUpdated({
+      tenantId: access.tenantId,
+      source: 'remark_option_created',
+      changedRemarkOptionId: created.id,
+    });
+
     return {
       success: true,
       item: {
@@ -2316,6 +2358,12 @@ export class OrdersService {
       },
     });
 
+    this.emitUndeliverablesUpdated({
+      tenantId: access.tenantId,
+      source: 'remark_option_updated',
+      changedRemarkOptionId: updated.id,
+    });
+
     return {
       success: true,
       item: {
@@ -2351,6 +2399,12 @@ export class OrdersService {
       where: {
         id: remarkOptionId,
       },
+    });
+
+    this.emitUndeliverablesUpdated({
+      tenantId: access.tenantId,
+      source: 'remark_option_deleted',
+      changedRemarkOptionId: remarkOptionId,
     });
 
     return {
@@ -2389,6 +2443,13 @@ export class OrdersService {
         remark: remarkOption.remark,
         createdById: access.userId,
       },
+    });
+
+    this.emitUndeliverablesUpdated({
+      tenantId: access.tenantId,
+      source: 'remark_created',
+      changedOrderId: order.id,
+      changedStoreIds: [store.id],
     });
 
     return {
@@ -2450,6 +2511,12 @@ export class OrdersService {
       },
     });
 
+    this.emitUndeliverablesUpdated({
+      tenantId: access.tenantId,
+      source: 'remark_updated',
+      changedOrderId: existing.orderId,
+    });
+
     return {
       success: true,
       item: {
@@ -2487,6 +2554,12 @@ export class OrdersService {
       where: {
         id: existing.id,
       },
+    });
+
+    this.emitUndeliverablesUpdated({
+      tenantId: access.tenantId,
+      source: 'remark_deleted',
+      changedOrderId: existing.orderId,
     });
 
     return {

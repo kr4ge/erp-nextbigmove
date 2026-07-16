@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import { useToast } from '@/components/ui/toast';
 import { AnalyticsMultiSelectPicker } from '../../analytics/_components/analytics-multi-select-picker';
+import { useWorkflowTenantEvent } from '../../analytics/_hooks/use-workflow-tenant-event';
 import {
   formatDateInTimezone,
   normalizeDatepickerValue,
@@ -69,6 +70,9 @@ export default function UndeliverablesPage() {
   const [assignmentsData, setAssignmentsData] = useState<UndeliverablesAssignmentsResponse | null>(null);
   const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(false);
   const storePickerRef = useRef<HTMLDivElement | null>(null);
+  const loadUndeliverablesRef = useRef<null | (() => Promise<void>)>(null);
+  const loadAssignmentsRef = useRef<null | (() => Promise<void>)>(null);
+  const loadRemarkOptionsRef = useRef<null | (() => Promise<void>)>(null);
 
   const startDate = useMemo(
     () => normalizeDatepickerValue(dateRange.startDate, today),
@@ -150,6 +154,10 @@ export default function UndeliverablesPage() {
     void loadUndeliverables();
   }, [loadUndeliverables]);
 
+  useEffect(() => {
+    loadUndeliverablesRef.current = loadUndeliverables;
+  }, [loadUndeliverables]);
+
   const loadRemarkOptions = useCallback(async () => {
     if (!canWriteUndeliverableRemarks) {
       setRemarkOptions([]);
@@ -168,6 +176,10 @@ export default function UndeliverablesPage() {
     void loadRemarkOptions();
   }, [loadRemarkOptions]);
 
+  useEffect(() => {
+    loadRemarkOptionsRef.current = loadRemarkOptions;
+  }, [loadRemarkOptions]);
+
   const loadAssignments = useCallback(async () => {
     if (!canAssignUndeliverables && !canViewAllUndeliverables) {
       return;
@@ -183,6 +195,20 @@ export default function UndeliverablesPage() {
       setIsAssignmentsLoading(false);
     }
   }, [addToast, canAssignUndeliverables, canViewAllUndeliverables]);
+
+  useEffect(() => {
+    loadAssignmentsRef.current = loadAssignments;
+  }, [loadAssignments]);
+
+  useWorkflowTenantEvent('orders:undeliverables:updated', () => {
+    void loadUndeliverablesRef.current?.();
+    if (assignmentsOpen) {
+      void loadAssignmentsRef.current?.();
+    }
+    if (remarkOptionsOpen) {
+      void loadRemarkOptionsRef.current?.();
+    }
+  });
 
   const handleOpenAssignments = async () => {
     setAssignmentsOpen(true);
