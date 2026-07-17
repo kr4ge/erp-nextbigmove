@@ -28,6 +28,7 @@ function parseUndeliverablesError(error: unknown, fallback: string) {
 export async function fetchUndeliverables(params: {
   startDate: string;
   endDate: string;
+  view?: 'needs_remarks' | 'with_remarks';
   storeIds?: string[];
   statuses?: string[];
   search?: string;
@@ -39,6 +40,7 @@ export async function fetchUndeliverables(params: {
       params: {
         start_date: params.startDate,
         end_date: params.endDate,
+        ...(params.view ? { view: params.view } : {}),
         ...(params.storeIds && params.storeIds.length > 0 ? { store_id: params.storeIds } : {}),
         ...(params.statuses && params.statuses.length > 0 ? { status: params.statuses } : {}),
         ...(params.search?.trim() ? { search: params.search.trim() } : {}),

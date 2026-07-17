@@ -54,6 +54,7 @@ model Tenant {
   workflowExecutionLogs               WorkflowExecutionLog[]
   metaAdInsights                      MetaAdInsight[]
   posOrders                           PosOrder[]
+  undeliverableAttempts               UndeliverableAttempt[]
   undeliverableStoreAssignments       UndeliverableStoreAssignment[]
   undeliverableOrderRemarks           UndeliverableOrderRemark[]
   undeliverableRemarkOptions          UndeliverableRemarkOption[]
@@ -335,50 +336,50 @@ model User {
   teamMemberships                           TeamMembership[]
   userRoleAssignments                       UserRoleAssignment[]
   userPermissionAssignments                 UserPermissionAssignment[]
-  wmsStaffAssignment                        WmsStaffAssignment?        @relation("WmsStaffAssignmentUser")
-  wmsPurchasingBatchesCreated               WmsPurchasingBatch[]       @relation("WmsPurchasingBatchCreatedBy")
-  wmsPurchasingBatchesSubmitted             WmsPurchasingBatch[]       @relation("WmsPurchasingBatchSubmittedBy")
-  wmsPurchasingBatchesReviewed              WmsPurchasingBatch[]       @relation("WmsPurchasingBatchReviewedBy")
-  wmsPurchasingBatchesApproved              WmsPurchasingBatch[]       @relation("WmsPurchasingBatchApprovedBy")
-  wmsPurchasingBatchesPaymentProofSubmitted WmsPurchasingBatch[]       @relation("WmsPurchasingBatchPaymentProofSubmittedBy")
-  wmsPurchasingBatchesUpdated               WmsPurchasingBatch[]       @relation("WmsPurchasingBatchUpdatedBy")
-  wmsPurchasingBatchLinesCreated            WmsPurchasingBatchLine[]   @relation("WmsPurchasingBatchLineCreatedBy")
-  wmsPurchasingBatchLinesUpdated            WmsPurchasingBatchLine[]   @relation("WmsPurchasingBatchLineUpdatedBy")
-  mediaAssetsCreated                        MediaAsset[]               @relation("MediaAssetCreatedBy")
-  wmsInvoiceSettingsCreated                 WmsInvoiceSettings[]       @relation("WmsInvoiceSettingsCreatedBy")
-  wmsInvoiceSettingsUpdated                 WmsInvoiceSettings[]       @relation("WmsInvoiceSettingsUpdatedBy")
-  wmsInvoicesCreated                        WmsInvoice[]               @relation("WmsInvoiceCreatedBy")
-  wmsInvoicesUpdated                        WmsInvoice[]               @relation("WmsInvoiceUpdatedBy")
-  wmsStoxAppReleasesCreated                 WmsStoxAppRelease[]        @relation("WmsStoxAppReleaseCreatedBy")
-  wmsStoxAppReleasesActivated               WmsStoxAppRelease[]        @relation("WmsStoxAppReleaseActivatedBy")
-  wmsPurchasingEvents                       WmsPurchasingEvent[]       @relation("WmsPurchasingEventActor")
-  wmsReceivingBatchesCreated                WmsReceivingBatch[]        @relation("WmsReceivingBatchCreatedBy")
-  wmsReceivingBatchesUpdated                WmsReceivingBatch[]        @relation("WmsReceivingBatchUpdatedBy")
-  wmsReceivingLinesCreated                  WmsReceivingLine[]         @relation("WmsReceivingLineCreatedBy")
-  wmsReceivingLinesUpdated                  WmsReceivingLine[]         @relation("WmsReceivingLineUpdatedBy")
-  wmsInventoryUnitsCreated                  WmsInventoryUnit[]         @relation("WmsInventoryUnitCreatedBy")
-  wmsInventoryUnitsUpdated                  WmsInventoryUnit[]         @relation("WmsInventoryUnitUpdatedBy")
-  wmsInventoryCountSessionsStarted          WmsInventoryCountSession[] @relation("WmsInventoryCountSessionStartedBy")
-  wmsInventoryCountSessionsSubmitted        WmsInventoryCountSession[] @relation("WmsInventoryCountSessionSubmittedBy")
-  wmsInventoryCountSessionsClosed           WmsInventoryCountSession[] @relation("WmsInventoryCountSessionClosedBy")
-  wmsTransfersCreated                       WmsTransfer[]              @relation("WmsTransferCreatedBy")
-  wmsTransfersUpdated                       WmsTransfer[]              @relation("WmsTransferUpdatedBy")
-  wmsInventoryMovements                     WmsInventoryMovement[]     @relation("WmsInventoryMovementActor")
-  wmsLabelPrintLogs                         WmsLabelPrintLog[]         @relation("WmsLabelPrintLogActor")
-  wmsStaffActivities                        WmsStaffActivity[]         @relation("WmsStaffActivityActor")
-  wmsFulfillmentOrdersClaimed               WmsFulfillmentOrder[]      @relation("WmsFulfillmentOrderClaimedBy")
-  wmsFulfillmentOrdersPacked                WmsFulfillmentOrder[]      @relation("WmsFulfillmentOrderPackedBy")
-  wmsFulfillmentOrdersRtsDisposed           WmsFulfillmentOrder[]      @relation("WmsFulfillmentOrderRtsDisposedBy")
-  wmsBasketsAssigned                        WmsBasket[]                @relation("WmsBasketAssignedPicker")
-  wmsBasketsAssignedForPacking              WmsBasket[]                @relation("WmsBasketAssignedPacker")
-  wmsPickReservationsReserved               WmsPickReservation[]       @relation("WmsPickReservationReservedBy")
-  wmsPickReservationsPicked                 WmsPickReservation[]       @relation("WmsPickReservationPickedBy")
-  wmsBasketUnitsPicked                      WmsBasketUnit[]            @relation("WmsBasketUnitPickedBy")
-  wmsBasketUnitsPacked                      WmsBasketUnit[]            @relation("WmsBasketUnitPackedBy")
-  wmsBasketUnitsRemoved                     WmsBasketUnit[]            @relation("WmsBasketUnitRemovedBy")
-  wmsForecastSnapshotsGenerated             WmsForecastSnapshot[]      @relation("WmsForecastSnapshotGeneratedBy")
-  wmsStaffAssignmentsManaged                WmsStaffAssignment[]       @relation("WmsStaffAssignmentAssignedBy")
-  readNotificationStates                    NotificationState[]        @relation("NotificationStateReadBy")
+  wmsStaffAssignment                        WmsStaffAssignment?            @relation("WmsStaffAssignmentUser")
+  wmsPurchasingBatchesCreated               WmsPurchasingBatch[]           @relation("WmsPurchasingBatchCreatedBy")
+  wmsPurchasingBatchesSubmitted             WmsPurchasingBatch[]           @relation("WmsPurchasingBatchSubmittedBy")
+  wmsPurchasingBatchesReviewed              WmsPurchasingBatch[]           @relation("WmsPurchasingBatchReviewedBy")
+  wmsPurchasingBatchesApproved              WmsPurchasingBatch[]           @relation("WmsPurchasingBatchApprovedBy")
+  wmsPurchasingBatchesPaymentProofSubmitted WmsPurchasingBatch[]           @relation("WmsPurchasingBatchPaymentProofSubmittedBy")
+  wmsPurchasingBatchesUpdated               WmsPurchasingBatch[]           @relation("WmsPurchasingBatchUpdatedBy")
+  wmsPurchasingBatchLinesCreated            WmsPurchasingBatchLine[]       @relation("WmsPurchasingBatchLineCreatedBy")
+  wmsPurchasingBatchLinesUpdated            WmsPurchasingBatchLine[]       @relation("WmsPurchasingBatchLineUpdatedBy")
+  mediaAssetsCreated                        MediaAsset[]                   @relation("MediaAssetCreatedBy")
+  wmsInvoiceSettingsCreated                 WmsInvoiceSettings[]           @relation("WmsInvoiceSettingsCreatedBy")
+  wmsInvoiceSettingsUpdated                 WmsInvoiceSettings[]           @relation("WmsInvoiceSettingsUpdatedBy")
+  wmsInvoicesCreated                        WmsInvoice[]                   @relation("WmsInvoiceCreatedBy")
+  wmsInvoicesUpdated                        WmsInvoice[]                   @relation("WmsInvoiceUpdatedBy")
+  wmsStoxAppReleasesCreated                 WmsStoxAppRelease[]            @relation("WmsStoxAppReleaseCreatedBy")
+  wmsStoxAppReleasesActivated               WmsStoxAppRelease[]            @relation("WmsStoxAppReleaseActivatedBy")
+  wmsPurchasingEvents                       WmsPurchasingEvent[]           @relation("WmsPurchasingEventActor")
+  wmsReceivingBatchesCreated                WmsReceivingBatch[]            @relation("WmsReceivingBatchCreatedBy")
+  wmsReceivingBatchesUpdated                WmsReceivingBatch[]            @relation("WmsReceivingBatchUpdatedBy")
+  wmsReceivingLinesCreated                  WmsReceivingLine[]             @relation("WmsReceivingLineCreatedBy")
+  wmsReceivingLinesUpdated                  WmsReceivingLine[]             @relation("WmsReceivingLineUpdatedBy")
+  wmsInventoryUnitsCreated                  WmsInventoryUnit[]             @relation("WmsInventoryUnitCreatedBy")
+  wmsInventoryUnitsUpdated                  WmsInventoryUnit[]             @relation("WmsInventoryUnitUpdatedBy")
+  wmsInventoryCountSessionsStarted          WmsInventoryCountSession[]     @relation("WmsInventoryCountSessionStartedBy")
+  wmsInventoryCountSessionsSubmitted        WmsInventoryCountSession[]     @relation("WmsInventoryCountSessionSubmittedBy")
+  wmsInventoryCountSessionsClosed           WmsInventoryCountSession[]     @relation("WmsInventoryCountSessionClosedBy")
+  wmsTransfersCreated                       WmsTransfer[]                  @relation("WmsTransferCreatedBy")
+  wmsTransfersUpdated                       WmsTransfer[]                  @relation("WmsTransferUpdatedBy")
+  wmsInventoryMovements                     WmsInventoryMovement[]         @relation("WmsInventoryMovementActor")
+  wmsLabelPrintLogs                         WmsLabelPrintLog[]             @relation("WmsLabelPrintLogActor")
+  wmsStaffActivities                        WmsStaffActivity[]             @relation("WmsStaffActivityActor")
+  wmsFulfillmentOrdersClaimed               WmsFulfillmentOrder[]          @relation("WmsFulfillmentOrderClaimedBy")
+  wmsFulfillmentOrdersPacked                WmsFulfillmentOrder[]          @relation("WmsFulfillmentOrderPackedBy")
+  wmsFulfillmentOrdersRtsDisposed           WmsFulfillmentOrder[]          @relation("WmsFulfillmentOrderRtsDisposedBy")
+  wmsBasketsAssigned                        WmsBasket[]                    @relation("WmsBasketAssignedPicker")
+  wmsBasketsAssignedForPacking              WmsBasket[]                    @relation("WmsBasketAssignedPacker")
+  wmsPickReservationsReserved               WmsPickReservation[]           @relation("WmsPickReservationReservedBy")
+  wmsPickReservationsPicked                 WmsPickReservation[]           @relation("WmsPickReservationPickedBy")
+  wmsBasketUnitsPicked                      WmsBasketUnit[]                @relation("WmsBasketUnitPickedBy")
+  wmsBasketUnitsPacked                      WmsBasketUnit[]                @relation("WmsBasketUnitPackedBy")
+  wmsBasketUnitsRemoved                     WmsBasketUnit[]                @relation("WmsBasketUnitRemovedBy")
+  wmsForecastSnapshotsGenerated             WmsForecastSnapshot[]          @relation("WmsForecastSnapshotGeneratedBy")
+  wmsStaffAssignmentsManaged                WmsStaffAssignment[]           @relation("WmsStaffAssignmentAssignedBy")
+  readNotificationStates                    NotificationState[]            @relation("NotificationStateReadBy")
   undeliverableStoreAssignments             UndeliverableStoreAssignment[]
 
   @@unique([email, tenantId])
@@ -484,40 +485,41 @@ model AnalyticsShare {
 }
 
 model PosStore {
-  id                      String                   @id @default(uuid()) @db.Uuid
-  tenantId                String                   @db.Uuid
-  tenant                  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teamId                  String?                  @db.Uuid
-  team                    Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  integrationId           String?                  @db.Uuid
-  integration             Integration?             @relation(fields: [integrationId], references: [id], onDelete: SetNull)
-  name                    String
-  shopId                  String
-  shopName                String
-  shopAvatarUrl           String?
-  apiKey                  String
-  description             String?
-  status                  IntegrationStatus        @default(ACTIVE)
-  enabled                 Boolean?
-  lastSyncAt              DateTime?
-  initialValueOffer       Decimal?                 @db.Decimal(12, 2)
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  products                PosProduct[]
-  productCogs             PosProductCogs[]
-  tags                    PosTag[]
-  warehouses              PosWarehouse[]
-  wmsPurchasingBatches    WmsPurchasingBatch[]
-  wmsPurchasingBatchLines WmsPurchasingBatchLine[]
-  wmsReceivingBatches     WmsReceivingBatch[]
-  wmsReceivingLines       WmsReceivingLine[]
-  wmsProductProfiles      WmsProductProfile[]
-  wmsInventoryUnits       WmsInventoryUnit[]
-  wmsFulfillmentOrders    WmsFulfillmentOrder[]
-  wmsBasketPickDemands    WmsBasketPickDemand[]
-  wmsBasketUnits          WmsBasketUnit[]
-  wmsInvoiceLines         WmsInvoiceLine[]
-  wmsForecastSnapshotRows WmsForecastSnapshotRow[]
+  id                            String                         @id @default(uuid()) @db.Uuid
+  tenantId                      String                         @db.Uuid
+  tenant                        Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId                        String?                        @db.Uuid
+  team                          Team?                          @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  integrationId                 String?                        @db.Uuid
+  integration                   Integration?                   @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  name                          String
+  shopId                        String
+  shopName                      String
+  shopAvatarUrl                 String?
+  apiKey                        String
+  description                   String?
+  status                        IntegrationStatus              @default(ACTIVE)
+  enabled                       Boolean?
+  lastSyncAt                    DateTime?
+  initialValueOffer             Decimal?                       @db.Decimal(12, 2)
+  createdAt                     DateTime                       @default(now())
+  updatedAt                     DateTime                       @updatedAt
+  products                      PosProduct[]
+  productCogs                   PosProductCogs[]
+  tags                          PosTag[]
+  warehouses                    PosWarehouse[]
+  wmsPurchasingBatches          WmsPurchasingBatch[]
+  wmsPurchasingBatchLines       WmsPurchasingBatchLine[]
+  wmsReceivingBatches           WmsReceivingBatch[]
+  wmsReceivingLines             WmsReceivingLine[]
+  wmsProductProfiles            WmsProductProfile[]
+  wmsInventoryUnits             WmsInventoryUnit[]
+  wmsFulfillmentOrders          WmsFulfillmentOrder[]
+  wmsBasketPickDemands          WmsBasketPickDemand[]
+  wmsBasketUnits                WmsBasketUnit[]
+  wmsInvoiceLines               WmsInvoiceLine[]
+  wmsForecastSnapshotRows       WmsForecastSnapshotRow[]
+  undeliverableAttempts         UndeliverableAttempt[]
   undeliverableStoreAssignments UndeliverableStoreAssignment[]
   undeliverableOrderRemarks     UndeliverableOrderRemark[]
 
@@ -1198,10 +1200,10 @@ model PosOrder {
   posOrderId String // Order ID from POS system
 
   // Timestamps
-  insertedAt  DateTime // UTC timestamp from POS
-  dateLocal   String // Manila-local date (YYYY-MM-DD)
-  deliveredAt DateTime?
-  rtsAt       DateTime?
+  insertedAt      DateTime // UTC timestamp from POS
+  dateLocal       String // Manila-local date (YYYY-MM-DD)
+  deliveredAt     DateTime?
+  rtsAt           DateTime?
   undeliverableAt DateTime?
 
   // Order details
@@ -1238,22 +1240,23 @@ model PosOrder {
   mapping String?
 
   // Assignment info
-  customerCare         String?
-  marketer             String?
-  salesAssignee        String?
-  assigningCare        String?
-  customerName         String?
-  customerPhone        String?
-  customerAddress      String?
-  deliveryAttemptFailed Int      @default(0)
-  statusHistory        Json?
-  rtsReason            Json?
-  upsellBreakdown      Json?
-  orderSnapshot        Json?
+  customerCare              String?
+  marketer                  String?
+  salesAssignee             String?
+  assigningCare             String?
+  customerName              String?
+  customerPhone             String?
+  customerAddress           String?
+  deliveryAttemptFailed     Int                        @default(0)
+  statusHistory             Json?
+  rtsReason                 Json?
+  upsellBreakdown           Json?
+  orderSnapshot             Json?
   // Order items snapshot (subset of fields)
-  itemData             Json                  @default("[]")
-  tags                 Json                  @default("[]")
-  wmsFulfillmentOrders WmsFulfillmentOrder[]
+  itemData                  Json                       @default("[]")
+  tags                      Json                       @default("[]")
+  wmsFulfillmentOrders      WmsFulfillmentOrder[]
+  undeliverableAttempts     UndeliverableAttempt[]
   undeliverableOrderRemarks UndeliverableOrderRemark[]
 
   createdAt DateTime @default(now())
@@ -1272,16 +1275,50 @@ model PosOrder {
   @@map("pos_orders")
 }
 
-model UndeliverableStoreAssignment {
-  id       String @id @default(uuid()) @db.Uuid
-  tenantId String @db.Uuid
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeId  String @db.Uuid
-  store    PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  userId   String @db.Uuid
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+model UndeliverableAttempt {
+  id       String    @id @default(uuid()) @db.Uuid
+  tenantId String    @db.Uuid
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderId  String    @db.Uuid
+  order    PosOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  storeId  String?   @db.Uuid
+  store    PosStore? @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
-  createdById String? @db.Uuid
+  sourceEventKey String
+  attemptNumber  Int
+  failedAt       DateTime
+
+  partnerStatusOld String?
+  partnerStatusNew String  @default("undeliverable")
+  returnedReason   Json?
+  subStatus        Json?
+  sourceTags       Json?
+
+  remark         String?
+  remarkOptionId String?   @db.Uuid
+  remarkedById   String?   @db.Uuid
+  remarkedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orderId, sourceEventKey])
+  @@index([tenantId, storeId, failedAt])
+  @@index([tenantId, remarkedAt, failedAt])
+  @@index([tenantId, orderId, failedAt])
+  @@map("undeliverable_attempts")
+}
+
+model UndeliverableStoreAssignment {
+  id       String   @id @default(uuid()) @db.Uuid
+  tenantId String   @db.Uuid
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId  String   @db.Uuid
+  store    PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  userId   String   @db.Uuid
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdById String?  @db.Uuid
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1292,17 +1329,17 @@ model UndeliverableStoreAssignment {
 }
 
 model UndeliverableOrderRemark {
-  id       String @id @default(uuid()) @db.Uuid
-  tenantId String @db.Uuid
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  orderId  String @db.Uuid
-  order    PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  storeId  String? @db.Uuid
+  id       String    @id @default(uuid()) @db.Uuid
+  tenantId String    @db.Uuid
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderId  String    @db.Uuid
+  order    PosOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  storeId  String?   @db.Uuid
   store    PosStore? @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   remark      String
-  createdById String @db.Uuid
-  updatedById String? @db.Uuid
+  createdById String   @db.Uuid
+  updatedById String?  @db.Uuid
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1317,8 +1354,8 @@ model UndeliverableRemarkOption {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   remark      String
-  createdById String @db.Uuid
-  updatedById String? @db.Uuid
+  createdById String   @db.Uuid
+  updatedById String?  @db.Uuid
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1525,30 +1562,30 @@ model MediaAsset {
 }
 
 model WmsInvoiceSettings {
-  id                  String      @id @default(uuid()) @db.Uuid
-  scopeKey            String      @unique @default("GLOBAL")
-  tenantId            String?     @unique @db.Uuid
-  tenant              Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  companyName         String?
-  companyAddress      String?
-  logoAssetId         String?     @unique @db.Uuid
-  logoAsset           MediaAsset? @relation("WmsInvoiceSettingsLogo", fields: [logoAssetId], references: [id], onDelete: SetNull)
-  invoicePrefix       String      @default("INV")
-  bankName            String?
-  bankAccountName     String?
-  bankAccountNumber   String?
-  bankAccountType     String?
-  bankBranch          String?
-  paymentInstructions String?
-  footerNotes         String?
+  id                        String      @id @default(uuid()) @db.Uuid
+  scopeKey                  String      @unique @default("GLOBAL")
+  tenantId                  String?     @unique @db.Uuid
+  tenant                    Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  companyName               String?
+  companyAddress            String?
+  logoAssetId               String?     @unique @db.Uuid
+  logoAsset                 MediaAsset? @relation("WmsInvoiceSettingsLogo", fields: [logoAssetId], references: [id], onDelete: SetNull)
+  invoicePrefix             String      @default("INV")
+  bankName                  String?
+  bankAccountName           String?
+  bankAccountNumber         String?
+  bankAccountType           String?
+  bankBranch                String?
+  paymentInstructions       String?
+  footerNotes               String?
   partnerBillingCompanyName String?
   partnerBillingAddress     String?
-  createdById         String?     @db.Uuid
-  createdBy           User?       @relation("WmsInvoiceSettingsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById         String?     @db.Uuid
-  updatedBy           User?       @relation("WmsInvoiceSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+  createdById               String?     @db.Uuid
+  createdBy                 User?       @relation("WmsInvoiceSettingsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById               String?     @db.Uuid
+  updatedBy                 User?       @relation("WmsInvoiceSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
 
   @@index([scopeKey])
   @@index([tenantId])
@@ -1590,25 +1627,25 @@ model WmsInvoice {
 }
 
 model WmsInvoiceLine {
-  id           String     @id @default(uuid()) @db.Uuid
-  invoiceId    String     @db.Uuid
-  invoice      WmsInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  tenantId     String     @db.Uuid
-  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String             @id @default(uuid()) @db.Uuid
+  invoiceId    String             @db.Uuid
+  invoice      WmsInvoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tenantId     String             @db.Uuid
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lineType     WmsInvoiceLineType @default(SOURCE)
-  storeId      String?    @db.Uuid
-  store        PosStore?  @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  storeId      String?            @db.Uuid
+  store        PosStore?          @relation(fields: [storeId], references: [id], onDelete: SetNull)
   lineNo       Int
   productId    String?
   variationId  String?
   description  String
   quantity     Int
-  unitRate     Decimal    @db.Decimal(14, 2)
-  amount       Decimal    @db.Decimal(14, 2)
+  unitRate     Decimal            @db.Decimal(14, 2)
+  amount       Decimal            @db.Decimal(14, 2)
   rateSource   String?
-  lineSnapshot Json       @default("{}")
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  lineSnapshot Json               @default("{}")
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
   @@unique([invoiceId, lineNo])
   @@index([tenantId, storeId])
@@ -1975,43 +2012,43 @@ model WmsInventoryCountEntry {
 }
 
 model WmsFulfillmentOrder {
-  id                String                       @id @default(uuid()) @db.Uuid
-  tenantId          String                       @db.Uuid
-  tenant            Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeId           String                       @db.Uuid
-  store             PosStore                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  posOrderDbId      String                       @db.Uuid
-  posOrder          PosOrder                     @relation(fields: [posOrderDbId], references: [id], onDelete: Cascade)
-  shopId            String
-  posOrderId        String
-  posWarehouseRef   String?
-  warehouseId       String?                      @db.Uuid
-  warehouse         WmsWarehouse?                @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  customerName      String?
-  customerPhone     String?
-  status            WmsFulfillmentOrderStatus    @default(RESTOCKING)
-  assignmentMode    WmsFulfillmentAssignmentMode @default(SERIAL_RESERVED)
-  issueReason       String?
-  priorityOverrideAt DateTime?
-  priorityOverrideReason String?
-  priorityReleasedForOrderId String?            @db.Uuid
-  totalQuantity     Int                          @default(0)
-  allocatedQuantity Int                          @default(0)
-  pickedQuantity    Int                          @default(0)
-  claimedById       String?                      @db.Uuid
-  claimedBy         User?                        @relation("WmsFulfillmentOrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
-  packedById        String?                      @db.Uuid
-  packedBy          User?                        @relation("WmsFulfillmentOrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
-  rtsDisposedById   String?                      @db.Uuid
-  rtsDisposedBy     User?                        @relation("WmsFulfillmentOrderRtsDisposedBy", fields: [rtsDisposedById], references: [id], onDelete: SetNull)
-  rtsDisposedAt     DateTime?
-  basketId          String?                      @db.Uuid
-  basket            WmsBasket?                   @relation("WmsBasketFulfillmentOrders", fields: [basketId], references: [id], onDelete: SetNull)
-  claimedAt         DateTime?
-  completedAt       DateTime?
-  lastSyncedAt      DateTime                     @default(now())
-  createdAt         DateTime                     @default(now())
-  updatedAt         DateTime                     @updatedAt
+  id                         String                       @id @default(uuid()) @db.Uuid
+  tenantId                   String                       @db.Uuid
+  tenant                     Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId                    String                       @db.Uuid
+  store                      PosStore                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  posOrderDbId               String                       @db.Uuid
+  posOrder                   PosOrder                     @relation(fields: [posOrderDbId], references: [id], onDelete: Cascade)
+  shopId                     String
+  posOrderId                 String
+  posWarehouseRef            String?
+  warehouseId                String?                      @db.Uuid
+  warehouse                  WmsWarehouse?                @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  customerName               String?
+  customerPhone              String?
+  status                     WmsFulfillmentOrderStatus    @default(RESTOCKING)
+  assignmentMode             WmsFulfillmentAssignmentMode @default(SERIAL_RESERVED)
+  issueReason                String?
+  priorityOverrideAt         DateTime?
+  priorityOverrideReason     String?
+  priorityReleasedForOrderId String?                      @db.Uuid
+  totalQuantity              Int                          @default(0)
+  allocatedQuantity          Int                          @default(0)
+  pickedQuantity             Int                          @default(0)
+  claimedById                String?                      @db.Uuid
+  claimedBy                  User?                        @relation("WmsFulfillmentOrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
+  packedById                 String?                      @db.Uuid
+  packedBy                   User?                        @relation("WmsFulfillmentOrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
+  rtsDisposedById            String?                      @db.Uuid
+  rtsDisposedBy              User?                        @relation("WmsFulfillmentOrderRtsDisposedBy", fields: [rtsDisposedById], references: [id], onDelete: SetNull)
+  rtsDisposedAt              DateTime?
+  basketId                   String?                      @db.Uuid
+  basket                     WmsBasket?                   @relation("WmsBasketFulfillmentOrders", fields: [basketId], references: [id], onDelete: SetNull)
+  claimedAt                  DateTime?
+  completedAt                DateTime?
+  lastSyncedAt               DateTime                     @default(now())
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime                     @updatedAt
 
   legacyBasket      WmsBasket?            @relation("WmsBasketLegacyFulfillmentOrder")
   lines             WmsFulfillmentLine[]

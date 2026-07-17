@@ -35,6 +35,7 @@ import type {
 
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 const PAGE_SIZE = 20;
+type UndeliverablesRemarkView = 'needs_remarks' | 'with_remarks';
 
 export default function UndeliverablesPage() {
   const router = useRouter();
@@ -58,6 +59,7 @@ export default function UndeliverablesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [remarkView, setRemarkView] = useState<UndeliverablesRemarkView>('needs_remarks');
   const [showStorePicker, setShowStorePicker] = useState(false);
   const [storeSearch, setStoreSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -85,7 +87,7 @@ export default function UndeliverablesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [startDate, endDate, selectedStoreIds, selectedStatuses, searchTerm]);
+  }, [startDate, endDate, selectedStoreIds, selectedStatuses, searchTerm, remarkView]);
 
   useEffect(() => {
     if (!showStorePicker) return;
@@ -135,6 +137,7 @@ export default function UndeliverablesPage() {
       const response = await fetchUndeliverables({
         startDate,
         endDate,
+        view: remarkView,
         storeIds: selectedStoreIds,
         statuses: selectedStatuses,
         search: searchTerm,
@@ -148,7 +151,7 @@ export default function UndeliverablesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [canViewUndeliverables, endDate, page, searchTerm, selectedStatuses, selectedStoreIds, startDate]);
+  }, [canViewUndeliverables, endDate, page, remarkView, searchTerm, selectedStatuses, selectedStoreIds, startDate]);
 
   useEffect(() => {
     void loadUndeliverables();
@@ -318,7 +321,7 @@ export default function UndeliverablesPage() {
           <div className="space-y-0.5">
             <h1 className="text-xl-loose font-semibold tracking-tight text-foreground">Undeliverables</h1>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Track shipped, delivered, returning, and returned orders by assigned store owner.
+              Track each failed delivery attempt by assigned store owner.
             </p>
           </div>
         </div>
@@ -359,6 +362,29 @@ export default function UndeliverablesPage() {
       </header>
 
       <div className="space-y-3">
+        <div className="flex items-center gap-6 border-b border-slate-200 dark:border-border">
+          {[
+            { value: 'needs_remarks' as const, label: 'Needs remarks' },
+            { value: 'with_remarks' as const, label: 'With remarks' },
+          ].map((tab) => {
+            const active = remarkView === tab.value;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setRemarkView(tab.value)}
+                className={`border-b-2 px-0 pb-2 text-sm font-semibold transition ${
+                  active
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <div className="flex min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-border dark:bg-surface">

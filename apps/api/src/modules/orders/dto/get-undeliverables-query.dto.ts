@@ -21,6 +21,10 @@ export class GetUndeliverablesQueryDto {
 
   @IsOptional()
   @IsString()
+  view?: string;
+
+  @IsOptional()
+  @IsString()
   page?: string;
 
   @IsOptional()

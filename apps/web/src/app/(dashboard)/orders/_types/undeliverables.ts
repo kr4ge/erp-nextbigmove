@@ -14,8 +14,11 @@ export type UndeliverableRemarkPreview = {
 
 export type UndeliverableRow = {
   id: string;
+  order_id?: string;
   pos_order_id: string;
   date_local: string;
+  failed_at?: string;
+  attempt_number?: number;
   status: number | null;
   status_name: string | null;
   tracking: string | null;
@@ -63,6 +66,7 @@ export type UndeliverablesResponse = {
     store_ids: string[];
     statuses: string[];
     search: string;
+    view?: 'needs_remarks' | 'with_remarks';
   };
   scope: {
     mode: 'all' | 'assigned';

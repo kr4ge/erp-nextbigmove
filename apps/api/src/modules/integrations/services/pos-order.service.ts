@@ -2,6 +2,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { createHash } from 'crypto';
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
@@ -71,6 +72,7 @@ interface PosOrderData {
     surcharge: unknown | null;
     duplicated_phone: unknown | null;
     duplicated_ip: unknown | null;
+    histories: any[] | null;
   } | null;
   assigningCare?: string | null;
 }
@@ -78,6 +80,16 @@ interface PosOrderData {
 type PosOrderCurrencyContext = {
   orderCurrency: string | null;
   currencyDivisor: number;
+};
+
+type UndeliverableAttemptPayload = {
+  sourceEventKey: string;
+  attemptNumber: number;
+  failedAt: Date;
+  partnerStatusOld: string | null;
+  returnedReason: any | null;
+  subStatus: any | null;
+  sourceTags: any | null;
 };
 
 export type PosOrderUpsertStatus = 'UPSERTED' | 'SKIPPED' | 'DELETED' | 'FAILED';
@@ -185,36 +197,97 @@ export class PosOrderService {
     return Array.isArray(histories) ? histories : null;
   }
 
-  private extractUndeliverableState(rawOrder: any) {
+  private buildUndeliverableAttemptEventKey(entry: any, index: number) {
+    const source = JSON.stringify({
+      index,
+      updated_at: isString(entry?.updated_at) ? entry.updated_at.trim() : null,
+      partner_status: entry?.partner_status ?? null,
+      returned_reason: entry?.returned_reason ?? null,
+      sub_status: entry?.sub_status ?? null,
+      tags: entry?.tags ?? null,
+    });
+
+    return createHash('sha256').update(source).digest('hex');
+  }
+
+  private extractUndeliverableAttempts(rawOrder: any): UndeliverableAttemptPayload[] {
     const histories = this.parseOrderHistories(rawOrder);
     if (!histories || histories.length === 0) {
-      return {
-        isUndeliverable: false,
-        undeliverableAt: null as Date | null,
-      };
+      return [];
     }
 
-    const matchingEntries = histories
-      .filter((entry: any) => isObject(entry))
-      .filter((entry: any) => {
+    return histories
+      .map((entry: any, index: number) => ({ entry, index }))
+      .filter(({ entry }) => isObject(entry))
+      .filter(({ entry }) => {
         const partnerStatus = isObject(entry.partner_status) ? entry.partner_status : null;
         const nextStatus = isString(partnerStatus?.new) ? partnerStatus.new.trim().toLowerCase() : '';
         return nextStatus === 'undeliverable';
       })
-      .map((entry: any) => {
+      .map(({ entry, index }) => {
         const updatedRaw = isString(entry.updated_at) ? entry.updated_at.trim() : '';
         const parsed = updatedRaw ? dayjs.tz(updatedRaw, 'Asia/Manila') : null;
-        return parsed && parsed.isValid() ? parsed : null;
-      })
-      .filter((value): value is dayjs.Dayjs => Boolean(value))
-      .sort((left, right) => left.valueOf() - right.valueOf());
+        if (!parsed || !parsed.isValid()) return null;
 
-    const firstUndeliverableAt = matchingEntries[0] ?? null;
+        const partnerStatus = isObject(entry.partner_status) ? entry.partner_status : null;
+        const oldStatus = isString(partnerStatus?.old) ? partnerStatus.old.trim() : null;
+
+        return {
+          sourceEventKey: this.buildUndeliverableAttemptEventKey(entry, index),
+          attemptNumber: 0,
+          failedAt: parsed.toDate(),
+          partnerStatusOld: oldStatus,
+          returnedReason: entry.returned_reason ?? null,
+          subStatus: entry.sub_status ?? null,
+          sourceTags: entry.tags ?? null,
+        };
+      })
+      .filter((value): value is UndeliverableAttemptPayload => Boolean(value))
+      .sort((left, right) => left.failedAt.getTime() - right.failedAt.getTime())
+      .map((attempt, index) => ({
+        ...attempt,
+        attemptNumber: index + 1,
+      }));
+  }
+
+  private extractUndeliverableState(rawOrder: any) {
+    const attempts = this.extractUndeliverableAttempts(rawOrder);
+
+    const firstUndeliverableAt = attempts[0]?.failedAt ?? null;
 
     return {
       isUndeliverable: Boolean(firstUndeliverableAt),
-      undeliverableAt: firstUndeliverableAt ? firstUndeliverableAt.toDate() : null,
+      undeliverableAt: firstUndeliverableAt,
     };
+  }
+
+  private async syncUndeliverableAttempts(params: {
+    tenantId: string;
+    storeId: string;
+    orderId: string;
+    rawOrder: any;
+  }) {
+    const attempts = this.extractUndeliverableAttempts(params.rawOrder);
+    if (attempts.length === 0) {
+      return;
+    }
+
+    await this.prisma.undeliverableAttempt.createMany({
+      data: attempts.map((attempt) => ({
+        tenantId: params.tenantId,
+        orderId: params.orderId,
+        storeId: params.storeId,
+        sourceEventKey: attempt.sourceEventKey,
+        attemptNumber: attempt.attemptNumber,
+        failedAt: attempt.failedAt,
+        partnerStatusOld: attempt.partnerStatusOld,
+        partnerStatusNew: 'undeliverable',
+        returnedReason: this.jsonOrDbNull(attempt.returnedReason),
+        subStatus: this.jsonOrDbNull(attempt.subStatus),
+        sourceTags: this.jsonOrDbNull(attempt.sourceTags),
+      })),
+      skipDuplicates: true,
+    });
   }
 
   /**
@@ -662,6 +735,7 @@ export class PosOrderService {
       && !Array.isArray(rawOrder.assigning_seller)
         ? rawOrder.assigning_seller
         : null;
+    const snapshotHistories = this.parseOrderHistories(rawOrder);
     const snapshotTotalDiscount = rawOrder?.total_discount ?? null;
     const snapshotShippingFee = rawOrder?.shipping_fee ?? null;
     const snapshotBankPayments = rawOrder?.bank_payments ?? null;
@@ -686,6 +760,7 @@ export class PosOrderService {
       currency_divisor: currencyContext.currencyDivisor,
       duplicated_phone: snapshotDuplicatedPhone,
       duplicated_ip: snapshotDuplicatedIp,
+      histories: snapshotHistories,
     };
 
     const codValue = this.scaleCurrencyAmount(rawOrder.cod, currencyContext.currencyDivisor);
@@ -909,7 +984,7 @@ export class PosOrderService {
           order.isVoid = true;
         }
 
-        await this.prisma.posOrder.upsert({
+        const persistedOrder = await this.prisma.posOrder.upsert({
           where: {
             tenantId_shopId_posOrderId: {
               tenantId,
@@ -1005,6 +1080,12 @@ export class PosOrderService {
             orderSnapshot: this.jsonOrDbNull(order.orderSnapshot),
             assigningCare: order.assigningCare,
           },
+        });
+        await this.syncUndeliverableAttempts({
+          tenantId,
+          storeId,
+          orderId: persistedOrder.id,
+          rawOrder,
         });
 
         upserted++;

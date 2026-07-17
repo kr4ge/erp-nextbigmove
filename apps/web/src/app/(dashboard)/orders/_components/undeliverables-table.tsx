@@ -45,6 +45,27 @@ export function UndeliverablesTable({
     }).format(value);
   };
 
+  const formatFailedAt = (row: UndeliverableRow) => {
+    if (!row.failed_at) {
+      return row.date_local || '-';
+    }
+
+    const parsed = new Date(row.failed_at);
+    if (Number.isNaN(parsed.getTime())) {
+      return row.date_local || '-';
+    }
+
+    return new Intl.DateTimeFormat('en-PH', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(parsed);
+  };
+
   const start = total === 0 ? 0 : ((page - 1) * limit) + 1;
   const end = total === 0 ? 0 : Math.min(total, page * limit);
   const [openRemarkRowId, setOpenRemarkRowId] = useState<string | null>(null);
@@ -102,8 +123,8 @@ export function UndeliverablesTable({
               <th className="min-w-[8rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 Order ID
               </th>
-              <th className="min-w-[8rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
-                Date
+              <th className="min-w-[11rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
+                Failed At
               </th>
               <th className="min-w-[12rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 Address
@@ -123,7 +144,7 @@ export function UndeliverablesTable({
             {rows.length === 0 ? (
               <AnalyticsTableEmptyRow
                 colSpan={canViewAll ? 15 : 14}
-                message="No undeliverable orders found for the selected filters."
+                message="No undeliverable attempts found for the selected filters."
               />
             ) : null}
             {rows.map((row, index) => (
@@ -215,7 +236,7 @@ export function UndeliverablesTable({
                   {formatCodAmount(row.cod_amount)}
                 </td>
                 <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
-                  {row.attempt_failed}
+                  {row.attempt_number ?? row.attempt_failed}
                 </td>
                 <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                   {row.store_name}
@@ -223,8 +244,8 @@ export function UndeliverablesTable({
                 <td className="px-3 py-2 text-xs font-semibold text-foreground">
                   #{row.pos_order_id}
                 </td>
-                <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
-                  {row.date_local}
+                <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap dark:text-slate-300">
+                  {formatFailedAt(row)}
                 </td>
                 <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                   {row.address || '-'}
