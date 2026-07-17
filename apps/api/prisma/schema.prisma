@@ -1245,6 +1245,7 @@ model PosOrder {
   customerName         String?
   customerPhone        String?
   customerAddress      String?
+  deliveryAttemptFailed Int      @default(0)
   statusHistory        Json?
   rtsReason            Json?
   upsellBreakdown      Json?

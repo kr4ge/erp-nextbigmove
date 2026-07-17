@@ -272,20 +272,22 @@ function drawDetails(params: {
     rightCursor += 18;
   }
 
+  const dateBlockTop = Math.max(leftCursor, rightCursor) + 4;
+
   drawRightAlignedText(context.page, `Invoice Date: ${issueDate}`, {
     right: rightEdge,
-    top: Math.max(leftCursor, rightCursor) + 4,
+    top: dateBlockTop,
     size: 11,
     font: regularFont,
   });
   drawRightAlignedText(context.page, `Due Date: ${dueDate}`, {
     right: rightEdge,
-    top: Math.max(leftCursor, rightCursor) + 22,
+    top: dateBlockTop + 22,
     size: 11,
     font: regularFont,
   });
 
-  return Math.max(leftCursor, rightCursor) + 26;
+  return dateBlockTop + 44;
 }
 
 function drawTableHeader(

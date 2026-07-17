@@ -19,6 +19,8 @@ export type UndeliverableRow = {
   status: number | null;
   status_name: string | null;
   tracking: string | null;
+  cod_amount: number | null;
+  attempt_failed: number;
   customer_name: string | null;
   customer_phone: string | null;
   address: string | null;

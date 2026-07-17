@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowRightLeft, ChevronLeft, ChevronRight, Info, Loader2, Tags, Truck } from 'lucide-react';
+import { useToast } from '@/components/ui/toast';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsSearchableSelect } from '../../_components/wms-searchable-select';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
@@ -35,6 +36,7 @@ type TransferGroup = {
 
 const EMPTY_TRANSFER_UNITS: TransferUnit[] = [];
 const NOTICE_AUTO_DISMISS_MS = 5000;
+const TRANSFER_UNITS_PAGE_SIZE = 100;
 
 const INVENTORY_STATUSES: WmsInventoryUnitStatus[] = [
   'RECEIVED',
@@ -102,12 +104,14 @@ export function InventoryTransfersTab({
   onAssignPutawayUnits,
   onResetPutawayUnits,
 }: InventoryTransfersTabProps) {
+  const { addToast } = useToast();
   const [groupDrafts, setGroupDrafts] = useState<Record<string, PutawayDraft>>({});
   const [putawayError, setPutawayError] = useState<string | null>(null);
   const [unitFilter, setUnitFilter] = useState<'all' | 'pending' | 'done'>('pending');
   const [selectedItemKey, setSelectedItemKey] = useState('');
   const [activeGroupKey, setActiveGroupKey] = useState('');
   const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [lastSavedMessage, setLastSavedMessage] = useState<string | null>(null);
   const batchScrollRef = useRef<HTMLDivElement>(null);
 
@@ -183,10 +187,15 @@ export function InventoryTransfersTab({
   const activeGroupUnits = activeGroup?.units ?? EMPTY_TRANSFER_UNITS;
   const isPendingTab = unitFilter === 'pending';
   const isTransferredTab = unitFilter === 'done';
+  const totalPages = Math.max(1, Math.ceil(activeGroupUnits.length / TRANSFER_UNITS_PAGE_SIZE));
+  const paginatedGroupUnits = useMemo(() => {
+    const startIndex = (currentPage - 1) * TRANSFER_UNITS_PAGE_SIZE;
+    return activeGroupUnits.slice(startIndex, startIndex + TRANSFER_UNITS_PAGE_SIZE);
+  }, [activeGroupUnits, currentPage]);
   const actionableUnits = useMemo(
     () => {
       if (isPendingTab) {
-        return activeGroupUnits.filter(isPutawayPending);
+      return activeGroupUnits.filter(isPutawayPending);
       }
 
       if (isTransferredTab) {
@@ -200,6 +209,19 @@ export function InventoryTransfersTab({
   const actionableUnitIds = useMemo(
     () => actionableUnits.map((unit) => unit.id),
     [actionableUnits],
+  );
+  const pageActionableUnitIds = useMemo(
+    () =>
+      paginatedGroupUnits
+        .filter((unit) =>
+          isPendingTab
+            ? isPutawayPending(unit)
+            : isTransferredTab
+              ? isReturnToStageEligible(unit)
+              : false,
+        )
+        .map((unit) => unit.id),
+    [isPendingTab, isTransferredTab, paginatedGroupUnits],
   );
 
   useEffect(() => {
@@ -237,6 +259,16 @@ export function InventoryTransfersTab({
       return areGroupDraftsEqual(current, next) ? current : next;
     });
   }, [groups]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeGroupKey, selectedBatchId, selectedItemKey, unitFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   useEffect(() => {
     setSelectedUnitIds((current) => {
@@ -290,8 +322,8 @@ export function InventoryTransfersTab({
     return Math.min(selectedActionableCount, Math.max(selectedBinAvailableUnits, 0));
   }, [selectedActionableCount, selectedBin, selectedBinAvailableUnits]);
   const remainingSelectedCount = Math.max(selectedActionableCount - assignableSelectedCount, 0);
-  const allActionableSelected =
-    actionableUnitIds.length > 0 && actionableUnitIds.every((unitId) => selectedUnitIds.includes(unitId));
+  const allPageActionableSelected =
+    pageActionableUnitIds.length > 0 && pageActionableUnitIds.every((unitId) => selectedUnitIds.includes(unitId));
   const assignmentGridClassName = 'grid items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3';
   const isMutatingTransfer = isAssigningPutaway || isResettingPutaway;
 
@@ -313,12 +345,20 @@ export function InventoryTransfersTab({
   };
 
   const toggleSelectAll = () => {
-    if (!actionableUnitIds.length) {
+    if (!pageActionableUnitIds.length) {
       return;
     }
 
     setPutawayError(null);
-    setSelectedUnitIds(allActionableSelected ? [] : actionableUnitIds);
+    setSelectedUnitIds((current) => {
+      if (allPageActionableSelected) {
+        return current.filter((unitId) => !pageActionableUnitIds.includes(unitId));
+      }
+
+      const next = new Set(current);
+      pageActionableUnitIds.forEach((unitId) => next.add(unitId));
+      return Array.from(next);
+    });
   };
 
   const toggleUnitSelection = (unitId: string) => {
@@ -380,6 +420,12 @@ export function InventoryTransfersTab({
       setLastSavedMessage(remainingUnitIds.length > 0
         ? `Assigned ${assignments.length} unit${assignments.length === 1 ? '' : 's'} to ${selectedBin?.label ?? 'selected bin'}. ${remainingUnitIds.length} unit${remainingUnitIds.length === 1 ? '' : 's'} remain selected for the next bin.`
         : `Assigned ${assignments.length} unit${assignments.length === 1 ? '' : 's'} to ${selectedBin?.label ?? 'selected bin'}.`);
+      addToast(
+        'success',
+        remainingUnitIds.length > 0
+          ? `Transferred ${assignments.length} unit${assignments.length === 1 ? '' : 's'} to ${selectedBin?.label ?? 'selected bin'}.`
+          : `Transfer complete: ${assignments.length} unit${assignments.length === 1 ? '' : 's'} assigned to ${selectedBin?.label ?? 'selected bin'}.`,
+      );
     } catch (error) {
       setPutawayError(error instanceof Error ? error.message : 'Unable to save transfer');
     }
@@ -398,6 +444,10 @@ export function InventoryTransfersTab({
         ? `${batchDetail.stagingLocation.code} · ${batchDetail.stagingLocation.name}`
         : 'receiving staging';
       setLastSavedMessage(
+        `Returned ${selectedActionableCount} unit${selectedActionableCount === 1 ? '' : 's'} to ${stagingLabel}.`,
+      );
+      addToast(
+        'success',
         `Returned ${selectedActionableCount} unit${selectedActionableCount === 1 ? '' : 's'} to ${stagingLabel}.`,
       );
     } catch (error) {
@@ -807,9 +857,9 @@ export function InventoryTransfersTab({
                             <HeaderCell className="w-[52px]">
                               <input
                                 type="checkbox"
-                                checked={allActionableSelected && actionableUnitIds.length > 0}
+                                checked={allPageActionableSelected && pageActionableUnitIds.length > 0}
                                 onChange={toggleSelectAll}
-                                disabled={!actionableUnitIds.length || !canPutAway}
+                                disabled={!pageActionableUnitIds.length || !canPutAway}
                                 className="h-4 w-4 rounded border-[#c5d1d9] text-primary focus:ring-primary"
                               />
                             </HeaderCell>
@@ -821,7 +871,7 @@ export function InventoryTransfersTab({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#eef2f5] bg-white">
-                          {activeGroupUnits.map((unit) => {
+                          {paginatedGroupUnits.map((unit) => {
                             const isCompleted = isTransferCompleted(unit);
                             const isSelected = selectedUnitIds.includes(unit.id);
                             const isSelectable = isPendingTab
@@ -910,6 +960,42 @@ export function InventoryTransfersTab({
                         </tbody>
                       </table>
                     </div>
+                    {activeGroupUnits.length > TRANSFER_UNITS_PAGE_SIZE ? (
+                      <div className="flex items-center justify-between gap-3 border-t border-[#eef2f5] px-3.5 py-3">
+                        <p className="text-[12px] text-[#6f8290]">
+                          Showing {(currentPage - 1) * TRANSFER_UNITS_PAGE_SIZE + 1}
+                          -
+                          {Math.min(currentPage * TRANSFER_UNITS_PAGE_SIZE, activeGroupUnits.length)}
+                          {' '}of {activeGroupUnits.length} units
+                        </p>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                            disabled={currentPage === 1}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                            aria-label="Previous units page"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+
+                          <span className="rounded-full border border-[#dce4ea] bg-[#fbfcfc] px-3.5 py-1.5 text-[12px] font-semibold text-primary">
+                            {currentPage} / {totalPages}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                            disabled={currentPage === totalPages}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#d7e0e7] bg-white text-[#4d6677] transition hover:border-[#c6d4dd] hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                            aria-label="Next units page"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </>
               )}

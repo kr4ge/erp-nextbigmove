@@ -34,6 +34,17 @@ export function UndeliverablesTable({
   onPrevious,
   onNext,
 }: UndeliverablesTableProps) {
+  const formatCodAmount = (value: number | null) => {
+    if (value === null || !Number.isFinite(value)) {
+      return '-';
+    }
+
+    return new Intl.NumberFormat('en-PH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+
   const start = total === 0 ? 0 : ((page - 1) * limit) + 1;
   const end = total === 0 ? 0 : Math.min(total, page * limit);
   const [openRemarkRowId, setOpenRemarkRowId] = useState<string | null>(null);
@@ -76,6 +87,15 @@ export function UndeliverablesTable({
               <th className="min-w-[10rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 Waybill Number
               </th>
+              <th className="min-w-[10rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
+                Phone Number
+              </th>
+              <th className="min-w-[9rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
+                Cod Amount
+              </th>
+              <th className="min-w-[8rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
+                Attempt Failed
+              </th>
               <th className="min-w-[12rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 Store
               </th>
@@ -102,7 +122,7 @@ export function UndeliverablesTable({
           <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
             {rows.length === 0 ? (
               <AnalyticsTableEmptyRow
-                colSpan={canViewAll ? 12 : 11}
+                colSpan={canViewAll ? 15 : 14}
                 message="No undeliverable orders found for the selected filters."
               />
             ) : null}
@@ -187,6 +207,15 @@ export function UndeliverablesTable({
                 </td>
                 <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                   {row.tracking || '-'}
+                </td>
+                <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
+                  {row.customer_phone || '-'}
+                </td>
+                <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
+                  {formatCodAmount(row.cod_amount)}
+                </td>
+                <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
+                  {row.attempt_failed}
                 </td>
                 <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                   {row.store_name}

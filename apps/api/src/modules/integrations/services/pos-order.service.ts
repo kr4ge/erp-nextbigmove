@@ -51,6 +51,7 @@ interface PosOrderData {
   customerName?: string;
   customerPhone?: string;
   customerAddress?: string;
+  deliveryAttemptFailed?: number;
   statusHistory?: any[] | null;
   rtsReason?: { l1: string | null; l2: string | null; l3: string | null } | null;
   upsellBreakdown?: any | null;
@@ -483,6 +484,16 @@ export class PosOrderService {
       : undefined;
     const customerPhone = customerPhoneFromList ?? addressEntry?.phone_number ?? addressEntry?.phone ?? undefined;
     const customerAddress = addressEntry?.full_address ?? addressEntry?.address ?? undefined;
+    const rawDeliveryAttemptFailed =
+      rawOrder?.partner?.count_of_delivery
+      ?? rawOrder?.partner?.countOfDelivery
+      ?? rawOrder?.partner_count_of_delivery
+      ?? rawOrder?.partnerCountOfDelivery
+      ?? 0;
+    const parsedDeliveryAttemptFailed = Number(rawDeliveryAttemptFailed);
+    const deliveryAttemptFailed = Number.isFinite(parsedDeliveryAttemptFailed)
+      ? Math.max(0, Math.trunc(parsedDeliveryAttemptFailed))
+      : 0;
 
     const customerCare =
       rawOrder.assigning_care && typeof rawOrder.assigning_care === 'object'
@@ -786,6 +797,7 @@ export class PosOrderService {
       customerName,
       customerPhone,
       customerAddress,
+      deliveryAttemptFailed,
       statusHistory,
       rtsReason,
       upsellBreakdown,
@@ -944,6 +956,7 @@ export class PosOrderService {
             customerName: order.customerName,
             customerPhone: order.customerPhone,
             customerAddress: order.customerAddress,
+            deliveryAttemptFailed: order.deliveryAttemptFailed ?? 0,
             statusHistory: this.jsonOrDbNull(order.statusHistory),
             rtsReason: this.jsonOrDbNull(order.rtsReason),
             upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
@@ -985,6 +998,7 @@ export class PosOrderService {
             customerName: order.customerName,
             customerPhone: order.customerPhone,
             customerAddress: order.customerAddress,
+            deliveryAttemptFailed: order.deliveryAttemptFailed ?? 0,
             statusHistory: this.jsonOrDbNull(order.statusHistory),
             rtsReason: this.jsonOrDbNull(order.rtsReason),
             upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
