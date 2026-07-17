@@ -5,6 +5,7 @@ import type {
   UndeliverableRemarkOptionsResponse,
   UndeliverablesResponse,
   UndeliverableRemarksResponse,
+  UndeliverableTrackingResponse,
 } from '../_types/undeliverables';
 
 function parseUndeliverablesError(error: unknown, fallback: string) {
@@ -29,6 +30,7 @@ export async function fetchUndeliverables(params: {
   startDate: string;
   endDate: string;
   view?: 'needs_remarks' | 'with_remarks';
+  failedAtOrder?: 'asc' | 'desc';
   storeIds?: string[];
   statuses?: string[];
   search?: string;
@@ -41,6 +43,7 @@ export async function fetchUndeliverables(params: {
         start_date: params.startDate,
         end_date: params.endDate,
         ...(params.view ? { view: params.view } : {}),
+        ...(params.failedAtOrder ? { failed_at_order: params.failedAtOrder } : {}),
         ...(params.storeIds && params.storeIds.length > 0 ? { store_id: params.storeIds } : {}),
         ...(params.statuses && params.statuses.length > 0 ? { status: params.statuses } : {}),
         ...(params.search?.trim() ? { search: params.search.trim() } : {}),
@@ -81,6 +84,17 @@ export async function fetchUndeliverableRemarks(orderId: string) {
     return response.data;
   } catch (error) {
     throw new Error(parseUndeliverablesError(error, 'Failed to load undeliverables remarks.'));
+  }
+}
+
+export async function fetchUndeliverableTrackingUpdates(attemptId: string) {
+  try {
+    const response = await apiClient.get<UndeliverableTrackingResponse>(
+      `/orders/undeliverables/${attemptId}/tracking-updates`,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(parseUndeliverablesError(error, 'Failed to load delivery activity.'));
   }
 }
 

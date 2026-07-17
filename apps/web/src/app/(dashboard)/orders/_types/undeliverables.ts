@@ -67,6 +67,7 @@ export type UndeliverablesResponse = {
     statuses: string[];
     search: string;
     view?: 'needs_remarks' | 'with_remarks';
+    failed_at_order?: 'asc' | 'desc';
   };
   scope: {
     mode: 'all' | 'assigned';
@@ -120,4 +121,34 @@ export type UndeliverableRemarksResponse = {
 
 export type UndeliverableRemarkOptionsResponse = {
   items: UndeliverableRemarkOption[];
+};
+
+export type UndeliverableTrackingUpdate = {
+  key: string | null;
+  kind: 'problematic' | 'rider';
+  title: string;
+  detail: string;
+  location: string | null;
+  status: string;
+  tracking_id: string | null;
+  updated_at: string | null;
+  updated_at_local: string | null;
+};
+
+export type UndeliverableTrackingResponse = {
+  attempt: {
+    id: string;
+    attempt_number: number;
+    failed_at: string;
+  };
+  order: {
+    id: string;
+    pos_order_id: string;
+    customer_name: string | null;
+    tracking: string | null;
+    status: number | null;
+    status_name: string | null;
+    store_name: string;
+  };
+  items: UndeliverableTrackingUpdate[];
 };

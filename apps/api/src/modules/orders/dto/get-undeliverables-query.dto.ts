@@ -25,6 +25,10 @@ export class GetUndeliverablesQueryDto {
 
   @IsOptional()
   @IsString()
+  failed_at_order?: string;
+
+  @IsOptional()
+  @IsString()
   page?: string;
 
   @IsOptional()

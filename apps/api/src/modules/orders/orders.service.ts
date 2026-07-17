@@ -212,6 +212,19 @@ type UndeliverableUserOption = {
   email: string;
 };
 
+type UndeliverableTrackingUpdate = {
+  key: string | null;
+  kind: 'problematic' | 'rider';
+  title: string;
+  detail: string;
+  location: string | null;
+  status: string;
+  tracking_id: string | null;
+  updated_at: string | null;
+  updated_at_local: string | null;
+  sort_timestamp: number;
+};
+
 const UNDELIVERABLE_STATUS_VALUES: UndeliverableStatus[] = [2, 3, 4, 5];
 const UNDELIVERABLE_STATUS_LABELS: Record<UndeliverableStatus, string> = {
   2: 'Shipped',
@@ -308,6 +321,66 @@ export class OrdersService {
       barangay: parts[1] ?? null,
       city: parts[2] ?? null,
       province: null,
+    };
+  }
+
+  private parseTrackingUpdateDate(rawValue: string | null): {
+    local: string | null;
+    timestamp: number;
+  } {
+    if (!rawValue) {
+      return { local: null, timestamp: 0 };
+    }
+
+    const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(rawValue);
+    const parsed = hasTimezone ? dayjs(rawValue).tz(TIMEZONE) : dayjs.tz(rawValue, TIMEZONE);
+    if (!parsed.isValid()) {
+      return { local: null, timestamp: 0 };
+    }
+
+    return {
+      local: parsed.format(),
+      timestamp: parsed.valueOf(),
+    };
+  }
+
+  private parseUndeliverableTrackingUpdate(value: Prisma.JsonValue): UndeliverableTrackingUpdate | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    const entry = value as Prisma.JsonObject;
+    const status = typeof entry.status === 'string' ? entry.status.trim() : '';
+    const note = typeof entry.note === 'string' ? entry.note.trim() : '';
+    const isRiderUpdate = status.toLowerCase().includes('sprinter');
+    if (!note && !isRiderUpdate) {
+      return null;
+    }
+
+    const sourceText = note || status;
+    const bracketValues = Array.from(sourceText.matchAll(/【([^】]+)】/g))
+      .map((match) => match[1]?.trim())
+      .filter((item): item is string => Boolean(item));
+    const reasonMatch = note.match(/reason【([^】]+)】/i);
+    const riderMatch = status.match(/sprinter【([^】]+)】/i);
+    const updatedAt = typeof entry.update_at === 'string' ? entry.update_at.trim() || null : null;
+    const parsedDate = this.parseTrackingUpdateDate(updatedAt);
+    const kind: UndeliverableTrackingUpdate['kind'] = note ? 'problematic' : 'rider';
+
+    return {
+      key: typeof entry.key === 'string' ? entry.key.trim() || null : null,
+      kind,
+      title: kind === 'problematic' ? 'Delivery failed' : 'Rider out for delivery',
+      detail:
+        (kind === 'problematic' ? reasonMatch?.[1]?.trim() : riderMatch?.[1]?.trim())
+        || sourceText,
+      location: bracketValues[0] ?? null,
+      status,
+      tracking_id:
+        typeof entry.tracking_id === 'string' ? entry.tracking_id.trim() || null : null,
+      updated_at: updatedAt,
+      updated_at_local: parsedDate.local,
+      sort_timestamp: parsedDate.timestamp,
     };
   }
 
@@ -619,6 +692,8 @@ export class OrdersService {
         id: true,
         orderId: true,
         storeId: true,
+        attemptNumber: true,
+        failedAt: true,
         remark: true,
         remarkOptionId: true,
         remarkedById: true,
@@ -634,6 +709,8 @@ export class OrdersService {
             statusName: true,
             tracking: true,
             dateLocal: true,
+            customerName: true,
+            trackingUpdates: true,
           },
         },
       },
@@ -1818,6 +1895,7 @@ export class OrdersService {
     status?: string | string[];
     search?: string;
     view?: string;
+    failed_at_order?: string;
     page?: string;
     limit?: string;
   }) {
@@ -1834,6 +1912,7 @@ export class OrdersService {
     const search = params.search?.trim() || '';
     const statuses = this.parseUndeliverableStatuses(params.status);
     const view = this.parseUndeliverableView(params.view);
+    const failedAtOrder: Prisma.SortOrder = params.failed_at_order === 'desc' ? 'desc' : 'asc';
     const undeliverableStartAt = dayjs.tz(`${startDate}T00:00:00`, TIMEZONE).toDate();
     const undeliverableEndAt = dayjs.tz(`${endDate}T23:59:59.999`, TIMEZONE).toDate();
     const access = await this.resolveUndeliverablesAccessScope();
@@ -1856,6 +1935,7 @@ export class OrdersService {
           statuses: statuses.map(String),
           search,
           view,
+          failed_at_order: failedAtOrder,
         },
         scope: {
           mode: access.canReadAll ? 'all' : 'assigned',
@@ -1931,6 +2011,7 @@ export class OrdersService {
           statuses: statuses.map(String),
           search,
           view,
+          failed_at_order: failedAtOrder,
         },
         scope: {
           mode: access.canReadAll ? 'all' : 'assigned',
@@ -1967,7 +2048,7 @@ export class OrdersService {
       this.prisma.undeliverableAttempt.count({ where }),
       this.prisma.undeliverableAttempt.findMany({
         where,
-        orderBy: [{ failedAt: 'asc' }, { createdAt: 'asc' }],
+        orderBy: [{ failedAt: failedAtOrder }, { createdAt: failedAtOrder }],
         skip,
         take: limit,
         select: {
@@ -2137,6 +2218,7 @@ export class OrdersService {
         statuses: statuses.map(String),
         search,
         view,
+        failed_at_order: failedAtOrder,
       },
       scope: {
         mode: access.canReadAll ? 'all' : 'assigned',
@@ -2305,6 +2387,42 @@ export class OrdersService {
             },
           ]
         : [],
+    };
+  }
+
+  async getUndeliverableTrackingUpdates(attemptId: string) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attemptId)) {
+      throw new BadRequestException('Invalid undeliverable attempt ID');
+    }
+
+    const access = await this.resolveUndeliverablesAccessScope();
+    const { attempt, order, store } = await this.resolveUndeliverableAttemptScope(attemptId, access);
+    const rawUpdates = Array.isArray(order.trackingUpdates) ? order.trackingUpdates : [];
+    const items = rawUpdates
+      .map((entry) => this.parseUndeliverableTrackingUpdate(entry))
+      .filter((entry): entry is UndeliverableTrackingUpdate => Boolean(entry))
+      .sort((left, right) => right.sort_timestamp - left.sort_timestamp)
+      .map(({ sort_timestamp: _sortTimestamp, ...entry }) => entry);
+
+    return {
+      attempt: {
+        id: attempt.id,
+        attempt_number: attempt.attemptNumber,
+        failed_at: attempt.failedAt.toISOString(),
+      },
+      order: {
+        id: order.id,
+        pos_order_id: order.posOrderId,
+        customer_name: order.customerName,
+        tracking: order.tracking,
+        status: order.status,
+        status_name:
+          typeof order.status === 'number' && UNDELIVERABLE_STATUS_VALUES.includes(order.status as UndeliverableStatus)
+            ? UNDELIVERABLE_STATUS_LABELS[order.status as UndeliverableStatus]
+            : order.statusName,
+        store_name: this.buildUndeliverableStoreLabel(store),
+      },
+      items,
     };
   }
 

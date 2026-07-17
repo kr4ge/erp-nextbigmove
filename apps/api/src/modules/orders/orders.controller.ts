@@ -170,6 +170,12 @@ export class OrdersController {
     return this.ordersService.updateUndeliverableAssignments(userId, body.storeIds ?? []);
   }
 
+  @Get('undeliverables/:attemptId/tracking-updates')
+  @Permissions('orders.undeliverables.read', 'orders.undeliverables.read_all')
+  async getUndeliverableTrackingUpdates(@Param('attemptId') attemptId: string) {
+    return this.ordersService.getUndeliverableTrackingUpdates(attemptId);
+  }
+
   @Get('undeliverables/:orderId/remarks')
   @Permissions('orders.undeliverables.read', 'orders.undeliverables.read_all')
   async listUndeliverableRemarks(@Param('orderId') orderId: string) {

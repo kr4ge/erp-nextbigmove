@@ -54,6 +54,7 @@ interface PosOrderData {
   customerAddress?: string;
   deliveryAttemptFailed?: number;
   statusHistory?: any[] | null;
+  trackingUpdates?: Array<Record<string, unknown>>;
   rtsReason?: { l1: string | null; l2: string | null; l3: string | null } | null;
   upsellBreakdown?: any | null;
   orderSnapshot?: {
@@ -195,6 +196,56 @@ export class PosOrderService {
     }
 
     return Array.isArray(histories) ? histories : null;
+  }
+
+  private parseTrackingUpdates(rawOrder: any): Array<Record<string, unknown>> | undefined {
+    const partner = isObject(rawOrder?.partner) ? rawOrder.partner : null;
+    const candidates: Array<{ owner: Record<string, any> | null; key: string }> = [
+      { owner: partner, key: 'extend_update' },
+      { owner: partner, key: 'extendUpdate' },
+      { owner: isObject(rawOrder) ? rawOrder : null, key: 'extend_update' },
+      { owner: isObject(rawOrder) ? rawOrder : null, key: 'extendUpdate' },
+    ];
+    const source = candidates.find(({ owner, key }) =>
+      owner ? Object.prototype.hasOwnProperty.call(owner, key) : false,
+    );
+
+    if (!source?.owner) {
+      return undefined;
+    }
+
+    let updates: unknown = source.owner[source.key];
+    if (isString(updates)) {
+      try {
+        updates = JSON.parse(updates);
+      } catch {
+        return undefined;
+      }
+    }
+
+    if (!Array.isArray(updates)) {
+      return undefined;
+    }
+
+    return updates
+      .filter((entry): entry is Record<string, any> => isObject(entry))
+      .map((entry) => ({
+        key: this.toOptionalString(entry.key),
+        note: this.toOptionalString(entry.note) ?? '',
+        status: this.toOptionalString(entry.status) ?? '',
+        tracking_id: this.toOptionalString(entry.tracking_id ?? entry.trackingId),
+        update_at: this.toOptionalString(entry.update_at ?? entry.updateAt),
+        webhook_params: entry.webhook_params ?? entry.webhookParams ?? null,
+      }));
+  }
+
+  private toOptionalString(value: unknown): string | null {
+    if (typeof value !== 'string' && typeof value !== 'number') {
+      return null;
+    }
+
+    const normalized = value.toString().trim();
+    return normalized || null;
   }
 
   private buildUndeliverableAttemptEventKey(entry: any, index: number) {
@@ -567,6 +618,7 @@ export class PosOrderService {
     const deliveryAttemptFailed = Number.isFinite(parsedDeliveryAttemptFailed)
       ? Math.max(0, Math.trunc(parsedDeliveryAttemptFailed))
       : 0;
+    const trackingUpdates = this.parseTrackingUpdates(rawOrder);
 
     const customerCare =
       rawOrder.assigning_care && typeof rawOrder.assigning_care === 'object'
@@ -874,6 +926,7 @@ export class PosOrderService {
       customerAddress,
       deliveryAttemptFailed,
       statusHistory,
+      trackingUpdates,
       rtsReason,
       upsellBreakdown,
       orderSnapshot,
@@ -1033,6 +1086,7 @@ export class PosOrderService {
             customerAddress: order.customerAddress,
             deliveryAttemptFailed: order.deliveryAttemptFailed ?? 0,
             statusHistory: this.jsonOrDbNull(order.statusHistory),
+            trackingUpdates: this.jsonOrDbNull(order.trackingUpdates ?? null),
             rtsReason: this.jsonOrDbNull(order.rtsReason),
             upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
             orderSnapshot: this.jsonOrDbNull(order.orderSnapshot),
@@ -1075,6 +1129,9 @@ export class PosOrderService {
             customerAddress: order.customerAddress,
             deliveryAttemptFailed: order.deliveryAttemptFailed ?? 0,
             statusHistory: this.jsonOrDbNull(order.statusHistory),
+            ...(order.trackingUpdates !== undefined
+              ? { trackingUpdates: this.jsonOrDbNull(order.trackingUpdates) }
+              : {}),
             rtsReason: this.jsonOrDbNull(order.rtsReason),
             upsellBreakdown: this.jsonOrDbNull(order.upsellBreakdown),
             orderSnapshot: this.jsonOrDbNull(order.orderSnapshot),

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown } from 'lucide-react';
 import { AnalyticsTableEmptyRow } from '../../analytics/_components/analytics-table-shell';
 import type { UndeliverableRemarkOption, UndeliverableRow } from '../_types/undeliverables';
 
@@ -14,8 +14,11 @@ type UndeliverablesTableProps = {
   isLoading?: boolean;
   canViewAll: boolean;
   canWriteRemarks: boolean;
+  failedAtOrder: 'asc' | 'desc';
   remarkOptions: UndeliverableRemarkOption[];
   onSaveRemark: (row: UndeliverableRow, remarkOptionId: string) => Promise<void>;
+  onOpenTracking: (row: UndeliverableRow) => void;
+  onToggleFailedAtOrder: () => void;
   onPrevious: () => void;
   onNext: () => void;
 };
@@ -29,8 +32,11 @@ export function UndeliverablesTable({
   isLoading = false,
   canViewAll,
   canWriteRemarks,
+  failedAtOrder,
   remarkOptions,
   onSaveRemark,
+  onOpenTracking,
+  onToggleFailedAtOrder,
   onPrevious,
   onNext,
 }: UndeliverablesTableProps) {
@@ -64,6 +70,23 @@ export function UndeliverablesTable({
       minute: '2-digit',
       hour12: true,
     }).format(parsed);
+  };
+
+  const getStatusBadgeClass = (statusName: string | null) => {
+    const normalized = statusName?.trim().toLowerCase();
+    if (normalized === 'shipped') {
+      return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-300';
+    }
+    if (normalized === 'returning') {
+      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300';
+    }
+    if (normalized === 'returned') {
+      return 'border-red-300 bg-red-100 text-red-800 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300';
+    }
+    if (normalized === 'delivered') {
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300';
+    }
+    return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-border dark:bg-background-secondary dark:text-slate-300';
   };
 
   const start = total === 0 ? 0 : ((page - 1) * limit) + 1;
@@ -102,6 +125,21 @@ export function UndeliverablesTable({
               <th className="min-w-[18rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 SA Remarks
               </th>
+              <th className="min-w-[11rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
+                <button
+                  type="button"
+                  onClick={onToggleFailedAtOrder}
+                  className="inline-flex items-center gap-1.5 rounded-md text-xs font-semibold uppercase text-slate-500 transition hover:text-slate-800 focus:outline-none dark:text-slate-300 dark:hover:text-slate-100"
+                  aria-label={`Sort failed at ${failedAtOrder === 'asc' ? 'descending' : 'ascending'}`}
+                >
+                  Failed At
+                  {failedAtOrder === 'asc' ? (
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </th>
               <th className="min-w-[9rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 Status
               </th>
@@ -122,9 +160,6 @@ export function UndeliverablesTable({
               </th>
               <th className="min-w-[8rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 Order ID
-              </th>
-              <th className="min-w-[11rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
-                Failed At
               </th>
               <th className="min-w-[12rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 Address
@@ -148,7 +183,19 @@ export function UndeliverablesTable({
               />
             ) : null}
             {rows.map((row, index) => (
-              <tr key={row.id} className="align-top bg-white transition-colors hover:bg-slate-50/80 dark:bg-surface dark:hover:bg-background-secondary">
+              <tr
+                key={row.id}
+                tabIndex={0}
+                onClick={() => onOpenTracking(row)}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onOpenTracking(row);
+                  }
+                }}
+                className="cursor-pointer align-top bg-white transition-colors hover:bg-slate-50/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-orange-400 dark:bg-surface dark:hover:bg-background-secondary"
+              >
                 <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                   {((page - 1) * limit) + index + 1}.
                 </td>
@@ -167,7 +214,11 @@ export function UndeliverablesTable({
                     )}
                   </td>
                 ) : null}
-                <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
+                <td
+                  className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
                   <div className="space-y-2">
                     {canWriteRemarks ? (
                       openRemarkRowId === row.id ? (
@@ -223,8 +274,19 @@ export function UndeliverablesTable({
                     )}
                   </div>
                 </td>
+                <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap dark:text-slate-300">
+                  {formatFailedAt(row)}
+                </td>
                 <td className="px-3 py-2 text-xs font-semibold text-foreground">
-                  {row.status_name || '-'}
+                  {row.status_name ? (
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${getStatusBadgeClass(row.status_name)}`}
+                    >
+                      {row.status_name}
+                    </span>
+                  ) : (
+                    '-'
+                  )}
                 </td>
                 <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                   {row.tracking || '-'}
@@ -243,9 +305,6 @@ export function UndeliverablesTable({
                 </td>
                 <td className="px-3 py-2 text-xs font-semibold text-foreground">
                   #{row.pos_order_id}
-                </td>
-                <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap dark:text-slate-300">
-                  {formatFailedAt(row)}
                 </td>
                 <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                   {row.address || '-'}

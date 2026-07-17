@@ -17,6 +17,7 @@ import {
 import { UndeliverablesAssignmentsDialog } from '../_components/undeliverables-assignments-dialog';
 import { UndeliverablesRemarkOptionsDialog } from '../_components/undeliverables-remark-options-dialog';
 import { UndeliverablesTable } from '../_components/undeliverables-table';
+import { UndeliverableTrackingPanel } from '../_components/undeliverable-tracking-panel';
 import { useOrdersPermissions } from '../_hooks/use-orders-permissions';
 import {
   createUndeliverableRemark,
@@ -60,6 +61,7 @@ export default function UndeliverablesPage() {
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [remarkView, setRemarkView] = useState<UndeliverablesRemarkView>('needs_remarks');
+  const [failedAtOrder, setFailedAtOrder] = useState<'asc' | 'desc'>('asc');
   const [showStorePicker, setShowStorePicker] = useState(false);
   const [storeSearch, setStoreSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -71,6 +73,7 @@ export default function UndeliverablesPage() {
   const [assignmentsOpen, setAssignmentsOpen] = useState(false);
   const [assignmentsData, setAssignmentsData] = useState<UndeliverablesAssignmentsResponse | null>(null);
   const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(false);
+  const [trackingRow, setTrackingRow] = useState<UndeliverableRow | null>(null);
   const storePickerRef = useRef<HTMLDivElement | null>(null);
   const loadUndeliverablesRef = useRef<null | (() => Promise<void>)>(null);
   const loadAssignmentsRef = useRef<null | (() => Promise<void>)>(null);
@@ -87,7 +90,7 @@ export default function UndeliverablesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [startDate, endDate, selectedStoreIds, selectedStatuses, searchTerm, remarkView]);
+  }, [startDate, endDate, selectedStoreIds, selectedStatuses, searchTerm, remarkView, failedAtOrder]);
 
   useEffect(() => {
     if (!showStorePicker) return;
@@ -138,6 +141,7 @@ export default function UndeliverablesPage() {
         startDate,
         endDate,
         view: remarkView,
+        failedAtOrder,
         storeIds: selectedStoreIds,
         statuses: selectedStatuses,
         search: searchTerm,
@@ -151,7 +155,7 @@ export default function UndeliverablesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [canViewUndeliverables, endDate, page, remarkView, searchTerm, selectedStatuses, selectedStoreIds, startDate]);
+  }, [canViewUndeliverables, endDate, failedAtOrder, page, remarkView, searchTerm, selectedStatuses, selectedStoreIds, startDate]);
 
   useEffect(() => {
     void loadUndeliverables();
@@ -575,13 +579,21 @@ export default function UndeliverablesPage() {
         isLoading={isLoading}
         canViewAll={canViewAllUndeliverables}
         canWriteRemarks={canWriteUndeliverableRemarks}
+        failedAtOrder={failedAtOrder}
         remarkOptions={remarkOptions}
         onSaveRemark={handleSaveRemark}
+        onOpenTracking={setTrackingRow}
+        onToggleFailedAtOrder={() => setFailedAtOrder((current) => (current === 'asc' ? 'desc' : 'asc'))}
         onPrevious={() => setPage((current) => Math.max(1, current - 1))}
         onNext={() => {
           const totalPages = data?.pagination.pageCount ?? 0;
           setPage((current) => (totalPages > 0 ? Math.min(totalPages, current + 1) : current + 1));
         }}
+      />
+
+      <UndeliverableTrackingPanel
+        row={trackingRow}
+        onClose={() => setTrackingRow(null)}
       />
 
       <UndeliverablesAssignmentsDialog
