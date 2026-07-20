@@ -333,7 +333,8 @@ export class OrdersService {
     }
 
     const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(rawValue);
-    const parsed = hasTimezone ? dayjs(rawValue).tz(TIMEZONE) : dayjs.tz(rawValue, TIMEZONE);
+    // Carrier update_at values are UTC even when the source omits the timezone suffix.
+    const parsed = (hasTimezone ? dayjs(rawValue) : dayjs.utc(rawValue)).tz(TIMEZONE);
     if (!parsed.isValid()) {
       return { local: null, timestamp: 0 };
     }
