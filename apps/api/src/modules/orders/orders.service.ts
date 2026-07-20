@@ -225,6 +225,12 @@ type UndeliverableTrackingUpdate = {
   sort_timestamp: number;
 };
 
+type UndeliverableOrderItem = {
+  name: string;
+  quantity: number;
+  product_display_id: string | null;
+};
+
 const UNDELIVERABLE_STATUS_VALUES: UndeliverableStatus[] = [2, 3, 4, 5];
 const UNDELIVERABLE_STATUS_LABELS: Record<UndeliverableStatus, string> = {
   2: 'Shipped',
@@ -383,6 +389,53 @@ export class OrdersService {
       updated_at_local: parsedDate.local,
       sort_timestamp: parsedDate.timestamp,
     };
+  }
+
+  private parseUndeliverableOrderItems(value: Prisma.JsonValue): UndeliverableOrderItem[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.flatMap((rawItem) => {
+      if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
+        return [];
+      }
+
+      const item = rawItem as Prisma.JsonObject;
+      const variationInfo = item.variation_info;
+      const variation = variationInfo && typeof variationInfo === 'object' && !Array.isArray(variationInfo)
+        ? variationInfo as Prisma.JsonObject
+        : null;
+      const nameCandidates = [
+        item.variationName,
+        item.variation_name,
+        item.productName,
+        item.product_name,
+        item.name,
+        variation?.name,
+      ];
+      const name = nameCandidates.find(
+        (candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0,
+      )?.trim();
+
+      if (!name) {
+        return [];
+      }
+
+      const rawQuantity = Number(item.quantity ?? 0);
+      const quantity = Number.isFinite(rawQuantity) ? Math.max(0, rawQuantity) : 0;
+      const displayIdCandidates = [
+        item.productDisplayId,
+        item.product_display_id,
+        variation?.product_display_id,
+        variation?.display_id,
+      ];
+      const productDisplayId = displayIdCandidates.find(
+        (candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0,
+      )?.trim() ?? null;
+
+      return [{ name, quantity, product_display_id: productDisplayId }];
+    });
   }
 
   private parsePage(raw?: string): number {
@@ -711,6 +764,7 @@ export class OrdersService {
             tracking: true,
             dateLocal: true,
             customerName: true,
+            itemData: true,
             trackingUpdates: true,
           },
         },
@@ -2422,6 +2476,7 @@ export class OrdersService {
             ? UNDELIVERABLE_STATUS_LABELS[order.status as UndeliverableStatus]
             : order.statusName,
         store_name: this.buildUndeliverableStoreLabel(store),
+        order_items: this.parseUndeliverableOrderItems(order.itemData),
       },
       items,
     };

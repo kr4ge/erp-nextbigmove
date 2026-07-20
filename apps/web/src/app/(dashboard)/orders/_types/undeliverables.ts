@@ -149,6 +149,11 @@ export type UndeliverableTrackingResponse = {
     status: number | null;
     status_name: string | null;
     store_name: string;
+    order_items: Array<{
+      name: string;
+      quantity: number;
+      product_display_id: string | null;
+    }>;
   };
   items: UndeliverableTrackingUpdate[];
 };
