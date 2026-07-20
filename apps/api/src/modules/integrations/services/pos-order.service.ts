@@ -277,7 +277,7 @@ export class PosOrderService {
       })
       .map(({ entry, index }) => {
         const updatedRaw = isString(entry.updated_at) ? entry.updated_at.trim() : '';
-        const parsed = updatedRaw ? dayjs.tz(updatedRaw, 'Asia/Manila') : null;
+        const parsed = updatedRaw ? dayjs.utc(updatedRaw) : null;
         if (!parsed || !parsed.isValid()) return null;
 
         const partnerStatus = isObject(entry.partner_status) ? entry.partner_status : null;
@@ -323,22 +323,36 @@ export class PosOrderService {
       return;
     }
 
-    await this.prisma.undeliverableAttempt.createMany({
-      data: attempts.map((attempt) => ({
-        tenantId: params.tenantId,
-        orderId: params.orderId,
-        storeId: params.storeId,
-        sourceEventKey: attempt.sourceEventKey,
-        attemptNumber: attempt.attemptNumber,
-        failedAt: attempt.failedAt,
-        partnerStatusOld: attempt.partnerStatusOld,
-        partnerStatusNew: 'undeliverable',
-        returnedReason: this.jsonOrDbNull(attempt.returnedReason),
-        subStatus: this.jsonOrDbNull(attempt.subStatus),
-        sourceTags: this.jsonOrDbNull(attempt.sourceTags),
-      })),
-      skipDuplicates: true,
-    });
+    await this.prisma.$transaction(
+      attempts.map((attempt) => {
+        const data = {
+          storeId: params.storeId,
+          attemptNumber: attempt.attemptNumber,
+          failedAt: attempt.failedAt,
+          partnerStatusOld: attempt.partnerStatusOld,
+          partnerStatusNew: 'undeliverable',
+          returnedReason: this.jsonOrDbNull(attempt.returnedReason),
+          subStatus: this.jsonOrDbNull(attempt.subStatus),
+          sourceTags: this.jsonOrDbNull(attempt.sourceTags),
+        };
+
+        return this.prisma.undeliverableAttempt.upsert({
+          where: {
+            orderId_sourceEventKey: {
+              orderId: params.orderId,
+              sourceEventKey: attempt.sourceEventKey,
+            },
+          },
+          create: {
+            tenantId: params.tenantId,
+            orderId: params.orderId,
+            sourceEventKey: attempt.sourceEventKey,
+            ...data,
+          },
+          update: data,
+        });
+      }),
+    );
   }
 
   /**

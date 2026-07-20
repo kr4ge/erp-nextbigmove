@@ -3173,6 +3173,7 @@ export class WmsPurchasingService {
     });
 
     const totals = this.computeInvoiceTotals(normalizedLines);
+    const issueDate = existing?.issueDate ?? batch.receivedAt ?? new Date();
     return this.upsertLinkedInvoiceTx(tx, {
       existingInvoiceId: existing?.id ?? null,
       tenant: batch.tenant,
@@ -3184,8 +3185,8 @@ export class WmsPurchasingService {
         existing?.invoiceNumber
         ?? await this.generateNextInvoiceNumberTx(tx, batch.tenantId, prefix),
       status: existing?.status ?? WmsInvoiceStatus.ISSUED,
-      issueDate: existing?.issueDate ?? batch.receivedAt ?? new Date(),
-      dueDate: existing?.dueDate ?? null,
+      issueDate,
+      dueDate: existing?.dueDate ?? issueDate,
       currency: existing?.currency ?? 'PHP',
       notes: batch.notes ?? existing?.notes ?? null,
       allowReissueOnChange: true,
@@ -3284,6 +3285,22 @@ export class WmsPurchasingService {
       const hasMaterialChanges = this.hasLinkedInvoiceMaterialChanges(existing, input);
 
       if (!hasMaterialChanges && existing.status === input.status) {
+        const issueDateChanged =
+          (existing.issueDate?.getTime() ?? null) !== (input.issueDate?.getTime() ?? null);
+        const dueDateChanged =
+          (existing.dueDate?.getTime() ?? null) !== (input.dueDate?.getTime() ?? null);
+
+        if (issueDateChanged || dueDateChanged) {
+          await tx.wmsInvoice.update({
+            where: { id: existing.id },
+            data: {
+              issueDate: input.issueDate,
+              dueDate: input.dueDate,
+              updatedById: actorId,
+            },
+          });
+        }
+
         return existing.id;
       }
 

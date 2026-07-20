@@ -7,6 +7,7 @@ const PAGE_HEIGHT = 841.89;
 const PAGE_MARGIN_X = 34;
 const PAGE_MARGIN_TOP = 30;
 const PAGE_MARGIN_BOTTOM = 30;
+const HEADER_DETAILS_GAP = 18;
 const TABLE_HEADER_COLOR = rgb(58 / 255, 66 / 255, 77 / 255);
 const TOTAL_STRIP_COLOR = rgb(236 / 255, 239 / 255, 242 / 255);
 const AMOUNT_DUE_COLOR = rgb(227 / 255, 231 / 255, 236 / 255);
@@ -196,7 +197,7 @@ function drawHeader(params: {
     color: invoiceStatus.toUpperCase() === 'PAID VERIFIED' ? STATUS_GREEN : STATUS_RED,
   });
 
-  return headerTop + Math.max(Math.min(logoRenderedHeight, 118), 72);
+  return headerTop + Math.max(Math.min(logoRenderedHeight, 118), 72) + HEADER_DETAILS_GAP;
 }
 
 function drawDetails(params: {
