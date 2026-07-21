@@ -46,6 +46,10 @@ const ACTIVE_BASKET_UNIT_STATUSES = [
   WmsBasketUnitStatus.PACKED,
 ] as const;
 const ACTIVE_BASKET_ORDER_STATUSES = [
+  WmsFulfillmentOrderStatus.READY,
+  WmsFulfillmentOrderStatus.PARTIAL,
+  WmsFulfillmentOrderStatus.RESTOCKING,
+  WmsFulfillmentOrderStatus.ISSUE,
   WmsFulfillmentOrderStatus.IN_PICKING,
   WmsFulfillmentOrderStatus.READY_FOR_PACK,
   WmsFulfillmentOrderStatus.PICKED,
@@ -2404,6 +2408,7 @@ export class WmsFulfillmentSyncService {
       || order.status === WmsFulfillmentOrderStatus.PACKING
       || order.status === WmsFulfillmentOrderStatus.PACKED
       || order.status === WmsFulfillmentOrderStatus.CANCELED
+      || Boolean(order.basketId)
       || order.posOrder.status !== CONFIRMED_POS_ORDER_STATUS
       || order.posOrder.isVoid
     ) {

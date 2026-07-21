@@ -218,6 +218,10 @@ const PACK_LIST_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.PACKED,
 ] as const;
 const ACTIVE_BASKET_ORDER_STATUSES = [
+  WmsFulfillmentOrderStatus.READY,
+  WmsFulfillmentOrderStatus.PARTIAL,
+  WmsFulfillmentOrderStatus.RESTOCKING,
+  WmsFulfillmentOrderStatus.ISSUE,
   WmsFulfillmentOrderStatus.IN_PICKING,
   WmsFulfillmentOrderStatus.READY_FOR_PACK,
   WmsFulfillmentOrderStatus.PICKED,
