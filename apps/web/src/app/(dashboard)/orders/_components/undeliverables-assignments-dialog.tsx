@@ -2,8 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Search, Store, Users, X } from 'lucide-react';
+import { Check, MoreHorizontal, Search, Store, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { UndeliverablesAssignmentsResponse } from '../_types/undeliverables';
 
 type UndeliverablesAssignmentsDialogProps = {
@@ -118,6 +124,12 @@ export function UndeliverablesAssignmentsDialog({
   const visibleStoreIds = pagedStores.map((store) => store.store_id);
   const areAllVisibleStoresSelected =
     visibleStoreIds.length > 0 && visibleStoreIds.every((storeId) => selectedStoreIds.includes(storeId));
+  const allStoreIds = useMemo(
+    () => data?.stores.map((store) => store.store_id) ?? [],
+    [data],
+  );
+  const areAllStoresSelected =
+    allStoreIds.length > 0 && allStoreIds.every((storeId) => selectedStoreIds.includes(storeId));
 
   useEffect(() => {
     setStorePage(1);
@@ -143,6 +155,14 @@ export function UndeliverablesAssignmentsDialog({
 
   const handleClearVisibleStores = () => {
     setSelectedStoreIds((current) => current.filter((storeId) => !visibleStoreIds.includes(storeId)));
+  };
+
+  const handleSelectAllStores = () => {
+    setSelectedStoreIds(allStoreIds);
+  };
+
+  const handleClearAllStores = () => {
+    setSelectedStoreIds([]);
   };
 
   const handleSave = async () => {
@@ -274,6 +294,34 @@ export function UndeliverablesAssignmentsDialog({
 
                 {selectedUserId ? (
                   <div className="flex flex-wrap items-center gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        type="button"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-orange-300 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border dark:text-slate-300 dark:hover:bg-background-secondary dark:focus:ring-offset-surface"
+                        aria-label="All-store assignment actions"
+                        disabled={allStoreIds.length === 0}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48 rounded-xl p-1">
+                        <DropdownMenuItem
+                          onSelect={handleSelectAllStores}
+                          disabled={areAllStoresSelected}
+                          className="flex items-center gap-2"
+                        >
+                          <Check className="h-4 w-4" />
+                          Select all stores
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={handleClearAllStores}
+                          disabled={selectedStoreIds.length === 0}
+                          className="flex items-center gap-2"
+                        >
+                          <X className="h-4 w-4" />
+                          Clear all stores
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                       type="button"
                       variant="ghost"
