@@ -24,6 +24,7 @@ import {
   UpdatePancakeWebhookDto,
   UpdatePancakeWebhookRelayDto,
   ClaimPosShopOwnershipDto,
+  TransferOpenPosOrdersDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -330,7 +331,7 @@ export class IntegrationController {
 
   /**
    * Make this store the only active ingestion owner for its Pancake shop.
-   * Historical orders stay with their existing tenant; only new order IDs use this owner.
+   * Finalized historical orders stay with their existing tenant; only new order IDs use this owner.
    */
   @Post('/pos-stores/:id/claim-shop-ownership')
   @Permissions('integration.update')
@@ -339,6 +340,19 @@ export class IntegrationController {
     @Body() dto: ClaimPosShopOwnershipDto,
   ) {
     return this.integrationService.claimPosShopOwnership(id, dto);
+  }
+
+  /**
+   * Move safe, open POS orders from the former shop owner to the active owner.
+   * Dry-run is the default so production operators can review blocked work first.
+   */
+  @Post('/pos-stores/:id/transfer-open-orders')
+  @Permissions('integration.update')
+  async transferOpenPosOrders(
+    @Param('id') id: string,
+    @Body() dto: TransferOpenPosOrdersDto,
+  ) {
+    return this.integrationService.transferOpenPosOrders(id, dto);
   }
 
   /**

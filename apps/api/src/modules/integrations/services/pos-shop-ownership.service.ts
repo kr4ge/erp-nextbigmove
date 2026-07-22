@@ -1,9 +1,25 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  WmsBasketUnitStatus,
+  WmsFulfillmentOrderStatus,
+  WmsPickReservationStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { WmsFulfillmentSyncService } from '../../wms-fulfillment/wms-fulfillment-sync.service';
+
+const TRANSFERABLE_POS_STATUSES = [0, 1, 11];
+const CONFIRMED_POS_STATUS = 1;
+const TRANSFERABLE_FULFILLMENT_STATUSES = new Set<WmsFulfillmentOrderStatus>([
+  WmsFulfillmentOrderStatus.READY,
+  WmsFulfillmentOrderStatus.PARTIAL,
+  WmsFulfillmentOrderStatus.RESTOCKING,
+  WmsFulfillmentOrderStatus.ISSUE,
+]);
 
 type RoutableStore = {
   id: string;
@@ -34,7 +50,12 @@ export type PosShopOrderRoutingIssue = {
 
 @Injectable()
 export class PosShopOwnershipService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PosShopOwnershipService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
+  ) {}
 
   private getShopId(order: any): string | null {
     const value = order?.shop_id ?? order?.shopId;
@@ -163,6 +184,450 @@ export class PosShopOwnershipService {
       activatedAt: result.ownership.activatedAt,
       previousOwner: result.previous,
       historicalOrdersMoved: false,
+    };
+  }
+
+  async transferOpenOrders(params: {
+    sourceStoreId: string;
+    targetStoreId: string;
+    requestedById?: string | null;
+    reason?: string | null;
+    dryRun?: boolean;
+  }) {
+    const dryRun = params.dryRun !== false;
+    const reason = params.reason?.trim() || null;
+    const [sourceStore, targetStore] = await Promise.all([
+      this.prisma.posStore.findUnique({
+        where: { id: params.sourceStoreId },
+        select: {
+          id: true,
+          tenantId: true,
+          shopId: true,
+          shopName: true,
+        },
+      }),
+      this.prisma.posStore.findUnique({
+        where: { id: params.targetStoreId },
+        select: {
+          id: true,
+          tenantId: true,
+          teamId: true,
+          shopId: true,
+          shopName: true,
+          status: true,
+          enabled: true,
+        },
+      }),
+    ]);
+
+    if (!sourceStore) {
+      throw new NotFoundException('Source POS store not found');
+    }
+    if (!targetStore) {
+      throw new NotFoundException('Target POS store not found');
+    }
+    if (sourceStore.id === targetStore.id) {
+      throw new ConflictException(
+        'Source and target POS stores must be different',
+      );
+    }
+    if (sourceStore.tenantId === targetStore.tenantId) {
+      throw new ConflictException(
+        'Source and target POS stores must belong to different partners',
+      );
+    }
+    if (sourceStore.shopId !== targetStore.shopId) {
+      throw new ConflictException(
+        'Source and target POS stores must represent the same POS shop',
+      );
+    }
+    if (targetStore.status !== 'ACTIVE' || targetStore.enabled === false) {
+      throw new ConflictException('Target POS store is not active');
+    }
+
+    const ownership = await this.prisma.posShopOwnership.findUnique({
+      where: { shopId: targetStore.shopId },
+      select: { tenantId: true, storeId: true },
+    });
+    if (
+      !ownership ||
+      ownership.tenantId !== targetStore.tenantId ||
+      ownership.storeId !== targetStore.id
+    ) {
+      throw new ConflictException(
+        'Target store must claim POS shop ownership before open orders can be transferred',
+      );
+    }
+
+    const sourceOrders = await this.prisma.posOrder.findMany({
+      where: {
+        tenantId: sourceStore.tenantId,
+        shopId: sourceStore.shopId,
+        isVoid: false,
+        status: { in: TRANSFERABLE_POS_STATUSES },
+      },
+      select: {
+        id: true,
+        posOrderId: true,
+        status: true,
+        statusName: true,
+        dateLocal: true,
+        wmsFulfillmentOrders: {
+          select: {
+            id: true,
+            status: true,
+            claimedById: true,
+            packedById: true,
+            basketId: true,
+            pickedQuantity: true,
+            legacyBasket: { select: { id: true } },
+            reservations: {
+              where: { status: WmsPickReservationStatus.PICKED },
+              select: { id: true },
+              take: 1,
+            },
+            basketPickDemands: {
+              select: { id: true },
+              take: 1,
+            },
+            basketUnits: {
+              where: {
+                status: {
+                  in: [WmsBasketUnitStatus.PICKED, WmsBasketUnitStatus.PACKED],
+                },
+              },
+              select: { id: true },
+              take: 1,
+            },
+            lines: {
+              where: { quantityPicked: { gt: 0 } },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        },
+      },
+      orderBy: [{ insertedAt: 'asc' }, { id: 'asc' }],
+    });
+
+    const targetCollisions = sourceOrders.length
+      ? await this.prisma.posOrder.findMany({
+          where: {
+            tenantId: targetStore.tenantId,
+            shopId: targetStore.shopId,
+            posOrderId: { in: sourceOrders.map((order) => order.posOrderId) },
+          },
+          select: { posOrderId: true },
+        })
+      : [];
+    const collisionOrderIds = new Set(
+      targetCollisions.map((order) => order.posOrderId),
+    );
+
+    const transferableOrders: Array<{
+      id: string;
+      posOrderId: string;
+      posStatus: number | null;
+      posStatusName: string | null;
+      fulfillmentOrderId: string | null;
+      fulfillmentStatus: WmsFulfillmentOrderStatus | null;
+    }> = [];
+    const blockedOrders: Array<{
+      posOrderId: string;
+      posStatus: number | null;
+      posStatusName: string | null;
+      fulfillmentStatus: WmsFulfillmentOrderStatus | null;
+      reasons: string[];
+    }> = [];
+
+    for (const order of sourceOrders) {
+      const fulfillmentOrder = order.wmsFulfillmentOrders[0] || null;
+      const reasons: string[] = [];
+
+      if (collisionOrderIds.has(order.posOrderId)) {
+        reasons.push('ORDER_ALREADY_EXISTS_IN_TARGET_PARTNER');
+      }
+      if (order.wmsFulfillmentOrders.length > 1) {
+        reasons.push('MULTIPLE_FULFILLMENT_ORDERS');
+      }
+      if (
+        fulfillmentOrder &&
+        !TRANSFERABLE_FULFILLMENT_STATUSES.has(fulfillmentOrder.status)
+      ) {
+        reasons.push(`FULFILLMENT_IN_EXECUTION_${fulfillmentOrder.status}`);
+      }
+      if (
+        fulfillmentOrder?.claimedById ||
+        fulfillmentOrder?.basketId ||
+        fulfillmentOrder?.legacyBasket
+      ) {
+        reasons.push('FULFILLMENT_IS_CLAIMED_OR_BASKET_LINKED');
+      }
+      if (fulfillmentOrder?.packedById) {
+        reasons.push('FULFILLMENT_HAS_PACKER');
+      }
+      if (
+        (fulfillmentOrder?.pickedQuantity || 0) > 0 ||
+        fulfillmentOrder?.lines.length
+      ) {
+        reasons.push('FULFILLMENT_HAS_PICKED_QUANTITY');
+      }
+      if (fulfillmentOrder?.reservations.length) {
+        reasons.push('FULFILLMENT_HAS_PICKED_RESERVATION');
+      }
+      if (fulfillmentOrder?.basketPickDemands.length) {
+        reasons.push('FULFILLMENT_HAS_BASKET_DEMAND');
+      }
+      if (fulfillmentOrder?.basketUnits.length) {
+        reasons.push('FULFILLMENT_HAS_ACTIVE_BASKET_UNIT');
+      }
+
+      if (reasons.length > 0) {
+        blockedOrders.push({
+          posOrderId: order.posOrderId,
+          posStatus: order.status,
+          posStatusName: order.statusName,
+          fulfillmentStatus: fulfillmentOrder?.status || null,
+          reasons: Array.from(new Set(reasons)),
+        });
+        continue;
+      }
+
+      transferableOrders.push({
+        id: order.id,
+        posOrderId: order.posOrderId,
+        posStatus: order.status,
+        posStatusName: order.statusName,
+        fulfillmentOrderId: fulfillmentOrder?.id || null,
+        fulfillmentStatus: fulfillmentOrder?.status || null,
+      });
+    }
+
+    const baseResult = {
+      dryRun,
+      shop: {
+        shopId: targetStore.shopId,
+        shopName: targetStore.shopName,
+      },
+      source: {
+        tenantId: sourceStore.tenantId,
+        storeId: sourceStore.id,
+      },
+      target: {
+        tenantId: targetStore.tenantId,
+        storeId: targetStore.id,
+      },
+      includedPosStatuses: {
+        NEW: 0,
+        CONFIRMED: 1,
+        RESTOCKING: 11,
+      },
+      summary: {
+        candidates: sourceOrders.length,
+        transferable: transferableOrders.length,
+        blocked: blockedOrders.length,
+      },
+      transferableOrders: transferableOrders.map(
+        ({ id: _id, ...order }) => order,
+      ),
+      blockedOrders,
+    };
+
+    if (dryRun || transferableOrders.length === 0) {
+      return {
+        ...baseResult,
+        execution: {
+          movedOrders: 0,
+          rebuiltConfirmedOrders: 0,
+          fulfillmentSyncStatus: 'NOT_RUN',
+        },
+      };
+    }
+
+    const movedOrderIds = transferableOrders.map((order) => order.id);
+    const fulfillmentOrderIds = transferableOrders
+      .map((order) => order.fulfillmentOrderId)
+      .filter((id): id is string => Boolean(id));
+    const confirmedOrderRefs = transferableOrders
+      .filter((order) => order.posStatus === CONFIRMED_POS_STATUS)
+      .map((order) => ({
+        shopId: targetStore.shopId,
+        posOrderId: order.posOrderId,
+      }));
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const stillOwnedCount = await tx.posOrder.count({
+          where: {
+            id: { in: movedOrderIds },
+            tenantId: sourceStore.tenantId,
+            shopId: sourceStore.shopId,
+            isVoid: false,
+            status: { in: TRANSFERABLE_POS_STATUSES },
+          },
+        });
+        if (stillOwnedCount !== movedOrderIds.length) {
+          throw new ConflictException(
+            'One or more orders changed while the transfer was being prepared. Run the dry-run again.',
+          );
+        }
+
+        const targetCollisionCount = await tx.posOrder.count({
+          where: {
+            tenantId: targetStore.tenantId,
+            shopId: targetStore.shopId,
+            posOrderId: {
+              in: transferableOrders.map((order) => order.posOrderId),
+            },
+          },
+        });
+        if (targetCollisionCount > 0) {
+          throw new ConflictException(
+            'One or more orders now exist in the target partner. Run the dry-run again.',
+          );
+        }
+
+        if (fulfillmentOrderIds.length > 0) {
+          const stillTransferableFulfillmentCount =
+            await tx.wmsFulfillmentOrder.count({
+              where: {
+                id: { in: fulfillmentOrderIds },
+                status: { in: Array.from(TRANSFERABLE_FULFILLMENT_STATUSES) },
+                claimedById: null,
+                packedById: null,
+                basketId: null,
+                pickedQuantity: 0,
+                legacyBasket: { is: null },
+                reservations: {
+                  none: { status: WmsPickReservationStatus.PICKED },
+                },
+                basketPickDemands: { none: {} },
+                basketUnits: {
+                  none: {
+                    status: {
+                      in: [
+                        WmsBasketUnitStatus.PICKED,
+                        WmsBasketUnitStatus.PACKED,
+                      ],
+                    },
+                  },
+                },
+                lines: { none: { quantityPicked: { gt: 0 } } },
+              },
+            });
+          if (
+            stillTransferableFulfillmentCount !== fulfillmentOrderIds.length
+          ) {
+            throw new ConflictException(
+              'One or more fulfillment orders entered pick or pack execution. Run the dry-run again.',
+            );
+          }
+
+          await tx.wmsFulfillmentOrder.deleteMany({
+            where: { id: { in: fulfillmentOrderIds } },
+          });
+        }
+
+        await tx.undeliverableAttempt.updateMany({
+          where: { orderId: { in: movedOrderIds } },
+          data: {
+            tenantId: targetStore.tenantId,
+            storeId: targetStore.id,
+          },
+        });
+        await tx.undeliverableOrderRemark.updateMany({
+          where: { orderId: { in: movedOrderIds } },
+          data: {
+            tenantId: targetStore.tenantId,
+            storeId: targetStore.id,
+          },
+        });
+        const moved = await tx.posOrder.updateMany({
+          where: {
+            id: { in: movedOrderIds },
+            tenantId: sourceStore.tenantId,
+          },
+          data: {
+            tenantId: targetStore.tenantId,
+            teamId: targetStore.teamId,
+          },
+        });
+        if (moved.count !== movedOrderIds.length) {
+          throw new ConflictException(
+            'Not all open orders could be transferred. No changes were committed.',
+          );
+        }
+
+        await tx.auditLog.create({
+          data: {
+            tenantId: targetStore.tenantId,
+            userId: params.requestedById || null,
+            action: 'POS_SHOP_OPEN_ORDERS_TRANSFERRED',
+            resource: 'pos_shop',
+            resourceId: targetStore.shopId,
+            changes: {
+              sourceTenantId: sourceStore.tenantId,
+              sourceStoreId: sourceStore.id,
+              targetTenantId: targetStore.tenantId,
+              targetStoreId: targetStore.id,
+              movedOrderCount: moved.count,
+              removedFulfillmentOrderCount: fulfillmentOrderIds.length,
+              blockedOrderCount: blockedOrders.length,
+              movedPosOrderIds: transferableOrders.map(
+                (order) => order.posOrderId,
+              ),
+              reason,
+            },
+          },
+        });
+      },
+      {
+        maxWait: 10_000,
+        timeout: 60_000,
+      },
+    );
+
+    let fulfillmentSyncStatus: 'NOT_REQUIRED' | 'SUCCEEDED' | 'FAILED' =
+      'NOT_REQUIRED';
+    let rebuiltConfirmedOrders = 0;
+    let fulfillmentSyncError: string | null = null;
+    if (confirmedOrderRefs.length > 0) {
+      try {
+        const syncResult =
+          await this.wmsFulfillmentSyncService.syncConfirmedPickingOrders({
+            tenantId: targetStore.tenantId,
+            storeId: targetStore.id,
+            actorId: params.requestedById || null,
+            stores: [
+              {
+                id: targetStore.id,
+                tenantId: targetStore.tenantId,
+                shopId: targetStore.shopId,
+              },
+            ],
+            posOrderRefs: confirmedOrderRefs,
+          });
+        fulfillmentSyncStatus = 'SUCCEEDED';
+        rebuiltConfirmedOrders = syncResult.syncedOrders;
+      } catch (error) {
+        fulfillmentSyncStatus = 'FAILED';
+        fulfillmentSyncError =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `Transferred ${movedOrderIds.length} open orders for shop ${targetStore.shopId}, but target fulfillment rebuild failed: ${fulfillmentSyncError}`,
+        );
+      }
+    }
+
+    return {
+      ...baseResult,
+      execution: {
+        movedOrders: movedOrderIds.length,
+        confirmedOrdersQueuedForRebuild: confirmedOrderRefs.length,
+        rebuiltConfirmedOrders,
+        fulfillmentSyncStatus,
+        fulfillmentSyncError,
+      },
     };
   }
 

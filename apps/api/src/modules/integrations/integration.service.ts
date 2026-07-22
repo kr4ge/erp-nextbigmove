@@ -35,6 +35,7 @@ import {
   ListPosStoresDto,
   UpdatePosStoreDto,
   ClaimPosShopOwnershipDto,
+  TransferOpenPosOrdersDto,
 } from './dto';
 import { validate as uuidValidate } from 'uuid';
 import { MetaAdsProvider } from './providers/meta-ads.provider';
@@ -3109,6 +3110,24 @@ export class IntegrationService {
       storeId: id,
       claimedById: userId || null,
       reason: dto.reason || null,
+    });
+  }
+
+  async transferOpenPosOrders(id: string, dto: TransferOpenPosOrdersDto) {
+    const role = this.cls.get('userRole');
+    const userId = this.cls.get('userId');
+    if (role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException(
+        'Only a super administrator can transfer open POS orders between partners',
+      );
+    }
+
+    return this.posShopOwnershipService.transferOpenOrders({
+      sourceStoreId: dto.sourceStoreId,
+      targetStoreId: id,
+      requestedById: userId || null,
+      reason: dto.reason || null,
+      dryRun: dto.dryRun,
     });
   }
 

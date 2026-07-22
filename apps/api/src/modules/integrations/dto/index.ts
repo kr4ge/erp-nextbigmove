@@ -7,3 +7,4 @@ export * from './update-pos-store.dto';
 export * from './update-pancake-webhook.dto';
 export * from './update-pancake-webhook-relay.dto';
 export * from './claim-pos-shop-ownership.dto';
+export * from './transfer-open-pos-orders.dto';
