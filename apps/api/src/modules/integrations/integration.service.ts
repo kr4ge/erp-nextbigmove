@@ -866,9 +866,9 @@ export class IntegrationService {
 
     if (fail <= 0) return false;
 
-    // Guardrail requested: do not auto-cancel on (success=0, fail=1|2).
+    // Without successful orders, require a larger failure history before canceling.
     if (success === 0) {
-      return fail >= 3;
+      return fail >= 5;
     }
 
     const total = success + fail;
@@ -876,7 +876,7 @@ export class IntegrationService {
 
     // Return-rate risk = failed / total.
     const returnRate = (fail / total) * 100;
-    return returnRate >= 81;
+    return returnRate >= 91;
   }
 
   private getPancakeAutoCancelQueueJobOptions() {
