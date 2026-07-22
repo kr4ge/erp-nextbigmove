@@ -47,6 +47,7 @@ model Tenant {
   pancakeWebhookLogs                  PancakeWebhookLog[]
   auditLogs                           AuditLog[]
   posStores                           PosStore[]
+  posShopOwnerships                   PosShopOwnership[]
   metaAdAccounts                      MetaAdAccount[]
   posProductCogs                      PosProductCogs[]
   workflows                           Workflow[]
@@ -522,11 +523,31 @@ model PosStore {
   undeliverableAttempts         UndeliverableAttempt[]
   undeliverableStoreAssignments UndeliverableStoreAssignment[]
   undeliverableOrderRemarks     UndeliverableOrderRemark[]
+  activeShopOwnership           PosShopOwnership?
 
   @@index([tenantId])
   @@index([tenantId, teamId])
   @@index([integrationId])
   @@map("pos_stores")
+}
+
+// One authoritative tenant/store may ingest new orders for a Pancake shop.
+// Historical orders remain under their original tenant and are routed there by order ID.
+model PosShopOwnership {
+  id          String   @id @default(uuid()) @db.Uuid
+  shopId      String   @unique
+  tenantId    String   @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId     String   @unique @db.Uuid
+  store       PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  activatedAt DateTime @default(now())
+  reason      String?
+  claimedById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@map("pos_shop_ownerships")
 }
 
 model PosProduct {
@@ -1264,6 +1285,7 @@ model PosOrder {
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, shopId, posOrderId])
+  @@index([shopId, posOrderId], map: "pos_orders_shop_order_owner_idx")
   @@index([tenantId, shopId, dateLocal])
   @@index([tenantId, shopId, status, isVoid, insertedAt], map: "pos_orders_wms_pick_sync_idx")
   @@index([tenantId, teamId, dateLocal])

@@ -8,6 +8,7 @@ import { IntegrationService } from './integration.service';
 import { EncryptionService } from './services/encryption.service';
 import { MetaInsightService } from './services/meta-insight.service';
 import { PosOrderService } from './services/pos-order.service';
+import { PosShopOwnershipService } from './services/pos-shop-ownership.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { ProviderFactory } from './providers/provider.factory';
 import { ProviderRegistry } from './providers/provider.registry';
@@ -38,11 +39,19 @@ import { PancakeWebhookQueueProcessor } from './processors/pancake-webhook.proce
     EncryptionService,
     MetaInsightService,
     PosOrderService,
+    PosShopOwnershipService,
     PancakeWebhookQueueProcessor,
     ProviderRegistry,
     ProviderFactory,
   ],
-  exports: [IntegrationService, EncryptionService, ProviderFactory, MetaInsightService, PosOrderService],
+  exports: [
+    IntegrationService,
+    EncryptionService,
+    ProviderFactory,
+    MetaInsightService,
+    PosOrderService,
+    PosShopOwnershipService,
+  ],
 })
 export class IntegrationModule implements OnModuleInit {
   constructor(private readonly providerRegistry: ProviderRegistry) {}

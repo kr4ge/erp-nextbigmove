@@ -10,6 +10,7 @@ import { MetaAdsProvider } from '../../integrations/providers/meta-ads.provider'
 import { PancakePosProvider } from '../../integrations/providers/pancake-pos.provider';
 import { MetaInsightService } from '../../integrations/services/meta-insight.service';
 import { PosOrderService } from '../../integrations/services/pos-order.service';
+import { PosShopOwnershipService } from '../../integrations/services/pos-shop-ownership.service';
 import { DateRangeService } from './date-range.service';
 import { WorkflowExecutionStatus } from '@prisma/client';
 import { WorkflowExecutionGateway } from '../gateways/workflow-execution.gateway';
@@ -49,6 +50,7 @@ export class WorkflowProcessorService {
     private readonly providerFactory: ProviderFactory,
     private readonly metaInsightService: MetaInsightService,
     private readonly posOrderService: PosOrderService,
+    private readonly posShopOwnershipService: PosShopOwnershipService,
     private readonly dateRangeService: DateRangeService,
     private readonly executionGateway: WorkflowExecutionGateway,
     private readonly workflowLogService: WorkflowLogService,
@@ -172,8 +174,16 @@ export class WorkflowProcessorService {
         posEnabled
           ? this.prisma.posStore.count({
               where: sharedAccessFilter
-                ? { tenantId: context.tenantId, ...sharedAccessFilter }
-                : { tenantId: context.tenantId },
+                ? {
+                    tenantId: context.tenantId,
+                    status: 'ACTIVE',
+                    AND: [sharedAccessFilter, { OR: [{ enabled: true }, { enabled: null }] }],
+                  }
+                : {
+                    tenantId: context.tenantId,
+                    status: 'ACTIVE',
+                    OR: [{ enabled: true }, { enabled: null }],
+                  },
             })
           : Promise.resolve(0),
       ]);
@@ -712,11 +722,20 @@ export class WorkflowProcessorService {
 
     // Get all POS stores for tenant
     const sharedAccessFilter = this.buildSharedIntegrationWhere(context.teamId);
-    const posStores = await this.prisma.posStore.findMany({
+    const candidateStores = await this.prisma.posStore.findMany({
       where: sharedAccessFilter
-        ? { tenantId: context.tenantId, ...sharedAccessFilter }
-        : { tenantId: context.tenantId },
+        ? {
+            tenantId: context.tenantId,
+            status: 'ACTIVE',
+            AND: [sharedAccessFilter, { OR: [{ enabled: true }, { enabled: null }] }],
+          }
+        : {
+            tenantId: context.tenantId,
+            status: 'ACTIVE',
+            OR: [{ enabled: true }, { enabled: null }],
+          },
     });
+    const posStores = await this.posShopOwnershipService.filterOwnedStores(candidateStores);
 
     if (posStores.length === 0) {
       this.logger.warn(`No POS stores found for tenant ${context.tenantId}`);
@@ -773,6 +792,31 @@ export class WorkflowProcessorService {
           await new Promise(resolve => setTimeout(resolve, posDelayMs));
         }
         continue;
+      }
+
+      if (rawOrders.length > 0) {
+        const routing = await this.posShopOwnershipService.resolveOrderRoutes(
+          context.tenantId,
+          rawOrders,
+        );
+        const currentRoute = routing.routes.find(
+          (route) => route.tenantId === context.tenantId && route.store.id === store.id,
+        );
+        rawOrders = currentRoute?.orders ?? [];
+
+        for (const issue of routing.issues) {
+          registerError(issue.warning);
+        }
+
+        const redirectedCount = routing.routes
+          .filter((route) => route.tenantId !== context.tenantId || route.store.id !== store.id)
+          .reduce((total, route) => total + route.orders.length, 0);
+        if (redirectedCount > 0) {
+          this.logger.debug(
+            `Skipped ${redirectedCount} historical order update(s) for shop ${store.shopId}; `
+            + 'the records belong to another partner and will be handled by webhook routing',
+          );
+        }
       }
 
       let upserted = 0;

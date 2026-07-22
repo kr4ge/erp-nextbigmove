@@ -34,6 +34,7 @@ import {
   ListIntegrationsDto,
   ListPosStoresDto,
   UpdatePosStoreDto,
+  ClaimPosShopOwnershipDto,
 } from './dto';
 import { validate as uuidValidate } from 'uuid';
 import { MetaAdsProvider } from './providers/meta-ads.provider';
@@ -54,6 +55,7 @@ import {
   PancakeWebhookReportsHydrateJobData,
   PancakeWebhookReconcileJobData,
 } from './pancake-webhook.constants';
+import { PosShopOwnershipService } from './services/pos-shop-ownership.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -191,6 +193,7 @@ export class IntegrationService {
     private readonly providerFactory: ProviderFactory,
     private readonly metaInsightService: MetaInsightService,
     private readonly posOrderService: PosOrderService,
+    private readonly posShopOwnershipService: PosShopOwnershipService,
     @InjectQueue(PANCAKE_WEBHOOK_QUEUE)
     private readonly pancakeWebhookQueue: Queue<
       | PancakeWebhookJobData
@@ -1484,173 +1487,160 @@ export class IntegrationService {
       };
     }
 
-    const ordersByShopId = new Map<string, any[]>();
-    const reconcileTargets = new Map<string, { dateLocal: string }>();
-    for (const order of webhookOrders) {
-      const shopId = order?.shop_id?.toString?.()?.trim?.() || order?.shopId?.toString?.()?.trim?.() || '';
-      if (!shopId) {
-        warnings.push('Skipped order with missing shop_id');
-        continue;
-      }
-      const list = ordersByShopId.get(shopId) || [];
-      list.push(order);
-      ordersByShopId.set(shopId, list);
+    const routing = await this.posShopOwnershipService.resolveOrderRoutes(
+      tenant.id,
+      webhookOrders,
+    );
+    for (const issue of routing.issues) {
+      warnings.push(issue.warning);
+      const statusRaw = Number(issue.order?.status);
+      outcomes.push({
+        shopId: issue.shopId,
+        orderId: issue.orderId,
+        status: Number.isFinite(statusRaw) ? statusRaw : null,
+        upsertStatus: 'FAILED',
+        reason: issue.reason,
+        warning: issue.warning,
+      });
     }
 
-    if (ordersByShopId.size === 0) {
-      return {
-        upserted,
-        warnings,
-        relayStatus: relayResult.relayStatus,
-        outcomes,
-        reconcileQueuedCount,
-        reconcileSkippedCount,
-      };
-    }
-
-    const shopIds = Array.from(ordersByShopId.keys());
-    const stores = await this.prisma.posStore.findMany({
-      where: {
-        tenantId: tenant.id,
-        shopId: { in: shopIds },
-      },
-      select: {
-        id: true,
-        shopId: true,
-        teamId: true,
-        integrationId: true,
-        apiKey: true,
-        updatedAt: true,
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
-
-    const storeByShopId = new Map<
+    const destinationTenantIds = Array.from(
+      new Set(routing.routes.map((route) => route.tenantId)),
+    );
+    const destinationTenants =
+      destinationTenantIds.length > 0
+        ? await this.prisma.tenant.findMany({
+            where: { id: { in: destinationTenantIds } },
+            select: { id: true, settings: true, encryptionKey: true },
+          })
+        : [];
+    const destinationTenantById = new Map(
+      destinationTenants.map((row) => [row.id, row]),
+    );
+    const reconcileTargetsByTenant = new Map<
       string,
-      {
-        id: string;
-        teamId: string | null;
-        integrationId: string | null;
-        apiKey: string | null;
-      }
+      Map<string, { dateLocal: string }>
     >();
-    for (const store of stores) {
-      if (!storeByShopId.has(store.shopId)) {
-        storeByShopId.set(store.shopId, {
-          id: store.id,
-          teamId: store.teamId || null,
-          integrationId: store.integrationId || null,
-          apiKey: store.apiKey || null,
-        });
-      }
-    }
 
-    for (const [shopId, orders] of ordersByShopId.entries()) {
-      const store = storeByShopId.get(shopId);
-      if (!store) {
-        warnings.push(`No POS store found for shop_id=${shopId}`);
-        orders.forEach((order) => {
+    for (const route of routing.routes) {
+      const destinationTenant = destinationTenantById.get(route.tenantId);
+      if (!destinationTenant) {
+        const warning = `Destination tenant ${route.tenantId} was not found for shop ${route.shopId}`;
+        warnings.push(warning);
+        route.orders.forEach((order) => {
           const statusRaw = Number(order?.status);
           outcomes.push({
-            shopId,
-            orderId: order?.id?.toString?.()?.trim?.() || order?.order_id?.toString?.()?.trim?.() || null,
+            shopId: route.shopId,
+            orderId:
+              order?.id?.toString?.()?.trim?.() ||
+              order?.order_id?.toString?.()?.trim?.() ||
+              null,
             status: Number.isFinite(statusRaw) ? statusRaw : null,
             upsertStatus: 'FAILED',
-            reason: 'STORE_NOT_FOUND',
+            reason: 'DESTINATION_TENANT_NOT_FOUND',
+            warning,
           });
         });
         continue;
       }
 
-      for (const order of orders) {
+      const destinationCfg = this.getPancakeWebhookSettings(
+        destinationTenant.settings,
+      );
+      const reconcileTargets =
+        reconcileTargetsByTenant.get(route.tenantId) ||
+        new Map<string, { dateLocal: string }>();
+      for (const order of route.orders) {
         const dateLocal = this.extractWebhookOrderDateLocal(order);
         if (!dateLocal) continue;
-        const jobId = this.buildPancakeWebhookReconcileJobId(tenant.id, dateLocal);
-        reconcileTargets.set(jobId, {
+        const jobId = this.buildPancakeWebhookReconcileJobId(
+          route.tenantId,
           dateLocal,
-        });
+        );
+        reconcileTargets.set(jobId, { dateLocal });
       }
+      reconcileTargetsByTenant.set(route.tenantId, reconcileTargets);
 
       try {
         const result = await this.withTransientDbRetry(
-          () => this.posOrderService.upsertPosOrdersWithOutcomes(
-            tenant.id,
-            store.id,
-            orders,
-            store.teamId,
-          ),
-          `pancake webhook upsert shop_id=${shopId}`,
+          () =>
+            this.posOrderService.upsertPosOrdersWithOutcomes(
+              route.tenantId,
+              route.store.id,
+              route.orders,
+              route.store.teamId,
+            ),
+          `pancake webhook upsert tenant=${route.tenantId} shop_id=${route.shopId}`,
         );
         upserted += result.upserted;
         outcomes.push(...result.outcomes);
 
-        const reportsWarnings = await this.hydrateReportsByPhoneForWebhookOrders(
-          tenant.id,
-          {
-            id: store.id,
-            shopId,
-            integrationId: store.integrationId,
-            apiKey: store.apiKey,
-          },
-          orders,
-          result.outcomes,
-          cfg,
-          requestId,
-          logId,
-        );
-        if (reportsWarnings.length > 0) {
-          warnings.push(...reportsWarnings);
-        }
+        const reportsWarnings =
+          await this.hydrateReportsByPhoneForWebhookOrders(
+            route.tenantId,
+            {
+              id: route.store.id,
+              shopId: route.shopId,
+              integrationId: route.store.integrationId,
+              apiKey: route.store.apiKey,
+            },
+            route.orders,
+            result.outcomes,
+            destinationCfg,
+            requestId,
+            logId,
+          );
+        warnings.push(...reportsWarnings);
       } catch (error: any) {
         if (this.isTransientDbError(error)) {
           throw error;
         }
 
-        warnings.push(
-          `Failed to upsert shop_id=${shopId}: ${error?.message || 'Unknown error'}`,
-        );
-        orders.forEach((order) => {
+        const warning = `Failed to upsert tenant=${route.tenantId} shop_id=${route.shopId}: ${error?.message || 'Unknown error'}`;
+        warnings.push(warning);
+        route.orders.forEach((order) => {
           const statusRaw = Number(order?.status);
           outcomes.push({
-            shopId,
-            orderId: order?.id?.toString?.()?.trim?.() || order?.order_id?.toString?.()?.trim?.() || null,
+            shopId: route.shopId,
+            orderId:
+              order?.id?.toString?.()?.trim?.() ||
+              order?.order_id?.toString?.()?.trim?.() ||
+              null,
             status: Number.isFinite(statusRaw) ? statusRaw : null,
             upsertStatus: 'FAILED',
             reason: 'SHOP_UPSERT_FAILED',
-            warning: error?.message || 'Unknown error',
+            warning,
           });
         });
       }
     }
 
-    if (cfg.reconcileEnabled === false) {
-      reconcileSkippedCount = reconcileTargets.size;
-      if (reconcileTargets.size > 0) {
-        this.logger.debug(
-          `Webhook reconcile is disabled tenant=${tenant.id} skipped=${reconcileTargets.size}`,
-        );
+    for (const [
+      destinationTenantId,
+      reconcileTargets,
+    ] of reconcileTargetsByTenant.entries()) {
+      const destinationTenant = destinationTenantById.get(destinationTenantId);
+      if (!destinationTenant) continue;
+      const destinationCfg = this.getPancakeWebhookSettings(
+        destinationTenant.settings,
+      );
+
+      if (destinationCfg.reconcileEnabled === false) {
+        reconcileSkippedCount += reconcileTargets.size;
+        continue;
       }
-    } else {
-      const reconcileDelayMs = this.getWebhookReconcileDelayMs(cfg);
-      const reconcileMode = cfg.reconcileMode ?? this.getDefaultWebhookReconcileMode();
+
       const reconcileQueueResult = await this.enqueueWebhookReconcileJobs(
-        tenant.id,
+        destinationTenantId,
         reconcileTargets,
         requestId,
-        reconcileDelayMs,
-        reconcileMode,
+        this.getWebhookReconcileDelayMs(destinationCfg),
+        destinationCfg.reconcileMode ?? this.getDefaultWebhookReconcileMode(),
         logId,
       );
-      if (reconcileQueueResult.warnings.length > 0) {
-        warnings.push(...reconcileQueueResult.warnings);
-      }
-      reconcileQueuedCount = reconcileQueueResult.queued;
-      reconcileSkippedCount = reconcileQueueResult.skipped;
-      if (reconcileQueueResult.queued > 0 || reconcileQueueResult.skipped > 0) {
-        this.logger.log(
-          `Webhook reconcile jobs tenant=${tenant.id} queued=${reconcileQueueResult.queued} skipped=${reconcileQueueResult.skipped}`,
-        );
-      }
+      warnings.push(...reconcileQueueResult.warnings);
+      reconcileQueuedCount += reconcileQueueResult.queued;
+      reconcileSkippedCount += reconcileQueueResult.skipped;
     }
 
     return {
@@ -2643,6 +2633,8 @@ export class IntegrationService {
       }
 
       if (shopId) {
+        await this.posShopOwnershipService.assertShopCanBeRegistered(tenantId, shopId);
+
         const existingStoreByShop = await this.prisma.posStore.findFirst({
           where: {
             tenantId,
@@ -2839,6 +2831,19 @@ export class IntegrationService {
         const shopId = shop.id?.toString() || '';
         const shopName = shop.name || 'Unnamed Shop';
         const shopAvatarUrl = shop.avatar_url || null;
+
+        try {
+          await this.posShopOwnershipService.assertShopCanBeRegistered(tenantId, shopId);
+        } catch (error: any) {
+          results.push({
+            status: 'skipped',
+            apiKey: maskedKey,
+            shopId,
+            shopName,
+            reason: error?.message || 'Shop is active under another partner',
+          });
+          continue;
+        }
 
         // Duplicate check: shopId
         const existingByShopId = await this.prisma.posStore.findFirst({
@@ -3088,6 +3093,22 @@ export class IntegrationService {
           ? { initialValueOffer: initialValueOffer === null ? null : initialValueOffer }
           : {}),
       },
+    });
+  }
+
+  async claimPosShopOwnership(id: string, dto: ClaimPosShopOwnershipDto) {
+    const role = this.cls.get('userRole');
+    const userId = this.cls.get('userId');
+    if (role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException(
+        'Only a super administrator can move active POS shop ownership between partners',
+      );
+    }
+
+    return this.posShopOwnershipService.claimShopOwnership({
+      storeId: id,
+      claimedById: userId || null,
+      reason: dto.reason || null,
     });
   }
 
@@ -3733,6 +3754,17 @@ export class IntegrationService {
     }
 
     if (shopId) {
+      const ownership = await this.prisma.posShopOwnership.findUnique({
+        where: { shopId: shopId.trim() },
+        select: { tenantId: true },
+      });
+      if (ownership && ownership.tenantId !== tenantId) {
+        return {
+          duplicate: true,
+          reason: 'This shop is actively owned by another partner',
+        };
+      }
+
       const existingShop = await this.prisma.posStore.findFirst({
         where: {
           ...where,

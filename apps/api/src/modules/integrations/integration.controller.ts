@@ -23,6 +23,7 @@ import {
   UpdatePosStoreDto,
   UpdatePancakeWebhookDto,
   UpdatePancakeWebhookRelayDto,
+  ClaimPosShopOwnershipDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -325,6 +326,19 @@ export class IntegrationController {
     @Body() dto: UpdatePosStoreDto,
   ) {
     return this.integrationService.updatePosStore(id, dto);
+  }
+
+  /**
+   * Make this store the only active ingestion owner for its Pancake shop.
+   * Historical orders stay with their existing tenant; only new order IDs use this owner.
+   */
+  @Post('/pos-stores/:id/claim-shop-ownership')
+  @Permissions('integration.update')
+  async claimPosShopOwnership(
+    @Param('id') id: string,
+    @Body() dto: ClaimPosShopOwnershipDto,
+  ) {
+    return this.integrationService.claimPosShopOwnership(id, dto);
   }
 
   /**
