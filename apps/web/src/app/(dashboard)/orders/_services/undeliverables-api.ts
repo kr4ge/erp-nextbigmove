@@ -2,6 +2,7 @@ import { isAxiosError } from 'axios';
 import apiClient from '@/lib/api-client';
 import type {
   UndeliverablesAssignmentsResponse,
+  UndeliverablesRemarkView,
   UndeliverableRemarkOptionsResponse,
   UndeliverablesResponse,
   UndeliverableRemarksResponse,
@@ -29,7 +30,7 @@ function parseUndeliverablesError(error: unknown, fallback: string) {
 export async function fetchUndeliverables(params: {
   startDate: string;
   endDate: string;
-  view?: 'needs_remarks' | 'with_remarks';
+  view?: UndeliverablesRemarkView;
   failedAtOrder?: 'asc' | 'desc';
   storeIds?: string[];
   statuses?: string[];

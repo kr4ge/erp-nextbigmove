@@ -1,9 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronDown } from 'lucide-react';
 import { AnalyticsTableEmptyRow } from '../../analytics/_components/analytics-table-shell';
 import type { UndeliverableRemarkOption, UndeliverableRow } from '../_types/undeliverables';
+
+function formatLifecycleDuration(totalSeconds: number) {
+  const absoluteSeconds = Math.max(0, Math.abs(totalSeconds));
+  const hours = Math.floor(absoluteSeconds / 3600);
+  const minutes = Math.ceil((absoluteSeconds % 3600) / 60);
+
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+  }
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  return `${Math.max(1, minutes)}m`;
+}
+
+function getLifecyclePresentation(row: UndeliverableRow, nowMs: number) {
+  if (row.latest_remark) {
+    if (row.remarked_late || row.lifecycle_status === 'REMARKED_LATE') {
+      return {
+        label: `Remarked late by ${row.latest_remark.author_name}`,
+        className: 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-300',
+      };
+    }
+
+    return {
+      label: `Remarked by ${row.latest_remark.author_name}`,
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300',
+    };
+  }
+
+  const deadlineMs = new Date(row.deadline_at).getTime();
+  const remainingSeconds = Number.isFinite(deadlineMs)
+    ? Math.ceil((deadlineMs - nowMs) / 1000)
+    : (row.remaining_seconds ?? 0);
+
+  if (remainingSeconds <= 0 || (!Number.isFinite(deadlineMs) && row.lifecycle_status === 'UNATTENDED')) {
+    return {
+      label: `Unattended · ${formatLifecycleDuration(remainingSeconds)} overdue`,
+      className: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300',
+    };
+  }
+
+  return {
+    label: `Awaiting remark · ${formatLifecycleDuration(remainingSeconds)} left`,
+    className: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300',
+  };
+}
 
 type UndeliverablesTableProps = {
   rows: UndeliverableRow[];
@@ -12,6 +61,7 @@ type UndeliverablesTableProps = {
   total: number;
   limit: number;
   isLoading?: boolean;
+  serverTime?: string | null;
   canViewAll: boolean;
   canWriteRemarks: boolean;
   failedAtOrder: 'asc' | 'desc';
@@ -30,6 +80,7 @@ export function UndeliverablesTable({
   total,
   limit,
   isLoading = false,
+  serverTime = null,
   canViewAll,
   canWriteRemarks,
   failedAtOrder,
@@ -93,6 +144,16 @@ export function UndeliverablesTable({
   const end = total === 0 ? 0 : Math.min(total, page * limit);
   const [openRemarkRowId, setOpenRemarkRowId] = useState<string | null>(null);
   const [savingRemarkRowId, setSavingRemarkRowId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const parsedServerTime = serverTime ? new Date(serverTime).getTime() : Number.NaN;
+    const serverOffsetMs = Number.isFinite(parsedServerTime) ? parsedServerTime - Date.now() : 0;
+    const syncClock = () => setNowMs(Date.now() + serverOffsetMs);
+    syncClock();
+    const intervalId = window.setInterval(syncClock, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [serverTime]);
 
   const handleSaveRemark = async (row: UndeliverableRow, remarkOptionId: string) => {
     if (!remarkOptionId) {
@@ -124,6 +185,9 @@ export function UndeliverablesTable({
               ) : null}
               <th className="min-w-[18rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 SA Remarks
+              </th>
+              <th className="min-w-[15rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
+                SA Response
               </th>
               <th className="min-w-[11rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 <button
@@ -178,7 +242,7 @@ export function UndeliverablesTable({
           <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
             {rows.length === 0 ? (
               <AnalyticsTableEmptyRow
-                colSpan={canViewAll ? 15 : 14}
+                colSpan={canViewAll ? 16 : 15}
                 message="No undeliverable attempts found for the selected filters."
               />
             ) : null}
@@ -265,14 +329,23 @@ export function UndeliverablesTable({
                     ) : row.latest_remark ? (
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-600 dark:border-border dark:bg-background-secondary dark:text-slate-300">
                         <p className="line-clamp-2">{row.latest_remark.remark}</p>
-                        <p className="mt-1 text-[11px] text-slate-400">
-                          {row.latest_remark.author_name}
-                        </p>
                       </div>
                     ) : (
                       <span className="text-slate-400">No remarks yet</span>
                     )}
                   </div>
+                </td>
+                <td className="px-3 py-2 text-xs">
+                  {(() => {
+                    const lifecycle = getLifecyclePresentation(row, nowMs);
+                    return (
+                      <span
+                        className={`inline-flex max-w-[15rem] rounded-full border px-2.5 py-1 font-semibold ${lifecycle.className}`}
+                      >
+                        <span className="truncate">{lifecycle.label}</span>
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap dark:text-slate-300">
                   {formatFailedAt(row)}

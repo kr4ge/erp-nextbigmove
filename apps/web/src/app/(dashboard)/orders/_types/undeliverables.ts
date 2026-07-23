@@ -12,6 +12,14 @@ export type UndeliverableRemarkPreview = {
   author_name: string;
 };
 
+export type UndeliverableLifecycleStatus =
+  | 'AWAITING_REMARK'
+  | 'UNATTENDED'
+  | 'REMARKED_ON_TIME'
+  | 'REMARKED_LATE';
+
+export type UndeliverablesRemarkView = 'needs_remarks' | 'with_remarks' | 'unattended';
+
 export type UndeliverableRow = {
   id: string;
   order_id?: string;
@@ -34,6 +42,10 @@ export type UndeliverableRow = {
   store_name: string;
   shop_id: string;
   sa_assigned: UndeliverableAssignee[];
+  deadline_at: string;
+  lifecycle_status: UndeliverableLifecycleStatus;
+  remaining_seconds: number | null;
+  remarked_late: boolean;
   latest_remark: UndeliverableRemarkPreview | null;
 };
 
@@ -66,12 +78,13 @@ export type UndeliverablesResponse = {
     store_ids: string[];
     statuses: string[];
     search: string;
-    view?: 'needs_remarks' | 'with_remarks';
+    view?: UndeliverablesRemarkView;
     failed_at_order?: 'asc' | 'desc';
   };
   scope: {
     mode: 'all' | 'assigned';
   };
+  server_time: string;
 };
 
 export type UndeliverableAssignmentUser = {

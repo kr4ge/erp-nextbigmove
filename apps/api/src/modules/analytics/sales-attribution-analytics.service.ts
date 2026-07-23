@@ -425,6 +425,7 @@ export class SalesAttributionAnalyticsService {
   async getOverview(
     query: GetSalesAttributionOverviewQueryDto,
   ): Promise<SalesAttributionOverviewContract> {
+    const excludeAbandoned = true;
     const startStr = (query.start_date && query.start_date.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
     const endStr = (query.end_date && query.end_date.trim()) || startStr;
 
@@ -508,7 +509,7 @@ export class SalesAttributionAnalyticsService {
       flags: {
         excludeCancel: query.exclude_cancel,
         excludeRestocking: query.exclude_restocking,
-        excludeAbandoned: query.exclude_abandoned,
+        excludeAbandoned,
         excludeRts: query.exclude_rts,
         includeTax12: query.include_tax_12,
         includeTax1: query.include_tax_1,
@@ -741,7 +742,7 @@ export class SalesAttributionAnalyticsService {
         {
           excludeCancel: query.exclude_cancel,
           excludeRestocking: query.exclude_restocking,
-          excludeAbandoned: query.exclude_abandoned,
+          excludeAbandoned,
           excludeRts: query.exclude_rts,
           includeTax12: query.include_tax_12,
           includeTax1: query.include_tax_1,
@@ -788,7 +789,7 @@ export class SalesAttributionAnalyticsService {
       ...this.computeKpis(aggregate, {
         excludeCancel: query.exclude_cancel,
         excludeRestocking: query.exclude_restocking,
-        excludeAbandoned: query.exclude_abandoned,
+        excludeAbandoned,
         excludeRts: query.exclude_rts,
         includeTax12: query.include_tax_12,
         includeTax1: query.include_tax_1,
@@ -802,7 +803,7 @@ export class SalesAttributionAnalyticsService {
       ...this.computeKpis(previousAggregate, {
         excludeCancel: query.exclude_cancel,
         excludeRestocking: query.exclude_restocking,
-        excludeAbandoned: query.exclude_abandoned,
+        excludeAbandoned,
         excludeRts: query.exclude_rts,
         includeTax12: query.include_tax_12,
         includeTax1: query.include_tax_1,
@@ -817,13 +818,13 @@ export class SalesAttributionAnalyticsService {
     const counts = this.computeCounts(aggregate, {
       excludeCancel: query.exclude_cancel,
       excludeRestocking: query.exclude_restocking,
-      excludeAbandoned: query.exclude_abandoned,
+      excludeAbandoned,
       excludeRts: query.exclude_rts,
     });
     const prevCounts = this.computeCounts(previousAggregate, {
       excludeCancel: query.exclude_cancel,
       excludeRestocking: query.exclude_restocking,
-      excludeAbandoned: query.exclude_abandoned,
+      excludeAbandoned,
       excludeRts: query.exclude_rts,
     });
 

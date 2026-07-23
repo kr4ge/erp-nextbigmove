@@ -105,6 +105,29 @@ export class MarketingAnalyticsService {
     return Number.isFinite(n) ? n : 0;
   }
 
+  private excludeRepurchaseFromSum(sum: any) {
+    const net = (field: string, repurchaseField: string) =>
+      Math.max(
+        0,
+        this.toNumber(sum?.[field]) - this.toNumber(sum?.[repurchaseField]),
+      );
+
+    return {
+      ...sum,
+      purchasesPos: net('purchasesPos', 'repurchaseCount'),
+      codPos: net('codPos', 'repurchaseCodPos'),
+      canceledCount: net('canceledCount', 'repurchaseCanceledCount'),
+      canceledCodPos: net('canceledCodPos', 'repurchaseCanceledCodPos'),
+      restockingCount: net('restockingCount', 'repurchaseRestockingCount'),
+      restockingCodPos: net(
+        'restockingCodPos',
+        'repurchaseRestockingCodPos',
+      ),
+      abandonedCount: net('abandonedCount', 'repurchaseAbandonedCount'),
+      abandonedCodPos: net('abandonedCodPos', 'repurchaseAbandonedCodPos'),
+    };
+  }
+
   private applyMarketingSpendTaxes(
     spend: number,
     opts: { includeTax12: boolean; includeTax1: boolean },
@@ -224,18 +247,19 @@ export class MarketingAnalyticsService {
 
   private computeTopAssociates(rows: any[], adsRunningMap: Record<string, number>, adsCreatedMap: Record<string, number>, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean }): TopAssociateRow[] {
     return rows.map((r) => {
+      const sum = this.excludeRepurchaseFromSum(r._sum);
       const key = this.normalizeAssociate(r.marketingAssociate);
-      const spend = this.toNumber(r._sum?.spend);
-      const clicks = this.toNumber(r._sum?.linkClicks);
-      const leads = this.toNumber(r._sum?.leads);
-      const purchases = this.toNumber(r._sum?.purchasesPos);
-      const revenueRaw = this.toNumber(r._sum?.codPos);
-      const canceledCod = this.toNumber(r._sum?.canceledCodPos);
-      const restockingCod = this.toNumber(r._sum?.restockingCodPos);
-      const abandonedCod = this.toNumber(r._sum?.abandonedCodPos);
-      const canceledCount = this.toNumber(r._sum?.canceledCount);
-      const restockingCount = this.toNumber(r._sum?.restockingCount);
-      const abandonedCount = this.toNumber(r._sum?.abandonedCount);
+      const spend = this.toNumber(sum.spend);
+      const clicks = this.toNumber(sum.linkClicks);
+      const leads = this.toNumber(sum.leads);
+      const purchases = this.toNumber(sum.purchasesPos);
+      const revenueRaw = this.toNumber(sum.codPos);
+      const canceledCod = this.toNumber(sum.canceledCodPos);
+      const restockingCod = this.toNumber(sum.restockingCodPos);
+      const abandonedCod = this.toNumber(sum.abandonedCodPos);
+      const canceledCount = this.toNumber(sum.canceledCount);
+      const restockingCount = this.toNumber(sum.restockingCount);
+      const abandonedCount = this.toNumber(sum.abandonedCount);
 
       const revenue = Math.max(
         0,
@@ -272,12 +296,13 @@ export class MarketingAnalyticsService {
 
   private computeTopCampaigns(rows: any[], opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean }): TopCampaignRow[] {
     return rows.map((r) => {
-      const spend = this.toNumber(r._sum?.spend);
-      const clicks = this.toNumber(r._sum?.linkClicks);
-      const revenueRaw = this.toNumber(r._sum?.codPos);
-      const canceledCod = this.toNumber(r._sum?.canceledCodPos);
-      const restockingCod = this.toNumber(r._sum?.restockingCodPos);
-      const abandonedCod = this.toNumber(r._sum?.abandonedCodPos);
+      const sum = this.excludeRepurchaseFromSum(r._sum);
+      const spend = this.toNumber(sum.spend);
+      const clicks = this.toNumber(sum.linkClicks);
+      const revenueRaw = this.toNumber(sum.codPos);
+      const canceledCod = this.toNumber(sum.canceledCodPos);
+      const restockingCod = this.toNumber(sum.restockingCodPos);
+      const abandonedCod = this.toNumber(sum.abandonedCodPos);
 
       const revenue = Math.max(
         0,
@@ -301,13 +326,14 @@ export class MarketingAnalyticsService {
 
   private computeTopCreatives(rows: any[], associatesDisplayMap: Record<string, string>, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean }): TopCreativeRow[] {
     return rows.map((r) => {
+      const sum = this.excludeRepurchaseFromSum(r._sum);
       const key = this.normalizeAssociate(r.marketingAssociate);
-      const spend = this.toNumber(r._sum?.spend);
-      const clicks = this.toNumber(r._sum?.linkClicks);
-      const revenueRaw = this.toNumber(r._sum?.codPos);
-      const canceledCod = this.toNumber(r._sum?.canceledCodPos);
-      const restockingCod = this.toNumber(r._sum?.restockingCodPos);
-      const abandonedCod = this.toNumber(r._sum?.abandonedCodPos);
+      const spend = this.toNumber(sum.spend);
+      const clicks = this.toNumber(sum.linkClicks);
+      const revenueRaw = this.toNumber(sum.codPos);
+      const canceledCod = this.toNumber(sum.canceledCodPos);
+      const restockingCod = this.toNumber(sum.restockingCodPos);
+      const abandonedCod = this.toNumber(sum.abandonedCodPos);
 
       const revenue = Math.max(
         0,
@@ -340,7 +366,8 @@ export class MarketingAnalyticsService {
   }
 
   async getOverview(params: { startDate?: string; endDate?: string; associates?: string[]; excludeCancel?: boolean; excludeRestocking?: boolean; excludeAbandoned?: boolean; tables?: string[] }) {
-    const { startDate, endDate, associates: associateParams = [], excludeCancel = true, excludeRestocking = true, excludeAbandoned = true, tables = [] } = params;
+    const { startDate, endDate, associates: associateParams = [], excludeCancel = true, excludeRestocking = true, tables = [] } = params;
+    const excludeAbandoned = true;
     const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
     const endStr = (endDate && endDate.trim()) || startStr;
 
@@ -412,7 +439,12 @@ export class MarketingAnalyticsService {
       end: endStr,
       associates: normalizedAssociates.sort(),
       includeNullAssociate,
-      flags: { excludeCancel, excludeRestocking, excludeAbandoned },
+      flags: {
+        excludeCancel,
+        excludeRestocking,
+        excludeAbandoned,
+        excludeRepurchase: true,
+      },
       tables: tables.slice().sort(),
     };
     const cacheKey = `analytics:${tenantId}:${cacheVersion}:marketing:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
@@ -429,13 +461,21 @@ export class MarketingAnalyticsService {
       impressions: true as const,
       leads: true as const,
       purchasesPos: true as const,
+      repurchaseCount: true as const,
       codPos: true as const,
+      repurchaseCodPos: true as const,
       canceledCodPos: true as const,
+      repurchaseCanceledCodPos: true as const,
       restockingCodPos: true as const,
+      repurchaseRestockingCodPos: true as const,
       abandonedCodPos: true as const,
+      repurchaseAbandonedCodPos: true as const,
       canceledCount: true as const,
+      repurchaseCanceledCount: true as const,
       restockingCount: true as const,
+      repurchaseRestockingCount: true as const,
       abandonedCount: true as const,
+      repurchaseAbandonedCount: true as const,
     };
 
     const [currentAgg, prevAgg, lastUpdatedAgg, associateRows, users, nullAssociateCount] = await Promise.all([
@@ -471,20 +511,23 @@ export class MarketingAnalyticsService {
       }),
     ]);
 
-    const sumToObj = (agg: any): KpiSums => ({
-      spend: this.toNumber(agg?._sum?.spend),
-      linkClicks: this.toNumber(agg?._sum?.linkClicks),
-      impressions: this.toNumber(agg?._sum?.impressions),
-      leads: this.toNumber(agg?._sum?.leads),
-      purchases: this.toNumber(agg?._sum?.purchasesPos),
-      revenue: this.toNumber(agg?._sum?.codPos),
-      canceledCod: this.toNumber(agg?._sum?.canceledCodPos),
-      restockingCod: this.toNumber(agg?._sum?.restockingCodPos),
-      abandonedCod: this.toNumber(agg?._sum?.abandonedCodPos),
-      canceledCount: this.toNumber(agg?._sum?.canceledCount),
-      restockingCount: this.toNumber(agg?._sum?.restockingCount),
-      abandonedCount: this.toNumber(agg?._sum?.abandonedCount),
-    });
+    const sumToObj = (agg: any): KpiSums => {
+      const sum = this.excludeRepurchaseFromSum(agg?._sum);
+      return {
+        spend: this.toNumber(sum.spend),
+        linkClicks: this.toNumber(sum.linkClicks),
+        impressions: this.toNumber(sum.impressions),
+        leads: this.toNumber(sum.leads),
+        purchases: this.toNumber(sum.purchasesPos),
+        revenue: this.toNumber(sum.codPos),
+        canceledCod: this.toNumber(sum.canceledCodPos),
+        restockingCod: this.toNumber(sum.restockingCodPos),
+        abandonedCod: this.toNumber(sum.abandonedCodPos),
+        canceledCount: this.toNumber(sum.canceledCount),
+        restockingCount: this.toNumber(sum.restockingCount),
+        abandonedCount: this.toNumber(sum.abandonedCount),
+      };
+    };
 
     const kpis = this.computeKpis(sumToObj(currentAgg), { excludeCancel, excludeRestocking, excludeAbandoned });
     const prevKpis = this.computeKpis(sumToObj(prevAgg), { excludeCancel, excludeRestocking, excludeAbandoned });
@@ -541,13 +584,21 @@ export class MarketingAnalyticsService {
             linkClicks: true,
             leads: true,
             purchasesPos: true,
+            repurchaseCount: true,
             codPos: true,
+            repurchaseCodPos: true,
             canceledCodPos: true,
+            repurchaseCanceledCodPos: true,
             restockingCodPos: true,
+            repurchaseRestockingCodPos: true,
             abandonedCodPos: true,
+            repurchaseAbandonedCodPos: true,
             canceledCount: true,
+            repurchaseCanceledCount: true,
             restockingCount: true,
+            repurchaseRestockingCount: true,
             abandonedCount: true,
+            repurchaseAbandonedCount: true,
           },
         })
       : [];
@@ -559,13 +610,21 @@ export class MarketingAnalyticsService {
       'linkClicks',
       'leads',
       'purchasesPos',
+      'repurchaseCount',
       'codPos',
+      'repurchaseCodPos',
       'canceledCodPos',
+      'repurchaseCanceledCodPos',
       'restockingCodPos',
+      'repurchaseRestockingCodPos',
       'abandonedCodPos',
+      'repurchaseAbandonedCodPos',
       'canceledCount',
+      'repurchaseCanceledCount',
       'restockingCount',
+      'repurchaseRestockingCount',
       'abandonedCount',
+      'repurchaseAbandonedCount',
     ];
     topAssocRowsRaw.forEach((row) => {
       const key = this.normalizeAssociate(row.marketingAssociate);
@@ -651,9 +710,13 @@ export class MarketingAnalyticsService {
             spend: true,
             linkClicks: true,
             codPos: true,
+            repurchaseCodPos: true,
             canceledCodPos: true,
+            repurchaseCanceledCodPos: true,
             restockingCodPos: true,
+            repurchaseRestockingCodPos: true,
             abandonedCodPos: true,
+            repurchaseAbandonedCodPos: true,
           },
         })
       : [];
@@ -669,9 +732,13 @@ export class MarketingAnalyticsService {
             spend: true,
             linkClicks: true,
             codPos: true,
+            repurchaseCodPos: true,
             canceledCodPos: true,
+            repurchaseCanceledCodPos: true,
             restockingCodPos: true,
+            repurchaseRestockingCodPos: true,
             abandonedCodPos: true,
+            repurchaseAbandonedCodPos: true,
           },
         })
       : [];

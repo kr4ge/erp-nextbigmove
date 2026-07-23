@@ -12,6 +12,7 @@ interface PosOrderLite {
   status?: number | null;
   isVoid?: boolean | null;
   isAbandoned?: boolean | null;
+  wasAbandonedCart?: boolean | null;
   isRepurchase?: boolean | null;
   cogs?: any;
   tracking?: string | null;
@@ -164,7 +165,8 @@ export class ReconcileMarketingService {
     const codVal = parseFloat(order.cod ?? '0') || 0;
     const cogsVal = parseFloat(order.cogs ?? '0') || 0;
     const isRepurchase = order.isRepurchase === true;
-    const isAbandoned = order.isAbandoned === true;
+    const isAbandoned =
+      order.wasAbandonedCart === true || order.isAbandoned === true;
     const isVoidOrder = order.isVoid === true;
     const isDeleted = status === 7;
     const isPrinted = status === 13;
@@ -317,8 +319,6 @@ export class ReconcileMarketingService {
         tenantId,
         ...(teamId ? { teamId } : {}),
         dateLocal: date,
-        wasAbandonedCart: false,
-        isRepurchase: false,
         AND: [
           {
             OR: [
@@ -341,6 +341,7 @@ export class ReconcileMarketingService {
         status: true,
         isVoid: true,
         isAbandoned: true,
+        wasAbandonedCart: true,
         isRepurchase: true,
         cogs: true,
         tracking: true,

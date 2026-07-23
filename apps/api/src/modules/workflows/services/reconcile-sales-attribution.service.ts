@@ -84,6 +84,10 @@ export class ReconcileSalesAttributionService {
     return Number.isFinite(numeric) ? numeric : 0;
   }
 
+  private netOfRepurchase(value: unknown, repurchaseValue: unknown): number {
+    return Math.max(0, this.toNumber(value) - this.toNumber(repurchaseValue));
+  }
+
   private normalize(value?: string | null): string {
     return (value || '').trim().toLowerCase();
   }
@@ -174,41 +178,77 @@ export class ReconcileSalesAttributionService {
         impressions: true,
         leads: true,
         purchasesPos: true,
+        repurchaseCount: true,
         processedPurchasesPos: true,
+        repurchaseProcessedPurchasesPos: true,
         confirmedCount: true,
+        repurchaseConfirmedCount: true,
         unconfirmedCount: true,
+        repurchaseUnconfirmedCount: true,
         printedCount: true,
+        repurchasePrintedCount: true,
         deletedCount: true,
+        repurchaseDeletedCount: true,
         abandonedCount: true,
+        repurchaseAbandonedCount: true,
         waitingPickupCount: true,
+        repurchaseWaitingPickupCount: true,
         shippedCount: true,
+        repurchaseShippedCount: true,
         deliveredCount: true,
+        repurchaseDeliveredCount: true,
         canceledCount: true,
+        repurchaseCanceledCount: true,
         rtsCount: true,
+        repurchaseRtsCount: true,
         restockingCount: true,
+        repurchaseRestockingCount: true,
         codPos: true,
+        repurchaseCodPos: true,
         deliveredCodPos: true,
+        repurchaseDeliveredCodPos: true,
         shippedCodPos: true,
+        repurchaseShippedCodPos: true,
         waitingPickupCodPos: true,
+        repurchaseWaitingPickupCodPos: true,
         rtsCodPos: true,
+        repurchaseRtsCodPos: true,
         canceledCodPos: true,
+        repurchaseCanceledCodPos: true,
         restockingCodPos: true,
+        repurchaseRestockingCodPos: true,
         cogsRtsPos: true,
+        repurchaseCogsRtsPos: true,
         cogsDeliveredPos: true,
+        repurchaseCogsDeliveredPos: true,
         confirmedCodPos: true,
+        repurchaseConfirmedCodPos: true,
         unconfirmedCodPos: true,
+        repurchaseUnconfirmedCodPos: true,
         abandonedCodPos: true,
+        repurchaseAbandonedCodPos: true,
         cogsPos: true,
+        repurchaseCogsPos: true,
         cogsCanceledPos: true,
+        repurchaseCogsCanceledPos: true,
         cogsRestockingPos: true,
+        repurchaseCogsRestockingPos: true,
         sfPos: true,
+        repurchaseSfPos: true,
         ffPos: true,
+        repurchaseFfPos: true,
         ifPos: true,
+        repurchaseIfPos: true,
         sfSdrPos: true,
+        repurchaseSfSdrPos: true,
         ffSdrPos: true,
+        repurchaseFfSdrPos: true,
         ifSdrPos: true,
+        repurchaseIfSdrPos: true,
         codFeePos: true,
+        repurchaseCodFeePos: true,
         codFeeDeliveredPos: true,
+        repurchaseCodFeeDeliveredPos: true,
       },
     });
 
@@ -248,42 +288,117 @@ export class ReconcileSalesAttributionService {
       totals.linkClicks += this.toNumber(row.linkClicks);
       totals.impressions += this.toNumber(row.impressions);
       totals.leads += this.toNumber(row.leads);
-      totals.purchasesPos += this.toNumber(row.purchasesPos);
-      totals.processedPurchasesPos += this.toNumber(row.processedPurchasesPos);
-      totals.confirmedCount += this.toNumber(row.confirmedCount);
-      totals.unconfirmedCount += this.toNumber(row.unconfirmedCount);
-      totals.printedCount += this.toNumber(row.printedCount);
-      totals.deletedCount += this.toNumber(row.deletedCount);
-      totals.abandonedCount += this.toNumber(row.abandonedCount);
-      totals.waitingPickupCount += this.toNumber(row.waitingPickupCount);
-      totals.shippedCount += this.toNumber(row.shippedCount);
-      totals.deliveredCount += this.toNumber(row.deliveredCount);
-      totals.canceledCount += this.toNumber(row.canceledCount);
-      totals.rtsCount += this.toNumber(row.rtsCount);
-      totals.restockingCount += this.toNumber(row.restockingCount);
-      totals.codPos += this.toNumber(row.codPos);
-      totals.deliveredCodPos += this.toNumber(row.deliveredCodPos);
-      totals.shippedCodPos += this.toNumber(row.shippedCodPos);
-      totals.waitingPickupCodPos += this.toNumber(row.waitingPickupCodPos);
-      totals.rtsCodPos += this.toNumber(row.rtsCodPos);
-      totals.canceledCodPos += this.toNumber(row.canceledCodPos);
-      totals.restockingCodPos += this.toNumber(row.restockingCodPos);
-      totals.cogsRtsPos += this.toNumber(row.cogsRtsPos);
-      totals.cogsDeliveredPos += this.toNumber(row.cogsDeliveredPos);
-      totals.confirmedCodPos += this.toNumber(row.confirmedCodPos);
-      totals.unconfirmedCodPos += this.toNumber(row.unconfirmedCodPos);
-      totals.abandonedCodPos += this.toNumber(row.abandonedCodPos);
-      totals.cogsPos += this.toNumber(row.cogsPos);
-      totals.cogsCanceledPos += this.toNumber(row.cogsCanceledPos);
-      totals.cogsRestockingPos += this.toNumber(row.cogsRestockingPos);
-      totals.sfPos += this.toNumber(row.sfPos);
-      totals.ffPos += this.toNumber(row.ffPos);
-      totals.ifPos += this.toNumber(row.ifPos);
-      totals.sfSdrPos += this.toNumber(row.sfSdrPos);
-      totals.ffSdrPos += this.toNumber(row.ffSdrPos);
-      totals.ifSdrPos += this.toNumber(row.ifSdrPos);
-      totals.codFeePos += this.toNumber(row.codFeePos);
-      totals.codFeeDeliveredPos += this.toNumber(row.codFeeDeliveredPos);
+      totals.purchasesPos += this.netOfRepurchase(row.purchasesPos, row.repurchaseCount);
+      totals.processedPurchasesPos += this.netOfRepurchase(
+        row.processedPurchasesPos,
+        row.repurchaseProcessedPurchasesPos,
+      );
+      totals.confirmedCount += this.netOfRepurchase(
+        row.confirmedCount,
+        row.repurchaseConfirmedCount,
+      );
+      totals.unconfirmedCount += this.netOfRepurchase(
+        row.unconfirmedCount,
+        row.repurchaseUnconfirmedCount,
+      );
+      totals.printedCount += this.netOfRepurchase(
+        row.printedCount,
+        row.repurchasePrintedCount,
+      );
+      totals.deletedCount += this.netOfRepurchase(
+        row.deletedCount,
+        row.repurchaseDeletedCount,
+      );
+      totals.abandonedCount += this.netOfRepurchase(
+        row.abandonedCount,
+        row.repurchaseAbandonedCount,
+      );
+      totals.waitingPickupCount += this.netOfRepurchase(
+        row.waitingPickupCount,
+        row.repurchaseWaitingPickupCount,
+      );
+      totals.shippedCount += this.netOfRepurchase(
+        row.shippedCount,
+        row.repurchaseShippedCount,
+      );
+      totals.deliveredCount += this.netOfRepurchase(
+        row.deliveredCount,
+        row.repurchaseDeliveredCount,
+      );
+      totals.canceledCount += this.netOfRepurchase(
+        row.canceledCount,
+        row.repurchaseCanceledCount,
+      );
+      totals.rtsCount += this.netOfRepurchase(row.rtsCount, row.repurchaseRtsCount);
+      totals.restockingCount += this.netOfRepurchase(
+        row.restockingCount,
+        row.repurchaseRestockingCount,
+      );
+      totals.codPos += this.netOfRepurchase(row.codPos, row.repurchaseCodPos);
+      totals.deliveredCodPos += this.netOfRepurchase(
+        row.deliveredCodPos,
+        row.repurchaseDeliveredCodPos,
+      );
+      totals.shippedCodPos += this.netOfRepurchase(
+        row.shippedCodPos,
+        row.repurchaseShippedCodPos,
+      );
+      totals.waitingPickupCodPos += this.netOfRepurchase(
+        row.waitingPickupCodPos,
+        row.repurchaseWaitingPickupCodPos,
+      );
+      totals.rtsCodPos += this.netOfRepurchase(row.rtsCodPos, row.repurchaseRtsCodPos);
+      totals.canceledCodPos += this.netOfRepurchase(
+        row.canceledCodPos,
+        row.repurchaseCanceledCodPos,
+      );
+      totals.restockingCodPos += this.netOfRepurchase(
+        row.restockingCodPos,
+        row.repurchaseRestockingCodPos,
+      );
+      totals.cogsRtsPos += this.netOfRepurchase(
+        row.cogsRtsPos,
+        row.repurchaseCogsRtsPos,
+      );
+      totals.cogsDeliveredPos += this.netOfRepurchase(
+        row.cogsDeliveredPos,
+        row.repurchaseCogsDeliveredPos,
+      );
+      totals.confirmedCodPos += this.netOfRepurchase(
+        row.confirmedCodPos,
+        row.repurchaseConfirmedCodPos,
+      );
+      totals.unconfirmedCodPos += this.netOfRepurchase(
+        row.unconfirmedCodPos,
+        row.repurchaseUnconfirmedCodPos,
+      );
+      totals.abandonedCodPos += this.netOfRepurchase(
+        row.abandonedCodPos,
+        row.repurchaseAbandonedCodPos,
+      );
+      totals.cogsPos += this.netOfRepurchase(row.cogsPos, row.repurchaseCogsPos);
+      totals.cogsCanceledPos += this.netOfRepurchase(
+        row.cogsCanceledPos,
+        row.repurchaseCogsCanceledPos,
+      );
+      totals.cogsRestockingPos += this.netOfRepurchase(
+        row.cogsRestockingPos,
+        row.repurchaseCogsRestockingPos,
+      );
+      totals.sfPos += this.netOfRepurchase(row.sfPos, row.repurchaseSfPos);
+      totals.ffPos += this.netOfRepurchase(row.ffPos, row.repurchaseFfPos);
+      totals.ifPos += this.netOfRepurchase(row.ifPos, row.repurchaseIfPos);
+      totals.sfSdrPos += this.netOfRepurchase(row.sfSdrPos, row.repurchaseSfSdrPos);
+      totals.ffSdrPos += this.netOfRepurchase(row.ffSdrPos, row.repurchaseFfSdrPos);
+      totals.ifSdrPos += this.netOfRepurchase(row.ifSdrPos, row.repurchaseIfSdrPos);
+      totals.codFeePos += this.netOfRepurchase(
+        row.codFeePos,
+        row.repurchaseCodFeePos,
+      );
+      totals.codFeeDeliveredPos += this.netOfRepurchase(
+        row.codFeeDeliveredPos,
+        row.repurchaseCodFeeDeliveredPos,
+      );
     }
 
     await this.prisma.$transaction(async (tx) => {

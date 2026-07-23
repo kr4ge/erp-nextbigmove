@@ -31,12 +31,12 @@ import type {
   UndeliverableRemarkOption,
   UndeliverableRow,
   UndeliverablesAssignmentsResponse,
+  UndeliverablesRemarkView,
   UndeliverablesResponse,
 } from '../_types/undeliverables';
 
 const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: false });
 const PAGE_SIZE = 20;
-type UndeliverablesRemarkView = 'needs_remarks' | 'with_remarks';
 
 export default function UndeliverablesPage() {
   const router = useRouter();
@@ -165,6 +165,18 @@ export default function UndeliverablesPage() {
     loadUndeliverablesRef.current = loadUndeliverables;
   }, [loadUndeliverables]);
 
+  useEffect(() => {
+    if (remarkView !== 'unattended') {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadUndeliverablesRef.current?.();
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [remarkView]);
+
   const loadRemarkOptions = useCallback(async () => {
     if (!canWriteUndeliverableRemarks) {
       setRemarkOptions([]);
@@ -265,6 +277,16 @@ export default function UndeliverablesPage() {
 
   const isAllStoresMode = selectedStoreIds.length === 0;
   const isAllStatusesMode = selectedStatuses.length === 0;
+  const remarkViewTabs = useMemo(
+    () => [
+      { value: 'needs_remarks' as const, label: 'Needs remarks' },
+      { value: 'with_remarks' as const, label: 'With remarks' },
+      ...(canViewAllUndeliverables
+        ? [{ value: 'unattended' as const, label: 'Unattended' }]
+        : []),
+    ],
+    [canViewAllUndeliverables],
+  );
 
   const selectedStoreLabel = useMemo(() => {
     if (storeOptions.length === 0) {
@@ -367,10 +389,7 @@ export default function UndeliverablesPage() {
 
       <div className="space-y-3">
         <div className="flex items-center gap-6 border-b border-slate-200 dark:border-border">
-          {[
-            { value: 'needs_remarks' as const, label: 'Needs remarks' },
-            { value: 'with_remarks' as const, label: 'With remarks' },
-          ].map((tab) => {
+          {remarkViewTabs.map((tab) => {
             const active = remarkView === tab.value;
             return (
               <button
@@ -522,48 +541,55 @@ export default function UndeliverablesPage() {
               ) : null}
             </div>
 
-            <div className="relative order-2">
-              <Datepicker
-                value={dateRange}
-                onChange={(value) => {
-                  const nextStart = normalizeDatepickerValue(value?.startDate, today);
-                  const nextEnd = normalizeDatepickerValue(value?.endDate ?? value?.startDate, nextStart);
-                  setDateRange({
-                    startDate: parseYmdToLocalDate(nextStart),
-                    endDate: parseYmdToLocalDate(nextEnd),
-                  });
-                }}
-                useRange
-                asSingle={false}
-                showShortcuts={false}
-                showFooter={false}
-                primaryColor="orange"
-                readOnly
-                inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 transition-[width] duration-300 ease-out dark:!border-border dark:!bg-transparent dark:!text-transparent ${
-                  undeliverablesDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
-                }`}
-                containerClassName=""
-                popupClassName={(defaultClass: string) => `${defaultClass} z-50 kpi-datepicker-light`}
-                displayFormat="MM/DD/YYYY"
-                separator=" – "
-                toggleIcon={() => (
-                  <span className="flex w-full items-center gap-2 overflow-hidden">
-                    <CalendarDays className="h-4 w-4 shrink-0" />
-                    <span
-                      className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
-                        undeliverablesDateRangeIsToday
-                          ? 'max-w-0 -translate-x-1 opacity-0'
-                          : 'max-w-[148px] translate-x-0 opacity-100 sm:max-w-[184px]'
-                      }`}
-                    >
-                      {undeliverablesDateRangeButtonLabel}
+            {remarkView === 'unattended' ? (
+              <div className="order-2 flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 shadow-sm dark:border-border dark:bg-surface dark:text-slate-300">
+                <CalendarDays className="h-4 w-4" />
+                All overdue attempts
+              </div>
+            ) : (
+              <div className="relative order-2">
+                <Datepicker
+                  value={dateRange}
+                  onChange={(value) => {
+                    const nextStart = normalizeDatepickerValue(value?.startDate, today);
+                    const nextEnd = normalizeDatepickerValue(value?.endDate ?? value?.startDate, nextStart);
+                    setDateRange({
+                      startDate: parseYmdToLocalDate(nextStart),
+                      endDate: parseYmdToLocalDate(nextEnd),
+                    });
+                  }}
+                  useRange
+                  asSingle={false}
+                  showShortcuts={false}
+                  showFooter={false}
+                  primaryColor="orange"
+                  readOnly
+                  inputClassName={`h-10 cursor-pointer rounded-xl border border-slate-200 bg-white p-0 text-transparent caret-transparent placeholder:text-transparent shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 transition-[width] duration-300 ease-out dark:!border-border dark:!bg-transparent dark:!text-transparent ${
+                    undeliverablesDateRangeIsToday ? 'w-10' : 'w-[200px] sm:w-[236px]'
+                  }`}
+                  containerClassName=""
+                  popupClassName={(defaultClass: string) => `${defaultClass} z-50 kpi-datepicker-light`}
+                  displayFormat="MM/DD/YYYY"
+                  separator=" – "
+                  toggleIcon={() => (
+                    <span className="flex w-full items-center gap-2 overflow-hidden">
+                      <CalendarDays className="h-4 w-4 shrink-0" />
+                      <span
+                        className={`whitespace-nowrap text-xs font-medium text-slate-700 transition-all duration-300 ease-out dark:text-foreground ${
+                          undeliverablesDateRangeIsToday
+                            ? 'max-w-0 -translate-x-1 opacity-0'
+                            : 'max-w-[148px] translate-x-0 opacity-100 sm:max-w-[184px]'
+                        }`}
+                      >
+                        {undeliverablesDateRangeButtonLabel}
+                      </span>
                     </span>
-                  </span>
-                )}
-                toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-orange-700 dark:text-foreground"
-                placeholder=" "
-              />
-            </div>
+                  )}
+                  toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start px-3 text-slate-600 hover:text-orange-700 dark:text-foreground"
+                  placeholder=" "
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -577,6 +603,7 @@ export default function UndeliverablesPage() {
         total={data?.pagination.total ?? 0}
         limit={data?.pagination.limit ?? PAGE_SIZE}
         isLoading={isLoading}
+        serverTime={data?.server_time ?? null}
         canViewAll={canViewAllUndeliverables}
         canWriteRemarks={canWriteUndeliverableRemarks}
         failedAtOrder={failedAtOrder}

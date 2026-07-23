@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 
 export class GetUndeliverablesQueryDto {
   @IsOptional()
@@ -21,10 +21,12 @@ export class GetUndeliverablesQueryDto {
 
   @IsOptional()
   @IsString()
+  @IsIn(['needs_remarks', 'with_remarks', 'unattended'])
   view?: string;
 
   @IsOptional()
   @IsString()
+  @IsIn(['asc', 'desc'])
   failed_at_order?: string;
 
   @IsOptional()

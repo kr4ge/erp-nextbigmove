@@ -186,6 +186,12 @@ type AgingOrdersNotificationContext = {
 };
 
 type UndeliverableStatus = 2 | 3 | 4 | 5;
+type UndeliverableRemarkView = 'needs_remarks' | 'with_remarks' | 'unattended';
+type UndeliverableLifecycleStatus =
+  | 'AWAITING_REMARK'
+  | 'UNATTENDED'
+  | 'REMARKED_ON_TIME'
+  | 'REMARKED_LATE';
 
 type UndeliverableStoreRow = {
   id: string;
@@ -232,6 +238,7 @@ type UndeliverableOrderItem = {
 };
 
 const UNDELIVERABLE_STATUS_VALUES: UndeliverableStatus[] = [2, 3, 4, 5];
+const UNDELIVERABLE_REMARK_SLA_MS = 24 * 60 * 60 * 1000;
 const UNDELIVERABLE_STATUS_LABELS: Record<UndeliverableStatus, string> = {
   2: 'Shipped',
   3: 'Delivered',
@@ -527,8 +534,46 @@ export class OrdersService {
     return parsed.length > 0 ? Array.from(new Set(parsed)) : [];
   }
 
-  private parseUndeliverableView(raw?: string): 'needs_remarks' | 'with_remarks' {
-    return raw === 'with_remarks' ? 'with_remarks' : 'needs_remarks';
+  private parseUndeliverableView(raw?: string): UndeliverableRemarkView {
+    if (raw === 'with_remarks' || raw === 'unattended') {
+      return raw;
+    }
+
+    return 'needs_remarks';
+  }
+
+  private buildUndeliverableLifecycle(params: {
+    failedAt: Date;
+    remark: string | null;
+    remarkedAt: Date | null;
+    updatedAt: Date;
+    now: Date;
+  }): {
+    deadline_at: string;
+    lifecycle_status: UndeliverableLifecycleStatus;
+    remaining_seconds: number | null;
+    remarked_late: boolean;
+  } {
+    const deadlineAt = new Date(params.failedAt.getTime() + UNDELIVERABLE_REMARK_SLA_MS);
+    const hasRemark = Boolean(params.remark);
+    const responseAt = params.remarkedAt ?? (hasRemark ? params.updatedAt : null);
+    const remarkedLate = Boolean(responseAt && responseAt.getTime() > deadlineAt.getTime());
+
+    let lifecycleStatus: UndeliverableLifecycleStatus;
+    let remainingSeconds: number | null = null;
+    if (hasRemark) {
+      lifecycleStatus = remarkedLate ? 'REMARKED_LATE' : 'REMARKED_ON_TIME';
+    } else {
+      remainingSeconds = Math.ceil((deadlineAt.getTime() - params.now.getTime()) / 1000);
+      lifecycleStatus = remainingSeconds <= 0 ? 'UNATTENDED' : 'AWAITING_REMARK';
+    }
+
+    return {
+      deadline_at: deadlineAt.toISOString(),
+      lifecycle_status: lifecycleStatus,
+      remaining_seconds: remainingSeconds,
+      remarked_late: remarkedLate,
+    };
   }
 
   private getCurrentUserBasePermissions(): string[] {
@@ -1970,6 +2015,29 @@ export class OrdersService {
     const failedAtOrder: Prisma.SortOrder = params.failed_at_order === 'desc' ? 'desc' : 'asc';
     const undeliverableStartAt = dayjs.tz(`${startDate}T00:00:00`, TIMEZONE).toDate();
     const undeliverableEndAt = dayjs.tz(`${endDate}T23:59:59.999`, TIMEZONE).toDate();
+    const requestNow = new Date();
+    const unattendedCutoff = new Date(requestNow.getTime() - UNDELIVERABLE_REMARK_SLA_MS);
+    const attemptVisibilityWhere: Prisma.UndeliverableAttemptWhereInput =
+      view === 'with_remarks'
+        ? {
+            failedAt: {
+              gte: undeliverableStartAt,
+              lte: undeliverableEndAt,
+            },
+            remark: { not: null },
+          }
+        : view === 'unattended'
+          ? {
+              failedAt: { lte: unattendedCutoff },
+              remark: null,
+            }
+          : {
+              failedAt: {
+                gte: undeliverableStartAt,
+                lte: undeliverableEndAt,
+              },
+              remark: null,
+            };
     const access = await this.resolveUndeliverablesAccessScope();
 
     if (access.accessibleStores.length === 0 || access.accessibleShopIds.length === 0) {
@@ -1995,6 +2063,7 @@ export class OrdersService {
         scope: {
           mode: access.canReadAll ? 'all' : 'assigned',
         },
+        server_time: requestNow.toISOString(),
       };
     }
 
@@ -2009,14 +2078,8 @@ export class OrdersService {
 
     const baseWhere: Prisma.UndeliverableAttemptWhereInput = {
       tenantId: access.tenantId,
-      failedAt: {
-        gte: undeliverableStartAt,
-        lte: undeliverableEndAt,
-      },
+      ...attemptVisibilityWhere,
       storeId: { in: access.accessibleStoreIds },
-      ...(view === 'needs_remarks'
-        ? { remark: null }
-        : { remark: { not: null } }),
       order: {
         ...(statuses.length > 0 ? { status: { in: statuses } } : {}),
         ...(search
@@ -2071,19 +2134,14 @@ export class OrdersService {
         scope: {
           mode: access.canReadAll ? 'all' : 'assigned',
         },
+        server_time: requestNow.toISOString(),
       };
     }
 
     const where: Prisma.UndeliverableAttemptWhereInput = {
       tenantId: access.tenantId,
-      failedAt: {
-        gte: undeliverableStartAt,
-        lte: undeliverableEndAt,
-      },
+      ...attemptVisibilityWhere,
       storeId: { in: effectiveStoreIds },
-      ...(view === 'needs_remarks'
-        ? { remark: null }
-        : { remark: { not: null } }),
       order: {
         ...(statuses.length > 0 ? { status: { in: statuses } } : {}),
         ...(search
@@ -2211,6 +2269,13 @@ export class OrdersService {
       const order = attempt.order;
       const store = (attempt.storeId ? storeById.get(attempt.storeId) : undefined) ?? storeByShopId.get(order.shopId);
       const parsedAddress = this.parseUndeliverableAddress(order.customerAddress);
+      const lifecycle = this.buildUndeliverableLifecycle({
+        failedAt: attempt.failedAt,
+        remark: attempt.remark,
+        remarkedAt: attempt.remarkedAt,
+        updatedAt: attempt.updatedAt,
+        now: requestNow,
+      });
 
       return {
         id: attempt.id,
@@ -2237,6 +2302,7 @@ export class OrdersService {
         store_name: store ? this.buildUndeliverableStoreLabel(store) : order.shopId,
         shop_id: order.shopId,
         sa_assigned: store ? (assignedUsersByStoreId.get(store.id) ?? []) : [],
+        ...lifecycle,
         latest_remark: attempt.remark
           ? {
               id: attempt.id,
@@ -2278,6 +2344,7 @@ export class OrdersService {
       scope: {
         mode: access.canReadAll ? 'all' : 'assigned',
       },
+      server_time: requestNow.toISOString(),
     };
   }
 
@@ -2687,17 +2754,35 @@ export class OrdersService {
     }
 
     const { attempt, order, store } = await this.resolveUndeliverableAttemptScope(attemptId, access);
-    const remarkedAt = new Date();
-    const updated = await this.prisma.undeliverableAttempt.update({
-      where: {
-        id: attempt.id,
-      },
-      data: {
-        remark: remarkOption.remark,
-        remarkOptionId: remarkOption.id,
-        remarkedById: access.userId,
-        remarkedAt,
-      },
+    if (attempt.remark) {
+      throw new ConflictException('This delivery attempt already has an SA remark');
+    }
+
+    const remarkedAt = attempt.remarkedAt ?? new Date();
+    const remarkedById = attempt.remarkedById ?? access.userId;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.undeliverableAttempt.updateMany({
+        where: {
+          id: attempt.id,
+          remark: null,
+        },
+        data: {
+          remark: remarkOption.remark,
+          remarkOptionId: remarkOption.id,
+          remarkedById,
+          remarkedAt,
+        },
+      });
+
+      if (result.count !== 1) {
+        throw new ConflictException('This delivery attempt already has an SA remark');
+      }
+
+      return tx.undeliverableAttempt.findUniqueOrThrow({
+        where: {
+          id: attempt.id,
+        },
+      });
     });
 
     this.emitUndeliverablesUpdated({
@@ -2740,8 +2825,6 @@ export class OrdersService {
     }
 
     const { attempt, order } = await this.resolveUndeliverableAttemptScope(remarkId, access);
-
-    const remarkedAt = new Date();
     const updated = await this.prisma.undeliverableAttempt.update({
       where: {
         id: attempt.id,
@@ -2749,8 +2832,8 @@ export class OrdersService {
       data: {
         remark: remarkOption.remark,
         remarkOptionId: remarkOption.id,
-        remarkedById: access.userId,
-        remarkedAt,
+        remarkedAt: attempt.remarkedAt ?? attempt.updatedAt,
+        remarkedById: attempt.remarkedById ?? access.userId,
       },
     });
 
@@ -2765,7 +2848,7 @@ export class OrdersService {
       item: {
         id: updated.id,
         remark: updated.remark,
-        created_at: remarkedAt.toISOString(),
+        created_at: (attempt.remarkedAt ?? attempt.updatedAt).toISOString(),
         updated_at: updated.updatedAt.toISOString(),
       },
     };
@@ -2785,8 +2868,6 @@ export class OrdersService {
       data: {
         remark: null,
         remarkOptionId: null,
-        remarkedById: null,
-        remarkedAt: null,
       },
     });
 
