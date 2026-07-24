@@ -22,6 +22,7 @@ import type { Request } from 'express';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
+import { buildUnexpiredInventoryWhere } from '../wms-inventory/wms-inventory-expiration.utils';
 import { GetWmsFulfillmentOpsSnapshotDto } from './dto/get-wms-fulfillment-ops-snapshot.dto';
 import { GetWmsFulfillmentPriorityPreviewDto } from './dto/get-wms-fulfillment-priority-preview.dto';
 import { PrioritizeWmsFulfillmentOrderDto } from './dto/prioritize-wms-fulfillment-order.dto';
@@ -57,7 +58,6 @@ const ACTIVE_BASKET_ORDER_STATUSES = [
 ] as const;
 const FULFILLABLE_UNIT_STATUSES = [
   WmsInventoryUnitStatus.PUTAWAY,
-  WmsInventoryUnitStatus.DEADSTOCK,
 ] as const;
 const CONFIRMED_POS_ORDER_STATUS = 1;
 const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
@@ -3684,6 +3684,7 @@ export class WmsFulfillmentOpsService {
       status: {
         in: [...FULFILLABLE_UNIT_STATUSES],
       },
+      AND: [buildUnexpiredInventoryWhere()],
       currentLocation: {
         is: {
           kind: WmsLocationKind.BIN,

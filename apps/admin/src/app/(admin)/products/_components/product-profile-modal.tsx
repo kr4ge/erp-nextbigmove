@@ -22,6 +22,7 @@ type ProductProfileModalProps = {
 type ProductProfileModalFormState = {
   status: WmsProductProfileStatus;
   isSerialized: boolean;
+  requiresExpirationDate: boolean;
   preferredLocationId: string | null;
   isFragile: boolean;
   isStackable: boolean;
@@ -73,6 +74,7 @@ export function ProductProfileModal({
   const [formState, setFormState] = useState<ProductProfileModalFormState>({
     status: profile?.status ?? 'DEFAULT',
     isSerialized: profile?.isSerialized ?? true,
+    requiresExpirationDate: profile?.requiresExpirationDate ?? false,
     preferredLocationId: profile?.preferredLocation?.id ?? null,
     isFragile: profile?.handling.isFragile ?? false,
     isStackable: profile?.handling.isStackable ?? true,
@@ -86,6 +88,7 @@ export function ProductProfileModal({
     setFormState({
       status: profile?.status ?? 'DEFAULT',
       isSerialized: profile?.isSerialized ?? true,
+      requiresExpirationDate: profile?.requiresExpirationDate ?? false,
       preferredLocationId: profile?.preferredLocation?.id ?? null,
       isFragile: profile?.handling.isFragile ?? false,
       isStackable: profile?.handling.isStackable ?? true,
@@ -274,6 +277,27 @@ export function ProductProfileModal({
             </div>
           </div>
 
+          <label className="flex items-start gap-3 rounded-2xl border border-[#dce4ea] bg-[#fbfcfc] px-4 py-3">
+            <input
+              type="checkbox"
+              checked={formState.requiresExpirationDate}
+              disabled={inputsDisabled}
+              onChange={(event) =>
+                setFormState((current) => ({
+                  ...current,
+                  requiresExpirationDate: event.target.checked,
+                }))
+              }
+              className="mt-0.5 h-4 w-4 rounded border-[#c5d5df] text-primary"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-primary">Expiration date required</span>
+              <span className="mt-1 block text-xs leading-5 text-[#6f8290]">
+                Receiving staff must set an expiration date before units of this product can be put away.
+              </span>
+            </span>
+          </label>
+
           <label className="space-y-2">
             <span className="form-label">Notes</span>
             <textarea
@@ -325,6 +349,10 @@ export function ProductProfileModal({
               <div>
                 <p className="font-semibold text-primary">Section assignment</p>
                 <p>{profile.preferredLocation?.label ?? 'Not assigned'}</p>
+              </div>
+              <div>
+                <p className="font-semibold text-primary">Expiration</p>
+                <p>{profile.requiresExpirationDate ? 'Required before put-away' : 'Optional'}</p>
               </div>
               <div>
                 <p className="font-semibold text-primary">Updated</p>

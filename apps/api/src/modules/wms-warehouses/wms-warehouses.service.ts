@@ -1392,7 +1392,11 @@ export class WmsWarehousesService {
           OR: [
             {
               status: {
-                in: [WmsInventoryUnitStatus.RTS, WmsInventoryUnitStatus.DAMAGED],
+                in: [
+                  WmsInventoryUnitStatus.EXPIRED,
+                  WmsInventoryUnitStatus.RTS,
+                  WmsInventoryUnitStatus.DAMAGED,
+                ],
               },
             },
             {

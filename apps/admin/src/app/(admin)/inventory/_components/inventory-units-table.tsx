@@ -4,9 +4,11 @@ import type { ReactNode } from 'react';
 import { Eye } from 'lucide-react';
 import type { WmsInventoryUnitRecord } from '../_types/inventory';
 import {
+  formatInventoryExpirationDate,
   formatInventoryStatusLabel,
   getInventoryStatusClassName,
 } from '../_utils/inventory-status-presenters';
+import { InventoryExpirationBadge } from './inventory-expiration-badge';
 
 type InventoryUnitsTableProps = {
   units: WmsInventoryUnitRecord[];
@@ -54,6 +56,7 @@ export function InventoryUnitsTable({
             <HeaderCell>Store</HeaderCell>
             <HeaderCell>Warehouse</HeaderCell>
             <HeaderCell>Location</HeaderCell>
+            <HeaderCell>Expiration</HeaderCell>
             <HeaderCell>Status</HeaderCell>
             <HeaderCell align="right">Action</HeaderCell>
           </tr>
@@ -62,19 +65,19 @@ export function InventoryUnitsTable({
         <tbody className="bg-white">
           {isLoading ? (
             <tr>
-              <td colSpan={9} className="px-5 py-14 text-center text-sm text-[#6a7e8b]">
+              <td colSpan={10} className="px-5 py-14 text-center text-sm text-[#6a7e8b]">
                 Loading units…
               </td>
             </tr>
           ) : !tenantReady ? (
             <tr>
-              <td colSpan={9} className="px-5 py-14 text-center text-sm text-[#6a7e8b]">
+              <td colSpan={10} className="px-5 py-14 text-center text-sm text-[#6a7e8b]">
                 No tenant scope is active for inventory.
               </td>
             </tr>
           ) : units.length === 0 ? (
             <tr>
-              <td colSpan={9} className="px-5 py-14 text-center text-sm text-[#6a7e8b]">
+              <td colSpan={10} className="px-5 py-14 text-center text-sm text-[#6a7e8b]">
                 No units yet. Receiving will create serialized stock here.
               </td>
             </tr>
@@ -123,6 +126,18 @@ export function InventoryUnitsTable({
                   ) : (
                     <span className="text-[#8aa0ae]">Not assigned</span>
                   )}
+                </BodyCell>
+
+                <BodyCell>
+                  <div className="min-w-[112px] space-y-1.5">
+                    <p className={unit.status === 'EXPIRED' ? 'font-semibold text-red-700' : 'text-primary'}>
+                      {formatInventoryExpirationDate(unit.expirationDate)}
+                    </p>
+                    <InventoryExpirationBadge
+                      expirationDate={unit.expirationDate}
+                      status={unit.status}
+                    />
+                  </div>
                 </BodyCell>
 
                 <BodyCell>

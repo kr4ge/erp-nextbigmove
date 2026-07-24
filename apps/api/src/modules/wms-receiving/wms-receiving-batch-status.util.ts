@@ -2,6 +2,7 @@ import { WmsInventoryUnitStatus, WmsReceivingBatchStatus } from '@prisma/client'
 
 export const RECEIVING_BATCH_COMPLETED_BIN_UNIT_STATUSES = [
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.EXPIRED,
   WmsInventoryUnitStatus.DEADSTOCK,
 ] as const;
 

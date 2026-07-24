@@ -35,6 +35,7 @@ const UNIT_STATUS_ORDER: WmsInventoryUnitStatus[] = [
   WmsInventoryUnitStatus.RECEIVED,
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.EXPIRED,
   WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.RESERVED,
   WmsInventoryUnitStatus.PICKED,
@@ -202,6 +203,7 @@ const TRANSFERABLE_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.RECEIVED,
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.EXPIRED,
   WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
@@ -235,6 +237,7 @@ const ARCHIVABLE_ADJUSTMENT_SOURCE_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.RECEIVED,
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.EXPIRED,
   WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.RESERVED,
   WmsInventoryUnitStatus.RTS,
@@ -246,6 +249,7 @@ const VOIDABLE_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.RECEIVED,
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.EXPIRED,
   WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.RESERVED,
   WmsInventoryUnitStatus.RTS,
@@ -2778,6 +2782,8 @@ export class WmsInventoryService {
       code: unit.code,
       barcode: unit.barcode,
       status: unit.status,
+      expirationDate: unit.expirationDate,
+      expiredAt: unit.expiredAt,
       labelPrintCount: unit.labelPrintCount,
       firstLabelPrintedAt: unit.firstLabelPrintedAt,
       lastLabelPrintedAt: unit.lastLabelPrintedAt,
@@ -3588,6 +3594,10 @@ export class WmsInventoryService {
     currentStatus: WmsInventoryUnitStatus,
     targetKind: WmsLocationKind,
   ) {
+    if (currentStatus === WmsInventoryUnitStatus.EXPIRED) {
+      return WmsInventoryUnitStatus.EXPIRED;
+    }
+
     switch (targetKind) {
       case WmsLocationKind.BIN:
         return currentStatus === WmsInventoryUnitStatus.DEADSTOCK

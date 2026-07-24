@@ -320,6 +320,8 @@ export type WmsReceivingPutawayOptionsResponse = {
     receivingSequence: number | null;
     variationId: string;
     status: string;
+    expirationDate: string | null;
+    requiresExpirationDate: boolean;
     productName: string;
     productCustomId: string | null;
     currentLocation: {
@@ -344,6 +346,7 @@ export type AssignWmsReceivingPutawayInput = {
     sectionId: string;
     rackId: string;
     binId: string;
+    expirationDate?: string | null;
   }>;
 };
 

@@ -789,6 +789,9 @@ export class WmsProductsService {
         ...(body.isFragile !== undefined ? { isFragile: body.isFragile } : {}),
         ...(body.isStackable !== undefined ? { isStackable: body.isStackable } : {}),
         ...(body.keepDry !== undefined ? { keepDry: body.keepDry } : {}),
+        ...(body.requiresExpirationDate !== undefined
+          ? { requiresExpirationDate: body.requiresExpirationDate }
+          : {}),
         ...(body.inhouseUnitCost !== undefined ? { inhouseUnitCost: this.numberOrNull(body.inhouseUnitCost) } : {}),
         ...(body.supplierUnitCost !== undefined ? { supplierUnitCost: this.numberOrNull(body.supplierUnitCost) } : {}),
         ...(body.notes !== undefined ? { notes: this.cleanOptionalText(body.notes) } : {}),
@@ -1113,6 +1116,7 @@ export class WmsProductsService {
       posProductId: profile.posProductId,
       status: profile.status,
       isSerialized: profile.isSerialized,
+      requiresExpirationDate: profile.requiresExpirationDate,
       isStockable: true,
       stockabilityReason: null,
       productId: profile.productId,
@@ -1180,6 +1184,7 @@ export class WmsProductsService {
       posProductId: product.id,
       status: null,
       isSerialized: null,
+      requiresExpirationDate: false,
       isStockable: false,
       stockabilityReason: this.getStockabilityReason(product.productId, product.variationId),
       productId: product.productId,

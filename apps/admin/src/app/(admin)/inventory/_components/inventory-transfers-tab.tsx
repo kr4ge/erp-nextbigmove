@@ -16,12 +16,17 @@ import {
   getReceivingStatusClassName,
 } from '../../receiving/_utils/receiving-presenters';
 import type { WmsInventoryUnitStatus } from '../_types/inventory';
-import { getInventoryStatusClassName } from '../_utils/inventory-status-presenters';
+import {
+  formatInventoryExpirationDate,
+  getInventoryStatusClassName,
+} from '../_utils/inventory-status-presenters';
+import { InventoryExpirationBadge } from './inventory-expiration-badge';
 
 type PutawayDraft = {
   sectionId: string;
   rackId: string;
   binId: string;
+  expirationDate: string;
 };
 
 type TransferUnit = WmsReceivingPutawayOptionsResponse['units'][number];
@@ -42,6 +47,7 @@ const INVENTORY_STATUSES: WmsInventoryUnitStatus[] = [
   'RECEIVED',
   'STAGED',
   'PUTAWAY',
+  'EXPIRED',
   'DEADSTOCK',
   'RESERVED',
   'PICKED',
@@ -73,6 +79,7 @@ type InventoryTransfersTabProps = {
       sectionId: string;
       rackId: string;
       binId: string;
+      expirationDate?: string | null;
     },
   ) => Promise<void>;
   onAssignPutawayUnits?: (
@@ -82,6 +89,7 @@ type InventoryTransfersTabProps = {
       sectionId: string;
       rackId: string;
       binId: string;
+      expirationDate?: string | null;
     }>,
   ) => Promise<void>;
   onResetPutawayUnits: (batchId: string, unitIds: string[]) => Promise<void>;
@@ -253,6 +261,7 @@ export function InventoryTransfersTab({
           sectionId: forcedSectionId,
           rackId: sectionChanged ? '' : previous?.rackId ?? '',
           binId: sectionChanged ? '' : previous?.binId ?? '',
+          expirationDate: previous?.expirationDate ?? '',
         };
       }
 
@@ -299,6 +308,7 @@ export function InventoryTransfersTab({
       sectionId: activeGroup?.sectionId ?? '',
       rackId: '',
       binId: '',
+      expirationDate: '',
     };
 
   const selectedSection = activeDraft.sectionId
@@ -313,6 +323,10 @@ export function InventoryTransfersTab({
     () => actionableUnits.filter((unit) => selectedUnitIds.includes(unit.id)),
     [actionableUnits, selectedUnitIds],
   );
+  const selectedUnitsRequiringExpiration = useMemo(
+    () => orderedSelectedUnits.filter((unit) => unit.requiresExpirationDate).length,
+    [orderedSelectedUnits],
+  );
   const selectedActionableCount = orderedSelectedUnits.length;
   const assignableSelectedCount = useMemo(() => {
     if (!selectedBin || selectedBin.isFull || selectedBin.capacity === null || selectedBinAvailableUnits === null) {
@@ -324,7 +338,7 @@ export function InventoryTransfersTab({
   const remainingSelectedCount = Math.max(selectedActionableCount - assignableSelectedCount, 0);
   const allPageActionableSelected =
     pageActionableUnitIds.length > 0 && pageActionableUnitIds.every((unitId) => selectedUnitIds.includes(unitId));
-  const assignmentGridClassName = 'grid items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-3';
+  const assignmentGridClassName = 'grid items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-4';
   const isMutatingTransfer = isAssigningPutaway || isResettingPutaway;
 
   const updateActiveGroupDraft = (update: Partial<PutawayDraft>) => {
@@ -339,6 +353,7 @@ export function InventoryTransfersTab({
         sectionId: current[activeGroup.key]?.sectionId ?? activeGroup.sectionId ?? '',
         rackId: current[activeGroup.key]?.rackId ?? '',
         binId: current[activeGroup.key]?.binId ?? '',
+        expirationDate: current[activeGroup.key]?.expirationDate ?? '',
         ...update,
       },
     }));
@@ -389,19 +404,29 @@ export function InventoryTransfersTab({
       return;
     }
 
-    const orderedSelectedIds = orderedSelectedUnits.map((unit) => unit.id);
-    const assignableUnitIds = orderedSelectedIds.slice(0, Math.max(selectedBinAvailableUnits, 0));
+    const assignableUnits = orderedSelectedUnits.slice(0, Math.max(selectedBinAvailableUnits, 0));
 
-    if (!assignableUnitIds.length) {
+    if (!assignableUnits.length) {
       setPutawayError(`Bin ${selectedBin?.code} has no free slots right now. Choose another bin.`);
       return;
     }
 
-    const assignments = assignableUnitIds.map((unitId) => ({
-      unitId,
+    const missingRequiredExpiration = assignableUnits.find(
+      (unit) => unit.requiresExpirationDate && !activeDraft.expirationDate && !unit.expirationDate,
+    );
+    if (missingRequiredExpiration) {
+      setPutawayError(
+        `${missingRequiredExpiration.productName} requires an expiration date before put-away.`,
+      );
+      return;
+    }
+
+    const assignments = assignableUnits.map((unit) => ({
+      unitId: unit.id,
       sectionId: activeDraft.sectionId,
       rackId: activeDraft.rackId,
       binId: activeDraft.binId,
+      expirationDate: activeDraft.expirationDate || unit.expirationDate || undefined,
     }));
 
     try {
@@ -415,7 +440,7 @@ export function InventoryTransfersTab({
         );
       }
 
-      const remainingUnitIds = orderedSelectedIds.slice(assignments.length);
+      const remainingUnitIds = orderedSelectedUnits.slice(assignments.length).map((unit) => unit.id);
       setSelectedUnitIds(remainingUnitIds);
       setLastSavedMessage(remainingUnitIds.length > 0
         ? `Assigned ${assignments.length} unit${assignments.length === 1 ? '' : 's'} to ${selectedBin?.label ?? 'selected bin'}. ${remainingUnitIds.length} unit${remainingUnitIds.length === 1 ? '' : 's'} remain selected for the next bin.`
@@ -791,6 +816,29 @@ export function InventoryTransfersTab({
                           </p>
                         </label>
 
+                        <label className="flex h-full min-w-0 flex-col space-y-2 rounded-[14px] border border-[#dce4ea] bg-white px-3 py-3">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8193a0]">
+                            Expiration date
+                          </span>
+                          <input
+                            type="date"
+                            value={activeDraft.expirationDate}
+                            min={getManilaDateInputValue()}
+                            onChange={(event) =>
+                              updateActiveGroupDraft({
+                                expirationDate: event.target.value,
+                              })
+                            }
+                            disabled={!canPutAway || isLoadingPutawayOptions}
+                            className="input"
+                          />
+                          <p className="text-[11px] text-[#6f8290]">
+                            {selectedUnitsRequiringExpiration > 0
+                              ? `Required for ${selectedUnitsRequiringExpiration} selected unit${selectedUnitsRequiringExpiration === 1 ? '' : 's'}.`
+                              : 'Optional. The date applies to selected units.'}
+                          </p>
+                        </label>
+
                         </div>
 
                         <div className="flex items-stretch">
@@ -851,7 +899,7 @@ export function InventoryTransfersTab({
 
                   <div className="overflow-hidden rounded-[18px] border border-[#dce4ea] bg-white">
                     <div className="overflow-x-auto">
-                      <table className="min-w-[760px] w-full border-separate border-spacing-0">
+                      <table className="min-w-[900px] w-full border-separate border-spacing-0">
                         <thead className="bg-slate-50">
                           <tr>
                             <HeaderCell className="w-[52px]">
@@ -867,6 +915,7 @@ export function InventoryTransfersTab({
                             <HeaderCell>Product</HeaderCell>
                             <HeaderCell>Current</HeaderCell>
                             <HeaderCell>Section Rule</HeaderCell>
+                            <HeaderCell>Expiration</HeaderCell>
                             <HeaderCell>Status</HeaderCell>
                           </tr>
                         </thead>
@@ -941,6 +990,23 @@ export function InventoryTransfersTab({
                                         ? 'Section locked by product assignment'
                                         : 'Choose section during transfer'}
                                     </p>
+                                  </div>
+                                </BodyCell>
+
+                                <BodyCell>
+                                  <div className="min-w-[126px] space-y-1">
+                                    <p className="font-medium text-primary">
+                                      {formatInventoryExpirationDate(unit.expirationDate)}
+                                    </p>
+                                    <InventoryExpirationBadge
+                                      expirationDate={unit.expirationDate}
+                                      status={unit.status}
+                                    />
+                                    {unit.expirationDate ? null : (
+                                      <p className="text-[11px] text-[#7c8f9b]">
+                                        {unit.requiresExpirationDate ? 'Required' : 'Optional'}
+                                      </p>
+                                    )}
                                   </div>
                                 </BodyCell>
 
@@ -1103,7 +1169,7 @@ function buildTransferGroups(units: TransferUnit[]): TransferGroup[] {
 function isTransferCompleted(unit: TransferUnit) {
   return (
     unit.currentLocation?.kind === 'BIN'
-    && unit.status === 'PUTAWAY'
+    && (unit.status === 'PUTAWAY' || unit.status === 'EXPIRED')
   );
 }
 
@@ -1112,7 +1178,10 @@ function isPutawayPending(unit: TransferUnit) {
 }
 
 function isReturnToStageEligible(unit: TransferUnit) {
-  return isTransferCompleted(unit);
+  return (
+    unit.currentLocation?.kind === 'BIN'
+    && unit.status === 'PUTAWAY'
+  );
 }
 
 function formatBinOptionLabel(bin: WmsReceivingPutawayOptionsResponse['sections'][number]['racks'][number]['bins'][number]) {
@@ -1146,9 +1215,21 @@ function areGroupDraftsEqual(
       rightDraft
       && leftDraft?.sectionId === rightDraft.sectionId
       && leftDraft?.rackId === rightDraft.rackId
-      && leftDraft?.binId === rightDraft.binId,
+      && leftDraft?.binId === rightDraft.binId
+      && leftDraft?.expirationDate === rightDraft.expirationDate
     );
   });
+}
+
+function getManilaDateInputValue(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function areStringArraysEqual(left: string[], right: string[]) {

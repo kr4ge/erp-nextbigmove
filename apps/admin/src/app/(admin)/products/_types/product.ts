@@ -19,6 +19,7 @@ export type WmsProductProfileRecord = {
   posProductId: string;
   status: WmsProductProfileStatus | null;
   isSerialized: boolean | null;
+  requiresExpirationDate: boolean;
   isStockable: boolean;
   stockabilityReason: string | null;
   productId: string;
@@ -123,6 +124,7 @@ export type SyncWmsProductsStoreResponse = {
 export type UpdateWmsProductProfileInput = {
   status?: WmsProductProfileStatus;
   isSerialized?: boolean;
+  requiresExpirationDate?: boolean;
   preferredLocationId?: string | null;
   isFragile?: boolean;
   isStackable?: boolean;

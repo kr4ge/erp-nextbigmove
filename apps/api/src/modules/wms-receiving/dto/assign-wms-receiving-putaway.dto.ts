@@ -2,6 +2,8 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsDateString,
+  IsOptional,
   IsUUID,
   ValidateNested,
 } from 'class-validator';
@@ -18,6 +20,10 @@ class AssignWmsReceivingPutawayUnitDto {
 
   @IsUUID()
   binId!: string;
+
+  @IsOptional()
+  @IsDateString({ strict: true })
+  expirationDate?: string | null;
 }
 
 export class AssignWmsReceivingPutawayDto {

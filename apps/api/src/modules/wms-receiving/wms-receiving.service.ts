@@ -25,6 +25,10 @@ import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { NotificationStateService } from '../../common/services/notification-state.service';
 import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
+import {
+  getManilaTodayDate,
+  parseExpirationDate,
+} from '../wms-inventory/wms-inventory-expiration.utils';
 import { WmsPurchasingService } from '../wms-purchasing/wms-purchasing.service';
 import { WorkflowExecutionGateway } from '../workflows/gateways/workflow-execution.gateway';
 import {
@@ -919,6 +923,7 @@ export class WmsReceivingService {
             receivingSequence: true,
             variationId: true,
             status: true,
+            expirationDate: true,
             currentLocation: {
               select: {
                 id: true,
@@ -931,6 +936,7 @@ export class WmsReceivingService {
             productProfile: {
               select: {
                 preferredLocationId: true,
+                requiresExpirationDate: true,
               },
             },
             posProduct: {
@@ -1023,6 +1029,8 @@ export class WmsReceivingService {
           receivingSequence: unit.receivingSequence ?? null,
           variationId: unit.variationId,
           status: unit.status,
+          expirationDate: unit.expirationDate,
+          requiresExpirationDate: unit.productProfile.requiresExpirationDate,
           productName: unit.posProduct.name,
           productCustomId: unit.posProduct.customId,
           currentLocation: unit.currentLocation
@@ -1067,9 +1075,12 @@ export class WmsReceivingService {
             currentLocationId: true,
             status: true,
             variationId: true,
+            code: true,
+            expirationDate: true,
             productProfile: {
               select: {
                 preferredLocationId: true,
+                requiresExpirationDate: true,
               },
             },
           },
@@ -1106,6 +1117,7 @@ export class WmsReceivingService {
       await this.getActiveStructuralLocationsByWarehouse(batch.warehouseId),
     );
 
+    const today = getManilaTodayDate();
     const validatedAssignments = body.assignments.map((assignment) => {
       const section = structure.locationMap.get(assignment.sectionId);
       const rack = structure.locationMap.get(assignment.rackId);
@@ -1122,6 +1134,30 @@ export class WmsReceivingService {
       }
 
       const unit = unitMap.get(assignment.unitId)!;
+      let expirationDate = unit.expirationDate;
+      if (assignment.expirationDate === null) {
+        expirationDate = null;
+      } else if (assignment.expirationDate) {
+        try {
+          expirationDate = parseExpirationDate(assignment.expirationDate);
+        } catch (error) {
+          throw new BadRequestException(
+            error instanceof Error ? error.message : 'Expiration date is invalid',
+          );
+        }
+      }
+
+      if (expirationDate && expirationDate < today) {
+        throw new BadRequestException(
+          `Unit ${unit.code} expiration date cannot be before today`,
+        );
+      }
+      if (unit.productProfile.requiresExpirationDate && !expirationDate) {
+        throw new BadRequestException(
+          `Unit ${unit.code} requires an expiration date before put-away`,
+        );
+      }
+
       const defaultSectionId = this.resolveSectionIdFromLocation(
         structure.locationMap,
         unit.productProfile.preferredLocationId,
@@ -1139,6 +1175,7 @@ export class WmsReceivingService {
         currentLocationId: unit.currentLocationId,
         currentStatus: unit.status,
         variationId: unit.variationId,
+        expirationDate,
         binId: bin.id,
         binCode: bin.code,
       };
@@ -1218,6 +1255,8 @@ export class WmsReceivingService {
           data: {
             currentLocationId: assignment.binId,
             status: WmsInventoryUnitStatus.PUTAWAY,
+            expirationDate: assignment.expirationDate,
+            expiredAt: null,
             ...(actorId ? { updatedById: actorId } : {}),
           },
         });
@@ -1236,7 +1275,9 @@ export class WmsReceivingService {
           referenceType: 'RECEIVING_BATCH',
           referenceId: batch.id,
           referenceCode: batch.code,
-          notes: `Put away into ${assignment.binCode}`,
+          notes: assignment.expirationDate
+            ? `Put away into ${assignment.binCode}; expires ${assignment.expirationDate.toISOString().slice(0, 10)}`
+            : `Put away into ${assignment.binCode}`,
           actorId,
           createdAt: now,
         })),

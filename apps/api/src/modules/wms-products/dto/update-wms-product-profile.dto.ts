@@ -41,6 +41,10 @@ export class UpdateWmsProductProfileDto {
   keepDry?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  requiresExpirationDate?: boolean;
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)

@@ -12,6 +12,7 @@ import {
   WmsPickReservationStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { buildUnexpiredInventoryWhere } from '../wms-inventory/wms-inventory-expiration.utils';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
 
 type FulfillmentLineDraft = {
@@ -76,7 +77,6 @@ const PUTAWAY_REALLOCATION_ORDER_LIMIT = 80;
 const MANUAL_REALLOCATION_ORDER_LIMIT = 200;
 const FULFILLABLE_UNIT_STATUSES = [
   WmsInventoryUnitStatus.PUTAWAY,
-  WmsInventoryUnitStatus.DEADSTOCK,
 ] as const;
 
 type DemandFulfillmentReadinessRecord = Prisma.WmsFulfillmentOrderGetPayload<{
@@ -833,6 +833,7 @@ export class WmsFulfillmentSyncService {
         status: {
           in: [...FULFILLABLE_UNIT_STATUSES],
         },
+        AND: [buildUnexpiredInventoryWhere()],
         currentLocation: {
           is: {
             kind: WmsLocationKind.BIN,
@@ -1849,6 +1850,7 @@ export class WmsFulfillmentSyncService {
       status: {
         in: [...FULFILLABLE_UNIT_STATUSES],
       },
+      AND: [buildUnexpiredInventoryWhere()],
       currentLocation: {
         is: {
           kind: WmsLocationKind.BIN,
@@ -1876,6 +1878,7 @@ export class WmsFulfillmentSyncService {
     } satisfies Prisma.WmsInventoryUnitSelect;
     const orderBy = [
       ...(params.order.warehouseId ? [] : [{ warehouseId: 'asc' as const }]),
+      { expirationDate: 'asc' as const },
       { updatedAt: 'asc' as const },
       { code: 'asc' as const },
     ];
@@ -1951,6 +1954,7 @@ export class WmsFulfillmentSyncService {
       status: {
         in: [...FULFILLABLE_UNIT_STATUSES],
       },
+      AND: [buildUnexpiredInventoryWhere()],
     };
     const binnedWhere: Prisma.WmsInventoryUnitWhereInput = {
       ...putawayWhere,
@@ -2792,6 +2796,7 @@ export class WmsFulfillmentSyncService {
       status: {
         in: [...FULFILLABLE_UNIT_STATUSES],
       },
+      AND: [buildUnexpiredInventoryWhere()],
       currentLocation: {
         is: {
           kind: WmsLocationKind.BIN,

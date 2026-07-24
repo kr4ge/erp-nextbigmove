@@ -2,6 +2,7 @@ export type WmsInventoryUnitStatus =
   | 'RECEIVED'
   | 'STAGED'
   | 'PUTAWAY'
+  | 'EXPIRED'
   | 'DEADSTOCK'
   | 'RESERVED'
   | 'PICKED'
@@ -28,6 +29,8 @@ export type WmsInventoryUnitRecord = {
   variationDisplayId: string | null;
   name: string;
   unitCost: number | null;
+  expirationDate: string | null;
+  expiredAt: string | null;
   store: {
     id: string;
     name: string;

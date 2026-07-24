@@ -39,6 +39,10 @@ import { WmsStaffActivityService } from '../../common/services/wms-staff-activit
 import { OrdersService } from '../orders/orders.service';
 import { WmsFulfillmentOpsService } from '../wms-fulfillment/wms-fulfillment-ops.service';
 import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
+import {
+  buildUnexpiredInventoryWhere,
+  isExpiredInventoryDate,
+} from '../wms-inventory/wms-inventory-expiration.utils';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
 import {
   deriveReceivingBatchStatus,
@@ -129,6 +133,7 @@ const STOCK_TRANSFERABLE_UNIT_STATUSES = [
   WmsInventoryUnitStatus.RECEIVED,
   WmsInventoryUnitStatus.STAGED,
   WmsInventoryUnitStatus.PUTAWAY,
+  WmsInventoryUnitStatus.EXPIRED,
   WmsInventoryUnitStatus.DEADSTOCK,
   WmsInventoryUnitStatus.RTS,
   WmsInventoryUnitStatus.DAMAGED,
@@ -143,7 +148,6 @@ const MOBILE_UNITS_ON_HAND_EXCLUDED_STATUSES = [
 ] as const;
 const FULFILLABLE_UNIT_STATUSES = [
   WmsInventoryUnitStatus.PUTAWAY,
-  WmsInventoryUnitStatus.DEADSTOCK,
 ] as const;
 const RETURNED_EQUIVALENT_UNIT_STATUSES = new Set<WmsInventoryUnitStatus>([
   WmsInventoryUnitStatus.RTS,
@@ -2655,6 +2659,14 @@ export class WmsMobileService {
         `Unit ${unit.code} is not in receiving staging. Use Move for already stored units.`,
       );
     }
+    if (unit.productProfile.requiresExpirationDate && !unit.expirationDate) {
+      throw new BadRequestException(
+        `Unit ${unit.code} requires an expiration date. Set it in Inventory > Transfer before put-away.`,
+      );
+    }
+    if (isExpiredInventoryDate(unit.expirationDate)) {
+      throw new BadRequestException(`Unit ${unit.code} has already expired and cannot be put away`);
+    }
 
     const target = await this.resolveTargetLocation(body.targetCode, unit.warehouseId);
     if (target.kind !== WmsLocationKind.BIN) {
@@ -2672,6 +2684,7 @@ export class WmsMobileService {
         data: {
           currentLocationId: target.id,
           status: WmsInventoryUnitStatus.PUTAWAY,
+          expiredAt: null,
           updatedById: user.userId || user.id || undefined,
         },
         include: this.mobileUnitInclude(),
@@ -5951,6 +5964,7 @@ export class WmsMobileService {
       status: {
         in: [...FULFILLABLE_UNIT_STATUSES],
       },
+      AND: [buildUnexpiredInventoryWhere()],
       currentLocationId: {
         not: null,
       },
@@ -5985,6 +5999,9 @@ export class WmsMobileService {
       where: scopedWhere,
       _count: {
         _all: true,
+      },
+      _min: {
+        expirationDate: true,
       },
     });
     const locationIds = unitGroups
@@ -6066,6 +6083,7 @@ export class WmsMobileService {
           locationCode: location?.code ?? '',
           locationSortOrder: location?.sortOrder ?? 0,
           availableQuantity,
+          earliestExpirationDate: group._min.expirationDate,
         };
       })
       .filter((bin): bin is {
@@ -6074,8 +6092,15 @@ export class WmsMobileService {
         locationCode: string;
         locationSortOrder: number;
         availableQuantity: number;
+        earliestExpirationDate: Date | null;
       } => bin !== null && bin.availableQuantity > 0)
       .sort((a, b) => {
+        const aExpiration = a.earliestExpirationDate?.getTime() ?? Number.POSITIVE_INFINITY;
+        const bExpiration = b.earliestExpirationDate?.getTime() ?? Number.POSITIVE_INFINITY;
+        if (aExpiration !== bExpiration) {
+          return aExpiration - bExpiration;
+        }
+
         if (b.availableQuantity !== a.availableQuantity) {
           return b.availableQuantity - a.availableQuantity;
         }
@@ -6341,6 +6366,9 @@ export class WmsMobileService {
       if (!(FULFILLABLE_UNIT_STATUSES as readonly WmsInventoryUnitStatus[]).includes(scannedUnit.status)) {
         throw new BadRequestException(`Unit ${scannedUnit.code} is ${this.formatEnumLabel(scannedUnit.status)} and cannot be picked`);
       }
+      if (isExpiredInventoryDate(scannedUnit.expirationDate)) {
+        throw new BadRequestException(`Unit ${scannedUnit.code} is expired and cannot be picked`);
+      }
 
       const pendingDemandContexts = this.getBasketDemandPickContexts(basket)
         .filter((context: any) => (
@@ -6432,6 +6460,7 @@ export class WmsMobileService {
             status: {
               in: [...FULFILLABLE_UNIT_STATUSES],
             },
+            AND: [buildUnexpiredInventoryWhere()],
             pickReservations: {
               none: {
                 status: { in: [...ACTIVE_PICK_RESERVATION_STATUSES] },
@@ -6574,6 +6603,19 @@ export class WmsMobileService {
 
     if (reservation.status !== WmsPickReservationStatus.RESERVED) {
       throw new BadRequestException(`Unit ${reservation.inventoryUnit.code} is not active for picking`);
+    }
+    if (isExpiredInventoryDate(reservation.inventoryUnit.expirationDate)) {
+      throw new BadRequestException(
+        `Unit ${reservation.inventoryUnit.code} is expired and cannot be picked`,
+      );
+    }
+    if (
+      reservation.inventoryUnit.productProfile.requiresExpirationDate
+      && !reservation.inventoryUnit.expirationDate
+    ) {
+      throw new BadRequestException(
+        `Unit ${reservation.inventoryUnit.code} requires an expiration date and cannot be picked`,
+      );
     }
 
     if (reservation.inventoryUnit.currentLocationId !== activeBin.id) {
@@ -7672,6 +7714,7 @@ export class WmsMobileService {
       status: {
         in: [...FULFILLABLE_UNIT_STATUSES],
       },
+      AND: [buildUnexpiredInventoryWhere()],
       currentLocation: {
         is: {
           kind: WmsLocationKind.BIN,
@@ -7693,6 +7736,7 @@ export class WmsMobileService {
       code: true,
     } satisfies Prisma.WmsInventoryUnitSelect;
     const orderBy = [
+      { expirationDate: 'asc' as const },
       { updatedAt: 'asc' as const },
       { code: 'asc' as const },
     ];
@@ -7758,6 +7802,7 @@ export class WmsMobileService {
       status: {
         in: [...FULFILLABLE_UNIT_STATUSES],
       },
+      AND: [buildUnexpiredInventoryWhere()],
     };
     const binnedWhere: Prisma.WmsInventoryUnitWhereInput = {
       ...putawayWhere,
@@ -9786,6 +9831,7 @@ export class WmsMobileService {
               code: true,
               barcode: true,
               status: true,
+              expirationDate: true,
               productId: true,
               variationId: true,
               warehouseId: true,
@@ -9840,6 +9886,12 @@ export class WmsMobileService {
                   code: true,
                   barcode: true,
                   status: true,
+                  expirationDate: true,
+                  productProfile: {
+                    select: {
+                      requiresExpirationDate: true,
+                    },
+                  },
                   productId: true,
                   variationId: true,
                   warehouseId: true,
@@ -12940,6 +12992,11 @@ export class WmsMobileService {
           status: true,
         },
       },
+      productProfile: {
+        select: {
+          requiresExpirationDate: true,
+        },
+      },
       posProduct: {
         select: {
           id: true,
@@ -13110,6 +13167,8 @@ export class WmsMobileService {
       barcode: unit.barcode,
       status: unit.status,
       statusLabel: this.formatEnumLabel(unit.status),
+      expirationDate: unit.expirationDate,
+      expiredAt: unit.expiredAt,
       productId: unit.productId,
       variationId: unit.variationId,
       name: unit.posProduct.name,
@@ -13294,6 +13353,10 @@ export class WmsMobileService {
     currentStatus: WmsInventoryUnitStatus,
     targetKind: WmsLocationKind,
   ) {
+    if (currentStatus === WmsInventoryUnitStatus.EXPIRED) {
+      return WmsInventoryUnitStatus.EXPIRED;
+    }
+
     if (targetKind === WmsLocationKind.BIN) {
       return currentStatus === WmsInventoryUnitStatus.DEADSTOCK
         ? WmsInventoryUnitStatus.DEADSTOCK

@@ -31,7 +31,7 @@ const ADJUSTABLE_STATUS_OPTIONS: Array<{
   {
     value: 'DEADSTOCK',
     label: 'Deadstock',
-    hint: 'Keep the unit in a bin but classify it as deadstock. Still fulfillable.',
+    hint: 'Keep the unit in a bin but remove it from fulfillment availability.',
   },
   { value: 'RTS', label: 'RTS', hint: 'Mark the unit as a verified return pending final disposition.' },
   { value: 'DAMAGED', label: 'Damaged', hint: 'Move the unit into damage or quarantine.' },

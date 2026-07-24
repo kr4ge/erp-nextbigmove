@@ -13,7 +13,11 @@ import type {
   WmsInventoryTransferOptionsResponse,
   WmsInventoryUnitRecord,
 } from '../_types/inventory';
-import { formatInventoryStatusLabel } from '../_utils/inventory-status-presenters';
+import {
+  formatInventoryExpirationDate,
+  formatInventoryStatusLabel,
+} from '../_utils/inventory-status-presenters';
+import { InventoryExpirationBadge } from './inventory-expiration-badge';
 import { printUnitLabel } from '../_utils/print-unit-label';
 import {
   isCode128CCompatible,
@@ -429,6 +433,21 @@ export function InventoryUnitModal({
                 <MetaItem label="Store" value={unit.store.name} />
                 <MetaItem label="Warehouse" value={`${unit.warehouse.name} (${unit.warehouse.code})`} />
                 <MetaItem label="Location" value={unit.currentLocation?.label ?? 'Not assigned'} />
+                <div className="card">
+                  <p className="card-label">Expiration</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <p className="text-[13px] font-medium text-primary">
+                      {formatInventoryExpirationDate(unit.expirationDate)}
+                    </p>
+                    <InventoryExpirationBadge
+                      expirationDate={unit.expirationDate}
+                      status={unit.status}
+                    />
+                  </div>
+                </div>
+                {unit.expiredAt ? (
+                  <MetaItem label="Expired at" value={formatDateTime(unit.expiredAt)} />
+                ) : null}
                 <MetaItem label="Status" value={formatInventoryStatusLabel(unit.status)} />
                 <MetaItem
                   label="Label Prints"

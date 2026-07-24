@@ -724,6 +724,7 @@ enum WmsInventoryUnitStatus {
   RECEIVED
   STAGED
   PUTAWAY
+  EXPIRED
   DEADSTOCK
   RESERVED
   PICKED
@@ -1540,6 +1541,7 @@ model WmsProductProfile {
   isFragile           Boolean                  @default(false)
   isStackable         Boolean                  @default(true)
   keepDry             Boolean                  @default(false)
+  requiresExpirationDate Boolean                @default(false)
   inhouseUnitCost     Decimal?                 @db.Decimal(14, 2)
   supplierUnitCost    Decimal?                 @db.Decimal(14, 2)
   notes               String?
@@ -1944,6 +1946,8 @@ model WmsInventoryUnit {
   barcode             String                          @unique
   receivingSequence   Int?
   status              WmsInventoryUnitStatus          @default(STAGED)
+  expirationDate      DateTime?                       @db.Date
+  expiredAt           DateTime?
   labelPrintCount     Int                             @default(0)
   firstLabelPrintedAt DateTime?
   lastLabelPrintedAt  DateTime?
@@ -1968,6 +1972,7 @@ model WmsInventoryUnit {
 
   @@index([tenantId, storeId])
   @@index([tenantId, status])
+  @@index([tenantId, status, expirationDate])
   @@index([storeId, variationId])
   @@index([warehouseId, currentLocationId])
   @@index([receivingBatchId])
