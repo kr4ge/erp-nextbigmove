@@ -878,9 +878,9 @@ export class IntegrationService {
     const total = success + fail;
     if (total <= 0) return false;
 
-    // Return-rate risk = failed / total.
+    // Auto-cancel only when the failure rate reaches a full 100%.
     const returnRate = (fail / total) * 100;
-    return returnRate >= 91;
+    return returnRate >= 100;
   }
 
   private getPancakeAutoCancelQueueJobOptions() {
