@@ -7,12 +7,23 @@ import type {
   WmsInvoiceDetail,
   WmsInvoiceDocumentResponse,
   WmsInvoiceOverviewResponse,
+  WmsInvoicePaymentProfile,
   GetWmsPurchasingOverviewParams,
   UpdateWmsPurchasingLineInput,
   UpdateWmsPurchasingStatusInput,
   WmsPurchasingBatchDetail,
   WmsPurchasingOverviewResponse,
 } from '../_types/purchasing';
+
+export async function fetchWmsInvoicePaymentProfiles() {
+  const response = await apiClient.get<{
+    settings: {
+      paymentProfiles: WmsInvoicePaymentProfile[];
+    };
+  }>('/wms/settings/invoice');
+
+  return response.data.settings.paymentProfiles;
+}
 
 export async function fetchWmsPurchasingOverview(params: GetWmsPurchasingOverviewParams = {}) {
   const response = await apiClient.get('/wms/purchasing/overview', {

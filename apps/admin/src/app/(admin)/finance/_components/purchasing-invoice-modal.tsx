@@ -36,6 +36,8 @@ const STATUS_ACTIONS: Record<WmsInvoiceStatus, WmsInvoiceStatus[]> = {
   CANCELED: [],
 };
 
+const MANUAL_INVOICE_VAT_RATE = 12;
+
 export function PurchasingInvoiceModal({
   open,
   invoice,
@@ -55,8 +57,10 @@ export function PurchasingInvoiceModal({
   const actions = invoice ? STATUS_ACTIONS[invoice.status] : [];
   const [isAddingCustomLine, setIsAddingCustomLine] = useState(false);
   const [customDescription, setCustomDescription] = useState('');
+  const [customItemSubtext, setCustomItemSubtext] = useState('');
   const [customQuantity, setCustomQuantity] = useState('1');
   const [customRate, setCustomRate] = useState('0.00');
+  const [customVatEnabled, setCustomVatEnabled] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
   const canAddCustomLine = canEdit && invoice !== null && (invoice.status === 'DRAFT' || invoice.status === 'ISSUED');
   const computedCustomAmount = useMemo(() => {
@@ -72,8 +76,10 @@ export function PurchasingInvoiceModal({
   useEffect(() => {
     setIsAddingCustomLine(false);
     setCustomDescription('');
+    setCustomItemSubtext('');
     setCustomQuantity('1');
     setCustomRate('0.00');
+    setCustomVatEnabled(false);
     setCustomError(null);
   }, [invoice?.id, open]);
 
@@ -109,15 +115,19 @@ export function PurchasingInvoiceModal({
         productId: line.productId ?? undefined,
         variationId: line.variationId ?? undefined,
         description: line.description,
+        itemSubtext: line.itemSubtext ?? undefined,
         quantity: line.quantity,
         unitRate: line.unitRate,
+        vatEnabled: line.vatEnabled,
         rateSource: line.rateSource ?? undefined,
       })),
       {
         description,
+        itemSubtext: customItemSubtext.trim() || undefined,
         quantity,
         unitRate: Number(unitRate.toFixed(2)),
         lineType: 'CUSTOM',
+        vatEnabled: invoice.sourceType === 'MANUAL' && customVatEnabled,
         rateSource: 'CUSTOM_ITEM',
       },
     ]);
@@ -224,10 +234,13 @@ export function PurchasingInvoiceModal({
                       <td className="px-4 py-3">
                         <div className="space-y-1">
                           <p className="text-sm font-semibold text-primary">{line.description}</p>
-                          <p className="text-[12px] text-[#7b8e9c]">
-                            {line.store?.name ?? (line.lineType === 'CUSTOM' ? 'Custom item' : 'Tenant-wide')}
-                            {line.rateSource ? ` · ${line.rateSource}` : ''}
-                          </p>
+                          {line.itemSubtext ? (
+                            <p className="text-xs text-muted">{line.itemSubtext}</p>
+                          ) : null}
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                            {line.store?.name ? <span>{line.store.name}</span> : null}
+                            {line.vatEnabled ? <span className="pill pill-warning">+ VAT {line.vatRate}%</span> : null}
+                          </div>
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-primary">
@@ -267,6 +280,24 @@ export function PurchasingInvoiceModal({
                             className="input h-10 w-full"
                             disabled={isSavingInvoice}
                           />
+                          <input
+                            value={customItemSubtext}
+                            onChange={(event) => setCustomItemSubtext(event.target.value)}
+                            placeholder="Optional text below item"
+                            className="input h-10 w-full"
+                            disabled={isSavingInvoice}
+                          />
+                          {invoice.sourceType === 'MANUAL' ? (
+                            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                              <input
+                                type="checkbox"
+                                checked={customVatEnabled}
+                                onChange={(event) => setCustomVatEnabled(event.target.checked)}
+                                disabled={isSavingInvoice}
+                              />
+                              Add VAT {MANUAL_INVOICE_VAT_RATE}%
+                            </label>
+                          ) : null}
                           {customError ? (
                             <p className="text-[12px] text-destructive">{customError}</p>
                           ) : null}
@@ -313,8 +344,10 @@ export function PurchasingInvoiceModal({
                             onClick={() => {
                               setIsAddingCustomLine(false);
                               setCustomDescription('');
+                              setCustomItemSubtext('');
                               setCustomQuantity('1');
                               setCustomRate('0.00');
+                              setCustomVatEnabled(false);
                               setCustomError(null);
                             }}
                             disabled={isSavingInvoice}
@@ -329,6 +362,30 @@ export function PurchasingInvoiceModal({
                   ) : null}
                 </tbody>
               </table>
+            </div>
+            <div className="border-t border-[#e6edf1] bg-[#fbfcfc] px-4 py-3">
+              <div className="ml-auto w-full max-w-[320px] space-y-2 text-sm">
+                <InvoiceTotalRow
+                  label="Sub Total"
+                  value={formatMoney(invoice.totals.subtotal ?? invoice.totalAmount)}
+                />
+                {(invoice.totals.vatTotal ?? 0) > 0 ? (
+                  <InvoiceTotalRow
+                    label={`+ VAT (${invoice.totals.vatRate ?? MANUAL_INVOICE_VAT_RATE}%)`}
+                    value={formatMoney(invoice.totals.vatTotal)}
+                  />
+                ) : null}
+                <InvoiceTotalRow
+                  label="Total"
+                  value={formatMoney(invoice.totals.totalAmount ?? invoice.totalAmount)}
+                  emphasized
+                />
+                <InvoiceTotalRow
+                  label="Amount Due"
+                  value={formatMoney(invoice.totals.amountDue ?? invoice.amountDue)}
+                  emphasized
+                />
+              </div>
             </div>
           </section>
 
@@ -431,6 +488,27 @@ function formatActivityLabel(actionType: string) {
     .replaceAll('_', ' ')
     .toLowerCase()
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function InvoiceTotalRow({
+  label,
+  value,
+  emphasized = false,
+}: {
+  label: string;
+  value: string;
+  emphasized?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-4 tabular-nums ${
+        emphasized ? 'border-t border-border pt-2 font-semibold text-primary' : 'text-[#4d6677]'
+      }`}
+    >
+      <span>{label}</span>
+      <span className={emphasized ? '' : 'font-semibold text-primary'}>{value}</span>
+    </div>
+  );
 }
 
 function HeaderCell({

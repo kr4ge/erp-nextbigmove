@@ -19,6 +19,14 @@ type PageContext = {
   top: number;
 };
 
+type InvoiceRowLayout = {
+  itemNameLines: string[];
+  inlineStoreText: string | null;
+  storeLines: string[];
+  subtextLines: string[];
+  height: number;
+};
+
 export async function printInvoiceDocument(payload: WmsInvoiceDocumentResponse) {
   if (typeof window === 'undefined') {
     return;
@@ -69,14 +77,23 @@ async function buildInvoicePdf(payload: WmsInvoiceDocumentResponse) {
     rate: 70,
     amount: 70,
   };
-  const rowHeight = 27;
-  const tailReserve = 170;
+  const hasVat = (invoice.totals.vatTotal ?? 0) > 0;
+  const tailReserve = hasVat ? 192 : 170;
   const centeredTableLeft = (PAGE_WIDTH - tableWidth) / 2;
 
   drawTableHeader(context.page, tableTop, centeredTableLeft, tableColumns, regularFont, boldFont);
   let rowsTop = tableTop + 34;
 
   for (let index = 0; index < invoice.lines.length; index += 1) {
+    const rowLayout = buildInvoiceRowLayout({
+      itemName: invoice.lines[index].description,
+      itemSubtext: invoice.lines[index].itemSubtext,
+      storeName: invoice.lines[index].store?.name ?? null,
+      itemWidth: tableColumns.item - 16,
+      regularFont,
+      boldFont,
+    });
+    const rowHeight = rowLayout.height;
     if (rowsTop + rowHeight + tailReserve > PAGE_HEIGHT - PAGE_MARGIN_BOTTOM) {
       context = addPage(pdfDoc);
       drawTableHeader(context.page, context.top, centeredTableLeft, tableColumns, regularFont, boldFont);
@@ -88,8 +105,7 @@ async function buildInvoicePdf(payload: WmsInvoiceDocumentResponse) {
       top: rowsTop,
       left: centeredTableLeft,
       lineNo: invoice.lines[index].lineNo,
-      itemName: invoice.lines[index].description,
-      storeName: invoice.lines[index].store?.name ?? null,
+      rowLayout,
       quantity: invoice.lines[index].quantity.toLocaleString(),
       rate: formatPdfAmount(invoice.lines[index].unitRate),
       amount: formatPdfAmount(invoice.lines[index].amount),
@@ -105,6 +121,8 @@ async function buildInvoicePdf(payload: WmsInvoiceDocumentResponse) {
     page: context.page,
     top: totalsTop,
     subtotal: formatPdfCurrency(invoice.totals.subtotal ?? invoice.totalAmount),
+    vatRate: invoice.totals.vatRate ?? 0,
+    vatTotal: hasVat ? formatPdfCurrency(invoice.totals.vatTotal) : null,
     total: formatPdfCurrency(invoice.totals.totalAmount ?? invoice.totalAmount),
     amountDue: formatPdfCurrency(invoice.totals.amountDue ?? invoice.amountDue),
     regularFont,
@@ -359,8 +377,7 @@ function drawInvoiceRow(params: {
   top: number;
   left: number;
   lineNo: number;
-  itemName: string;
-  storeName: string | null;
+  rowLayout: InvoiceRowLayout;
   quantity: string;
   rate: string;
   amount: string;
@@ -368,7 +385,19 @@ function drawInvoiceRow(params: {
   boldFont: PDFFont;
   columns: { index: number; item: number; qty: number; rate: number; amount: number };
 }) {
-  const { page, top, left, lineNo, itemName, storeName, quantity, rate, amount, regularFont, boldFont, columns } = params;
+  const {
+    page,
+    top,
+    left,
+    lineNo,
+    rowLayout,
+    quantity,
+    rate,
+    amount,
+    regularFont,
+    boldFont,
+    columns,
+  } = params;
   drawCenteredText(page, `${lineNo}`, {
     x: left,
     width: columns.index,
@@ -378,29 +407,47 @@ function drawInvoiceRow(params: {
   });
 
   const itemX = left + columns.index + 10;
-  const itemWidth = columns.item - 16;
-  const fittedItemName = fitText(itemName, itemWidth, boldFont, 10.5);
-  const itemNameWidth = boldFont.widthOfTextAtSize(fittedItemName, 10.5);
-  drawTextFromTop(page, fittedItemName, {
-    x: itemX,
-    top: top + 7,
-    size: 10.5,
-    font: boldFont,
+  const lineHeight = 15;
+
+  rowLayout.itemNameLines.forEach((line, index) => {
+    drawTextFromTop(page, line, {
+      x: itemX,
+      top: top + 7 + (index * lineHeight),
+      size: 10.5,
+      font: boldFont,
+    });
   });
 
-  if (storeName) {
-    const separator = ' - ';
-    const remainingWidth = Math.max(itemWidth - itemNameWidth, 0);
-    const fittedStore = fitText(`${separator}${storeName}`, remainingWidth, regularFont, 10.5);
-    if (fittedStore.trim().length) {
-      drawTextFromTop(page, fittedStore, {
-        x: itemX + itemNameWidth,
-        top: top + 7,
-        size: 10.5,
-        font: regularFont,
-      });
-    }
+  if (rowLayout.inlineStoreText) {
+    const lastItemLine = rowLayout.itemNameLines.at(-1) ?? '';
+    drawTextFromTop(page, rowLayout.inlineStoreText, {
+      x: itemX + boldFont.widthOfTextAtSize(lastItemLine, 10.5),
+      top: top + 7 + ((rowLayout.itemNameLines.length - 1) * lineHeight),
+      size: 10.5,
+      font: regularFont,
+    });
   }
+
+  const storeStartIndex = rowLayout.itemNameLines.length;
+  rowLayout.storeLines.forEach((line, index) => {
+    drawTextFromTop(page, line, {
+      x: itemX,
+      top: top + 7 + ((storeStartIndex + index) * lineHeight),
+      size: 10.5,
+      font: regularFont,
+    });
+  });
+
+  const subtextStartIndex = storeStartIndex + rowLayout.storeLines.length;
+  rowLayout.subtextLines.forEach((line, index) => {
+    drawTextFromTop(page, line, {
+      x: itemX,
+      top: top + 7 + ((subtextStartIndex + index) * lineHeight),
+      size: 10,
+      font: regularFont,
+      color: rgb(78 / 255, 78 / 255, 78 / 255),
+    });
+  });
 
   const qtyRight = left + columns.index + columns.item + columns.qty - 10;
   drawRightAlignedText(page, quantity, {
@@ -427,26 +474,79 @@ function drawInvoiceRow(params: {
   });
 }
 
+function buildInvoiceRowLayout(params: {
+  itemName: string;
+  itemSubtext: string | null;
+  storeName: string | null;
+  itemWidth: number;
+  regularFont: PDFFont;
+  boldFont: PDFFont;
+}): InvoiceRowLayout {
+  const {
+    itemName,
+    itemSubtext,
+    storeName,
+    itemWidth,
+    regularFont,
+    boldFont,
+  } = params;
+  const itemNameLines = wrapLines(itemName, itemWidth, boldFont, 10.5);
+  const safeItemNameLines = itemNameLines.length ? itemNameLines : [''];
+  const storeText = storeName ? ` - ${normalizePdfText(storeName)}` : null;
+  const lastItemLine = safeItemNameLines.at(-1) ?? '';
+  const canRenderStoreInline = Boolean(
+    storeText
+    && boldFont.widthOfTextAtSize(lastItemLine, 10.5)
+      + regularFont.widthOfTextAtSize(storeText, 10.5) <= itemWidth,
+  );
+  const storeLines = storeText && !canRenderStoreInline
+    ? wrapLines(`- ${storeName}`, itemWidth, regularFont, 10.5)
+    : [];
+  const subtextLines = itemSubtext
+    ? wrapLines(itemSubtext, itemWidth, regularFont, 10)
+    : [];
+  const renderedLineCount = safeItemNameLines.length + storeLines.length + subtextLines.length;
+
+  return {
+    itemNameLines: safeItemNameLines,
+    inlineStoreText: canRenderStoreInline ? storeText : null,
+    storeLines,
+    subtextLines,
+    height: Math.max(27, 12 + (renderedLineCount * 15)),
+  };
+}
+
 function drawTotals(params: {
   page: PDFPage;
   top: number;
   subtotal: string;
+  vatRate: number;
+  vatTotal: string | null;
   total: string;
   amountDue: string;
   regularFont: PDFFont;
   boldFont: PDFFont;
 }) {
-  const { page, top, subtotal, total, amountDue, boldFont } = params;
+  const { page, top, subtotal, vatRate, vatTotal, total, amountDue, boldFont } = params;
   const totalWidth = 310;
   const labelWidth = 154;
   const valueWidth = 136;
   const x = PAGE_WIDTH - PAGE_MARGIN_X - totalWidth;
   const rowHeight = 22;
-  const rows = [
+  const rows: Array<{ label: string; value: string; color: ReturnType<typeof rgb> | null }> = [
     { label: 'Sub Total', value: subtotal, color: null },
+  ];
+  if (vatTotal) {
+    rows.push({
+      label: `+ VAT (${formatPdfPercent(vatRate)})`,
+      value: vatTotal,
+      color: null,
+    });
+  }
+  rows.push(
     { label: 'Total', value: total, color: TOTAL_STRIP_COLOR },
     { label: 'Amount Due', value: amountDue, color: AMOUNT_DUE_COLOR },
-  ];
+  );
 
   rows.forEach((row, index) => {
     const rowTop = top + (index * rowHeight);
@@ -513,27 +613,9 @@ function drawPaymentBlock(params: {
   }
 }
 
-function fitText(text: string, maxWidth: number, font: PDFFont, size: number) {
-  if (maxWidth <= 0) {
-    return '';
-  }
-  const normalizedText = normalizePdfText(text);
-  if (font.widthOfTextAtSize(normalizedText, size) <= maxWidth) {
-    return normalizedText;
-  }
-
-  const ellipsis = '...';
-  let output = normalizedText;
-  while (output.length > 1 && font.widthOfTextAtSize(`${output}${ellipsis}`, size) > maxWidth) {
-    output = output.slice(0, -1);
-  }
-
-  return `${output.trimEnd()}${ellipsis}`;
-}
-
 function wrapLines(text: string, maxWidth: number, font: PDFFont, size: number) {
   const normalizedText = normalizePdfText(text);
-  if (!normalizedText.trim()) {
+  if (!normalizedText.trim() || maxWidth <= 0) {
     return [];
   }
 
@@ -551,7 +633,13 @@ function wrapLines(text: string, maxWidth: number, font: PDFFont, size: number) 
     if (current) {
       lines.push(current);
     }
-    current = word;
+    current = '';
+
+    const wordParts = splitTextToWidth(word, maxWidth, font, size);
+    if (wordParts.length > 1) {
+      lines.push(...wordParts.slice(0, -1));
+    }
+    current = wordParts.at(-1) ?? '';
   }
 
   if (current) {
@@ -559,6 +647,31 @@ function wrapLines(text: string, maxWidth: number, font: PDFFont, size: number) 
   }
 
   return lines;
+}
+
+function splitTextToWidth(text: string, maxWidth: number, font: PDFFont, size: number) {
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) {
+    return [text];
+  }
+
+  const parts: string[] = [];
+  let current = '';
+
+  for (const character of text) {
+    const candidate = `${current}${character}`;
+    if (current && font.widthOfTextAtSize(candidate, size) > maxWidth) {
+      parts.push(current);
+      current = character;
+      continue;
+    }
+    current = candidate;
+  }
+
+  if (current) {
+    parts.push(current);
+  }
+
+  return parts;
 }
 
 function splitMultiline(value: string | null | undefined) {
@@ -809,6 +922,13 @@ function formatPdfCurrency(value: number | null | undefined) {
   }
 
   return `PHP ${formatPdfAmount(value)}`;
+}
+
+function formatPdfPercent(value: number) {
+  return `${new Intl.NumberFormat('en-PH', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value)}%`;
 }
 
 function normalizePdfText(value: string) {

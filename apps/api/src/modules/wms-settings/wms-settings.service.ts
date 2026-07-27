@@ -9,6 +9,7 @@ import { CreateWmsSettingsUserDto, UpdateWmsSettingsUserDto } from './dto/wms-se
 import {
   UpdateWmsInvoiceSettingsDto,
   UpdateWmsInvoiceTenantBillingDto,
+  type WmsInvoicePaymentProfileDto,
 } from './dto/update-wms-invoice-settings.dto';
 
 type WmsSettingsUser = {
@@ -670,6 +671,13 @@ export class WmsSettingsService {
             originalFileName: true,
           },
         },
+        paymentProfiles: {
+          orderBy: [
+            { isDefault: 'desc' },
+            { sortOrder: 'asc' },
+            { name: 'asc' },
+          ],
+        },
       },
     });
 
@@ -697,6 +705,7 @@ export class WmsSettingsService {
         bankBranch: settings?.bankBranch ?? null,
         paymentInstructions: settings?.paymentInstructions ?? null,
         footerNotes: settings?.footerNotes ?? null,
+        paymentProfiles: this.mapInvoicePaymentProfiles(settings),
       },
     };
   }
@@ -743,72 +752,175 @@ export class WmsSettingsService {
       ? await this.mediaAssetsService.assertGlobalInvoiceLogoAsset(dto.logoAssetId)
       : null;
 
-    const updated = await this.prisma.wmsInvoiceSettings.upsert({
-      where: { scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE },
-      update: {
-        companyName:
-          dto.companyName !== undefined ? this.cleanOptionalText(dto.companyName) : undefined,
-        companyAddress:
-          dto.companyAddress !== undefined ? this.cleanOptionalText(dto.companyAddress) : undefined,
-        logoAssetId:
-          dto.logoAssetId !== undefined ? (logoAsset?.id ?? null) : undefined,
-        invoicePrefix:
-          dto.invoicePrefix !== undefined
-            ? this.normalizeInvoicePrefix(dto.invoicePrefix)
-            : undefined,
-        bankName:
-          dto.bankName !== undefined ? this.cleanOptionalText(dto.bankName) : undefined,
-        bankAccountName:
-          dto.bankAccountName !== undefined
-            ? this.cleanOptionalText(dto.bankAccountName)
-            : undefined,
-        bankAccountNumber:
-          dto.bankAccountNumber !== undefined
-            ? this.cleanOptionalText(dto.bankAccountNumber)
-            : undefined,
-        bankAccountType:
-          dto.bankAccountType !== undefined
-            ? this.cleanOptionalText(dto.bankAccountType)
-            : undefined,
-        bankBranch:
-          dto.bankBranch !== undefined ? this.cleanOptionalText(dto.bankBranch) : undefined,
-        paymentInstructions:
-          dto.paymentInstructions !== undefined
-            ? this.cleanOptionalText(dto.paymentInstructions)
-            : undefined,
-        footerNotes:
-          dto.footerNotes !== undefined ? this.cleanOptionalText(dto.footerNotes) : undefined,
-        updatedById: actorId,
-      },
-      create: {
-        scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE,
-        companyName: this.cleanOptionalText(dto.companyName),
-        companyAddress: this.cleanOptionalText(dto.companyAddress),
-        logoAssetId: logoAsset?.id ?? null,
-        invoicePrefix: this.normalizeInvoicePrefix(dto.invoicePrefix),
-        bankName: this.cleanOptionalText(dto.bankName),
-        bankAccountName: this.cleanOptionalText(dto.bankAccountName),
-        bankAccountNumber: this.cleanOptionalText(dto.bankAccountNumber),
-        bankAccountType: this.cleanOptionalText(dto.bankAccountType),
-        bankBranch: this.cleanOptionalText(dto.bankBranch),
-        paymentInstructions: this.cleanOptionalText(dto.paymentInstructions),
-        footerNotes: this.cleanOptionalText(dto.footerNotes),
-        createdById: actorId,
-        updatedById: actorId,
-      },
-      include: {
-        logoAsset: {
-          select: {
-            id: true,
-            objectKey: true,
-            contentType: true,
-            byteSize: true,
-            width: true,
-            height: true,
-            originalFileName: true,
+    const normalizedProfiles = dto.paymentProfiles === undefined
+      ? undefined
+      : this.normalizeInvoicePaymentProfiles(dto.paymentProfiles);
+    const defaultProfile = normalizedProfiles?.find((profile) => profile.isDefault) ?? null;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const settings = await tx.wmsInvoiceSettings.upsert({
+        where: { scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE },
+        update: {
+          companyName:
+            dto.companyName !== undefined ? this.cleanOptionalText(dto.companyName) : undefined,
+          companyAddress:
+            dto.companyAddress !== undefined ? this.cleanOptionalText(dto.companyAddress) : undefined,
+          logoAssetId:
+            dto.logoAssetId !== undefined ? (logoAsset?.id ?? null) : undefined,
+          invoicePrefix:
+            dto.invoicePrefix !== undefined
+              ? this.normalizeInvoicePrefix(dto.invoicePrefix)
+              : undefined,
+          bankName:
+            normalizedProfiles !== undefined
+              ? defaultProfile?.bankName ?? null
+              : dto.bankName !== undefined
+                ? this.cleanOptionalText(dto.bankName)
+                : undefined,
+          bankAccountName:
+            normalizedProfiles !== undefined
+              ? defaultProfile?.bankAccountName ?? null
+              : dto.bankAccountName !== undefined
+                ? this.cleanOptionalText(dto.bankAccountName)
+                : undefined,
+          bankAccountNumber:
+            normalizedProfiles !== undefined
+              ? defaultProfile?.bankAccountNumber ?? null
+              : dto.bankAccountNumber !== undefined
+                ? this.cleanOptionalText(dto.bankAccountNumber)
+                : undefined,
+          bankAccountType:
+            normalizedProfiles !== undefined
+              ? defaultProfile?.bankAccountType ?? null
+              : dto.bankAccountType !== undefined
+                ? this.cleanOptionalText(dto.bankAccountType)
+                : undefined,
+          bankBranch:
+            normalizedProfiles !== undefined
+              ? defaultProfile?.bankBranch ?? null
+              : dto.bankBranch !== undefined
+                ? this.cleanOptionalText(dto.bankBranch)
+                : undefined,
+          paymentInstructions:
+            normalizedProfiles !== undefined
+              ? defaultProfile?.paymentInstructions ?? null
+              : dto.paymentInstructions !== undefined
+                ? this.cleanOptionalText(dto.paymentInstructions)
+                : undefined,
+          footerNotes:
+            dto.footerNotes !== undefined ? this.cleanOptionalText(dto.footerNotes) : undefined,
+          updatedById: actorId,
+        },
+        create: {
+          scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE,
+          companyName: this.cleanOptionalText(dto.companyName),
+          companyAddress: this.cleanOptionalText(dto.companyAddress),
+          logoAssetId: logoAsset?.id ?? null,
+          invoicePrefix: this.normalizeInvoicePrefix(dto.invoicePrefix),
+          bankName: defaultProfile?.bankName ?? this.cleanOptionalText(dto.bankName),
+          bankAccountName:
+            defaultProfile?.bankAccountName ?? this.cleanOptionalText(dto.bankAccountName),
+          bankAccountNumber:
+            defaultProfile?.bankAccountNumber ?? this.cleanOptionalText(dto.bankAccountNumber),
+          bankAccountType:
+            defaultProfile?.bankAccountType ?? this.cleanOptionalText(dto.bankAccountType),
+          bankBranch: defaultProfile?.bankBranch ?? this.cleanOptionalText(dto.bankBranch),
+          paymentInstructions:
+            defaultProfile?.paymentInstructions ?? this.cleanOptionalText(dto.paymentInstructions),
+          footerNotes: this.cleanOptionalText(dto.footerNotes),
+          createdById: actorId,
+          updatedById: actorId,
+        },
+      });
+
+      if (normalizedProfiles !== undefined) {
+        const requestedIds = normalizedProfiles
+          .map((profile) => profile.id)
+          .filter((id): id is string => Boolean(id));
+        if (new Set(requestedIds).size !== requestedIds.length) {
+          throw new BadRequestException('A payment profile can only appear once');
+        }
+        const existingProfiles = requestedIds.length
+          ? await tx.wmsInvoicePaymentProfile.findMany({
+              where: {
+                invoiceSettingsId: settings.id,
+                id: { in: requestedIds },
+              },
+              select: { id: true },
+            })
+          : [];
+
+        if (existingProfiles.length !== requestedIds.length) {
+          throw new BadRequestException('One or more payment profiles do not belong to these invoice settings');
+        }
+
+        // Free the unique names first so two existing profiles can safely swap names.
+        for (const profile of existingProfiles) {
+          await tx.wmsInvoicePaymentProfile.update({
+            where: { id: profile.id },
+            data: { name: `__pending__${profile.id}` },
+          });
+        }
+
+        await tx.wmsInvoicePaymentProfile.deleteMany({
+          where: {
+            invoiceSettingsId: settings.id,
+            ...(requestedIds.length ? { id: { notIn: requestedIds } } : {}),
+          },
+        });
+
+        for (const profile of normalizedProfiles) {
+          const data = {
+            name: profile.name,
+            bankName: profile.bankName,
+            bankAccountName: profile.bankAccountName,
+            bankAccountNumber: profile.bankAccountNumber,
+            bankAccountType: profile.bankAccountType,
+            bankBranch: profile.bankBranch,
+            paymentInstructions: profile.paymentInstructions,
+            isDefault: profile.isDefault,
+            sortOrder: profile.sortOrder,
+          };
+
+          if (profile.id) {
+            await tx.wmsInvoicePaymentProfile.update({
+              where: { id: profile.id },
+              data,
+            });
+          } else {
+            await tx.wmsInvoicePaymentProfile.create({
+              data: {
+                invoiceSettingsId: settings.id,
+                ...data,
+              },
+            });
+          }
+        }
+      }
+
+      return tx.wmsInvoiceSettings.findUniqueOrThrow({
+        where: { id: settings.id },
+        include: {
+          logoAsset: {
+            select: {
+              id: true,
+              objectKey: true,
+              contentType: true,
+              byteSize: true,
+              width: true,
+              height: true,
+              originalFileName: true,
+            },
+          },
+          paymentProfiles: {
+            orderBy: [
+              { isDefault: 'desc' },
+              { sortOrder: 'asc' },
+              { name: 'asc' },
+            ],
           },
         },
-      },
+      });
     });
 
     return {
@@ -835,6 +947,7 @@ export class WmsSettingsService {
         bankBranch: updated.bankBranch ?? null,
         paymentInstructions: updated.paymentInstructions ?? null,
         footerNotes: updated.footerNotes ?? null,
+        paymentProfiles: this.mapInvoicePaymentProfiles(updated),
       },
     };
   }
@@ -997,6 +1110,99 @@ export class WmsSettingsService {
   private cleanOptionalText(value?: string | null) {
     const normalized = value?.trim();
     return normalized ? normalized : null;
+  }
+
+  private normalizeInvoicePaymentProfiles(profiles: WmsInvoicePaymentProfileDto[]) {
+    const normalized = profiles.map((profile, index) => ({
+      id: profile.id,
+      name: this.cleanOptionalText(profile.name),
+      bankName: this.cleanOptionalText(profile.bankName),
+      bankAccountName: this.cleanOptionalText(profile.bankAccountName),
+      bankAccountNumber: this.cleanOptionalText(profile.bankAccountNumber),
+      bankAccountType: this.cleanOptionalText(profile.bankAccountType),
+      bankBranch: this.cleanOptionalText(profile.bankBranch),
+      paymentInstructions: this.cleanOptionalText(profile.paymentInstructions),
+      isDefault: profile.isDefault === true,
+      sortOrder: profile.sortOrder ?? index,
+    }));
+
+    if (normalized.some((profile) => !profile.name)) {
+      throw new BadRequestException('Every payment profile needs a name');
+    }
+
+    const uniqueNames = new Set(normalized.map((profile) => profile.name!.toLowerCase()));
+    if (uniqueNames.size !== normalized.length) {
+      throw new BadRequestException('Payment profile names must be unique');
+    }
+
+    if (normalized.length) {
+      const firstDefaultIndex = normalized.findIndex((profile) => profile.isDefault);
+      const defaultIndex = firstDefaultIndex >= 0 ? firstDefaultIndex : 0;
+      normalized.forEach((profile, index) => {
+        profile.isDefault = index === defaultIndex;
+        profile.sortOrder = index;
+      });
+    }
+
+    return normalized.map((profile) => ({
+      ...profile,
+      name: profile.name!,
+    }));
+  }
+
+  private mapInvoicePaymentProfiles(
+    settings: {
+      paymentProfiles: Array<{
+        id: string;
+        name: string;
+        bankName: string | null;
+        bankAccountName: string | null;
+        bankAccountNumber: string | null;
+        bankAccountType: string | null;
+        bankBranch: string | null;
+        paymentInstructions: string | null;
+        isDefault: boolean;
+        sortOrder: number;
+      }>;
+      bankName: string | null;
+      bankAccountName: string | null;
+      bankAccountNumber: string | null;
+      bankAccountType: string | null;
+      bankBranch: string | null;
+      paymentInstructions: string | null;
+    } | null,
+  ) {
+    if (!settings) {
+      return [];
+    }
+
+    if (settings.paymentProfiles.length) {
+      return settings.paymentProfiles;
+    }
+
+    const hasLegacyPaymentDetails = [
+      settings.bankName,
+      settings.bankAccountName,
+      settings.bankAccountNumber,
+      settings.bankAccountType,
+      settings.bankBranch,
+      settings.paymentInstructions,
+    ].some(Boolean);
+
+    return hasLegacyPaymentDetails
+      ? [{
+          id: null,
+          name: 'Default payment',
+          bankName: settings.bankName,
+          bankAccountName: settings.bankAccountName,
+          bankAccountNumber: settings.bankAccountNumber,
+          bankAccountType: settings.bankAccountType,
+          bankBranch: settings.bankBranch,
+          paymentInstructions: settings.paymentInstructions,
+          isDefault: true,
+          sortOrder: 0,
+        }]
+      : [];
   }
 
   private async resolveWmsPermissionKeys(permissionKeys: string[]) {

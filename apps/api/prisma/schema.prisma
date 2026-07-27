@@ -1524,32 +1524,32 @@ model WmsLocation {
 }
 
 model WmsProductProfile {
-  id                  String                   @id @default(uuid()) @db.Uuid
-  tenantId            String                   @db.Uuid
-  tenant              Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeId             String                   @db.Uuid
-  store               PosStore                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  posProductId        String                   @unique @db.Uuid
-  posProduct          PosProduct               @relation(fields: [posProductId], references: [id], onDelete: Cascade)
-  productId           String
-  variationId         String
-  posWarehouseRef     String?
-  status              WmsProductProfileStatus  @default(DEFAULT)
-  isSerialized        Boolean                  @default(true)
-  preferredLocationId String?                  @db.Uuid
-  pickLocationId      String?                  @db.Uuid
-  isFragile           Boolean                  @default(false)
-  isStackable         Boolean                  @default(true)
-  keepDry             Boolean                  @default(false)
-  requiresExpirationDate Boolean                @default(false)
-  inhouseUnitCost     Decimal?                 @db.Decimal(14, 2)
-  supplierUnitCost    Decimal?                 @db.Decimal(14, 2)
-  notes               String?
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
-  purchasingLines     WmsPurchasingBatchLine[] @relation("WmsPurchasingLineResolvedProfile")
-  receivingLines      WmsReceivingLine[]       @relation("WmsReceivingLineResolvedProfile")
-  inventoryUnits      WmsInventoryUnit[]
+  id                     String                   @id @default(uuid()) @db.Uuid
+  tenantId               String                   @db.Uuid
+  tenant                 Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId                String                   @db.Uuid
+  store                  PosStore                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  posProductId           String                   @unique @db.Uuid
+  posProduct             PosProduct               @relation(fields: [posProductId], references: [id], onDelete: Cascade)
+  productId              String
+  variationId            String
+  posWarehouseRef        String?
+  status                 WmsProductProfileStatus  @default(DEFAULT)
+  isSerialized           Boolean                  @default(true)
+  preferredLocationId    String?                  @db.Uuid
+  pickLocationId         String?                  @db.Uuid
+  isFragile              Boolean                  @default(false)
+  isStackable            Boolean                  @default(true)
+  keepDry                Boolean                  @default(false)
+  requiresExpirationDate Boolean                  @default(false)
+  inhouseUnitCost        Decimal?                 @db.Decimal(14, 2)
+  supplierUnitCost       Decimal?                 @db.Decimal(14, 2)
+  notes                  String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  purchasingLines        WmsPurchasingBatchLine[] @relation("WmsPurchasingLineResolvedProfile")
+  receivingLines         WmsReceivingLine[]       @relation("WmsReceivingLineResolvedProfile")
+  inventoryUnits         WmsInventoryUnit[]
 
   @@unique([storeId, variationId])
   @@index([tenantId, storeId])
@@ -1587,15 +1587,15 @@ model MediaAsset {
 }
 
 model WmsInvoiceSettings {
-  id                        String      @id @default(uuid()) @db.Uuid
-  scopeKey                  String      @unique @default("GLOBAL")
-  tenantId                  String?     @unique @db.Uuid
-  tenant                    Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                        String                     @id @default(uuid()) @db.Uuid
+  scopeKey                  String                     @unique @default("GLOBAL")
+  tenantId                  String?                    @unique @db.Uuid
+  tenant                    Tenant?                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   companyName               String?
   companyAddress            String?
-  logoAssetId               String?     @unique @db.Uuid
-  logoAsset                 MediaAsset? @relation("WmsInvoiceSettingsLogo", fields: [logoAssetId], references: [id], onDelete: SetNull)
-  invoicePrefix             String      @default("INV")
+  logoAssetId               String?                    @unique @db.Uuid
+  logoAsset                 MediaAsset?                @relation("WmsInvoiceSettingsLogo", fields: [logoAssetId], references: [id], onDelete: SetNull)
+  invoicePrefix             String                     @default("INV")
   bankName                  String?
   bankAccountName           String?
   bankAccountNumber         String?
@@ -1605,12 +1605,13 @@ model WmsInvoiceSettings {
   footerNotes               String?
   partnerBillingCompanyName String?
   partnerBillingAddress     String?
-  createdById               String?     @db.Uuid
-  createdBy                 User?       @relation("WmsInvoiceSettingsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById               String?     @db.Uuid
-  updatedBy                 User?       @relation("WmsInvoiceSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt                 DateTime    @default(now())
-  updatedAt                 DateTime    @updatedAt
+  createdById               String?                    @db.Uuid
+  createdBy                 User?                      @relation("WmsInvoiceSettingsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById               String?                    @db.Uuid
+  updatedBy                 User?                      @relation("WmsInvoiceSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  paymentProfiles           WmsInvoicePaymentProfile[]
 
   @@index([scopeKey])
   @@index([tenantId])
@@ -1619,29 +1620,51 @@ model WmsInvoiceSettings {
   @@map("wms_invoice_settings")
 }
 
+model WmsInvoicePaymentProfile {
+  id                  String             @id @default(uuid()) @db.Uuid
+  invoiceSettingsId   String             @db.Uuid
+  invoiceSettings     WmsInvoiceSettings @relation(fields: [invoiceSettingsId], references: [id], onDelete: Cascade)
+  name                String
+  bankName            String?
+  bankAccountName     String?
+  bankAccountNumber   String?
+  bankAccountType     String?
+  bankBranch          String?
+  paymentInstructions String?
+  isDefault           Boolean            @default(false)
+  sortOrder           Int                @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@unique([invoiceSettingsId, name])
+  @@index([invoiceSettingsId, isDefault, sortOrder])
+  @@map("wms_invoice_payment_profiles")
+}
+
 model WmsInvoice {
-  id             String               @id @default(uuid()) @db.Uuid
-  tenantId       String               @db.Uuid
-  tenant         Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sourceType     WmsInvoiceSourceType
-  sourceRefId    String?              @db.Uuid
-  sourceRefCode  String?
-  status         WmsInvoiceStatus     @default(DRAFT)
-  invoiceNumber  String
-  issueDate      DateTime?
-  dueDate        DateTime?
-  currency       String               @default("PHP")
-  issuerSnapshot Json                 @default("{}")
-  billToSnapshot Json                 @default("{}")
-  totalsSnapshot Json                 @default("{}")
-  notes          String?
-  createdById    String?              @db.Uuid
-  createdBy      User?                @relation("WmsInvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById    String?              @db.Uuid
-  updatedBy      User?                @relation("WmsInvoiceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  lines          WmsInvoiceLine[]
+  id                     String               @id @default(uuid()) @db.Uuid
+  tenantId               String               @db.Uuid
+  tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceType             WmsInvoiceSourceType
+  sourceRefId            String?              @db.Uuid
+  sourceRefCode          String?
+  status                 WmsInvoiceStatus     @default(DRAFT)
+  invoiceNumber          String
+  issueDate              DateTime?
+  dueDate                DateTime?
+  currency               String               @default("PHP")
+  issuerSnapshot         Json                 @default("{}")
+  billToSnapshot         Json                 @default("{}")
+  paymentProfileSnapshot Json                 @default("{}")
+  totalsSnapshot         Json                 @default("{}")
+  notes                  String?
+  createdById            String?              @db.Uuid
+  createdBy              User?                @relation("WmsInvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById            String?              @db.Uuid
+  updatedBy              User?                @relation("WmsInvoiceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  lines                  WmsInvoiceLine[]
 
   @@unique([tenantId, invoiceNumber])
   @@index([tenantId, sourceType, status])
@@ -1664,9 +1687,13 @@ model WmsInvoiceLine {
   productId    String?
   variationId  String?
   description  String
+  itemSubtext  String?
   quantity     Int
   unitRate     Decimal            @db.Decimal(14, 2)
   amount       Decimal            @db.Decimal(14, 2)
+  vatEnabled   Boolean            @default(false)
+  vatRate      Decimal            @default(0) @db.Decimal(5, 2)
+  vatAmount    Decimal            @default(0) @db.Decimal(14, 2)
   rateSource   String?
   lineSnapshot Json               @default("{}")
   createdAt    DateTime           @default(now())

@@ -2,6 +2,7 @@ import { WmsInvoiceLineType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -39,6 +40,11 @@ class UpdateWmsInvoiceLineDto {
   @MaxLength(280)
   description!: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  itemSubtext?: string | null;
+
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -48,6 +54,10 @@ class UpdateWmsInvoiceLineDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   unitRate!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  vatEnabled?: boolean;
 
   @IsOptional()
   @IsString()
@@ -60,6 +70,10 @@ class UpdateWmsInvoiceLineDto {
 }
 
 export class UpdateWmsInvoiceDto {
+  @IsOptional()
+  @IsUUID()
+  paymentProfileId?: string | null;
+
   @IsOptional()
   @IsDateString()
   issueDate?: string | null;

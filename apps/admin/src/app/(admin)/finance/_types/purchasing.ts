@@ -11,6 +11,18 @@ export type WmsInvoiceStatus =
 
 export type WmsInvoiceLineType = 'SOURCE' | 'CUSTOM';
 
+export type WmsInvoicePaymentProfile = {
+  id: string | null;
+  name: string | null;
+  bankName: string | null;
+  bankAccountName: string | null;
+  bankAccountNumber: string | null;
+  bankAccountType: string | null;
+  bankBranch: string | null;
+  paymentInstructions: string | null;
+  isDefault?: boolean;
+};
+
 export type WmsLinkedInvoiceSummary = {
   id: string;
   sourceType: WmsInvoiceSourceType;
@@ -238,10 +250,13 @@ export type WmsInvoiceRow = {
 export type WmsInvoiceDetail = WmsInvoiceRow & {
   issuer: Record<string, unknown>;
   billTo: Record<string, unknown>;
+  paymentProfile: Record<string, unknown> & Partial<WmsInvoicePaymentProfile>;
   totals: {
     lineCount: number | null;
     totalQuantity: number | null;
     subtotal: number | null;
+    vatRate: number | null;
+    vatTotal: number | null;
     totalAmount: number | null;
     amountDue: number | null;
   };
@@ -257,9 +272,13 @@ export type WmsInvoiceDetail = WmsInvoiceRow & {
     productId: string | null;
     variationId: string | null;
     description: string;
+    itemSubtext: string | null;
     quantity: number;
     unitRate: number;
     amount: number;
+    vatEnabled: boolean;
+    vatRate: number;
+    vatAmount: number;
     rateSource: string | null;
     lineSnapshot: Record<string, unknown> | null;
     createdAt: string;
@@ -294,6 +313,8 @@ export type WmsInvoiceDocumentResponse = {
     };
     billTo: Record<string, unknown>;
     payment: {
+      profileId: string | null;
+      profileName: string | null;
       bankName: string | null;
       bankAccountName: string | null;
       bankAccountNumber: string | null;
@@ -372,13 +393,16 @@ export type WmsInvoiceLineInput = {
   productId?: string;
   variationId?: string;
   description: string;
+  itemSubtext?: string;
   quantity: number;
   unitRate: number;
+  vatEnabled?: boolean;
   rateSource?: string;
   lineType?: WmsInvoiceLineType;
 };
 
 export type CreateWmsInvoiceInput = {
+  paymentProfileId?: string;
   invoiceNumber?: string;
   status?: WmsInvoiceStatus;
   issueDate?: string;
@@ -389,6 +413,7 @@ export type CreateWmsInvoiceInput = {
 };
 
 export type UpdateWmsInvoiceInput = {
+  paymentProfileId?: string | null;
   issueDate?: string | null;
   dueDate?: string | null;
   currency?: string;

@@ -196,6 +196,19 @@ export type WmsInvoiceSettingsLogoAsset = {
   originalFileName: string | null;
 };
 
+export type WmsInvoicePaymentProfile = {
+  id: string | null;
+  name: string;
+  bankName: string | null;
+  bankAccountName: string | null;
+  bankAccountNumber: string | null;
+  bankAccountType: string | null;
+  bankBranch: string | null;
+  paymentInstructions: string | null;
+  isDefault: boolean;
+  sortOrder: number;
+};
+
 export type WmsInvoiceSettingsRecord = {
   companyName: string | null;
   companyAddress: string | null;
@@ -208,6 +221,7 @@ export type WmsInvoiceSettingsRecord = {
   bankBranch: string | null;
   paymentInstructions: string | null;
   footerNotes: string | null;
+  paymentProfiles: WmsInvoicePaymentProfile[];
 };
 
 export type WmsInvoiceSettingsResponse = {
@@ -227,6 +241,18 @@ export type UpdateWmsInvoiceSettingsInput = {
   bankBranch?: string | null;
   paymentInstructions?: string | null;
   footerNotes?: string | null;
+  paymentProfiles?: Array<{
+    id?: string;
+    name: string;
+    bankName?: string | null;
+    bankAccountName?: string | null;
+    bankAccountNumber?: string | null;
+    bankAccountType?: string | null;
+    bankBranch?: string | null;
+    paymentInstructions?: string | null;
+    isDefault?: boolean;
+    sortOrder?: number;
+  }>;
 };
 
 export type WmsInvoicePartnerBillingRecord = {

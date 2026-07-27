@@ -93,6 +93,7 @@ const INVOICE_STATUS_TRANSITIONS: Record<WmsInvoiceStatus, readonly WmsInvoiceSt
 const ACTIVE_WMS_TENANT_STATUSES = [TenantStatus.ACTIVE, TenantStatus.TRIAL] as const;
 
 const GLOBAL_WMS_INVOICE_SETTINGS_SCOPE = 'GLOBAL';
+const MANUAL_INVOICE_VAT_RATE = 12;
 
 const PROCUREMENT_STATUS_TRANSITIONS: Record<
   WmsPurchasingBatchStatus,
@@ -261,6 +262,17 @@ type InvoiceBankDetailsRecord = {
   billingAddress: string | null;
   issuerCompanyName: string | null;
   issuerCompanyAddress: string | null;
+  bankName: string | null;
+  bankAccountName: string | null;
+  bankAccountNumber: string | null;
+  bankAccountType: string | null;
+  bankBranch: string | null;
+  paymentInstructions: string | null;
+};
+
+type InvoicePaymentProfileSnapshot = {
+  id: string | null;
+  name: string;
   bankName: string | null;
   bankAccountName: string | null;
   bankAccountNumber: string | null;
@@ -884,24 +896,32 @@ export class WmsPurchasingService {
     const logoUrl = settings?.logoAsset
       ? await this.mediaAssetsService.createAssetDataUrl(settings.logoAsset)
       : null;
+    const storedPaymentProfile = this.asJsonRecord(invoice.paymentProfileSnapshot);
+    const selectedPaymentProfile = this.hasInvoicePaymentProfile(storedPaymentProfile)
+      ? storedPaymentProfile
+      : this.resolveInvoicePaymentProfile(settings);
     const issuerDocument = {
       ...(invoiceDetail.issuer ?? {}),
       companyName: settings?.companyName ?? this.readJsonString(invoiceDetail.issuer, 'companyName'),
       companyAddress:
         settings?.companyAddress ?? this.readJsonString(invoiceDetail.issuer, 'companyAddress'),
-      bankName: settings?.bankName ?? this.readJsonString(invoiceDetail.issuer, 'bankName'),
+      bankName:
+        this.readJsonString(selectedPaymentProfile, 'bankName')
+        ?? this.readJsonString(invoiceDetail.issuer, 'bankName'),
       bankAccountName:
-        settings?.bankAccountName
+        this.readJsonString(selectedPaymentProfile, 'bankAccountName')
         ?? this.readJsonString(invoiceDetail.issuer, 'bankAccountName'),
       bankAccountNumber:
-        settings?.bankAccountNumber
+        this.readJsonString(selectedPaymentProfile, 'bankAccountNumber')
         ?? this.readJsonString(invoiceDetail.issuer, 'bankAccountNumber'),
       bankAccountType:
-        settings?.bankAccountType
+        this.readJsonString(selectedPaymentProfile, 'bankAccountType')
         ?? this.readJsonString(invoiceDetail.issuer, 'bankAccountType'),
-      bankBranch: settings?.bankBranch ?? this.readJsonString(invoiceDetail.issuer, 'bankBranch'),
+      bankBranch:
+        this.readJsonString(selectedPaymentProfile, 'bankBranch')
+        ?? this.readJsonString(invoiceDetail.issuer, 'bankBranch'),
       paymentInstructions:
-        settings?.paymentInstructions
+        this.readJsonString(selectedPaymentProfile, 'paymentInstructions')
         ?? this.readJsonString(invoiceDetail.issuer, 'paymentInstructions'),
       footerNotes: settings?.footerNotes ?? this.readJsonString(invoiceDetail.issuer, 'footerNotes'),
       logoUrl,
@@ -928,6 +948,8 @@ export class WmsPurchasingService {
         issuer: issuerDocument,
         billTo: billToDocument,
         payment: {
+          profileId: this.readJsonString(selectedPaymentProfile, 'id'),
+          profileName: this.readJsonString(selectedPaymentProfile, 'name'),
           bankName: this.readJsonString(issuerDocument, 'bankName'),
           bankAccountName: this.readJsonString(issuerDocument, 'bankAccountName'),
           bankAccountNumber: this.readJsonString(issuerDocument, 'bankAccountNumber'),
@@ -971,9 +993,14 @@ export class WmsPurchasingService {
             tx,
             scope.activeTenantId!,
             body.lines,
+            { allowVat: true },
           );
           const totals = this.computeInvoiceTotals(normalizedLines);
           const invoiceSettings = await this.getInvoiceSettingsRecordTx(tx, scope.activeTenantId!);
+          const paymentProfile = this.resolveInvoicePaymentProfile(
+            invoiceSettings,
+            body.paymentProfileId,
+          );
           const invoiceNumber = explicitInvoiceNumber
             ?? await this.generateNextInvoiceNumberTx(
               tx,
@@ -993,8 +1020,9 @@ export class WmsPurchasingService {
               issueDate: status === WmsInvoiceStatus.ISSUED ? (issueDate ?? now) : issueDate,
               dueDate,
               currency: this.normalizeInvoiceCurrency(body.currency),
-              issuerSnapshot: this.buildIssuerSnapshot(invoiceSettings, tenant),
+              issuerSnapshot: this.buildIssuerSnapshot(invoiceSettings, tenant, paymentProfile),
               billToSnapshot: this.buildBillToSnapshot(tenant),
+              paymentProfileSnapshot: this.buildPaymentProfileSnapshot(paymentProfile),
               totalsSnapshot: totals as Prisma.InputJsonValue,
               notes: this.cleanOptionalText(body.notes),
               createdById: actorId,
@@ -1008,9 +1036,13 @@ export class WmsPurchasingService {
                   productId: line.productId ?? null,
                   variationId: line.variationId ?? null,
                   description: line.description,
+                  itemSubtext: line.itemSubtext,
                   quantity: line.quantity,
                   unitRate: new Prisma.Decimal(line.unitRate.toFixed(2)),
                   amount: new Prisma.Decimal(line.amount.toFixed(2)),
+                  vatEnabled: line.vatEnabled,
+                  vatRate: new Prisma.Decimal(line.vatRate.toFixed(2)),
+                  vatAmount: new Prisma.Decimal(line.vatAmount.toFixed(2)),
                   rateSource: line.rateSource ?? null,
                   lineSnapshot: this.buildInvoiceLineSnapshot(line),
                 })),
@@ -1109,10 +1141,33 @@ export class WmsPurchasingService {
         throw new BadRequestException('Only draft or issued invoices can be edited');
       }
 
+      if (
+        body.paymentProfileId !== undefined
+        && current.sourceType !== WmsInvoiceSourceType.MANUAL
+      ) {
+        throw new BadRequestException(
+          'Payment information can only be changed on manual invoices',
+        );
+      }
+
       let totalsSnapshot: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput =
         current.totalsSnapshot === null
           ? Prisma.JsonNull
           : current.totalsSnapshot as Prisma.InputJsonValue;
+      let paymentProfileSnapshot: Prisma.InputJsonValue | undefined;
+      let issuerSnapshot: Prisma.InputJsonValue | undefined;
+      if (body.paymentProfileId !== undefined) {
+        const invoiceSettings = await this.getInvoiceSettingsRecordTx(tx, scope.activeTenantId!);
+        const paymentProfile = this.resolveInvoicePaymentProfile(
+          invoiceSettings,
+          body.paymentProfileId,
+        );
+        paymentProfileSnapshot = this.buildPaymentProfileSnapshot(paymentProfile);
+        issuerSnapshot = {
+          ...(this.asJsonRecord(current.issuerSnapshot) ?? {}),
+          ...this.paymentProfileFields(paymentProfile),
+        } as Prisma.InputJsonValue;
+      }
       if (body.lines) {
         if (!body.lines.length) {
           throw new BadRequestException('At least one invoice line is required');
@@ -1122,6 +1177,7 @@ export class WmsPurchasingService {
           tx,
           scope.activeTenantId!,
           body.lines,
+          { allowVat: current.sourceType === WmsInvoiceSourceType.MANUAL },
         );
         const totals = this.applyInvoiceStatusToTotals(
           this.computeInvoiceTotals(normalizedLines),
@@ -1145,9 +1201,13 @@ export class WmsPurchasingService {
             productId: line.productId ?? null,
             variationId: line.variationId ?? null,
             description: line.description,
+            itemSubtext: line.itemSubtext,
             quantity: line.quantity,
             unitRate: new Prisma.Decimal(line.unitRate.toFixed(2)),
             amount: new Prisma.Decimal(line.amount.toFixed(2)),
+            vatEnabled: line.vatEnabled,
+            vatRate: new Prisma.Decimal(line.vatRate.toFixed(2)),
+            vatAmount: new Prisma.Decimal(line.vatAmount.toFixed(2)),
             rateSource: line.rateSource ?? null,
             lineSnapshot: this.buildInvoiceLineSnapshot(line),
           })),
@@ -1165,6 +1225,8 @@ export class WmsPurchasingService {
             body.currency !== undefined ? this.normalizeInvoiceCurrency(body.currency) : undefined,
           notes:
             body.notes !== undefined ? this.cleanOptionalText(body.notes) : undefined,
+          paymentProfileSnapshot,
+          issuerSnapshot,
           totalsSnapshot,
           updatedById: actorId,
         },
@@ -1184,6 +1246,7 @@ export class WmsPurchasingService {
           currencyChanged: body.currency !== undefined,
           dueDateChanged: body.dueDate !== undefined,
           issueDateChanged: body.issueDate !== undefined,
+          paymentProfileChanged: body.paymentProfileId !== undefined,
         }),
       });
 
@@ -3224,21 +3287,28 @@ export class WmsPurchasingService {
         productId: string | null;
         variationId: string | null;
         description: string;
+        itemSubtext?: string | null;
         quantity: number;
         unitRate: number;
         amount: number;
+        vatEnabled?: boolean;
+        vatRate?: number;
+        vatAmount?: number;
         rateSource: string | null;
       }>;
       totals: {
         lineCount: number;
         totalQuantity: number;
         subtotal: number;
+        vatRate: number;
+        vatTotal: number;
         totalAmount: number;
         amountDue: number;
       };
     },
   ) {
     const actorId = (this.cls.get('userId') as string | undefined) ?? null;
+    const paymentProfile = this.resolveInvoicePaymentProfile(input.settings);
 
     if (input.existingInvoiceId) {
       const existing = await tx.wmsInvoice.findUnique({
@@ -3276,8 +3346,9 @@ export class WmsPurchasingService {
         dueDate: input.dueDate,
         currency: input.currency,
         notes: input.notes,
-        issuerSnapshot: this.buildIssuerSnapshot(input.settings, input.tenant),
+        issuerSnapshot: this.buildIssuerSnapshot(input.settings, input.tenant, paymentProfile),
         billToSnapshot: this.buildBillToSnapshot(input.tenant),
+        paymentProfileSnapshot: this.buildPaymentProfileSnapshot(paymentProfile),
         totalsSnapshot: totals as Prisma.InputJsonValue,
         updatedById: actorId,
       } satisfies Prisma.WmsInvoiceUncheckedUpdateInput;
@@ -3322,9 +3393,13 @@ export class WmsPurchasingService {
                 productId: line.productId,
                 variationId: line.variationId,
                 description: line.description,
+                itemSubtext: line.itemSubtext ?? null,
                 quantity: line.quantity,
                 unitRate: new Prisma.Decimal(line.unitRate.toFixed(2)),
                 amount: new Prisma.Decimal(line.amount.toFixed(2)),
+                vatEnabled: line.vatEnabled ?? false,
+                vatRate: new Prisma.Decimal((line.vatRate ?? 0).toFixed(2)),
+                vatAmount: new Prisma.Decimal((line.vatAmount ?? 0).toFixed(2)),
                 rateSource: line.rateSource,
                 lineSnapshot: this.buildInvoiceLineSnapshot(line),
               })),
@@ -3458,8 +3533,9 @@ export class WmsPurchasingService {
       dueDate: input.dueDate,
       currency: input.currency,
       notes: input.notes,
-      issuerSnapshot: this.buildIssuerSnapshot(input.settings, input.tenant),
+      issuerSnapshot: this.buildIssuerSnapshot(input.settings, input.tenant, paymentProfile),
       billToSnapshot: this.buildBillToSnapshot(input.tenant),
+      paymentProfileSnapshot: this.buildPaymentProfileSnapshot(paymentProfile),
       totalsSnapshot: totals as Prisma.InputJsonValue,
       updatedById: actorId,
     } satisfies Prisma.WmsInvoiceUncheckedUpdateInput;
@@ -3478,9 +3554,13 @@ export class WmsPurchasingService {
             productId: line.productId,
             variationId: line.variationId,
             description: line.description,
+            itemSubtext: line.itemSubtext ?? null,
             quantity: line.quantity,
             unitRate: new Prisma.Decimal(line.unitRate.toFixed(2)),
             amount: new Prisma.Decimal(line.amount.toFixed(2)),
+            vatEnabled: line.vatEnabled ?? false,
+            vatRate: new Prisma.Decimal((line.vatRate ?? 0).toFixed(2)),
+            vatAmount: new Prisma.Decimal((line.vatAmount ?? 0).toFixed(2)),
             rateSource: line.rateSource,
             lineSnapshot: this.buildInvoiceLineSnapshot(line),
           })),
@@ -4251,11 +4331,13 @@ export class WmsPurchasingService {
     const totals = this.readInvoiceTotals(invoice.totalsSnapshot);
     const issuerSnapshot = this.asJsonRecord(invoice.issuerSnapshot) ?? {};
     const billToSnapshot = this.asJsonRecord(invoice.billToSnapshot) ?? {};
+    const paymentProfileSnapshot = this.asJsonRecord(invoice.paymentProfileSnapshot) ?? {};
 
     return {
       ...this.mapInvoiceListRow(invoice),
       issuer: issuerSnapshot,
       billTo: billToSnapshot,
+      paymentProfile: paymentProfileSnapshot,
       totals,
       lines: invoice.lines.map((line) => ({
         id: line.id,
@@ -4271,9 +4353,13 @@ export class WmsPurchasingService {
         productId: line.productId,
         variationId: line.variationId,
         description: line.description,
+        itemSubtext: line.itemSubtext,
         quantity: line.quantity,
         unitRate: this.toNumber(line.unitRate) ?? 0,
         amount: this.toNumber(line.amount) ?? 0,
+        vatEnabled: line.vatEnabled,
+        vatRate: this.toNumber(line.vatRate) ?? 0,
+        vatAmount: this.toNumber(line.vatAmount) ?? 0,
         rateSource: line.rateSource,
         lineSnapshot: line.lineSnapshot,
         createdAt: line.createdAt,
@@ -4322,6 +4408,7 @@ export class WmsPurchasingService {
         scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE,
       },
       select: {
+        id: true,
         companyName: true,
         companyAddress: true,
         invoicePrefix: true,
@@ -4334,6 +4421,13 @@ export class WmsPurchasingService {
         footerNotes: true,
         partnerBillingCompanyName: true,
         partnerBillingAddress: true,
+        paymentProfiles: {
+          orderBy: [
+            { isDefault: 'desc' },
+            { sortOrder: 'asc' },
+            { name: 'asc' },
+          ],
+        },
       },
     });
 
@@ -4346,6 +4440,7 @@ export class WmsPurchasingService {
         tenantId,
       },
       select: {
+        id: true,
         companyName: true,
         companyAddress: true,
         invoicePrefix: true,
@@ -4358,6 +4453,13 @@ export class WmsPurchasingService {
         footerNotes: true,
         partnerBillingCompanyName: true,
         partnerBillingAddress: true,
+        paymentProfiles: {
+          orderBy: [
+            { isDefault: 'desc' },
+            { sortOrder: 'asc' },
+            { name: 'asc' },
+          ],
+        },
       },
     });
   }
@@ -4366,6 +4468,15 @@ export class WmsPurchasingService {
     const globalSettings = await this.prisma.wmsInvoiceSettings.findFirst({
       where: {
         scopeKey: GLOBAL_WMS_INVOICE_SETTINGS_SCOPE,
+      },
+      include: {
+        paymentProfiles: {
+          orderBy: [
+            { isDefault: 'desc' },
+            { sortOrder: 'asc' },
+            { name: 'asc' },
+          ],
+        },
       },
     });
 
@@ -4376,6 +4487,15 @@ export class WmsPurchasingService {
     return this.prisma.wmsInvoiceSettings.findFirst({
       where: {
         tenantId,
+      },
+      include: {
+        paymentProfiles: {
+          orderBy: [
+            { isDefault: 'desc' },
+            { sortOrder: 'asc' },
+            { name: 'asc' },
+          ],
+        },
       },
     });
   }
@@ -4397,6 +4517,13 @@ export class WmsPurchasingService {
             originalFileName: true,
           },
         },
+        paymentProfiles: {
+          orderBy: [
+            { isDefault: 'desc' },
+            { sortOrder: 'asc' },
+            { name: 'asc' },
+          ],
+        },
       },
     });
 
@@ -4420,6 +4547,13 @@ export class WmsPurchasingService {
             originalFileName: true,
           },
         },
+        paymentProfiles: {
+          orderBy: [
+            { isDefault: 'desc' },
+            { sortOrder: 'asc' },
+            { name: 'asc' },
+          ],
+        },
       },
     });
   }
@@ -4431,6 +4565,7 @@ export class WmsPurchasingService {
       name: string;
       slug: string;
     },
+    paymentProfile = this.resolveInvoicePaymentProfile(settings),
   ) {
     return {
       tenantId: tenant.id,
@@ -4439,14 +4574,94 @@ export class WmsPurchasingService {
       companyName: settings?.companyName ?? null,
       companyAddress: settings?.companyAddress ?? null,
       invoicePrefix: settings?.invoicePrefix ?? 'INV',
-      bankName: settings?.bankName ?? null,
-      bankAccountName: settings?.bankAccountName ?? null,
-      bankAccountNumber: settings?.bankAccountNumber ?? null,
-      bankAccountType: settings?.bankAccountType ?? null,
-      bankBranch: settings?.bankBranch ?? null,
-      paymentInstructions: settings?.paymentInstructions ?? null,
+      ...this.paymentProfileFields(paymentProfile),
       footerNotes: settings?.footerNotes ?? null,
     } as Prisma.InputJsonValue;
+  }
+
+  private resolveInvoicePaymentProfile(
+    settings:
+      | Awaited<ReturnType<WmsPurchasingService['getInvoiceSettingsRecordTx']>>
+      | Awaited<ReturnType<WmsPurchasingService['findEffectiveInvoiceSettingsWithLogo']>>,
+    requestedProfileId?: string | null,
+  ): InvoicePaymentProfileSnapshot | null {
+    const paymentProfiles = settings?.paymentProfiles ?? [];
+    const selected = requestedProfileId
+      ? paymentProfiles.find((profile) => profile.id === requestedProfileId)
+      : paymentProfiles.find((profile) => profile.isDefault) ?? paymentProfiles[0];
+
+    if (requestedProfileId && !selected) {
+      throw new BadRequestException('Selected payment option was not found in invoice settings');
+    }
+
+    if (selected) {
+      return {
+        id: selected.id,
+        name: selected.name,
+        bankName: selected.bankName ?? null,
+        bankAccountName: selected.bankAccountName ?? null,
+        bankAccountNumber: selected.bankAccountNumber ?? null,
+        bankAccountType: selected.bankAccountType ?? null,
+        bankBranch: selected.bankBranch ?? null,
+        paymentInstructions: selected.paymentInstructions ?? null,
+      };
+    }
+
+    if (!settings) {
+      return null;
+    }
+
+    const hasLegacyPaymentDetails = [
+      settings.bankName,
+      settings.bankAccountName,
+      settings.bankAccountNumber,
+      settings.bankAccountType,
+      settings.bankBranch,
+      settings.paymentInstructions,
+    ].some(Boolean);
+
+    return hasLegacyPaymentDetails
+      ? {
+          id: null,
+          name: 'Default payment',
+          bankName: settings.bankName ?? null,
+          bankAccountName: settings.bankAccountName ?? null,
+          bankAccountNumber: settings.bankAccountNumber ?? null,
+          bankAccountType: settings.bankAccountType ?? null,
+          bankBranch: settings.bankBranch ?? null,
+          paymentInstructions: settings.paymentInstructions ?? null,
+        }
+      : null;
+  }
+
+  private buildPaymentProfileSnapshot(paymentProfile: InvoicePaymentProfileSnapshot | null) {
+    return (paymentProfile ?? {}) as Prisma.InputJsonValue;
+  }
+
+  private paymentProfileFields(paymentProfile: InvoicePaymentProfileSnapshot | null) {
+    return {
+      bankName: paymentProfile?.bankName ?? null,
+      bankAccountName: paymentProfile?.bankAccountName ?? null,
+      bankAccountNumber: paymentProfile?.bankAccountNumber ?? null,
+      bankAccountType: paymentProfile?.bankAccountType ?? null,
+      bankBranch: paymentProfile?.bankBranch ?? null,
+      paymentInstructions: paymentProfile?.paymentInstructions ?? null,
+    };
+  }
+
+  private hasInvoicePaymentProfile(
+    paymentProfile: Record<string, unknown> | null | undefined,
+  ) {
+    return [
+      'id',
+      'name',
+      'bankName',
+      'bankAccountName',
+      'bankAccountNumber',
+      'bankAccountType',
+      'bankBranch',
+      'paymentInstructions',
+    ].some((key) => paymentProfile?.[key] !== undefined && paymentProfile[key] !== null);
   }
 
   private buildBillToSnapshot(tenant: {
@@ -4513,6 +4728,7 @@ export class WmsPurchasingService {
     tx: Prisma.TransactionClient,
     tenantId: string,
     lines: CreateWmsInvoiceLineInput[] | UpdateWmsInvoiceLineInput[],
+    options: { allowVat: boolean },
   ) {
     const storeIds = Array.from(
       new Set(
@@ -4556,6 +4772,9 @@ export class WmsPurchasingService {
       }
 
       const amount = Number((quantity * unitRate).toFixed(2));
+      const vatEnabled = options.allowVat && line.vatEnabled === true;
+      const vatRate = vatEnabled ? MANUAL_INVOICE_VAT_RATE : 0;
+      const vatAmount = Number((amount * (vatRate / 100)).toFixed(2));
 
       return {
         lineNo: line.lineNo ?? index + 1,
@@ -4564,9 +4783,13 @@ export class WmsPurchasingService {
         productId: this.cleanOptionalText(line.productId ?? null),
         variationId: this.cleanOptionalText(line.variationId ?? null),
         description,
+        itemSubtext: this.cleanOptionalText(line.itemSubtext ?? null),
         quantity,
         unitRate: Number(unitRate.toFixed(2)),
         amount,
+        vatEnabled,
+        vatRate,
+        vatAmount,
         rateSource: this.cleanOptionalText(line.rateSource ?? null),
       };
     });
@@ -4576,17 +4799,24 @@ export class WmsPurchasingService {
     lines: Array<{
       quantity: number;
       amount: number;
+      vatAmount?: number;
     }>,
   ) {
     const subtotal = Number(lines.reduce((sum, line) => sum + line.amount, 0).toFixed(2));
+    const vatTotal = Number(
+      lines.reduce((sum, line) => sum + (line.vatAmount ?? 0), 0).toFixed(2),
+    );
+    const totalAmount = Number((subtotal + vatTotal).toFixed(2));
     const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
 
     return {
       lineCount: lines.length,
       totalQuantity,
       subtotal,
-      totalAmount: subtotal,
-      amountDue: subtotal,
+      vatRate: vatTotal > 0 ? MANUAL_INVOICE_VAT_RATE : 0,
+      vatTotal,
+      totalAmount,
+      amountDue: totalAmount,
     };
   }
 
@@ -4595,6 +4825,8 @@ export class WmsPurchasingService {
       lineCount: number;
       totalQuantity: number;
       subtotal: number;
+      vatRate: number;
+      vatTotal: number;
       totalAmount: number;
       amountDue: number;
     },
@@ -4617,9 +4849,13 @@ export class WmsPurchasingService {
       productId: string | null;
       variationId: string | null;
       description: string;
+      itemSubtext?: string | null;
       quantity: number;
       unitRate: number;
       amount: number;
+      vatEnabled?: boolean;
+      vatRate?: number;
+      vatAmount?: number;
       rateSource: string | null;
     },
   >(lines: T[]) {
@@ -4637,9 +4873,13 @@ export class WmsPurchasingService {
       productId: string | null;
       variationId: string | null;
       description: string;
+      itemSubtext: string | null;
       quantity: number;
       unitRate: Prisma.Decimal;
       amount: Prisma.Decimal;
+      vatEnabled: boolean;
+      vatRate: Prisma.Decimal;
+      vatAmount: Prisma.Decimal;
       rateSource: string | null;
     }>,
   ) {
@@ -4652,9 +4892,13 @@ export class WmsPurchasingService {
         productId: line.productId ?? null,
         variationId: line.variationId ?? null,
         description: line.description,
+        itemSubtext: line.itemSubtext,
         quantity: line.quantity,
         unitRate: this.toNumber(line.unitRate) ?? 0,
         amount: this.toNumber(line.amount) ?? 0,
+        vatEnabled: line.vatEnabled,
+        vatRate: this.toNumber(line.vatRate) ?? 0,
+        vatAmount: this.toNumber(line.vatAmount) ?? 0,
         rateSource: line.rateSource ?? null,
       }));
   }
@@ -4665,9 +4909,13 @@ export class WmsPurchasingService {
     productId: string | null;
     variationId: string | null;
     description: string;
+    itemSubtext?: string | null;
     quantity: number;
     unitRate: number;
     amount: number;
+    vatEnabled?: boolean;
+    vatRate?: number;
+    vatAmount?: number;
     rateSource: string | null;
   }) {
     return {
@@ -4676,9 +4924,13 @@ export class WmsPurchasingService {
       productId: line.productId,
       variationId: line.variationId,
       description: line.description,
+      itemSubtext: line.itemSubtext ?? null,
       quantity: line.quantity,
       unitRate: line.unitRate,
       amount: line.amount,
+      vatEnabled: line.vatEnabled ?? false,
+      vatRate: line.vatRate ?? 0,
+      vatAmount: line.vatAmount ?? 0,
       rateSource: line.rateSource,
     } as Prisma.InputJsonValue;
   }
@@ -4688,6 +4940,8 @@ export class WmsPurchasingService {
     const lineCount = this.jsonNumber(snapshot?.lineCount);
     const totalQuantity = this.jsonNumber(snapshot?.totalQuantity);
     const subtotal = this.jsonNumber(snapshot?.subtotal);
+    const vatRate = this.jsonNumber(snapshot?.vatRate);
+    const vatTotal = this.jsonNumber(snapshot?.vatTotal);
     const totalAmount = this.jsonNumber(snapshot?.totalAmount);
     const amountDue = this.jsonNumber(snapshot?.amountDue);
 
@@ -4695,6 +4949,8 @@ export class WmsPurchasingService {
       lineCount,
       totalQuantity,
       subtotal,
+      vatRate,
+      vatTotal,
       totalAmount,
       amountDue,
     };

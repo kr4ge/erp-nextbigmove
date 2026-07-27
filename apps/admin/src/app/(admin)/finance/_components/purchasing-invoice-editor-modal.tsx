@@ -10,7 +10,9 @@ import type {
   UpdateWmsInvoiceInput,
   WmsInvoiceDetail,
   WmsInvoiceLineInput,
+  WmsInvoicePaymentProfile,
 } from '../_types/purchasing';
+import { fetchWmsInvoicePaymentProfiles } from '../_services/purchasing.service';
 import { formatMoney } from '../_utils/purchasing-presenters';
 
 type PurchasingInvoiceEditorModalProps = {
@@ -25,16 +27,20 @@ type PurchasingInvoiceEditorModalProps = {
 
 type LineDraft = {
   description: string;
+  itemSubtext: string;
   quantity: string;
   unitRate: string;
-  rateSource: string;
+  vatEnabled: boolean;
 };
+
+const MANUAL_INVOICE_VAT_RATE = 12;
 
 const EMPTY_LINE: LineDraft = {
   description: '',
+  itemSubtext: '',
   quantity: '1',
   unitRate: '0',
-  rateSource: '',
+  vatEnabled: false,
 };
 
 function toDateInputValue(value: string | null | undefined) {
@@ -62,6 +68,9 @@ export function PurchasingInvoiceEditorModal({
   const [issueDate, setIssueDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [currency, setCurrency] = useState('PHP');
+  const [paymentProfileId, setPaymentProfileId] = useState('');
+  const [paymentProfiles, setPaymentProfiles] = useState<WmsInvoicePaymentProfile[]>([]);
+  const [isLoadingPaymentProfiles, setIsLoadingPaymentProfiles] = useState(false);
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([EMPTY_LINE]);
   const [error, setError] = useState<string | null>(null);
@@ -76,14 +85,18 @@ export function PurchasingInvoiceEditorModal({
       setIssueDate(toDateInputValue(invoice.issueDate));
       setDueDate(toDateInputValue(invoice.dueDate));
       setCurrency(invoice.currency || 'PHP');
+      setPaymentProfileId(
+        typeof invoice.paymentProfile?.id === 'string' ? invoice.paymentProfile.id : '',
+      );
       setNotes(invoice.notes || '');
       setLines(
         invoice.lines.length
           ? invoice.lines.map((line) => ({
               description: line.description,
+              itemSubtext: line.itemSubtext || '',
               quantity: String(line.quantity),
               unitRate: String(line.unitRate),
-              rateSource: line.rateSource || '',
+              vatEnabled: line.vatEnabled,
             }))
           : [EMPTY_LINE],
       );
@@ -93,11 +106,52 @@ export function PurchasingInvoiceEditorModal({
       setIssueDate(today);
       setDueDate(today);
       setCurrency('PHP');
+      setPaymentProfileId('');
       setNotes('');
       setLines([EMPTY_LINE]);
     }
 
     setError(null);
+  }, [invoice, open]);
+
+  useEffect(() => {
+    if (!open || (invoice && invoice.sourceType !== 'MANUAL')) {
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingPaymentProfiles(true);
+
+    fetchWmsInvoicePaymentProfiles()
+      .then((profiles) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setPaymentProfiles(profiles);
+        setPaymentProfileId((current) => {
+          if (invoice) {
+            return current;
+          }
+          return profiles.find((profile) => profile.isDefault)?.id
+            ?? profiles[0]?.id
+            ?? '';
+        });
+      })
+      .catch(() => {
+        if (isMounted) {
+          setPaymentProfiles([]);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingPaymentProfiles(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [invoice, open]);
 
   const computedTotals = useMemo(() => {
@@ -107,12 +161,57 @@ export function PurchasingInvoiceEditorModal({
       const unitRate = Math.max(0, Number(line.unitRate) || 0);
       return sum + (quantity * unitRate);
     }, 0);
+    const vatTotal = lines.reduce((sum, line) => {
+      if (!line.vatEnabled) {
+        return sum;
+      }
+      const quantity = Math.max(0, Number(line.quantity) || 0);
+      const unitRate = Math.max(0, Number(line.unitRate) || 0);
+      return sum + (quantity * unitRate * (MANUAL_INVOICE_VAT_RATE / 100));
+    }, 0);
 
     return {
       totalQuantity,
       subtotal,
+      vatTotal,
+      total: subtotal + vatTotal,
     };
   }, [lines]);
+
+  const paymentProfileOptions = useMemo(() => {
+    if (!invoice || invoice.sourceType !== 'MANUAL') {
+      return paymentProfiles;
+    }
+
+    const savedProfileId =
+      typeof invoice.paymentProfile?.id === 'string' ? invoice.paymentProfile.id : '';
+    const savedProfileIsAvailable = paymentProfiles.some(
+      (profile) => (profile.id ?? '') === savedProfileId,
+    );
+
+    if (savedProfileIsAvailable) {
+      return paymentProfiles;
+    }
+
+    return [
+      {
+        id: savedProfileId || null,
+        name:
+          typeof invoice.paymentProfile?.name === 'string'
+            ? `${invoice.paymentProfile.name} (Saved on invoice)`
+            : 'Saved invoice payment',
+        bankName: null,
+        bankAccountName: null,
+        bankAccountNumber: null,
+        bankAccountType: null,
+        bankBranch: null,
+        paymentInstructions: null,
+        isDefault: false,
+        sortOrder: -1,
+      },
+      ...paymentProfiles,
+    ];
+  }, [invoice, paymentProfiles]);
 
   const updateLine = (index: number, patch: Partial<LineDraft>) => {
     setLines((current) => current.map((line, lineIndex) => (lineIndex === index ? { ...line, ...patch } : line)));
@@ -148,9 +247,10 @@ export function PurchasingInvoiceEditorModal({
       normalizedLines.push({
         lineNo: index + 1,
         description,
+        itemSubtext: line.itemSubtext.trim() || undefined,
         quantity,
         unitRate,
-        rateSource: line.rateSource.trim() || undefined,
+        vatEnabled: line.vatEnabled,
       });
     }
 
@@ -158,7 +258,12 @@ export function PurchasingInvoiceEditorModal({
       setError(null);
 
       if (invoice) {
+        const savedPaymentProfileId =
+          typeof invoice.paymentProfile?.id === 'string' ? invoice.paymentProfile.id : '';
         await onUpdate(invoice.id, {
+          ...(invoice.sourceType === 'MANUAL' && paymentProfileId !== savedPaymentProfileId
+            ? { paymentProfileId: paymentProfileId || null }
+            : {}),
           issueDate: issueDate || null,
           dueDate: dueDate || null,
           currency: currency.trim() || 'PHP',
@@ -167,6 +272,7 @@ export function PurchasingInvoiceEditorModal({
         });
       } else {
         await onCreate({
+          paymentProfileId: paymentProfileId || undefined,
           invoiceNumber: invoiceNumber.trim() || undefined,
           issueDate: issueDate || undefined,
           dueDate: dueDate || undefined,
@@ -225,7 +331,29 @@ export function PurchasingInvoiceEditorModal({
             <input value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} className="input" maxLength={10} />
           </WmsFormField>
 
-          <div className={isEdit ? 'lg:col-span-4' : 'lg:col-span-1'} />
+          {!invoice || invoice.sourceType === 'MANUAL' ? (
+            <WmsFormField
+              label="Payment information"
+              hint={paymentProfileOptions.length ? 'The selected details are saved with this invoice.' : 'Configure payment options in Settings > Invoice.'}
+            >
+              <select
+                value={paymentProfileId}
+                onChange={(event) => setPaymentProfileId(event.target.value)}
+                className="input"
+                disabled={isLoadingPaymentProfiles || paymentProfileOptions.length === 0}
+              >
+                {paymentProfileOptions.length === 0 ? (
+                  <option value="">No payment option configured</option>
+                ) : null}
+                {paymentProfileOptions.map((profile) => (
+                  <option key={profile.id ?? profile.name ?? 'legacy-payment'} value={profile.id ?? ''}>
+                    {profile.name ?? 'Payment option'}
+                    {profile.isDefault ? ' (Default)' : ''}
+                  </option>
+                ))}
+              </select>
+            </WmsFormField>
+          ) : null}
 
           <div className="lg:col-span-4">
             <WmsFormField label="Notes">
@@ -263,7 +391,9 @@ export function PurchasingInvoiceEditorModal({
                   <HeaderCell className="text-right">Qty</HeaderCell>
                   <HeaderCell className="text-right">Rate</HeaderCell>
                   <HeaderCell className="text-right">Amount</HeaderCell>
-                  <HeaderCell>Source</HeaderCell>
+                  <HeaderCell className="text-center">
+                    {`VAT ${MANUAL_INVOICE_VAT_RATE}%`}
+                  </HeaderCell>
                   <HeaderCell className="text-right">Remove</HeaderCell>
                 </tr>
               </thead>
@@ -274,13 +404,21 @@ export function PurchasingInvoiceEditorModal({
                   return (
                     <tr key={`draft-line-${index}`}>
                       <td className="px-4 py-3 text-sm tabular-nums text-[#4d6677]">{index + 1}</td>
-                      <td className="min-w-[280px] px-4 py-3">
-                        <input
-                          value={line.description}
-                          onChange={(event) => updateLine(index, { description: event.target.value })}
-                          className="input"
-                          placeholder="Item description"
-                        />
+                      <td className="min-w-[320px] px-4 py-3">
+                        <div className="space-y-2">
+                          <input
+                            value={line.description}
+                            onChange={(event) => updateLine(index, { description: event.target.value })}
+                            className="input"
+                            placeholder="Item name"
+                          />
+                          <input
+                            value={line.itemSubtext}
+                            onChange={(event) => updateLine(index, { itemSubtext: event.target.value })}
+                            className="input"
+                            placeholder="Optional text below item, e.g. May 13-31, 2026"
+                          />
+                        </div>
                       </td>
                       <td className="min-w-[120px] px-4 py-3">
                         <input
@@ -305,13 +443,15 @@ export function PurchasingInvoiceEditorModal({
                       <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold tabular-nums text-primary">
                         {formatMoney(amount)}
                       </td>
-                      <td className="min-w-[180px] px-4 py-3">
-                        <input
-                          value={line.rateSource}
-                          onChange={(event) => updateLine(index, { rateSource: event.target.value })}
-                          className="input"
-                          placeholder="COGS / manual / supplier"
-                        />
+                      <td className="px-4 py-3 text-center">
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
+                          <input
+                            type="checkbox"
+                            checked={line.vatEnabled}
+                            onChange={(event) => updateLine(index, { vatEnabled: event.target.checked })}
+                          />
+                          Enable
+                        </label>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
@@ -338,6 +478,18 @@ export function PurchasingInvoiceEditorModal({
             <div className="ml-auto mt-2 flex w-full max-w-[320px] items-center justify-between text-sm">
               <span className="font-medium text-[#4d6677]">Subtotal</span>
               <span className="font-semibold tabular-nums text-primary">{formatMoney(computedTotals.subtotal)}</span>
+            </div>
+            {computedTotals.vatTotal > 0 ? (
+              <div className="ml-auto mt-2 flex w-full max-w-[320px] items-center justify-between text-sm">
+                <span className="font-medium text-[#4d6677]">
+                  + VAT ({MANUAL_INVOICE_VAT_RATE}%)
+                </span>
+                <span className="font-semibold tabular-nums text-primary">{formatMoney(computedTotals.vatTotal)}</span>
+              </div>
+            ) : null}
+            <div className="ml-auto mt-2 flex w-full max-w-[320px] items-center justify-between border-t border-border pt-2 text-sm">
+              <span className="font-semibold text-foreground">Total</span>
+              <span className="font-semibold tabular-nums text-primary">{formatMoney(computedTotals.total)}</span>
             </div>
           </div>
         </section>
