@@ -120,6 +120,11 @@ export async function createUndeliverableRemark(
     const response = await apiClient.post(
       `/orders/undeliverables/${attemptId}/remarks`,
       formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      },
     );
     return response.data;
   } catch (error) {

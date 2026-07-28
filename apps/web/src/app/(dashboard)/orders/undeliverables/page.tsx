@@ -575,8 +575,18 @@ export default function UndeliverablesPage() {
                 <Datepicker
                   value={dateRange}
                   onChange={(value) => {
-                    const nextStart = normalizeDatepickerValue(value?.startDate, today);
-                    const nextEnd = normalizeDatepickerValue(value?.endDate ?? value?.startDate, nextStart);
+                    if (!value || (!value.startDate && !value.endDate)) {
+                      return;
+                    }
+
+                    const nextStart = normalizeDatepickerValue(
+                      value.startDate ?? value.endDate,
+                      startDate,
+                    );
+                    const nextEnd = normalizeDatepickerValue(
+                      value.endDate ?? value.startDate,
+                      endDate,
+                    );
                     setDateRange({
                       startDate: parseYmdToLocalDate(nextStart),
                       endDate: parseYmdToLocalDate(nextEnd),
