@@ -15,6 +15,7 @@ import {
   parseYmdToLocalDate,
 } from '../../analytics/_utils/date';
 import { UndeliverablesAssignmentsDialog } from '../_components/undeliverables-assignments-dialog';
+import { UndeliverableProofDialog } from '../_components/undeliverable-proof-dialog';
 import { UndeliverablesRemarkOptionsDialog } from '../_components/undeliverables-remark-options-dialog';
 import { UndeliverablesTable } from '../_components/undeliverables-table';
 import { UndeliverableTrackingPanel } from '../_components/undeliverable-tracking-panel';
@@ -74,6 +75,10 @@ export default function UndeliverablesPage() {
   const [assignmentsData, setAssignmentsData] = useState<UndeliverablesAssignmentsResponse | null>(null);
   const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(false);
   const [trackingRow, setTrackingRow] = useState<UndeliverableRow | null>(null);
+  const [pendingProof, setPendingProof] = useState<{
+    row: UndeliverableRow;
+    remarkOption: UndeliverableRemarkOption;
+  } | null>(null);
   const storePickerRef = useRef<HTMLDivElement | null>(null);
   const loadUndeliverablesRef = useRef<null | (() => Promise<void>)>(null);
   const loadAssignmentsRef = useRef<null | (() => Promise<void>)>(null);
@@ -247,10 +252,29 @@ export default function UndeliverablesPage() {
       await updateUndeliverableRemark(row.latest_remark.id, remarkOptionId);
       addToast('success', 'SA remark updated.');
     } else {
-      await createUndeliverableRemark(row.id, remarkOptionId);
-      addToast('success', 'SA remark added.');
+      const remarkOption = remarkOptions.find((option) => option.id === remarkOptionId);
+      if (!remarkOption) {
+        throw new Error('The selected SA remark is no longer available.');
+      }
+      setPendingProof({ row, remarkOption });
+      return;
     }
 
+    await loadUndeliverables();
+  };
+
+  const handleSaveRemarkProof = async (file: File) => {
+    if (!pendingProof) {
+      throw new Error('Select an SA remark first.');
+    }
+
+    await createUndeliverableRemark(
+      pendingProof.row.id,
+      pendingProof.remarkOption.id,
+      file,
+    );
+    addToast('success', 'SA remark and proof saved.');
+    setPendingProof(null);
     await loadUndeliverables();
   };
 
@@ -621,6 +645,14 @@ export default function UndeliverablesPage() {
       <UndeliverableTrackingPanel
         row={trackingRow}
         onClose={() => setTrackingRow(null)}
+      />
+
+      <UndeliverableProofDialog
+        open={Boolean(pendingProof)}
+        row={pendingProof?.row ?? null}
+        remark={pendingProof?.remarkOption.remark ?? ''}
+        onClose={() => setPendingProof(null)}
+        onSubmit={handleSaveRemarkProof}
       />
 
       <UndeliverablesAssignmentsDialog

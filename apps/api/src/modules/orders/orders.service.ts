@@ -14,6 +14,7 @@ import { Queue } from 'bull';
 import { ClsService } from 'nestjs-cls';
 import { createHash } from 'crypto';
 import {
+  MediaAssetKind,
   NotificationDomain,
   NotificationSystem,
   Prisma,
@@ -23,6 +24,10 @@ import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EffectiveAccessService } from '../../common/services/effective-access.service';
+import {
+  MediaAssetsService,
+  type UploadedImageFile,
+} from '../../common/services/media-assets.service';
 import { NotificationStateService } from '../../common/services/notification-state.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import { IntegrationService } from '../integrations/integration.service';
@@ -284,6 +289,7 @@ export class OrdersService {
     private readonly teamContext: TeamContextService,
     private readonly effectiveAccess: EffectiveAccessService,
     private readonly notificationStateService: NotificationStateService,
+    private readonly mediaAssetsService: MediaAssetsService,
     private readonly integrationService: IntegrationService,
     private readonly workflowExecutionGateway: WorkflowExecutionGateway,
     private readonly ordersAgingNotificationCache: OrdersAgingNotificationCacheService,
@@ -799,6 +805,25 @@ export class OrdersService {
         remarkedAt: true,
         createdAt: true,
         updatedAt: true,
+        proofs: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            uploadedById: true,
+            createdAt: true,
+            mediaAsset: {
+              select: {
+                id: true,
+                objectKey: true,
+                contentType: true,
+                byteSize: true,
+                width: true,
+                height: true,
+                originalFileName: true,
+              },
+            },
+          },
+        },
         order: {
           select: {
             id: true,
@@ -2175,6 +2200,11 @@ export class OrdersService {
           remarkedById: true,
           remarkedAt: true,
           updatedAt: true,
+          _count: {
+            select: {
+              proofs: true,
+            },
+          },
           order: {
             select: {
               id: true,
@@ -2312,6 +2342,7 @@ export class OrdersService {
               author_name:
                 (attempt.remarkedById ? remarkUserMap.get(attempt.remarkedById) : null)
                 || 'Unknown user',
+              proof_count: attempt._count.proofs,
             }
           : null,
       };
@@ -2472,7 +2503,10 @@ export class OrdersService {
     const access = await this.resolveUndeliverablesAccessScope();
     const { attempt, order, store } = await this.resolveUndeliverableAttemptScope(attemptId, access);
 
-    const userIds = attempt.remarkedById ? [attempt.remarkedById] : [];
+    const userIds = Array.from(new Set([
+      ...(attempt.remarkedById ? [attempt.remarkedById] : []),
+      ...attempt.proofs.map((proof) => proof.uploadedById),
+    ]));
     const users = userIds.length > 0
       ? await this.prisma.user.findMany({
           where: { id: { in: userIds } },
@@ -2485,6 +2519,21 @@ export class OrdersService {
       })
       : [];
     const userMap = new Map(users.map((user) => [user.id, this.buildUndeliverableUserLabel(user)]));
+    const proofs = await Promise.all(
+      attempt.proofs.map(async (proof) => ({
+        id: proof.id,
+        asset_id: proof.mediaAsset.id,
+        image_url: await this.mediaAssetsService.createSignedAssetUrl(proof.mediaAsset),
+        content_type: proof.mediaAsset.contentType,
+        byte_size: proof.mediaAsset.byteSize,
+        width: proof.mediaAsset.width,
+        height: proof.mediaAsset.height,
+        original_file_name: proof.mediaAsset.originalFileName,
+        uploaded_at: proof.createdAt.toISOString(),
+        uploaded_by_id: proof.uploadedById,
+        uploaded_by_name: userMap.get(proof.uploadedById) || 'Unknown user',
+      })),
+    );
 
     return {
       order: {
@@ -2506,6 +2555,7 @@ export class OrdersService {
               updated_by_id: attempt.remarkedById,
               created_by_name: attempt.remarkedById ? (userMap.get(attempt.remarkedById) || 'Unknown user') : 'Unknown user',
               updated_by_name: attempt.remarkedById ? (userMap.get(attempt.remarkedById) || 'Unknown user') : null,
+              proofs,
             },
           ]
         : [],
@@ -2525,6 +2575,16 @@ export class OrdersService {
       .filter((entry): entry is UndeliverableTrackingUpdate => Boolean(entry))
       .sort((left, right) => right.sort_timestamp - left.sort_timestamp)
       .map(({ sort_timestamp: _sortTimestamp, ...entry }) => entry);
+    const proofs = await Promise.all(
+      attempt.proofs.map(async (proof) => ({
+        id: proof.id,
+        image_url: await this.mediaAssetsService.createSignedAssetUrl(proof.mediaAsset),
+        byte_size: proof.mediaAsset.byteSize,
+        width: proof.mediaAsset.width,
+        height: proof.mediaAsset.height,
+        uploaded_at: proof.createdAt.toISOString(),
+      })),
+    );
 
     return {
       attempt: {
@@ -2544,6 +2604,10 @@ export class OrdersService {
             : order.statusName,
         store_name: this.buildUndeliverableStoreLabel(store),
         order_items: this.parseUndeliverableOrderItems(order.itemData),
+      },
+      proof: {
+        remark: attempt.remark,
+        items: proofs,
       },
       items,
     };
@@ -2732,7 +2796,11 @@ export class OrdersService {
     };
   }
 
-  async createUndeliverableRemark(attemptId: string, remarkOptionId: string) {
+  async createUndeliverableRemark(
+    attemptId: string,
+    remarkOptionId: string,
+    proofFile: UploadedImageFile | undefined,
+  ) {
     const access = await this.resolveUndeliverablesAccessScope();
     if (!access.canWriteRemarks) {
       throw new ForbiddenException('You do not have permission to write undeliverables remarks');
@@ -2760,30 +2828,66 @@ export class OrdersService {
 
     const remarkedAt = attempt.remarkedAt ?? new Date();
     const remarkedById = attempt.remarkedById ?? access.userId;
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.undeliverableAttempt.updateMany({
-        where: {
-          id: attempt.id,
-          remark: null,
-        },
-        data: {
-          remark: remarkOption.remark,
-          remarkOptionId: remarkOption.id,
-          remarkedById,
-          remarkedAt,
-        },
-      });
+    const proofAsset = await this.mediaAssetsService.uploadUndeliverableRemarkProofImage(
+      proofFile,
+      access.tenantId,
+    );
 
-      if (result.count !== 1) {
-        throw new ConflictException('This delivery attempt already has an SA remark');
+    let updated: {
+      id: string;
+      remark: string | null;
+      updatedAt: Date;
+    };
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        const result = await tx.undeliverableAttempt.updateMany({
+          where: {
+            id: attempt.id,
+            remark: null,
+          },
+          data: {
+            remark: remarkOption.remark,
+            remarkOptionId: remarkOption.id,
+            remarkedById,
+            remarkedAt,
+          },
+        });
+
+        if (result.count !== 1) {
+          throw new ConflictException('This delivery attempt already has an SA remark');
+        }
+
+        await tx.undeliverableAttemptProof.create({
+          data: {
+            tenantId: access.tenantId,
+            attemptId: attempt.id,
+            mediaAssetId: proofAsset.assetId,
+            uploadedById: access.userId,
+          },
+        });
+
+        return tx.undeliverableAttempt.findUniqueOrThrow({
+          where: {
+            id: attempt.id,
+          },
+        });
+      });
+    } catch (error) {
+      try {
+        await this.mediaAssetsService.deleteUnattachedImageAsset(
+          proofAsset.assetId,
+          access.tenantId,
+          MediaAssetKind.UNDELIVERABLE_REMARK_PROOF_IMAGE,
+        );
+      } catch (cleanupError) {
+        this.logger.error(
+          `Failed to clean up proof asset ${proofAsset.assetId}: ${
+            cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          }`,
+        );
       }
-
-      return tx.undeliverableAttempt.findUniqueOrThrow({
-        where: {
-          id: attempt.id,
-        },
-      });
-    });
+      throw error;
+    }
 
     this.emitUndeliverablesUpdated({
       tenantId: access.tenantId,
@@ -2797,6 +2901,7 @@ export class OrdersService {
       item: {
         id: updated.id,
         remark: updated.remark,
+        proof_asset_id: proofAsset.assetId,
         created_at: remarkedAt.toISOString(),
         updated_at: updated.updatedAt.toISOString(),
       },

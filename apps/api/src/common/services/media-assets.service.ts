@@ -34,6 +34,10 @@ export class MediaAssetsService {
     process.env.OBJECT_STORAGE_INVOICE_LOGO_MAX_FILE_MB,
     4,
   );
+  private readonly undeliverableProofMaxFileMb = this.parsePositiveInt(
+    process.env.OBJECT_STORAGE_UNDELIVERABLE_PROOF_MAX_FILE_MB,
+    30,
+  );
 
   constructor(
     private readonly prisma: PrismaService,
@@ -71,6 +75,23 @@ export class MediaAssetsService {
     });
   }
 
+  async uploadUndeliverableRemarkProofImage(
+    file: UploadedImageFile | undefined,
+    tenantId: string,
+  ): Promise<UploadedAssetView> {
+    return this.uploadImageAsset({
+      file,
+      tenantId,
+      kind: MediaAssetKind.UNDELIVERABLE_REMARK_PROOF_IMAGE,
+      maxFileMb: this.undeliverableProofMaxFileMb,
+      objectPrefix: 'undeliverable-proofs',
+      requiredMessage: 'Proof image is required before saving the SA remark',
+      tooLargeLabel: 'Proof image',
+      resizeWidth: 1920,
+      resizeHeight: 2560,
+    });
+  }
+
   async assertTenantOwnedPaymentProofAsset(assetId: string, tenantId: string) {
     return this.assertTenantOwnedImageAsset(
       assetId,
@@ -92,6 +113,35 @@ export class MediaAssetsService {
         requireTenantId: null,
       },
     );
+  }
+
+  async deleteUnattachedImageAsset(
+    assetId: string,
+    tenantId: string,
+    kind: MediaAssetKind,
+  ) {
+    const asset = await this.assertTenantOwnedImageAsset(
+      assetId,
+      tenantId,
+      kind,
+      'Uploaded image was not found',
+      'Uploaded image does not belong to the active tenant',
+      'Uploaded image has an unexpected asset type',
+    );
+
+    await this.prisma.mediaAsset.delete({
+      where: { id: asset.id },
+    });
+
+    try {
+      await this.objectStorageService.deleteObject(asset.objectKey);
+    } catch (error) {
+      this.logger.error(
+        `Failed to remove unreferenced object ${asset.objectKey}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   async createSignedAssetUrl(asset: { objectKey: string } | null | undefined) {
@@ -132,6 +182,8 @@ export class MediaAssetsService {
     objectPrefix: string;
     requiredMessage: string;
     tooLargeLabel: string;
+    resizeWidth?: number;
+    resizeHeight?: number;
   }): Promise<UploadedAssetView> {
     const {
       file,
@@ -141,6 +193,8 @@ export class MediaAssetsService {
       objectPrefix,
       requiredMessage,
       tooLargeLabel,
+      resizeWidth = 1800,
+      resizeHeight = 1800,
     } = params;
 
     if (!file) {
@@ -161,19 +215,32 @@ export class MediaAssetsService {
       throw new BadRequestException(`${tooLargeLabel} must be ${maxFileMb}MB or smaller`);
     }
 
-    const optimized = await sharp(file.buffer)
-      .rotate()
-      .resize({
-        width: 1800,
-        height: 1800,
-        fit: 'inside',
-        withoutEnlargement: true,
+    let optimized: {
+      data: Buffer;
+      info: sharp.OutputInfo;
+    };
+    try {
+      optimized = await sharp(file.buffer, {
+        failOn: 'error',
+        limitInputPixels: 40_000_000,
       })
-      .webp({
-        quality: 82,
-        effort: 5,
-      })
-      .toBuffer({ resolveWithObject: true });
+        .rotate()
+        .resize({
+          width: resizeWidth,
+          height: resizeHeight,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .webp({
+          quality: 82,
+          effort: 5,
+        })
+        .toBuffer({ resolveWithObject: true });
+    } catch {
+      throw new BadRequestException(
+        'The image could not be processed. Upload a valid PNG, JPEG, or WebP image.',
+      );
+    }
 
     const now = new Date();
     const year = `${now.getUTCFullYear()}`;
@@ -194,22 +261,36 @@ export class MediaAssetsService {
       },
     });
 
-    const asset = await this.prisma.mediaAsset.create({
-      data: {
-        tenantId,
-        kind,
-        storageProvider: this.objectStorageService.getProviderName(),
-        bucket: this.objectStorageService.getBucketName(),
-        objectKey,
-        contentType: 'image/webp',
-        byteSize: optimized.info.size,
-        width: optimized.info.width ?? null,
-        height: optimized.info.height ?? null,
-        checksumSha256,
-        originalFileName: this.cleanOptionalText(file.originalname),
-        createdById: actorId,
-      },
-    });
+    let asset;
+    try {
+      asset = await this.prisma.mediaAsset.create({
+        data: {
+          tenantId,
+          kind,
+          storageProvider: this.objectStorageService.getProviderName(),
+          bucket: this.objectStorageService.getBucketName(),
+          objectKey,
+          contentType: 'image/webp',
+          byteSize: optimized.info.size,
+          width: optimized.info.width ?? null,
+          height: optimized.info.height ?? null,
+          checksumSha256,
+          originalFileName: this.cleanOptionalText(file.originalname),
+          createdById: actorId,
+        },
+      });
+    } catch (error) {
+      try {
+        await this.objectStorageService.deleteObject(objectKey);
+      } catch (cleanupError) {
+        this.logger.error(
+          `Failed to clean up object ${objectKey}: ${
+            cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          }`,
+        );
+      }
+      throw error;
+    }
 
     return {
       assetId: asset.id,

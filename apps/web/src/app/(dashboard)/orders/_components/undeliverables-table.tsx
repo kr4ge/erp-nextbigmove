@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, Paperclip } from 'lucide-react';
 import { AnalyticsTableEmptyRow } from '../../analytics/_components/analytics-table-shell';
 import type { UndeliverableRemarkOption, UndeliverableRow } from '../_types/undeliverables';
 
@@ -323,6 +323,15 @@ export function UndeliverablesTable({
                               ? 'Saving...'
                               : row.latest_remark?.remark ?? 'No remarks yet'}
                           </span>
+                          {(row.latest_remark?.proof_count ?? 0) > 0 ? (
+                            <span
+                              className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300"
+                              title={`${row.latest_remark?.proof_count} proof image`}
+                            >
+                              <Paperclip className="h-3 w-3" />
+                              {row.latest_remark?.proof_count}
+                            </span>
+                          ) : null}
                           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                         </button>
                       )

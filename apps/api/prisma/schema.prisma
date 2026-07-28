@@ -56,6 +56,7 @@ model Tenant {
   metaAdInsights                      MetaAdInsight[]
   posOrders                           PosOrder[]
   undeliverableAttempts               UndeliverableAttempt[]
+  undeliverableAttemptProofs          UndeliverableAttemptProof[]
   undeliverableStoreAssignments       UndeliverableStoreAssignment[]
   undeliverableOrderRemarks           UndeliverableOrderRemark[]
   undeliverableRemarkOptions          UndeliverableRemarkOption[]
@@ -347,6 +348,7 @@ model User {
   wmsPurchasingBatchLinesCreated            WmsPurchasingBatchLine[]       @relation("WmsPurchasingBatchLineCreatedBy")
   wmsPurchasingBatchLinesUpdated            WmsPurchasingBatchLine[]       @relation("WmsPurchasingBatchLineUpdatedBy")
   mediaAssetsCreated                        MediaAsset[]                   @relation("MediaAssetCreatedBy")
+  undeliverableAttemptProofsUploaded        UndeliverableAttemptProof[]    @relation("UndeliverableAttemptProofUploadedBy")
   wmsInvoiceSettingsCreated                 WmsInvoiceSettings[]           @relation("WmsInvoiceSettingsCreatedBy")
   wmsInvoiceSettingsUpdated                 WmsInvoiceSettings[]           @relation("WmsInvoiceSettingsUpdatedBy")
   wmsInvoicesCreated                        WmsInvoice[]                   @relation("WmsInvoiceCreatedBy")
@@ -659,6 +661,7 @@ enum WmsPurchasingRequestType {
 enum MediaAssetKind {
   PAYMENT_PROOF_IMAGE
   INVOICE_LOGO_IMAGE
+  UNDELIVERABLE_REMARK_PROOF_IMAGE
 }
 
 enum WmsStoxAppPlatform {
@@ -1319,9 +1322,10 @@ model UndeliverableAttempt {
   sourceTags       Json?
 
   remark         String?
-  remarkOptionId String?   @db.Uuid
-  remarkedById   String?   @db.Uuid
+  remarkOptionId String?                     @db.Uuid
+  remarkedById   String?                     @db.Uuid
   remarkedAt     DateTime?
+  proofs         UndeliverableAttemptProof[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1331,6 +1335,26 @@ model UndeliverableAttempt {
   @@index([tenantId, remarkedAt, failedAt])
   @@index([tenantId, orderId, failedAt])
   @@map("undeliverable_attempts")
+}
+
+model UndeliverableAttemptProof {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  attemptId String               @db.Uuid
+  attempt   UndeliverableAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  mediaAssetId String     @unique @db.Uuid
+  mediaAsset   MediaAsset @relation("UndeliverableAttemptProofAsset", fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  uploadedById String   @db.Uuid
+  uploadedBy   User     @relation("UndeliverableAttemptProofUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, attemptId, createdAt])
+  @@index([uploadedById])
+  @@map("undeliverable_attempt_proofs")
 }
 
 model UndeliverableStoreAssignment {
@@ -1577,8 +1601,9 @@ model MediaAsset {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  wmsInvoiceSettingsLogo           WmsInvoiceSettings?  @relation("WmsInvoiceSettingsLogo")
-  wmsPurchasingBatchesPaymentProof WmsPurchasingBatch[] @relation("WmsPurchasingBatchPaymentProofAsset")
+  wmsInvoiceSettingsLogo           WmsInvoiceSettings?        @relation("WmsInvoiceSettingsLogo")
+  wmsPurchasingBatchesPaymentProof WmsPurchasingBatch[]       @relation("WmsPurchasingBatchPaymentProofAsset")
+  undeliverableAttemptProof        UndeliverableAttemptProof? @relation("UndeliverableAttemptProofAsset")
 
   @@unique([bucket, objectKey])
   @@index([tenantId, kind])

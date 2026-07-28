@@ -8,12 +8,16 @@ import {
   Post,
   Put,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import type { UploadedImageFile } from '../../common/services/media-assets.service';
 import { OrdersService } from './orders.service';
 import { GetAgingOrdersSummaryQueryDto } from './dto/get-aging-orders-summary-query.dto';
 import { GetOrderStatusSummaryQueryDto } from './dto/get-order-status-summary-query.dto';
@@ -210,13 +214,27 @@ export class OrdersController {
     return this.ordersService.deleteUndeliverableRemarkOption(remarkOptionId);
   }
 
-  @Post('undeliverables/:orderId/remarks')
+  @Post('undeliverables/:attemptId/remarks')
   @Permissions('orders.undeliverables.remarks.write')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: {
+      files: 1,
+      fileSize: Math.max(
+        1,
+        Number(process.env.OBJECT_STORAGE_UNDELIVERABLE_PROOF_MAX_FILE_MB || '30'),
+      ) * 1024 * 1024,
+    },
+  }))
   async createUndeliverableRemark(
-    @Param('orderId') orderId: string,
+    @Param('attemptId') attemptId: string,
     @Body() body: CreateUndeliverableOrderRemarkDto,
+    @UploadedFile() file: UploadedImageFile,
   ) {
-    return this.ordersService.createUndeliverableRemark(orderId, body.remarkOptionId);
+    return this.ordersService.createUndeliverableRemark(
+      attemptId,
+      body.remarkOptionId,
+      file,
+    );
   }
 
   @Patch('undeliverables/remarks/:remarkId')

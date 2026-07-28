@@ -10,6 +10,16 @@ export type UndeliverableRemarkPreview = {
   created_at: string;
   updated_at: string;
   author_name: string;
+  proof_count: number;
+};
+
+export type UndeliverableProof = {
+  id: string;
+  image_url: string | null;
+  byte_size: number;
+  width: number | null;
+  height: number | null;
+  uploaded_at: string;
 };
 
 export type UndeliverableLifecycleStatus =
@@ -111,6 +121,13 @@ export type UndeliverableRemarkItem = {
   updated_by_id: string | null;
   created_by_name: string;
   updated_by_name: string | null;
+  proofs: Array<UndeliverableProof & {
+    asset_id: string;
+    content_type: string;
+    original_file_name: string | null;
+    uploaded_by_id: string;
+    uploaded_by_name: string;
+  }>;
 };
 
 export type UndeliverableRemarkOption = {
@@ -167,6 +184,10 @@ export type UndeliverableTrackingResponse = {
       quantity: number;
       product_display_id: string | null;
     }>;
+  };
+  proof: {
+    remark: string | null;
+    items: UndeliverableProof[];
   };
   items: UndeliverableTrackingUpdate[];
 };

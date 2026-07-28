@@ -43,6 +43,7 @@ export function UndeliverablesRemarksDialog({
   const [data, setData] = useState<UndeliverableRemarksResponse | null>(null);
   const [remarkOptions, setRemarkOptions] = useState<UndeliverableRemarkOption[]>([]);
   const [draftRemarkOptionId, setDraftRemarkOptionId] = useState('');
+  const [draftProofFile, setDraftProofFile] = useState<File | null>(null);
   const [editingRemarkId, setEditingRemarkId] = useState<string | null>(null);
   const [editingRemarkOptionId, setEditingRemarkOptionId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -72,6 +73,7 @@ export function UndeliverablesRemarksDialog({
     setEditingRemarkId(null);
     setEditingRemarkOptionId('');
     setDraftRemarkOptionId('');
+    setDraftProofFile(null);
 
     loadDialogData()
       .catch((error) => {
@@ -104,16 +106,17 @@ export function UndeliverablesRemarksDialog({
   }, [remarkOptions]);
 
   const handleCreate = async () => {
-    if (!row || !draftRemarkOptionId) {
+    if (!row || !draftRemarkOptionId || !draftProofFile) {
       return;
     }
 
     setIsSaving(true);
     try {
-      await createUndeliverableRemark(row.id, draftRemarkOptionId);
+      await createUndeliverableRemark(row.id, draftRemarkOptionId, draftProofFile);
       setDraftRemarkOptionId('');
+      setDraftProofFile(null);
       await refresh();
-      onSuccess('Undeliverables remark added.');
+      onSuccess('Undeliverables remark and proof added.');
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Failed to add remark.');
     } finally {
@@ -298,15 +301,29 @@ export function UndeliverablesRemarksDialog({
                 No selectable remarks yet. Create one first in Manage remarks.
               </div>
             )}
+            <label className="mt-3 block">
+              <span className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Proof image
+              </span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => setDraftProofFile(event.target.files?.[0] ?? null)}
+                className="block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-orange-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-700 dark:border-border dark:bg-background-secondary dark:text-slate-200"
+              />
+              <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                PNG, JPEG, or WebP, up to 30 MB.
+              </span>
+            </label>
             <div className="mt-3 flex justify-end">
               <Button
                 type="button"
                 size="sm"
                 loading={isSaving}
-                disabled={!draftRemarkOptionId}
+                disabled={!draftRemarkOptionId || !draftProofFile}
                 onClick={handleCreate}
               >
-                Save remark
+                Save remark and proof
               </Button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import { IsUUID } from 'class-validator';
 
 export class CreateUndeliverableOrderRemarkDto {
-  @IsUUID()
+  @IsUUID('4')
   remarkOptionId!: string;
 }

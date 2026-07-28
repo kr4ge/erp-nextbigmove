@@ -1,7 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Bike, Clock3, MapPin, Package, PackageSearch, RefreshCw } from 'lucide-react';
+import Image from 'next/image';
+import {
+  AlertTriangle,
+  Bike,
+  Clock3,
+  ExternalLink,
+  Image as ImageIcon,
+  MapPin,
+  Package,
+  PackageSearch,
+  RefreshCw,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -130,6 +141,67 @@ function OrderItemsSummary({ items }: { items: UndeliverableTrackingResponse['or
   );
 }
 
+function ProofSummary({ proof }: { proof: UndeliverableTrackingResponse['proof'] }) {
+  if (!proof.remark && proof.items.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="mb-5 rounded-xl border border-slate-200 bg-white p-4 dark:border-border dark:bg-surface">
+      <div className="flex items-center gap-2">
+        <ImageIcon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+        <h3 className="text-sm font-semibold text-foreground">SA proof</h3>
+        <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
+          {proof.items.length} {proof.items.length === 1 ? 'image' : 'images'}
+        </span>
+      </div>
+
+      {proof.remark ? (
+        <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{proof.remark}</p>
+      ) : null}
+
+      {proof.items.length > 0 ? (
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {proof.items.map((item) => (
+            item.image_url ? (
+              <a
+                key={item.id}
+                href={item.image_url}
+                target="_blank"
+                rel="noreferrer"
+                className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-border dark:bg-background-secondary"
+              >
+                <Image
+                  src={item.image_url}
+                  alt="SA remark proof"
+                  width={640}
+                  height={480}
+                  unoptimized
+                  className="aspect-[4/3] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                />
+                <span className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-950/75 text-white">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </span>
+              </a>
+            ) : (
+              <div
+                key={item.id}
+                className="flex aspect-[4/3] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 text-center text-xs text-slate-500 dark:border-border dark:bg-background-secondary dark:text-slate-400"
+              >
+                Proof preview unavailable
+              </div>
+            )
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+          No proof was captured for this historical remark.
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function UndeliverableTrackingPanel({ row, onClose }: UndeliverableTrackingPanelProps) {
   const attemptId = row?.id ?? null;
   const [data, setData] = useState<UndeliverableTrackingResponse | null>(null);
@@ -222,7 +294,10 @@ export function UndeliverableTrackingPanel({ row, onClose }: UndeliverableTracki
             ) : null}
 
             {!isLoading && !error && data ? (
-              <OrderItemsSummary items={data.order.order_items} />
+              <>
+                <ProofSummary proof={data.proof} />
+                <OrderItemsSummary items={data.order.order_items} />
+              </>
             ) : null}
 
             {!isLoading && !error && data?.items.length === 0 ? (

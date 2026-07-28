@@ -108,12 +108,22 @@ export async function fetchUndeliverableRemarkOptions() {
   }
 }
 
-export async function createUndeliverableRemark(orderId: string, remarkOptionId: string) {
+export async function createUndeliverableRemark(
+  attemptId: string,
+  remarkOptionId: string,
+  proofFile: File,
+) {
   try {
-    const response = await apiClient.post(`/orders/undeliverables/${orderId}/remarks`, { remarkOptionId });
+    const formData = new FormData();
+    formData.append('remarkOptionId', remarkOptionId);
+    formData.append('file', proofFile);
+    const response = await apiClient.post(
+      `/orders/undeliverables/${attemptId}/remarks`,
+      formData,
+    );
     return response.data;
   } catch (error) {
-    throw new Error(parseUndeliverablesError(error, 'Failed to create undeliverables remark.'));
+    throw new Error(parseUndeliverablesError(error, 'Failed to save the remark and proof.'));
   }
 }
 

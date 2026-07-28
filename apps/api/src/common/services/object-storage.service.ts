@@ -1,5 +1,6 @@
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
@@ -95,6 +96,14 @@ export class ObjectStorageService implements OnModuleInit {
       bucket: this.getBucketName(),
       key: input.key,
     };
+  }
+
+  async deleteObject(key: string) {
+    const client = this.getClient();
+    await client.send(new DeleteObjectCommand({
+      Bucket: this.getBucketName(),
+      Key: key,
+    }));
   }
 
   async createSignedReadUrl(key: string, options?: SignedReadUrlOptions) {
