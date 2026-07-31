@@ -14,7 +14,11 @@ import { Cache } from 'cache-manager';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { ClsService } from 'nestjs-cls';
-import { Prisma, WmsProductProfileStatus } from '@prisma/client';
+import {
+  IntegrationStatus,
+  Prisma,
+  WmsProductProfileStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import { EncryptionService } from './services/encryption.service';
@@ -878,9 +882,9 @@ export class IntegrationService {
     const total = success + fail;
     if (total <= 0) return false;
 
-    // Auto-cancel only when the failure rate reaches a full 100%.
+    // Auto-cancel when the failure rate is within the 95-100% range.
     const returnRate = (fail / total) * 100;
-    return returnRate >= 100;
+    return returnRate >= 95;
   }
 
   private getPancakeAutoCancelQueueJobOptions() {
@@ -999,12 +1003,25 @@ export class IntegrationService {
         id: true,
         integrationId: true,
         apiKey: true,
+        status: true,
+        integration: {
+          select: {
+            status: true,
+          },
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
     if (!store) {
       return { success: false, reason: 'STORE_NOT_FOUND' };
+    }
+
+    if (
+      store.status === IntegrationStatus.DISABLED
+      || store.integration?.status === IntegrationStatus.DISABLED
+    ) {
+      return { success: false, reason: 'INTEGRATION_DISABLED' };
     }
 
     const apiKey = await this.resolveStoreApiKeyForWebhook(jobData.tenantId, {
