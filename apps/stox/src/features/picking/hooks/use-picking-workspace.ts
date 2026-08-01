@@ -16,12 +16,18 @@ import {
 } from '../services/picking-api';
 import type {
   WmsMobileBasketPickPlan,
+  WmsMobileBasketUnitScanDeltaResult,
+  WmsMobileBasketUnitScanResult,
   PickingFilters,
   PickingStatus,
   WmsMobilePickingBinScanResult,
   WmsMobilePickingResponse,
   WmsMobilePickingTask,
 } from '../types';
+import {
+  applyBasketScanDeltaToPlan,
+  applyBasketScanDeltaToTask,
+} from '../utils/apply-basket-scan-delta';
 
 const PICKING_PAGE_SIZE = 10;
 
@@ -341,16 +347,42 @@ export function usePickingWorkspace({
         binId,
         code,
       });
-      setPicking((current) => current ? replacePickingTasks(current, result.tasks) : current);
-      setBasketPlans((current) => ({
-        ...current,
-        [basketId]: result.plan,
-      }));
-      if (!result.plan.bins.some((group) => group.bin.id === binId)) {
+      if (isLegacyBasketScanResult(result)) {
+        setPicking((current) => current ? replacePickingTasks(current, result.tasks) : current);
+        setBasketPlans((current) => ({
+          ...current,
+          [basketId]: result.plan,
+        }));
+        if (!result.plan.bins.some((group) => group.bin.id === binId)) {
+          setActiveBin(null);
+        }
+        if (result.task) {
+          setActiveTaskId(result.task.id);
+        }
+        setError(null);
+        return true;
+      }
+
+      setPicking((current) => applyBasketScanResultToPicking(current, result));
+      setBasketPlans((current) => {
+        const currentPlan = current[basketId];
+        if (!currentPlan || (result.requiresRefresh && result.alreadyProcessed)) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [basketId]: applyBasketScanDeltaToPlan(currentPlan, result),
+        };
+      });
+      if (result.currentBinComplete) {
         setActiveBin(null);
       }
-      if (result.task) {
-        setActiveTaskId(result.task.id);
+      if (result.taskId) {
+        setActiveTaskId(result.taskId);
+      }
+      if (result.requiresRefresh) {
+        void fetchBasketPlan(basketId);
       }
       setError(null);
       return true;
@@ -360,7 +392,7 @@ export function usePickingWorkspace({
     } finally {
       setIsSubmitting(false);
     }
-  }, [device, filters.tenantId, session.accessToken]);
+  }, [device, fetchBasketPlan, filters.tenantId, session.accessToken]);
 
   const scanUnit = useCallback(async (taskId: string, code: string) => {
     if (!device) {
@@ -609,6 +641,31 @@ function replacePickingTasks(
     (nextPicking, nextTask) => replacePickingTask(nextPicking, nextTask),
     current,
   );
+}
+
+function applyBasketScanResultToPicking(
+  current: WmsMobilePickingResponse | null,
+  result: WmsMobileBasketUnitScanDeltaResult,
+) {
+  if (!current || !result.taskId || !result.counters.order) {
+    return current;
+  }
+
+  const currentTask = findTaskById(current, result.taskId);
+  if (!currentTask) {
+    return current;
+  }
+
+  return replacePickingTask(
+    current,
+    applyBasketScanDeltaToTask(currentTask, result),
+  );
+}
+
+function isLegacyBasketScanResult(
+  result: WmsMobileBasketUnitScanResult,
+): result is Extract<WmsMobileBasketUnitScanResult, { plan: WmsMobileBasketPickPlan }> {
+  return 'plan' in result;
 }
 
 function replacePickingTask(

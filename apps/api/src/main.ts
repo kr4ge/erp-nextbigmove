@@ -39,6 +39,7 @@ async function bootstrap() {
       'X-Client-Platform',
       'X-Device-ID',
       'X-Device-Name',
+      'X-STOX-Scan-Response',
     ],
   });
 

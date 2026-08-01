@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { Queue } from 'bull';
@@ -6319,9 +6320,19 @@ export class WmsMobileService {
     body: WmsMobilePickBasketUnitScanDto,
     request?: Request,
   ) {
+    const scanStartedAt = Date.now();
+    const useDeltaResponse = this.wantsBasketScanDeltaResponse(request);
     const userId = user.userId || user.id || null;
-    const basket = await this.findPickingBasketForAction(user, id, body.tenantId, request);
-    this.assertPickingBasketAssignedToUser(basket, userId);
+    let basket: any = useDeltaResponse
+      ? await this.findPickingBasketForUnitScan(user, id, body.tenantId, request)
+      : await this.findPickingBasketForAction(user, id, body.tenantId, request);
+    if (useDeltaResponse && !this.isDemandPickingBasket(basket)) {
+      basket = await this.findPickingBasketForAction(user, id, body.tenantId, request);
+    }
+    const initialBasketLoadMs = Date.now() - scanStartedAt;
+    this.assertPickingBasketAssignedToUser(basket, userId, {
+      allowFullHeld: useDeltaResponse,
+    });
 
     const activeBin = await this.prisma.wmsLocation.findFirst({
       where: {
@@ -6357,14 +6368,36 @@ export class WmsMobileService {
         );
       }
 
+      if (!(FULFILLABLE_UNIT_STATUSES as readonly WmsInventoryUnitStatus[]).includes(scannedUnit.status)) {
+        const existingBasketUnit = await this.prisma.wmsBasketUnit.findFirst({
+          where: {
+            inventoryUnitId: scannedUnit.id,
+            status: {
+              in: [...ACTIVE_BASKET_UNIT_STATUSES],
+            },
+          },
+          select: {
+            basketId: true,
+          },
+        });
+        if (existingBasketUnit?.basketId === basket.id) {
+          if (useDeltaResponse) {
+            return this.buildIdempotentBasketScanResult({
+              basket,
+              activeBin,
+              scannedUnit,
+            });
+          }
+
+          throw new ConflictException(`Unit ${scannedUnit.code} was already picked in basket ${basket.barcode}`);
+        }
+
+        throw new BadRequestException(`Unit ${scannedUnit.code} is ${this.formatEnumLabel(scannedUnit.status)} and cannot be picked`);
+      }
       if (scannedUnit.currentLocationId !== activeBin.id) {
         throw new BadRequestException(
           `Unit ${scannedUnit.code} is in ${scannedUnit.currentLocation?.code ?? 'another bin'}, not ${activeBin.code}`,
         );
-      }
-
-      if (!(FULFILLABLE_UNIT_STATUSES as readonly WmsInventoryUnitStatus[]).includes(scannedUnit.status)) {
-        throw new BadRequestException(`Unit ${scannedUnit.code} is ${this.formatEnumLabel(scannedUnit.status)} and cannot be picked`);
       }
       if (isExpiredInventoryDate(scannedUnit.expirationDate)) {
         throw new BadRequestException(`Unit ${scannedUnit.code} is expired and cannot be picked`);
@@ -6403,18 +6436,10 @@ export class WmsMobileService {
         );
       }
 
-      const selectedContext = pendingDemandContexts[0];
       const now = new Date();
-      await this.prisma.$transaction(async (tx) => {
+      const transactionStartedAt = Date.now();
+      const executeTransaction = () => this.prisma.$transaction(async (tx) => {
         await this.lockBasketForUpdate(tx, basket.id);
-
-        const scopedBasket = await tx.wmsBasket.findUnique({
-          where: { id: basket.id },
-          include: this.mobileBasketInclude(),
-        });
-        if (!scopedBasket) {
-          throw new NotFoundException('Pick basket was not found');
-        }
 
         const activeBasketUnit = await tx.wmsBasketUnit.findFirst({
           where: {
@@ -6429,26 +6454,53 @@ export class WmsMobileService {
         });
         if (activeBasketUnit) {
           if (activeBasketUnit.basketId === basket.id) {
-            throw new ConflictException(`Unit ${scannedUnit.code} was already picked in basket ${basket.barcode}`);
+            return {
+              alreadyProcessed: true as const,
+            };
           }
 
           throw new ConflictException(`Unit ${scannedUnit.code} is already held by another basket`);
         }
 
-        const scopedPendingContexts = this.getBasketDemandPickContexts(scopedBasket)
-          .filter((context: any) => (
-            context.remainingQuantity > 0
-            && context.order.tenantId === scannedUnit.tenantId
-            && context.order.storeId === scannedUnit.storeId
-            && context.demand.variationId === scannedUnit.variationId
-            && context.bin.location?.id === activeBin.id
-          ))
-          .sort((left: any, right: any) => (
-            (left.bin.routeSequence ?? Number.MAX_SAFE_INTEGER) - (right.bin.routeSequence ?? Number.MAX_SAFE_INTEGER)
-            || left.order.posOrderId.localeCompare(right.order.posOrderId)
-          ));
-        const scopedContext = scopedPendingContexts[0];
-        if (!scopedContext) {
+        const scopedDemandBins = await tx.wmsBasketPickDemandBin.findMany({
+          where: {
+            basketId: basket.id,
+            locationId: activeBin.id,
+            variationId: scannedUnit.variationId,
+            demand: {
+              is: {
+                tenantId: scannedUnit.tenantId,
+                storeId: scannedUnit.storeId,
+              },
+            },
+          },
+          include: {
+            demand: {
+              select: {
+                id: true,
+                fulfillmentOrderId: true,
+                fulfillmentLineId: true,
+                fulfillmentOrder: {
+                  select: {
+                    id: true,
+                    posOrderId: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: [
+            { routeSequence: 'asc' },
+            { createdAt: 'asc' },
+          ],
+        });
+        const scopedBin = scopedDemandBins
+          .filter((candidate) => candidate.quantityPicked < candidate.quantityTarget)
+          .sort((left, right) => (
+            left.routeSequence - right.routeSequence
+            || left.demand.fulfillmentOrder.posOrderId.localeCompare(right.demand.fulfillmentOrder.posOrderId)
+          ))[0];
+        if (!scopedBin) {
           throw new ConflictException(`Bin ${activeBin.code} no longer needs ${scannedUnit.code}`);
         }
 
@@ -6480,6 +6532,23 @@ export class WmsMobileService {
         });
 
         if (inventoryUpdate.count !== 1) {
+          const concurrentBasketUnit = await tx.wmsBasketUnit.findFirst({
+            where: {
+              inventoryUnitId: scannedUnit.id,
+              status: {
+                in: [...ACTIVE_BASKET_UNIT_STATUSES],
+              },
+            },
+            select: {
+              basketId: true,
+            },
+          });
+          if (concurrentBasketUnit?.basketId === basket.id) {
+            return {
+              alreadyProcessed: true as const,
+            };
+          }
+
           throw new ConflictException(`Unit ${scannedUnit.code} changed before this scan completed`);
         }
 
@@ -6500,7 +6569,7 @@ export class WmsMobileService {
 
         await tx.wmsBasketPickDemandBin.update({
           where: {
-            id: scopedContext.bin.id,
+            id: scopedBin.id,
           },
           data: {
             quantityPicked: {
@@ -6511,7 +6580,7 @@ export class WmsMobileService {
 
         await tx.wmsBasketPickDemand.update({
           where: {
-            id: scopedContext.demand.id,
+            id: scopedBin.demand.id,
           },
           data: {
             quantityPicked: {
@@ -6539,15 +6608,113 @@ export class WmsMobileService {
           },
         });
 
-        await this.refreshFulfillmentOrderState(tx, scopedContext.order.id, now);
-        await this.refreshFulfillmentBasketState(tx, scopedContext.order.id, now);
+        await this.refreshFulfillmentOrderState(tx, scopedBin.demand.fulfillmentOrderId, now);
+        await this.refreshFulfillmentBasketState(tx, scopedBin.demand.fulfillmentOrderId, now);
+
+        const [updatedOrder, updatedBasketState, binTotals] = await Promise.all([
+          tx.wmsFulfillmentOrder.findUniqueOrThrow({
+            where: { id: scopedBin.demand.fulfillmentOrderId },
+            select: {
+              id: true,
+              status: true,
+              totalQuantity: true,
+              allocatedQuantity: true,
+              pickedQuantity: true,
+              lines: {
+                where: { id: scopedBin.demand.fulfillmentLineId },
+                select: {
+                  id: true,
+                  status: true,
+                  quantityRequired: true,
+                  quantityAllocated: true,
+                  quantityPicked: true,
+                },
+              },
+            },
+          }),
+          tx.wmsBasket.findUniqueOrThrow({
+            where: { id: basket.id },
+            select: { status: true },
+          }),
+          tx.wmsBasketPickDemandBin.aggregate({
+            where: {
+              basketId: basket.id,
+              locationId: activeBin.id,
+            },
+            _sum: {
+              quantityTarget: true,
+              quantityPicked: true,
+            },
+          }),
+        ]);
+        const updatedLine = updatedOrder.lines[0] ?? null;
+        const binRequired = Math.max(binTotals._sum.quantityTarget ?? 0, 0);
+        const binPicked = Math.min(Math.max(binTotals._sum.quantityPicked ?? 0, 0), binRequired);
+
+        return {
+          alreadyProcessed: false as const,
+          basketStatus: updatedBasketState.status,
+          taskId: updatedOrder.id,
+          lineId: updatedLine?.id ?? scopedBin.demand.fulfillmentLineId,
+          demandId: scopedBin.demand.id,
+          order: {
+            required: updatedOrder.totalQuantity,
+            allocated: updatedOrder.allocatedQuantity,
+            picked: updatedOrder.pickedQuantity,
+            remaining: Math.max(updatedOrder.totalQuantity - updatedOrder.pickedQuantity, 0),
+            status: updatedOrder.status,
+          },
+          line: updatedLine
+            ? {
+                required: updatedLine.quantityRequired,
+                allocated: updatedLine.quantityAllocated,
+                picked: updatedLine.quantityPicked,
+                remaining: Math.max(updatedLine.quantityRequired - updatedLine.quantityPicked, 0),
+                status: updatedLine.status,
+              }
+            : null,
+          bin: {
+            required: binRequired,
+            picked: binPicked,
+            remaining: Math.max(binRequired - binPicked, 0),
+          },
+        };
+      }, {
+        maxWait: 3000,
+        timeout: 10000,
       });
+      let transactionResult: Awaited<ReturnType<typeof executeTransaction>>;
+      try {
+        transactionResult = await executeTransaction();
+      } catch (error) {
+        const transactionMs = Date.now() - transactionStartedAt;
+        this.logger.error(
+          `STOX basket scan failed basket=${basket.id} unit=${scannedUnit.id} initial_load_ms=${initialBasketLoadMs} transaction_ms=${transactionMs} total_ms=${Date.now() - scanStartedAt}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+          throw new ConflictException('Basket changed while this unit was being scanned. Please retry.');
+        }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2028') {
+          throw new ServiceUnavailableException('Basket scan timed out while waiting for inventory. Please retry.');
+        }
+        throw error;
+      }
+      const transactionMs = Date.now() - transactionStartedAt;
 
-      const updatedBasket = await this.findPickingBasketForAction(user, id, body.tenantId, request);
-      const updatedTasks = this.mapMobileBasketTasks(updatedBasket);
-      const updatedTask = updatedTasks.find((task: any) => task.id === selectedContext.order.id) ?? updatedTasks[0] ?? null;
+      if (transactionResult.alreadyProcessed) {
+        if (useDeltaResponse) {
+          return this.buildIdempotentBasketScanResult({
+            basket,
+            activeBin,
+            scannedUnit,
+          });
+        }
 
-      await this.recordStockActivity(user, request, {
+        throw new ConflictException(`Unit ${scannedUnit.code} was already picked in basket ${basket.barcode}`);
+      }
+
+      void this.recordStockActivity(user, request, {
         tenantId: scannedUnit.tenantId,
         actionType: 'PICKING_BASKET_UNIT_SCAN',
         resourceType: 'WMS_INVENTORY_UNIT',
@@ -6559,24 +6726,65 @@ export class WmsMobileService {
           basketId: basket.id,
           basketCode: basket.barcode,
           binCode: activeBin.code,
-          fulfillmentOrderId: selectedContext.order.id,
-          fulfillmentLineId: selectedContext.demand.fulfillmentLineId,
-          posOrderId: selectedContext.order.posOrderId,
+          fulfillmentOrderId: transactionResult.taskId,
+          fulfillmentLineId: transactionResult.lineId,
           unitCode: scannedUnit.code,
           mode: 'BASKET_DEMAND',
         },
       });
 
+      const totalMs = Date.now() - scanStartedAt;
+      const timingMessage = `STOX basket scan basket=${basket.id} unit=${scannedUnit.id} initial_load_ms=${initialBasketLoadMs} transaction_ms=${transactionMs} total_ms=${totalMs}`;
+      if (totalMs >= 2000) {
+        this.logger.warn(timingMessage);
+      } else {
+        this.logger.debug(timingMessage);
+      }
+
+      if (!useDeltaResponse) {
+        const updatedBasket = await this.findPickingBasketForAction(user, id, body.tenantId, request);
+        const updatedTasks = this.mapMobileBasketTasks(updatedBasket);
+        const updatedTask = updatedTasks.find((task: any) => task.id === transactionResult.taskId)
+          ?? updatedTasks[0]
+          ?? null;
+        const updatedContext = this.getBasketDemandPickContexts(updatedBasket).find((context: any) => (
+          context.demand.id === transactionResult.demandId
+          && context.bin.id === activeBin.id
+        )) ?? pendingDemandContexts[0];
+
+        return {
+          success: true,
+          basket: this.mapMobilePickBasket(updatedBasket),
+          task: updatedTask,
+          tasks: updatedTasks,
+          pickedUnit: this.mapMobileBasketPickDemandUnit(updatedContext),
+          plan: this.buildMobileBasketPickPlan(updatedBasket),
+        };
+      }
+
       return {
         success: true,
-        basket: this.mapMobilePickBasket(updatedBasket),
-        task: updatedTask,
-        tasks: updatedTasks,
-        pickedUnit: this.mapMobileBasketPickDemandUnit({
-          ...selectedContext,
-          remainingQuantity: Math.max(selectedContext.remainingQuantity - 1, 0),
-        }),
-        plan: this.buildMobileBasketPickPlan(updatedBasket),
+        alreadyProcessed: false,
+        requiresRefresh: transactionResult.bin.remaining === 0 || transactionResult.order.remaining === 0,
+        basketId: basket.id,
+        basketStatus: transactionResult.basketStatus,
+        taskId: transactionResult.taskId,
+        lineId: transactionResult.lineId,
+        demandId: transactionResult.demandId,
+        binId: activeBin.id,
+        pickedUnit: {
+          id: scannedUnit.id,
+          code: scannedUnit.code,
+          barcode: scannedUnit.barcode,
+          variationId: scannedUnit.variationId,
+        },
+        counters: {
+          order: transactionResult.order,
+          line: transactionResult.line,
+          bin: transactionResult.bin,
+        },
+        currentBinComplete: transactionResult.bin.remaining === 0,
+        orderComplete: transactionResult.order.remaining === 0,
       };
     }
 
@@ -8762,6 +8970,131 @@ export class WmsMobileService {
     return basket;
   }
 
+  private async findPickingBasketForUnitScan(
+    user: BootstrapUser,
+    id: string,
+    requestedTenantId?: string | null,
+    request?: Request,
+  ) {
+    const tenantContext = await this.resolveMobileStockContext(
+      user,
+      { tenantId: requestedTenantId ?? undefined } as GetWmsMobileStockDto,
+      request,
+    );
+    const fulfillmentGoLiveWhere = this.buildFulfillmentGoLiveWhere(
+      await this.getFulfillmentGoLiveAt(tenantContext.tenantId),
+    );
+    const tenantScopeWhere: Prisma.WmsBasketWhereInput = tenantContext.tenantId
+      ? {
+          OR: [
+            { tenantId: tenantContext.tenantId },
+            {
+              fulfillmentOrders: {
+                some: {
+                  tenantId: tenantContext.tenantId,
+                  ...fulfillmentGoLiveWhere,
+                },
+              },
+            },
+          ],
+        }
+      : {};
+    const basket = await this.prisma.wmsBasket.findFirst({
+      where: {
+        id,
+        ...tenantScopeWhere,
+      },
+      include: {
+        warehouse: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+        },
+        fulfillmentOrders: {
+          where: {
+            status: {
+              in: [...ACTIVE_BASKET_ORDER_STATUSES],
+            },
+          },
+          select: {
+            id: true,
+            posOrderId: true,
+            tenantId: true,
+            storeId: true,
+            status: true,
+            assignmentMode: true,
+            posOrder: {
+              select: {
+                status: true,
+                isVoid: true,
+              },
+            },
+            basketPickDemands: {
+              select: {
+                id: true,
+                fulfillmentLineId: true,
+                variationId: true,
+                quantityRequired: true,
+                quantityPicked: true,
+                bins: {
+                  select: {
+                    id: true,
+                    locationId: true,
+                    variationId: true,
+                    quantityTarget: true,
+                    quantityPicked: true,
+                    routeSequence: true,
+                    location: {
+                      select: {
+                        id: true,
+                        code: true,
+                        name: true,
+                        kind: true,
+                      },
+                    },
+                  },
+                  orderBy: [
+                    { routeSequence: 'asc' },
+                    { createdAt: 'asc' },
+                  ],
+                },
+              },
+              orderBy: [{ createdAt: 'asc' }],
+            },
+          },
+          orderBy: [
+            { updatedAt: 'desc' },
+            { createdAt: 'desc' },
+          ],
+        },
+      },
+    });
+
+    if (!basket) {
+      throw new NotFoundException('Pick basket was not found');
+    }
+
+    this.assertLegacyReservedStoxAccessAllowedForBasket(basket);
+    this.assertBasketActivePickOrdersPosConfirmed(basket);
+
+    const userId = user.userId || user.id || null;
+    if (userId) {
+      const [access, taskAssignment] = await Promise.all([
+        this.effectiveAccessService.resolveUserAccess({
+          userId,
+          basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+          workspace: 'wms',
+        }),
+        this.getWmsTaskAssignment(userId),
+      ]);
+      this.assertPickExecutionAccess(user, access.permissions, taskAssignment);
+    }
+
+    return basket;
+  }
+
   private async findPickingBasketForRepairAction(
     user: BootstrapUser,
     id: string,
@@ -10610,6 +10943,49 @@ export class WmsMobileService {
         variationId: context.demand.variationId,
       },
     };
+  }
+
+  private buildIdempotentBasketScanResult(params: {
+    basket: any;
+    activeBin: { id: string };
+    scannedUnit: {
+      id: string;
+      code: string;
+      barcode: string;
+      variationId: string;
+    };
+  }) {
+    return {
+      success: true,
+      alreadyProcessed: true,
+      requiresRefresh: true,
+      basketId: params.basket.id,
+      basketStatus: params.basket.status,
+      taskId: null,
+      lineId: null,
+      demandId: null,
+      binId: params.activeBin.id,
+      pickedUnit: {
+        id: params.scannedUnit.id,
+        code: params.scannedUnit.code,
+        barcode: params.scannedUnit.barcode,
+        variationId: params.scannedUnit.variationId,
+      },
+      counters: {
+        order: null,
+        line: null,
+        bin: null,
+      },
+      currentBinComplete: false,
+      orderComplete: false,
+    };
+  }
+
+  private wantsBasketScanDeltaResponse(request?: Request) {
+    const rawHeader = request?.headers['x-stox-scan-response'];
+    const responseMode = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+
+    return responseMode === 'delta-v1';
   }
 
   private mapMobileHeldBasket(basket: any) {
