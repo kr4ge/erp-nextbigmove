@@ -314,7 +314,48 @@ export type WmsMobileBasketBinScanResult = {
   plan: WmsMobileBasketPickPlan;
 };
 
-export type WmsMobileBasketUnitScanResult = {
+export type WmsMobileBasketUnitScanDeltaResult = {
+  success: boolean;
+  alreadyProcessed: boolean;
+  requiresRefresh: boolean;
+  basketId: string;
+  basketStatus: string;
+  taskId: string | null;
+  lineId: string | null;
+  demandId: string | null;
+  binId: string;
+  pickedUnit: {
+    id: string;
+    code: string;
+    barcode: string;
+    variationId: string;
+  };
+  counters: {
+    order: {
+      required: number;
+      allocated: number;
+      picked: number;
+      remaining: number;
+      status: PickingStatus;
+    } | null;
+    line: {
+      required: number;
+      allocated: number;
+      picked: number;
+      remaining: number;
+      status: string;
+    } | null;
+    bin: {
+      required: number;
+      picked: number;
+      remaining: number;
+    } | null;
+  };
+  currentBinComplete: boolean;
+  orderComplete: boolean;
+};
+
+export type WmsMobileBasketUnitScanLegacyResult = {
   success: boolean;
   basket: WmsMobilePickBasket;
   task: WmsMobilePickingTask | null;
@@ -322,6 +363,10 @@ export type WmsMobileBasketUnitScanResult = {
   pickedUnit: WmsMobileBasketPickUnit;
   plan: WmsMobileBasketPickPlan;
 };
+
+export type WmsMobileBasketUnitScanResult =
+  | WmsMobileBasketUnitScanDeltaResult
+  | WmsMobileBasketUnitScanLegacyResult;
 
 export type WmsMobileBasketLookupResponse = {
   found: boolean;

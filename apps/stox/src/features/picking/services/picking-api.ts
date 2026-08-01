@@ -224,6 +224,10 @@ export function scanMobilePickingBasketUnit(params: PickingRequestParams & {
         binId: params.binId,
         code: params.code,
       },
+      timeoutMs: 15_000,
+      headers: {
+        'X-STOX-Scan-Response': 'delta-v1',
+      },
     },
   );
 }

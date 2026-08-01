@@ -7,6 +7,8 @@ type RequestOptions = {
   body?: unknown;
   device?: DeviceIdentity | null;
   tenantId?: string | null;
+  timeoutMs?: number;
+  headers?: Record<string, string>;
 };
 
 export class ApiError extends Error {
@@ -19,18 +21,38 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method || 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Client-Platform': STOX_CLIENT_PLATFORM,
-      ...(options.device?.id ? { 'X-Device-ID': options.device.id } : {}),
-      ...(options.device?.name ? { 'X-Device-Name': options.device.name } : {}),
-      ...(options.tenantId ? { 'X-Tenant-ID': options.tenantId } : {}),
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  const controller = options.timeoutMs ? new AbortController() : null;
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), options.timeoutMs)
+    : null;
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: options.method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Client-Platform': STOX_CLIENT_PLATFORM,
+        ...(options.device?.id ? { 'X-Device-ID': options.device.id } : {}),
+        ...(options.device?.name ? { 'X-Device-Name': options.device.name } : {}),
+        ...(options.tenantId ? { 'X-Tenant-ID': options.tenantId } : {}),
+        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+        ...options.headers,
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller?.signal,
+    });
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      throw new ApiError('The scan is taking too long. Rescan the same unit safely to check its status.', 408);
+    }
+
+    throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 
   const text = await response.text();
   const payload = text ? tryParseJson(text) : null;
