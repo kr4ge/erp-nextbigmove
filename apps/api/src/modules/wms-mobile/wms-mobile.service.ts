@@ -2992,9 +2992,17 @@ export class WmsMobileService {
         : userId
           ? { assignedPickerId: userId }
           : { assignedPickerId: '__missing_user__' }),
-      status: {
-        in: [...ACTIVE_PICK_BASKET_STATUSES],
-      },
+      OR: [
+        {
+          status: {
+            in: [...PICKER_ACTIVE_BASKET_STATUSES],
+          },
+        },
+        {
+          status: WmsBasketStatus.FULL_HELD,
+          assignedPackerId: null,
+        },
+      ],
       ...(tenantId ? { tenantId } : {}),
       fulfillmentOrders: {
         some: heldBasketOrderWhere,

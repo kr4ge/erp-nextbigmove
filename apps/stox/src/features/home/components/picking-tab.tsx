@@ -56,6 +56,12 @@ const PICK_STATUS_FILTERS: Array<{ label: string; value: PickingStatus | null }>
 ];
 const PICK_LIST_PAGE_SIZE = 10;
 
+function isMonitoredPickBasket(basket: WmsMobilePickBasket) {
+  return basket.status === 'ASSIGNED'
+    || basket.status === 'IN_PICKING'
+    || (basket.status === 'FULL_HELD' && !basket.assignedPacker);
+}
+
 export function PickingTab({ bootstrap, device, session }: PickingTabProps) {
   if (!canUsePickWorkspace(bootstrap)) {
     return (
@@ -560,7 +566,17 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
           ) : null}
 
           {activeTab === 'baskets' ? (
-            <AvailableBasketSection baskets={picking?.availableBaskets ?? []} />
+            <>
+              <SectionLabel
+                title="Picking Baskets"
+                trailing={`${(picking?.heldBaskets ?? []).filter(isMonitoredPickBasket).length}`}
+              />
+              <HeldBasketTaskList
+                baskets={picking?.heldBaskets ?? []}
+                onSelect={openHeldBasket}
+              />
+              <AvailableBasketSection baskets={picking?.availableBaskets ?? []} />
+            </>
           ) : null}
         </>
       )}
@@ -685,11 +701,7 @@ function HeldBasketTaskList({
   baskets: WmsMobileHeldBasket[];
   onSelect: (basket: WmsMobileHeldBasket) => void;
 }) {
-  const activeBaskets = baskets.filter((basket) => (
-    basket.status === 'ASSIGNED'
-    || basket.status === 'IN_PICKING'
-    || basket.status === 'FULL_HELD'
-  ));
+  const activeBaskets = baskets.filter(isMonitoredPickBasket);
 
   if (activeBaskets.length === 0) {
     return (
@@ -713,6 +725,13 @@ function HeldBasketTaskList({
         const nextBin = tasks
           .map((task) => task.nextPick?.unit.currentLocation?.code ?? null)
           .find(Boolean);
+        const nextAction = basket.status === 'FULL_HELD'
+          ? basket.assignedPacker
+            ? `Packer: ${basket.assignedPacker.name}`
+            : 'Assign packer'
+          : nextBin
+            ? `Next bin ${nextBin}`
+            : 'Continue picking';
 
         return (
           <Pressable
@@ -736,7 +755,7 @@ function HeldBasketTaskList({
               <View style={styles.heldBasketFooter}>
                 <StatusBadge status={basket.status} label={basket.statusLabel} />
                 <Text numberOfLines={1} style={styles.heldBasketNextBin}>
-                  {nextBin ? `Next bin ${nextBin}` : 'Ready'}
+                  {nextAction}
                 </Text>
               </View>
             </SurfaceCard>

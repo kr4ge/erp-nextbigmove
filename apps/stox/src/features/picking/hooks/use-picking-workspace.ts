@@ -444,12 +444,18 @@ export function usePickingWorkspace({
       setError(null);
       return true;
     } catch (requestError) {
-      setError(resolvePickingError(requestError));
+      const handoffError = resolvePickingError(requestError);
+      await loadPickingPage({
+        loadingKind: 'refresh',
+        page: 1,
+        preserveLoadedPages: page,
+      });
+      setError(handoffError);
       return false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [device, filters.tenantId, session.accessToken]);
+  }, [device, filters.tenantId, loadPickingPage, page, session.accessToken]);
 
   const retryAllocation = useCallback(async (taskId: string) => {
     if (!device) {
@@ -731,6 +737,10 @@ function buildHeldBasketCollection(
 ) {
   if (!nextTask.basket) {
     return current;
+  }
+
+  if (nextTask.basket.status === 'FULL_HELD' && nextTask.basket.assignedPacker) {
+    return current.filter((basket) => basket.id !== nextTask.basket?.id);
   }
 
   const currentBasket = current.find((basket) => basket.id === nextTask.basket?.id) ?? null;
