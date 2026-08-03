@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, PackageCheck, RefreshCcw } from 'lucide-react';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsPageShell } from '../../_components/wms-page-shell';
+import { WmsScopeFilterFields } from '../../_components/wms-scope-filter-fields';
 import { WmsWorkspaceCard } from '../../_components/wms-workspace-card';
 import { useFulfillmentPackController } from '../_hooks/use-fulfillment-pack-controller';
 import { FulfillmentPackExecutionPanel } from './fulfillment-pack-execution-panel';
@@ -17,6 +18,16 @@ export function FulfillmentPackScreen() {
         title="Pack Queue"
         actions={(
           <>
+            <div className="grid w-full grid-cols-2 gap-2.5 sm:w-auto sm:min-w-96 [&>*]:min-w-0 [&_button]:w-full">
+              <WmsScopeFilterFields
+                tenantOptions={pack.tenantOptions}
+                selectedTenantId={pack.selectedTenantId}
+                onTenantChange={pack.setSelectedTenantId}
+                storeOptions={pack.storeOptions}
+                selectedStoreId={pack.selectedStoreId}
+                onStoreChange={pack.setSelectedStoreId}
+              />
+            </div>
             <select
               value={pack.selectedStatus}
               onChange={(event) => pack.setSelectedStatus(event.target.value)}
