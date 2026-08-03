@@ -2966,6 +2966,26 @@ export class WmsMobileService {
     const queueOwnershipWhere: Prisma.WmsFulfillmentOrderWhereInput = ownedOnly
       ? { claimedById: userId }
       : {};
+    const heldBasketOrderWhere: Prisma.WmsFulfillmentOrderWhereInput = {
+      ...activeStoxAssignmentWhere,
+      ...(activeStore ? { storeId: activeStore.id } : {}),
+      OR: [
+        {
+          status: {
+            in: [...ACTIVE_PICKING_ORDER_STATUSES],
+          },
+          ...confirmedPickOrderWhere,
+        },
+        {
+          status: {
+            in: [
+              WmsFulfillmentOrderStatus.READY_FOR_PACK,
+              WmsFulfillmentOrderStatus.PICKED,
+            ],
+          },
+        },
+      ],
+    };
     const heldBasketWhere: Prisma.WmsBasketWhereInput = {
       ...(pickQueueAccess.canViewAll
         ? {}
@@ -2977,14 +2997,7 @@ export class WmsMobileService {
       },
       ...(tenantId ? { tenantId } : {}),
       fulfillmentOrders: {
-        some: {
-          ...activeStoxAssignmentWhere,
-          ...(activeStore ? { storeId: activeStore.id } : {}),
-          status: {
-            in: [...ACTIVE_BASKET_ORDER_STATUSES],
-          },
-          ...confirmedPickOrderWhere,
-        },
+        some: heldBasketOrderWhere,
       },
     };
     const openBasketWhere: Prisma.WmsBasketWhereInput = {
@@ -3049,7 +3062,7 @@ export class WmsMobileService {
     const pickedHistoryWhere: Prisma.WmsFulfillmentOrderWhereInput = {
       ...scopedWhere,
       ...activeStoxAssignmentWhere,
-      claimedById: userId,
+      ...(pickQueueAccess.canViewAll ? {} : { claimedById: userId }),
       status: {
         in: [
           WmsFulfillmentOrderStatus.READY_FOR_PACK,
@@ -3106,13 +3119,7 @@ export class WmsMobileService {
         where: heldBasketWhere,
         include: {
           fulfillmentOrders: {
-            where: {
-              ...activeStoxAssignmentWhere,
-              status: {
-                in: [...ACTIVE_BASKET_ORDER_STATUSES],
-              },
-              ...confirmedPickOrderWhere,
-            },
+            where: heldBasketOrderWhere,
             include: this.pickingTaskInclude(),
             orderBy: [
               { updatedAt: 'desc' },
@@ -7024,7 +7031,17 @@ export class WmsMobileService {
 
     const order = await this.findPickingOrderForAction(user, id, body.tenantId, request);
 
-    if (order.claimedById !== userId) {
+    const [access, taskAssignment] = await Promise.all([
+      this.effectiveAccessService.resolveUserAccess({
+        userId,
+        basePermissions: Array.isArray(user.permissions) ? user.permissions : [],
+        workspace: 'wms',
+      }),
+      this.getWmsTaskAssignment(userId),
+    ]);
+    const pickQueueAccess = this.resolvePickQueueAccess(user, access.permissions, taskAssignment);
+
+    if (order.claimedById !== userId && !pickQueueAccess.canViewAll) {
       throw new ForbiddenException('Only the claiming picker can hand off this basket');
     }
 
@@ -7048,7 +7065,18 @@ export class WmsMobileService {
     const handoffResult = await this.prisma.$transaction(async (tx) => {
       const scopedOrder = await tx.wmsFulfillmentOrder.findUnique({
         where: { id: order.id },
-        include: this.pickingTaskInclude(),
+        select: {
+          id: true,
+          posOrderId: true,
+          status: true,
+          basket: {
+            select: {
+              id: true,
+              barcode: true,
+              readyForPackAt: true,
+            },
+          },
+        },
       });
 
       if (!scopedOrder || !scopedOrder.basket) {
@@ -7101,35 +7129,68 @@ export class WmsMobileService {
         },
       });
 
-      const [updatedOrder, posStatusOrders] = await Promise.all([
-        tx.wmsFulfillmentOrder.findUniqueOrThrow({
-          where: { id: scopedOrder.id },
-          include: this.pickingTaskInclude(),
-        }),
-        tx.wmsFulfillmentOrder.findMany({
-          where: {
-            basketId: scopedOrder.basket.id,
-            status: WmsFulfillmentOrderStatus.PICKED,
-          },
-          select: {
-            id: true,
-            tenantId: true,
-            storeId: true,
-            posOrderDbId: true,
-            shopId: true,
-            posOrderId: true,
-            warehouseId: true,
-          },
-        }),
-      ]);
+      const posStatusOrders = await tx.wmsFulfillmentOrder.findMany({
+        where: {
+          basketId: scopedOrder.basket.id,
+          status: WmsFulfillmentOrderStatus.PICKED,
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          storeId: true,
+          posOrderDbId: true,
+          shopId: true,
+          posOrderId: true,
+          warehouseId: true,
+        },
+      });
 
       return {
-        order: updatedOrder,
+        basketId: scopedOrder.basket.id,
+        basketCode: scopedOrder.basket.barcode,
         posStatusOrders,
       };
+    }, {
+      maxWait: 3000,
+      timeout: 10000,
     });
-    const updatedOrder = handoffResult.order;
-    let posStatusDispatchMode: 'ASYNC_QUEUE' | 'INLINE_FALLBACK' = 'ASYNC_QUEUE';
+    let updatedOrder: any;
+    try {
+      updatedOrder = await this.prisma.wmsFulfillmentOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: this.pickingTaskInclude(),
+      });
+    } catch (reloadError: any) {
+      this.logger.error(
+        `Failed to reload committed WMS picking handoff basket=${handoffResult.basketCode}: ${reloadError?.message || 'Unknown error'}. Returning the committed handoff state.`,
+        reloadError?.stack,
+      );
+      updatedOrder = {
+        ...order,
+        status: WmsFulfillmentOrderStatus.PICKED,
+        completedAt: now,
+        basket: {
+          ...order.basket,
+          status: WmsBasketStatus.FULL_HELD,
+          assignedPackerId: packerCandidate.id,
+          assignedPacker: {
+            firstName: packerCandidate.name,
+            lastName: null,
+            email: packerCandidate.email,
+          },
+          readyForPackAt: order.basket.readyForPackAt ?? now,
+          fulfillmentOrders: Array.isArray(order.basket.fulfillmentOrders)
+            ? order.basket.fulfillmentOrders.map((basketOrder: any) => ({
+                ...basketOrder,
+                status: basketOrder.status === WmsFulfillmentOrderStatus.READY_FOR_PACK
+                  ? WmsFulfillmentOrderStatus.PICKED
+                  : basketOrder.status,
+              }))
+            : [],
+        },
+      };
+    }
+    let posStatusDispatchMode: 'ASYNC_QUEUE' | 'INLINE_FALLBACK' | 'FAILED' = 'ASYNC_QUEUE';
     let posStatusUpdate: PickedOrderPosStatusUpdateSummary;
 
     try {
@@ -7145,31 +7206,58 @@ export class WmsMobileService {
         `Failed to queue WMS picking handoff fanout basket=${updatedOrder.basket?.barcode ?? order.basket.barcode ?? order.basket.id}: ${error?.message || 'Unknown error'}. Falling back to inline status queueing.`,
         error?.stack,
       );
-      posStatusUpdate = await this.enqueuePickedOrdersWaitingForPrintingStatus(handoffResult.posStatusOrders);
+      try {
+        posStatusUpdate = await this.enqueuePickedOrdersWaitingForPrintingStatus(handoffResult.posStatusOrders);
+      } catch (fallbackError: any) {
+        posStatusDispatchMode = 'FAILED';
+        const reason = fallbackError?.message || 'Unknown error';
+        this.logger.error(
+          `Failed all WMS picking handoff status dispatch modes basket=${updatedOrder.basket?.barcode ?? order.basket.barcode ?? order.basket.id}: ${reason}. The basket handoff remains committed.`,
+          fallbackError?.stack,
+        );
+        posStatusUpdate = {
+          targetStatus: WAITING_FOR_PRINTING_POS_ORDER_STATUS,
+          queued: 0,
+          skipped: 0,
+          failed: handoffResult.posStatusOrders.length,
+          results: handoffResult.posStatusOrders.map((statusOrder) => ({
+            posOrderId: statusOrder.posOrderId,
+            outcome: 'failed' as const,
+            reason,
+          })),
+        };
+      }
     }
 
-    await this.recordStockActivity(user, request, {
-      tenantId: updatedOrder.tenantId,
-      actionType: 'PICKING_HANDOFF',
-      resourceType: 'WMS_FULFILLMENT_ORDER',
-      resourceId: updatedOrder.id,
-      storeId: updatedOrder.storeId,
-      warehouseId: updatedOrder.warehouseId,
-      metadata: {
-        fulfillmentOrderId: updatedOrder.id,
-        posOrderId: updatedOrder.posOrderId,
-        basketCode: updatedOrder.basket?.barcode ?? null,
-        packerId: packerCandidate.id,
-        packerEmail: packerCandidate.email,
-        posStatusDispatchMode,
-        posStatusTarget: posStatusUpdate.targetStatus,
-        posStatusQueued: posStatusUpdate.queued,
-        posStatusSkipped: posStatusUpdate.skipped,
-        posStatusFailed: posStatusUpdate.failed,
-        posStatusResults: posStatusUpdate.results,
-        ...(this.isDemandPickingOrder(updatedOrder) ? { mode: 'BASKET_DEMAND' } : {}),
-      },
-    });
+    try {
+      await this.recordStockActivity(user, request, {
+        tenantId: updatedOrder.tenantId,
+        actionType: 'PICKING_HANDOFF',
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: updatedOrder.id,
+        storeId: updatedOrder.storeId,
+        warehouseId: updatedOrder.warehouseId,
+        metadata: {
+          fulfillmentOrderId: updatedOrder.id,
+          posOrderId: updatedOrder.posOrderId,
+          basketCode: updatedOrder.basket?.barcode ?? null,
+          packerId: packerCandidate.id,
+          packerEmail: packerCandidate.email,
+          posStatusDispatchMode,
+          posStatusTarget: posStatusUpdate.targetStatus,
+          posStatusQueued: posStatusUpdate.queued,
+          posStatusSkipped: posStatusUpdate.skipped,
+          posStatusFailed: posStatusUpdate.failed,
+          posStatusResults: posStatusUpdate.results,
+          ...(this.isDemandPickingOrder(updatedOrder) ? { mode: 'BASKET_DEMAND' } : {}),
+        },
+      });
+    } catch (activityError: any) {
+      this.logger.error(
+        `Failed to record WMS picking handoff activity basket=${updatedOrder.basket?.barcode ?? order.basket.barcode ?? order.basket.id}: ${activityError?.message || 'Unknown error'}. The basket handoff remains committed.`,
+        activityError?.stack,
+      );
+    }
 
     return {
       success: true,

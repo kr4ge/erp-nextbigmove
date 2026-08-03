@@ -688,6 +688,7 @@ function HeldBasketTaskList({
   const activeBaskets = baskets.filter((basket) => (
     basket.status === 'ASSIGNED'
     || basket.status === 'IN_PICKING'
+    || basket.status === 'FULL_HELD'
   ));
 
   if (activeBaskets.length === 0) {

@@ -405,7 +405,7 @@ export class WmsMobileController {
   }
 
   @Post('picking/tasks/:id/handoff')
-  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit', 'wms.fulfillment.override')
   async handoffPickingTask(
     @Request() req,
     @Param('id') id: string,
