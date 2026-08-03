@@ -1,5 +1,12 @@
 export type WmsTaskAssignmentType = 'PICK' | 'PACK' | 'INVENTORY' | null;
 
+export type WmsFulfillmentPackerOption = {
+  id: string;
+  name: string;
+  email: string;
+  employeeId: string | null;
+};
+
 export type WmsFulfillmentQueueMode = 'pick' | 'pack';
 
 export type WmsFulfillmentQueueScope = 'all' | 'own';
@@ -207,6 +214,7 @@ export type WmsFulfillmentQueueResponse = {
       tenantName?: string | null;
       tenantSlug?: string | null;
     }>;
+    packerOptions?: WmsFulfillmentPackerOption[];
   };
   summary: Record<string, number>;
   heldBaskets?: WmsFulfillmentHeldBasket[];

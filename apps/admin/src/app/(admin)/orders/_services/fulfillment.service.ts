@@ -97,6 +97,22 @@ export async function voidWmsPickBasket(params: {
   };
 }
 
+export async function assignWmsPickBasketPacker(params: {
+  taskId: string;
+  packerId: string;
+  tenantId?: string | null;
+}) {
+  const response = await apiClient.post(`/wms/mobile/picking/tasks/${params.taskId}/handoff`, {
+    packerId: params.packerId,
+    tenantId: params.tenantId,
+  });
+
+  return response.data as {
+    success: boolean;
+    task: WmsFulfillmentQueueTask;
+  };
+}
+
 export async function fetchWmsFulfillmentPriorityPreview(params: {
   orderId: string;
   tenantId?: string | null;

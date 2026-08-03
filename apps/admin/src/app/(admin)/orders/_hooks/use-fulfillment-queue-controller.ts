@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WmsSearchableOption } from '../../_components/wms-searchable-select';
 import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
 import {
+  assignWmsPickBasketPacker,
   fetchWmsPackQueue,
   fetchWmsPickQueue,
   reallocateWmsPickQueue,
@@ -49,6 +50,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
   const [isResyncing, setIsResyncing] = useState(false);
   const [isReallocating, setIsReallocating] = useState(false);
   const [isVoidingBasket, setIsVoidingBasket] = useState(false);
+  const [isAssigningBasketPacker, setIsAssigningBasketPacker] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedTenantIdState, setSelectedTenantIdState] = useState<string | undefined>(undefined);
   const [selectedStoreIdState, setSelectedStoreIdState] = useState<string | undefined>(undefined);
@@ -252,6 +254,48 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     }
   }, [fetchQueue, mode, selectedTenantIdState]);
 
+  const assignPickBasketPacker = useCallback(async (basketId: string, packerId: string) => {
+    if (mode !== 'pick') {
+      return false;
+    }
+
+    const heldBasket = data?.heldBaskets?.find((basket) => basket.id === basketId);
+    const task = heldBasket?.tasks.find((candidate) => (
+      candidate.status === 'READY_FOR_PACK' || candidate.status === 'PICKED'
+    )) ?? heldBasket?.task ?? heldBasket?.tasks[0];
+
+    if (!heldBasket || !task) {
+      setErrorMessage('This basket has no ready order that can be handed off. Refresh the pick queue and try again.');
+      return false;
+    }
+
+    setIsAssigningBasketPacker(true);
+    setErrorMessage(null);
+    setNotice(null);
+
+    try {
+      const result = await assignWmsPickBasketPacker({
+        taskId: task.id,
+        packerId,
+        tenantId: task.store?.tenantId ?? selectedTenantIdState ?? null,
+      });
+
+      await fetchQueue(true);
+
+      const packer = data?.context.packerOptions?.find((candidate) => candidate.id === packerId);
+      setNotice({
+        tone: 'success',
+        message: `Basket ${heldBasket.barcode} was assigned to ${packer?.name ?? 'the selected packer'} and is ready in the pack queue.`,
+      });
+      return result.success;
+    } catch (error) {
+      setErrorMessage(resolveQueueError(error));
+      return false;
+    } finally {
+      setIsAssigningBasketPacker(false);
+    }
+  }, [data, fetchQueue, mode, selectedTenantIdState]);
+
   useEffect(() => {
     if (mode !== 'pick' || ownedOnly || !data?.context) {
       return;
@@ -314,6 +358,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     isReallocating,
     isRefreshing,
     isResyncing,
+    isAssigningBasketPacker,
     isVoidingBasket,
     mode,
     notice,
@@ -346,6 +391,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     storeOptions,
     summaryItems,
     heldBaskets: data?.heldBaskets ?? [],
+    packerOptions: data?.context.packerOptions ?? [],
     tasks: data?.tasks ?? [],
     tenantOptions,
     tenantReady: data?.tenantReady ?? false,
@@ -354,6 +400,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     reallocatePickQueue,
     resyncPickQueue,
     voidPickBasket,
+    assignPickBasketPacker,
   };
 }
 

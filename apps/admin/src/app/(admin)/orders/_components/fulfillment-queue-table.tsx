@@ -9,6 +9,7 @@ import {
 } from '../_services/fulfillment.service';
 import type {
   WmsFulfillmentHeldBasket,
+  WmsFulfillmentPackerOption,
   WmsFulfillmentQueueMode,
   WmsFulfillmentPriorityPreviewResponse,
   WmsFulfillmentQueueTask,
@@ -28,6 +29,10 @@ type FulfillmentQueueTableProps = {
   tenantReady: boolean;
   pickView?: PickQueueView;
   canVoidPickBaskets?: boolean;
+  canAssignPickBasketPacker?: boolean;
+  packerOptions?: WmsFulfillmentPackerOption[];
+  isAssigningPickBasketPacker?: boolean;
+  onAssignPickBasketPacker?: (basketId: string, packerId: string) => Promise<boolean> | boolean;
   isVoidingPickBasket?: boolean;
   onVoidPickBasket?: (basketId: string) => Promise<boolean> | boolean;
   onRefresh?: () => Promise<unknown> | unknown;
@@ -57,12 +62,17 @@ export function FulfillmentQueueTable({
   tenantReady,
   pickView = 'orders',
   canVoidPickBaskets = false,
+  canAssignPickBasketPacker = false,
+  packerOptions = [],
+  isAssigningPickBasketPacker = false,
+  onAssignPickBasketPacker,
   isVoidingPickBasket = false,
   onVoidPickBasket,
   onRefresh,
 }: FulfillmentQueueTableProps) {
   const [selection, setSelection] = useState<{ kind: 'task' | 'basket'; id: string } | null>(null);
   const [confirmVoidBasketId, setConfirmVoidBasketId] = useState<string | null>(null);
+  const [selectedPackerId, setSelectedPackerId] = useState('');
   const [priorityPreview, setPriorityPreview] = useState<WmsFulfillmentPriorityPreviewResponse | null>(null);
   const [priorityError, setPriorityError] = useState<string | null>(null);
   const [priorityNotice, setPriorityNotice] = useState<string | null>(null);
@@ -98,6 +108,7 @@ export function FulfillmentQueueTable({
     if (!tenantReady) {
       setSelection(null);
       setConfirmVoidBasketId(null);
+      setSelectedPackerId('');
       return;
     }
 
@@ -117,6 +128,10 @@ export function FulfillmentQueueTable({
       setConfirmVoidBasketId(null);
     }
   }, [confirmVoidBasketId, selectedRow]);
+
+  useEffect(() => {
+    setSelectedPackerId('');
+  }, [selection?.id]);
 
   const primaryHeader = isBasketView ? 'Basket' : 'Order';
   const secondaryHeader = isBasketView ? 'Orders' : 'Customer';
@@ -170,6 +185,12 @@ export function FulfillmentQueueTable({
       return leftOrder.localeCompare(rightOrder, undefined, { numeric: true });
     });
   }, [selectedBasket]);
+  const canHandoffSelectedBasket = Boolean(
+    selectedBasket
+    && selectedBasket.basket.status === 'FULL_HELD'
+    && canAssignPickBasketPacker
+    && onAssignPickBasketPacker,
+  );
 
   const canPrioritizeSelectedTask = mode === 'pick' && Boolean(
     selectedTask
@@ -302,14 +323,39 @@ export function FulfillmentQueueTable({
                   <button
                     type="button"
                     onClick={() => setConfirmVoidBasketId(selectedBasket.basket.id)}
+                    disabled={isAssigningPickBasketPacker}
                     className="inline-flex h-11 items-center justify-center rounded-[16px] border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
                   >
                     Void basket
                   </button>
                 ) : null}
+                {canHandoffSelectedBasket ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedPackerId || !onAssignPickBasketPacker) {
+                        return;
+                      }
+
+                      void Promise.resolve(onAssignPickBasketPacker(
+                        selectedBasket.basket.id,
+                        selectedPackerId,
+                      )).then((success) => {
+                        if (success) {
+                          setSelectedPackerId('');
+                        }
+                      });
+                    }}
+                    disabled={!selectedPackerId || isAssigningPickBasketPacker}
+                    className="btn btn-md btn-primary"
+                  >
+                    {isAssigningPickBasketPacker ? 'Assigning…' : 'Assign packer'}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setSelection(null)}
+                  disabled={isAssigningPickBasketPacker}
                   className="btn btn-md btn-outline"
                 >
                   Close
@@ -362,11 +408,52 @@ export function FulfillmentQueueTable({
             <DetailSection title="Basket overview" description="Live basket progress and assignment details.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <InfoCard label="Picker" value={selectedActor ?? 'Not started'} />
+                <InfoCard label="Packer" value={selectedBasket.basket.assignedPacker?.name ?? 'Not assigned'} />
                 <InfoCard label="Warehouse" value={selectedLastValue ?? 'Not assigned'} />
                 <InfoCard label="Capacity" value={selectedMiddleValue ?? '0/0'} />
                 <InfoCard label="Ready for pack" value={formatDateTime(selectedBasket.basket.readyForPackAt)} />
               </div>
             </DetailSection>
+
+            {selectedBasket.basket.status === 'FULL_HELD' ? (
+              <DetailSection
+                title="Assign to packer"
+                description="Hand off this completed basket to an eligible packing staff member. All orders in the basket will enter the pack queue together."
+              >
+                {canAssignPickBasketPacker ? (
+                  <div className="space-y-2">
+                    <label htmlFor="pick-basket-packer" className="block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#667a88]">
+                      Packer
+                    </label>
+                    <select
+                      id="pick-basket-packer"
+                      value={selectedPackerId}
+                      onChange={(event) => setSelectedPackerId(event.target.value)}
+                      disabled={isAssigningPickBasketPacker || packerOptions.length === 0}
+                      className="h-12 w-full rounded-2xl border border-[#d7e0e7] bg-white px-3.5 text-[13px] font-semibold text-[#12384b] outline-none transition focus:border-[#96b4c3] focus:shadow-[0_0_0_4px_rgba(18,56,75,0.08)] disabled:cursor-not-allowed disabled:bg-[#f5f7f8] disabled:text-[#82929d]"
+                    >
+                      <option value="">
+                        {packerOptions.length === 0 ? 'No eligible packers available' : 'Select a packer'}
+                      </option>
+                      {packerOptions.map((packer) => (
+                        <option key={packer.id} value={packer.id}>
+                          {packer.name} · {packer.email}
+                        </option>
+                      ))}
+                    </select>
+                    {packerOptions.length === 0 ? (
+                      <p className="text-[12px] text-amber-700">
+                        Add an active WMS staff assignment with the Pack task type and packing permission first.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-sm text-[#667a88]">
+                    Supervisor access is required to assign a held basket from WMS Web.
+                  </p>
+                )}
+              </DetailSection>
+            ) : null}
 
             <DetailSection
               title="Orders in basket"
