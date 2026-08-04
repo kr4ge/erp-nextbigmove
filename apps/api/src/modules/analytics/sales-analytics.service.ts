@@ -10,6 +10,7 @@ import { AnalyticsCacheService } from './analytics-cache.service';
 import { ReconcileMarketingService } from '../workflows/services/reconcile-marketing.service';
 import { ReconcileSalesService } from '../workflows/services/reconcile-sales.service';
 import { ReconcileSalesAttributionService } from '../workflows/services/reconcile-sales-attribution.service';
+import { AnalyticsRequestCoordinatorService } from './analytics-request-coordinator.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -118,12 +119,26 @@ type DeliveryStatusRow = {
   deleted: number;
 };
 
+type SalesOverviewParams = {
+  startDate?: string;
+  endDate?: string;
+  mappings?: string[];
+  excludeCancel?: boolean;
+  excludeRestocking?: boolean;
+  excludeAbandoned?: boolean;
+  excludeRts?: boolean;
+  excludeRepurchase?: boolean;
+  includeTax12?: boolean;
+  includeTax1?: boolean;
+};
+
 @Injectable()
 export class SalesAnalyticsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly teamContext: TeamContextService,
     private readonly analyticsCache: AnalyticsCacheService,
+    private readonly analyticsRequestCoordinator: AnalyticsRequestCoordinatorService,
     private readonly reconcileMarketingService: ReconcileMarketingService,
     private readonly reconcileSalesService: ReconcileSalesService,
     private readonly reconcileSalesAttributionService: ReconcileSalesAttributionService,
@@ -636,7 +651,21 @@ export class SalesAnalyticsService {
     };
   }
 
-  async getOverview(params: { startDate?: string; endDate?: string; mappings?: string[]; excludeCancel?: boolean; excludeRestocking?: boolean; excludeAbandoned?: boolean; excludeRts?: boolean; excludeRepurchase?: boolean; includeTax12?: boolean; includeTax1?: boolean }) {
+  async getOverview(params: SalesOverviewParams) {
+    const tenantId = this.teamContext.getTenantId();
+    const requestKey = `sales-overview:${tenantId}:${this.analyticsCache.hashObject({
+      ...params,
+      mappings: [...(params.mappings || [])].map((value) => this.normalize(value)).sort(),
+    })}`;
+
+    return this.analyticsRequestCoordinator.run(
+      tenantId,
+      requestKey,
+      () => this.calculateOverview(params),
+    );
+  }
+
+  private async calculateOverview(params: SalesOverviewParams) {
     const { startDate, endDate, mappings = [], excludeCancel = true, excludeRestocking = true, excludeAbandoned = true, excludeRts = true, excludeRepurchase = true, includeTax12 = false, includeTax1 = false } = params;
 
     const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
@@ -665,8 +694,7 @@ export class SalesAnalyticsService {
     const normalizedMappings = mappings.map((m) => this.normalize(m)).filter((v) => v.length > 0);
     const includeNull = normalizedMappings.includes(this.normalize('__null__'));
 
-    const { tenantId, teamId } = await this.teamContext.getContext();
-    const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
+    const tenantId = this.teamContext.getTenantId();
 
     const mappingFilter =
       normalizedMappings.length > 0
@@ -682,58 +710,42 @@ export class SalesAnalyticsService {
           }
         : {};
 
-    const baseWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        date: { gte: startDate_dt, lte: endDate_dt },
-      },
-      effectiveTeamIds || undefined,
-    );
+    const baseWhere = this.teamContext.buildTenantWhereClause({
+      date: { gte: startDate_dt, lte: endDate_dt },
+    });
 
     const where = {
       ...baseWhere,
       ...mappingFilter,
     };
-    const processedSalesWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        dateLocal: { gte: startStr, lte: endStr },
-        status: { in: [...PROCESSED_SALES_STATUSES] },
-        ...(excludeRepurchase ? { isRepurchase: false } : {}),
-        ...mappingFilter,
-      },
-      effectiveTeamIds || undefined,
-    );
-    const prevProcessedSalesWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        dateLocal: { gte: prevStartStr, lte: prevEndStr },
-        status: { in: [...PROCESSED_SALES_STATUSES] },
-        ...(excludeRepurchase ? { isRepurchase: false } : {}),
-        ...mappingFilter,
-      },
-      effectiveTeamIds || undefined,
-    );
-    const cancellationRateWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        dateLocal: { gte: startStr, lte: endStr },
-        ...(excludeRepurchase ? { isRepurchase: false } : {}),
-        ...mappingFilter,
-      },
-      effectiveTeamIds || undefined,
-    );
-    const prevCancellationRateWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        dateLocal: { gte: prevStartStr, lte: prevEndStr },
-        ...(excludeRepurchase ? { isRepurchase: false } : {}),
-        ...mappingFilter,
-      },
-      effectiveTeamIds || undefined,
-    );
+    const processedSalesWhere = this.teamContext.buildTenantWhereClause({
+      dateLocal: { gte: startStr, lte: endStr },
+      status: { in: [...PROCESSED_SALES_STATUSES] },
+      ...(excludeRepurchase ? { isRepurchase: false } : {}),
+      ...mappingFilter,
+    });
+    const prevProcessedSalesWhere = this.teamContext.buildTenantWhereClause({
+      dateLocal: { gte: prevStartStr, lte: prevEndStr },
+      status: { in: [...PROCESSED_SALES_STATUSES] },
+      ...(excludeRepurchase ? { isRepurchase: false } : {}),
+      ...mappingFilter,
+    });
+    const cancellationRateWhere = this.teamContext.buildTenantWhereClause({
+      dateLocal: { gte: startStr, lte: endStr },
+      ...(excludeRepurchase ? { isRepurchase: false } : {}),
+      ...mappingFilter,
+    });
+    const prevCancellationRateWhere = this.teamContext.buildTenantWhereClause({
+      dateLocal: { gte: prevStartStr, lte: prevEndStr },
+      ...(excludeRepurchase ? { isRepurchase: false } : {}),
+      ...mappingFilter,
+    });
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
-    const cacheTeamIds = effectiveTeamIds ? [...effectiveTeamIds].sort() : teamId ? [teamId] : [];
     const cacheKeyPayload = {
       responseShapeVersion: 3,
       tenantId,
-      teamIds: cacheTeamIds,
+      analyticsScope: 'tenant',
       start: startStr,
       end: endStr,
       mappings: normalizedMappings.sort(),
@@ -754,15 +766,6 @@ export class SalesAnalyticsService {
       Prisma.sql`"tenantId" = ${tenantId}::uuid`,
       Prisma.sql`"status" IS DISTINCT FROM 7`,
     ];
-    if (Array.isArray(effectiveTeamIds)) {
-      if (effectiveTeamIds.length === 0) {
-        volumeGrowthWhere.push(Prisma.sql`1 = 0`);
-      } else {
-        volumeGrowthWhere.push(
-          Prisma.sql`"teamId" IN (${Prisma.join(effectiveTeamIds.map((id) => Prisma.sql`${id}::uuid`))})`,
-        );
-      }
-    }
     if (normalizedMappings.length > 0) {
       const mappingConditions = normalizedMappings
         .filter((m) => m !== this.normalize('__null__'))
@@ -1321,7 +1324,7 @@ export class SalesAnalyticsService {
       throw new BadRequestException('start_date and end_date are required');
     }
 
-    const { tenantId } = await this.teamContext.getContext();
+    const tenantId = this.teamContext.getTenantId();
     const since = dayjs(startDate).format('YYYY-MM-DD');
     const until = dayjs(endDate).format('YYYY-MM-DD');
 
@@ -1387,7 +1390,7 @@ export class SalesAnalyticsService {
       }
 
       try {
-        await this.reconcileMarketingService.reconcileDay(tenantId, date, null);
+        await this.reconcileMarketingService.reconcileDay(tenantId, date);
       } catch (err: any) {
         errors.push({
           date,
@@ -1397,7 +1400,7 @@ export class SalesAnalyticsService {
       }
 
       try {
-        await this.reconcileSalesService.aggregateDay(tenantId, date, null);
+        await this.reconcileSalesService.aggregateDay(tenantId, date);
       } catch (err: any) {
         errors.push({
           date,

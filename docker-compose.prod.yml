@@ -1,3 +1,9 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   redis:
     image: redis:7-alpine
@@ -8,6 +14,7 @@ services:
       - redis_data:/data
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -28,6 +35,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
+      ANALYTICS_MAX_CONCURRENT_PER_TENANT: ${ANALYTICS_MAX_CONCURRENT_PER_TENANT:-2}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
@@ -56,6 +65,13 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/v1').then((response) => process.exit(response.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
     networks:
       - erp-network
 
@@ -74,6 +90,7 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - erp-network
 
@@ -92,6 +109,7 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - erp-network
 

@@ -1350,7 +1350,8 @@ export class IntegrationService {
           throw error;
         }
 
-        const delayMs = Math.min(1000, 150 * attempt);
+        const baseDelayMs = Math.min(1000, 150 * attempt);
+        const delayMs = baseDelayMs + Math.floor(Math.random() * 151);
         this.logger.warn(
           `${operationName} hit transient DB error; retrying attempt ${attempt + 1}/${maxAttempts} in ${delayMs}ms: ${error?.message || 'Unknown error'}`,
         );

@@ -71,8 +71,8 @@ export class PancakeWebhookReconcileProcessor {
       ]);
     }
 
-    await this.reconcileMarketingService.reconcileDay(tenantId, dateLocal, null);
-    await this.reconcileSalesService.aggregateDay(tenantId, dateLocal, null);
+    await this.reconcileMarketingService.reconcileDay(tenantId, dateLocal);
+    await this.reconcileSalesService.aggregateDay(tenantId, dateLocal);
     await this.reconcileSalesAttributionService.aggregateDay(tenantId, dateLocal);
 
     this.executionGateway.emitTenantEvent(

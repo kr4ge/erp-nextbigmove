@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   Logger,
 } from '@nestjs/common';
@@ -13,6 +12,7 @@ import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { AnalyticsCacheService } from './analytics-cache.service';
 import type { SalesAttributionOverviewContract } from './contracts/sales-attribution-overview.contract';
 import { GetSalesAttributionOverviewQueryDto } from './dto/get-sales-attribution-overview-query.dto';
+import { AnalyticsRequestCoordinatorService } from './analytics-request-coordinator.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -21,8 +21,6 @@ dayjs.extend(customParseFormat);
 const TIMEZONE = 'Asia/Manila';
 const NULL_MAPPING_FILTER_KEY = '__null__';
 const UNASSIGNED_MAPPING_KEY = '__unassigned_mapping__';
-const NULL_TEAM_FILTER_KEY = '__null__';
-const UNASSIGNED_TEAM_CODE_KEY = '__unassigned_team_code__';
 
 type SalesAttributionKpis = SalesAttributionOverviewContract['kpis'];
 type SalesAttributionCounts = SalesAttributionOverviewContract['counts'];
@@ -37,6 +35,7 @@ export class SalesAttributionAnalyticsService {
     private readonly prisma: PrismaService,
     private readonly teamContext: TeamContextService,
     private readonly analyticsCache: AnalyticsCacheService,
+    private readonly analyticsRequestCoordinator: AnalyticsRequestCoordinatorService,
   ) {}
 
   private normalize(value?: string | null): string {
@@ -351,40 +350,9 @@ export class SalesAttributionAnalyticsService {
     };
   }
 
-  private async resolveAllowedTeamCodeKeys(tenantId: string): Promise<string[] | null> {
-    const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('sales');
-    if (effectiveTeamIds === null) {
-      return null;
-    }
-    if (effectiveTeamIds.length === 0) {
-      return [];
-    }
-
-    const teams = await this.prisma.team.findMany({
-      where: {
-        tenantId,
-        id: { in: effectiveTeamIds },
-        teamCode: { not: null },
-      },
-      select: {
-        teamCode: true,
-      },
-    });
-
-    return Array.from(
-      new Set(
-        teams
-          .map((team) => this.normalize(team.teamCode))
-          .filter((teamCode) => teamCode.length > 0),
-      ),
-    ).sort();
-  }
-
   private buildRollupWhere(params: {
     tenantId: string;
     range: { gte: Date; lte: Date };
-    allowedTeamCodeKeys: string[] | null;
-    selectedTeamCode: string | null;
     normalizedMappings: string[];
   }) {
     const includeNull = params.normalizedMappings.includes(NULL_MAPPING_FILTER_KEY);
@@ -397,21 +365,6 @@ export class SalesAttributionAnalyticsService {
       date: params.range,
     };
 
-    if (params.allowedTeamCodeKeys !== null) {
-      if (params.allowedTeamCodeKeys.length === 0) {
-        where.teamCodeKey = '__no_access__';
-      } else {
-        where.teamCodeKey = { in: params.allowedTeamCodeKeys };
-      }
-    }
-
-    if (params.selectedTeamCode) {
-      where.teamCodeKey =
-        params.selectedTeamCode === NULL_TEAM_FILTER_KEY
-          ? UNASSIGNED_TEAM_CODE_KEY
-          : params.selectedTeamCode;
-    }
-
     if (nonNullMappings.length > 0 || includeNull) {
       where.OR = [
         ...(nonNullMappings.length > 0 ? [{ mappingKey: { in: nonNullMappings } }] : []),
@@ -423,6 +376,23 @@ export class SalesAttributionAnalyticsService {
   }
 
   async getOverview(
+    query: GetSalesAttributionOverviewQueryDto,
+  ): Promise<SalesAttributionOverviewContract> {
+    const tenantId = this.teamContext.getTenantId();
+    const requestKey = `sales-attribution:${tenantId}:${this.analyticsCache.hashObject({
+      ...query,
+      mapping: [...(query.mapping || [])].map((value) => this.normalize(value)).sort(),
+      team_code: undefined,
+    })}`;
+
+    return this.analyticsRequestCoordinator.run(
+      tenantId,
+      requestKey,
+      () => this.calculateOverview(query),
+    );
+  }
+
+  private async calculateOverview(
     query: GetSalesAttributionOverviewQueryDto,
   ): Promise<SalesAttributionOverviewContract> {
     const excludeAbandoned = true;
@@ -451,60 +421,32 @@ export class SalesAttributionAnalyticsService {
     const normalizedMappings = (query.mapping || [])
       .map((mapping) => this.normalize(mapping))
       .filter((mapping) => mapping.length > 0);
-    const normalizedTeamCode = this.normalize(query.team_code) || null;
-
-    const { tenantId } = await this.teamContext.getContext();
-    const allowedTeamCodeKeys = await this.resolveAllowedTeamCodeKeys(tenantId);
-
-    if (normalizedTeamCode && allowedTeamCodeKeys !== null) {
-      const requestedTeamCodeKey =
-        normalizedTeamCode === NULL_TEAM_FILTER_KEY
-          ? UNASSIGNED_TEAM_CODE_KEY
-          : normalizedTeamCode;
-      if (!allowedTeamCodeKeys.includes(requestedTeamCodeKey)) {
-        throw new ForbiddenException('You do not have access to this team');
-      }
-    }
+    const tenantId = this.teamContext.getTenantId();
 
     const currentBaseWhere = this.buildRollupWhere({
       tenantId,
       range: { gte: startDate, lte: endDate },
-      allowedTeamCodeKeys,
-      selectedTeamCode: normalizedTeamCode,
       normalizedMappings,
     });
 
     const previousBaseWhere = this.buildRollupWhere({
       tenantId,
       range: { gte: prevStartDate, lte: prevEndDate },
-      allowedTeamCodeKeys,
-      selectedTeamCode: normalizedTeamCode,
       normalizedMappings,
-    });
-
-    const currentFilterWhere = this.buildRollupWhere({
-      tenantId,
-      range: { gte: startDate, lte: endDate },
-      allowedTeamCodeKeys,
-      selectedTeamCode: null,
-      normalizedMappings: [],
     });
 
     const currentMappingFilterWhere = this.buildRollupWhere({
       tenantId,
       range: { gte: startDate, lte: endDate },
-      allowedTeamCodeKeys,
-      selectedTeamCode: normalizedTeamCode,
       normalizedMappings: [],
     });
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
     const cachePayload = {
       tenantId,
-      teamCodeScope: allowedTeamCodeKeys,
+      analyticsScope: 'tenant',
       start: startStr,
       end: endStr,
-      teamCode: normalizedTeamCode,
       mappings: [...normalizedMappings].sort(),
       flags: {
         excludeCancel: query.exclude_cancel,
@@ -515,7 +457,7 @@ export class SalesAttributionAnalyticsService {
         includeTax1: query.include_tax_1,
       },
     };
-    const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales-by-team:${this.analyticsCache.hashObject(cachePayload)}`;
+    const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales-attribution:${this.analyticsCache.hashObject(cachePayload)}`;
     const cached = await this.analyticsCache.get<SalesAttributionOverviewContract>(cacheKey);
     if (cached) {
       this.logger.log(`CACHE HIT ${cacheKey}`);
@@ -526,8 +468,6 @@ export class SalesAttributionAnalyticsService {
     const [
       aggregate,
       previousAggregate,
-      teamRows,
-      nullTeamCount,
       mappingRows,
       nullMappingCount,
       productGroups,
@@ -621,23 +561,6 @@ export class SalesAttributionAnalyticsService {
       }),
       this.prisma.reconcileSalesAttribution.findMany({
         where: {
-          ...currentFilterWhere,
-          teamCode: { not: null },
-        },
-        distinct: ['teamCodeKey'],
-        select: {
-          teamCodeKey: true,
-          teamCode: true,
-        },
-      }),
-      this.prisma.reconcileSalesAttribution.count({
-        where: {
-          ...currentFilterWhere,
-          teamCode: null,
-        },
-      }),
-      this.prisma.reconcileSalesAttribution.findMany({
-        where: {
           ...currentMappingFilterWhere,
           mapping: { not: null },
         },
@@ -705,20 +628,6 @@ export class SalesAttributionAnalyticsService {
 
     const teamCodes: string[] = [];
     const teamCodeDisplayMap: Record<string, string> = {};
-    teamRows.forEach((row) => {
-      if (!row.teamCode) return;
-      const normalized = row.teamCodeKey || this.normalize(row.teamCode);
-      if (!normalized) return;
-      if (!teamCodeDisplayMap[normalized]) {
-        teamCodeDisplayMap[normalized] = row.teamCode;
-        teamCodes.push(normalized);
-      }
-    });
-    if (nullTeamCount > 0) {
-      teamCodeDisplayMap[NULL_TEAM_FILTER_KEY] = 'Unassigned';
-      teamCodes.push(NULL_TEAM_FILTER_KEY);
-    }
-    teamCodes.sort((a, b) => (teamCodeDisplayMap[a] || a).localeCompare(teamCodeDisplayMap[b] || b));
 
     const mappingOptions: string[] = [];
     const mappingDisplayMap: Record<string, string> = {};
@@ -842,7 +751,7 @@ export class SalesAttributionAnalyticsService {
       selected: {
         start_date: startStr,
         end_date: endStr,
-        teamCode: normalizedTeamCode,
+        teamCode: null,
         mappings: normalizedMappings,
       },
       rangeDays,
