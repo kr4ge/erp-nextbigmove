@@ -32,12 +32,14 @@ import { WmsReceivingModule } from './modules/wms-receiving/wms-receiving.module
 import { WmsMobileModule } from './modules/wms-mobile/wms-mobile.module';
 import { WmsSettingsModule } from './modules/wms-settings/wms-settings.module';
 import { WmsIntegrationsModule } from './modules/wms-integrations/wms-integrations.module';
+import { SmsModule } from './modules/sms/sms.module';
 
 @Module({
   imports: [
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env', '../../.env'],
       load: [databaseConfig, jwtConfig, redisConfig],
       validationSchema,
     }),
@@ -118,6 +120,7 @@ import { WmsIntegrationsModule } from './modules/wms-integrations/wms-integratio
     WmsMobileModule,
     WmsSettingsModule,
     WmsIntegrationsModule,
+    SmsModule,
   ],
   controllers: [],
   providers: [],

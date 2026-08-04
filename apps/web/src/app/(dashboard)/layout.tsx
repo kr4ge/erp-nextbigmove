@@ -16,6 +16,7 @@ import {
   X,
   Moon,
   Sun,
+  MessageSquare,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
@@ -75,6 +76,12 @@ const baseNavigation: NavLink[] = [
       { href: '/orders/confirmation', label: 'Confirmation of Order', icon: <ClipboardList className="h-4 w-4" /> },
       { href: '/orders/undeliverables', label: 'Undeliverables', icon: <Users className="h-4 w-4" /> },
     ],
+  },
+  {
+    href: '/sms',
+    label: 'SMS',
+    description: 'Customer messaging and gateway devices',
+    icon: <MessageSquare className={iconClasses} />,
   },
   {
     href: '/requests',
@@ -235,7 +242,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       permissions.includes('orders.undeliverables.read')
       || permissions.includes('orders.undeliverables.read_all');
     const hasReports = permissions.includes('reports.pos_orders.read');
-
+    const hasSmsAccess = permissions.some((permission) =>
+      permission.startsWith('sms.'),
+    );
     return baseNavigation.flatMap((link) => {
       if (link.href !== '/analytics') {
         if (link.href === '/workflows') {
@@ -256,6 +265,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
         if (link.href === '/reports') {
           return hasReports ? [link] : [];
+        }
+        if (link.href === '/sms') {
+          return hasSmsAccess ? [link] : [];
         }
         if (link.href !== '/integrations') return [link];
 
@@ -676,8 +688,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   {hasChildren && !isSidebarCollapsed && isExpanded && (
                     <div className="ml-9 space-y-1">
                       {link.children!.map((child) => {
-                        const isRootIntegration = child.href === '/integrations';
-                        const childActive = isRootIntegration
+                        const isParentRoot = child.href === link.href;
+                        const childActive = isParentRoot
                           ? normalizedPath === child.href
                           : normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`);
                         const childNotificationCount = getNavigationNotificationCount(child.href);
@@ -912,8 +924,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     {hasChildren && isExpanded ? (
                       <div className="ml-9 space-y-1">
                         {link.children!.map((child) => {
-                          const isRootIntegration = child.href === '/integrations';
-                          const childActive = isRootIntegration
+                          const isParentRoot = child.href === link.href;
+                          const childActive = isParentRoot
                             ? normalizedPath === child.href
                             : normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`);
                           const childNotificationCount = getNavigationNotificationCount(child.href);
@@ -1029,8 +1041,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 </div>
                 <div className="py-2">
                   {link.children!.map((child) => {
-                    const isRootIntegration = child.href === '/integrations';
-                    const childActive = isRootIntegration
+                    const isParentRoot = child.href === link.href;
+                    const childActive = isParentRoot
                       ? normalizedPath === child.href
                       : normalizedPath === child.href || normalizedPath.startsWith(`${child.href}/`);
                     const childNotificationCount = getNavigationNotificationCount(child.href);

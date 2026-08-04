@@ -98,6 +98,17 @@ model Tenant {
   roles                               Role[]
   userRoleAssignments                 UserRoleAssignment[]
   userPermissionAssignments           UserPermissionAssignment[]
+  smsDevices                          SmsDevice[]
+  smsSims                             SmsSim[]
+  smsStoreRoutes                      SmsStoreRoute[]
+  smsTemplates                        SmsTemplate[]
+  smsConversations                    SmsConversation[]
+  smsMessages                         SmsMessage[]
+  smsMessageEvents                    SmsMessageEvent[]
+  smsConversationReads                SmsConversationRead[]
+  smsSuppressions                     SmsSuppression[]
+  smsUsageDaily                       SmsUsageDaily[]
+  smsOutboxEvents                     SmsOutboxEvent[]
 
   @@index([slug])
   @@index([status])
@@ -384,6 +395,11 @@ model User {
   wmsStaffAssignmentsManaged                WmsStaffAssignment[]           @relation("WmsStaffAssignmentAssignedBy")
   readNotificationStates                    NotificationState[]            @relation("NotificationStateReadBy")
   undeliverableStoreAssignments             UndeliverableStoreAssignment[]
+  smsTemplatesCreated                       SmsTemplate[]                  @relation("SmsTemplateCreatedBy")
+  smsMessagesCreated                        SmsMessage[]                   @relation("SmsMessageCreatedBy")
+  smsMessagesRedacted                       SmsMessage[]                   @relation("SmsMessageRedactedBy")
+  smsConversationReads                      SmsConversationRead[]
+  smsSuppressionsCreated                    SmsSuppression[]               @relation("SmsSuppressionCreatedBy")
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -526,6 +542,9 @@ model PosStore {
   undeliverableStoreAssignments UndeliverableStoreAssignment[]
   undeliverableOrderRemarks     UndeliverableOrderRemark[]
   activeShopOwnership           PosShopOwnership?
+  smsStoreRoutes                SmsStoreRoute[]
+  smsConversations              SmsConversation[]
+  smsMessages                   SmsMessage[]
 
   @@index([tenantId])
   @@index([tenantId, teamId])
@@ -1284,6 +1303,7 @@ model PosOrder {
   wmsFulfillmentOrders      WmsFulfillmentOrder[]
   undeliverableAttempts     UndeliverableAttempt[]
   undeliverableOrderRemarks UndeliverableOrderRemark[]
+  smsMessages               SmsMessage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2997,4 +3017,331 @@ model ReconcileSalesAttribution {
   @@index([tenantId, date, campaignKey])
   @@index([tenantId, date, teamCodeKey, mappingKey])
   @@map("reconcile_sales_attribution")
+}
+
+// ============================================================================
+// SMS MESSAGING (Tenant-scoped canonical message history)
+// ============================================================================
+enum SmsChannelType {
+  PHYSICAL_SIM
+  VIRTUAL_PROVIDER
+}
+
+enum SmsDeviceStatus {
+  PENDING
+  ACTIVE
+  OFFLINE
+  REVOKED
+}
+
+enum SmsSimStatus {
+  ACTIVE
+  OFFLINE
+  DISABLED
+}
+
+enum SmsMessageDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum SmsMessageStatus {
+  PENDING
+  WAITING_FOR_DEVICE
+  DISPATCHING
+  SENT
+  DELIVERED
+  FAILED
+  EXPIRED
+  RECEIVED
+}
+
+enum SmsMessageEventType {
+  QUEUED
+  WAITING_FOR_DEVICE
+  DISPATCH_ACCEPTED
+  SENT
+  DELIVERED
+  FAILED
+  EXPIRED
+  RECEIVED
+  REDACTED
+}
+
+enum SmsSuppressionSource {
+  STOP
+  MANUAL
+  IMPORTED
+}
+
+enum SmsOutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+model SmsDevice {
+  id               String          @id @default(uuid()) @db.Uuid
+  tenantId         String          @db.Uuid
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  externalDeviceId String          @unique
+  name             String
+  status           SmsDeviceStatus @default(PENDING)
+  platform         String          @default("ANDROID")
+  appVersion       String?
+  lastSeenAt       DateTime?
+  enrolledAt       DateTime?
+  revokedAt        DateTime?
+  metadata         Json            @default("{}")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  sims     SmsSim[]
+  messages SmsMessage[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, lastSeenAt])
+  @@map("sms_devices")
+}
+
+model SmsSim {
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @db.Uuid
+  tenant           Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deviceId         String       @db.Uuid
+  device           SmsDevice    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  externalSimId    String       @unique
+  subscriptionId   String
+  slotIndex        Int
+  phoneNumber      String?
+  normalizedNumber String?
+  alias            String?
+  carrier          String?
+  status           SmsSimStatus @default(ACTIVE)
+  lastSeenAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  routes        SmsStoreRoute[]
+  conversations SmsConversation[]
+  messages      SmsMessage[]
+  usageDaily    SmsUsageDaily[]
+
+  @@unique([deviceId, subscriptionId])
+  @@index([tenantId, status])
+  @@index([tenantId, normalizedNumber])
+  @@map("sms_sims")
+}
+
+model SmsStoreRoute {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId   String   @db.Uuid
+  store     PosStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  simId     String   @db.Uuid
+  sim       SmsSim   @relation(fields: [simId], references: [id], onDelete: Cascade)
+  priority  Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, storeId, simId])
+  @@index([tenantId, storeId, isActive, priority])
+  @@index([tenantId, simId])
+  @@map("sms_store_routes")
+}
+
+model SmsTemplate {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  body        String
+  isActive    Boolean  @default(true)
+  createdById String   @db.Uuid
+  createdBy   User     @relation("SmsTemplateCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+  @@index([createdById])
+  @@map("sms_templates")
+}
+
+model SmsConversation {
+  id                      String    @id @default(uuid()) @db.Uuid
+  tenantId                String    @db.Uuid
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  simId                   String    @db.Uuid
+  sim                     SmsSim    @relation(fields: [simId], references: [id], onDelete: Restrict)
+  storeId                 String?   @db.Uuid
+  store                   PosStore? @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  customerPhone           String
+  customerPhoneNormalized String
+  customerName            String?
+  lastMessageAt           DateTime?
+  lastMessagePreview      String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  messages SmsMessage[]
+  reads    SmsConversationRead[]
+
+  @@unique([tenantId, simId, customerPhoneNormalized])
+  @@index([tenantId, lastMessageAt])
+  @@index([tenantId, customerPhoneNormalized])
+  @@index([tenantId, storeId])
+  @@map("sms_conversations")
+}
+
+model SmsMessage {
+  id               String              @id @default(uuid()) @db.Uuid
+  tenantId         String              @db.Uuid
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId   String              @db.Uuid
+  conversation     SmsConversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction        SmsMessageDirection
+  status           SmsMessageStatus
+  channelType      SmsChannelType      @default(PHYSICAL_SIM)
+  simId            String              @db.Uuid
+  sim              SmsSim              @relation(fields: [simId], references: [id], onDelete: Restrict)
+  deviceId         String?             @db.Uuid
+  device           SmsDevice?          @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  storeId          String?             @db.Uuid
+  store            PosStore?           @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  posOrderId       String?             @db.Uuid
+  posOrder         PosOrder?           @relation(fields: [posOrderId], references: [id], onDelete: SetNull)
+  senderPhone      String
+  recipientPhone   String
+  body             String
+  bodyEncoding     String
+  segmentCount     Int                 @default(1)
+  idempotencyKey   String              @unique
+  gatewayMessageId String?             @unique
+  externalOrderId  String?
+  errorCode        String?
+  errorMessage     String?
+  metadata         Json                @default("{}")
+  createdById      String?             @db.Uuid
+  createdBy        User?               @relation("SmsMessageCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  queuedAt         DateTime?
+  dispatchedAt     DateTime?
+  sentAt           DateTime?
+  deliveredAt      DateTime?
+  failedAt         DateTime?
+  expiresAt        DateTime?
+  receivedAt       DateTime?
+  redactedAt       DateTime?
+  redactedById     String?             @db.Uuid
+  redactedBy       User?               @relation("SmsMessageRedactedBy", fields: [redactedById], references: [id], onDelete: SetNull)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  events SmsMessageEvent[]
+  outbox SmsOutboxEvent?
+
+  @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, storeId, createdAt])
+  @@index([tenantId, posOrderId])
+  @@index([tenantId, simId, createdAt])
+  @@map("sms_messages")
+}
+
+model SmsMessageEvent {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @db.Uuid
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messageId      String              @db.Uuid
+  message        SmsMessage          @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  gatewayEventId String?             @unique
+  type           SmsMessageEventType
+  status         SmsMessageStatus?
+  payload        Json                @default("{}")
+  occurredAt     DateTime
+  createdAt      DateTime            @default(now())
+
+  @@index([tenantId, messageId, occurredAt])
+  @@index([tenantId, type, occurredAt])
+  @@map("sms_message_events")
+}
+
+model SmsConversationRead {
+  id             String          @id @default(uuid()) @db.Uuid
+  tenantId       String          @db.Uuid
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId String          @db.Uuid
+  conversation   SmsConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String          @db.Uuid
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt     DateTime
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([tenantId, conversationId, userId])
+  @@index([tenantId, userId, lastReadAt])
+  @@map("sms_conversation_reads")
+}
+
+model SmsSuppression {
+  id              String               @id @default(uuid()) @db.Uuid
+  tenantId        String               @db.Uuid
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  phoneNormalized String
+  source          SmsSuppressionSource
+  reason          String?
+  isActive        Boolean              @default(true)
+  createdById     String?              @db.Uuid
+  createdBy       User?                @relation("SmsSuppressionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([tenantId, phoneNormalized])
+  @@index([tenantId, isActive])
+  @@map("sms_suppressions")
+}
+
+model SmsUsageDaily {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @db.Uuid
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  simId            String   @db.Uuid
+  sim              SmsSim   @relation(fields: [simId], references: [id], onDelete: Cascade)
+  usageDate        DateTime @db.Date
+  outboundMessages Int      @default(0)
+  outboundSegments Int      @default(0)
+  sentCount        Int      @default(0)
+  deliveredCount   Int      @default(0)
+  failedCount      Int      @default(0)
+  receivedCount    Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([tenantId, simId, usageDate])
+  @@index([tenantId, usageDate])
+  @@map("sms_usage_daily")
+}
+
+model SmsOutboxEvent {
+  id          String          @id @default(uuid()) @db.Uuid
+  tenantId    String          @db.Uuid
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messageId   String          @unique @db.Uuid
+  message     SmsMessage      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  eventType   String
+  payload     Json
+  status      SmsOutboxStatus @default(PENDING)
+  attempts    Int             @default(0)
+  availableAt DateTime        @default(now())
+  lastError   String?
+  processedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([status, availableAt])
+  @@index([tenantId, status, availableAt])
+  @@map("sms_outbox_events")
 }

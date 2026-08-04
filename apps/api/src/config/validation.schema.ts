@@ -60,4 +60,16 @@ export default Joi.object({
   // WMS feature rollout
   WMS_BASKET_DEMAND_PICKING_ENABLED: Joi.string().valid('true', 'false').default('true'),
   WMS_STOX_LEGACY_RESERVED_ENABLED: Joi.string().valid('true', 'false').default('false'),
+
+  // SMS gateway and outbound controls
+  SMS_GATEWAY_BASE_URL: Joi.string().uri().allow('', null),
+  SMS_GATEWAY_API_KEY: Joi.string().allow('', null),
+  SMS_GATEWAY_WEBHOOK_SECRET: Joi.string().min(32).allow('', null),
+  SMS_GATEWAY_REQUEST_TIMEOUT_MS: Joi.number().integer().min(1000).default(15000),
+  SMS_OUTBOUND_QUEUE_ATTEMPTS: Joi.number().integer().min(1).default(5),
+  SMS_OUTBOUND_QUEUE_BACKOFF_MS: Joi.number().integer().min(100).default(2000),
+  SMS_TENANT_DAILY_LIMIT: Joi.number().integer().min(1).default(1000),
+  SMS_SIM_DAILY_LIMIT: Joi.number().integer().min(1).default(500),
+  SMS_SIM_PER_MINUTE_LIMIT: Joi.number().integer().min(1).default(10),
+  SMS_MESSAGE_EXPIRY_MINUTES: Joi.number().integer().min(1).default(60),
 });
