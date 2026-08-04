@@ -6624,7 +6624,15 @@ export class WmsMobileService {
         });
 
         await this.refreshFulfillmentOrderState(tx, scopedBin.demand.fulfillmentOrderId, now);
-        await this.refreshFulfillmentBasketState(tx, scopedBin.demand.fulfillmentOrderId, now);
+        await this.refreshFulfillmentBasketState(
+          tx,
+          scopedBin.demand.fulfillmentOrderId,
+          now,
+          {
+            basketAlreadyLocked: true,
+            cleanupOrphans: false,
+          },
+        );
 
         const [updatedOrder, updatedBasketState, binTotals] = await Promise.all([
           tx.wmsFulfillmentOrder.findUniqueOrThrow({
@@ -8280,6 +8288,10 @@ export class WmsMobileService {
     tx: Prisma.TransactionClient,
     fulfillmentOrderId: string,
     now: Date,
+    options: {
+      basketAlreadyLocked?: boolean;
+      cleanupOrphans?: boolean;
+    } = {},
   ) {
     const order = await tx.wmsFulfillmentOrder.findUnique({
       where: { id: fulfillmentOrderId },
@@ -8292,26 +8304,36 @@ export class WmsMobileService {
       return;
     }
 
-    await this.refreshBasketState(tx, order.basketId, now);
+    await this.refreshBasketState(tx, order.basketId, now, options);
   }
 
   private async refreshBasketState(
     tx: Prisma.TransactionClient,
     basketId: string,
     now: Date,
+    options: {
+      basketAlreadyLocked?: boolean;
+      cleanupOrphans?: boolean;
+    } = {},
   ) {
-    await this.lockBasketForUpdate(tx, basketId);
-    await this.releaseReusableOrphanBasketUnitsTx(tx, {
-      basketId,
-      actorId: null,
-      now,
-    });
+    if (!options.basketAlreadyLocked) {
+      await this.lockBasketForUpdate(tx, basketId);
+    }
+    if (options.cleanupOrphans !== false) {
+      await this.releaseReusableOrphanBasketUnitsTx(tx, {
+        basketId,
+        actorId: null,
+        now,
+      });
+    }
 
     const basket = await tx.wmsBasket.findUnique({
       where: { id: basketId },
       select: {
         id: true,
+        tenantId: true,
         status: true,
+        assignedPickerId: true,
         assignedPackerId: true,
         fullAt: true,
         readyForPackAt: true,
@@ -8377,21 +8399,38 @@ export class WmsMobileService {
           ? WmsBasketStatus.IN_PICKING
           : WmsBasketStatus.ASSIGNED;
 
+    const nextTenantId = activeTenantIds.length === 1 ? activeTenantIds[0] : null;
+    const nextAssignedPickerId = activeOrders[0]?.claimedById ?? null;
+    const nextAssignedPackerId = nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
+      ? basket.assignedPackerId
+      : null;
+    const nextFullAt = nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
+      ? basket.fullAt ?? now
+      : null;
+    const nextReadyForPackAt = nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
+      ? basket.readyForPackAt ?? now
+      : null;
+
+    if (
+      basket.status === nextStatus
+      && basket.tenantId === nextTenantId
+      && basket.assignedPickerId === nextAssignedPickerId
+      && basket.assignedPackerId === nextAssignedPackerId
+      && basket.fullAt?.getTime() === nextFullAt?.getTime()
+      && basket.readyForPackAt?.getTime() === nextReadyForPackAt?.getTime()
+    ) {
+      return;
+    }
+
     await tx.wmsBasket.update({
       where: { id: basket.id },
       data: {
         status: nextStatus,
-        tenantId: activeTenantIds.length === 1 ? activeTenantIds[0] : null,
-        assignedPickerId: activeOrders[0]?.claimedById ?? null,
-        assignedPackerId: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
-          ? basket.assignedPackerId
-          : null,
-        fullAt: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
-          ? basket.fullAt ?? now
-          : null,
-        readyForPackAt: nextStatus === WmsBasketStatus.FULL_HELD || nextStatus === WmsBasketStatus.PACKING
-          ? basket.readyForPackAt ?? now
-          : null,
+        tenantId: nextTenantId,
+        assignedPickerId: nextAssignedPickerId,
+        assignedPackerId: nextAssignedPackerId,
+        fullAt: nextFullAt,
+        readyForPackAt: nextReadyForPackAt,
       },
     });
   }

@@ -111,7 +111,7 @@ export class ReconcileSalesService {
    * - campaignId null/empty falls back to adId (for unmatched POS rows).
    * - mapping is carried through as-is (already normalized in sources).
    */
-  async aggregateDay(tenantId: string, date: string, teamId?: string | null): Promise<void> {
+  async aggregateDay(tenantId: string, date: string): Promise<void> {
     const dayStart = new Date(`${date}T00:00:00.000Z`);
     const dayEnd = new Date(dayStart);
     dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
@@ -119,7 +119,6 @@ export class ReconcileSalesService {
     const rows = await this.prisma.reconcileMarketing.findMany({
       where: {
         tenantId,
-        ...(teamId ? { teamId } : {}),
         date: { gte: dayStart, lt: dayEnd },
       },
       select: {
@@ -403,7 +402,7 @@ export class ReconcileSalesService {
         },
         create: {
           tenantId,
-          teamId: teamId ?? null,
+          teamId: null,
           date: dayStart,
           campaignId: group.campaignId,
           campaignName: group.campaignName,
@@ -412,7 +411,7 @@ export class ReconcileSalesService {
           ...group.totals,
         },
         update: {
-          teamId: teamId ?? null,
+          teamId: null,
           campaignName: group.campaignName,
           mapping: group.mapping,
           isUnmatched: group.isUnmatched,

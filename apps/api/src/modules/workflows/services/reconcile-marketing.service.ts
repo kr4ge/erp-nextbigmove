@@ -296,7 +296,7 @@ export class ReconcileMarketingService {
    * - Upsert into reconcile_marketing.
    * - Create synthetic rows for unmatched POS orders.
    */
-  async reconcileDay(tenantId: string, date: string, teamId?: string | null): Promise<void> {
+  async reconcileDay(tenantId: string, date: string): Promise<void> {
     const dayStart = new Date(`${date}T00:00:00.000Z`);
     const dayEnd = new Date(dayStart);
     dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
@@ -305,7 +305,6 @@ export class ReconcileMarketingService {
     const metaInsights = await this.prisma.metaAdInsight.findMany({
       where: {
         tenantId,
-        ...(teamId ? { teamId } : {}),
         date: {
           gte: dayStart,
           lt: dayEnd,
@@ -317,7 +316,6 @@ export class ReconcileMarketingService {
     const posOrders: PosOrderLite[] = await this.prisma.posOrder.findMany({
       where: {
         tenantId,
-        ...(teamId ? { teamId } : {}),
         dateLocal: date,
         AND: [
           {
@@ -426,7 +424,7 @@ export class ReconcileMarketingService {
         },
         create: {
           tenantId,
-          teamId: insight.teamId ?? teamId ?? null,
+          teamId: insight.teamId ?? null,
           date: dayStart,
           adId: insight.adId,
           normalizedAdId: norm || null,
@@ -520,7 +518,7 @@ export class ReconcileMarketingService {
           shops,
         },
         update: {
-          teamId: insight.teamId ?? teamId ?? null,
+          teamId: insight.teamId ?? null,
           normalizedAdId: norm || null,
           campaignName: insight.campaignName,
           adName: insight.adName,
@@ -670,7 +668,7 @@ export class ReconcileMarketingService {
         },
         create: {
           tenantId,
-          teamId: order.teamId ?? teamId ?? null,
+          teamId: order.teamId ?? null,
           date: dayStart,
           adId: syntheticAdId,
           normalizedAdId: null,
@@ -769,7 +767,7 @@ export class ReconcileMarketingService {
           shops: [order.shopId],
         },
         update: {
-          teamId: order.teamId ?? teamId ?? null,
+          teamId: order.teamId ?? null,
           purchasesPos: syntheticAgg.purchasesPos,
           codPos: syntheticAgg.codPos,
           processedPurchasesPos: syntheticAgg.processedPurchasesPos,

@@ -16,6 +16,7 @@ import { SalesAttributionAnalyticsService } from './sales-attribution-analytics.
 import { ReconcileMarketingService } from '../workflows/services/reconcile-marketing.service';
 import { ReconcileSalesService } from '../workflows/services/reconcile-sales.service';
 import { ReconcileSalesAttributionService } from '../workflows/services/reconcile-sales-attribution.service';
+import { AnalyticsRequestCoordinatorService } from './analytics-request-coordinator.service';
 
 @Module({
   imports: [PrismaModule, CommonServicesModule],
@@ -33,6 +34,7 @@ import { ReconcileSalesAttributionService } from '../workflows/services/reconcil
     AnalyticsShareService,
     SalesPerformanceService,
     AnalyticsCacheService,
+    AnalyticsRequestCoordinatorService,
     ReconcileMarketingService,
     ReconcileSalesService,
     ReconcileSalesAttributionService,

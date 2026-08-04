@@ -9,6 +9,28 @@ export class TeamContextService {
     private readonly cls: ClsService,
   ) {}
 
+  /**
+   * Return the mandatory tenant boundary without resolving any team state.
+   *
+   * Analytics is tenant-wide. Keeping this path separate prevents analytics
+   * requests from querying team memberships or accidentally re-applying team
+   * filters while the rest of the application transitions away from teams.
+   */
+  getTenantId(): string {
+    const tenantId = this.cls.get('tenantId');
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+    return tenantId;
+  }
+
+  buildTenantWhereClause(additionalWhere: any = {}): any {
+    return {
+      ...additionalWhere,
+      tenantId: this.getTenantId(),
+    };
+  }
+
   private async tenantHasActiveTeams(tenantId: string): Promise<boolean> {
     const cached = this.cls.get('tenantHasActiveTeams');
     if (typeof cached === 'boolean') {
@@ -241,34 +263,8 @@ export class TeamContextService {
    * For analytics modules, expand effective teams with shares.
    */
   async getAnalyticsTeamIds(scope: 'sales' | 'marketing' | 'both'): Promise<string[] | null> {
-    const { tenantId, teamIds, userTeams, isAdmin, tenantHasTeams } = await this.getContext();
-
-    if (!tenantHasTeams) {
-      return null;
-    }
-
-    // Admin without explicit scope: no restriction needed
-    if (isAdmin && (!teamIds || teamIds.length === 0)) {
-      return null;
-    }
-
-    const baseTeams = (Array.isArray(teamIds) && teamIds.length > 0 ? teamIds : userTeams) || [];
-    if (baseTeams.length === 0) {
-      return [];
-    }
-
-    const scopes = scope === 'both' ? ['BOTH', 'SALES', 'MARKETING'] : [scope.toUpperCase(), 'BOTH'];
-    const shares = await this.prisma.analyticsShare.findMany({
-      where: {
-        tenantId,
-        targetTeamId: { in: baseTeams },
-        scope: { in: scopes as any },
-      },
-      select: { ownerTeamId: true },
-    });
-
-    const ownerIds = shares.map((s) => s.ownerTeamId);
-    const all = Array.from(new Set([...baseTeams, ...ownerIds]));
-    return all;
+    void scope;
+    this.getTenantId();
+    return null;
   }
 }

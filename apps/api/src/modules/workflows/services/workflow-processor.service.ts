@@ -317,7 +317,6 @@ export class WorkflowProcessorService {
           await this.reconcileMarketingService.reconcileDay(
             context.tenantId,
             date,
-            null,
           );
         } catch (error) {
           reconcileOk = false;
@@ -343,7 +342,6 @@ export class WorkflowProcessorService {
             await this.reconcileSalesService.aggregateDay(
               context.tenantId,
               date,
-              null,
             );
             await this.reconcileSalesAttributionService.aggregateDay(
               context.tenantId,

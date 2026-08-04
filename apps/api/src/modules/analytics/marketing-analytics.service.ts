@@ -6,6 +6,7 @@ import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { AnalyticsCacheService } from './analytics-cache.service';
+import { AnalyticsRequestCoordinatorService } from './analytics-request-coordinator.service';
 import { User } from '@prisma/client';
 
 dayjs.extend(utc);
@@ -75,6 +76,16 @@ type TopCreativeRow = {
   ar_pct: number;
 };
 
+type MarketingOverviewParams = {
+  startDate?: string;
+  endDate?: string;
+  associates?: string[];
+  excludeCancel?: boolean;
+  excludeRestocking?: boolean;
+  excludeAbandoned?: boolean;
+  tables?: string[];
+};
+
 type MarketingMonitoringSnapshot = {
   revenue: number;
   canceled: number;
@@ -92,6 +103,7 @@ export class MarketingAnalyticsService {
     private readonly prisma: PrismaService,
     private readonly teamContext: TeamContextService,
     private readonly analyticsCache: AnalyticsCacheService,
+    private readonly analyticsRequestCoordinator: AnalyticsRequestCoordinatorService,
   ) {}
 
   private readonly logger = new Logger(MarketingAnalyticsService.name);
@@ -365,7 +377,22 @@ export class MarketingAnalyticsService {
     return Array.from(new Set(keys.filter(Boolean)));
   }
 
-  async getOverview(params: { startDate?: string; endDate?: string; associates?: string[]; excludeCancel?: boolean; excludeRestocking?: boolean; excludeAbandoned?: boolean; tables?: string[] }) {
+  async getOverview(params: MarketingOverviewParams) {
+    const tenantId = this.teamContext.getTenantId();
+    const requestKey = `marketing-overview:${tenantId}:${this.analyticsCache.hashObject({
+      ...params,
+      associates: [...(params.associates || [])].map((value) => this.normalizeAssociate(value)).sort(),
+      tables: [...(params.tables || [])].sort(),
+    })}`;
+
+    return this.analyticsRequestCoordinator.run(
+      tenantId,
+      requestKey,
+      () => this.calculateOverview(params),
+    );
+  }
+
+  private async calculateOverview(params: MarketingOverviewParams) {
     const { startDate, endDate, associates: associateParams = [], excludeCancel = true, excludeRestocking = true, tables = [] } = params;
     const excludeAbandoned = true;
     const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
@@ -396,8 +423,7 @@ export class MarketingAnalyticsService {
       .filter((v) => v.length > 0);
     const includeNullAssociate = normalizedAssociates.includes(this.normalizeAssociate(NULL_ASSOCIATE_KEY));
 
-    const { tenantId, teamId } = await this.teamContext.getContext();
-    const effectiveTeamIds = await this.teamContext.getAnalyticsTeamIds('marketing');
+    const tenantId = this.teamContext.getTenantId();
     const associateFilter =
       normalizedAssociates.length > 0
         ? {
@@ -412,29 +438,22 @@ export class MarketingAnalyticsService {
           }
         : {};
 
-    const baseWhere = await this.teamContext.buildTeamWhereClause(
-      {
-        date: { gte: start, lte: end },
-      },
-      effectiveTeamIds || undefined,
-    );
+    const baseWhere = this.teamContext.buildTenantWhereClause({
+      date: { gte: start, lte: end },
+    });
     const whereCurrent = {
       ...baseWhere,
       ...associateFilter,
     };
-    const wherePrev = await this.teamContext.buildTeamWhereClause(
-      {
-        date: { gte: prevStart, lte: prevEnd },
-        ...associateFilter,
-      },
-      effectiveTeamIds || undefined,
-    );
+    const wherePrev = this.teamContext.buildTenantWhereClause({
+      date: { gte: prevStart, lte: prevEnd },
+      ...associateFilter,
+    });
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
-    const cacheTeamIds = effectiveTeamIds ? [...effectiveTeamIds].sort() : teamId ? [teamId] : [];
     const cacheKeyPayload = {
       tenantId,
-      teamIds: cacheTeamIds,
+      analyticsScope: 'tenant',
       start: startStr,
       end: endStr,
       associates: normalizedAssociates.sort(),
@@ -667,7 +686,6 @@ export class MarketingAnalyticsService {
       ? await this.prisma.reconcileMarketing.findMany({
           where: {
             tenantId,
-            teamId: teamId || undefined,
             ...(associateFilter?.OR ? { OR: associateFilter.OR } : {}),
             dateCreated: { gte: start, lte: end },
           },
@@ -702,7 +720,6 @@ export class MarketingAnalyticsService {
           by: ['campaignId', 'campaignName'],
           where: {
             tenantId,
-            teamId: teamId || undefined,
             date: { gte: start, lte: end },
             ...(associateFilter?.OR ? { OR: associateFilter.OR } : {}),
           },
@@ -831,8 +848,7 @@ export class MarketingAnalyticsService {
       };
     }
 
-    const { tenantId } = await this.teamContext.getContext();
-    const effectiveTeams = await this.teamContext.getAnalyticsTeamIds('marketing');
+    const tenantId = this.teamContext.getTenantId();
     const teamCodeFilter =
       opts.teamCodeOverride && opts.teamCodeOverride.trim()
         ? {
@@ -851,14 +867,11 @@ export class MarketingAnalyticsService {
       dateRange: { gte: Date; lte: Date },
       includeTeamCode: boolean,
     ) =>
-      this.teamContext.buildTeamWhereClause(
-        {
-          date: dateRange,
-          ...associateFilter,
-          ...(includeTeamCode && teamCodeFilter ? teamCodeFilter : {}),
-        },
-        effectiveTeams || undefined,
-      );
+      this.teamContext.buildTenantWhereClause({
+        date: dateRange,
+        ...associateFilter,
+        ...(includeTeamCode && teamCodeFilter ? teamCodeFilter : {}),
+      });
 
     let shouldApplyTeamCodeFilter = Boolean(teamCodeFilter);
     let baseWhere = await buildWhereForDateRange(
@@ -976,7 +989,6 @@ export class MarketingAnalyticsService {
       where: {
         tenantId,
         ...associateFilter,
-        ...(effectiveTeams ? { teamId: effectiveTeams.length === 1 ? effectiveTeams[0] : { in: effectiveTeams } } : {}),
         ...(shouldApplyTeamCodeFilter && teamCodeFilter ? teamCodeFilter : {}),
         dateCreated: { gte: start, lte: end },
       },
@@ -1046,43 +1058,10 @@ export class MarketingAnalyticsService {
       includeTax1: opts.includeTax1,
     };
 
-    const { tenantId, teamId } = await this.teamContext.getContext();
-    const effectiveTeams = await this.teamContext.getAnalyticsTeamIds('marketing');
-
-    // Derive leader's teamCode, allow explicit override from caller
-    const teamCodeRaw =
-      (opts.teamCodeOverride && opts.teamCodeOverride.trim()) ||
-      (
-        await this.prisma.team.findFirst({
-          where: { id: teamId || undefined, tenantId },
-          select: { teamCode: true },
-        })
-      )?.teamCode;
-    const teamCode = teamCodeRaw ? teamCodeRaw.trim() : '';
-    if (!teamCode) {
-      const empty = this.computeMarketingMonitoringSnapshot(
-        null,
-        monitoringOptions,
-      );
-      return {
-        team_ad_spend: 0,
-        team_ar: 0,
-        team_overall_ranking: null,
-        monitoring: {
-          current: empty,
-          previous: empty,
-        },
-      };
-    }
-
     const buildTeamWhere = (date: { gte: Date; lte: Date }) =>
-      this.teamContext.buildTeamWhereClause(
-        {
-          date,
-          teamCode: { equals: teamCode, mode: 'insensitive' as const },
-        },
-        effectiveTeams || undefined,
-      );
+      this.teamContext.buildTenantWhereClause({
+        date,
+      });
     const aggregateFields = {
       spend: true,
       codPos: true,
