@@ -30,6 +30,7 @@ import type {
 
 type UndeliverableTrackingPanelProps = {
   row: UndeliverableRow | null;
+  canViewRemarkedAt: boolean;
   onClose: () => void;
 };
 
@@ -141,7 +142,13 @@ function OrderItemsSummary({ items }: { items: UndeliverableTrackingResponse['or
   );
 }
 
-function ProofSummary({ proof }: { proof: UndeliverableTrackingResponse['proof'] }) {
+function ProofSummary({
+  proof,
+  remarkedAt,
+}: {
+  proof: UndeliverableTrackingResponse['proof'];
+  remarkedAt: string | null;
+}) {
   if (!proof.remark && proof.items.length === 0) {
     return null;
   }
@@ -158,6 +165,13 @@ function ProofSummary({ proof }: { proof: UndeliverableTrackingResponse['proof']
 
       {proof.remark ? (
         <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{proof.remark}</p>
+      ) : null}
+
+      {remarkedAt ? (
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+          <Clock3 className="h-3.5 w-3.5" />
+          <span>Remarked {formatTrackingDate(remarkedAt)}</span>
+        </div>
       ) : null}
 
       {proof.items.length > 0 ? (
@@ -202,7 +216,11 @@ function ProofSummary({ proof }: { proof: UndeliverableTrackingResponse['proof']
   );
 }
 
-export function UndeliverableTrackingPanel({ row, onClose }: UndeliverableTrackingPanelProps) {
+export function UndeliverableTrackingPanel({
+  row,
+  canViewRemarkedAt,
+  onClose,
+}: UndeliverableTrackingPanelProps) {
   const attemptId = row?.id ?? null;
   const [data, setData] = useState<UndeliverableTrackingResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -295,7 +313,10 @@ export function UndeliverableTrackingPanel({ row, onClose }: UndeliverableTracki
 
             {!isLoading && !error && data ? (
               <>
-                <ProofSummary proof={data.proof} />
+                <ProofSummary
+                  proof={data.proof}
+                  remarkedAt={canViewRemarkedAt ? row?.latest_remark?.created_at ?? null : null}
+                />
                 <OrderItemsSummary items={data.order.order_items} />
               </>
             ) : null}

@@ -252,6 +252,8 @@ export type WmsFulfillmentPriorityPreviewResponse = {
   donors: Array<{
     id: string;
     posOrderId: string;
+    status: string;
+    statusLabel: string;
     dateLocal: string | null;
     customerName: string | null;
     releasableQty: number;

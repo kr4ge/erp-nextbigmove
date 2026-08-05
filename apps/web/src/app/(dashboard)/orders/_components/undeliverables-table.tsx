@@ -21,6 +21,22 @@ function formatLifecycleDuration(totalSeconds: number) {
   return `${Math.max(1, minutes)}m`;
 }
 
+function formatRemarkedAt(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(parsed);
+}
+
 function getLifecyclePresentation(row: UndeliverableRow, nowMs: number) {
   if (row.latest_remark) {
     if (row.remarked_late || row.lifecycle_status === 'REMARKED_LATE') {
@@ -63,6 +79,7 @@ type UndeliverablesTableProps = {
   isLoading?: boolean;
   serverTime?: string | null;
   canViewAll: boolean;
+  canViewRemarkedAt: boolean;
   canWriteRemarks: boolean;
   failedAtOrder: 'asc' | 'desc';
   remarkOptions: UndeliverableRemarkOption[];
@@ -82,6 +99,7 @@ export function UndeliverablesTable({
   isLoading = false,
   serverTime = null,
   canViewAll,
+  canViewRemarkedAt,
   canWriteRemarks,
   failedAtOrder,
   remarkOptions,
@@ -186,7 +204,7 @@ export function UndeliverablesTable({
               <th className="min-w-[18rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
                 SA Remarks
               </th>
-              <th className="min-w-[15rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
+              <th className={`${canViewRemarkedAt ? 'min-w-[28rem]' : 'min-w-[15rem]'} px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300`}>
                 SA Response
               </th>
               <th className="min-w-[11rem] px-3 py-2 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300">
@@ -347,12 +365,22 @@ export function UndeliverablesTable({
                 <td className="px-3 py-2 text-xs">
                   {(() => {
                     const lifecycle = getLifecyclePresentation(row, nowMs);
+                    const remarkedAt = canViewRemarkedAt
+                      ? formatRemarkedAt(row.latest_remark?.created_at)
+                      : null;
                     return (
-                      <span
-                        className={`inline-flex max-w-[15rem] rounded-full border px-2.5 py-1 font-semibold ${lifecycle.className}`}
-                      >
-                        <span className="truncate">{lifecycle.label}</span>
-                      </span>
+                      <div className="flex items-center gap-2 whitespace-nowrap">
+                        <span
+                          className={`inline-flex max-w-[15rem] rounded-full border px-2.5 py-1 font-semibold ${lifecycle.className}`}
+                        >
+                          <span className="truncate">{lifecycle.label}</span>
+                        </span>
+                        {remarkedAt ? (
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            Remarked {remarkedAt}
+                          </span>
+                        ) : null}
+                      </div>
                     );
                   })()}
                 </td>

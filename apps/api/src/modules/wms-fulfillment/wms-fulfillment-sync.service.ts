@@ -14,6 +14,7 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildUnexpiredInventoryWhere } from '../wms-inventory/wms-inventory-expiration.utils';
 import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
+import { finalizeCompleteDemandAllocation } from './wms-demand-allocation.utils';
 
 type FulfillmentLineDraft = {
   variationId: string;
@@ -1063,6 +1064,19 @@ export class WmsFulfillmentSyncService {
     limit?: number | null;
   }) {
     await this.refreshDemandFulfillmentQueue(params);
+  }
+
+  async refreshDemandQueueForScopeTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      tenantId: string | null;
+      storeId: string;
+      variationIds?: string[] | null;
+      limit?: number | null;
+    },
+    now = new Date(),
+  ) {
+    await this.refreshDemandFulfillmentQueueTx(tx, params, now);
   }
 
   async clearPriorityOverridesTx(
@@ -2564,6 +2578,15 @@ export class WmsFulfillmentSyncService {
       }
     }
 
+    const completeAllocationByLineId = hasIssue
+      ? new Map(eligibleLines.map((line) => [line.id, 0]))
+      : finalizeCompleteDemandAllocation(eligibleLines, allocatedByLineId);
+    const orderIsFullyAllocatable = !hasIssue
+      && eligibleLines.length > 0
+      && eligibleLines.every((line) => (
+        (completeAllocationByLineId.get(line.id) ?? 0) >= line.required
+      ));
+
     for (const line of order.lines) {
       if (line.status === WmsFulfillmentLineStatus.CANCELED) {
         continue;
@@ -2575,7 +2598,7 @@ export class WmsFulfillmentSyncService {
       }
 
       const eligibleLine = eligibleLines.find((entry) => entry.id === line.id);
-      const nextAllocated = Math.min(allocatedByLineId.get(line.id) ?? 0, required);
+      const nextAllocated = Math.min(completeAllocationByLineId.get(line.id) ?? 0, required);
       const nextLineStatus = this.resolveFulfillmentLineStatus(required, nextAllocated, 0, line.status);
 
       totalQuantity += required;
@@ -2594,12 +2617,14 @@ export class WmsFulfillmentSyncService {
           status: nextLineStatus,
           issueReason: nextLineStatus === WmsFulfillmentLineStatus.READY
             ? null
-            : this.buildDemandAvailabilityIssueReason({
-                required,
-                availableInSelectedWarehouse,
-                totalAvailableAcrossWarehouses: eligibleLine?.totalAvailableAcrossWarehouses ?? 0,
-                warehouseLocked,
-              }),
+            : !orderIsFullyAllocatable && availableInSelectedWarehouse >= required
+              ? 'Stock is available for this item, but the complete order cannot be fulfilled yet.'
+              : this.buildDemandAvailabilityIssueReason({
+                  required,
+                  availableInSelectedWarehouse,
+                  totalAvailableAcrossWarehouses: eligibleLine?.totalAvailableAcrossWarehouses ?? 0,
+                  warehouseLocked,
+                }),
         },
       });
     }
@@ -2633,7 +2658,7 @@ export class WmsFulfillmentSyncService {
       && selectedWarehouseId
     ) {
       for (const line of eligibleLines) {
-        const allocated = Math.min(allocatedByLineId.get(line.id) ?? 0, line.required);
+        const allocated = Math.min(completeAllocationByLineId.get(line.id) ?? 0, line.required);
         if (allocated <= 0) {
           continue;
         }

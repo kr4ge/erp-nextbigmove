@@ -174,6 +174,20 @@ export class WmsFulfillmentOpsService {
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
   ) {}
 
+  private getPriorityTransactionOptions() {
+    const configuredTimeout = Number(process.env.WMS_DEMAND_QUEUE_REFRESH_TX_TIMEOUT_MS ?? 90000);
+    const configuredMaxWait = Number(process.env.WMS_DEMAND_QUEUE_REFRESH_TX_MAX_WAIT_MS ?? 10000);
+
+    return {
+      timeout: Number.isFinite(configuredTimeout) && configuredTimeout >= 1000
+        ? Math.floor(configuredTimeout)
+        : 90000,
+      maxWait: Number.isFinite(configuredMaxWait) && configuredMaxWait >= 1000
+        ? Math.floor(configuredMaxWait)
+        : 10000,
+    };
+  }
+
   async getOpsHealth(query: GetWmsFulfillmentOpsSnapshotDto) {
     const scope = await this.resolveTenantScope(query.tenantId, query.allTenants === true);
     const limit = query.limit ?? DEFAULT_OPS_LIMIT;
@@ -520,23 +534,36 @@ export class WmsFulfillmentOpsService {
     const now = new Date();
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const targetOrder = await this.loadPriorityTargetOrder(tx, body.orderId, scopedTenantId);
-      const donorOrders = await this.loadPriorityDonorOrders(tx, targetOrder);
+      const initialTargetOrder = await this.loadPriorityTargetOrder(tx, body.orderId, scopedTenantId);
+      const initialDonorOrders = await this.loadPriorityDonorOrders(tx, initialTargetOrder);
       const selectedDonorIds = new Set(body.donorOrderIds);
-      const selectedPlan = this.buildPriorityPreview(targetOrder, donorOrders, selectedDonorIds);
-      const selectedOrderIds = selectedPlan.donors.map((donor) => donor.id);
+      const initialSelectedPlan = this.buildPriorityPreview(
+        initialTargetOrder,
+        initialDonorOrders,
+        selectedDonorIds,
+      );
+      const initialSelectedOrderIds = initialSelectedPlan.donors.map((donor) => donor.id);
 
-      if (selectedOrderIds.length !== selectedDonorIds.size) {
+      if (initialSelectedOrderIds.length !== selectedDonorIds.size) {
         throw new BadRequestException('One or more selected donor orders are no longer eligible for priority release.');
       }
 
-      if (!selectedPlan.summary.canFullyPrioritize) {
+      if (!initialSelectedPlan.summary.canFullyPrioritize) {
         throw new BadRequestException(
-          `Selected donors can only release ${selectedPlan.summary.totalSuggestedQty} of ${selectedPlan.summary.targetShortage} required unit(s).`,
+          `Selected donors can only release ${initialSelectedPlan.summary.totalSuggestedQty} of ${initialSelectedPlan.summary.targetShortage} required unit(s).`,
         );
       }
 
-      await this.lockFulfillmentOrdersForUpdate(tx, [targetOrder.id, ...selectedOrderIds]);
+      await this.lockFulfillmentOrdersForUpdate(tx, [initialTargetOrder.id, ...initialSelectedOrderIds]);
+
+      const targetOrder = await this.loadPriorityTargetOrder(tx, body.orderId, scopedTenantId);
+      const donorOrders = await this.loadPriorityDonorOrders(tx, targetOrder);
+      const selectedPlan = this.buildPriorityPreview(targetOrder, donorOrders, selectedDonorIds);
+      const selectedOrderIds = selectedPlan.donors.map((donor) => donor.id);
+
+      if (selectedOrderIds.length !== selectedDonorIds.size || !selectedPlan.summary.canFullyPrioritize) {
+        throw new ConflictException('The selected allocation changed while prioritizing. Refresh the donor list and try again.');
+      }
 
       await tx.wmsFulfillmentOrder.update({
         where: { id: targetOrder.id },
@@ -581,6 +608,26 @@ export class WmsFulfillmentOpsService {
         now,
       });
 
+      await this.wmsFulfillmentSyncService.refreshDemandQueueForScopeTx(tx, {
+        tenantId: targetOrder.tenantId,
+        storeId: targetOrder.storeId,
+      }, now);
+
+      const refreshedTarget = await tx.wmsFulfillmentOrder.findUnique({
+        where: { id: targetOrder.id },
+        select: {
+          status: true,
+          allocatedQuantity: true,
+          totalQuantity: true,
+        },
+      });
+
+      if (!refreshedTarget || refreshedTarget.status !== WmsFulfillmentOrderStatus.READY) {
+        throw new ConflictException(
+          'The order could not be fully backed by eligible warehouse units. Refresh stock and donor availability, then try again.',
+        );
+      }
+
       await this.wmsStaffActivityService.recordFromRequest({
         request,
         tenantId: targetOrder.tenantId,
@@ -607,7 +654,7 @@ export class WmsFulfillmentOpsService {
         donorOrderIds: selectedOrderIds,
         donorPosOrderIds: selectedPlan.donors.map((donor) => donor.posOrderId),
       };
-    });
+    }, this.getPriorityTransactionOptions());
 
     return {
       success: true,
@@ -3925,7 +3972,12 @@ export class WmsFulfillmentOpsService {
         tenantId: targetOrder.tenantId,
         storeId: targetOrder.storeId,
         assignmentMode: WmsFulfillmentAssignmentMode.BASKET_DEMAND,
-        status: WmsFulfillmentOrderStatus.READY,
+        status: {
+          in: [
+            WmsFulfillmentOrderStatus.READY,
+            WmsFulfillmentOrderStatus.PARTIAL,
+          ],
+        },
         claimedById: null,
         basketId: null,
         pickedQuantity: 0,
@@ -4062,6 +4114,8 @@ export class WmsFulfillmentOpsService {
         return {
           id: order.id,
           posOrderId: order.posOrderId,
+          status: order.status,
+          statusLabel: this.formatEnumLabel(order.status),
           dateLocal: order.posOrder?.dateLocal ?? null,
           customerName: order.customerName ?? null,
           releasableQty,
