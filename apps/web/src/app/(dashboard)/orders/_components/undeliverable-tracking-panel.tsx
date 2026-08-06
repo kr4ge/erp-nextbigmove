@@ -170,7 +170,7 @@ function ProofSummary({
       {remarkedAt ? (
         <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
           <Clock3 className="h-3.5 w-3.5" />
-          <span>Remarked {formatTrackingDate(remarkedAt)}</span>
+          <span>{formatTrackingDate(remarkedAt)}</span>
         </div>
       ) : null}
 
