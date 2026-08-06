@@ -257,7 +257,7 @@ export class ReconcileMarketingService {
         bucket.repurchaseCogsRestockingPos += cogsVal;
       }
     }
-    if (status === 9) {
+    if (status === 9 || status === 13) {
       bucket.waitingPickupCount += 1;
       bucket.waitingPickupCodPos += codVal;
       if (isRepurchase) {
