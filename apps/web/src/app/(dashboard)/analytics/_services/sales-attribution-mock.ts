@@ -416,17 +416,25 @@ const computeCounts = (
   };
 };
 
-const computeStatusDistribution = (sum: AggregateShape) => ({
-  total: toNumber(sum._sum.purchasesPos),
-  delivered: toNumber(sum._sum.deliveredCount),
-  shipped: toNumber(sum._sum.shippedCount),
-  waiting_pickup: toNumber(sum._sum.waitingPickupCount),
-  rts: toNumber(sum._sum.rtsCount),
-  restocking: toNumber(sum._sum.restockingCount),
-  confirmed: toNumber(sum._sum.confirmedCount),
-  unconfirmed: toNumber(sum._sum.unconfirmedCount),
-  canceled: toNumber(sum._sum.canceledCount),
-});
+const computeStatusDistribution = (sum: AggregateShape) => {
+  const withoutRepurchase = (countKey: string, repurchaseCountKey: string) =>
+    Math.max(0, toNumber(sum._sum[countKey]) - toNumber(sum._sum[repurchaseCountKey]));
+
+  return {
+    total: withoutRepurchase('purchasesPos', 'repurchaseCount'),
+    delivered: withoutRepurchase('deliveredCount', 'repurchaseDeliveredCount'),
+    shipped: withoutRepurchase('shippedCount', 'repurchaseShippedCount'),
+    waiting_pickup: withoutRepurchase(
+      'waitingPickupCount',
+      'repurchaseWaitingPickupCount',
+    ),
+    rts: withoutRepurchase('rtsCount', 'repurchaseRtsCount'),
+    restocking: withoutRepurchase('restockingCount', 'repurchaseRestockingCount'),
+    confirmed: withoutRepurchase('confirmedCount', 'repurchaseConfirmedCount'),
+    unconfirmed: withoutRepurchase('unconfirmedCount', 'repurchaseUnconfirmedCount'),
+    canceled: withoutRepurchase('canceledCount', 'repurchaseCanceledCount'),
+  };
+};
 
 const computeKpis = (
   sum: AggregateShape,

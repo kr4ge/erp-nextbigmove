@@ -528,16 +528,26 @@ export class SalesAnalyticsService {
   }
 
   private computeStatusDistribution(sum: any): SalesStatusDistribution {
+    const withoutRepurchase = (countKey: string, repurchaseCountKey: string) =>
+      Math.max(
+        0,
+        this.toNumber(sum?._sum?.[countKey]) -
+          this.toNumber(sum?._sum?.[repurchaseCountKey]),
+      );
+
     return {
-      total: this.toNumber(sum?._sum?.purchasesPos),
-      delivered: this.toNumber(sum?._sum?.deliveredCount),
-      shipped: this.toNumber(sum?._sum?.shippedCount),
-      waiting_pickup: this.toNumber(sum?._sum?.waitingPickupCount),
-      rts: this.toNumber(sum?._sum?.rtsCount),
-      restocking: this.toNumber(sum?._sum?.restockingCount),
-      confirmed: this.toNumber(sum?._sum?.confirmedCount),
-      unconfirmed: this.toNumber(sum?._sum?.unconfirmedCount),
-      canceled: this.toNumber(sum?._sum?.canceledCount),
+      total: withoutRepurchase('purchasesPos', 'repurchaseCount'),
+      delivered: withoutRepurchase('deliveredCount', 'repurchaseDeliveredCount'),
+      shipped: withoutRepurchase('shippedCount', 'repurchaseShippedCount'),
+      waiting_pickup: withoutRepurchase(
+        'waitingPickupCount',
+        'repurchaseWaitingPickupCount',
+      ),
+      rts: withoutRepurchase('rtsCount', 'repurchaseRtsCount'),
+      restocking: withoutRepurchase('restockingCount', 'repurchaseRestockingCount'),
+      confirmed: withoutRepurchase('confirmedCount', 'repurchaseConfirmedCount'),
+      unconfirmed: withoutRepurchase('unconfirmedCount', 'repurchaseUnconfirmedCount'),
+      canceled: withoutRepurchase('canceledCount', 'repurchaseCanceledCount'),
     };
   }
 
@@ -769,7 +779,7 @@ export class SalesAnalyticsService {
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
     const cacheKeyPayload = {
-      responseShapeVersion: 5,
+      responseShapeVersion: 6,
       tenantId,
       analyticsScope: 'tenant',
       start: startStr,
