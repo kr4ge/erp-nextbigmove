@@ -74,6 +74,18 @@ type SalesCounts = {
   canceled: number;
 };
 
+type SalesStatusDistribution = {
+  total: number;
+  delivered: number;
+  shipped: number;
+  waiting_pickup: number;
+  rts: number;
+  restocking: number;
+  confirmed: number;
+  unconfirmed: number;
+  canceled: number;
+};
+
 type ProductRow = {
   mapping: string | null;
   revenue: number;
@@ -515,6 +527,20 @@ export class SalesAnalyticsService {
     };
   }
 
+  private computeStatusDistribution(sum: any): SalesStatusDistribution {
+    return {
+      total: this.toNumber(sum?._sum?.purchasesPos),
+      delivered: this.toNumber(sum?._sum?.deliveredCount),
+      shipped: this.toNumber(sum?._sum?.shippedCount),
+      waiting_pickup: this.toNumber(sum?._sum?.waitingPickupCount),
+      rts: this.toNumber(sum?._sum?.rtsCount),
+      restocking: this.toNumber(sum?._sum?.restockingCount),
+      confirmed: this.toNumber(sum?._sum?.confirmedCount),
+      unconfirmed: this.toNumber(sum?._sum?.unconfirmedCount),
+      canceled: this.toNumber(sum?._sum?.canceledCount),
+    };
+  }
+
   private computeProductRow(sum: any, opts: { excludeCancel: boolean; excludeRestocking: boolean; excludeAbandoned: boolean; excludeRts: boolean; excludeRepurchase: boolean; includeTax12: boolean; includeTax1: boolean; rtsForecastPct?: number }): ProductRow {
     const spendBase = this.toNumber(sum?._sum?.spend);
     const spendMultiplier = 1 + (opts.includeTax12 ? 0.12 : 0) + (opts.includeTax1 ? 0.01 : 0);
@@ -743,7 +769,7 @@ export class SalesAnalyticsService {
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
     const cacheKeyPayload = {
-      responseShapeVersion: 4,
+      responseShapeVersion: 5,
       tenantId,
       analyticsScope: 'tenant',
       start: startStr,
@@ -1279,6 +1305,7 @@ export class SalesAnalyticsService {
         returned: returnedOrdersCount,
       },
     );
+    const statusDistribution = this.computeStatusDistribution(agg);
     const prevCounts = this.computeCounts(
       prevAgg,
       { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, excludeRepurchase },
@@ -1296,6 +1323,7 @@ export class SalesAnalyticsService {
     const response = {
       kpis,
       counts,
+      statusDistribution,
       prevCounts,
       prevKpis,
       filters: {

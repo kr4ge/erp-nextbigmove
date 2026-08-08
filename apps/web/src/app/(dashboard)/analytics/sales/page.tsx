@@ -752,7 +752,30 @@ export default function SalesAnalyticsPage() {
         const countCurrent = def.countKey ? data.counts?.[def.countKey] ?? 0 : null;
         const countPrev = def.countKey ? data.prevCounts?.[def.countKey] ?? 0 : null;
         const countDelta = def.countKey ? formatDeltaPercent(countCurrent ?? 0, countPrev ?? 0) : null;
-        return { ...def, current, previous, delta, countCurrent, countPrev, countDelta };
+        const statusCountKey =
+          def.countKey && def.countKey !== 'purchases' ? def.countKey : null;
+        const isStatusMetric = statusCountKey !== null;
+        const statusCount =
+          statusCountKey
+            ? data.statusDistribution?.[statusCountKey] ?? countCurrent ?? 0
+            : countCurrent;
+        const statusShare =
+          isStatusMetric && (data.statusDistribution?.total ?? 0) > 0
+            ? ((statusCount ?? 0) / data.statusDistribution.total) * 100
+            : isStatusMetric
+              ? 0
+              : null;
+        return {
+          ...def,
+          current,
+          previous,
+          delta,
+          countCurrent: statusCount,
+          countPrev,
+          countDelta,
+          isStatusMetric,
+          statusShare,
+        };
       })
     : [];
   const visibleMetricValues = metricValues.filter((metric) =>
@@ -765,9 +788,9 @@ export default function SalesAnalyticsPage() {
   ];
 
   const leftCard = visibleMetricValues.find((m) => m.key === 'revenue');
-  const rightCard = visibleMetricValues.find((m) => m.key === 'ad_spend');
+  const rightCard = visibleMetricValues.find((m) => m.key === 'delivered');
   const middleCards = visibleMetricValues.filter(
-    (m) => m.key !== 'revenue' && m.key !== 'ad_spend',
+    (m) => m.key !== 'revenue' && m.key !== 'delivered',
   );
 
   const secondaryCards =
@@ -790,6 +813,8 @@ export default function SalesAnalyticsPage() {
             countCurrent: null,
             countPrev: null,
             countDelta: null,
+            isStatusMetric: false,
+            statusShare: null,
           };
         })
       : [];
@@ -828,25 +853,25 @@ export default function SalesAnalyticsPage() {
   const kpiVisibilityOptions = [
     'revenue',
     'unconfirmed',
-    'confirmed',
-    'canceled',
     'restocking_cod',
+    'confirmed',
     'waiting_pickup',
+    'canceled',
     'shipped',
+    'rts',
     'delivered',
   ]
     .map((key) => buildVisibilityOption(key, 'Primary'))
     .concat(
       [
         'cm_rts_forecast',
+        'ad_spend',
         'ar_pct',
         'cancellation_rate_pct',
         'aov',
         'cpp',
         'processed_cpp',
         'rts_pct',
-        'ad_spend',
-        'rts',
         'conversion_rate',
         'profit_efficiency',
         'contribution_margin',
@@ -1138,12 +1163,15 @@ export default function SalesAnalyticsPage() {
         format={m.format}
         precision={m.format === 'percent' ? 1 : 2}
         delta={m.delta}
+        deltaDisplay="trend"
+        showDelta={!m.isStatusMetric}
         count={
           m.countKey
             ? {
                 label: 'ord',
                 value: m.countCurrent ?? 0,
                 delta: m.countDelta ?? null,
+                percentage: m.isStatusMetric ? m.statusShare : undefined,
               }
             : undefined
         }

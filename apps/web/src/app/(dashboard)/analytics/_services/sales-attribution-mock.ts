@@ -416,6 +416,18 @@ const computeCounts = (
   };
 };
 
+const computeStatusDistribution = (sum: AggregateShape) => ({
+  total: toNumber(sum._sum.purchasesPos),
+  delivered: toNumber(sum._sum.deliveredCount),
+  shipped: toNumber(sum._sum.shippedCount),
+  waiting_pickup: toNumber(sum._sum.waitingPickupCount),
+  rts: toNumber(sum._sum.rtsCount),
+  restocking: toNumber(sum._sum.restockingCount),
+  confirmed: toNumber(sum._sum.confirmedCount),
+  unconfirmed: toNumber(sum._sum.unconfirmedCount),
+  canceled: toNumber(sum._sum.canceledCount),
+});
+
 const computeKpis = (
   sum: AggregateShape,
   opts: Pick<
@@ -677,6 +689,7 @@ const buildOverviewForSeeds = (
     kpis: computeKpis(currentAggregate, params),
     prevKpis: computeKpis(previousAggregate, params),
     counts: computeCounts(currentAggregate, params),
+    statusDistribution: computeStatusDistribution(currentAggregate),
     prevCounts: computeCounts(previousAggregate, params),
     products,
     deliveryStatuses,

@@ -1,7 +1,7 @@
 'use client';
 
 import { type ReactNode } from 'react';
-import { Info } from 'lucide-react';
+import { ArrowDown, ArrowUp, Info } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { formatMetricValue } from '../_utils/metrics';
 
@@ -10,6 +10,7 @@ export type AnalyticsMetricFormat = 'currency' | 'number' | 'percent';
 type MetricCount = {
   value: number;
   delta?: number | null;
+  percentage?: number | null;
   label?: string;
 };
 
@@ -19,6 +20,8 @@ type AnalyticsMetricCardProps = {
   format: AnalyticsMetricFormat;
   precision?: number;
   delta: number | null;
+  deltaDisplay?: 'signed' | 'trend';
+  showDelta?: boolean;
   count?: MetricCount;
   tooltip?: ReactNode;
   tooltipMode?: 'hover' | 'popover';
@@ -33,10 +36,36 @@ const formatDeltaLabel = (value: number | null | undefined) => {
   return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
 };
 
+const formatPercentageLabel = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return '--';
+  return `${value.toFixed(1)}%`;
+};
+
 const getDeltaColor = (value: number | null | undefined) => {
   if (value === null || value === undefined) return 'text-slate-400';
   return value >= 0 ? 'text-emerald-600' : 'text-rose-500';
 };
+
+function DeltaLabel({
+  value,
+  display,
+}: {
+  value: number | null | undefined;
+  display: 'signed' | 'trend';
+}) {
+  if (display === 'signed' || value === null || value === undefined) {
+    return <span className={`text-xs ${getDeltaColor(value)}`}>{formatDeltaLabel(value)}</span>;
+  }
+
+  const TrendIcon = value > 0 ? ArrowUp : value < 0 ? ArrowDown : null;
+
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs ${getDeltaColor(value)}`}>
+      {TrendIcon ? <TrendIcon className="h-3 w-3" aria-hidden="true" /> : null}
+      {Math.abs(value).toFixed(1)}%
+    </span>
+  );
+}
 
 function TooltipIcon({ label, content, mode }: { label: string; content: ReactNode; mode: 'hover' | 'popover' }) {
   if (mode === 'popover') {
@@ -78,6 +107,8 @@ export function AnalyticsMetricCard({
   format,
   precision,
   delta,
+  deltaDisplay = 'signed',
+  showDelta = true,
   count,
   tooltip,
   tooltipMode = 'hover',
@@ -99,7 +130,9 @@ export function AnalyticsMetricCard({
         <p className="text-lg font-semibold text-foreground">
           {formatMetricValue(value, format, valuePrecision)}
         </p>
-        <p className={`text-xs ${getDeltaColor(delta)}`}>{formatDeltaLabel(delta)}</p>
+        {showDelta ? (
+          <DeltaLabel value={delta} display={deltaDisplay} />
+        ) : null}
       </div>
 
       {count ? (
@@ -108,9 +141,13 @@ export function AnalyticsMetricCard({
             <span className="font-normal text-foreground/80">{count.label ?? 'ord'}:</span>{' '}
             <span className="font-semibold text-foreground">{formatCountValue(count.value)}</span>
           </span>
-          <span className={`text-xs ${getDeltaColor(count.delta)}`}>
-            {formatDeltaLabel(count.delta)}
-          </span>
+          {count.percentage !== undefined ? (
+            <span className="text-xs font-medium text-muted">
+              {formatPercentageLabel(count.percentage)}
+            </span>
+          ) : (
+            <DeltaLabel value={count.delta} display={deltaDisplay} />
+          )}
         </div>
       ) : null}
     </div>
