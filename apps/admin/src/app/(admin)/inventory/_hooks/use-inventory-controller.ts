@@ -539,7 +539,7 @@ export function useInventoryController() {
   function openStoreTransferModal() {
     setStoreTransferModal({
       open: true,
-      targetStoreId: '',
+      targetStoreId: selectedUnits[0]?.store.id ?? '',
       targetProfileId: '',
       notes: '',
       errorMessage: null,

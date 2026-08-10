@@ -53,19 +53,22 @@ export function InventoryStoreTransferModal({
   const sourceStore = units[0]?.store ?? null;
   const sourceProduct = units[0] ?? null;
   const isMixedSource = sourceStoreIds.size > 1 || sourceVariationIds.size > 1;
-  const targetStoreOptions = (options?.stores ?? [])
-    .filter((store) => store.id !== sourceStore?.id)
-    .map((store) => ({
-      value: store.id,
-      label: store.label,
-    }));
-  const productOptions = (options?.products ?? []).map((product) => ({
-    value: product.profileId,
-    label: product.label,
-    hint: product.profileId === options?.suggestion?.profileId
-      ? `Suggested · ${options.suggestion.reason}`
-      : product.variationDisplayId ?? product.productCustomId ?? product.variationId,
+  const targetStoreOptions = (options?.stores ?? []).map((store) => ({
+    value: store.id,
+    label: store.id === sourceStore?.id ? `${store.label} (Current store)` : store.label,
   }));
+  const productOptions = (options?.products ?? [])
+    .filter((product) => (
+      targetStoreId !== sourceStore?.id
+      || product.variationId !== sourceProduct?.variationId
+    ))
+    .map((product) => ({
+      value: product.profileId,
+      label: product.label,
+      hint: product.profileId === options?.suggestion?.profileId
+        ? `Suggested · ${options.suggestion.reason}`
+        : product.variationDisplayId ?? product.productCustomId ?? product.variationId,
+    }));
   const selectedTargetProduct = options?.products.find((product) => product.profileId === targetProfileId) ?? null;
   const suggestion = options?.suggestion ?? null;
   const submitDisabled =
@@ -83,8 +86,8 @@ export function InventoryStoreTransferModal({
   return (
     <WmsModal
       open={open}
-      title="Transfer stock to store"
-      description="Reassign selected physical units to another store product profile."
+      title="Change variant"
+      description="Reassign selected physical units to another variant in the current store or a different store."
       onClose={onClose}
       panelClassName="w-[min(94vw,920px)]"
       footer={(
@@ -108,7 +111,7 @@ export function InventoryStoreTransferModal({
               className="inline-flex h-9 items-center justify-center gap-2 rounded-[12px] bg-primary px-4 text-[12px] font-semibold text-white transition hover:bg-[#0f3242] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shuffle className="h-4 w-4" />}
-              Transfer stock
+              Change variant
             </button>
           </div>
         </div>
@@ -184,7 +187,7 @@ export function InventoryStoreTransferModal({
             </div>
           ) : targetStoreId && !isLoadingOptions ? (
             <div className="rounded-2xl border border-[#e5edf2] bg-[#fbfcfc] px-4 py-3 text-[12px] text-[#667b8a]">
-              No exact match found yet. Select the target product manually; the system will remember it after transfer.
+              No exact match found yet. Select the target product manually.
             </div>
           ) : null}
 
@@ -202,7 +205,7 @@ export function InventoryStoreTransferModal({
               value={notes}
               onChange={(event) => onNotesChange(event.target.value)}
               rows={3}
-              placeholder="Optional reason, campaign, or approval reference"
+              placeholder="Optional reason, correction, or approval reference"
               className="mt-2 w-full rounded-2xl border border-[#d7e0e7] bg-white px-3.5 py-3 text-[13px] text-primary outline-none transition placeholder:text-[#9aacb8] focus:border-[#96b4c3] focus:shadow-[0_0_0_4px_rgba(18,56,75,0.08)]"
             />
           </label>

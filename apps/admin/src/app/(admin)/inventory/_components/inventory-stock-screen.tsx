@@ -141,7 +141,7 @@ export function InventoryStockScreen() {
                     canTransfer={canTransferSelectedUnits}
                     adjustDisabledReason={!inventory.canAdjustUnits ? 'Adjust permission required.' : null}
                     archiveDisabledReason={archiveDisabledReason}
-                    transferDisabledReason={!inventory.canTransferUnits ? 'Transfer permission required.' : null}
+                    transferDisabledReason={!inventory.canTransferUnits ? 'Inventory transfer permission required.' : null}
                     onAdjust={inventory.openBulkAdjustModal}
                     onArchive={() => setBulkArchiveOpen(true)}
                     onTransfer={inventory.openStoreTransferModal}

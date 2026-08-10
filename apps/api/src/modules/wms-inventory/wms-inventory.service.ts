@@ -1107,16 +1107,22 @@ export class WmsInventoryService {
         : Promise.resolve(null),
     ]);
 
+    const isSameStoreTarget = Boolean(
+      sourceProfile
+      && activeTargetStoreId
+      && sourceProfile.storeId === activeTargetStoreId,
+    );
     const mappedProducts = products
       .filter((profile) => (
         this.isStockableVariation(profile.posProduct.productId, profile.posProduct.variationId)
         && this.isStockableVariation(profile.productId, profile.variationId)
+        && !(isSameStoreTarget && profile.variationId === sourceProfile?.variationId)
       ))
       .map((profile) => this.mapStoreTransferProductOption(profile));
     const suggestion = this.resolveStoreTransferSuggestion({
       sourceProfile,
       products: mappedProducts,
-      savedEquivalence,
+      savedEquivalence: isSameStoreTarget ? null : savedEquivalence,
     });
     const sortedProducts = suggestion
       ? [
@@ -1269,10 +1275,16 @@ export class WmsInventoryService {
     const sourceVariationId = sourceUnit?.variationId ?? null;
     const sourceProfileId = sourceUnit?.productProfileId ?? null;
 
-    if (sourceUnit && targetStore && sourceStoreId === targetStore.id) {
+    if (
+      sourceUnit
+      && targetStore
+      && targetProfile
+      && sourceStoreId === targetStore.id
+      && sourceVariationId === targetProfile.variationId
+    ) {
       blockers.push({
-        code: 'SAME_STORE',
-        message: 'Target store must be different from the source store',
+        code: 'SAME_VARIANT',
+        message: 'Select a different target variant when changing stock within the same store',
       });
     }
 
@@ -1304,7 +1316,7 @@ export class WmsInventoryService {
     if (invalidStatusUnits.length) {
       blockers.push({
         code: 'INVALID_UNIT_STATUS',
-        message: `${invalidStatusUnits.length} selected unit${invalidStatusUnits.length === 1 ? '' : 's'} cannot be transferred from the current status`,
+        message: `${invalidStatusUnits.length} selected unit${invalidStatusUnits.length === 1 ? '' : 's'} cannot change variant from the current status`,
       });
     }
 
@@ -1312,7 +1324,7 @@ export class WmsInventoryService {
     if (reservedUnits.length) {
       blockers.push({
         code: 'RESERVED_UNITS',
-        message: `${reservedUnits.length} selected unit${reservedUnits.length === 1 ? '' : 's'} already reserved for picking`,
+        message: `${reservedUnits.length} selected unit${reservedUnits.length === 1 ? '' : 's'} already reserved for picking and cannot change variant`,
       });
     }
 
@@ -1396,7 +1408,7 @@ export class WmsInventoryService {
       warnings.push({
         code: 'TRANSFER_ALL_AVAILABLE',
         severity: 'critical',
-        message: `This transfers all ${sourceAvailableUnits} available unit${sourceAvailableUnits === 1 ? '' : 's'} from the source store for this product.`,
+        message: `This changes all ${sourceAvailableUnits} available unit${sourceAvailableUnits === 1 ? '' : 's'} from the source product variant.`,
       });
     }
 
@@ -1404,7 +1416,7 @@ export class WmsInventoryService {
       warnings.push({
         code: 'DEMAND_EXCEEDS_REMAINING',
         severity: 'critical',
-        message: `After transfer, ${remainingAvailableUnits} available unit${remainingAvailableUnits === 1 ? '' : 's'} will remain, below the active demand of ${activeDemandUnits}.`,
+        message: `After this change, ${remainingAvailableUnits} available unit${remainingAvailableUnits === 1 ? '' : 's'} will remain, below the active demand of ${activeDemandUnits}.`,
       });
     }
 
@@ -1581,9 +1593,10 @@ export class WmsInventoryService {
       const sourceStoreId = units[0].storeId;
       const sourceVariationId = units[0].variationId;
       const sourceProductProfileId = units[0].productProfileId;
+      const isSameStoreChange = sourceStoreId === targetStore.id;
 
-      if (sourceStoreId === targetStore.id) {
-        throw new BadRequestException('Target store must be different from the source store');
+      if (isSameStoreChange && sourceVariationId === targetProfile.variationId) {
+        throw new BadRequestException('Select a different target variant when changing stock within the same store');
       }
 
       units.forEach((unit) => {
@@ -1600,11 +1613,11 @@ export class WmsInventoryService {
         }
 
         if (!STORE_TRANSFERABLE_UNIT_STATUSES.has(unit.status)) {
-          throw new BadRequestException(`Unit ${unit.code} cannot be transferred to another store from status ${unit.status}`);
+          throw new BadRequestException(`Unit ${unit.code} cannot change variant from status ${unit.status}`);
         }
 
         if (unit.pickReservations.length > 0) {
-          throw new BadRequestException(`Unit ${unit.code} is already reserved and cannot be transferred to another store`);
+          throw new BadRequestException(`Unit ${unit.code} is already reserved and cannot change variant`);
         }
       });
 
@@ -1640,39 +1653,41 @@ export class WmsInventoryService {
         })),
       });
 
-      await tx.wmsProductProfileEquivalence.upsert({
-        where: {
-          tenantId_sourceProfileId_targetStoreId: {
+      if (!isSameStoreChange) {
+        await tx.wmsProductProfileEquivalence.upsert({
+          where: {
+            tenantId_sourceProfileId_targetStoreId: {
+              tenantId: scope.activeTenantId!,
+              sourceProfileId: sourceProductProfileId,
+              targetStoreId: targetStore.id,
+            },
+          },
+          create: {
             tenantId: scope.activeTenantId!,
-            sourceProfileId: sourceProductProfileId,
+            sourceStoreId,
             targetStoreId: targetStore.id,
+            sourceProfileId: sourceProductProfileId,
+            targetProfileId: targetProfile.id,
+            sourceVariationId,
+            targetVariationId: targetProfile.variationId,
+            matchSource: 'TRANSFER',
+            transferCount: 1,
+            lastTransferAt: now,
+            createdById: actorId,
+            updatedById: actorId,
           },
-        },
-        create: {
-          tenantId: scope.activeTenantId!,
-          sourceStoreId,
-          targetStoreId: targetStore.id,
-          sourceProfileId: sourceProductProfileId,
-          targetProfileId: targetProfile.id,
-          sourceVariationId,
-          targetVariationId: targetProfile.variationId,
-          matchSource: 'TRANSFER',
-          transferCount: 1,
-          lastTransferAt: now,
-          createdById: actorId,
-          updatedById: actorId,
-        },
-        update: {
-          targetProfileId: targetProfile.id,
-          targetVariationId: targetProfile.variationId,
-          matchSource: 'TRANSFER',
-          transferCount: {
-            increment: 1,
+          update: {
+            targetProfileId: targetProfile.id,
+            targetVariationId: targetProfile.variationId,
+            matchSource: 'TRANSFER',
+            transferCount: {
+              increment: 1,
+            },
+            lastTransferAt: now,
+            updatedById: actorId,
           },
-          lastTransferAt: now,
-          updatedById: actorId,
-        },
-      });
+        });
+      }
 
       await tx.wmsInventoryMovement.createMany({
         data: units.map((unit) => ({
@@ -1768,6 +1783,7 @@ export class WmsInventoryService {
         toStoreId: result.transfer.toStoreId,
         targetProfileId: result.transfer.targetProfileId,
         unitCount: result.units.length,
+        changeScope: result.transfer.fromStoreId === result.transfer.toStoreId ? 'SAME_STORE' : 'CROSS_STORE',
       },
     });
 
