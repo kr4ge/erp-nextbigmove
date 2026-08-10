@@ -731,6 +731,15 @@ export class SalesAnalyticsService {
     const includeNull = normalizedMappings.includes(this.normalize('__null__'));
 
     const tenantId = this.teamContext.getTenantId();
+    const activeStores = await this.prisma.posStore.findMany({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+        OR: [{ enabled: true }, { enabled: null }],
+      },
+      select: { shopId: true },
+    });
+    const activeShopIds = Array.from(new Set(activeStores.map((store) => store.shopId)));
 
     const mappingFilter =
       normalizedMappings.length > 0
@@ -756,32 +765,37 @@ export class SalesAnalyticsService {
     };
     const processedSalesWhere = this.teamContext.buildTenantWhereClause({
       dateLocal: { gte: startStr, lte: endStr },
+      shopId: { in: activeShopIds },
       status: { in: [...PROCESSED_SALES_STATUSES] },
       ...(excludeRepurchase ? { isRepurchase: false } : {}),
       ...mappingFilter,
     });
     const prevProcessedSalesWhere = this.teamContext.buildTenantWhereClause({
       dateLocal: { gte: prevStartStr, lte: prevEndStr },
+      shopId: { in: activeShopIds },
       status: { in: [...PROCESSED_SALES_STATUSES] },
       ...(excludeRepurchase ? { isRepurchase: false } : {}),
       ...mappingFilter,
     });
     const cancellationRateWhere = this.teamContext.buildTenantWhereClause({
       dateLocal: { gte: startStr, lte: endStr },
+      shopId: { in: activeShopIds },
       ...(excludeRepurchase ? { isRepurchase: false } : {}),
       ...mappingFilter,
     });
     const prevCancellationRateWhere = this.teamContext.buildTenantWhereClause({
       dateLocal: { gte: prevStartStr, lte: prevEndStr },
+      shopId: { in: activeShopIds },
       ...(excludeRepurchase ? { isRepurchase: false } : {}),
       ...mappingFilter,
     });
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
     const cacheKeyPayload = {
-      responseShapeVersion: 6,
+      responseShapeVersion: 7,
       tenantId,
       analyticsScope: 'tenant',
+      activeShopIds: [...activeShopIds].sort(),
       start: startStr,
       end: endStr,
       mappings: normalizedMappings.sort(),
@@ -801,6 +815,9 @@ export class SalesAnalyticsService {
     const volumeGrowthWhere: Prisma.Sql[] = [
       Prisma.sql`"tenantId" = ${tenantId}::uuid`,
       Prisma.sql`"status" IS DISTINCT FROM 7`,
+      activeShopIds.length > 0
+        ? Prisma.sql`"shopId" IN (${Prisma.join(activeShopIds)})`
+        : Prisma.sql`FALSE`,
     ];
     if (normalizedMappings.length > 0) {
       const mappingConditions = normalizedMappings

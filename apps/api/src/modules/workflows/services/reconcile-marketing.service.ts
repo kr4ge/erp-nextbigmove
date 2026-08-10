@@ -318,6 +318,16 @@ export class ReconcileMarketingService {
     const dayEnd = new Date(dayStart);
     dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
 
+    const activeStores = await this.prisma.posStore.findMany({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+        OR: [{ enabled: true }, { enabled: null }],
+      },
+      select: { shopId: true },
+    });
+    const activeShopIds = Array.from(new Set(activeStores.map((store) => store.shopId)));
+
     // Load Meta insights for the day
     const metaInsights = await this.prisma.metaAdInsight.findMany({
       where: {
@@ -333,6 +343,7 @@ export class ReconcileMarketingService {
     const posOrders: PosOrderLite[] = await this.prisma.posOrder.findMany({
       where: {
         tenantId,
+        shopId: { in: activeShopIds },
         dateLocal: date,
         AND: [
           {
