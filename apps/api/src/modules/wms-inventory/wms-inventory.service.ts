@@ -1723,7 +1723,10 @@ export class WmsInventoryService {
           productProfileId: targetProfile.id,
           productId: targetProfile.productId,
           variationId: targetProfile.variationId,
-          posWarehouseRef: targetProfile.posWarehouseRef ?? null,
+          // A same-store variant correction is physical WMS stock, not stock received
+          // for one specific POS warehouse. Keep it eligible for orders from any POS
+          // warehouse mapped to this store while retaining the physical WMS scope.
+          posWarehouseRef: isSameStoreChange ? null : targetProfile.posWarehouseRef ?? null,
           ...(actorId ? { updatedById: actorId } : {}),
         },
       });
