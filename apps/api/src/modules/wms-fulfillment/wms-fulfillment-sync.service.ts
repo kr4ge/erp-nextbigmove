@@ -13,7 +13,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildUnexpiredInventoryWhere } from '../wms-inventory/wms-inventory-expiration.utils';
-import { WmsInventoryService } from '../wms-inventory/wms-inventory.service';
+import { WmsInventoryCogsService } from '../wms-inventory/wms-inventory-cogs.service';
 import {
   finalizeCompleteDemandAllocation,
   normalizeDemandAllocation,
@@ -100,7 +100,7 @@ type DemandFulfillmentReadinessRecord = Prisma.WmsFulfillmentOrderGetPayload<{
 export class WmsFulfillmentSyncService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly wmsInventoryService: WmsInventoryService,
+    private readonly wmsInventoryCogsService: WmsInventoryCogsService,
   ) {}
 
   private isBasketDemandPickingEnabled() {
@@ -1902,7 +1902,7 @@ export class WmsFulfillmentSyncService {
       await this.refreshFulfillmentOrderState(tx, order.id, new Date());
     });
 
-    await this.wmsInventoryService.syncPosOrderCogsFromMatchedInventoryUnits({
+    await this.wmsInventoryCogsService.syncPosOrderCogsFromMatchedInventoryUnits({
       fulfillmentOrderIds: [fulfillmentOrderId],
     });
   }
@@ -2826,11 +2826,7 @@ export class WmsFulfillmentSyncService {
               : {}),
             fulfillmentOrder: {
               status: {
-                in: [
-                  WmsFulfillmentOrderStatus.IN_PICKING,
-                  WmsFulfillmentOrderStatus.READY_FOR_PACK,
-                  WmsFulfillmentOrderStatus.PICKED,
-                ],
+                in: [...ACTIVE_BASKET_ORDER_STATUSES],
               },
             },
           },
@@ -2898,6 +2894,7 @@ export class WmsFulfillmentSyncService {
       currentLocation: {
         is: {
           kind: WmsLocationKind.BIN,
+          isActive: true,
         },
       },
       pickReservations: {
@@ -2911,7 +2908,15 @@ export class WmsFulfillmentSyncService {
         },
       },
     };
-    return baseWhere;
+    return params.posWarehouseRef
+      ? {
+          ...baseWhere,
+          OR: [
+            { posWarehouseRef: params.posWarehouseRef },
+            { posWarehouseRef: null },
+          ],
+        }
+      : baseWhere;
   }
 
   private async countActiveDemandHeldQuantity(

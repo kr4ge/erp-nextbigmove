@@ -18,10 +18,10 @@ import {
   WmsProductProfileStatus,
   WmsTransferStatus,
 } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
+import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
 import { CreateWmsInventoryAdjustmentDto } from './dto/create-wms-inventory-adjustment.dto';
 import { CreateWmsInventoryStoreTransferDto } from './dto/create-wms-inventory-store-transfer.dto';
 import { CreateWmsInventoryTransferDto } from './dto/create-wms-inventory-transfer.dto';
@@ -30,6 +30,7 @@ import { GetWmsInventoryStoreTransferOptionsDto } from './dto/get-wms-inventory-
 import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.dto';
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
 import { VoidWmsInventoryUnitDto } from './dto/void-wms-inventory-unit.dto';
+import { WmsInventoryCogsService } from './wms-inventory-cogs.service';
 
 const UNIT_STATUS_ORDER: WmsInventoryUnitStatus[] = [
   WmsInventoryUnitStatus.RECEIVED,
@@ -290,6 +291,8 @@ export class WmsInventoryService {
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
+    private readonly wmsInventoryCogsService: WmsInventoryCogsService,
+    private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
   ) {}
 
   async getOverview(query: GetWmsInventoryOverviewDto) {
@@ -1769,8 +1772,28 @@ export class WmsInventoryService {
       return {
         transfer: storeTransfer,
         units: updatedUnits,
+        sourceVariationId,
       };
     });
+
+    const fulfillmentRefreshScopes = new Map<string, Set<string>>();
+    const addRefreshScope = (storeId: string, variationId: string) => {
+      const variationIds = fulfillmentRefreshScopes.get(storeId) ?? new Set<string>();
+      variationIds.add(variationId);
+      fulfillmentRefreshScopes.set(storeId, variationIds);
+    };
+
+    addRefreshScope(result.transfer.fromStoreId, result.sourceVariationId);
+    addRefreshScope(result.transfer.toStoreId, targetProfile.variationId);
+
+    for (const [storeId, variationIds] of fulfillmentRefreshScopes) {
+      await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
+        tenantId: scope.activeTenantId,
+        storeId,
+        variationIds: Array.from(variationIds),
+        limit: null,
+      });
+    }
 
     await this.recordInventoryActivity({
       tenantId: scope.activeTenantId,
@@ -1782,6 +1805,8 @@ export class WmsInventoryService {
         fromStoreId: result.transfer.fromStoreId,
         toStoreId: result.transfer.toStoreId,
         targetProfileId: result.transfer.targetProfileId,
+        sourceVariationId: result.sourceVariationId,
+        targetVariationId: targetProfile.variationId,
         unitCount: result.units.length,
         changeScope: result.transfer.fromStoreId === result.transfer.toStoreId ? 'SAME_STORE' : 'CROSS_STORE',
       },
@@ -2977,129 +3002,7 @@ export class WmsInventoryService {
       posOrderId: string;
     }>;
   }) {
-    const fulfillmentOrderIds = Array.from(new Set(params.fulfillmentOrderIds ?? []));
-    const refs = Array.from(
-      new Map(
-        (params.posOrderRefs ?? [])
-          .filter((ref) => ref.shopId && ref.posOrderId)
-          .map((ref) => [`${ref.shopId}::${ref.posOrderId}`, ref] as const),
-      ).values(),
-    );
-
-    if (fulfillmentOrderIds.length === 0 && !params.tenantId) {
-      return {
-        updatedOrders: 0,
-        skippedOrders: 0,
-      };
-    }
-
-    const orders = await this.prisma.wmsFulfillmentOrder.findMany({
-      where: {
-        ...(fulfillmentOrderIds.length
-          ? { id: { in: fulfillmentOrderIds } }
-          : {
-              ...(params.tenantId ? { tenantId: params.tenantId } : {}),
-              ...(params.storeId ? { storeId: params.storeId } : {}),
-              ...(refs.length > 0
-                ? {
-                    OR: refs.map((ref) => ({
-                      shopId: ref.shopId,
-                      posOrderId: ref.posOrderId,
-                    })),
-                  }
-                : {}),
-            }),
-      },
-      select: {
-        id: true,
-        assignmentMode: true,
-        posOrderDbId: true,
-        totalQuantity: true,
-        reservations: {
-          where: {
-            status: {
-              in: [WmsPickReservationStatus.RESERVED, WmsPickReservationStatus.PICKED],
-            },
-          },
-          select: {
-            inventoryUnit: {
-              select: {
-                unitCost: true,
-              },
-            },
-          },
-        },
-        basketUnits: {
-          where: {
-            OR: [
-              {
-                status: {
-                  in: [WmsBasketUnitStatus.PICKED, WmsBasketUnitStatus.PACKED],
-                },
-              },
-              {
-                status: WmsBasketUnitStatus.REMOVED,
-                packedAt: {
-                  not: null,
-                },
-              },
-            ],
-          },
-          select: {
-            inventoryUnit: {
-              select: {
-                unitCost: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    let updatedOrders = 0;
-    let skippedOrders = 0;
-
-    for (const order of orders) {
-      const matchedUnits = order.assignmentMode === 'BASKET_DEMAND'
-        ? order.basketUnits
-        : order.reservations;
-
-      if (matchedUnits.length === 0) {
-        continue;
-      }
-
-      if (order.totalQuantity > 0 && matchedUnits.length < order.totalQuantity) {
-        skippedOrders += 1;
-        continue;
-      }
-
-      const hasMissingUnitCost = matchedUnits.some(
-        (matchedUnit) => matchedUnit.inventoryUnit.unitCost === null,
-      );
-      if (hasMissingUnitCost) {
-        skippedOrders += 1;
-        continue;
-      }
-
-      const actualCogs = matchedUnits.reduce(
-        (sum, matchedUnit) => sum + Number(matchedUnit.inventoryUnit.unitCost ?? 0),
-        0,
-      );
-
-      await this.prisma.posOrder.update({
-        where: { id: order.posOrderDbId },
-        data: {
-          cogs: new Decimal(actualCogs.toFixed(2)),
-        },
-      });
-
-      updatedOrders += 1;
-    }
-
-    return {
-      updatedOrders,
-      skippedOrders,
-    };
+    return this.wmsInventoryCogsService.syncPosOrderCogsFromMatchedInventoryUnits(params);
   }
 
   async syncPackedUnitsToDispatchedForPosOrders(params: {
