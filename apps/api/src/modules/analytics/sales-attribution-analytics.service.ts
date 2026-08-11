@@ -21,6 +21,7 @@ dayjs.extend(customParseFormat);
 const TIMEZONE = 'Asia/Manila';
 const NULL_MAPPING_FILTER_KEY = '__null__';
 const UNASSIGNED_MAPPING_KEY = '__unassigned_mapping__';
+const UNASSIGNED_TEAM_CODE_KEY = '__unassigned_team_code__';
 
 type SalesAttributionKpis = SalesAttributionOverviewContract['kpis'];
 type SalesAttributionCounts = SalesAttributionOverviewContract['counts'];
@@ -354,6 +355,7 @@ export class SalesAttributionAnalyticsService {
     tenantId: string;
     range: { gte: Date; lte: Date };
     normalizedMappings: string[];
+    normalizedTeamCode?: string | null;
   }) {
     const includeNull = params.normalizedMappings.includes(NULL_MAPPING_FILTER_KEY);
     const nonNullMappings = params.normalizedMappings.filter(
@@ -364,6 +366,10 @@ export class SalesAttributionAnalyticsService {
       tenantId: params.tenantId,
       date: params.range,
     };
+
+    if (params.normalizedTeamCode) {
+      where.teamCodeKey = params.normalizedTeamCode;
+    }
 
     if (nonNullMappings.length > 0 || includeNull) {
       where.OR = [
@@ -379,10 +385,11 @@ export class SalesAttributionAnalyticsService {
     query: GetSalesAttributionOverviewQueryDto,
   ): Promise<SalesAttributionOverviewContract> {
     const tenantId = this.teamContext.getTenantId();
+    const normalizedTeamCode = this.normalize(query.team_code) || null;
     const requestKey = `sales-attribution:${tenantId}:${this.analyticsCache.hashObject({
       ...query,
       mapping: [...(query.mapping || [])].map((value) => this.normalize(value)).sort(),
-      team_code: undefined,
+      team_code: normalizedTeamCode,
     })}`;
 
     return this.analyticsRequestCoordinator.run(
@@ -421,24 +428,34 @@ export class SalesAttributionAnalyticsService {
     const normalizedMappings = (query.mapping || [])
       .map((mapping) => this.normalize(mapping))
       .filter((mapping) => mapping.length > 0);
+    const normalizedTeamCode = this.normalize(query.team_code) || null;
     const tenantId = this.teamContext.getTenantId();
 
     const currentBaseWhere = this.buildRollupWhere({
       tenantId,
       range: { gte: startDate, lte: endDate },
       normalizedMappings,
+      normalizedTeamCode,
     });
 
     const previousBaseWhere = this.buildRollupWhere({
       tenantId,
       range: { gte: prevStartDate, lte: prevEndDate },
       normalizedMappings,
+      normalizedTeamCode,
+    });
+
+    const currentTeamFilterWhere = this.buildRollupWhere({
+      tenantId,
+      range: { gte: startDate, lte: endDate },
+      normalizedMappings: [],
     });
 
     const currentMappingFilterWhere = this.buildRollupWhere({
       tenantId,
       range: { gte: startDate, lte: endDate },
       normalizedMappings: [],
+      normalizedTeamCode,
     });
 
     const cacheVersion = await this.analyticsCache.getVersion(tenantId);
@@ -447,6 +464,7 @@ export class SalesAttributionAnalyticsService {
       analyticsScope: 'tenant',
       start: startStr,
       end: endStr,
+      teamCode: normalizedTeamCode,
       mappings: [...normalizedMappings].sort(),
       flags: {
         excludeCancel: query.exclude_cancel,
@@ -468,6 +486,7 @@ export class SalesAttributionAnalyticsService {
     const [
       aggregate,
       previousAggregate,
+      teamRows,
       mappingRows,
       nullMappingCount,
       productGroups,
@@ -559,6 +578,10 @@ export class SalesAttributionAnalyticsService {
           ifSdrPos: true,
         },
       }),
+      this.prisma.reconcileSalesAttribution.groupBy({
+        where: currentTeamFilterWhere,
+        by: ['teamCodeKey', 'teamCode'],
+      }),
       this.prisma.reconcileSalesAttribution.findMany({
         where: {
           ...currentMappingFilterWhere,
@@ -628,6 +651,21 @@ export class SalesAttributionAnalyticsService {
 
     const teamCodes: string[] = [];
     const teamCodeDisplayMap: Record<string, string> = {};
+    teamRows.forEach((row) => {
+      if (row.teamCodeKey === UNASSIGNED_TEAM_CODE_KEY) {
+        teamCodeDisplayMap[UNASSIGNED_TEAM_CODE_KEY] = 'Unassigned team';
+        teamCodes.push(UNASSIGNED_TEAM_CODE_KEY);
+        return;
+      }
+      if (!row.teamCode) return;
+      const normalized = row.teamCodeKey || this.normalize(row.teamCode);
+      if (!normalized || teamCodeDisplayMap[normalized]) return;
+      teamCodeDisplayMap[normalized] = row.teamCode;
+      teamCodes.push(normalized);
+    });
+    teamCodes.sort((a, b) =>
+      (teamCodeDisplayMap[a] || a).localeCompare(teamCodeDisplayMap[b] || b),
+    );
 
     const mappingOptions: string[] = [];
     const mappingDisplayMap: Record<string, string> = {};
@@ -751,7 +789,7 @@ export class SalesAttributionAnalyticsService {
       selected: {
         start_date: startStr,
         end_date: endStr,
-        teamCode: null,
+        teamCode: normalizedTeamCode,
         mappings: normalizedMappings,
       },
       rangeDays,
