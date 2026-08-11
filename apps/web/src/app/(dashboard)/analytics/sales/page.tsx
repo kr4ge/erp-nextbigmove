@@ -619,6 +619,23 @@ export default function SalesAnalyticsPage() {
   const productEnd = Math.min(productPage * pageSize, totalProducts);
   const productCanPrev = productPage > 1;
   const productCanNext = productPage < totalProductPages;
+  const productTotals = computedKpis
+    ? {
+        revenue: computedKpis.revenue ?? 0,
+        grossSales: data?.counts.purchases ?? 0,
+        cogs: products.reduce((total, row) => total + (row.cogs ?? 0), 0),
+        aov: computedKpis.aov ?? 0,
+        cpp: computedKpis.cpp ?? 0,
+        processedCpp: computedKpis.processed_cpp ?? 0,
+        adSpend: computedKpis.ad_spend ?? 0,
+        arPct: computedKpis.ar_pct ?? 0,
+        rtsPct: computedKpis.rts_pct ?? 0,
+        profitEfficiency: computedKpis.profit_efficiency ?? 0,
+        contributionMargin: computedKpis.contribution_margin ?? 0,
+        cmRtsForecast: computedKpis.cm_rts_forecast ?? 0,
+        netMargin: computedKpis.net_margin ?? 0,
+      }
+    : null;
   const cmRtsExportLabel = `CM (RTS ${rtsForecastSafe}%)`;
   const exportableProducts: SalesProductsExportRow[] = sortedProducts
     .filter((item) => {
@@ -1533,6 +1550,7 @@ export default function SalesAnalyticsPage() {
             rtsForecastSafe={rtsForecastSafe}
             rows={pagedProducts}
             sourceCount={products.length}
+            totals={productTotals}
             renderSortLabel={renderSortLabel}
           />
         ) : (
