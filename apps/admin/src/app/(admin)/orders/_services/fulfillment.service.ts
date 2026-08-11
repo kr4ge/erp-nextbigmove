@@ -5,6 +5,8 @@ import type {
   WmsFulfillmentBasketPackUnitResponse,
   WmsFulfillmentBasketPackWaybillResponse,
   WmsFulfillmentPackStatus,
+  WmsPackingProof,
+  WmsPackingProofSource,
   WmsFulfillmentPickStatus,
   WmsFulfillmentPriorityPreviewResponse,
   WmsFulfillmentQueueTask,
@@ -256,13 +258,10 @@ export async function scanWmsPackBasketOrderUnit(params: {
 export async function completeWmsPackBasketOrder(params: {
   basketId: string;
   orderId: string;
-  tenantId?: string | null;
 }) {
   const response = await apiClient.post(
-    `/wms/mobile/packing/baskets/${params.basketId}/orders/${params.orderId}/complete`,
-    {
-      tenantId: params.tenantId,
-    },
+    `/wms/mobile/packing/web/baskets/${params.basketId}/orders/${params.orderId}/complete`,
+    {},
   );
 
   return response.data as WmsFulfillmentBasketPackCompleteResponse;
@@ -303,17 +302,51 @@ export async function verifyWmsPackTracking(params: {
 
 export async function completeWmsPackTask(params: {
   taskId: string;
-  tenantId?: string | null;
   trackingCode: string;
 }) {
-  const response = await apiClient.post(`/wms/mobile/packing/tasks/${params.taskId}/complete`, {
-    tenantId: params.tenantId,
+  const response = await apiClient.post(`/wms/mobile/packing/web/tasks/${params.taskId}/complete`, {
     trackingCode: params.trackingCode,
   });
 
   return response.data as {
     success: boolean;
     task: WmsFulfillmentQueueTask;
+  };
+}
+
+export async function fetchWmsPackingProofs(orderId: string) {
+  const response = await apiClient.get(`/wms/mobile/packing/web/orders/${orderId}/proofs`);
+
+  return response.data as {
+    orderId: string;
+    posOrderId: string;
+    tracking: string | null;
+    proofs: WmsPackingProof[];
+  };
+}
+
+export async function uploadWmsPackingProof(params: {
+  orderId: string;
+  file: File;
+  source: WmsPackingProofSource;
+}) {
+  const payload = new FormData();
+  payload.append('file', params.file);
+  payload.append('source', params.source);
+
+  const response = await apiClient.post(
+    `/wms/mobile/packing/web/orders/${params.orderId}/proofs`,
+    payload,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    },
+  );
+
+  return response.data as {
+    success: boolean;
+    proof: WmsPackingProof;
   };
 }
 

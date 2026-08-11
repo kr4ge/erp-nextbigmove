@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Request, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import type { UploadedImageFile } from '../../common/services/media-assets.service';
 import { GetWmsMobileStockDto } from './dto/get-wms-mobile-stock.dto';
 import {
   GetWmsMobileHomeInventorySummaryDto,
@@ -40,6 +42,9 @@ import {
   WmsMobilePackScanDto,
   WmsMobilePackScopedDto,
   WmsMobilePackVoidDto,
+  WmsWebPackBasketOrderCompleteDto,
+  WmsWebPackCompleteDto,
+  WmsWebPackingProofUploadDto,
 } from './dto/wms-mobile-packing.dto';
 import { GetWmsMobileHistoryFeedDto } from './dto/wms-mobile-history.dto';
 import { WmsMobileService } from './wms-mobile.service';
@@ -468,6 +473,46 @@ export class WmsMobileController {
     return this.wmsMobileService.completePackingBasketOrder(req.user, id, orderId, body, req);
   }
 
+  @Get('packing/web/orders/:orderId/proofs')
+  @Permissions('wms.dispatch.read', 'wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async getWebPackingProofs(
+    @Request() req,
+    @Param('orderId') orderId: string,
+  ) {
+    return this.wmsMobileService.getWebPackingProofs(req.user, orderId, req);
+  }
+
+  @Post('packing/web/orders/:orderId/proofs')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: {
+      files: 1,
+      fileSize: Math.max(
+        1,
+        Number(process.env.OBJECT_STORAGE_PACKING_PROOF_MAX_FILE_MB || '30'),
+      ) * 1024 * 1024,
+    },
+  }))
+  async uploadWebPackingProof(
+    @Request() req,
+    @Param('orderId') orderId: string,
+    @Body() body: WmsWebPackingProofUploadDto,
+    @UploadedFile() file: UploadedImageFile,
+  ) {
+    return this.wmsMobileService.uploadWebPackingProof(req.user, orderId, body, file, req);
+  }
+
+  @Post('packing/web/baskets/:id/orders/:orderId/complete')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async completeWebPackingBasketOrder(
+    @Request() req,
+    @Param('id') id: string,
+    @Param('orderId') orderId: string,
+    @Body() _body: WmsWebPackBasketOrderCompleteDto,
+  ) {
+    return this.wmsMobileService.completeWebPackingBasketOrder(req.user, id, orderId, req);
+  }
+
   @Post('packing/baskets/:id/void-orders')
   @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override', 'wms.dispatch.void')
   async voidPackingBasketOrders(
@@ -535,6 +580,16 @@ export class WmsMobileController {
     @Body() body: WmsMobilePackCompleteDto,
   ) {
     return this.wmsMobileService.completePackingTask(req.user, id, body, req);
+  }
+
+  @Post('packing/web/tasks/:id/complete')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async completeWebPackingTask(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: WmsWebPackCompleteDto,
+  ) {
+    return this.wmsMobileService.completeWebPackingTask(req.user, id, body, req);
   }
 
   @Post('packing/tasks/:id/void')

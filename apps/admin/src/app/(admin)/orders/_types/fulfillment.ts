@@ -26,6 +26,25 @@ export type WmsFulfillmentPackStatus =
   | 'AWAITING_TRACKING'
   | 'PACKED';
 
+export type WmsPackingProofSource = 'CAMERA' | 'FILE' | 'CLIPBOARD';
+
+export type WmsPackingProof = {
+  id: string;
+  source: WmsPackingProofSource;
+  createdAt: string;
+  imageUrl: string | null;
+  contentType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  originalFileName: string | null;
+  uploadedBy: {
+    id: string;
+    name: string;
+    email: string;
+  };
+};
+
 export type WmsFulfillmentQueueTask = {
   id: string;
   posOrderId: string;

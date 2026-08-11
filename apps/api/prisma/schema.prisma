@@ -349,6 +349,7 @@ model User {
   wmsPurchasingBatchLinesUpdated            WmsPurchasingBatchLine[]       @relation("WmsPurchasingBatchLineUpdatedBy")
   mediaAssetsCreated                        MediaAsset[]                   @relation("MediaAssetCreatedBy")
   undeliverableAttemptProofsUploaded        UndeliverableAttemptProof[]    @relation("UndeliverableAttemptProofUploadedBy")
+  wmsPackingProofsUploaded                  WmsPackingProof[]              @relation("WmsPackingProofUploadedBy")
   wmsInvoiceSettingsCreated                 WmsInvoiceSettings[]           @relation("WmsInvoiceSettingsCreatedBy")
   wmsInvoiceSettingsUpdated                 WmsInvoiceSettings[]           @relation("WmsInvoiceSettingsUpdatedBy")
   wmsInvoicesCreated                        WmsInvoice[]                   @relation("WmsInvoiceCreatedBy")
@@ -662,6 +663,13 @@ enum MediaAssetKind {
   PAYMENT_PROOF_IMAGE
   INVOICE_LOGO_IMAGE
   UNDELIVERABLE_REMARK_PROOF_IMAGE
+  WMS_PACKING_PROOF_IMAGE
+}
+
+enum WmsPackingProofSource {
+  CAMERA
+  FILE
+  CLIPBOARD
 }
 
 enum WmsStoxAppPlatform {
@@ -1604,6 +1612,7 @@ model MediaAsset {
   wmsInvoiceSettingsLogo           WmsInvoiceSettings?        @relation("WmsInvoiceSettingsLogo")
   wmsPurchasingBatchesPaymentProof WmsPurchasingBatch[]       @relation("WmsPurchasingBatchPaymentProofAsset")
   undeliverableAttemptProof        UndeliverableAttemptProof? @relation("UndeliverableAttemptProofAsset")
+  wmsPackingProof                  WmsPackingProof?            @relation("WmsPackingProofAsset")
 
   @@unique([bucket, objectKey])
   @@index([tenantId, kind])
@@ -2135,6 +2144,7 @@ model WmsFulfillmentOrder {
   reservations      WmsPickReservation[]
   basketPickDemands WmsBasketPickDemand[]
   basketUnits       WmsBasketUnit[]
+  packingProofs     WmsPackingProof[]
 
   @@unique([tenantId, shopId, posOrderId])
   @@unique([posOrderDbId])
@@ -2149,6 +2159,22 @@ model WmsFulfillmentOrder {
   @@index([storeId, priorityOverrideAt])
   @@index([priorityReleasedForOrderId])
   @@map("wms_fulfillment_orders")
+}
+
+model WmsPackingProof {
+  id                 String                @id @default(uuid()) @db.Uuid
+  fulfillmentOrderId String                @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder   @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  mediaAssetId       String                @unique @db.Uuid
+  mediaAsset         MediaAsset            @relation("WmsPackingProofAsset", fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  uploadedById       String                @db.Uuid
+  uploadedBy         User                  @relation("WmsPackingProofUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  source             WmsPackingProofSource @default(FILE)
+  createdAt          DateTime              @default(now())
+
+  @@index([fulfillmentOrderId, createdAt])
+  @@index([uploadedById])
+  @@map("wms_packing_proofs")
 }
 
 model WmsBasket {

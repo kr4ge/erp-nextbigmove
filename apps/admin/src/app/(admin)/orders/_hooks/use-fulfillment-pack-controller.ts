@@ -374,7 +374,6 @@ export function useFulfillmentPackController() {
       const result = await completeWmsPackBasketOrder({
         basketId: task.basket.id,
         orderId,
-        tenantId: resolveTenantIdForTask(task),
       });
       applyBasketResult({
         result,
@@ -392,7 +391,7 @@ export function useFulfillmentPackController() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [currentPage, loadQueue, notifyActionError, notifyActionSuccess, resolveTenantIdForTask]);
+  }, [currentPage, loadQueue, notifyActionError, notifyActionSuccess]);
 
   const startTask = useCallback(async (task: WmsFulfillmentQueueTask) => {
     setIsSubmitting(true);
@@ -458,7 +457,6 @@ export function useFulfillmentPackController() {
     try {
       const result = await completeWmsPackTask({
         taskId: task.id,
-        tenantId: resolveTenantIdForTask(task),
         trackingCode,
       });
       replaceTask(result.task, { closeWhenFinished: true });
@@ -470,7 +468,7 @@ export function useFulfillmentPackController() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [notifyActionError, notifyActionSuccess, replaceTask, resolveTenantIdForTask]);
+  }, [notifyActionError, notifyActionSuccess, replaceTask]);
 
   const voidTask = useCallback(async (params: {
     task: WmsFulfillmentQueueTask;

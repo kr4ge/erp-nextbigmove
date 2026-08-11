@@ -71,7 +71,24 @@ export class WmsMobilePackScanDto extends WmsMobilePackScopedDto {
 
 export class WmsMobilePackBasketOrderCompleteDto extends WmsMobilePackScopedDto {}
 
+export class WmsWebPackBasketOrderCompleteDto {}
+
+export const WMS_WEB_PACKING_PROOF_SOURCES = ['CAMERA', 'FILE', 'CLIPBOARD'] as const;
+
+export class WmsWebPackingProofUploadDto {
+  @IsOptional()
+  @IsIn(WMS_WEB_PACKING_PROOF_SOURCES)
+  source?: (typeof WMS_WEB_PACKING_PROOF_SOURCES)[number];
+}
+
 export class WmsMobilePackCompleteDto extends WmsMobilePackScopedDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  trackingCode!: string;
+}
+
+export class WmsWebPackCompleteDto {
   @IsString()
   @MinLength(1)
   @MaxLength(120)
