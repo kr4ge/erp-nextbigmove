@@ -6,6 +6,7 @@ import { WmsSidePanel } from '../../_components/wms-side-panel';
 import { WmsModal } from '../../_components/wms-modal';
 import type {
   WmsDispatchHistoryEntry,
+  WmsDispatchPackingProof,
   WmsDispatchReturnTask,
   WmsDispatchTab,
   WmsDispatchTask,
@@ -67,10 +68,12 @@ export function DispatchDetailPanel({
   const task = tab === 'returns' ? returnTask?.task ?? null : outboundTask ?? null;
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidReason, setVoidReason] = useState('');
+  const [selectedProof, setSelectedProof] = useState<WmsDispatchPackingProof | null>(null);
 
   useEffect(() => {
     setVoidOpen(false);
     setVoidReason('');
+    setSelectedProof(null);
   }, [task?.id, tab]);
 
   if (!task && !hasSelection) {
@@ -119,6 +122,7 @@ export function DispatchDetailPanel({
     ? returnFlow.verifiedUnits.filter((unit) => unit.status !== 'RTS')
     : [];
   const packedUnitCount = task.unitRecords.filter((unit) => isPackedEquivalentUnit(unit.status)).length;
+  const packingProofs = task.packingProofs ?? [];
   const latestPackedAt = resolveLatestPackedAt(task);
   const metrics = [
     { id: 'required', label: 'Required', value: task.totals.required },
@@ -256,6 +260,16 @@ export function DispatchDetailPanel({
           </div>
         </DetailSection>
       ) : null}
+
+      <DetailSection
+        title={`Packing proof · ${packingProofs.length}`}
+        description="Photos captured after item verification and before final packing."
+      >
+        <PackingProofGallery
+          proofs={packingProofs}
+          onSelect={setSelectedProof}
+        />
+      </DetailSection>
 
       {returnFlow ? (
         <>
@@ -405,7 +419,108 @@ export function DispatchDetailPanel({
           />
         </label>
       </WmsModal>
+
+      <WmsModal
+        open={Boolean(selectedProof)}
+        title={`Packing proof · Order #${task.posOrderId}`}
+        description={selectedProof
+          ? `${selectedProof.uploadedBy.name} · ${formatDateTime(selectedProof.createdAt)}`
+          : undefined}
+        onClose={() => setSelectedProof(null)}
+        bodyClassName="space-y-4"
+        panelClassName="max-w-5xl"
+        footer={(
+          <div className="flex flex-wrap justify-end gap-2">
+            {selectedProof?.imageUrl ? (
+              <a
+                href={selectedProof.imageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-md btn-outline"
+              >
+                Open original
+              </a>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setSelectedProof(null)}
+              className="btn btn-md btn-primary"
+            >
+              Close
+            </button>
+          </div>
+        )}
+      >
+        {selectedProof?.imageUrl ? (
+          <div className="overflow-hidden rounded-[22px] border border-[#dce4ea] bg-[#f3f6f8]">
+            {/* Signed object-storage URLs are dynamic and cannot use a static Next image host allowlist. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={selectedProof.imageUrl}
+              alt={`Packing proof for order ${task.posOrderId}`}
+              className="max-h-[70vh] w-full object-contain"
+            />
+          </div>
+        ) : (
+          <div className="rounded-[18px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-4 py-8 text-center text-sm text-[#6f8290]">
+            This packing proof is temporarily unavailable. Refresh the dispatch order to request a new secured link.
+          </div>
+        )}
+      </WmsModal>
     </>
+  );
+}
+
+function PackingProofGallery({
+  proofs,
+  onSelect,
+}: {
+  proofs: WmsDispatchPackingProof[];
+  onSelect: (proof: WmsDispatchPackingProof) => void;
+}) {
+  if (proofs.length === 0) {
+    return (
+      <div className="rounded-[18px] border border-dashed border-[#d7e0e7] bg-[#fbfcfc] px-4 py-6 text-sm text-[#6f8290]">
+        No packing proof was recorded for this order. Older or non-Web Packing orders may not have a proof.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {proofs.map((proof) => (
+        <button
+          key={proof.id}
+          type="button"
+          onClick={() => onSelect(proof)}
+          className="overflow-hidden rounded-[18px] border border-[#dce4ea] bg-[#fbfcfc] text-left transition hover:border-[#b8c8d2] hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#12384b]/15"
+        >
+          <div className="aspect-[4/3] bg-[#eef3f5]">
+            {proof.imageUrl ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={proof.imageUrl}
+                  alt="Packing proof thumbnail"
+                  className="h-full w-full object-cover"
+                />
+              </>
+            ) : (
+              <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-[#6f8290]">
+                Preview unavailable
+              </div>
+            )}
+          </div>
+          <div className="space-y-1 px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="truncate text-[13px] font-semibold text-primary">{proof.uploadedBy.name}</p>
+              <span className="pill pill-neutral shrink-0">{formatProofSource(proof.source)}</span>
+            </div>
+            <p className="text-[12px] text-[#68808f]">{formatDateTime(proof.createdAt)}</p>
+          </div>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -672,6 +787,17 @@ function resolveLatestPackedAt(task: WmsDispatchTask) {
 
 function isPackedEquivalentUnit(status: string | null | undefined) {
   return status ? PACKED_EQUIVALENT_UNIT_STATUSES.has(status) : false;
+}
+
+function formatProofSource(source: WmsDispatchPackingProof['source']) {
+  switch (source) {
+    case 'CAMERA':
+      return 'Camera';
+    case 'CLIPBOARD':
+      return 'Pasted';
+    default:
+      return 'Upload';
+  }
 }
 
 function buildPillClass(status: string | null | undefined) {

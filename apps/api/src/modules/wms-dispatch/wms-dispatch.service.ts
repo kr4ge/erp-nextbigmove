@@ -8,11 +8,13 @@ import {
   WmsFulfillmentOrderStatus,
   WmsInventoryUnitStatus,
   WmsPickReservationStatus,
+  WmsPackingProofSource,
   WmsStaffActivityOutcome,
   type Prisma,
 } from '@prisma/client';
 import type { Request } from 'express';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { MediaAssetsService } from '../../common/services/media-assets.service';
 import { GetWmsDispatchOutboundDto } from './dto/get-wms-dispatch-outbound.dto';
 import { GetWmsDispatchReportsDto } from './dto/get-wms-dispatch-reports.dto';
 import { GetWmsDispatchReturnsDto } from './dto/get-wms-dispatch-returns.dto';
@@ -100,6 +102,23 @@ type DispatchHistoryEntry = {
     name: string;
     email: string;
   } | null;
+};
+
+type DispatchPackingProof = {
+  id: string;
+  source: WmsPackingProofSource;
+  createdAt: Date;
+  imageUrl: string | null;
+  contentType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  originalFileName: string | null;
+  uploadedBy: {
+    id: string;
+    name: string;
+    email: string;
+  };
 };
 
 type DispatchOutboundLifecycleStatus =
@@ -197,6 +216,7 @@ export class WmsDispatchService {
     private readonly prisma: PrismaService,
     private readonly wmsInventoryService: WmsInventoryService,
     private readonly wmsFulfillmentOpsService: WmsFulfillmentOpsService,
+    private readonly mediaAssetsService: MediaAssetsService,
   ) {}
 
   async getSummary(query: GetWmsDispatchSummaryDto) {
@@ -418,13 +438,17 @@ export class WmsDispatchService {
       throw new NotFoundException('Dispatch order not found in the active outbound scope');
     }
 
-    const outboundActivities = await this.loadOutboundActivitiesByOrder([order.id]);
+    const [outboundActivities, packingProofs] = await Promise.all([
+      this.loadOutboundActivitiesByOrder([order.id]),
+      this.mapDispatchPackingProofs(order.packingProofs),
+    ]);
 
     return {
       tenantReady: true,
       serverTime: new Date().toISOString(),
       task: this.mapDispatchTask(order, {
         history: outboundActivities.get(order.id) ?? [],
+        packingProofs,
       }),
     };
   }
@@ -444,16 +468,17 @@ export class WmsDispatchService {
       throw new NotFoundException('Dispatch order not found in the active returns scope');
     }
 
-    const [returnActivities, dispositionKeysByOrderId] = await Promise.all([
+    const [returnActivities, dispositionKeysByOrderId, packingProofs] = await Promise.all([
       this.loadReturnActivitiesByOrder([order.id]),
       this.loadSuccessfulReturnDispositionUnitKeysByOrder([order.id]),
+      this.mapDispatchPackingProofs(order.packingProofs),
     ]);
 
     return {
       tenantReady: true,
       serverTime: new Date().toISOString(),
       task: {
-        task: this.mapDispatchTask(order),
+        task: this.mapDispatchTask(order, { packingProofs }),
         returnFlow: this.buildReturnFlow(
           order,
           returnActivities.get(order.id) ?? [],
@@ -1247,6 +1272,32 @@ export class WmsDispatchService {
           email: true,
         },
       },
+      packingProofs: {
+        orderBy: [{ createdAt: 'desc' }],
+        select: {
+          id: true,
+          source: true,
+          createdAt: true,
+          mediaAsset: {
+            select: {
+              objectKey: true,
+              contentType: true,
+              byteSize: true,
+              width: true,
+              height: true,
+              originalFileName: true,
+            },
+          },
+          uploadedBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      },
       rtsDisposedBy: {
         select: {
           firstName: true,
@@ -1563,6 +1614,7 @@ export class WmsDispatchService {
     order: any,
     options?: {
       history?: DispatchHistoryEntry[];
+      packingProofs?: DispatchPackingProof[];
     },
   ) {
     const lines = Array.isArray(order.lines)
@@ -1643,6 +1695,7 @@ export class WmsDispatchService {
           }
         : null,
       history: options?.history ?? [],
+      packingProofs: options?.packingProofs ?? [],
       unitRecords,
       lines: lines.map((line: any) => ({
         id: line.id,
@@ -1667,6 +1720,50 @@ export class WmsDispatchService {
         shortage: Math.max(Math.max(line.quantityRequired ?? 0, 0) - Math.max(line.quantityAllocated ?? 0, 0), 0),
       })),
     };
+  }
+
+  private async mapDispatchPackingProofs(proofs: Array<{
+    id: string;
+    source: WmsPackingProofSource;
+    createdAt: Date;
+    mediaAsset: {
+      objectKey: string;
+      contentType: string;
+      byteSize: number;
+      width: number | null;
+      height: number | null;
+      originalFileName: string | null;
+    };
+    uploadedBy: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+    };
+  }>): Promise<DispatchPackingProof[]> {
+    return Promise.all(proofs.map(async (proof) => {
+      const uploadedByName = [proof.uploadedBy.firstName, proof.uploadedBy.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+      return {
+        id: proof.id,
+        source: proof.source,
+        createdAt: proof.createdAt,
+        imageUrl: await this.mediaAssetsService.createSignedAssetUrl(proof.mediaAsset),
+        contentType: proof.mediaAsset.contentType,
+        byteSize: proof.mediaAsset.byteSize,
+        width: proof.mediaAsset.width,
+        height: proof.mediaAsset.height,
+        originalFileName: proof.mediaAsset.originalFileName,
+        uploadedBy: {
+          id: proof.uploadedBy.id,
+          name: uploadedByName || proof.uploadedBy.email,
+          email: proof.uploadedBy.email,
+        },
+      };
+    }));
   }
 
   private emptyReturnSummaryCounts(): DispatchReturnSummaryCounts {
