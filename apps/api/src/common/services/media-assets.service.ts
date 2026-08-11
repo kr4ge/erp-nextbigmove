@@ -38,10 +38,6 @@ export class MediaAssetsService {
     process.env.OBJECT_STORAGE_UNDELIVERABLE_PROOF_MAX_FILE_MB,
     30,
   );
-  private readonly packingProofMaxFileMb = this.parsePositiveInt(
-    process.env.OBJECT_STORAGE_PACKING_PROOF_MAX_FILE_MB,
-    30,
-  );
 
   constructor(
     private readonly prisma: PrismaService,
@@ -93,23 +89,6 @@ export class MediaAssetsService {
       tooLargeLabel: 'Proof image',
       resizeWidth: 1920,
       resizeHeight: 2560,
-    });
-  }
-
-  async uploadPackingProofImage(
-    file: UploadedImageFile | undefined,
-    tenantId: string,
-  ): Promise<UploadedAssetView> {
-    return this.uploadImageAsset({
-      file,
-      tenantId,
-      kind: MediaAssetKind.WMS_PACKING_PROOF_IMAGE,
-      maxFileMb: this.packingProofMaxFileMb,
-      objectPrefix: 'packing-proofs',
-      requiredMessage: 'Packing proof image is required',
-      tooLargeLabel: 'Packing proof image',
-      resizeWidth: 1920,
-      resizeHeight: 1920,
     });
   }
 

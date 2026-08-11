@@ -1,18 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from 'react';
-import { Camera, CheckCircle2, CornerDownLeft, PackageOpen, RefreshCcw, ShieldAlert, Slash } from 'lucide-react';
+import { CheckCircle2, CornerDownLeft, PackageOpen, RefreshCcw, ShieldAlert, Slash } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsModal } from '../../_components/wms-modal';
-import { usePackingProofs } from '../_hooks/use-packing-proofs';
 import type {
   WmsFulfillmentBasketPackPlan,
   WmsFulfillmentBasketPackValidation,
   WmsFulfillmentQueueReservation,
   WmsFulfillmentQueueTask,
 } from '../_types/fulfillment';
-import { PackingProofDialog } from './packing-proof-dialog';
 
 type BasketPackView = {
   basket: NonNullable<WmsFulfillmentQueueTask['basket']>;
@@ -206,8 +204,6 @@ export function FulfillmentPackExecutionPanel({
   const [supervisorPassword, setSupervisorPassword] = useState('');
   const [selectedVoidOrderIds, setSelectedVoidOrderIds] = useState<string[]>([]);
   const [voidOpen, setVoidOpen] = useState(false);
-  const [proofOpen, setProofOpen] = useState(false);
-  const promptedProofOrderIdRef = useRef<string | null>(null);
   const unitInputRef = useRef<HTMLInputElement>(null);
   const trackingInputRef = useRef<HTMLInputElement>(null);
 
@@ -220,8 +216,6 @@ export function FulfillmentPackExecutionPanel({
     setSupervisorPassword('');
     setSelectedVoidOrderIds([]);
     setVoidOpen(false);
-    setProofOpen(false);
-    promptedProofOrderIdRef.current = null;
   }, [task?.id]);
 
   useEffect(() => {
@@ -264,8 +258,6 @@ export function FulfillmentPackExecutionPanel({
   const selectedVoidOrderIdSet = useMemo(() => new Set(selectedVoidOrderIds), [selectedVoidOrderIds]);
   const allVoidEligibleSelected = voidEligibleBasketOrders.length > 0
     && selectedVoidOrderIds.length === voidEligibleBasketOrders.length;
-  const proofStageReady = Boolean(task && isPacking && packedAll && verifiedTracking);
-  const packingProofs = usePackingProofs(task?.id ?? null, proofStageReady);
 
   const items = useMemo(() => (task ? getVisiblePackLines(task.lines) : []), [task]);
 
@@ -313,30 +305,15 @@ export function FulfillmentPackExecutionPanel({
     )));
   }, [task?.basket?.orders]);
 
-  useEffect(() => {
-    if (
-      !task
-      || !proofStageReady
-      || packingProofs.isLoading
-      || packingProofs.hasProof
-      || promptedProofOrderIdRef.current === task.id
-    ) {
-      return;
-    }
-
-    promptedProofOrderIdRef.current = task.id;
-    setProofOpen(true);
-  }, [packingProofs.hasProof, packingProofs.isLoading, proofStageReady, task]);
-
   useScannerKeyboardCapture({
-    enabled: Boolean(task && canExecute && isPacking && !packedAll && !voidOpen && !proofOpen),
+    enabled: Boolean(task && canExecute && isPacking && !packedAll && !voidOpen),
     inputRef: unitInputRef,
     onScannedValue: setUnitCode,
     onSubmit: submitPackedUnit,
   });
 
   useScannerKeyboardCapture({
-    enabled: Boolean(task && canExecute && isPacking && packedAll && !voidOpen && !proofOpen),
+    enabled: Boolean(task && canExecute && isPacking && packedAll && !voidOpen),
     inputRef: trackingInputRef,
     onScannedValue: (value) => {
       setTrackingCode(value);
@@ -346,21 +323,9 @@ export function FulfillmentPackExecutionPanel({
   });
 
   usePackCompleteHotkey({
-    enabled: Boolean(
-      task
-      && canExecute
-      && proofStageReady
-      && !packingProofs.isLoading
-      && !isSubmitting
-      && !voidOpen
-      && !proofOpen
-    ),
+    enabled: Boolean(task && canExecute && isPacking && packedAll && verifiedTracking && !isSubmitting && !voidOpen),
     onTrigger: async () => {
       if (!task || !verifiedTracking) {
-        return;
-      }
-      if (!packingProofs.hasProof) {
-        setProofOpen(true);
         return;
       }
       await onComplete(task, verifiedTracking ?? trackingCode);
@@ -602,7 +567,7 @@ export function FulfillmentPackExecutionPanel({
               ) : null}
 
               <ScannerInput
-                disabled={isSubmitting || proofOpen}
+                disabled={isSubmitting}
                 helper={verifiedTracking ? `Verified ${verifiedTracking}` : 'Scan the waybill barcode to confirm the order tracking number.'}
                 inputRef={trackingInputRef}
                 label="Waybill"
@@ -615,45 +580,11 @@ export function FulfillmentPackExecutionPanel({
                 value={trackingCode}
               />
 
-              {proofStageReady ? (
-                packingProofs.hasProof ? (
-                  <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-emerald-800">Packing proof saved</p>
-                        <p className="mt-1 text-sm text-emerald-700">This proof belongs to waybill order #{task.posOrderId}.</p>
-                      </div>
-                      {packingProofs.latestProof?.imageUrl ? (
-                        <a
-                          href={packingProofs.latestProof.imageUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="shrink-0 text-xs font-semibold text-emerald-800 underline underline-offset-2"
-                        >
-                          View
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-4">
-                    <p className="text-sm font-semibold text-amber-900">Packing proof required</p>
-                    <p className="mt-1 text-sm text-amber-800">Photograph the verified items before bubble wrap.</p>
-                  </div>
-                )
-              ) : null}
-
               <ActionButton
-                disabled={!proofStageReady || packingProofs.isLoading || packingProofs.isUploading || isSubmitting}
-                icon={packingProofs.hasProof ? <CheckCircle2 className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
-                label={packingProofs.hasProof ? 'Mark packed · F9' : 'Add packing proof'}
-                onClick={() => {
-                  if (!packingProofs.hasProof) {
-                    setProofOpen(true);
-                    return;
-                  }
-                  void onComplete(task, verifiedTracking ?? trackingCode);
-                }}
+                disabled={!packedAll || !verifiedTracking || isSubmitting}
+                icon={<CheckCircle2 className="h-4 w-4" />}
+                label="Mark packed · F9"
+                onClick={() => void onComplete(task, verifiedTracking ?? trackingCode)}
                 tone="primary"
               />
             </div>
@@ -661,16 +592,6 @@ export function FulfillmentPackExecutionPanel({
 
         </div>
       </WmsCompactPanel>
-
-      <PackingProofDialog
-        open={proofOpen}
-        orderLabel={`Order #${task.posOrderId}`}
-        tracking={verifiedTracking ?? tracking}
-        isUploading={packingProofs.isUploading}
-        requestError={packingProofs.error}
-        onClose={() => setProofOpen(false)}
-        onSave={packingProofs.upload}
-      />
 
       <WmsModal
         open={voidOpen}
@@ -842,8 +763,6 @@ function DemandBasketPackExecutionPanel({
 }) {
   const [waybillCode, setWaybillCode] = useState('');
   const [unitCode, setUnitCode] = useState('');
-  const [proofOpen, setProofOpen] = useState(false);
-  const promptedProofOrderIdRef = useRef<string | null>(null);
   const waybillInputRef = useRef<HTMLInputElement>(null);
   const unitInputRef = useRef<HTMLInputElement>(null);
   const plan = basketView?.plan ?? null;
@@ -861,7 +780,6 @@ function DemandBasketPackExecutionPanel({
     && selectedOrder.totals.required > 0
     && selectedOrder.totals.remaining === 0,
   );
-  const packingProofs = usePackingProofs(selectedOrder?.id ?? null, activeOrderReadyToComplete);
   const availableUnitCount = plan?.availableUnits.reduce((total, unit) => total + unit.unitCount, 0) ?? 0;
   const trackingReadyCount = plan?.orders.filter((order) => order.trackingReady).length ?? 0;
   const trackingWaitingCount = Math.max((plan?.orders.length ?? 0) - trackingReadyCount, 0);
@@ -902,20 +820,14 @@ function DemandBasketPackExecutionPanel({
     ? 'Basket complete'
     : selectedOrder
       ? activeOrderReadyToComplete
-        ? packingProofs.isLoading
-          ? 'Checking proof'
-          : packingProofs.hasProof
-            ? 'Done packing'
-            : 'Add packing proof'
+        ? 'Done packing'
         : 'Scan unit'
       : 'Scan waybill';
   const nextActionCopy = basketComplete
     ? 'No more orders left in this basket.'
     : selectedOrder
       ? activeOrderReadyToComplete
-        ? packingProofs.hasProof
-          ? `Close order #${selectedOrder.posOrderId}`
-          : `Photograph order #${selectedOrder.posOrderId}`
+        ? `Close order #${selectedOrder.posOrderId}`
         : `Pack order #${selectedOrder.posOrderId}`
       : `${trackingReadyCount} ready to start`;
 
@@ -925,31 +837,7 @@ function DemandBasketPackExecutionPanel({
   }, [plan?.basketId]);
 
   useEffect(() => {
-    setProofOpen(false);
-    promptedProofOrderIdRef.current = null;
-  }, [selectedOrder?.id]);
-
-  useEffect(() => {
-    if (
-      !selectedOrder
-      || !activeOrderReadyToComplete
-      || packingProofs.isLoading
-      || packingProofs.hasProof
-      || promptedProofOrderIdRef.current === selectedOrder.id
-    ) {
-      return;
-    }
-
-    promptedProofOrderIdRef.current = selectedOrder.id;
-    setProofOpen(true);
-  }, [activeOrderReadyToComplete, packingProofs.hasProof, packingProofs.isLoading, selectedOrder]);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (proofOpen) {
-        return;
-      }
-
       if (selectedOrder && !activeOrderReadyToComplete) {
         unitInputRef.current?.focus();
         return;
@@ -961,7 +849,7 @@ function DemandBasketPackExecutionPanel({
     }, 120);
 
     return () => window.clearTimeout(timer);
-  }, [activeOrderReadyToComplete, basketComplete, proofOpen, selectedOrder]);
+  }, [activeOrderReadyToComplete, basketComplete, selectedOrder]);
 
   const submitWaybill = async (scannedValue?: string) => {
     const code = (scannedValue ?? waybillCode).trim();
@@ -997,35 +885,23 @@ function DemandBasketPackExecutionPanel({
   };
 
   useScannerKeyboardCapture({
-    enabled: Boolean(canExecute && !voidOpen && !proofOpen && !selectedOrder && !basketComplete),
+    enabled: Boolean(canExecute && !voidOpen && !selectedOrder && !basketComplete),
     inputRef: waybillInputRef,
     onScannedValue: setWaybillCode,
     onSubmit: submitWaybill,
   });
 
   useScannerKeyboardCapture({
-    enabled: Boolean(canExecute && !voidOpen && !proofOpen && selectedOrder && !activeOrderReadyToComplete),
+    enabled: Boolean(canExecute && !voidOpen && selectedOrder && !activeOrderReadyToComplete),
     inputRef: unitInputRef,
     onScannedValue: setUnitCode,
     onSubmit: submitUnit,
   });
 
   usePackCompleteHotkey({
-    enabled: Boolean(
-      canExecute
-      && !voidOpen
-      && !proofOpen
-      && selectedOrder
-      && activeOrderReadyToComplete
-      && !packingProofs.isLoading
-      && !isSubmitting
-    ),
+    enabled: Boolean(canExecute && !voidOpen && selectedOrder && activeOrderReadyToComplete && !isSubmitting),
     onTrigger: async () => {
       if (!selectedOrder) {
-        return;
-      }
-      if (!packingProofs.hasProof) {
-        setProofOpen(true);
         return;
       }
       await onCompleteBasketOrder(task, selectedOrder.id);
@@ -1234,31 +1110,10 @@ function DemandBasketPackExecutionPanel({
                     </div>
 
                     {activeOrderReadyToComplete ? (
-                      packingProofs.hasProof ? (
-                        <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-emerald-800">Packing proof saved</p>
-                              <p className="mt-1 text-sm text-emerald-700">Done packing will finish this waybill.</p>
-                            </div>
-                            {packingProofs.latestProof?.imageUrl ? (
-                              <a
-                                href={packingProofs.latestProof.imageUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="shrink-0 text-xs font-semibold text-emerald-800 underline underline-offset-2"
-                              >
-                                View
-                              </a>
-                            ) : null}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-4">
-                          <p className="text-sm font-semibold text-amber-900">Packing proof required</p>
-                          <p className="mt-1 text-sm text-amber-800">Photograph the verified items before bubble wrap.</p>
-                        </div>
-                      )
+                      <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-4">
+                        <p className="text-sm font-semibold text-emerald-800">Ready to close</p>
+                        <p className="mt-1 text-sm text-emerald-700">Done packing will finish this waybill.</p>
+                      </div>
                     ) : (
                       <ScannerInput
                         disabled={isSubmitting}
@@ -1295,16 +1150,10 @@ function DemandBasketPackExecutionPanel({
                   />
                   {selectedOrder && activeOrderReadyToComplete ? (
                     <ActionButton
-                      disabled={packingProofs.isLoading || packingProofs.isUploading || isSubmitting}
-                      icon={packingProofs.hasProof ? <CheckCircle2 className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
-                      label={packingProofs.hasProof ? 'Done packing · F9' : 'Add packing proof'}
-                      onClick={() => {
-                        if (!packingProofs.hasProof) {
-                          setProofOpen(true);
-                          return;
-                        }
-                        void onCompleteBasketOrder(task, selectedOrder.id);
-                      }}
+                      disabled={isSubmitting}
+                      icon={<CheckCircle2 className="h-4 w-4" />}
+                      label="Done packing · F9"
+                      onClick={() => void onCompleteBasketOrder(task, selectedOrder.id)}
                       tone="primary"
                     />
                   ) : null}
@@ -1349,16 +1198,6 @@ function DemandBasketPackExecutionPanel({
           </div>
         </div>
       </WmsCompactPanel>
-
-      <PackingProofDialog
-        open={proofOpen}
-        orderLabel={selectedOrder ? `Order #${selectedOrder.posOrderId}` : 'Packing order'}
-        tracking={selectedOrder?.tracking ?? null}
-        isUploading={packingProofs.isUploading}
-        requestError={packingProofs.error}
-        onClose={() => setProofOpen(false)}
-        onSave={packingProofs.upload}
-      />
 
       <WmsModal
         open={voidOpen}
