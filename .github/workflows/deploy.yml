@@ -26,11 +26,32 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+          DEPLOY_SHA: ${{ github.sha }}
         run: |
           set -e
 
-          # Pull latest code
-          ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && git pull"
+          # Fetch transient network failures safely, then deploy exactly this workflow's commit.
+          ssh "$SSH_USER@$SSH_HOST" "DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
+            set -euo pipefail
+            cd /opt/erp
+
+            max_attempts=4
+            for attempt in $(seq 1 "$max_attempts"); do
+              echo "Fetching main from GitHub (attempt $attempt/$max_attempts)..."
+              if git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 fetch --no-tags origin main; then
+                break
+              fi
+
+              if [ "$attempt" -eq "$max_attempts" ]; then
+                echo "Unable to reach GitHub after $max_attempts attempts." >&2
+                exit 1
+              fi
+
+              sleep $((attempt * 15))
+            done
+
+            git merge --ff-only "$DEPLOY_SHA"
+          REMOTE
 
           # Write env file from secret
           echo "$PROD_ENV_FILE" | ssh "$SSH_USER@$SSH_HOST" "cat > /opt/erp/.env.prod"
