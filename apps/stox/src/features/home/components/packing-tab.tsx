@@ -698,6 +698,10 @@ function DemandPackExecutionCard({
   }, [selectedOrderId]);
 
   useEffect(() => {
+    if (isSubmitting || proofVisible) {
+      return;
+    }
+
     const timer = setTimeout(() => {
       if (selectedOrderId && !activeOrderReadyToComplete) {
         unitInputRef.current?.focus();
@@ -710,7 +714,7 @@ function DemandPackExecutionCard({
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [activeOrderReadyToComplete, isComplete, selectedOrderId]);
+  }, [activeOrderReadyToComplete, isComplete, isSubmitting, proofVisible, selectedOrderId]);
 
   const submitWaybill = async () => {
     if (!basket?.id || waybillSubmitInFlightRef.current || isSubmitting || isComplete) {
@@ -800,7 +804,7 @@ function DemandPackExecutionCard({
   return (
     <>
       <HiddenScannerCapture
-        enabled={Boolean(scannerTarget)}
+        enabled={Boolean(scannerTarget) && !isSubmitting && !proofVisible}
         value={scannerTarget?.value ?? ''}
         onChangeText={scannerTarget?.onChangeText ?? noopScannerChange}
         onSubmit={scannerTarget?.onSubmit ?? noopScannerSubmit}
@@ -1147,7 +1151,7 @@ function PackExecutionCard({
   return (
     <>
       <HiddenScannerCapture
-        enabled={Boolean(scannerTarget)}
+        enabled={Boolean(scannerTarget) && !isSubmitting}
         value={scannerTarget?.value ?? ''}
         onChangeText={scannerTarget?.onChangeText ?? noopScannerChange}
         onSubmit={scannerTarget?.onSubmit ?? noopScannerSubmit}
