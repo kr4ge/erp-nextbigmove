@@ -1,5 +1,5 @@
 import type { DeviceIdentity } from '@/src/features/auth/types';
-import { apiRequest } from '@/src/shared/services/http';
+import { apiMultipartRequest, apiRequest } from '@/src/shared/services/http';
 import type {
   WmsMobileBasketPackCompleteResponse,
   PackingFilters,
@@ -8,6 +8,9 @@ import type {
   WmsMobileBasketPackUnitResponse,
   WmsMobileBasketPackWaybillResponse,
   WmsMobilePackingResponse,
+  WmsPackingProof,
+  WmsPackingProofFile,
+  WmsPackingProofsResponse,
 } from '../types';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
 
@@ -194,6 +197,43 @@ export function completeMobilePackingBasketOrder(params: PackingRequestParams & 
       body: {
         tenantId: params.tenantId,
       },
+    },
+  );
+}
+
+export function fetchMobilePackingProofs(params: PackingRequestParams & {
+  orderId: string;
+}) {
+  return apiRequest<WmsPackingProofsResponse>(
+    `/wms/mobile/packing/orders/${params.orderId}/proofs`,
+    {
+      method: 'GET',
+      token: params.accessToken,
+      device: params.device,
+    },
+  );
+}
+
+export function uploadMobilePackingProof(params: PackingRequestParams & {
+  orderId: string;
+  file: WmsPackingProofFile;
+}) {
+  const formData = new FormData();
+  formData.append('source', params.file.source);
+  formData.append('file', {
+    uri: params.file.uri,
+    name: params.file.name,
+    type: params.file.type,
+  } as unknown as Blob);
+
+  return apiMultipartRequest<{ success: boolean; proof: WmsPackingProof }>(
+    `/wms/mobile/packing/orders/${params.orderId}/proofs`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: formData,
+      timeoutMs: 60_000,
     },
   );
 }

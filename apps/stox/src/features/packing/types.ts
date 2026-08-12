@@ -128,3 +128,37 @@ export type WmsMobileBasketPackCompleteResponse = WmsMobileBasketPackPlanRespons
   activeOrder: WmsMobilePickingTask | null;
   completedOrder: WmsMobilePickingTask;
 };
+
+export type WmsPackingProofSource = 'CAMERA' | 'FILE' | 'CLIPBOARD';
+
+export type WmsPackingProof = {
+  id: string;
+  source: WmsPackingProofSource;
+  createdAt: string;
+  imageUrl: string;
+  contentType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  originalFileName: string | null;
+  uploadedBy: {
+    id: string;
+    name: string;
+    email: string;
+  };
+};
+
+export type WmsPackingProofFile = {
+  uri: string;
+  name: string;
+  type: string;
+  source: Exclude<WmsPackingProofSource, 'CLIPBOARD'>;
+  byteSize?: number | null;
+};
+
+export type WmsPackingProofsResponse = {
+  orderId: string;
+  posOrderId: string;
+  tracking: string | null;
+  proofs: WmsPackingProof[];
+};
