@@ -92,11 +92,11 @@ import {
   WmsMobilePackBasketVoidDto,
   WmsMobilePackBasketOrderCompleteDto,
   WmsMobilePackCompleteDto,
+  WmsPackingProofUploadDto,
   WmsMobilePackScanDto,
   WmsMobilePackScopedDto,
   WmsMobilePackVoidDto,
   WmsWebPackCompleteDto,
-  WmsWebPackingProofUploadDto,
 } from './dto/wms-mobile-packing.dto';
 import {
   GetWmsMobileHistoryFeedDto,
@@ -4854,7 +4854,7 @@ export class WmsMobileService {
     orderId: string,
     request?: Request,
   ) {
-    const order = await this.findWebPackingOrderForAction(user, orderId, request);
+    const order = await this.findPackingOrderByIdForAction(user, orderId, request);
 
     return this.completePackingBasketOrder(
       user,
@@ -4872,7 +4872,7 @@ export class WmsMobileService {
     body: WmsWebPackCompleteDto,
     request?: Request,
   ) {
-    const order = await this.findWebPackingOrderForAction(user, orderId, request);
+    const order = await this.findPackingOrderByIdForAction(user, orderId, request);
 
     return this.completePackingTask(
       user,
@@ -4886,12 +4886,12 @@ export class WmsMobileService {
     );
   }
 
-  async getWebPackingProofs(
+  async getPackingProofs(
     user: BootstrapUser,
     orderId: string,
     request?: Request,
   ) {
-    const order = await this.findWebPackingOrderForAction(user, orderId, request);
+    const order = await this.findPackingOrderByIdForAction(user, orderId, request);
     const proofs = await this.prisma.wmsPackingProof.findMany({
       where: { fulfillmentOrderId: order.id },
       include: {
@@ -4912,18 +4912,18 @@ export class WmsMobileService {
       orderId: order.id,
       posOrderId: order.posOrderId,
       tracking: order.posOrder?.tracking ?? null,
-      proofs: await Promise.all(proofs.map((proof) => this.mapWebPackingProof(proof))),
+      proofs: await Promise.all(proofs.map((proof) => this.mapPackingProof(proof))),
     };
   }
 
-  async uploadWebPackingProof(
+  async uploadPackingProof(
     user: BootstrapUser,
     orderId: string,
-    body: WmsWebPackingProofUploadDto,
+    body: WmsPackingProofUploadDto,
     file: UploadedImageFile | undefined,
     request?: Request,
   ) {
-    const order = await this.findWebPackingOrderForAction(user, orderId, request);
+    const order = await this.findPackingOrderByIdForAction(user, orderId, request);
     this.assertPackingTaskInProgress(order);
 
     const userId = user.userId || user.id;
@@ -4989,7 +4989,7 @@ export class WmsMobileService {
 
     return {
       success: true,
-      proof: await this.mapWebPackingProof(proof),
+      proof: await this.mapPackingProof(proof),
     };
   }
 
@@ -9572,7 +9572,7 @@ export class WmsMobileService {
     return order;
   }
 
-  private async findWebPackingOrderForAction(
+  private async findPackingOrderByIdForAction(
     user: BootstrapUser,
     id: string,
     request?: Request,
@@ -9604,7 +9604,7 @@ export class WmsMobileService {
     }
   }
 
-  private async mapWebPackingProof(proof: {
+  private async mapPackingProof(proof: {
     id: string;
     source: WmsPackingProofSource;
     createdAt: Date;

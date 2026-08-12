@@ -20,6 +20,8 @@ import type {
   PackingStatusFilter,
   WmsMobilePackingResponse,
 } from '@/src/features/packing/types';
+import { PackingProofModal } from '@/src/features/packing/components/packing-proof-modal';
+import { usePackingProof } from '@/src/features/packing/hooks/use-packing-proof';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
 import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
@@ -293,6 +295,7 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
         activeBasketView?.plan.mode === 'BASKET_DEMAND' ? (
           <DemandPackExecutionCard
             basket={activeBasketView.basket}
+            device={device}
             isSubmitting={isSubmitting}
             onBack={() => {
               setActiveBasketId(null);
@@ -315,10 +318,12 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
             onScanUnit={handleDemandUnit}
             onScanWaybill={handleDemandWaybill}
             plan={activeBasketView.plan}
+            session={session}
           />
         ) : activeTask ? (
           <PackExecutionCard
           canDirectVoid={canDirectVoid}
+          device={device}
           isSubmitting={isSubmitting}
           task={activeTask}
           onBack={() => {
@@ -331,6 +336,7 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
           onStart={startTask}
           onVerifyTracking={verifyTracking}
           onVoid={voidTask}
+          session={session}
           />
         ) : null
       ) : (
@@ -635,6 +641,7 @@ function PackBasketCard({
 
 function DemandPackExecutionCard({
   basket,
+  device,
   isSubmitting,
   onBack,
   onCompleteOrder,
@@ -642,8 +649,10 @@ function DemandPackExecutionCard({
   onScanUnit,
   onScanWaybill,
   plan,
+  session,
 }: {
   basket: WmsMobilePickingTask['basket'];
+  device: DeviceIdentity | null;
   isSubmitting: boolean;
   onBack: () => void;
   onCompleteOrder: (basketId: string, orderId: string) => Promise<boolean>;
@@ -651,7 +660,9 @@ function DemandPackExecutionCard({
   onScanUnit: (basketId: string, orderId: string, code: string) => Promise<boolean>;
   onScanWaybill: (basketId: string, code: string) => Promise<boolean>;
   plan: WmsMobileBasketPackPlan;
+  session: StoredSession;
 }) {
+  const [proofVisible, setProofVisible] = useState(false);
   const [waybillCode, setWaybillCode] = useState('');
   const [unitCode, setUnitCode] = useState('');
   const waybillInputRef = useRef<TextInput>(null);
@@ -659,6 +670,7 @@ function DemandPackExecutionCard({
   const waybillSubmitInFlightRef = useRef(false);
   const unitSubmitInFlightRef = useRef(false);
   const selectedOrder = plan.activeOrder;
+  const selectedOrderId = selectedOrder?.id ?? null;
   const basketLabel = basket?.barcode ?? plan.basketCode;
   const remainingOrders = plan.orderProgress.remaining;
   const availableUnitCount = plan.availableUnits.reduce((total, unit) => total + unit.unitCount, 0);
@@ -668,26 +680,37 @@ function DemandPackExecutionCard({
     && selectedOrder.totals.required > 0
     && selectedOrder.totals.remaining === 0,
   );
+  const packingProof = usePackingProof({
+    device,
+    enabled: activeOrderReadyToComplete,
+    orderId: selectedOrderId,
+    session,
+  });
 
   useEffect(() => {
     setWaybillCode('');
     setUnitCode('');
+    setProofVisible(false);
   }, [plan.basketId]);
 
   useEffect(() => {
+    setProofVisible(false);
+  }, [selectedOrderId]);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
-      if (selectedOrder && !activeOrderReadyToComplete) {
+      if (selectedOrderId && !activeOrderReadyToComplete) {
         unitInputRef.current?.focus();
         return;
       }
 
-      if (!selectedOrder && !isComplete) {
+      if (!selectedOrderId && !isComplete) {
         waybillInputRef.current?.focus();
       }
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [activeOrderReadyToComplete, isComplete, selectedOrder?.id]);
+  }, [activeOrderReadyToComplete, isComplete, selectedOrderId]);
 
   const submitWaybill = async () => {
     if (!basket?.id || waybillSubmitInFlightRef.current || isSubmitting || isComplete) {
@@ -744,6 +767,20 @@ function DemandPackExecutionCard({
     }
   };
 
+  const completeOrderWithProof = async () => {
+    if (!basket?.id || !selectedOrder || packingProof.isLoading || packingProof.isUploading) {
+      return false;
+    }
+
+    if (!packingProof.hasProof) {
+      packingProof.clearError();
+      setProofVisible(true);
+      return false;
+    }
+
+    return onCompleteOrder(basket.id, selectedOrder.id);
+  };
+
   const scannerTarget = isComplete
     ? null
     : selectedOrder
@@ -791,10 +828,16 @@ function DemandPackExecutionCard({
       </View>
 
       <DemandPackFloatingCounter
-        isSubmitting={isSubmitting}
+        actionDisabled={packingProof.isLoading || packingProof.isUploading}
+        actionLabel={packingProof.isLoading
+          ? 'Checking proof'
+          : packingProof.hasProof
+            ? 'Done packing'
+            : 'Add packing proof'}
+        isSubmitting={isSubmitting || packingProof.isLoading}
         onCompleteOrder={
           basket?.id && selectedOrder && activeOrderReadyToComplete
-            ? () => onCompleteOrder(basket.id, selectedOrder.id)
+            ? completeOrderWithProof
             : null
         }
         plan={plan}
@@ -847,9 +890,19 @@ function DemandPackExecutionCard({
 
                 {activeOrderReadyToComplete ? (
                   <View style={styles.donePanelCompact}>
-                    <Feather name="check-circle" size={24} color={tokens.colors.success} />
-                    <Text style={styles.doneTitle}>Ready to close</Text>
-                    <Text style={styles.doneCopy}>Done packing will finish this waybill.</Text>
+                    <Feather
+                      name={packingProof.hasProof ? 'check-circle' : 'camera'}
+                      size={24}
+                      color={packingProof.hasProof ? tokens.colors.success : tokens.colors.panel}
+                    />
+                    <Text style={styles.doneTitle}>
+                      {packingProof.hasProof ? 'Packing proof saved' : 'Packing proof required'}
+                    </Text>
+                    <Text style={styles.doneCopy}>
+                      {packingProof.hasProof
+                        ? 'Done packing will finish this waybill.'
+                        : 'Take or select one clear item photo before finishing this waybill.'}
+                    </Text>
                   </View>
                 ) : (
                   <ScannerInput
@@ -906,12 +959,25 @@ function DemandPackExecutionCard({
               </SurfaceCard>
             ))}
       </View>
+
+      <PackingProofModal
+        error={packingProof.error}
+        isUploading={packingProof.isUploading}
+        orderLabel={`Order #${selectedOrder?.posOrderId ?? ''}`}
+        visible={proofVisible && Boolean(selectedOrder)}
+        onClose={() => {
+          packingProof.clearError();
+          setProofVisible(false);
+        }}
+        onSave={packingProof.upload}
+      />
     </>
   );
 }
 
 function PackExecutionCard({
   canDirectVoid,
+  device,
   isSubmitting,
   task,
   onBack,
@@ -921,8 +987,10 @@ function PackExecutionCard({
   onStart,
   onVerifyTracking,
   onVoid,
+  session,
 }: {
   canDirectVoid: boolean;
+  device: DeviceIdentity | null;
   isSubmitting: boolean;
   task: WmsMobilePickingTask;
   onBack: () => void;
@@ -937,7 +1005,9 @@ function PackExecutionCard({
     supervisorIdentifier?: string | null;
     supervisorPassword?: string | null;
   }) => Promise<boolean>;
+  session: StoredSession;
 }) {
+  const [proofVisible, setProofVisible] = useState(false);
   const [unitCode, setUnitCode] = useState('');
   const [trackingCode, setTrackingCode] = useState('');
   const [verifiedTracking, setVerifiedTracking] = useState<string | null>(null);
@@ -956,6 +1026,12 @@ function PackExecutionCard({
   const packedAll = task.totals.packed >= task.totals.required && task.totals.required > 0;
   const isPacked = task.status === 'PACKED';
   const nextUnit = getNextPackReservation(task);
+  const packingProof = usePackingProof({
+    device,
+    enabled: isPacking && packedAll,
+    orderId: task.id,
+    session,
+  });
 
   useEffect(() => {
     setUnitCode('');
@@ -965,10 +1041,11 @@ function PackExecutionCard({
     setSupervisorIdentifier('');
     setSupervisorPassword('');
     setVoidVisible(false);
+    setProofVisible(false);
   }, [task.id]);
 
   useEffect(() => {
-    if (!isPacking) {
+    if (!isPacking || proofVisible) {
       return;
     }
 
@@ -981,7 +1058,7 @@ function PackExecutionCard({
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [isPacking, packedAll, task.id]);
+  }, [isPacking, packedAll, proofVisible, task.id]);
 
   const submitUnit = async () => {
     if (unitSubmitInFlightRef.current || isSubmitting) {
@@ -1050,7 +1127,7 @@ function PackExecutionCard({
     }
   };
 
-  const scannerTarget = isPacking
+  const scannerTarget = isPacking && !proofVisible
     ? !packedAll
       ? {
           value: unitCode,
@@ -1200,10 +1277,27 @@ function PackExecutionCard({
             />
 
             <PrimaryButton
-              disabled={!packedAll || !verifiedTracking}
-              label="Mark packed"
-              loading={isSubmitting}
-              onPress={() => void onComplete(task.id, verifiedTracking ?? trackingCode)}
+              disabled={
+                !packedAll
+                || packingProof.isLoading
+                || packingProof.isUploading
+                || (packingProof.hasProof && !verifiedTracking)
+              }
+              label={packingProof.isLoading
+                ? 'Checking proof'
+                : packingProof.hasProof
+                  ? 'Mark packed'
+                  : 'Add packing proof'}
+              loading={isSubmitting || packingProof.isLoading}
+              onPress={() => {
+                if (!packingProof.hasProof) {
+                  packingProof.clearError();
+                  setProofVisible(true);
+                  return;
+                }
+
+                void onComplete(task.id, verifiedTracking ?? trackingCode);
+              }}
             />
           </View>
         ) : null}
@@ -1223,6 +1317,18 @@ function PackExecutionCard({
           </SurfaceCard>
         ))}
       </View>
+
+      <PackingProofModal
+        error={packingProof.error}
+        isUploading={packingProof.isUploading}
+        orderLabel={`Order #${task.posOrderId}`}
+        visible={proofVisible}
+        onClose={() => {
+          packingProof.clearError();
+          setProofVisible(false);
+        }}
+        onSave={packingProof.upload}
+      />
 
       <Modal
         transparent
@@ -1378,10 +1484,14 @@ function DemandPackOrderList({
 }
 
 function DemandPackFloatingCounter({
+  actionDisabled,
+  actionLabel,
   isSubmitting,
   onCompleteOrder,
   plan,
 }: {
+  actionDisabled: boolean;
+  actionLabel: string;
   isSubmitting: boolean;
   onCompleteOrder: (() => Promise<boolean>) | null;
   plan: WmsMobileBasketPackPlan;
@@ -1404,7 +1514,8 @@ function DemandPackFloatingCounter({
       </View>
       {onCompleteOrder ? (
         <PrimaryButton
-          label="Done packing"
+          disabled={actionDisabled}
+          label={actionLabel}
           loading={isSubmitting}
           onPress={() => {
             void onCompleteOrder();
@@ -1413,7 +1524,7 @@ function DemandPackFloatingCounter({
         />
       ) : null}
     </View>
-  ), [isSubmitting, onCompleteOrder, plan.totals.remaining, primaryLabel, primaryPacked, primaryRequired]);
+  ), [actionDisabled, actionLabel, isSubmitting, onCompleteOrder, plan.totals.remaining, primaryLabel, primaryPacked, primaryRequired]);
 
   useEffect(() => {
     if (!setShellOverlay) {

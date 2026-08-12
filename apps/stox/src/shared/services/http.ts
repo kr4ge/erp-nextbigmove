@@ -11,6 +11,11 @@ type RequestOptions = {
   headers?: Record<string, string>;
 };
 
+type MultipartRequestOptions = Omit<RequestOptions, 'body' | 'headers'> & {
+  body: FormData;
+  headers?: Record<string, string>;
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -21,6 +26,19 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}) {
+  return executeRequest<T>(path, options, options.body ? JSON.stringify(options.body) : undefined, true);
+}
+
+export async function apiMultipartRequest<T>(path: string, options: MultipartRequestOptions) {
+  return executeRequest<T>(path, options, options.body, false);
+}
+
+async function executeRequest<T>(
+  path: string,
+  options: RequestOptions | MultipartRequestOptions,
+  body: BodyInit | undefined,
+  includeJsonContentType: boolean,
+) {
   const controller = options.timeoutMs ? new AbortController() : null;
   const timeout = controller
     ? setTimeout(() => controller.abort(), options.timeoutMs)
@@ -31,7 +49,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: options.method || 'GET',
       headers: {
-        'Content-Type': 'application/json',
+        ...(includeJsonContentType ? { 'Content-Type': 'application/json' } : {}),
         'X-Client-Platform': STOX_CLIENT_PLATFORM,
         ...(options.device?.id ? { 'X-Device-ID': options.device.id } : {}),
         ...(options.device?.name ? { 'X-Device-Name': options.device.name } : {}),
@@ -39,7 +57,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
         ...options.headers,
       },
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      body,
       signal: controller?.signal,
     });
   } catch (error) {

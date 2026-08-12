@@ -73,13 +73,15 @@ export class WmsMobilePackBasketOrderCompleteDto extends WmsMobilePackScopedDto 
 
 export class WmsWebPackBasketOrderCompleteDto {}
 
-export const WMS_WEB_PACKING_PROOF_SOURCES = ['CAMERA', 'FILE', 'CLIPBOARD'] as const;
+export const WMS_PACKING_PROOF_SOURCES = ['CAMERA', 'FILE', 'CLIPBOARD'] as const;
 
-export class WmsWebPackingProofUploadDto {
+export class WmsPackingProofUploadDto {
   @IsOptional()
-  @IsIn(WMS_WEB_PACKING_PROOF_SOURCES)
-  source?: (typeof WMS_WEB_PACKING_PROOF_SOURCES)[number];
+  @IsIn(WMS_PACKING_PROOF_SOURCES)
+  source?: (typeof WMS_PACKING_PROOF_SOURCES)[number];
 }
+
+export class WmsWebPackingProofUploadDto extends WmsPackingProofUploadDto {}
 
 export class WmsMobilePackCompleteDto extends WmsMobilePackScopedDto {
   @IsString()
