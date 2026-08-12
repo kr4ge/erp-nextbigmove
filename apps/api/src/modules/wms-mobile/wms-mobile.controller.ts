@@ -1,7 +1,20 @@
-import { Body, Controller, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Request,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import type { UploadedImageFile } from '../../common/services/media-assets.service';
 import { GetWmsMobileStockDto } from './dto/get-wms-mobile-stock.dto';
 import {
   GetWmsMobileHomeInventorySummaryDto,
@@ -37,6 +50,7 @@ import {
   WmsMobilePackBasketOrderCompleteDto,
   GetWmsMobilePackingTasksDto,
   WmsMobilePackCompleteDto,
+  WmsPackingProofUploadDto,
   WmsMobilePackScanDto,
   WmsMobilePackScopedDto,
   WmsMobilePackVoidDto,
@@ -466,6 +480,35 @@ export class WmsMobileController {
     @Body() body: WmsMobilePackBasketOrderCompleteDto,
   ) {
     return this.wmsMobileService.completePackingBasketOrder(req.user, id, orderId, body, req);
+  }
+
+  @Get('packing/orders/:orderId/proofs')
+  @Permissions('wms.dispatch.read', 'wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async getPackingProofs(
+    @Request() req,
+    @Param('orderId') orderId: string,
+  ) {
+    return this.wmsMobileService.getPackingProofs(req.user, orderId, req);
+  }
+
+  @Post('packing/orders/:orderId/proofs')
+  @Permissions('wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: {
+      files: 1,
+      fileSize: Math.max(
+        1,
+        Number(process.env.OBJECT_STORAGE_PACKING_PROOF_MAX_FILE_MB || '30'),
+      ) * 1024 * 1024,
+    },
+  }))
+  async uploadPackingProof(
+    @Request() req,
+    @Param('orderId') orderId: string,
+    @Body() body: WmsPackingProofUploadDto,
+    @UploadedFile() file: UploadedImageFile,
+  ) {
+    return this.wmsMobileService.uploadPackingProof(req.user, orderId, body, file, req);
   }
 
   @Post('packing/baskets/:id/void-orders')

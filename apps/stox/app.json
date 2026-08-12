@@ -40,7 +40,19 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow STOX to photograph items as packing proof."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow STOX to select an item photo as packing proof."
+        }
+      ]
     ],
     "experiments": {
       "autolinkingModuleResolution": true,

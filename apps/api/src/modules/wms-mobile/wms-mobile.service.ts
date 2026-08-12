@@ -12,6 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { Queue } from 'bull';
 import {
   IntegrationStatus,
+  MediaAssetKind,
   Prisma,
   UserStatus,
   WmsBasketStatus,
@@ -27,6 +28,7 @@ import {
   WmsInventoryMovementType,
   WmsInventoryUnitStatus,
   WmsLocationKind,
+  WmsPackingProofSource,
   WmsPickReservationStatus,
   WmsReceivingBatchStatus,
   WmsTransferStatus,
@@ -36,6 +38,7 @@ import type { Request } from 'express';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EffectiveAccessService } from '../../common/services/effective-access.service';
+import { MediaAssetsService, type UploadedImageFile } from '../../common/services/media-assets.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
 import { OrdersService } from '../orders/orders.service';
 import { WmsFulfillmentOpsService } from '../wms-fulfillment/wms-fulfillment-ops.service';
@@ -89,6 +92,7 @@ import {
   WmsMobilePackBasketVoidDto,
   WmsMobilePackBasketOrderCompleteDto,
   WmsMobilePackCompleteDto,
+  WmsPackingProofUploadDto,
   WmsMobilePackScanDto,
   WmsMobilePackScopedDto,
   WmsMobilePackVoidDto,
@@ -344,6 +348,7 @@ export class WmsMobileService {
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
     private readonly effectiveAccessService: EffectiveAccessService,
+    private readonly mediaAssetsService: MediaAssetsService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
     private readonly wmsFulfillmentOpsService: WmsFulfillmentOpsService,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
@@ -4370,6 +4375,7 @@ export class WmsMobileService {
     orderId: string,
     body: WmsMobilePackBasketOrderCompleteDto,
     request?: Request,
+    options: { requirePackingProof?: boolean } = {},
   ) {
     const basket = await this.findPackingBasketForAction(user, basketId, body.tenantId, request);
     this.assertDemandPackingBasket(basket);
@@ -4413,6 +4419,10 @@ export class WmsMobileService {
       const scopedPackedCount = this.getPackedBasketUnitCount(scopedOrder);
       if (scopedPackedCount < Math.max(scopedOrder.totalQuantity ?? 0, 0)) {
         throw new BadRequestException(`Order ${scopedOrder.posOrderId} still has units to verify for packing`);
+      }
+
+      if (options.requirePackingProof ?? this.isStoxPackingProofRequired()) {
+        await this.assertPackingProofExists(tx, scopedOrder.id, scopedOrder.posOrderId);
       }
 
       await tx.wmsFulfillmentOrder.update({
@@ -4747,6 +4757,7 @@ export class WmsMobileService {
     id: string,
     body: WmsMobilePackCompleteDto,
     request?: Request,
+    options: { requirePackingProof?: boolean } = {},
   ) {
     const order = await this.findPackingOrderForAction(user, id, body.tenantId, request);
     this.assertPackingTaskInProgress(order);
@@ -4774,6 +4785,10 @@ export class WmsMobileService {
       const scopedPackedCount = this.getPackedReservationCount(scopedOrder);
       if (scopedPackedCount < scopedOrder.totalQuantity) {
         throw new BadRequestException(`Order ${scopedOrder.posOrderId} still has units to verify for packing`);
+      }
+
+      if (options.requirePackingProof ?? this.isStoxPackingProofRequired()) {
+        await this.assertPackingProofExists(tx, scopedOrder.id, scopedOrder.posOrderId);
       }
 
       const basketId = scopedOrder.basket?.id ?? null;
@@ -4829,6 +4844,112 @@ export class WmsMobileService {
     return {
       success: true,
       task: this.mapMobilePickingTask(updatedOrder),
+    };
+  }
+
+  async getPackingProofs(
+    user: BootstrapUser,
+    orderId: string,
+    request?: Request,
+  ) {
+    const order = await this.findPackingOrderByIdForAction(user, orderId, request);
+    const proofs = await this.prisma.wmsPackingProof.findMany({
+      where: { fulfillmentOrderId: order.id },
+      include: {
+        mediaAsset: true,
+        uploadedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    return {
+      orderId: order.id,
+      posOrderId: order.posOrderId,
+      tracking: order.posOrder?.tracking ?? null,
+      proofs: await Promise.all(proofs.map((proof) => this.mapPackingProof(proof))),
+    };
+  }
+
+  async uploadPackingProof(
+    user: BootstrapUser,
+    orderId: string,
+    body: WmsPackingProofUploadDto,
+    file: UploadedImageFile | undefined,
+    request?: Request,
+  ) {
+    const order = await this.findPackingOrderByIdForAction(user, orderId, request);
+    this.assertPackingTaskInProgress(order);
+
+    const userId = user.userId || user.id;
+    if (!userId) {
+      throw new ForbiddenException('Authenticated WMS user is required');
+    }
+
+    const uploadedAsset = await this.mediaAssetsService.uploadPackingProofImage(file, order.tenantId);
+    let proof;
+    try {
+      proof = await this.prisma.wmsPackingProof.create({
+        data: {
+          fulfillmentOrderId: order.id,
+          mediaAssetId: uploadedAsset.assetId,
+          uploadedById: userId,
+          source: (body.source ?? 'FILE') as WmsPackingProofSource,
+        },
+        include: {
+          mediaAsset: true,
+          uploadedBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      });
+    } catch (error) {
+      await this.mediaAssetsService.deleteUnattachedImageAsset(
+        uploadedAsset.assetId,
+        order.tenantId,
+        MediaAssetKind.WMS_PACKING_PROOF_IMAGE,
+      );
+      throw error;
+    }
+
+    try {
+      await this.recordStockActivity(user, request, {
+        tenantId: order.tenantId,
+        actionType: 'PACKING_PROOF_UPLOAD',
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: order.id,
+        storeId: order.storeId,
+        warehouseId: order.warehouseId,
+        metadata: {
+          fulfillmentOrderId: order.id,
+          posOrderId: order.posOrderId,
+          trackingCode: order.posOrder?.tracking ?? null,
+          proofId: proof.id,
+          source: proof.source,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Packing proof ${proof.id} was saved but its activity log failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return {
+      success: true,
+      proof: await this.mapPackingProof(proof),
     };
   }
 
@@ -9409,6 +9530,86 @@ export class WmsMobileService {
     }
 
     return order;
+  }
+
+  private async findPackingOrderByIdForAction(
+    user: BootstrapUser,
+    id: string,
+    request?: Request,
+  ) {
+    const orderReference = await this.prisma.wmsFulfillmentOrder.findUnique({
+      where: { id },
+      select: { tenantId: true },
+    });
+
+    if (!orderReference) {
+      throw new NotFoundException('Pack task was not found');
+    }
+
+    return this.findPackingOrderForAction(user, id, orderReference.tenantId, request);
+  }
+
+  private isStoxPackingProofRequired() {
+    return ['1', 'true', 'yes', 'on'].includes(
+      String(process.env.WMS_STOX_PACKING_PROOF_REQUIRED ?? 'false').trim().toLowerCase(),
+    );
+  }
+
+  private async assertPackingProofExists(
+    tx: Prisma.TransactionClient,
+    fulfillmentOrderId: string,
+    posOrderId: string,
+  ) {
+    const proof = await tx.wmsPackingProof.findFirst({
+      where: { fulfillmentOrderId },
+      select: { id: true },
+    });
+
+    if (!proof) {
+      throw new BadRequestException(`Packing proof is required for order ${posOrderId}`);
+    }
+  }
+
+  private async mapPackingProof(proof: {
+    id: string;
+    source: WmsPackingProofSource;
+    createdAt: Date;
+    mediaAsset: {
+      objectKey: string;
+      contentType: string;
+      byteSize: number;
+      width: number | null;
+      height: number | null;
+      originalFileName: string | null;
+    };
+    uploadedBy: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+    };
+  }) {
+    const uploadedByName = [proof.uploadedBy.firstName, proof.uploadedBy.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    return {
+      id: proof.id,
+      source: proof.source,
+      createdAt: proof.createdAt,
+      imageUrl: await this.mediaAssetsService.createSignedAssetUrl(proof.mediaAsset),
+      contentType: proof.mediaAsset.contentType,
+      byteSize: proof.mediaAsset.byteSize,
+      width: proof.mediaAsset.width,
+      height: proof.mediaAsset.height,
+      originalFileName: proof.mediaAsset.originalFileName,
+      uploadedBy: {
+        id: proof.uploadedBy.id,
+        name: uploadedByName || proof.uploadedBy.email,
+        email: proof.uploadedBy.email,
+      },
+    };
   }
 
   private async findLinkedTaskForUnit(unitId: string, tenantId: string | null) {
