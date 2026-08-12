@@ -155,6 +155,7 @@ export type WmsDispatchTask = {
     } | null;
   } | null;
   history: WmsDispatchHistoryEntry[];
+  packingProofs: WmsDispatchPackingProof[];
   unitRecords: Array<{
     id: string;
     code: string;
@@ -189,6 +190,23 @@ export type WmsDispatchTask = {
     packed: number;
     shortage: number;
   }>;
+};
+
+export type WmsDispatchPackingProof = {
+  id: string;
+  source: 'CAMERA' | 'FILE' | 'CLIPBOARD';
+  createdAt: string;
+  imageUrl: string | null;
+  contentType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  originalFileName: string | null;
+  uploadedBy: {
+    id: string;
+    name: string;
+    email: string;
+  };
 };
 
 export type WmsDispatchHistoryEntry = {
