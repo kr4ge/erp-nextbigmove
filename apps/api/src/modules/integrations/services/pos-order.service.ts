@@ -1237,34 +1237,6 @@ export class PosOrderService {
       }
     }
 
-    // Backfill forUpsell for existing orders in this store (tenant scope)
-    if (store?.shopId && initialValueOffer !== null) {
-      await this.prisma.$executeRaw`
-        UPDATE "pos_orders"
-        SET "forUpsell" = CASE
-          WHEN "cod" IS NULL THEN false
-          WHEN ("upsellBreakdown"->>'original_amount') ~ '^-?\d+(\.\d+)?$'
-            AND ("upsellBreakdown"->>'original_amount')::numeric > 0
-            AND ("upsellBreakdown"->>'original_amount')::numeric <= ${initialValueOffer}
-            THEN true
-          WHEN ("upsellBreakdown"->>'original_amount') ~ '^-?\d+(\.\d+)?$'
-            AND ("upsellBreakdown"->>'original_amount')::numeric > 0
-            THEN "forUpsell"
-          WHEN "cod" <= ${initialValueOffer} THEN true
-          ELSE "forUpsell"
-        END
-        WHERE "tenantId" = ${tenantId}::uuid
-          AND "shopId" = ${store.shopId}
-      `;
-    } else if (store?.shopId) {
-      await this.prisma.$executeRaw`
-        UPDATE "pos_orders"
-        SET "forUpsell" = false
-        WHERE "tenantId" = ${tenantId}::uuid
-          AND "shopId" = ${store.shopId}
-      `;
-    }
-
     const fulfillmentSyncCandidates = Array.from(
       new Map(
         [...fulfillmentCandidates, ...canceledFulfillmentCandidates]

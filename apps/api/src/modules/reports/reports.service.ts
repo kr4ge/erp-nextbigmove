@@ -132,13 +132,21 @@ export class ReportsService {
         COALESCE(SUM(CASE WHEN "status" = 5 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "returnedRevenue",
         COALESCE(SUM(CASE WHEN "status" = 11 THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "restockingRevenue",
         COALESCE(SUM(CASE WHEN "status" IN (${Prisma.join(this.inProcessStatuses)}) THEN COALESCE("cod", 0)::double precision ELSE 0 END), 0)::double precision AS "inProcessRevenue"
-      FROM "pos_orders"
-      WHERE "tenantId" = ${tenantId}::uuid
-        AND "dateLocal" >= ${startDate}
-        AND "dateLocal" <= ${endDate}
-        AND "status" IS DISTINCT FROM 7
-      GROUP BY "shopId"
-      ORDER BY COUNT(*) DESC, "shopId" ASC
+      FROM "pos_orders" po
+      WHERE po."tenantId" = ${tenantId}::uuid
+        AND po."dateLocal" >= ${startDate}
+        AND po."dateLocal" <= ${endDate}
+        AND po."status" IS DISTINCT FROM 7
+        AND EXISTS (
+          SELECT 1
+          FROM "pos_stores" ps
+          WHERE ps."tenantId" = po."tenantId"
+            AND ps."shopId" = po."shopId"
+            AND ps."status" = 'ACTIVE'
+            AND COALESCE(ps."enabled", true) = true
+        )
+      GROUP BY po."shopId"
+      ORDER BY COUNT(*) DESC, po."shopId" ASC
     `);
 
     const shopIds = rows.map((row) => row.shopId).filter((row) => row.length > 0);
@@ -147,6 +155,8 @@ export class ReportsService {
           where: {
             tenantId,
             shopId: { in: shopIds },
+            status: 'ACTIVE',
+            OR: [{ enabled: true }, { enabled: null }],
           },
           select: {
             shopId: true,

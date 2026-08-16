@@ -71,6 +71,14 @@ export class WmsMobilePackScanDto extends WmsMobilePackScopedDto {
 
 export class WmsMobilePackBasketOrderCompleteDto extends WmsMobilePackScopedDto {}
 
+export const WMS_PACKING_PROOF_SOURCES = ['CAMERA', 'FILE', 'CLIPBOARD'] as const;
+
+export class WmsPackingProofUploadDto {
+  @IsOptional()
+  @IsIn(WMS_PACKING_PROOF_SOURCES)
+  source?: (typeof WMS_PACKING_PROOF_SOURCES)[number];
+}
+
 export class WmsMobilePackCompleteDto extends WmsMobilePackScopedDto {
   @IsString()
   @MinLength(1)

@@ -18,10 +18,10 @@ import {
   WmsProductProfileStatus,
   WmsTransferStatus,
 } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
+import { WmsFulfillmentSyncService } from '../wms-fulfillment/wms-fulfillment-sync.service';
 import { CreateWmsInventoryAdjustmentDto } from './dto/create-wms-inventory-adjustment.dto';
 import { CreateWmsInventoryStoreTransferDto } from './dto/create-wms-inventory-store-transfer.dto';
 import { CreateWmsInventoryTransferDto } from './dto/create-wms-inventory-transfer.dto';
@@ -30,6 +30,7 @@ import { GetWmsInventoryStoreTransferOptionsDto } from './dto/get-wms-inventory-
 import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.dto';
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
 import { VoidWmsInventoryUnitDto } from './dto/void-wms-inventory-unit.dto';
+import { WmsInventoryCogsService } from './wms-inventory-cogs.service';
 
 const UNIT_STATUS_ORDER: WmsInventoryUnitStatus[] = [
   WmsInventoryUnitStatus.RECEIVED,
@@ -290,6 +291,8 @@ export class WmsInventoryService {
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
+    private readonly wmsInventoryCogsService: WmsInventoryCogsService,
+    private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
   ) {}
 
   async getOverview(query: GetWmsInventoryOverviewDto) {
@@ -1107,16 +1110,22 @@ export class WmsInventoryService {
         : Promise.resolve(null),
     ]);
 
+    const isSameStoreTarget = Boolean(
+      sourceProfile
+      && activeTargetStoreId
+      && sourceProfile.storeId === activeTargetStoreId,
+    );
     const mappedProducts = products
       .filter((profile) => (
         this.isStockableVariation(profile.posProduct.productId, profile.posProduct.variationId)
         && this.isStockableVariation(profile.productId, profile.variationId)
+        && !(isSameStoreTarget && profile.variationId === sourceProfile?.variationId)
       ))
       .map((profile) => this.mapStoreTransferProductOption(profile));
     const suggestion = this.resolveStoreTransferSuggestion({
       sourceProfile,
       products: mappedProducts,
-      savedEquivalence,
+      savedEquivalence: isSameStoreTarget ? null : savedEquivalence,
     });
     const sortedProducts = suggestion
       ? [
@@ -1269,10 +1278,16 @@ export class WmsInventoryService {
     const sourceVariationId = sourceUnit?.variationId ?? null;
     const sourceProfileId = sourceUnit?.productProfileId ?? null;
 
-    if (sourceUnit && targetStore && sourceStoreId === targetStore.id) {
+    if (
+      sourceUnit
+      && targetStore
+      && targetProfile
+      && sourceStoreId === targetStore.id
+      && sourceVariationId === targetProfile.variationId
+    ) {
       blockers.push({
-        code: 'SAME_STORE',
-        message: 'Target store must be different from the source store',
+        code: 'SAME_VARIANT',
+        message: 'Select a different target variant when changing stock within the same store',
       });
     }
 
@@ -1304,7 +1319,7 @@ export class WmsInventoryService {
     if (invalidStatusUnits.length) {
       blockers.push({
         code: 'INVALID_UNIT_STATUS',
-        message: `${invalidStatusUnits.length} selected unit${invalidStatusUnits.length === 1 ? '' : 's'} cannot be transferred from the current status`,
+        message: `${invalidStatusUnits.length} selected unit${invalidStatusUnits.length === 1 ? '' : 's'} cannot change variant from the current status`,
       });
     }
 
@@ -1312,7 +1327,7 @@ export class WmsInventoryService {
     if (reservedUnits.length) {
       blockers.push({
         code: 'RESERVED_UNITS',
-        message: `${reservedUnits.length} selected unit${reservedUnits.length === 1 ? '' : 's'} already reserved for picking`,
+        message: `${reservedUnits.length} selected unit${reservedUnits.length === 1 ? '' : 's'} already reserved for picking and cannot change variant`,
       });
     }
 
@@ -1396,7 +1411,7 @@ export class WmsInventoryService {
       warnings.push({
         code: 'TRANSFER_ALL_AVAILABLE',
         severity: 'critical',
-        message: `This transfers all ${sourceAvailableUnits} available unit${sourceAvailableUnits === 1 ? '' : 's'} from the source store for this product.`,
+        message: `This changes all ${sourceAvailableUnits} available unit${sourceAvailableUnits === 1 ? '' : 's'} from the source product variant.`,
       });
     }
 
@@ -1404,7 +1419,7 @@ export class WmsInventoryService {
       warnings.push({
         code: 'DEMAND_EXCEEDS_REMAINING',
         severity: 'critical',
-        message: `After transfer, ${remainingAvailableUnits} available unit${remainingAvailableUnits === 1 ? '' : 's'} will remain, below the active demand of ${activeDemandUnits}.`,
+        message: `After this change, ${remainingAvailableUnits} available unit${remainingAvailableUnits === 1 ? '' : 's'} will remain, below the active demand of ${activeDemandUnits}.`,
       });
     }
 
@@ -1581,9 +1596,10 @@ export class WmsInventoryService {
       const sourceStoreId = units[0].storeId;
       const sourceVariationId = units[0].variationId;
       const sourceProductProfileId = units[0].productProfileId;
+      const isSameStoreChange = sourceStoreId === targetStore.id;
 
-      if (sourceStoreId === targetStore.id) {
-        throw new BadRequestException('Target store must be different from the source store');
+      if (isSameStoreChange && sourceVariationId === targetProfile.variationId) {
+        throw new BadRequestException('Select a different target variant when changing stock within the same store');
       }
 
       units.forEach((unit) => {
@@ -1600,11 +1616,11 @@ export class WmsInventoryService {
         }
 
         if (!STORE_TRANSFERABLE_UNIT_STATUSES.has(unit.status)) {
-          throw new BadRequestException(`Unit ${unit.code} cannot be transferred to another store from status ${unit.status}`);
+          throw new BadRequestException(`Unit ${unit.code} cannot change variant from status ${unit.status}`);
         }
 
         if (unit.pickReservations.length > 0) {
-          throw new BadRequestException(`Unit ${unit.code} is already reserved and cannot be transferred to another store`);
+          throw new BadRequestException(`Unit ${unit.code} is already reserved and cannot change variant`);
         }
       });
 
@@ -1640,39 +1656,41 @@ export class WmsInventoryService {
         })),
       });
 
-      await tx.wmsProductProfileEquivalence.upsert({
-        where: {
-          tenantId_sourceProfileId_targetStoreId: {
+      if (!isSameStoreChange) {
+        await tx.wmsProductProfileEquivalence.upsert({
+          where: {
+            tenantId_sourceProfileId_targetStoreId: {
+              tenantId: scope.activeTenantId!,
+              sourceProfileId: sourceProductProfileId,
+              targetStoreId: targetStore.id,
+            },
+          },
+          create: {
             tenantId: scope.activeTenantId!,
-            sourceProfileId: sourceProductProfileId,
+            sourceStoreId,
             targetStoreId: targetStore.id,
+            sourceProfileId: sourceProductProfileId,
+            targetProfileId: targetProfile.id,
+            sourceVariationId,
+            targetVariationId: targetProfile.variationId,
+            matchSource: 'TRANSFER',
+            transferCount: 1,
+            lastTransferAt: now,
+            createdById: actorId,
+            updatedById: actorId,
           },
-        },
-        create: {
-          tenantId: scope.activeTenantId!,
-          sourceStoreId,
-          targetStoreId: targetStore.id,
-          sourceProfileId: sourceProductProfileId,
-          targetProfileId: targetProfile.id,
-          sourceVariationId,
-          targetVariationId: targetProfile.variationId,
-          matchSource: 'TRANSFER',
-          transferCount: 1,
-          lastTransferAt: now,
-          createdById: actorId,
-          updatedById: actorId,
-        },
-        update: {
-          targetProfileId: targetProfile.id,
-          targetVariationId: targetProfile.variationId,
-          matchSource: 'TRANSFER',
-          transferCount: {
-            increment: 1,
+          update: {
+            targetProfileId: targetProfile.id,
+            targetVariationId: targetProfile.variationId,
+            matchSource: 'TRANSFER',
+            transferCount: {
+              increment: 1,
+            },
+            lastTransferAt: now,
+            updatedById: actorId,
           },
-          lastTransferAt: now,
-          updatedById: actorId,
-        },
-      });
+        });
+      }
 
       await tx.wmsInventoryMovement.createMany({
         data: units.map((unit) => ({
@@ -1705,7 +1723,10 @@ export class WmsInventoryService {
           productProfileId: targetProfile.id,
           productId: targetProfile.productId,
           variationId: targetProfile.variationId,
-          posWarehouseRef: targetProfile.posWarehouseRef ?? null,
+          // A same-store variant correction is physical WMS stock, not stock received
+          // for one specific POS warehouse. Keep it eligible for orders from any POS
+          // warehouse mapped to this store while retaining the physical WMS scope.
+          posWarehouseRef: isSameStoreChange ? null : targetProfile.posWarehouseRef ?? null,
           ...(actorId ? { updatedById: actorId } : {}),
         },
       });
@@ -1754,8 +1775,28 @@ export class WmsInventoryService {
       return {
         transfer: storeTransfer,
         units: updatedUnits,
+        sourceVariationId,
       };
     });
+
+    const fulfillmentRefreshScopes = new Map<string, Set<string>>();
+    const addRefreshScope = (storeId: string, variationId: string) => {
+      const variationIds = fulfillmentRefreshScopes.get(storeId) ?? new Set<string>();
+      variationIds.add(variationId);
+      fulfillmentRefreshScopes.set(storeId, variationIds);
+    };
+
+    addRefreshScope(result.transfer.fromStoreId, result.sourceVariationId);
+    addRefreshScope(result.transfer.toStoreId, targetProfile.variationId);
+
+    for (const [storeId, variationIds] of fulfillmentRefreshScopes) {
+      await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
+        tenantId: scope.activeTenantId,
+        storeId,
+        variationIds: Array.from(variationIds),
+        limit: null,
+      });
+    }
 
     await this.recordInventoryActivity({
       tenantId: scope.activeTenantId,
@@ -1767,7 +1808,10 @@ export class WmsInventoryService {
         fromStoreId: result.transfer.fromStoreId,
         toStoreId: result.transfer.toStoreId,
         targetProfileId: result.transfer.targetProfileId,
+        sourceVariationId: result.sourceVariationId,
+        targetVariationId: targetProfile.variationId,
         unitCount: result.units.length,
+        changeScope: result.transfer.fromStoreId === result.transfer.toStoreId ? 'SAME_STORE' : 'CROSS_STORE',
       },
     });
 
@@ -2961,129 +3005,7 @@ export class WmsInventoryService {
       posOrderId: string;
     }>;
   }) {
-    const fulfillmentOrderIds = Array.from(new Set(params.fulfillmentOrderIds ?? []));
-    const refs = Array.from(
-      new Map(
-        (params.posOrderRefs ?? [])
-          .filter((ref) => ref.shopId && ref.posOrderId)
-          .map((ref) => [`${ref.shopId}::${ref.posOrderId}`, ref] as const),
-      ).values(),
-    );
-
-    if (fulfillmentOrderIds.length === 0 && !params.tenantId) {
-      return {
-        updatedOrders: 0,
-        skippedOrders: 0,
-      };
-    }
-
-    const orders = await this.prisma.wmsFulfillmentOrder.findMany({
-      where: {
-        ...(fulfillmentOrderIds.length
-          ? { id: { in: fulfillmentOrderIds } }
-          : {
-              ...(params.tenantId ? { tenantId: params.tenantId } : {}),
-              ...(params.storeId ? { storeId: params.storeId } : {}),
-              ...(refs.length > 0
-                ? {
-                    OR: refs.map((ref) => ({
-                      shopId: ref.shopId,
-                      posOrderId: ref.posOrderId,
-                    })),
-                  }
-                : {}),
-            }),
-      },
-      select: {
-        id: true,
-        assignmentMode: true,
-        posOrderDbId: true,
-        totalQuantity: true,
-        reservations: {
-          where: {
-            status: {
-              in: [WmsPickReservationStatus.RESERVED, WmsPickReservationStatus.PICKED],
-            },
-          },
-          select: {
-            inventoryUnit: {
-              select: {
-                unitCost: true,
-              },
-            },
-          },
-        },
-        basketUnits: {
-          where: {
-            OR: [
-              {
-                status: {
-                  in: [WmsBasketUnitStatus.PICKED, WmsBasketUnitStatus.PACKED],
-                },
-              },
-              {
-                status: WmsBasketUnitStatus.REMOVED,
-                packedAt: {
-                  not: null,
-                },
-              },
-            ],
-          },
-          select: {
-            inventoryUnit: {
-              select: {
-                unitCost: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    let updatedOrders = 0;
-    let skippedOrders = 0;
-
-    for (const order of orders) {
-      const matchedUnits = order.assignmentMode === 'BASKET_DEMAND'
-        ? order.basketUnits
-        : order.reservations;
-
-      if (matchedUnits.length === 0) {
-        continue;
-      }
-
-      if (order.totalQuantity > 0 && matchedUnits.length < order.totalQuantity) {
-        skippedOrders += 1;
-        continue;
-      }
-
-      const hasMissingUnitCost = matchedUnits.some(
-        (matchedUnit) => matchedUnit.inventoryUnit.unitCost === null,
-      );
-      if (hasMissingUnitCost) {
-        skippedOrders += 1;
-        continue;
-      }
-
-      const actualCogs = matchedUnits.reduce(
-        (sum, matchedUnit) => sum + Number(matchedUnit.inventoryUnit.unitCost ?? 0),
-        0,
-      );
-
-      await this.prisma.posOrder.update({
-        where: { id: order.posOrderDbId },
-        data: {
-          cogs: new Decimal(actualCogs.toFixed(2)),
-        },
-      });
-
-      updatedOrders += 1;
-    }
-
-    return {
-      updatedOrders,
-      skippedOrders,
-    };
+    return this.wmsInventoryCogsService.syncPosOrderCogsFromMatchedInventoryUnits(params);
   }
 
   async syncPackedUnitsToDispatchedForPosOrders(params: {

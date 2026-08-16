@@ -639,6 +639,7 @@ export default function UndeliverablesPage() {
         isLoading={isLoading}
         serverTime={data?.server_time ?? null}
         canViewAll={canViewAllUndeliverables}
+        canViewRemarkedAt={canAssignUndeliverables}
         canWriteRemarks={canWriteUndeliverableRemarks}
         failedAtOrder={failedAtOrder}
         remarkOptions={remarkOptions}
@@ -654,6 +655,7 @@ export default function UndeliverablesPage() {
 
       <UndeliverableTrackingPanel
         row={trackingRow}
+        canViewRemarkedAt={canAssignUndeliverables}
         onClose={() => setTrackingRow(null)}
       />
 

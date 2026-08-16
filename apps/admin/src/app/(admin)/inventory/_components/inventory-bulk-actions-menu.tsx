@@ -122,7 +122,7 @@ export function InventoryBulkActionsMenu({
             >
               <MenuItem
                 icon={<Shuffle className="h-3.5 w-3.5" />}
-                label="Transfer to store"
+                label="Change variant"
                 disabled={!canTransfer}
                 hint={transferDisabledReason ?? null}
                 onSelect={() => {

@@ -20,6 +20,10 @@ export default Joi.object({
   REDIS_PORT: Joi.number().default(6379),
   REDIS_PASSWORD: Joi.string().allow('', null),
 
+  // Analytics load protection
+  CACHE_TTL_SECONDS: Joi.number().integer().min(1).default(60),
+  ANALYTICS_MAX_CONCURRENT_PER_TENANT: Joi.number().integer().min(1).default(2),
+
   // Rate limiting
   THROTTLE_TTL: Joi.number().default(60000),
   THROTTLE_LIMIT: Joi.number().default(100),

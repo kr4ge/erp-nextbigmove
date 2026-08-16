@@ -557,7 +557,7 @@ export function FulfillmentQueueTable({
                         <div>
                           <p className="text-sm font-semibold text-primary">Recommended donor orders</p>
                           <p className="mt-1 text-[13px] text-[#667a88]">
-                            Select enough ready orders to cover {priorityPreview.summary.targetShortage} unit{priorityPreview.summary.targetShortage === 1 ? '' : 's'}.
+                            Select enough unclaimed ready or partial orders to cover {priorityPreview.summary.targetShortage} unit{priorityPreview.summary.targetShortage === 1 ? '' : 's'}.
                           </p>
                         </div>
                         <button
@@ -596,7 +596,9 @@ export function FulfillmentQueueTable({
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <p className="text-sm font-semibold text-primary">Order #{donor.posOrderId}</p>
+                                  <p className="text-sm font-semibold text-primary">
+                                    Order #{donor.posOrderId} · {donor.statusLabel}
+                                  </p>
                                   <p className="text-[12px] font-semibold text-[#4d6677]">
                                     Suggested {donor.suggestedGiveQty} / Releasable {donor.releasableQty}
                                   </p>
@@ -667,7 +669,7 @@ export function FulfillmentQueueTable({
                       <p className="mt-1 text-[13px] text-[#667a88]">
                         {selectedTask.priority?.isPrioritized
                           ? 'This order already has priority. Load the donor list to review or release it.'
-                          : 'Load ready donor orders first, then choose which ones should give up their soft allocation.'}
+                          : 'Load unclaimed ready or partial donor orders, then choose which ones should give up their soft allocation.'}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">

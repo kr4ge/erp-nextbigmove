@@ -40,6 +40,22 @@ export type SalesProductRowItem = {
   };
 };
 
+export type SalesProductsTotalRow = {
+  revenue: number;
+  grossSales: number;
+  cogs: number;
+  aov: number;
+  cpp: number;
+  processedCpp: number;
+  adSpend: number;
+  arPct: number;
+  rtsPct: number;
+  profitEfficiency: number;
+  contributionMargin: number;
+  cmRtsForecast: number;
+  netMargin: number;
+};
+
 type AnalyticsSalesProductsTableProps = {
   isLoading: boolean;
   productStart: number;
@@ -55,6 +71,7 @@ type AnalyticsSalesProductsTableProps = {
   rtsForecastSafe: number;
   rows: SalesProductRowItem[];
   sourceCount: number;
+  totals?: SalesProductsTotalRow | null;
   renderSortLabel: (label: ReactNode, key: SalesProductsSortKey) => ReactNode;
 };
 
@@ -105,6 +122,7 @@ export function AnalyticsSalesProductsTable({
   rtsForecastSafe,
   rows,
   sourceCount,
+  totals,
   renderSortLabel,
 }: AnalyticsSalesProductsTableProps) {
   return (
@@ -221,6 +239,29 @@ export function AnalyticsSalesProductsTable({
               <AnalyticsSalesProductsTableEmptyRow colSpan={15} message="No products found for this range." />
             ) : null}
           </tbody>
+          {!isLoading && sourceCount > 0 && totals ? (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-100 dark:border-border dark:bg-background-secondary">
+              <tr className="font-semibold text-slate-900 dark:text-foreground">
+                <td className="w-16 min-w-[4rem] max-w-[4rem] bg-slate-100 px-3 py-3 dark:bg-background-secondary md:sticky md:left-0 md:z-10 sm:px-4 lg:px-6" />
+                <td className="bg-slate-100 px-3 py-3 text-sm whitespace-nowrap dark:bg-background-secondary md:sticky md:left-16 md:z-10 sm:px-4 lg:px-6">
+                  Total
+                </td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.revenue, 'currency')}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.grossSales, 'number', 0)}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.cogs, 'currency')}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.aov, 'currency')}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.cpp, 'currency')}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.processedCpp, 'currency')}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.adSpend, 'currency')}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.arPct, 'percent', 1)}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.rtsPct, 'percent', 1)}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.profitEfficiency, 'percent', 1)}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.contributionMargin, 'currency')}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.cmRtsForecast, 'currency')}</td>
+                <td className="px-3 py-3 text-center text-sm whitespace-nowrap sm:px-4 lg:px-6">{formatMetricValue(totals.netMargin, 'currency')}</td>
+              </tr>
+            </tfoot>
+          ) : null}
         </table>
       </div>
     </AnalyticsTableShell>

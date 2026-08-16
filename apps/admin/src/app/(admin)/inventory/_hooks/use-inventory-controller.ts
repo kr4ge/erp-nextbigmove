@@ -99,7 +99,7 @@ export function useInventoryController() {
     open: false,
     unit: null,
   });
-  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
+  const [selectedUnitsById, setSelectedUnitsById] = useState<Record<string, WmsInventoryUnitRecord>>({});
   const [storeTransferModal, setStoreTransferModal] = useState<StoreTransferModalState>({
     open: false,
     targetStoreId: '',
@@ -231,7 +231,7 @@ export function useInventoryController() {
 
   useEffect(() => {
     setCurrentPage(1);
-    setSelectedUnitIds([]);
+    setSelectedUnitsById({});
   }, [
     selectedTenantId,
     selectedStoreId,
@@ -260,16 +260,25 @@ export function useInventoryController() {
     }
   }, [currentPage, totalPages]);
 
-  useEffect(() => {
-    setSelectedUnitIds([]);
-  }, [currentPage]);
-
   const paginatedUnits = useMemo(() => overviewQuery.data?.units ?? [], [overviewQuery.data?.units]);
+  const selectedUnitIds = useMemo(() => Object.keys(selectedUnitsById), [selectedUnitsById]);
+  const selectedUnits = useMemo(() => Object.values(selectedUnitsById), [selectedUnitsById]);
 
-  const selectedUnits = useMemo(() => {
-    const selectedIds = new Set(selectedUnitIds);
-    return paginatedUnits.filter((unit) => selectedIds.has(unit.id));
-  }, [paginatedUnits, selectedUnitIds]);
+  useEffect(() => {
+    setSelectedUnitsById((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      for (const unit of paginatedUnits) {
+        if (current[unit.id] && current[unit.id] !== unit) {
+          next[unit.id] = unit;
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [paginatedUnits]);
   const selectedBulkAdjustSourceUnitId = selectedUnits[0]?.id ?? null;
   const selectedSourceProfileId = selectedUnits.length > 0
     ? selectedUnits[0]?.productProfileId
@@ -412,7 +421,7 @@ export function useInventoryController() {
     mutationFn: (input: CreateWmsInventoryStoreTransferInput) =>
       createWmsInventoryStoreTransfer(input, selectedTenantId),
     onSuccess: async () => {
-      setSelectedUnitIds([]);
+      setSelectedUnitsById({});
       setStoreTransferModal({
         open: false,
         targetStoreId: '',
@@ -460,7 +469,15 @@ export function useInventoryController() {
     mutationFn: (input: VoidWmsInventoryUnitInput) =>
       voidWmsInventoryUnit(input, selectedTenantId),
     onSuccess: async (response) => {
-      setSelectedUnitIds((current) => current.filter((unitId) => unitId !== response.unit.id));
+      setSelectedUnitsById((current) => {
+        if (!current[response.unit.id]) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[response.unit.id];
+        return next;
+      });
       setUnitModal((current) => {
         if (!current.open || !current.unit || current.unit.id !== response.unit.id) {
           return current;
@@ -515,31 +532,41 @@ export function useInventoryController() {
   }
 
   function toggleUnitSelection(unitId: string) {
-    setSelectedUnitIds((current) =>
-      current.includes(unitId)
-        ? current.filter((id) => id !== unitId)
-        : [...current, unitId],
-    );
+    setSelectedUnitsById((current) => {
+      if (current[unitId]) {
+        const next = { ...current };
+        delete next[unitId];
+        return next;
+      }
+
+      const unit = paginatedUnits.find((candidate) => candidate.id === unitId);
+      return unit ? { ...current, [unit.id]: unit } : current;
+    });
   }
 
   function toggleVisibleUnitSelection() {
-    const visibleIds = paginatedUnits.map((unit) => unit.id);
-    const visibleIdSet = new Set(visibleIds);
-    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedUnitIds.includes(id));
+    setSelectedUnitsById((current) => {
+      const allVisibleSelected = paginatedUnits.length > 0
+        && paginatedUnits.every((unit) => Boolean(current[unit.id]));
 
-    setSelectedUnitIds((current) => {
       if (allVisibleSelected) {
-        return current.filter((id) => !visibleIdSet.has(id));
+        const next = { ...current };
+        paginatedUnits.forEach((unit) => delete next[unit.id]);
+        return next;
       }
 
-      return Array.from(new Set([...current, ...visibleIds]));
+      const next = { ...current };
+      paginatedUnits.forEach((unit) => {
+        next[unit.id] = unit;
+      });
+      return next;
     });
   }
 
   function openStoreTransferModal() {
     setStoreTransferModal({
       open: true,
-      targetStoreId: '',
+      targetStoreId: selectedUnits[0]?.store.id ?? '',
       targetProfileId: '',
       notes: '',
       errorMessage: null,
@@ -656,7 +683,7 @@ export function useInventoryController() {
     voidUnit,
     toggleUnitSelection,
     toggleVisibleUnitSelection,
-    clearUnitSelection: () => setSelectedUnitIds([]),
+    clearUnitSelection: () => setSelectedUnitsById({}),
     openStoreTransferModal,
     closeStoreTransferModal,
     openBulkAdjustModal,

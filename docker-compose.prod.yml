@@ -1,3 +1,9 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   redis:
     image: redis:7-alpine
@@ -8,6 +14,7 @@ services:
       - redis_data:/data
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -28,6 +35,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
+      ANALYTICS_MAX_CONCURRENT_PER_TENANT: ${ANALYTICS_MAX_CONCURRENT_PER_TENANT:-2}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
@@ -45,7 +54,9 @@ services:
       OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS: ${OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS}
       OBJECT_STORAGE_PAYMENT_PROOF_MAX_FILE_MB: ${OBJECT_STORAGE_PAYMENT_PROOF_MAX_FILE_MB}
       OBJECT_STORAGE_UNDELIVERABLE_PROOF_MAX_FILE_MB: ${OBJECT_STORAGE_UNDELIVERABLE_PROOF_MAX_FILE_MB:-30}
+      OBJECT_STORAGE_PACKING_PROOF_MAX_FILE_MB: ${OBJECT_STORAGE_PACKING_PROOF_MAX_FILE_MB:-30}
       OBJECT_STORAGE_STOX_APK_MAX_FILE_MB: ${OBJECT_STORAGE_STOX_APK_MAX_FILE_MB}
+      WMS_STOX_PACKING_PROOF_REQUIRED: ${WMS_STOX_PACKING_PROOF_REQUIRED:-false}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       SEED_ADMIN_FIRST_NAME: ${SEED_ADMIN_FIRST_NAME}
@@ -56,6 +67,13 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/v1').then((response) => process.exit(response.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
     networks:
       - erp-network
 
@@ -74,6 +92,7 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - erp-network
 
@@ -92,6 +111,7 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - erp-network
 

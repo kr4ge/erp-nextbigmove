@@ -92,6 +92,17 @@ export type SalesOverviewResponse = {
     unconfirmed: number;
     canceled: number;
   };
+  statusDistribution: {
+    total: number;
+    delivered: number;
+    shipped: number;
+    waiting_pickup: number;
+    rts: number;
+    restocking: number;
+    confirmed: number;
+    unconfirmed: number;
+    canceled: number;
+  };
   prevCounts: {
     purchases: number;
     delivered: number;
@@ -166,12 +177,13 @@ export const salesMetricDefinitions: Array<{
 }> = [
   { key: 'revenue', label: 'Revenue (₱)', format: 'currency', countKey: 'purchases', countLabel: 'Orders' },
   { key: 'unconfirmed', label: 'New (₱)', format: 'currency', countKey: 'unconfirmed', countLabel: 'Orders' },
-  { key: 'confirmed', label: 'Confirmed (₱)', format: 'currency', countKey: 'confirmed', countLabel: 'Orders' },
-  { key: 'canceled', label: 'Canceled (₱)', format: 'currency', countKey: 'canceled', countLabel: 'Orders' },
   { key: 'restocking_cod', label: 'Restocking (₱)', format: 'currency', countKey: 'restocking', countLabel: 'Orders' },
+  { key: 'confirmed', label: 'Confirmed (₱)', format: 'currency', countKey: 'confirmed', countLabel: 'Orders' },
   { key: 'waiting_pickup', label: 'Wait for Pickup (₱)', format: 'currency', countKey: 'waiting_pickup', countLabel: 'Waiting' },
+  { key: 'canceled', label: 'Canceled (₱)', format: 'currency', countKey: 'canceled', countLabel: 'Orders' },
   { key: 'shipped', label: 'Shipped (₱)', format: 'currency', countKey: 'shipped', countLabel: 'Shipped' },
-  { key: 'ad_spend', label: 'Ad Spend (₱)', format: 'currency' },
+  { key: 'rts', label: 'RTS (₱)', format: 'currency', countKey: 'rts', countLabel: 'Orders' },
+  { key: 'delivered', label: 'Delivered (₱)', format: 'currency', countKey: 'delivered', countLabel: 'Orders' },
 ] as const;
 
 export const salesSecondaryMetricDefinitions: Array<{
@@ -180,14 +192,13 @@ export const salesSecondaryMetricDefinitions: Array<{
   format: 'currency' | 'number' | 'percent';
 }> = [
   { key: 'cm_rts_forecast', label: 'CM (RTS 20%)', format: 'currency' },
+  { key: 'ad_spend', label: 'Ad Spend (₱)', format: 'currency' },
   { key: 'ar_pct', label: 'AR (%)', format: 'percent' },
   { key: 'aov', label: 'AOV (₱)', format: 'currency' },
   { key: 'cancellation_rate_pct', label: 'Cancellation Rate (%)', format: 'percent' },
   { key: 'cpp', label: 'CPP (₱)', format: 'currency' },
   { key: 'processed_cpp', label: 'Processed CPP (₱)', format: 'currency' },
   { key: 'rts_pct', label: 'RTS (%)', format: 'percent' },
-  { key: 'delivered', label: 'Delivered (₱)', format: 'currency' },
-  { key: 'rts', label: 'RTS (₱)', format: 'currency' },
   { key: 'conversion_rate', label: 'Conversion Rate (%)', format: 'percent' },
   { key: 'profit_efficiency', label: 'Profit Efficiency (%)', format: 'percent' },
   { key: 'contribution_margin', label: 'Contribution Margin (₱)', format: 'currency' },

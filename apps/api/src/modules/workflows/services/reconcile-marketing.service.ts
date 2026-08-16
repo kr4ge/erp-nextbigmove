@@ -34,6 +34,7 @@ type PosAggregateBucket = {
   deletedCount: number;
   restockingCount: number;
   abandonedCount: number;
+  currentAbandonedCount: number;
   waitingPickupCount: number;
   shippedCount: number;
   deliveredCount: number;
@@ -42,6 +43,7 @@ type PosAggregateBucket = {
   confirmedCodPos: number;
   unconfirmedCodPos: number;
   abandonedCodPos: number;
+  currentAbandonedCodPos: number;
   canceledCodPos: number;
   restockingCodPos: number;
   rtsCodPos: number;
@@ -62,6 +64,7 @@ type PosAggregateBucket = {
   repurchaseDeletedCount: number;
   repurchaseRestockingCount: number;
   repurchaseAbandonedCount: number;
+  repurchaseCurrentAbandonedCount: number;
   repurchaseWaitingPickupCount: number;
   repurchaseShippedCount: number;
   repurchaseDeliveredCount: number;
@@ -70,6 +73,7 @@ type PosAggregateBucket = {
   repurchaseConfirmedCodPos: number;
   repurchaseUnconfirmedCodPos: number;
   repurchaseAbandonedCodPos: number;
+  repurchaseCurrentAbandonedCodPos: number;
   repurchaseCanceledCodPos: number;
   repurchaseRestockingCodPos: number;
   repurchaseRtsCodPos: number;
@@ -114,6 +118,7 @@ export class ReconcileMarketingService {
       deletedCount: 0,
       restockingCount: 0,
       abandonedCount: 0,
+      currentAbandonedCount: 0,
       waitingPickupCount: 0,
       shippedCount: 0,
       deliveredCount: 0,
@@ -122,6 +127,7 @@ export class ReconcileMarketingService {
       confirmedCodPos: 0,
       unconfirmedCodPos: 0,
       abandonedCodPos: 0,
+      currentAbandonedCodPos: 0,
       canceledCodPos: 0,
       restockingCodPos: 0,
       rtsCodPos: 0,
@@ -142,6 +148,7 @@ export class ReconcileMarketingService {
       repurchaseDeletedCount: 0,
       repurchaseRestockingCount: 0,
       repurchaseAbandonedCount: 0,
+      repurchaseCurrentAbandonedCount: 0,
       repurchaseWaitingPickupCount: 0,
       repurchaseShippedCount: 0,
       repurchaseDeliveredCount: 0,
@@ -150,6 +157,7 @@ export class ReconcileMarketingService {
       repurchaseConfirmedCodPos: 0,
       repurchaseUnconfirmedCodPos: 0,
       repurchaseAbandonedCodPos: 0,
+      repurchaseCurrentAbandonedCodPos: 0,
       repurchaseCanceledCodPos: 0,
       repurchaseRestockingCodPos: 0,
       repurchaseRtsCodPos: 0,
@@ -165,8 +173,9 @@ export class ReconcileMarketingService {
     const codVal = parseFloat(order.cod ?? '0') || 0;
     const cogsVal = parseFloat(order.cogs ?? '0') || 0;
     const isRepurchase = order.isRepurchase === true;
-    const isAbandoned =
+    const wasEverAbandoned =
       order.wasAbandonedCart === true || order.isAbandoned === true;
+    const isCurrentlyAbandoned = status === 0 && order.isAbandoned === true;
     const isVoidOrder = order.isVoid === true;
     const isDeleted = status === 7;
     const isPrinted = status === 13;
@@ -208,12 +217,20 @@ export class ReconcileMarketingService {
         bucket.repurchaseUnconfirmedCodPos += codVal;
       }
     }
-    if (isAbandoned) {
+    if (wasEverAbandoned) {
       bucket.abandonedCount += 1;
       bucket.abandonedCodPos += codVal;
       if (isRepurchase) {
         bucket.repurchaseAbandonedCount += 1;
         bucket.repurchaseAbandonedCodPos += codVal;
+      }
+    }
+    if (isCurrentlyAbandoned) {
+      bucket.currentAbandonedCount += 1;
+      bucket.currentAbandonedCodPos += codVal;
+      if (isRepurchase) {
+        bucket.repurchaseCurrentAbandonedCount += 1;
+        bucket.repurchaseCurrentAbandonedCodPos += codVal;
       }
     }
     if (status === 1) {
@@ -240,7 +257,7 @@ export class ReconcileMarketingService {
         bucket.repurchaseCogsRestockingPos += cogsVal;
       }
     }
-    if (status === 9) {
+    if (status === 9 || status === 13) {
       bucket.waitingPickupCount += 1;
       bucket.waitingPickupCodPos += codVal;
       if (isRepurchase) {
@@ -296,16 +313,25 @@ export class ReconcileMarketingService {
    * - Upsert into reconcile_marketing.
    * - Create synthetic rows for unmatched POS orders.
    */
-  async reconcileDay(tenantId: string, date: string, teamId?: string | null): Promise<void> {
+  async reconcileDay(tenantId: string, date: string): Promise<void> {
     const dayStart = new Date(`${date}T00:00:00.000Z`);
     const dayEnd = new Date(dayStart);
     dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+    const activeStores = await this.prisma.posStore.findMany({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+        OR: [{ enabled: true }, { enabled: null }],
+      },
+      select: { shopId: true },
+    });
+    const activeShopIds = Array.from(new Set(activeStores.map((store) => store.shopId)));
 
     // Load Meta insights for the day
     const metaInsights = await this.prisma.metaAdInsight.findMany({
       where: {
         tenantId,
-        ...(teamId ? { teamId } : {}),
         date: {
           gte: dayStart,
           lt: dayEnd,
@@ -317,7 +343,7 @@ export class ReconcileMarketingService {
     const posOrders: PosOrderLite[] = await this.prisma.posOrder.findMany({
       where: {
         tenantId,
-        ...(teamId ? { teamId } : {}),
+        shopId: { in: activeShopIds },
         dateLocal: date,
         AND: [
           {
@@ -426,7 +452,7 @@ export class ReconcileMarketingService {
         },
         create: {
           tenantId,
-          teamId: insight.teamId ?? teamId ?? null,
+          teamId: insight.teamId ?? null,
           date: dayStart,
           adId: insight.adId,
           normalizedAdId: norm || null,
@@ -494,6 +520,8 @@ export class ReconcileMarketingService {
           repurchaseUnconfirmedCodPos: agg?.repurchaseUnconfirmedCodPos || 0,
           abandonedCodPos: agg?.abandonedCodPos || 0,
           repurchaseAbandonedCodPos: agg?.repurchaseAbandonedCodPos || 0,
+          currentAbandonedCodPos: agg?.currentAbandonedCodPos || 0,
+          repurchaseCurrentAbandonedCodPos: agg?.repurchaseCurrentAbandonedCodPos || 0,
           confirmedCount: agg?.confirmedCount || 0,
           repurchaseConfirmedCount: agg?.repurchaseConfirmedCount || 0,
           unconfirmedCount: agg?.unconfirmedCount || 0,
@@ -504,6 +532,8 @@ export class ReconcileMarketingService {
           repurchaseDeletedCount: agg?.repurchaseDeletedCount || 0,
           abandonedCount: agg?.abandonedCount || 0,
           repurchaseAbandonedCount: agg?.repurchaseAbandonedCount || 0,
+          currentAbandonedCount: agg?.currentAbandonedCount || 0,
+          repurchaseCurrentAbandonedCount: agg?.repurchaseCurrentAbandonedCount || 0,
           restockingCount: agg?.restockingCount || 0,
           repurchaseRestockingCount: agg?.repurchaseRestockingCount || 0,
           waitingPickupCount: agg?.waitingPickupCount || 0,
@@ -520,7 +550,7 @@ export class ReconcileMarketingService {
           shops,
         },
         update: {
-          teamId: insight.teamId ?? teamId ?? null,
+          teamId: insight.teamId ?? null,
           normalizedAdId: norm || null,
           campaignName: insight.campaignName,
           adName: insight.adName,
@@ -583,6 +613,8 @@ export class ReconcileMarketingService {
           repurchaseUnconfirmedCodPos: agg?.repurchaseUnconfirmedCodPos || 0,
           abandonedCodPos: agg?.abandonedCodPos || 0,
           repurchaseAbandonedCodPos: agg?.repurchaseAbandonedCodPos || 0,
+          currentAbandonedCodPos: agg?.currentAbandonedCodPos || 0,
+          repurchaseCurrentAbandonedCodPos: agg?.repurchaseCurrentAbandonedCodPos || 0,
           confirmedCount: agg?.confirmedCount || 0,
           repurchaseConfirmedCount: agg?.repurchaseConfirmedCount || 0,
           unconfirmedCount: agg?.unconfirmedCount || 0,
@@ -593,6 +625,8 @@ export class ReconcileMarketingService {
           repurchaseDeletedCount: agg?.repurchaseDeletedCount || 0,
           abandonedCount: agg?.abandonedCount || 0,
           repurchaseAbandonedCount: agg?.repurchaseAbandonedCount || 0,
+          currentAbandonedCount: agg?.currentAbandonedCount || 0,
+          repurchaseCurrentAbandonedCount: agg?.repurchaseCurrentAbandonedCount || 0,
           restockingCount: agg?.restockingCount || 0,
           repurchaseRestockingCount: agg?.repurchaseRestockingCount || 0,
           waitingPickupCount: agg?.waitingPickupCount || 0,
@@ -670,7 +704,7 @@ export class ReconcileMarketingService {
         },
         create: {
           tenantId,
-          teamId: order.teamId ?? teamId ?? null,
+          teamId: order.teamId ?? null,
           date: dayStart,
           adId: syntheticAdId,
           normalizedAdId: null,
@@ -737,6 +771,8 @@ export class ReconcileMarketingService {
           repurchaseUnconfirmedCodPos: syntheticAgg.repurchaseUnconfirmedCodPos,
           abandonedCodPos: syntheticAgg.abandonedCodPos,
           repurchaseAbandonedCodPos: syntheticAgg.repurchaseAbandonedCodPos,
+          currentAbandonedCodPos: syntheticAgg.currentAbandonedCodPos,
+          repurchaseCurrentAbandonedCodPos: syntheticAgg.repurchaseCurrentAbandonedCodPos,
           confirmedCount: syntheticAgg.confirmedCount,
           repurchaseConfirmedCount: syntheticAgg.repurchaseConfirmedCount,
           unconfirmedCount: syntheticAgg.unconfirmedCount,
@@ -747,6 +783,8 @@ export class ReconcileMarketingService {
           repurchaseDeletedCount: syntheticAgg.repurchaseDeletedCount,
           abandonedCount: syntheticAgg.abandonedCount,
           repurchaseAbandonedCount: syntheticAgg.repurchaseAbandonedCount,
+          currentAbandonedCount: syntheticAgg.currentAbandonedCount,
+          repurchaseCurrentAbandonedCount: syntheticAgg.repurchaseCurrentAbandonedCount,
           restockingCount: syntheticAgg.restockingCount,
           repurchaseRestockingCount: syntheticAgg.repurchaseRestockingCount,
           waitingPickupCount: syntheticAgg.waitingPickupCount,
@@ -769,7 +807,7 @@ export class ReconcileMarketingService {
           shops: [order.shopId],
         },
         update: {
-          teamId: order.teamId ?? teamId ?? null,
+          teamId: order.teamId ?? null,
           purchasesPos: syntheticAgg.purchasesPos,
           codPos: syntheticAgg.codPos,
           processedPurchasesPos: syntheticAgg.processedPurchasesPos,
@@ -822,6 +860,8 @@ export class ReconcileMarketingService {
           repurchaseUnconfirmedCodPos: syntheticAgg.repurchaseUnconfirmedCodPos,
           abandonedCodPos: syntheticAgg.abandonedCodPos,
           repurchaseAbandonedCodPos: syntheticAgg.repurchaseAbandonedCodPos,
+          currentAbandonedCodPos: syntheticAgg.currentAbandonedCodPos,
+          repurchaseCurrentAbandonedCodPos: syntheticAgg.repurchaseCurrentAbandonedCodPos,
           confirmedCount: syntheticAgg.confirmedCount,
           repurchaseConfirmedCount: syntheticAgg.repurchaseConfirmedCount,
           unconfirmedCount: syntheticAgg.unconfirmedCount,
@@ -832,6 +872,8 @@ export class ReconcileMarketingService {
           repurchaseDeletedCount: syntheticAgg.repurchaseDeletedCount,
           abandonedCount: syntheticAgg.abandonedCount,
           repurchaseAbandonedCount: syntheticAgg.repurchaseAbandonedCount,
+          currentAbandonedCount: syntheticAgg.currentAbandonedCount,
+          repurchaseCurrentAbandonedCount: syntheticAgg.repurchaseCurrentAbandonedCount,
           restockingCount: syntheticAgg.restockingCount,
           repurchaseRestockingCount: syntheticAgg.repurchaseRestockingCount,
           waitingPickupCount: syntheticAgg.waitingPickupCount,

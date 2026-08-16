@@ -47,7 +47,7 @@ export function InventoryUnitsTable({
                 disabled={!canSelectUnits || units.length === 0}
                 onChange={onToggleVisibleUnitSelection}
                 className="h-4 w-4 rounded border-[#cbd8e1] text-primary focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Select visible units"
+                aria-label="Select units on this page"
               />
             </HeaderCell>
             <HeaderCell>Unit</HeaderCell>

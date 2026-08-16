@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { WmsSidePanel } from '../../_components/wms-side-panel';
 import { WmsModal } from '../../_components/wms-modal';
+import { DispatchPackingProofGallery } from './dispatch-packing-proof-gallery';
 import type {
   WmsDispatchHistoryEntry,
   WmsDispatchReturnTask,
@@ -112,6 +113,7 @@ export function DispatchDetailPanel({
   }
 
   const returnFlow = tab === 'returns' ? returnTask?.returnFlow ?? null : null;
+  const packingProofs = task.packingProofs ?? [];
   const awaitingPlacementUnits = returnFlow
     ? returnFlow.verifiedUnits.filter((unit) => unit.status === 'RTS')
     : [];
@@ -256,6 +258,16 @@ export function DispatchDetailPanel({
           </div>
         </DetailSection>
       ) : null}
+
+      <DetailSection
+        title={`Packing proof · ${packingProofs.length}`}
+        description="Photos captured after item verification and before the parcel was sealed."
+      >
+        <DispatchPackingProofGallery
+          orderNumber={task.posOrderId}
+          proofs={packingProofs}
+        />
+      </DetailSection>
 
       {returnFlow ? (
         <>

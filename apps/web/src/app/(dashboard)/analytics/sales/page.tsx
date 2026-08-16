@@ -438,17 +438,65 @@ export default function SalesAnalyticsPage() {
 
   const computedKpis = data
     ? (() => {
+        const adjustedGrossCod = computeAdjustedGrossCod(data.kpis, {
+          excludeCancel: excludeCanceled,
+          excludeRestocking,
+          excludeAbandoned,
+        });
+        const purchasesForCmRts =
+          (data.counts.purchases ?? 0) + (excludeRts ? data.counts.rts ?? 0 : 0);
+        const aovForCmRts = purchasesForCmRts > 0 ? adjustedGrossCod / purchasesForCmRts : 0;
+        const revenueBaseForCmRts = aovForCmRts * purchasesForCmRts;
+        const cogsTotal = data.kpis.cogs ?? 0;
+        const cogsCanceled = excludeCanceled ? data.kpis.cogs_canceled ?? 0 : 0;
+        const cogsRestocking = excludeRestocking ? data.kpis.cogs_restocking ?? 0 : 0;
+        const cogsAdjusted = cogsTotal - cogsCanceled - cogsRestocking;
         return {
           ...data.kpis,
           rts_pct: computeRtsPctFromCounts(data.counts),
+          cm_rts_forecast: computeCmRtsForecast({
+            revenueBase: revenueBaseForCmRts,
+            adSpend: data.kpis.ad_spend ?? 0,
+            sf: data.kpis.sf_fees ?? 0,
+            ff: data.kpis.ff_fees ?? 0,
+            iF: data.kpis.if_fees ?? 0,
+            codFeeDelivered: data.kpis.cod_fee_delivered ?? 0,
+            cogsAdjusted,
+            cogsRts: data.kpis.cogs_rts ?? 0,
+            rtsPct: rtsForecastSafe,
+          }).cmForecast,
         };
       })()
     : null;
   const computedPrevKpis = data
     ? (() => {
+        const adjustedGrossCod = computeAdjustedGrossCod(data.prevKpis, {
+          excludeCancel: excludeCanceled,
+          excludeRestocking,
+          excludeAbandoned,
+        });
+        const purchasesForCmRts =
+          (data.prevCounts.purchases ?? 0) + (excludeRts ? data.prevCounts.rts ?? 0 : 0);
+        const aovForCmRts = purchasesForCmRts > 0 ? adjustedGrossCod / purchasesForCmRts : 0;
+        const revenueBaseForCmRts = aovForCmRts * purchasesForCmRts;
+        const cogsTotal = data.prevKpis.cogs ?? 0;
+        const cogsCanceled = excludeCanceled ? data.prevKpis.cogs_canceled ?? 0 : 0;
+        const cogsRestocking = excludeRestocking ? data.prevKpis.cogs_restocking ?? 0 : 0;
+        const cogsAdjusted = cogsTotal - cogsCanceled - cogsRestocking;
         return {
           ...data.prevKpis,
           rts_pct: computeRtsPctFromCounts(data.prevCounts),
+          cm_rts_forecast: computeCmRtsForecast({
+            revenueBase: revenueBaseForCmRts,
+            adSpend: data.prevKpis.ad_spend ?? 0,
+            sf: data.prevKpis.sf_fees ?? 0,
+            ff: data.prevKpis.ff_fees ?? 0,
+            iF: data.prevKpis.if_fees ?? 0,
+            codFeeDelivered: data.prevKpis.cod_fee_delivered ?? 0,
+            cogsAdjusted,
+            cogsRts: data.prevKpis.cogs_rts ?? 0,
+            rtsPct: rtsForecastSafe,
+          }).cmForecast,
         };
       })()
     : null;
@@ -457,6 +505,41 @@ export default function SalesAnalyticsPage() {
   const sortableProducts: SalesProductRowItem[] = products.map((row, index) => {
     const norm = (row.mapping || '__null__').toLowerCase();
     const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
+    const adjustedGrossCod = Math.max(
+      0,
+      computeAdjustedCod(
+        row.cod_raw ?? row.revenue ?? 0,
+        row.canceled_cod ?? 0,
+        row.restocking_cod ?? 0,
+        row.abandoned_cod ?? 0,
+        {
+          excludeCancel: excludeCanceled,
+          excludeRestocking,
+          excludeAbandoned,
+        },
+      ),
+    );
+    const purchasesForCmRts =
+      (row.gross_sales ?? 0) + (excludeRts ? row.rts_count ?? 0 : 0);
+    const aovForCmRts = purchasesForCmRts > 0 ? adjustedGrossCod / purchasesForCmRts : 0;
+    const revenueBaseForCmRts = aovForCmRts * purchasesForCmRts;
+    const sf = row.sf_raw ?? row.sf_fees ?? 0;
+    const ff = row.ff_raw ?? row.ff_fees ?? 0;
+    const iF = row.if_raw ?? row.if_fees ?? 0;
+    const codFeeDelivered = row.cod_fee_delivered_raw ?? row.cod_fee_delivered ?? 0;
+    const cogsAdjusted = row.cogs ?? 0;
+    const cogsRts = row.cogs_rts ?? 0;
+    const forecast = computeCmRtsForecast({
+      revenueBase: revenueBaseForCmRts,
+      adSpend: row.ad_spend ?? 0,
+      sf,
+      ff,
+      iF,
+      codFeeDelivered,
+      cogsAdjusted,
+      cogsRts,
+      rtsPct: rtsForecastSafe,
+    });
     const deliveredCount = row.delivered_count ?? 0;
     const rtsCount = row.rts_count ?? 0;
     const rtsPct = deliveredCount + rtsCount > 0 ? (rtsCount / (deliveredCount + rtsCount)) * 100 : 0;
@@ -465,14 +548,14 @@ export default function SalesAnalyticsPage() {
       index,
       derived: {
         display,
-        forecast: { cmForecast: row.cm_rts_forecast ?? 0, revenueAfterRts: 0, rtsFraction: 0 },
+        forecast,
         rtsPct,
-        sf: row.sf_raw ?? row.sf_fees ?? 0,
-        ff: row.ff_raw ?? row.ff_fees ?? 0,
-        iF: row.if_raw ?? row.if_fees ?? 0,
-        codFeeDelivered: row.cod_fee_delivered_raw ?? row.cod_fee_delivered ?? 0,
-        cogsAdjusted: row.cogs ?? 0,
-        cogsRts: row.cogs_rts ?? 0,
+        sf,
+        ff,
+        iF,
+        codFeeDelivered,
+        cogsAdjusted,
+        cogsRts,
         cogsCanceled: row.cogs_ec != null ? Math.max(0, (row.cogs ?? 0) - row.cogs_ec) : 0,
         cogsRestocking: row.cogs_restocking ?? 0,
       },
@@ -536,6 +619,23 @@ export default function SalesAnalyticsPage() {
   const productEnd = Math.min(productPage * pageSize, totalProducts);
   const productCanPrev = productPage > 1;
   const productCanNext = productPage < totalProductPages;
+  const productTotals = computedKpis
+    ? {
+        revenue: computedKpis.revenue ?? 0,
+        grossSales: data?.counts.purchases ?? 0,
+        cogs: products.reduce((total, row) => total + (row.cogs ?? 0), 0),
+        aov: computedKpis.aov ?? 0,
+        cpp: computedKpis.cpp ?? 0,
+        processedCpp: computedKpis.processed_cpp ?? 0,
+        adSpend: computedKpis.ad_spend ?? 0,
+        arPct: computedKpis.ar_pct ?? 0,
+        rtsPct: computedKpis.rts_pct ?? 0,
+        profitEfficiency: computedKpis.profit_efficiency ?? 0,
+        contributionMargin: computedKpis.contribution_margin ?? 0,
+        cmRtsForecast: computedKpis.cm_rts_forecast ?? 0,
+        netMargin: computedKpis.net_margin ?? 0,
+      }
+    : null;
   const cmRtsExportLabel = `CM (RTS ${rtsForecastSafe}%)`;
   const exportableProducts: SalesProductsExportRow[] = sortedProducts
     .filter((item) => {
@@ -669,7 +769,30 @@ export default function SalesAnalyticsPage() {
         const countCurrent = def.countKey ? data.counts?.[def.countKey] ?? 0 : null;
         const countPrev = def.countKey ? data.prevCounts?.[def.countKey] ?? 0 : null;
         const countDelta = def.countKey ? formatDeltaPercent(countCurrent ?? 0, countPrev ?? 0) : null;
-        return { ...def, current, previous, delta, countCurrent, countPrev, countDelta };
+        const statusCountKey =
+          def.countKey && def.countKey !== 'purchases' ? def.countKey : null;
+        const isStatusMetric = statusCountKey !== null;
+        const statusCount =
+          statusCountKey
+            ? data.statusDistribution?.[statusCountKey] ?? countCurrent ?? 0
+            : countCurrent;
+        const statusShare =
+          isStatusMetric && (data.statusDistribution?.total ?? 0) > 0
+            ? ((statusCount ?? 0) / data.statusDistribution.total) * 100
+            : isStatusMetric
+              ? 0
+              : null;
+        return {
+          ...def,
+          current,
+          previous,
+          delta,
+          countCurrent: statusCount,
+          countPrev,
+          countDelta,
+          isStatusMetric,
+          statusShare,
+        };
       })
     : [];
   const visibleMetricValues = metricValues.filter((metric) =>
@@ -682,9 +805,9 @@ export default function SalesAnalyticsPage() {
   ];
 
   const leftCard = visibleMetricValues.find((m) => m.key === 'revenue');
-  const rightCard = visibleMetricValues.find((m) => m.key === 'ad_spend');
+  const rightCard = visibleMetricValues.find((m) => m.key === 'delivered');
   const middleCards = visibleMetricValues.filter(
-    (m) => m.key !== 'revenue' && m.key !== 'ad_spend',
+    (m) => m.key !== 'revenue' && m.key !== 'delivered',
   );
 
   const secondaryCards =
@@ -707,6 +830,8 @@ export default function SalesAnalyticsPage() {
             countCurrent: null,
             countPrev: null,
             countDelta: null,
+            isStatusMetric: false,
+            statusShare: null,
           };
         })
       : [];
@@ -745,25 +870,25 @@ export default function SalesAnalyticsPage() {
   const kpiVisibilityOptions = [
     'revenue',
     'unconfirmed',
-    'confirmed',
-    'canceled',
     'restocking_cod',
+    'confirmed',
     'waiting_pickup',
+    'canceled',
     'shipped',
+    'rts',
     'delivered',
   ]
     .map((key) => buildVisibilityOption(key, 'Primary'))
     .concat(
       [
         'cm_rts_forecast',
+        'ad_spend',
         'ar_pct',
         'cancellation_rate_pct',
         'aov',
         'cpp',
         'processed_cpp',
         'rts_pct',
-        'ad_spend',
-        'rts',
         'conversion_rate',
         'profit_efficiency',
         'contribution_margin',
@@ -1017,7 +1142,7 @@ export default function SalesAnalyticsPage() {
         </div>
         <div className="flex justify-between text-slate-900 border-t border-slate-200 pt-1 font-semibold">
           <span>CM (RTS {rtsForecastSafe}%)</span>
-          <span>{nf(kpis.cm_rts_forecast ?? forecast.cmForecast)}</span>
+          <span>{nf(forecast.cmForecast)}</span>
         </div>
         <p className="text-xs text-slate-500">{filtersLabel}</p>
       </div>
@@ -1055,12 +1180,15 @@ export default function SalesAnalyticsPage() {
         format={m.format}
         precision={m.format === 'percent' ? 1 : 2}
         delta={m.delta}
+        deltaDisplay="trend"
+        showDelta={!m.isStatusMetric}
         count={
           m.countKey
             ? {
                 label: 'ord',
                 value: m.countCurrent ?? 0,
                 delta: m.countDelta ?? null,
+                percentage: m.isStatusMetric ? m.statusShare : undefined,
               }
             : undefined
         }
@@ -1422,6 +1550,7 @@ export default function SalesAnalyticsPage() {
             rtsForecastSafe={rtsForecastSafe}
             rows={pagedProducts}
             sourceCount={products.length}
+            totals={productTotals}
             renderSortLabel={renderSortLabel}
           />
         ) : (

@@ -905,10 +905,10 @@ export class WorkflowService {
       });
 
       for (const date of datesProcessed) {
-        await this.reconcileMarketingService.reconcileDay(job.data.tenantId, date, null);
+        await this.reconcileMarketingService.reconcileDay(job.data.tenantId, date);
       }
       for (const date of datesProcessed) {
-        await this.reconcileSalesService.aggregateDay(job.data.tenantId, date, null);
+        await this.reconcileSalesService.aggregateDay(job.data.tenantId, date);
         await this.reconcileSalesAttributionService.aggregateDay(job.data.tenantId, date);
       }
 
@@ -1172,10 +1172,10 @@ export class WorkflowService {
 
     const datesProcessed = Array.from(affectedDates).sort((a, b) => a.localeCompare(b));
     for (const date of datesProcessed) {
-      await this.reconcileMarketingService.reconcileDay(tenantId, date, null);
+      await this.reconcileMarketingService.reconcileDay(tenantId, date);
     }
     for (const date of datesProcessed) {
-      await this.reconcileSalesService.aggregateDay(tenantId, date, null);
+      await this.reconcileSalesService.aggregateDay(tenantId, date);
       await this.reconcileSalesAttributionService.aggregateDay(tenantId, date);
     }
 

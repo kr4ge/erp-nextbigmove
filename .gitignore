@@ -62,6 +62,7 @@ docker-compose.override.yml
 
 # Docs (track only top-level README and team-isolation docs; keep archive optional)
 docs/**
+# !docs/SMS_V2_HANDOFF_AND_RUNBOOK.md
 !docs/README.md
 !docs/DOCUMENTATION_INDEX.md
 !docs/team-isolation/**

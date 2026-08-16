@@ -17,6 +17,7 @@ type NumericFields = {
   printedCount: number;
   deletedCount: number;
   abandonedCount: number;
+  currentAbandonedCount: number;
   waitingPickupCount: number;
   shippedCount: number;
   deliveredCount: number;
@@ -28,6 +29,7 @@ type NumericFields = {
   repurchasePrintedCount: number;
   repurchaseDeletedCount: number;
   repurchaseAbandonedCount: number;
+  repurchaseCurrentAbandonedCount: number;
   repurchaseWaitingPickupCount: number;
   repurchaseShippedCount: number;
   repurchaseDeliveredCount: number;
@@ -46,6 +48,7 @@ type NumericFields = {
   confirmedCodPos: number;
   unconfirmedCodPos: number;
   abandonedCodPos: number;
+  currentAbandonedCodPos: number;
   repurchaseCodPos: number;
   repurchaseDeliveredCodPos: number;
   repurchaseShippedCodPos: number;
@@ -56,6 +59,7 @@ type NumericFields = {
   repurchaseConfirmedCodPos: number;
   repurchaseUnconfirmedCodPos: number;
   repurchaseAbandonedCodPos: number;
+  repurchaseCurrentAbandonedCodPos: number;
   cogsPos: number;
   cogsCanceledPos: number;
   cogsRestockingPos: number;
@@ -111,7 +115,7 @@ export class ReconcileSalesService {
    * - campaignId null/empty falls back to adId (for unmatched POS rows).
    * - mapping is carried through as-is (already normalized in sources).
    */
-  async aggregateDay(tenantId: string, date: string, teamId?: string | null): Promise<void> {
+  async aggregateDay(tenantId: string, date: string): Promise<void> {
     const dayStart = new Date(`${date}T00:00:00.000Z`);
     const dayEnd = new Date(dayStart);
     dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
@@ -119,7 +123,6 @@ export class ReconcileSalesService {
     const rows = await this.prisma.reconcileMarketing.findMany({
       where: {
         tenantId,
-        ...(teamId ? { teamId } : {}),
         date: { gte: dayStart, lt: dayEnd },
       },
       select: {
@@ -142,6 +145,7 @@ export class ReconcileSalesService {
         printedCount: true,
         deletedCount: true,
         abandonedCount: true,
+        currentAbandonedCount: true,
         waitingPickupCount: true,
         shippedCount: true,
         deliveredCount: true,
@@ -153,6 +157,7 @@ export class ReconcileSalesService {
         repurchasePrintedCount: true,
         repurchaseDeletedCount: true,
         repurchaseAbandonedCount: true,
+        repurchaseCurrentAbandonedCount: true,
         repurchaseWaitingPickupCount: true,
         repurchaseShippedCount: true,
         repurchaseDeliveredCount: true,
@@ -171,6 +176,7 @@ export class ReconcileSalesService {
         confirmedCodPos: true,
         unconfirmedCodPos: true,
         abandonedCodPos: true,
+        currentAbandonedCodPos: true,
         repurchaseCodPos: true,
         repurchaseDeliveredCodPos: true,
         repurchaseShippedCodPos: true,
@@ -181,6 +187,7 @@ export class ReconcileSalesService {
         repurchaseConfirmedCodPos: true,
         repurchaseUnconfirmedCodPos: true,
         repurchaseAbandonedCodPos: true,
+        repurchaseCurrentAbandonedCodPos: true,
         cogsPos: true,
         cogsCanceledPos: true,
         cogsRestockingPos: true,
@@ -244,6 +251,7 @@ export class ReconcileSalesService {
             printedCount: 0,
             deletedCount: 0,
             abandonedCount: 0,
+            currentAbandonedCount: 0,
             waitingPickupCount: 0,
             shippedCount: 0,
             deliveredCount: 0,
@@ -255,6 +263,7 @@ export class ReconcileSalesService {
             repurchasePrintedCount: 0,
             repurchaseDeletedCount: 0,
             repurchaseAbandonedCount: 0,
+            repurchaseCurrentAbandonedCount: 0,
             repurchaseWaitingPickupCount: 0,
             repurchaseShippedCount: 0,
             repurchaseDeliveredCount: 0,
@@ -273,6 +282,7 @@ export class ReconcileSalesService {
             confirmedCodPos: 0,
             unconfirmedCodPos: 0,
             abandonedCodPos: 0,
+            currentAbandonedCodPos: 0,
             repurchaseCodPos: 0,
             repurchaseDeliveredCodPos: 0,
             repurchaseShippedCodPos: 0,
@@ -283,6 +293,7 @@ export class ReconcileSalesService {
             repurchaseConfirmedCodPos: 0,
             repurchaseUnconfirmedCodPos: 0,
             repurchaseAbandonedCodPos: 0,
+            repurchaseCurrentAbandonedCodPos: 0,
             cogsPos: 0,
             cogsCanceledPos: 0,
             cogsRestockingPos: 0,
@@ -327,6 +338,7 @@ export class ReconcileSalesService {
       t.printedCount += this.toNumber(row.printedCount);
       t.deletedCount += this.toNumber(row.deletedCount);
       t.abandonedCount += this.toNumber(row.abandonedCount);
+      t.currentAbandonedCount += this.toNumber(row.currentAbandonedCount);
       t.waitingPickupCount += this.toNumber(row.waitingPickupCount);
       t.shippedCount += this.toNumber(row.shippedCount);
       t.deliveredCount += this.toNumber(row.deliveredCount);
@@ -338,6 +350,7 @@ export class ReconcileSalesService {
       t.repurchasePrintedCount += this.toNumber(row.repurchasePrintedCount);
       t.repurchaseDeletedCount += this.toNumber(row.repurchaseDeletedCount);
       t.repurchaseAbandonedCount += this.toNumber(row.repurchaseAbandonedCount);
+      t.repurchaseCurrentAbandonedCount += this.toNumber(row.repurchaseCurrentAbandonedCount);
       t.repurchaseWaitingPickupCount += this.toNumber(row.repurchaseWaitingPickupCount);
       t.repurchaseShippedCount += this.toNumber(row.repurchaseShippedCount);
       t.repurchaseDeliveredCount += this.toNumber(row.repurchaseDeliveredCount);
@@ -356,6 +369,7 @@ export class ReconcileSalesService {
       t.confirmedCodPos += this.toNumber(row.confirmedCodPos);
       t.unconfirmedCodPos += this.toNumber(row.unconfirmedCodPos);
       t.abandonedCodPos += this.toNumber(row.abandonedCodPos);
+      t.currentAbandonedCodPos += this.toNumber(row.currentAbandonedCodPos);
       t.repurchaseCodPos += this.toNumber(row.repurchaseCodPos);
       t.repurchaseDeliveredCodPos += this.toNumber(row.repurchaseDeliveredCodPos);
       t.repurchaseShippedCodPos += this.toNumber(row.repurchaseShippedCodPos);
@@ -366,6 +380,7 @@ export class ReconcileSalesService {
       t.repurchaseConfirmedCodPos += this.toNumber(row.repurchaseConfirmedCodPos);
       t.repurchaseUnconfirmedCodPos += this.toNumber(row.repurchaseUnconfirmedCodPos);
       t.repurchaseAbandonedCodPos += this.toNumber(row.repurchaseAbandonedCodPos);
+      t.repurchaseCurrentAbandonedCodPos += this.toNumber(row.repurchaseCurrentAbandonedCodPos);
       t.cogsPos += this.toNumber(row.cogsPos);
       t.cogsCanceledPos += this.toNumber(row.cogsCanceledPos);
       t.cogsRestockingPos += this.toNumber(row.cogsRestockingPos);
@@ -403,7 +418,7 @@ export class ReconcileSalesService {
         },
         create: {
           tenantId,
-          teamId: teamId ?? null,
+          teamId: null,
           date: dayStart,
           campaignId: group.campaignId,
           campaignName: group.campaignName,
@@ -412,7 +427,7 @@ export class ReconcileSalesService {
           ...group.totals,
         },
         update: {
-          teamId: teamId ?? null,
+          teamId: null,
           campaignName: group.campaignName,
           mapping: group.mapping,
           isUnmatched: group.isUnmatched,

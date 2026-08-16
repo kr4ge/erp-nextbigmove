@@ -416,6 +416,26 @@ const computeCounts = (
   };
 };
 
+const computeStatusDistribution = (sum: AggregateShape) => {
+  const withoutRepurchase = (countKey: string, repurchaseCountKey: string) =>
+    Math.max(0, toNumber(sum._sum[countKey]) - toNumber(sum._sum[repurchaseCountKey]));
+
+  return {
+    total: withoutRepurchase('purchasesPos', 'repurchaseCount'),
+    delivered: withoutRepurchase('deliveredCount', 'repurchaseDeliveredCount'),
+    shipped: withoutRepurchase('shippedCount', 'repurchaseShippedCount'),
+    waiting_pickup: withoutRepurchase(
+      'waitingPickupCount',
+      'repurchaseWaitingPickupCount',
+    ),
+    rts: withoutRepurchase('rtsCount', 'repurchaseRtsCount'),
+    restocking: withoutRepurchase('restockingCount', 'repurchaseRestockingCount'),
+    confirmed: withoutRepurchase('confirmedCount', 'repurchaseConfirmedCount'),
+    unconfirmed: withoutRepurchase('unconfirmedCount', 'repurchaseUnconfirmedCount'),
+    canceled: withoutRepurchase('canceledCount', 'repurchaseCanceledCount'),
+  };
+};
+
 const computeKpis = (
   sum: AggregateShape,
   opts: Pick<
@@ -677,6 +697,7 @@ const buildOverviewForSeeds = (
     kpis: computeKpis(currentAggregate, params),
     prevKpis: computeKpis(previousAggregate, params),
     counts: computeCounts(currentAggregate, params),
+    statusDistribution: computeStatusDistribution(currentAggregate),
     prevCounts: computeCounts(previousAggregate, params),
     products,
     deliveryStatuses,
