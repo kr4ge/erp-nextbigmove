@@ -59,6 +59,7 @@ export function usePickingWorkspace({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const requestInFlightRef = useRef(false);
+  const basketAssignmentInFlightRef = useRef(false);
 
   const requestPickingPage = useCallback(async (nextPage: number) => {
     if (!device) {
@@ -255,6 +256,11 @@ export function usePickingWorkspace({
       return false;
     }
 
+    if (basketAssignmentInFlightRef.current) {
+      return null;
+    }
+
+    basketAssignmentInFlightRef.current = true;
     setIsSubmitting(true);
     try {
       const result = await assignMobilePickingTasksToBasket({
@@ -271,6 +277,7 @@ export function usePickingWorkspace({
       setError(resolvePickingError(requestError));
       return null;
     } finally {
+      basketAssignmentInFlightRef.current = false;
       setIsSubmitting(false);
     }
   }, [device, filters.tenantId, session.accessToken]);

@@ -189,6 +189,7 @@ const CANCELED_POS_ORDER_STATUS = 6;
 const PICKING_SYNC_ORDER_LIMIT = 80;
 const BASKET_ASSIGN_TRANSACTION_MAX_WAIT_MS = 5000;
 const BASKET_ASSIGN_TRANSACTION_TIMEOUT_MS = 30000;
+const BASKET_ASSIGN_TRANSACTION_MAX_ATTEMPTS = 3;
 const SLOW_BASKET_ASSIGN_THRESHOLD_MS = 2000;
 const ACTIVE_PICKING_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.READY,
@@ -210,6 +211,25 @@ const ACTIVE_BASKET_UNIT_STATUSES = [
   WmsBasketUnitStatus.PICKED,
   WmsBasketUnitStatus.PACKED,
 ] as const;
+
+function isBasketAssignmentTransactionConflict(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+    return true;
+  }
+
+  if (!error) {
+    return false;
+  }
+
+  const errorCode = typeof error === 'object' && 'code' in error
+    ? String(error.code)
+    : '';
+  const errorText = error instanceof Error
+    ? `${error.message}\n${error.stack ?? ''}`
+    : String(error);
+
+  return errorCode === '40P01' || /\b40P01\b|deadlock detected/i.test(errorText);
+}
 const PICKER_ACTIVE_BASKET_STATUSES = [
   WmsBasketStatus.ASSIGNED,
   WmsBasketStatus.IN_PICKING,
@@ -5628,17 +5648,6 @@ export class WmsMobileService {
     const demandScopeKeys = Array.from(
       new Set(selectedDemandScopes.map((scope) => `${scope.tenantId}::${scope.storeId}`)),
     );
-    await Promise.all(demandScopeKeys.map(async (scopeKey) => {
-      const [tenantId, storeId] = scopeKey.split('::');
-      if (!tenantId || !storeId) {
-        return;
-      }
-
-      await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
-        tenantId,
-        storeId,
-      });
-    }));
     const preTransactionMs = Date.now() - assignmentStartedAt;
 
     const transactionStartedAt = Date.now();
@@ -5671,6 +5680,48 @@ export class WmsMobileService {
       }
 
       const assignmentMode = firstOrder.assignmentMode ?? WmsFulfillmentAssignmentMode.SERIAL_RESERVED;
+      let basket = await tx.wmsBasket.findUnique({
+        where: { barcode: basketCode },
+        include: this.basketAssignmentBasketInclude(),
+      });
+
+      if (!basket) {
+        throw new NotFoundException(`Basket ${basketCode} is not registered. Add it in WMS Warehouses first.`);
+      }
+
+      const isIdempotentReplay = basket.assignedPickerId === userId
+        && orderedTasks.every((order) => (
+          order.status === WmsFulfillmentOrderStatus.IN_PICKING
+          && order.basketId === basket?.id
+          && order.claimedById === userId
+          && (order.assignmentMode ?? WmsFulfillmentAssignmentMode.SERIAL_RESERVED) === assignmentMode
+        ));
+
+      if (isIdempotentReplay) {
+        const replayBasket = await tx.wmsBasket.findUniqueOrThrow({
+          where: { id: basket.id },
+          include: this.mobileBasketInclude(),
+        });
+        const replayTaskById = new Map(
+          replayBasket.fulfillmentOrders.map((task) => [task.id, task]),
+        );
+        const replayTasks = taskIds
+          .map((taskId) => replayTaskById.get(taskId))
+          .filter((task): task is (typeof replayBasket.fulfillmentOrders)[number] => Boolean(task));
+        const replayTenantIds = Array.from(new Set(orderedTasks.map((order) => order.tenantId)));
+        const replayStoreIds = Array.from(new Set(orderedTasks.map((order) => order.storeId)));
+
+        return {
+          basket: replayBasket,
+          tasks: replayTasks,
+          tenantId: replayTenantIds.length === 1 ? replayTenantIds[0] : null,
+          storeId: replayStoreIds.length === 1 ? replayStoreIds[0] : null,
+          warehouseId: replayBasket.warehouseId ?? firstOrder.warehouseId ?? null,
+          posOrderIds: orderedTasks.map((order) => order.posOrderId),
+          priorityRefreshScopes: [],
+          replayed: true,
+        };
+      }
 
       for (const order of orderedTasks) {
         if (order.status !== WmsFulfillmentOrderStatus.READY) {
@@ -5691,15 +5742,6 @@ export class WmsMobileService {
         if (order.claimedById && order.claimedById !== userId) {
           throw new ForbiddenException(`Order ${order.posOrderId} is assigned to another picker`);
         }
-      }
-
-      let basket = await tx.wmsBasket.findUnique({
-        where: { barcode: basketCode },
-        include: this.basketAssignmentBasketInclude(),
-      });
-
-      if (!basket) {
-        throw new NotFoundException(`Basket ${basketCode} is not registered. Add it in WMS Warehouses first.`);
       }
 
       if (BLOCKED_PICK_BASKET_STATUSES.includes(basket.status as (typeof BLOCKED_PICK_BASKET_STATUSES)[number])) {
@@ -5910,6 +5952,7 @@ export class WmsMobileService {
             variationIds: Array.from(variationIds),
           };
         }),
+        replayed: false,
       };
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -5919,17 +5962,17 @@ export class WmsMobileService {
     let result: Awaited<ReturnType<typeof executeTransaction>> | null = null;
     let transactionAttempts = 0;
     try {
-      while (!result && transactionAttempts < 2) {
+      while (!result && transactionAttempts < BASKET_ASSIGN_TRANSACTION_MAX_ATTEMPTS) {
         transactionAttempts += 1;
         try {
           result = await executeTransaction();
         } catch (error) {
-          const isSerializationConflict = error instanceof Prisma.PrismaClientKnownRequestError
-            && error.code === 'P2034';
-          if (isSerializationConflict && transactionAttempts < 2) {
+          const isTransactionConflict = isBasketAssignmentTransactionConflict(error);
+          if (isTransactionConflict && transactionAttempts < BASKET_ASSIGN_TRANSACTION_MAX_ATTEMPTS) {
             this.logger.warn(
               `STOX basket assignment retry basket=${basketCode} tasks=${taskIds.length} attempt=${transactionAttempts}`,
             );
+            await new Promise((resolve) => setTimeout(resolve, transactionAttempts * 75));
             continue;
           }
           throw error;
@@ -5941,7 +5984,7 @@ export class WmsMobileService {
         `STOX basket assignment failed basket=${basketCode} tasks=${taskIds.length} scopes=${demandScopeKeys.length} pre_transaction_ms=${preTransactionMs} transaction_ms=${transactionMs} total_ms=${Date.now() - assignmentStartedAt}`,
         error instanceof Error ? error.stack : String(error),
       );
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      if (isBasketAssignmentTransactionConflict(error)) {
         throw new ConflictException('Basket or inventory changed during assignment. Please retry.');
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2028') {
@@ -5966,25 +6009,27 @@ export class WmsMobileService {
       });
     }
 
-    await this.recordStockActivity(user, request, {
-      tenantId: result.tenantId,
-      actionType: 'PICKING_BASKET_BATCH_ASSIGN',
-      resourceType: 'WMS_BASKET',
-      resourceId: result.basket.id,
-      taskType: 'PICK',
-      storeId: result.storeId,
-      warehouseId: result.warehouseId,
-      metadata: {
-        basketCode: result.basket.barcode,
-        taskIds,
-        posOrderIds: result.posOrderIds,
-        assignedCount: result.tasks.length,
-        ...(result.tasks.some((task: any) => this.isDemandPickingOrder(task)) ? { mode: 'BASKET_DEMAND' } : {}),
-      },
-    });
+    if (!result.replayed) {
+      await this.recordStockActivity(user, request, {
+        tenantId: result.tenantId,
+        actionType: 'PICKING_BASKET_BATCH_ASSIGN',
+        resourceType: 'WMS_BASKET',
+        resourceId: result.basket.id,
+        taskType: 'PICK',
+        storeId: result.storeId,
+        warehouseId: result.warehouseId,
+        metadata: {
+          basketCode: result.basket.barcode,
+          taskIds,
+          posOrderIds: result.posOrderIds,
+          assignedCount: result.tasks.length,
+          ...(result.tasks.some((task: any) => this.isDemandPickingOrder(task)) ? { mode: 'BASKET_DEMAND' } : {}),
+        },
+      });
+    }
 
     const totalMs = Date.now() - assignmentStartedAt;
-    const timingMessage = `STOX basket assignment basket=${result.basket.id} tasks=${taskIds.length} scopes=${demandScopeKeys.length} attempts=${transactionAttempts} pre_transaction_ms=${preTransactionMs} transaction_ms=${transactionMs} total_ms=${totalMs}`;
+    const timingMessage = `STOX basket assignment basket=${result.basket.id} tasks=${taskIds.length} scopes=${demandScopeKeys.length} attempts=${transactionAttempts} replayed=${result.replayed} pre_transaction_ms=${preTransactionMs} transaction_ms=${transactionMs} total_ms=${totalMs}`;
     if (totalMs >= SLOW_BASKET_ASSIGN_THRESHOLD_MS) {
       this.logger.warn(timingMessage);
     } else {
