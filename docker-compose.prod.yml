@@ -24,19 +24,31 @@ services:
       - erp-network
 
   api:
+    image: erp-api
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     container_name: erp-api-prod
-    environment:
+    environment: &api-environment
       NODE_ENV: production
+      PROCESS_ROLE: ${API_PROCESS_ROLE:-api}
+      LOG_DEBUG_ENABLED: ${LOG_DEBUG_ENABLED:-false}
       TZ: ${TZ}
       DATABASE_URL: ${DATABASE_URL}
+      DATABASE_CONNECTION_LIMIT: ${API_DATABASE_CONNECTION_LIMIT:-6}
+      DATABASE_POOL_TIMEOUT_SECONDS: ${API_DATABASE_POOL_TIMEOUT_SECONDS:-10}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
       ANALYTICS_MAX_CONCURRENT_PER_TENANT: ${ANALYTICS_MAX_CONCURRENT_PER_TENANT:-2}
+      PANCAKE_WEBHOOK_PROCESSOR_CONCURRENCY: ${PANCAKE_WEBHOOK_PROCESSOR_CONCURRENCY:-2}
+      PANCAKE_AUTO_CANCEL_PROCESSOR_CONCURRENCY: ${PANCAKE_AUTO_CANCEL_PROCESSOR_CONCURRENCY:-1}
+      PANCAKE_REPORTS_HYDRATE_PROCESSOR_CONCURRENCY: ${PANCAKE_REPORTS_HYDRATE_PROCESSOR_CONCURRENCY:-1}
+      PANCAKE_RECONCILE_PROCESSOR_CONCURRENCY: ${PANCAKE_RECONCILE_PROCESSOR_CONCURRENCY:-1}
+      PANCAKE_WEBHOOK_RECONCILE_DELAY_MS: ${PANCAKE_WEBHOOK_RECONCILE_DELAY_MS:-300000}
+      PANCAKE_WEBHOOK_RECONCILE_MIN_DELAY_MS: ${PANCAKE_WEBHOOK_RECONCILE_MIN_DELAY_MS:-300000}
+      PANCAKE_WEBHOOK_ALLOW_AUTOMATIC_FULL_RESET: ${PANCAKE_WEBHOOK_ALLOW_AUTOMATIC_FULL_RESET:-false}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
@@ -73,6 +85,25 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    logging: *default-logging
+    networks:
+      - erp-network
+
+  worker:
+    image: erp-api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: erp-worker-prod
+    environment:
+      <<: *api-environment
+      PROCESS_ROLE: ${WORKER_PROCESS_ROLE:-worker}
+      DATABASE_CONNECTION_LIMIT: ${WORKER_DATABASE_CONNECTION_LIMIT:-3}
+      DATABASE_POOL_TIMEOUT_SECONDS: ${WORKER_DATABASE_POOL_TIMEOUT_SECONDS:-20}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
     logging: *default-logging
     networks:
       - erp-network

@@ -5,9 +5,13 @@ export default Joi.object({
     .valid('development', 'production', 'test')
     .default('development'),
   PORT: Joi.number().default(3001),
+  PROCESS_ROLE: Joi.string().valid('all', 'api', 'worker').default('all'),
+  LOG_DEBUG_ENABLED: Joi.string().valid('true', 'false').default('false'),
 
   // Database
   DATABASE_URL: Joi.string().required(),
+  DATABASE_CONNECTION_LIMIT: Joi.number().integer().min(1).default(6),
+  DATABASE_POOL_TIMEOUT_SECONDS: Joi.number().integer().min(1).default(10),
 
   // JWT
   JWT_SECRET: Joi.string().min(64).required(),
@@ -36,6 +40,16 @@ export default Joi.object({
   PANCAKE_WEBHOOK_QUEUE_TIMEOUT_MS: Joi.number().integer().min(1000).default(120000),
   PANCAKE_WEBHOOK_QUEUE_REMOVE_ON_COMPLETE: Joi.number().integer().min(1).default(1000),
   PANCAKE_WEBHOOK_QUEUE_REMOVE_ON_FAIL: Joi.number().integer().min(1).default(5000),
+  PANCAKE_WEBHOOK_PROCESSOR_CONCURRENCY: Joi.number().integer().min(1).default(2),
+  PANCAKE_AUTO_CANCEL_PROCESSOR_CONCURRENCY: Joi.number().integer().min(1).default(1),
+  PANCAKE_REPORTS_HYDRATE_PROCESSOR_CONCURRENCY: Joi.number().integer().min(1).default(1),
+  PANCAKE_WEBHOOK_RECONCILE_DELAY_MS: Joi.number().integer().min(10000).default(300000),
+  PANCAKE_WEBHOOK_RECONCILE_MIN_DELAY_MS: Joi.number().integer().min(10000).default(300000),
+  PANCAKE_WEBHOOK_ALLOW_AUTOMATIC_FULL_RESET: Joi.string().valid('true', 'false').default('false'),
+  PANCAKE_RECONCILE_PROCESSOR_CONCURRENCY: Joi.number().integer().min(1).default(1),
+  PANCAKE_RECONCILE_QUEUE_ATTEMPTS: Joi.number().integer().min(1).default(3),
+  PANCAKE_RECONCILE_QUEUE_BACKOFF_MS: Joi.number().integer().min(1000).default(4000),
+  PANCAKE_RECONCILE_QUEUE_TIMEOUT_MS: Joi.number().integer().min(30000).default(300000),
 
   // Object storage
   OBJECT_STORAGE_PROVIDER: Joi.string().default('s3-compatible'),

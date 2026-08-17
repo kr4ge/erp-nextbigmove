@@ -60,6 +60,10 @@ import {
   PancakeWebhookReportsHydrateJobData,
   PancakeWebhookReconcileJobData,
 } from './pancake-webhook.constants';
+import {
+  buildPancakeReconcileWindow,
+  resolveAutomaticPancakeReconcileMode,
+} from './pancake-webhook-reconcile.util';
 import { PosShopOwnershipService } from './services/pos-shop-ownership.service';
 
 dayjs.extend(utc);
@@ -280,17 +284,22 @@ export class IntegrationService {
     const settings = this.normalizeJsonObject(settingsRaw);
     const webhook = this.normalizeJsonObject(settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY]);
     const reconcileIntervalRaw = Number(webhook.reconcileIntervalSeconds);
-    const reconcileIntervalSeconds =
+    const configuredReconcileIntervalSeconds =
       Number.isFinite(reconcileIntervalRaw)
       && reconcileIntervalRaw >= 10
       && reconcileIntervalRaw <= 3600
         ? Math.floor(reconcileIntervalRaw)
         : undefined;
+    const reconcileIntervalSeconds = Math.max(
+      configuredReconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds(),
+      Math.ceil(this.getMinimumWebhookReconcileDelayMs() / 1000),
+    );
     const reconcileModeRaw = typeof webhook.reconcileMode === 'string' ? webhook.reconcileMode : '';
-    const reconcileMode: 'incremental' | 'full_reset' | undefined =
+    const configuredReconcileMode: 'incremental' | 'full_reset' | undefined =
       reconcileModeRaw === 'incremental' || reconcileModeRaw === 'full_reset'
         ? reconcileModeRaw
         : undefined;
+    const reconcileMode = this.getAutomaticWebhookReconcileMode(configuredReconcileMode);
     return {
       enabled: typeof webhook.enabled === 'boolean' ? webhook.enabled : false,
       autoCancelEnabled:
@@ -1362,13 +1371,6 @@ export class IntegrationService {
     throw new Error(`${operationName} failed after ${maxAttempts} attempts`);
   }
 
-  private buildPancakeWebhookReconcileJobId(
-    tenantId: string,
-    dateLocal: string,
-  ): string {
-    return `pancake-reconcile:${tenantId}:${dateLocal}`;
-  }
-
   private extractWebhookOrderDateLocal(order: any): string | null {
     const insertedRaw =
       (typeof order?.inserted_at === 'string' && order.inserted_at.trim()) ||
@@ -1405,18 +1407,37 @@ export class IntegrationService {
   private getDefaultWebhookReconcileIntervalSeconds(): number {
     const delayMs = Math.max(
       0,
-      Number(process.env.PANCAKE_WEBHOOK_RECONCILE_DELAY_MS || 120000),
+      Number(process.env.PANCAKE_WEBHOOK_RECONCILE_DELAY_MS || 300000),
     );
     return Math.max(10, Math.round(delayMs / 1000));
   }
 
+  private getMinimumWebhookReconcileDelayMs(): number {
+    return Math.max(
+      10_000,
+      Number(process.env.PANCAKE_WEBHOOK_RECONCILE_MIN_DELAY_MS || 300000),
+    );
+  }
+
   private getWebhookReconcileDelayMs(cfg: PancakeWebhookSettings): number {
     const intervalSeconds = cfg.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds();
-    return Math.max(10, intervalSeconds) * 1000;
+    return Math.max(
+      Math.max(10, intervalSeconds) * 1000,
+      this.getMinimumWebhookReconcileDelayMs(),
+    );
   }
 
   private getDefaultWebhookReconcileMode(): 'incremental' | 'full_reset' {
-    return 'full_reset';
+    return 'incremental';
+  }
+
+  private getAutomaticWebhookReconcileMode(
+    configuredMode: 'incremental' | 'full_reset' | undefined,
+  ) {
+    return resolveAutomaticPancakeReconcileMode(
+      configuredMode,
+      process.env.PANCAKE_WEBHOOK_ALLOW_AUTOMATIC_FULL_RESET === 'true',
+    );
   }
 
   private async enqueueWebhookReconcileJobs(
@@ -1435,8 +1456,21 @@ export class IntegrationService {
       return { queued, skipped, warnings };
     }
 
-    for (const [jobId, target] of targets.entries()) {
+    for (const target of targets.values()) {
       try {
+        const reconcileWindow = buildPancakeReconcileWindow({
+          tenantId,
+          dateLocal: target.dateLocal,
+          delayMs,
+        });
+        const existingJob = await this.pancakeWebhookReconcileQueue.getJob(
+          reconcileWindow.jobId,
+        );
+        if (existingJob) {
+          skipped += 1;
+          continue;
+        }
+
         await this.pancakeWebhookReconcileQueue.add(
           PANCAKE_WEBHOOK_RECONCILE_JOB,
           {
@@ -1444,12 +1478,13 @@ export class IntegrationService {
             teamId: null,
             dateLocal: target.dateLocal,
             reconcileMode,
+            scheduledFor: reconcileWindow.scheduledFor,
             requestId,
             logId,
           },
           {
-            jobId,
-            ...this.getPancakeWebhookReconcileQueueJobOptions(delayMs),
+            jobId: reconcileWindow.jobId,
+            ...this.getPancakeWebhookReconcileQueueJobOptions(reconcileWindow.delayMs),
           },
         );
         queued += 1;
@@ -1572,11 +1607,7 @@ export class IntegrationService {
       for (const order of route.orders) {
         const dateLocal = this.extractWebhookOrderDateLocal(order);
         if (!dateLocal) continue;
-        const jobId = this.buildPancakeWebhookReconcileJobId(
-          route.tenantId,
-          dateLocal,
-        );
-        reconcileTargets.set(jobId, { dateLocal });
+        reconcileTargets.set(dateLocal, { dateLocal });
       }
       reconcileTargetsByTenant.set(route.tenantId, reconcileTargets);
 
@@ -1654,7 +1685,9 @@ export class IntegrationService {
         reconcileTargets,
         requestId,
         this.getWebhookReconcileDelayMs(destinationCfg),
-        destinationCfg.reconcileMode ?? this.getDefaultWebhookReconcileMode(),
+        this.getAutomaticWebhookReconcileMode(
+          destinationCfg.reconcileMode ?? this.getDefaultWebhookReconcileMode(),
+        ),
         logId,
       );
       warnings.push(...reconcileQueueResult.warnings);
@@ -2111,9 +2144,10 @@ export class IntegrationService {
     const reconcileIntervalSeconds = hasReconcileIntervalUpdate
       ? Math.floor(dto.reconcileIntervalSeconds as number)
       : existing.reconcileIntervalSeconds ?? this.getDefaultWebhookReconcileIntervalSeconds();
-    const reconcileMode = hasReconcileModeUpdate
+    const requestedReconcileMode = hasReconcileModeUpdate
       ? (dto.reconcileMode as 'incremental' | 'full_reset')
       : existing.reconcileMode ?? this.getDefaultWebhookReconcileMode();
+    const reconcileMode = this.getAutomaticWebhookReconcileMode(requestedReconcileMode);
 
     settings[this.PANCAKE_WEBHOOK_SETTINGS_KEY] = {
       enabled,

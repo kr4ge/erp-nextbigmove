@@ -1,6 +1,6 @@
-import { Process, Processor, OnQueueFailed } from '@nestjs/bull';
+import { InjectQueue, Process, Processor, OnQueueFailed } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bull';
+import { Job, Queue } from 'bull';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ReconcileMarketingService } from '../services/reconcile-marketing.service';
 import { ReconcileSalesService } from '../services/reconcile-sales.service';
@@ -12,9 +12,18 @@ import {
   PancakeWebhookReconcileJobData,
 } from '../../integrations/pancake-webhook.constants';
 
+const PANCAKE_RECONCILE_PROCESSOR_CONCURRENCY = (() => {
+  const configured = Number(process.env.PANCAKE_RECONCILE_PROCESSOR_CONCURRENCY);
+  return Number.isFinite(configured) && configured >= 1
+    ? Math.floor(configured)
+    : 1;
+})();
+const QUEUE_METRICS_INTERVAL_MS = 30_000;
+
 @Processor(PANCAKE_WEBHOOK_RECONCILE_QUEUE)
 export class PancakeWebhookReconcileProcessor {
   private readonly logger = new Logger(PancakeWebhookReconcileProcessor.name);
+  private lastQueueMetricsAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -22,9 +31,14 @@ export class PancakeWebhookReconcileProcessor {
     private readonly reconcileSalesService: ReconcileSalesService,
     private readonly reconcileSalesAttributionService: ReconcileSalesAttributionService,
     private readonly executionGateway: WorkflowExecutionGateway,
+    @InjectQueue(PANCAKE_WEBHOOK_RECONCILE_QUEUE)
+    private readonly reconcileQueue: Queue,
   ) {}
 
-  @Process(PANCAKE_WEBHOOK_RECONCILE_JOB)
+  @Process({
+    name: PANCAKE_WEBHOOK_RECONCILE_JOB,
+    concurrency: PANCAKE_RECONCILE_PROCESSOR_CONCURRENCY,
+  })
   async handleReconcile(job: Job<PancakeWebhookReconcileJobData>) {
     const startedAt = Date.now();
     const { tenantId, dateLocal, requestId, logId } = job.data;
@@ -100,8 +114,9 @@ export class PancakeWebhookReconcileProcessor {
     );
 
     this.logger.log(
-      `Processed webhook reconcile tenant=${tenantId} date=${dateLocal} mode=${reconcileMode} durationMs=${Date.now() - startedAt}`,
+      `Processed webhook reconcile tenant=${tenantId} date=${dateLocal} mode=${reconcileMode} scheduledFor=${job.data.scheduledFor ?? 'n/a'} queueLagMs=${this.getQueueLagMs(job)} durationMs=${Date.now() - startedAt}`,
     );
+    void this.logQueueMetrics();
   }
 
   @OnQueueFailed()
@@ -111,5 +126,31 @@ export class PancakeWebhookReconcileProcessor {
       `Webhook reconcile job failed job=${job?.id} tenant=${data.tenantId} date=${data.dateLocal}: ${error?.message || 'Unknown error'}`,
       error?.stack,
     );
+    void this.logQueueMetrics();
+  }
+
+  private getQueueLagMs(job: Job) {
+    const scheduledAt = job.timestamp + Math.max(Number(job.opts.delay) || 0, 0);
+    const processedAt = job.processedOn ?? Date.now();
+    return Math.max(processedAt - scheduledAt, 0);
+  }
+
+  private async logQueueMetrics() {
+    const now = Date.now();
+    if (now - this.lastQueueMetricsAt < QUEUE_METRICS_INTERVAL_MS) {
+      return;
+    }
+    this.lastQueueMetricsAt = now;
+
+    try {
+      const counts = await this.reconcileQueue.getJobCounts();
+      this.logger.log(
+        `Pancake reconcile queue waiting=${counts.waiting ?? 0} active=${counts.active ?? 0} delayed=${counts.delayed ?? 0} failed=${counts.failed ?? 0}`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Unable to read Pancake reconcile queue metrics: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

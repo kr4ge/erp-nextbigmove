@@ -5,6 +5,7 @@ import { WmsFulfillmentOpsController } from './wms-fulfillment-ops.controller';
 import { WmsFulfillmentOpsService } from './wms-fulfillment-ops.service';
 import { WmsFulfillmentSyncService } from './wms-fulfillment-sync.service';
 import { WmsInventoryExpirationReconcilerService } from './wms-inventory-expiration-reconciler.service';
+import { shouldRunApiBackgroundServices } from '../../common/runtime/process-role';
 
 @Module({
   imports: [PrismaModule, WmsInventoryCogsModule],
@@ -12,7 +13,9 @@ import { WmsInventoryExpirationReconcilerService } from './wms-inventory-expirat
   providers: [
     WmsFulfillmentSyncService,
     WmsFulfillmentOpsService,
-    WmsInventoryExpirationReconcilerService,
+    ...(shouldRunApiBackgroundServices()
+      ? [WmsInventoryExpirationReconcilerService]
+      : []),
   ],
   exports: [WmsFulfillmentSyncService, WmsFulfillmentOpsService],
 })

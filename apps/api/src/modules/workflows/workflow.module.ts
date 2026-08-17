@@ -20,6 +20,10 @@ import { ReconcileSalesAttributionService } from './services/reconcile-sales-att
 import { PancakeWebhookReconcileProcessor } from './processors/pancake-webhook-reconcile.processor';
 import { PANCAKE_WEBHOOK_RECONCILE_QUEUE } from '../integrations/pancake-webhook.constants';
 import { ManualMetaUploadProcessor } from './processors/manual-meta-upload.processor';
+import {
+  shouldRunApiBackgroundServices,
+  shouldRunPancakeWorkers,
+} from '../../common/runtime/process-role';
 
 @Module({
   imports: [
@@ -42,16 +46,20 @@ import { ManualMetaUploadProcessor } from './processors/manual-meta-upload.proce
     WorkflowProcessorService,
     WorkflowSchedulerService,
     DateRangeService,
-    WorkflowQueueProcessor,
     WorkflowExecutionGateway,
     WorkflowLogService,
     WorkflowProgressCacheService,
-    WorkflowExecutionReconcilerService,
     ReconcileMarketingService,
     ReconcileSalesService,
     ReconcileSalesAttributionService,
-    PancakeWebhookReconcileProcessor,
-    ManualMetaUploadProcessor,
+    ...(shouldRunApiBackgroundServices()
+      ? [
+          WorkflowQueueProcessor,
+          WorkflowExecutionReconcilerService,
+          ManualMetaUploadProcessor,
+        ]
+      : []),
+    ...(shouldRunPancakeWorkers() ? [PancakeWebhookReconcileProcessor] : []),
   ],
   exports: [WorkflowService, WorkflowExecutionGateway],
 })

@@ -8,6 +8,7 @@ import { DateRangeService } from './date-range.service';
 import { WorkflowTriggerType } from '@prisma/client';
 import { WORKFLOW_QUEUE, WorkflowJobData } from '../workflow.constants';
 import { WorkflowProcessorService } from './workflow-processor.service';
+import { shouldRunApiBackgroundServices } from '../../../common/runtime/process-role';
 
 @Injectable()
 export class WorkflowSchedulerService implements OnModuleInit {
@@ -25,6 +26,11 @@ export class WorkflowSchedulerService implements OnModuleInit {
    * Initialize all scheduled workflows on module start
    */
   async onModuleInit() {
+    if (!shouldRunApiBackgroundServices()) {
+      this.logger.log('Workflow scheduler disabled in dedicated worker process');
+      return;
+    }
+
     this.logger.log('Initializing workflow scheduler...');
     await this.syncAllScheduledWorkflows();
   }

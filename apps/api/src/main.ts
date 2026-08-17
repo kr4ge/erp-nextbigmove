@@ -5,15 +5,32 @@ import helmet from 'helmet';
 import * as compression from 'compression';
 import { webcrypto } from 'crypto';
 import { resolveAllowedCorsOrigins } from './common/services/cors-config.service';
+import { resolveProcessRole } from './common/runtime/process-role';
 
 // Ensure global crypto is available for libraries that rely on Web Crypto APIs
 if (!globalThis.crypto) {
   (globalThis as any).crypto = webcrypto;
 }
 
-async function bootstrap() {
+function resolveLoggerLevels(): Array<'error' | 'warn' | 'log' | 'debug'> {
+  const debugEnabled = process.env.LOG_DEBUG_ENABLED === 'true'
+    || process.env.NODE_ENV !== 'production';
+  return debugEnabled
+    ? ['error', 'warn', 'log', 'debug']
+    : ['error', 'warn', 'log'];
+}
+
+async function bootstrapWorker() {
+  const app = await NestFactory.createApplicationContext(AppModule, {
+    logger: resolveLoggerLevels(),
+  });
+  app.enableShutdownHooks();
+  console.log('Pancake worker running');
+}
+
+async function bootstrapApi() {
   const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log', 'debug'],
+    logger: resolveLoggerLevels(),
   });
 
   // Security middleware
@@ -65,4 +82,8 @@ async function bootstrap() {
   console.log(`🚀 API running on http://${host}:${port}/api/v1`);
 }
 
-bootstrap();
+if (resolveProcessRole() === 'worker') {
+  void bootstrapWorker();
+} else {
+  void bootstrapApi();
+}

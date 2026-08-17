@@ -1,6 +1,6 @@
-import { Process, Processor, OnQueueFailed } from '@nestjs/bull';
+import { InjectQueue, Process, Processor, OnQueueFailed } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bull';
+import { Job, Queue } from 'bull';
 import { IntegrationService } from '../integration.service';
 import {
   PANCAKE_WEBHOOK_AUTO_CANCEL_JOB,
@@ -12,13 +12,42 @@ import {
   PancakeWebhookReportsHydrateJobData,
 } from '../pancake-webhook.constants';
 
+function positiveIntegerFromEnv(name: string, fallback: number) {
+  const configured = Number(process.env[name]);
+  return Number.isFinite(configured) && configured >= 1
+    ? Math.floor(configured)
+    : fallback;
+}
+
+const PANCAKE_WEBHOOK_PROCESSOR_CONCURRENCY = positiveIntegerFromEnv(
+  'PANCAKE_WEBHOOK_PROCESSOR_CONCURRENCY',
+  2,
+);
+const PANCAKE_AUTO_CANCEL_PROCESSOR_CONCURRENCY = positiveIntegerFromEnv(
+  'PANCAKE_AUTO_CANCEL_PROCESSOR_CONCURRENCY',
+  1,
+);
+const PANCAKE_REPORTS_HYDRATE_PROCESSOR_CONCURRENCY = positiveIntegerFromEnv(
+  'PANCAKE_REPORTS_HYDRATE_PROCESSOR_CONCURRENCY',
+  1,
+);
+const QUEUE_METRICS_INTERVAL_MS = 30_000;
+
 @Processor(PANCAKE_WEBHOOK_QUEUE)
 export class PancakeWebhookQueueProcessor {
   private readonly logger = new Logger(PancakeWebhookQueueProcessor.name);
+  private lastQueueMetricsAt = 0;
 
-  constructor(private readonly integrationService: IntegrationService) {}
+  constructor(
+    private readonly integrationService: IntegrationService,
+    @InjectQueue(PANCAKE_WEBHOOK_QUEUE)
+    private readonly pancakeWebhookQueue: Queue,
+  ) {}
 
-  @Process(PANCAKE_WEBHOOK_JOB)
+  @Process({
+    name: PANCAKE_WEBHOOK_JOB,
+    concurrency: PANCAKE_WEBHOOK_PROCESSOR_CONCURRENCY,
+  })
   async handleIngest(job: Job<PancakeWebhookJobData>) {
     const startedAt = Date.now();
     const { logId, tenantId, requestId } = job.data;
@@ -34,13 +63,17 @@ export class PancakeWebhookQueueProcessor {
     const durationMs = Date.now() - startedAt;
 
     this.logger.log(
-      `Processed Pancake webhook log=${logId} request=${requestId} tenant=${tenantId} upserted=${result.upserted} warnings=${result.warnings.length} durationMs=${durationMs}`,
+      `Processed Pancake webhook log=${logId} request=${requestId} tenant=${tenantId} upserted=${result.upserted} warnings=${result.warnings.length} queueLagMs=${this.getQueueLagMs(job)} durationMs=${durationMs}`,
     );
+    void this.logQueueMetrics();
 
     return result;
   }
 
-  @Process(PANCAKE_WEBHOOK_AUTO_CANCEL_JOB)
+  @Process({
+    name: PANCAKE_WEBHOOK_AUTO_CANCEL_JOB,
+    concurrency: PANCAKE_AUTO_CANCEL_PROCESSOR_CONCURRENCY,
+  })
   async handleAutoCancel(job: Job<PancakeWebhookAutoCancelJobData>) {
     const startedAt = Date.now();
     const { tenantId, shopId, orderId } = job.data;
@@ -65,7 +98,10 @@ export class PancakeWebhookQueueProcessor {
     return result;
   }
 
-  @Process(PANCAKE_WEBHOOK_REPORTS_HYDRATE_JOB)
+  @Process({
+    name: PANCAKE_WEBHOOK_REPORTS_HYDRATE_JOB,
+    concurrency: PANCAKE_REPORTS_HYDRATE_PROCESSOR_CONCURRENCY,
+  })
   async handleReportsHydrate(job: Job<PancakeWebhookReportsHydrateJobData>) {
     const startedAt = Date.now();
     const { tenantId, shopId, orderId } = job.data;
@@ -106,5 +142,31 @@ export class PancakeWebhookQueueProcessor {
       `Pancake webhook job failed log=${logId || 'n/a'} request=${requestId || 'n/a'} tenant=${tenantId || asAutoCancel.tenantId || asReportsHydrate.tenantId || 'n/a'} shop=${asAutoCancel.shopId || asReportsHydrate.shopId || 'n/a'} order=${asAutoCancel.orderId || asReportsHydrate.orderId || 'n/a'}: ${error?.message || 'Unknown error'}`,
       error?.stack,
     );
+    void this.logQueueMetrics();
+  }
+
+  private getQueueLagMs(job: Job) {
+    const scheduledAt = job.timestamp + Math.max(Number(job.opts.delay) || 0, 0);
+    const processedAt = job.processedOn ?? Date.now();
+    return Math.max(processedAt - scheduledAt, 0);
+  }
+
+  private async logQueueMetrics() {
+    const now = Date.now();
+    if (now - this.lastQueueMetricsAt < QUEUE_METRICS_INTERVAL_MS) {
+      return;
+    }
+    this.lastQueueMetricsAt = now;
+
+    try {
+      const counts = await this.pancakeWebhookQueue.getJobCounts();
+      this.logger.log(
+        `Pancake webhook queue waiting=${counts.waiting ?? 0} active=${counts.active ?? 0} delayed=${counts.delayed ?? 0} failed=${counts.failed ?? 0}`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Unable to read Pancake webhook queue metrics: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

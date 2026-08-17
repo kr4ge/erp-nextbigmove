@@ -20,6 +20,7 @@ import {
   PANCAKE_WEBHOOK_RECONCILE_QUEUE,
 } from './pancake-webhook.constants';
 import { PancakeWebhookQueueProcessor } from './processors/pancake-webhook.processor';
+import { shouldRunPancakeWorkers } from '../../common/runtime/process-role';
 
 @Module({
   imports: [
@@ -40,7 +41,7 @@ import { PancakeWebhookQueueProcessor } from './processors/pancake-webhook.proce
     MetaInsightService,
     PosOrderService,
     PosShopOwnershipService,
-    PancakeWebhookQueueProcessor,
+    ...(shouldRunPancakeWorkers() ? [PancakeWebhookQueueProcessor] : []),
     ProviderRegistry,
     ProviderFactory,
   ],

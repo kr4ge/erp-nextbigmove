@@ -9,6 +9,7 @@ import { OrdersAgingNotificationCacheService } from './orders-aging-notification
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { OrdersQueueProcessor } from './orders.processor';
+import { shouldRunApiBackgroundServices } from '../../common/runtime/process-role';
 
 @Module({
   imports: [
@@ -21,7 +22,11 @@ import { OrdersQueueProcessor } from './orders.processor';
     }),
   ],
   controllers: [OrdersController],
-  providers: [OrdersService, OrdersQueueProcessor, OrdersAgingNotificationCacheService],
+  providers: [
+    OrdersService,
+    OrdersAgingNotificationCacheService,
+    ...(shouldRunApiBackgroundServices() ? [OrdersQueueProcessor] : []),
+  ],
   exports: [OrdersService],
 })
 export class OrdersModule {}

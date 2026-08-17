@@ -8,6 +8,7 @@ import { WmsMobileController } from './wms-mobile.controller';
 import { WMS_PICKING_HANDOFF_QUEUE } from './wms-mobile.constants';
 import { WmsMobileProcessor } from './wms-mobile.processor';
 import { WmsMobileService } from './wms-mobile.service';
+import { shouldRunApiBackgroundServices } from '../../common/runtime/process-role';
 
 @Module({
   imports: [
@@ -20,6 +21,9 @@ import { WmsMobileService } from './wms-mobile.service';
     }),
   ],
   controllers: [WmsMobileController],
-  providers: [WmsMobileService, WmsMobileProcessor],
+  providers: [
+    WmsMobileService,
+    ...(shouldRunApiBackgroundServices() ? [WmsMobileProcessor] : []),
+  ],
 })
 export class WmsMobileModule {}
