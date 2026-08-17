@@ -27,5 +27,6 @@ export function useSmsAccess() {
       permissions.includes('sms.devices.manage')
       || permissions.includes('sms.inbox.read'),
     canSendMessages: permissions.includes('sms.messages.send'),
+    canReadInbox: permissions.includes('sms.inbox.read'),
   };
 }

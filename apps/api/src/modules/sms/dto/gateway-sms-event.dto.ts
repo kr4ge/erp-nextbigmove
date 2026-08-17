@@ -113,7 +113,7 @@ export class GatewaySmsEventDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(160)
+  @MaxLength(4096)
   body?: string;
 
   @IsISO8601()

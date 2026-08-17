@@ -32,7 +32,7 @@ export function SmsGettingStarted({
       icon: Smartphone,
     },
     {
-      label: 'Generate a device API key',
+      label: 'Generate an enrollment key',
       description: 'Create a secure one-time enrollment key for the selected partner.',
       done: enrollmentGenerated || overview.setup.hasDevice,
       icon: KeyRound,
@@ -44,7 +44,7 @@ export function SmsGettingStarted({
           iconLeft={<KeyRound className="h-4 w-4" />}
           onClick={onGenerateEnrollment}
         >
-          Generate API key
+          Generate enrollment key
         </Button>
       ) : null,
     },

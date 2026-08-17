@@ -45,8 +45,9 @@ export class SmsController {
   listConversations(
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('cursor') cursor?: string,
+    @Query('search') search?: string,
   ) {
-    return this.sms.listConversations(limit, cursor);
+    return this.sms.listConversations(limit, cursor, search);
   }
 
   @Get('conversations/:conversationId/messages')
@@ -56,6 +57,14 @@ export class SmsController {
     @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
   ) {
     return this.sms.listConversationMessages(conversationId, limit);
+  }
+
+  @Post('conversations/:conversationId/read')
+  @Permissions('sms.inbox.read')
+  markConversationRead(
+    @Param('conversationId', ParseUUIDPipe) conversationId: string,
+  ) {
+    return this.sms.markConversationRead(conversationId);
   }
 
   @Get('devices')
@@ -68,6 +77,12 @@ export class SmsController {
   @Permissions('sms.devices.manage')
   createDeviceEnrollment() {
     return this.sms.createDeviceEnrollment();
+  }
+
+  @Post('devices/:deviceId/heartbeat-check')
+  @Permissions('sms.devices.manage')
+  checkDeviceHeartbeat(@Param('deviceId', ParseUUIDPipe) deviceId: string) {
+    return this.sms.checkDeviceHeartbeat(deviceId);
   }
 
   @Get('templates')

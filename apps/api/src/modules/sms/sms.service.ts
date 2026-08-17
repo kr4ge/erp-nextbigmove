@@ -35,12 +35,17 @@ export class SmsService {
 
   async createDeviceEnrollment() {
     const { tenantId } = await this.context.getContext();
-    return this.gateway.createEnrollment(tenantId);
+    const enrollment = await this.gateway.createEnrollment(tenantId);
+    return {
+      ...enrollment,
+      tenantId,
+    };
   }
 
   async getOverview() {
     const { tenantId } = await this.context.getContext();
     const now = new Date();
+    const deviceFreshAfter = this.deviceFreshAfter(now);
     const today = this.manilaDayBounds(now);
     const last30DaysStart = new Date(today.start.getTime() - (29 * 24 * 60 * 60 * 1000));
     const dailyLimit = Number(
@@ -77,10 +82,22 @@ export class SmsService {
         where: { tenantId, status: { not: 'REVOKED' } },
       }),
       this.prisma.smsDevice.count({
-        where: { tenantId, status: 'ACTIVE' },
+        where: {
+          tenantId,
+          status: 'ACTIVE',
+          lastSeenAt: { gte: deviceFreshAfter },
+        },
       }),
       this.prisma.smsSim.count({
-        where: { tenantId, status: 'ACTIVE' },
+        where: {
+          tenantId,
+          status: 'ACTIVE',
+          lastSeenAt: { gte: deviceFreshAfter },
+          device: {
+            status: 'ACTIVE',
+            lastSeenAt: { gte: deviceFreshAfter },
+          },
+        },
       }),
       this.prisma.smsMessage.count({
         where: { tenantId, direction: 'OUTBOUND', status: 'DELIVERED' },
@@ -294,12 +311,28 @@ export class SmsService {
     return result.message;
   }
 
-  async listConversations(limit = 50, cursor?: string) {
-    const { tenantId } = await this.context.getContext();
+  async listConversations(limit = 50, cursor?: string, search?: string) {
+    const { tenantId, userId } = await this.context.getContext();
+    if (!userId) {
+      throw new ForbiddenException('Authenticated user is required');
+    }
     const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const normalizedSearch = search?.trim().slice(0, 100);
 
-    return this.prisma.smsConversation.findMany({
-      where: { tenantId },
+    const conversations = await this.prisma.smsConversation.findMany({
+      where: {
+        tenantId,
+        ...(normalizedSearch
+          ? {
+              OR: [
+                { customerName: { contains: normalizedSearch, mode: 'insensitive' } },
+                { customerPhone: { contains: normalizedSearch } },
+                { customerPhoneNormalized: { contains: normalizedSearch } },
+                { lastMessagePreview: { contains: normalizedSearch, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
       orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
       take: safeLimit,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -316,7 +349,30 @@ export class SmsService {
         store: {
           select: { id: true, shopName: true },
         },
+        messages: {
+          where: { direction: 'INBOUND' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { createdAt: true },
+        },
+        reads: {
+          where: { userId },
+          take: 1,
+          select: { lastReadAt: true },
+        },
       },
+    });
+
+    return conversations.map(({ messages, reads, ...conversation }) => {
+      const lastInboundAt = messages[0]?.createdAt ?? null;
+      const lastReadAt = reads[0]?.lastReadAt ?? null;
+      return {
+        ...conversation,
+        hasUnread: Boolean(
+          lastInboundAt && (!lastReadAt || lastInboundAt > lastReadAt),
+        ),
+        lastReadAt,
+      };
     });
   }
 
@@ -330,9 +386,9 @@ export class SmsService {
       throw new NotFoundException('SMS conversation not found');
     }
 
-    return this.prisma.smsMessage.findMany({
+    const messages = await this.prisma.smsMessage.findMany({
       where: { tenantId, conversationId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
       take: Math.min(Math.max(limit, 1), 200),
       include: {
         events: {
@@ -340,11 +396,45 @@ export class SmsService {
         },
       },
     });
+
+    return messages.reverse();
+  }
+
+  async markConversationRead(conversationId: string) {
+    const { tenantId, userId } = await this.context.getContext();
+    if (!userId) {
+      throw new ForbiddenException('Authenticated user is required');
+    }
+
+    const conversation = await this.prisma.smsConversation.findFirst({
+      where: { id: conversationId, tenantId },
+      select: { id: true },
+    });
+    if (!conversation) {
+      throw new NotFoundException('SMS conversation not found');
+    }
+
+    return this.prisma.smsConversationRead.upsert({
+      where: {
+        tenantId_conversationId_userId: {
+          tenantId,
+          conversationId,
+          userId,
+        },
+      },
+      create: {
+        tenantId,
+        conversationId,
+        userId,
+        lastReadAt: new Date(),
+      },
+      update: { lastReadAt: new Date() },
+    });
   }
 
   async listDevices() {
     const { tenantId } = await this.context.getContext();
-    return this.prisma.smsDevice.findMany({
+    const devices = await this.prisma.smsDevice.findMany({
       where: { tenantId },
       orderBy: { name: 'asc' },
       include: {
@@ -353,6 +443,100 @@ export class SmsService {
         },
       },
     });
+
+    const freshAfter = this.deviceFreshAfter(new Date());
+    return devices.map((device) => {
+      const isFresh = Boolean(
+        device.lastSeenAt && device.lastSeenAt >= freshAfter,
+      );
+      const status = device.status === 'ACTIVE' && !isFresh
+        ? 'OFFLINE' as const
+        : device.status;
+
+      return {
+        ...device,
+        status,
+        connected: status === 'ACTIVE',
+        sims: device.sims.map((sim) => ({
+          ...sim,
+          status:
+            status === 'ACTIVE' && sim.status === 'ACTIVE'
+              ? sim.status
+              : sim.status === 'DISABLED'
+                ? sim.status
+                : 'OFFLINE' as const,
+        })),
+      };
+    });
+  }
+
+  async checkDeviceHeartbeat(deviceId: string) {
+    const { tenantId } = await this.context.getContext();
+    const device = await this.prisma.smsDevice.findFirst({
+      where: { id: deviceId, tenantId, status: { not: 'REVOKED' } },
+      select: {
+        id: true,
+        externalDeviceId: true,
+        lastSeenAt: true,
+      },
+    });
+    if (!device) {
+      throw new NotFoundException('SMS device not found');
+    }
+
+    const baseline = device.lastSeenAt?.getTime() ?? 0;
+    const request = await this.gateway.requestHeartbeat(
+      tenantId,
+      device.externalDeviceId,
+    );
+    const timeoutMs = Math.min(
+      Math.max(Number(process.env.SMS_HEARTBEAT_CHECK_TIMEOUT_MS ?? 12000), 3000),
+      20000,
+    );
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      await this.delay(500);
+      const refreshed = await this.prisma.smsDevice.findFirst({
+        where: { id: device.id, tenantId },
+        select: { lastSeenAt: true, status: true },
+      });
+      if (refreshed?.lastSeenAt && refreshed.lastSeenAt.getTime() > baseline) {
+        return {
+          connected: true,
+          status: 'ACTIVE' as const,
+          requestedAt: request.requestedAt,
+          checkedAt: new Date().toISOString(),
+          lastSeenAt: refreshed.lastSeenAt,
+        };
+      }
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.smsDevice.updateMany({
+        where: {
+          id: device.id,
+          tenantId,
+          status: 'ACTIVE',
+          ...(device.lastSeenAt
+            ? { lastSeenAt: { lte: device.lastSeenAt } }
+            : { lastSeenAt: null }),
+        },
+        data: { status: 'OFFLINE' },
+      }),
+      this.prisma.smsSim.updateMany({
+        where: { deviceId: device.id, tenantId, status: 'ACTIVE' },
+        data: { status: 'OFFLINE' },
+      }),
+    ]);
+
+    return {
+      connected: false,
+      status: 'OFFLINE' as const,
+      requestedAt: request.requestedAt,
+      checkedAt: new Date().toISOString(),
+      lastSeenAt: device.lastSeenAt,
+    };
   }
 
   async listTemplates() {
@@ -584,7 +768,7 @@ export class SmsService {
 
     const senderPhone = this.phone.normalize(dto.from);
     const recipientPhone = this.phone.normalize(dto.to);
-    const body = this.phone.analyzeBody(dto.body);
+    const body = this.phone.analyzeInboundBody(dto.body);
     const occurredAt = new Date(dto.occurredAt);
     const idempotencyKey = `gateway:${dto.eventId}`;
 
@@ -657,13 +841,19 @@ export class SmsService {
   }
 
   private async resolveSim(params: { tenantId: string; simId?: string; storeId?: string }) {
+    const freshAfter = this.deviceFreshAfter(new Date());
+
     if (params.simId) {
       const sim = await this.prisma.smsSim.findFirst({
         where: {
           id: params.simId,
           tenantId: params.tenantId,
           status: 'ACTIVE',
-          device: { status: 'ACTIVE' },
+          lastSeenAt: { gte: freshAfter },
+          device: {
+            status: 'ACTIVE',
+            lastSeenAt: { gte: freshAfter },
+          },
         },
         include: { device: true },
       });
@@ -684,7 +874,11 @@ export class SmsService {
         isActive: true,
         sim: {
           status: 'ACTIVE',
-          device: { status: 'ACTIVE' },
+          lastSeenAt: { gte: freshAfter },
+          device: {
+            status: 'ACTIVE',
+            lastSeenAt: { gte: freshAfter },
+          },
         },
       },
       orderBy: { priority: 'asc' },
@@ -785,6 +979,20 @@ export class SmsService {
       start: new Date(`${datePart}T00:00:00+08:00`),
       end: new Date(`${datePart}T24:00:00+08:00`),
     };
+  }
+
+  private deviceFreshAfter(now: Date) {
+    const staleAfterMinutes = Math.min(
+      Math.max(Number(process.env.SMS_DEVICE_STALE_AFTER_MINUTES ?? 45), 5),
+      24 * 60,
+    );
+    return new Date(now.getTime() - (staleAfterMinutes * 60_000));
+  }
+
+  private delay(milliseconds: number) {
+    return new Promise<void>((resolve) => {
+      setTimeout(resolve, milliseconds);
+    });
   }
 
   private mapGatewayEvent(type: GatewaySmsEventType): {

@@ -24,6 +24,11 @@ type EnrollmentResponse = {
   expiresAt: string;
 };
 
+type HeartbeatRequestResponse = {
+  accepted: boolean;
+  requestedAt: string;
+};
+
 @Injectable()
 export class SmsGatewayClient {
   constructor(private readonly config: ConfigService) {}
@@ -70,6 +75,34 @@ export class SmsGatewayClient {
     }
 
     return response.json() as Promise<DispatchResponse>;
+  }
+
+  async requestHeartbeat(
+    tenantId: string,
+    externalDeviceId: string,
+  ): Promise<HeartbeatRequestResponse> {
+    const { baseUrl, apiKey, timeoutMs } = this.getConfiguration();
+    const response = await fetch(
+      `${baseUrl}/api/v1/device-probes/${encodeURIComponent(externalDeviceId)}/heartbeat`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ tenantId }),
+        signal: AbortSignal.timeout(timeoutMs),
+      },
+    );
+
+    if (!response.ok) {
+      const responseBody = await response.text();
+      throw new Error(
+        `SMS gateway rejected heartbeat check (${response.status}): ${responseBody.slice(0, 500)}`,
+      );
+    }
+
+    return response.json() as Promise<HeartbeatRequestResponse>;
   }
 
   private getConfiguration() {

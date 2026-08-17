@@ -36,7 +36,7 @@ export function SmsEnrollmentDialog({
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-soft text-primary">
             <QrCode className="h-5 w-5" />
           </div>
-          <DialogTitle className="mb-1">Scan the device API key</DialogTitle>
+          <DialogTitle className="mb-1">Scan the enrollment key</DialogTitle>
           <DialogDescription>
             Open NBM SMS Gateway on the Android phone and scan this QR code. The
             key is scoped to the current partner, expires automatically, and can
@@ -58,7 +58,7 @@ export function SmsEnrollmentDialog({
             <div className="rounded-xl border border-border bg-background-secondary p-4">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                  Device API key
+                  One-time enrollment key
                 </p>
                 <span className="pill pill-warning">One-time use</span>
               </div>

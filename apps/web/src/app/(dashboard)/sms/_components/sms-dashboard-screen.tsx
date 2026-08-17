@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowUpRight,
+  Inbox,
   KeyRound,
+  LayoutDashboard,
   Send,
   RefreshCw,
   ShieldCheck,
@@ -13,10 +15,12 @@ import {
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
+import { DashboardTabs } from '@/components/ui/dashboard-tabs';
 import { SmsDeviceList } from './sms-device-list';
 import { SmsEnrollmentAccess } from './sms-enrollment-access';
 import { SmsEnrollmentDialog } from './sms-enrollment-dialog';
 import { SmsGettingStarted } from './sms-getting-started';
+import { SmsInbox } from './sms-inbox';
 import { SmsMetricGrid } from './sms-metric-grid';
 import { SmsOperationalSummary } from './sms-operational-summary';
 import { SmsSendDialog } from './sms-send-dialog';
@@ -26,6 +30,7 @@ import { parseSmsError } from '../_utils/sms-errors';
 
 export function SmsDashboardScreen() {
   const [displayName, setDisplayName] = useState('there');
+  const [activeTab, setActiveTab] = useState<'overview' | 'inbox'>('overview');
   const controller = useSmsDashboard();
   const {
     access,
@@ -37,12 +42,14 @@ export function SmsDashboardScreen() {
     enrollmentLoading,
     sendLoading,
     sendOpen,
+    checkingDeviceId,
     refreshLoading,
     generateEnrollment,
     openEnrollment,
     copyEnrollment,
     refresh,
     sendMessage,
+    checkDeviceHeartbeat,
     setEnrollmentOpen,
     setSendOpen,
   } = controller;
@@ -117,9 +124,12 @@ export function SmsDashboardScreen() {
               variant="ghost"
               iconLeft={<ArrowUpRight className="h-4 w-4" />}
               onClick={() => {
-                document
-                  .getElementById('sms-get-started')
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                setActiveTab('overview');
+                window.requestAnimationFrame(() => {
+                  document
+                    .getElementById('sms-get-started')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
               }}
             >
               Quick start
@@ -140,12 +150,39 @@ export function SmsDashboardScreen() {
                 iconLeft={<KeyRound className="h-4 w-4" />}
                 onClick={generateEnrollment}
               >
-                New API key
+                New enrollment key
               </Button>
             ) : null}
           </>
         }
       />
+
+      <DashboardTabs
+        value={activeTab}
+        items={[
+          {
+            value: 'overview',
+            label: 'Overview',
+            icon: <LayoutDashboard className="h-4 w-4" />,
+          },
+          ...(access.canReadInbox
+            ? [{
+                value: 'inbox' as const,
+                label: 'Inbox',
+                icon: <Inbox className="h-4 w-4" />,
+              }]
+            : []),
+        ]}
+        onValueChange={setActiveTab}
+      />
+
+      {activeTab === 'inbox' ? (
+        <SmsInbox
+          enabled={access.canReadInbox}
+          canSendMessages={access.canSendMessages}
+        />
+      ) : (
+        <>
 
       {devicesQuery.isError && access.canReadDevices ? (
         <AlertBanner
@@ -173,6 +210,8 @@ export function SmsDashboardScreen() {
             canManageDevices={access.canManageDevices}
             enrollmentLoading={enrollmentLoading}
             onGenerateEnrollment={generateEnrollment}
+            checkingDeviceId={checkingDeviceId}
+            onCheckHeartbeat={checkDeviceHeartbeat}
           />
         ) : (
           <section className="panel panel-content p-5">
@@ -192,6 +231,8 @@ export function SmsDashboardScreen() {
 
         <SmsEnrollmentAccess
           enrollment={enrollment}
+          hasRegisteredDevice={overview.setup.hasDevice}
+          hasConnectedDevice={overview.setup.hasActiveDevice}
           canManageDevices={access.canManageDevices}
           enrollmentLoading={enrollmentLoading}
           onGenerateEnrollment={generateEnrollment}
@@ -228,6 +269,8 @@ export function SmsDashboardScreen() {
           </div>
         </section>
       </div>
+        </>
+      )}
 
       <SmsEnrollmentDialog
         enrollment={enrollment}

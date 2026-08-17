@@ -1,4 +1,4 @@
-import { Radio, Smartphone, WifiOff } from 'lucide-react';
+import { HeartPulse, Radio, Smartphone, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/emptystate';
 import type { SmsDevice } from '../_types/sms';
@@ -9,6 +9,8 @@ type SmsDeviceListProps = {
   canManageDevices: boolean;
   enrollmentLoading: boolean;
   onGenerateEnrollment: () => void;
+  checkingDeviceId: string | null;
+  onCheckHeartbeat: (deviceId: string) => void;
 };
 
 const deviceStatusClasses: Record<SmsDevice['status'], string> = {
@@ -23,6 +25,8 @@ export function SmsDeviceList({
   canManageDevices,
   enrollmentLoading,
   onGenerateEnrollment,
+  checkingDeviceId,
+  onCheckHeartbeat,
 }: SmsDeviceListProps) {
   return (
     <section className="panel panel-content">
@@ -82,9 +86,24 @@ export function SmsDeviceList({
                       </p>
                     </div>
                   </div>
-                  <p className="text-xs text-muted">
-                    Enrolled {formatSmsDateTime(device.enrolledAt)}
-                  </p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {canManageDevices && device.status !== 'REVOKED' ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        loading={checkingDeviceId === device.id}
+                        disabled={Boolean(checkingDeviceId && checkingDeviceId !== device.id)}
+                        iconLeft={<HeartPulse className="h-4 w-4" />}
+                        onClick={() => onCheckHeartbeat(device.id)}
+                      >
+                        Check connection
+                      </Button>
+                    ) : null}
+                    <p className="text-xs text-muted">
+                      Enrolled {formatSmsDateTime(device.enrolledAt)}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2 pl-0 sm:pl-12">

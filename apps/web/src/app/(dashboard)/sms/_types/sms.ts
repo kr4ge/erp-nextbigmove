@@ -36,6 +36,7 @@ export type SmsOverviewResponse = {
 };
 
 export type SmsEnrollmentResponse = {
+  tenantId: string;
   enrollmentToken: string;
   expiresAt: string;
 };
@@ -61,6 +62,7 @@ export type SmsDevice = {
   appVersion: string | null;
   lastSeenAt: string | null;
   enrolledAt: string | null;
+  connected: boolean;
   sims: SmsSim[];
 };
 
@@ -72,8 +74,48 @@ export type SendSmsMessageInput = {
 
 export type SmsMessage = {
   id: string;
+  conversationId: string;
+  direction: 'OUTBOUND' | 'INBOUND';
+  senderPhone: string;
   recipientPhone: string;
   body: string;
   status: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  queuedAt?: string | null;
+  sentAt?: string | null;
+  deliveredAt?: string | null;
+  failedAt?: string | null;
+  receivedAt?: string | null;
   createdAt: string;
+};
+
+export type SmsConversation = {
+  id: string;
+  customerPhone: string;
+  customerPhoneNormalized: string;
+  customerName: string | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  hasUnread: boolean;
+  lastReadAt: string | null;
+  sim: {
+    id: string;
+    alias: string | null;
+    phoneNumber: string | null;
+    carrier: string | null;
+    status: SmsSim['status'];
+  };
+  store: {
+    id: string;
+    shopName: string;
+  } | null;
+};
+
+export type SmsHeartbeatResponse = {
+  connected: boolean;
+  status: 'ACTIVE' | 'OFFLINE';
+  requestedAt: string;
+  checkedAt: string;
+  lastSeenAt: string | null;
 };
