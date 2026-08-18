@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import {
   Prisma,
   TenantStatus,
@@ -81,6 +82,8 @@ type ReceivablePurchasingBatchRecord = Prisma.WmsPurchasingBatchGetPayload<{
   };
 }>;
 const ACTIVE_WMS_TENANT_STATUSES = [TenantStatus.ACTIVE, TenantStatus.TRIAL] as const;
+const RECEIVING_TRANSACTION_MAX_WAIT_MS = 10_000;
+const RECEIVING_TRANSACTION_TIMEOUT_MS = 30_000;
 
 type ReceivingBatchRecord = Prisma.WmsReceivingBatchGetPayload<{
   include: {
@@ -2022,6 +2025,7 @@ export class WmsReceivingService {
           unitBarcodeIndex += 1;
 
           return {
+            id: randomUUID(),
             tenantId: scope.activeTenantId!,
             storeId: entry.purchasingLine.storeId,
             posProductId: entry.purchasingLine.resolvedPosProductId!,
@@ -2051,21 +2055,9 @@ export class WmsReceivingService {
         data: unitRows,
       });
 
-      const createdUnits = await tx.wmsInventoryUnit.findMany({
-        where: {
-          receivingBatchId: receivingBatch.id,
-          code: {
-            in: unitRows.map((row) => row.code),
-          },
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      if (createdUnits.length) {
+      if (unitRows.length) {
         await tx.wmsInventoryMovement.createMany({
-          data: createdUnits.map((unit) => ({
+          data: unitRows.map((unit) => ({
             tenantId: scope.activeTenantId!,
             inventoryUnitId: unit.id,
             warehouseId: warehouse.id,
@@ -2152,6 +2144,9 @@ export class WmsReceivingService {
           status: nextPurchasingStatus,
         },
       };
+    }, {
+      maxWait: RECEIVING_TRANSACTION_MAX_WAIT_MS,
+      timeout: RECEIVING_TRANSACTION_TIMEOUT_MS,
     });
 
     this.workflowExecutionGateway.emitTenantEvent(
@@ -2419,6 +2414,7 @@ export class WmsReceivingService {
           unitBarcodeIndex += 1;
 
           return {
+            id: randomUUID(),
             tenantId,
             storeId: entry.storeId,
             posProductId: entry.profile.posProductId,
@@ -2448,21 +2444,9 @@ export class WmsReceivingService {
         data: unitRows,
       });
 
-      const createdUnits = await tx.wmsInventoryUnit.findMany({
-        where: {
-          receivingBatchId: receivingBatch.id,
-          code: {
-            in: unitRows.map((row) => row.code),
-          },
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      if (createdUnits.length) {
+      if (unitRows.length) {
         await tx.wmsInventoryMovement.createMany({
-          data: createdUnits.map((unit) => ({
+          data: unitRows.map((unit) => ({
             tenantId,
             inventoryUnitId: unit.id,
             warehouseId: warehouse.id,
@@ -2482,6 +2466,9 @@ export class WmsReceivingService {
       }
 
       return receivingBatch.id;
+    }, {
+      maxWait: RECEIVING_TRANSACTION_MAX_WAIT_MS,
+      timeout: RECEIVING_TRANSACTION_TIMEOUT_MS,
     });
 
     await this.wmsPurchasingService.ensureManualReceivingInvoice(created, tenantId);
