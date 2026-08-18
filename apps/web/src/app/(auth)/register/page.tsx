@@ -63,6 +63,13 @@ export default function RegisterPage() {
     try {
       const response = await apiClient.post('/auth/register', data);
 
+      // Registration must come back with a tenant; without one there is nothing to scope
+      // the session to, so surface it instead of crashing on a null read.
+      if (!response.data.tenant) {
+        setError('Registration did not return a workspace. Please try again.');
+        return;
+      }
+
       // Store tokens and tenant info
       localStorage.setItem('access_token', response.data.accessToken);
       localStorage.setItem('refresh_token', response.data.refreshToken);

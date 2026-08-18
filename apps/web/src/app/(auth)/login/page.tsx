@@ -59,6 +59,13 @@ export default function LoginPage() {
         password: data.password,
       });
 
+      // Platform-level accounts have no tenant and belong in the admin app.
+      // Bail out before persisting tokens so we never leave a half-authenticated session behind.
+      if (!response.data.tenant) {
+        setError('This account is not linked to a workspace. Please sign in from the admin app.');
+        return;
+      }
+
       // Store tokens and user info
       localStorage.setItem('access_token', response.data.accessToken);
       localStorage.setItem('refresh_token', response.data.refreshToken);
