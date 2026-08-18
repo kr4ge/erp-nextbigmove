@@ -9,11 +9,11 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev --no-remote",
-    "build": "turbo run build --no-remote",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "turbo run test --no-remote",
-    "clean": "turbo run clean --no-remote",
+    "test": "turbo run test",
+    "clean": "turbo run clean",
     "docker:dev": "docker-compose -f docker-compose.dev.yml up",
     "docker:prod": "docker-compose -f docker-compose.prod.yml up -d",
     "docker:down": "docker-compose -f docker-compose.dev.yml down",
