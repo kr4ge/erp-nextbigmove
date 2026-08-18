@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   ActivityIndicator,
+  AppState,
+  InteractionManager,
   Modal,
   Pressable,
   ScrollView,
@@ -15,7 +17,6 @@ import { canUsePackWorkspace } from '@/src/features/home/rbac';
 import { usePackingWorkspace } from '@/src/features/packing/hooks/use-packing-workspace';
 import type {
   WmsMobileBasketPackPlan,
-  WmsMobileBasketPackPlanOrder,
   PackingFilters,
   PackingStatusFilter,
   WmsMobilePackingResponse,
@@ -665,8 +666,6 @@ function DemandPackExecutionCard({
   const [proofVisible, setProofVisible] = useState(false);
   const [waybillCode, setWaybillCode] = useState('');
   const [unitCode, setUnitCode] = useState('');
-  const waybillInputRef = useRef<TextInput>(null);
-  const unitInputRef = useRef<TextInput>(null);
   const waybillSubmitInFlightRef = useRef(false);
   const unitSubmitInFlightRef = useRef(false);
   const selectedOrder = plan.activeOrder;
@@ -697,25 +696,6 @@ function DemandPackExecutionCard({
     setProofVisible(false);
   }, [selectedOrderId]);
 
-  useEffect(() => {
-    if (isSubmitting || proofVisible) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      if (selectedOrderId && !activeOrderReadyToComplete) {
-        unitInputRef.current?.focus();
-        return;
-      }
-
-      if (!selectedOrderId && !isComplete) {
-        waybillInputRef.current?.focus();
-      }
-    }, 150);
-
-    return () => clearTimeout(timer);
-  }, [activeOrderReadyToComplete, isComplete, isSubmitting, proofVisible, selectedOrderId]);
-
   const submitWaybill = async () => {
     if (!basket?.id || waybillSubmitInFlightRef.current || isSubmitting || isComplete) {
       return;
@@ -723,22 +703,13 @@ function DemandPackExecutionCard({
 
     const code = waybillCode.trim();
     if (!code) {
-      waybillInputRef.current?.focus();
       return;
     }
 
     waybillSubmitInFlightRef.current = true;
     try {
-      const ok = await onScanWaybill(basket.id, code);
+      await onScanWaybill(basket.id, code);
       setWaybillCode('');
-      setTimeout(() => {
-        if (ok) {
-          unitInputRef.current?.focus();
-          return;
-        }
-
-        waybillInputRef.current?.focus();
-      }, 80);
     } finally {
       waybillSubmitInFlightRef.current = false;
     }
@@ -757,7 +728,6 @@ function DemandPackExecutionCard({
 
     const code = unitCode.trim();
     if (!code) {
-      unitInputRef.current?.focus();
       return;
     }
 
@@ -765,7 +735,6 @@ function DemandPackExecutionCard({
     try {
       await onScanUnit(basket.id, selectedOrder.id, code);
       setUnitCode('');
-      setTimeout(() => unitInputRef.current?.focus(), 80);
     } finally {
       unitSubmitInFlightRef.current = false;
     }
@@ -782,7 +751,13 @@ function DemandPackExecutionCard({
       return false;
     }
 
-    return onCompleteOrder(basket.id, selectedOrder.id);
+    const completed = await onCompleteOrder(basket.id, selectedOrder.id);
+    if (completed) {
+      setWaybillCode('');
+      setUnitCode('');
+    }
+
+    return completed;
   };
 
   const scannerTarget = isComplete
@@ -804,7 +779,9 @@ function DemandPackExecutionCard({
   return (
     <>
       <HiddenScannerCapture
-        enabled={Boolean(scannerTarget) && !isSubmitting && !proofVisible}
+        focusKey={`${plan.basketId}:${selectedOrderId ?? 'waybill'}`}
+        enabled={!isComplete}
+        locked={!scannerTarget || isSubmitting || proofVisible}
         value={scannerTarget?.value ?? ''}
         onChangeText={scannerTarget?.onChangeText ?? noopScannerChange}
         onSubmit={scannerTarget?.onSubmit ?? noopScannerSubmit}
@@ -911,9 +888,9 @@ function DemandPackExecutionCard({
                 ) : (
                   <ScannerInput
                     autoSubmit
-                    inputRef={unitInputRef}
                     label="Unit"
                     placeholder="Scan basket unit"
+                    scannerOnly
                     value={unitCode}
                     disabled={isSubmitting}
                     onChangeText={setUnitCode}
@@ -924,9 +901,9 @@ function DemandPackExecutionCard({
             ) : (
               <ScannerInput
                 autoSubmit
-                inputRef={waybillInputRef}
                 label="Waybill"
                 placeholder="Scan waybill"
+                scannerOnly
                 value={waybillCode}
                 disabled={isSubmitting}
                 onChangeText={setWaybillCode}
@@ -964,17 +941,19 @@ function DemandPackExecutionCard({
             ))}
       </View>
 
-      <PackingProofModal
-        error={packingProof.error}
-        isUploading={packingProof.isUploading}
-        orderLabel={`Order #${selectedOrder?.posOrderId ?? ''}`}
-        visible={proofVisible && Boolean(selectedOrder)}
-        onClose={() => {
-          packingProof.clearError();
-          setProofVisible(false);
-        }}
-        onSave={packingProof.upload}
-      />
+      {proofVisible && selectedOrder ? (
+        <PackingProofModal
+          error={packingProof.error}
+          isUploading={packingProof.isUploading}
+          orderLabel={`Order #${selectedOrder.posOrderId}`}
+          visible
+          onClose={() => {
+            packingProof.clearError();
+            setProofVisible(false);
+          }}
+          onSave={packingProof.upload}
+        />
+      ) : null}
     </>
   );
 }
@@ -1019,8 +998,6 @@ function PackExecutionCard({
   const [supervisorIdentifier, setSupervisorIdentifier] = useState('');
   const [supervisorPassword, setSupervisorPassword] = useState('');
   const [voidVisible, setVoidVisible] = useState(false);
-  const unitInputRef = useRef<TextInput>(null);
-  const trackingInputRef = useRef<TextInput>(null);
   const unitSubmitInFlightRef = useRef(false);
   const trackingSubmitInFlightRef = useRef(false);
   const tracking = task.tracking?.trim() || null;
@@ -1048,22 +1025,6 @@ function PackExecutionCard({
     setProofVisible(false);
   }, [task.id]);
 
-  useEffect(() => {
-    if (!isPacking || proofVisible) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      if (!packedAll) {
-        unitInputRef.current?.focus();
-      } else {
-        trackingInputRef.current?.focus();
-      }
-    }, 150);
-
-    return () => clearTimeout(timer);
-  }, [isPacking, packedAll, proofVisible, task.id]);
-
   const submitUnit = async () => {
     if (unitSubmitInFlightRef.current || isSubmitting) {
       return;
@@ -1071,7 +1032,6 @@ function PackExecutionCard({
 
     const code = unitCode.trim();
     if (!code) {
-      unitInputRef.current?.focus();
       return;
     }
 
@@ -1080,7 +1040,6 @@ function PackExecutionCard({
       const ok = await onScanUnit(task.id, code);
       if (ok) {
         setUnitCode('');
-        setTimeout(() => unitInputRef.current?.focus(), 80);
       }
     } finally {
       unitSubmitInFlightRef.current = false;
@@ -1094,7 +1053,6 @@ function PackExecutionCard({
 
     const code = trackingCode.trim();
     if (!code) {
-      trackingInputRef.current?.focus();
       return;
     }
 
@@ -1131,7 +1089,7 @@ function PackExecutionCard({
     }
   };
 
-  const scannerTarget = isPacking && !proofVisible
+  const scannerTarget = isPacking
     ? !packedAll
       ? {
           value: unitCode,
@@ -1151,7 +1109,9 @@ function PackExecutionCard({
   return (
     <>
       <HiddenScannerCapture
-        enabled={Boolean(scannerTarget) && !isSubmitting}
+        focusKey={`${task.id}:${packedAll ? 'tracking' : 'unit'}`}
+        enabled={isPacking}
+        locked={!scannerTarget || isSubmitting || proofVisible}
         value={scannerTarget?.value ?? ''}
         onChangeText={scannerTarget?.onChangeText ?? noopScannerChange}
         onSubmit={scannerTarget?.onSubmit ?? noopScannerSubmit}
@@ -1254,9 +1214,9 @@ function PackExecutionCard({
             {!packedAll ? (
               <ScannerInput
                 autoSubmit
-                inputRef={unitInputRef}
                 label="Unit"
                 placeholder="Scan picked unit"
+                scannerOnly
                 value={unitCode}
                 disabled={isSubmitting}
                 helper="Only units reserved for this order are accepted. Open sibling basket orders separately."
@@ -1267,9 +1227,9 @@ function PackExecutionCard({
 
             <ScannerInput
               autoSubmit
-              inputRef={trackingInputRef}
               label="Tracking"
               placeholder={tracking ?? 'Scan tracking barcode'}
+              scannerOnly
               value={trackingCode}
               disabled={isSubmitting}
               helper={verifiedTracking ? `Verified ${verifiedTracking}` : 'Scan the waybill barcode to confirm the order tracking number.'}
@@ -1322,17 +1282,19 @@ function PackExecutionCard({
         ))}
       </View>
 
-      <PackingProofModal
-        error={packingProof.error}
-        isUploading={packingProof.isUploading}
-        orderLabel={`Order #${task.posOrderId}`}
-        visible={proofVisible}
-        onClose={() => {
-          packingProof.clearError();
-          setProofVisible(false);
-        }}
-        onSave={packingProof.upload}
-      />
+      {proofVisible ? (
+        <PackingProofModal
+          error={packingProof.error}
+          isUploading={packingProof.isUploading}
+          orderLabel={`Order #${task.posOrderId}`}
+          visible
+          onClose={() => {
+            packingProof.clearError();
+            setProofVisible(false);
+          }}
+          onSave={packingProof.upload}
+        />
+      ) : null}
 
       <Modal
         transparent
@@ -1561,9 +1523,9 @@ function ScannerInput({
   autoSubmitMinLength = 3,
   disabled,
   helper,
-  inputRef,
   label,
   placeholder,
+  scannerOnly = false,
   value,
   onChangeText,
   onSubmit,
@@ -1573,9 +1535,9 @@ function ScannerInput({
   autoSubmitMinLength?: number;
   disabled?: boolean;
   helper?: string;
-  inputRef: RefObject<TextInput | null>;
   label: string;
   placeholder: string;
+  scannerOnly?: boolean;
   value: string;
   onChangeText: (value: string) => void;
   onSubmit: () => void | Promise<void>;
@@ -1596,6 +1558,7 @@ function ScannerInput({
 
     if (
       !autoSubmit
+      || scannerOnly
       || disabled
       || cleaned.length < autoSubmitMinLength
       || lastAutoSubmittedRef.current === cleaned
@@ -1609,20 +1572,19 @@ function ScannerInput({
     }, autoSubmitDelayMs);
 
     return () => clearTimeout(timer);
-  }, [autoSubmit, autoSubmitDelayMs, autoSubmitMinLength, disabled, value]);
+  }, [autoSubmit, autoSubmitDelayMs, autoSubmitMinLength, disabled, scannerOnly, value]);
 
   return (
     <View style={[styles.scanInputWrap, disabled ? styles.scanInputDisabled : null]}>
       <Text style={styles.scanInputLabel}>{label}</Text>
       <View style={styles.scanInputRow}>
         <TextInput
-          ref={inputRef}
           autoCapitalize="characters"
           autoCorrect={false}
           blurOnSubmit={false}
           caretHidden
           contextMenuHidden
-          editable={!disabled}
+          editable={!disabled && !scannerOnly}
           placeholder={placeholder}
           placeholderTextColor={tokens.colors.inkSoft}
           returnKeyType="done"
@@ -1651,6 +1613,8 @@ function ScannerInput({
 
 function HiddenScannerCapture({
   enabled,
+  focusKey,
+  locked = false,
   value,
   onChangeText,
   onSubmit,
@@ -1658,6 +1622,8 @@ function HiddenScannerCapture({
   autoSubmitMinLength = 3,
 }: {
   enabled: boolean;
+  focusKey: string;
+  locked?: boolean;
   value: string;
   onChangeText: (value: string) => void;
   onSubmit: () => void | Promise<void>;
@@ -1665,6 +1631,8 @@ function HiddenScannerCapture({
   autoSubmitMinLength?: number;
 }) {
   const inputRef = useRef<TextInput>(null);
+  const enabledRef = useRef(enabled);
+  const lockedRef = useRef(locked);
   const submitRef = useRef(onSubmit);
   const lastAutoSubmittedRef = useRef<string | null>(null);
 
@@ -1673,21 +1641,45 @@ function HiddenScannerCapture({
   }, [onSubmit]);
 
   useEffect(() => {
+    lockedRef.current = locked;
+  }, [locked]);
+
+  useEffect(() => {
+    enabledRef.current = enabled;
+    if (!enabled) {
+      lastAutoSubmittedRef.current = null;
+      inputRef.current?.blur();
+      return;
+    }
+
+    const focusScanner = () => {
+      if (enabledRef.current && !lockedRef.current && AppState.currentState === 'active') {
+        inputRef.current?.focus();
+      }
+    };
+
+    const interaction = InteractionManager.runAfterInteractions(focusScanner);
+    const timers = [40, 250, 650, 1_200].map((delay) => setTimeout(focusScanner, delay));
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setTimeout(focusScanner, 100);
+      }
+    });
+
+    return () => {
+      interaction.cancel();
+      timers.forEach(clearTimeout);
+      appStateSubscription.remove();
+    };
+  }, [enabled, focusKey, locked]);
+
+  useEffect(() => {
     if (!enabled) {
       lastAutoSubmittedRef.current = null;
       return;
     }
 
-    const timer = setTimeout(() => {
-      inputRef.current?.focus();
-    }, 30);
-
-    return () => clearTimeout(timer);
-  }, [enabled, value]);
-
-  useEffect(() => {
-    if (!enabled) {
-      lastAutoSubmittedRef.current = null;
+    if (locked) {
       return;
     }
 
@@ -1707,28 +1699,38 @@ function HiddenScannerCapture({
     }, autoSubmitDelayMs);
 
     return () => clearTimeout(timer);
-  }, [autoSubmitDelayMs, autoSubmitMinLength, enabled, value]);
+  }, [autoSubmitDelayMs, autoSubmitMinLength, enabled, locked, value]);
 
   return (
     <TextInput
       ref={inputRef}
       autoCapitalize="characters"
       autoCorrect={false}
+      autoFocus={enabled}
       blurOnSubmit={false}
       caretHidden
       contextMenuHidden
+      editable
       onBlur={() => {
-        if (!enabled) {
+        if (!enabledRef.current || lockedRef.current) {
           return;
         }
 
         setTimeout(() => {
-          inputRef.current?.focus();
+          if (enabledRef.current && !lockedRef.current) {
+            inputRef.current?.focus();
+          }
         }, 30);
       }}
-      onChangeText={onChangeText}
+      onChangeText={(nextValue) => {
+        if (!lockedRef.current) {
+          onChangeText(nextValue);
+        }
+      }}
       onSubmitEditing={() => {
-        void onSubmit();
+        if (!lockedRef.current) {
+          void submitRef.current();
+        }
       }}
       showSoftInputOnFocus={false}
       style={styles.hiddenScannerInput}
@@ -2624,12 +2626,15 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.md,
   },
   hiddenScannerInput: {
-    height: 1,
-    left: -9999,
-    opacity: 0,
+    backgroundColor: 'transparent',
+    color: 'transparent',
+    height: 4,
+    left: 1,
+    opacity: 0.01,
+    padding: 0,
     position: 'absolute',
-    top: 0,
-    width: 1,
+    top: 1,
+    width: 4,
   },
   demandActiveOrderCard: {
     backgroundColor: tokens.colors.surfaceMuted,

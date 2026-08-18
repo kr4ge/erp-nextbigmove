@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   SafeAreaView,
@@ -36,10 +34,6 @@ export function PackingProofModal({
   onClose,
   onSave,
 }: PackingProofModalProps) {
-  const cameraRef = useRef<CameraView>(null);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [cameraVisible, setCameraVisible] = useState(false);
-  const [isCapturing, setIsCapturing] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<WmsPackingProofFile | null>(null);
 
@@ -48,24 +42,46 @@ export function PackingProofModal({
       return;
     }
 
-    setCameraVisible(false);
-    setIsCapturing(false);
     setLocalError(null);
     setSelectedFile(null);
   }, [visible]);
 
   const openCamera = async () => {
     setLocalError(null);
-    if (!cameraPermission?.granted) {
-      const permission = await requestCameraPermission();
-      if (!permission.granted) {
-        setLocalError('Camera permission is required to take a packing photo.');
-        return;
-      }
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      setLocalError('Camera permission is required to take a packing photo.');
+      return;
     }
 
-    setSelectedFile(null);
-    setCameraVisible(true);
+    // Use Android's camera activity instead of holding the rugged scanner imager
+    // inside this React Native view. Closing the activity releases the imager
+    // before the next waybill scan begins.
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.82,
+    });
+    if (result.canceled) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    if (!asset) {
+      return;
+    }
+    if (asset.fileSize && asset.fileSize > MAX_INPUT_BYTES) {
+      setLocalError('Packing proof must be 30MB or smaller.');
+      return;
+    }
+
+    setSelectedFile({
+      uri: asset.uri,
+      name: asset.fileName || `packing-${orderLabel.replace(/[^a-z0-9]+/gi, '-')}-${Date.now()}.jpg`,
+      type: asset.mimeType || 'image/jpeg',
+      source: 'CAMERA',
+      byteSize: asset.fileSize,
+    });
   };
 
   const chooseFromGallery = async () => {
@@ -95,7 +111,6 @@ export function PackingProofModal({
       return;
     }
 
-    setCameraVisible(false);
     setSelectedFile({
       uri: asset.uri,
       name: asset.fileName || `packing-${Date.now()}.jpg`,
@@ -103,32 +118,6 @@ export function PackingProofModal({
       source: 'FILE',
       byteSize: asset.fileSize,
     });
-  };
-
-  const capturePhoto = async () => {
-    if (!cameraRef.current || isCapturing) {
-      return;
-    }
-
-    setIsCapturing(true);
-    setLocalError(null);
-    try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.82,
-        skipProcessing: false,
-      });
-      setCameraVisible(false);
-      setSelectedFile({
-        uri: photo.uri,
-        name: `packing-${orderLabel.replace(/[^a-z0-9]+/gi, '-')}-${Date.now()}.jpg`,
-        type: 'image/jpeg',
-        source: 'CAMERA',
-      });
-    } catch {
-      setLocalError('The camera could not capture a photo. Please try again.');
-    } finally {
-      setIsCapturing(false);
-    }
   };
 
   const saveProof = async () => {
@@ -167,27 +156,7 @@ export function PackingProofModal({
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          {cameraVisible ? (
-            <View style={styles.cameraStage}>
-              <CameraView ref={cameraRef} facing="back" style={styles.camera} />
-              <View style={styles.cameraControls}>
-                <Pressable onPress={() => setCameraVisible(false)} style={styles.cameraCancelButton}>
-                  <Text style={styles.cameraCancelText}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  disabled={isCapturing}
-                  onPress={() => void capturePhoto()}
-                  style={[styles.shutterOuter, isCapturing ? styles.disabled : null]}>
-                  {isCapturing ? (
-                    <ActivityIndicator color={tokens.colors.panel} />
-                  ) : (
-                    <View style={styles.shutterInner} />
-                  )}
-                </Pressable>
-                <View style={styles.cameraControlSpacer} />
-              </View>
-            </View>
-          ) : selectedFile ? (
+          {selectedFile ? (
             <View style={styles.previewStage}>
               <Image contentFit="contain" source={{ uri: selectedFile.uri }} style={styles.previewImage} />
               <View style={styles.previewMetaRow}>
@@ -241,16 +210,14 @@ export function PackingProofModal({
           ) : null}
         </ScrollView>
 
-        {!cameraVisible ? (
-          <View style={styles.footer}>
-            <PrimaryButton
-              disabled={!selectedFile}
-              label="Save packing proof"
-              loading={isUploading}
-              onPress={() => void saveProof()}
-            />
-          </View>
-        ) : null}
+        <View style={styles.footer}>
+          <PrimaryButton
+            disabled={!selectedFile}
+            label="Save packing proof"
+            loading={isUploading}
+            onPress={() => void saveProof()}
+          />
+        </View>
       </SafeAreaView>
     </Modal>
   );
@@ -361,52 +328,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: 4,
   },
-  cameraStage: {
-    backgroundColor: '#07151E',
-    borderRadius: tokens.radius.lg,
-    overflow: 'hidden',
-  },
-  camera: {
-    aspectRatio: 3 / 4,
-    width: '100%',
-  },
-  cameraControls: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: tokens.spacing.lg,
-    paddingVertical: tokens.spacing.lg,
-  },
-  cameraCancelButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-    minWidth: 72,
-  },
-  cameraCancelText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  cameraControlSpacer: {
-    width: 72,
-  },
-  shutterOuter: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#FFFFFF',
-    borderRadius: 38,
-    borderWidth: 4,
-    height: 76,
-    justifyContent: 'center',
-    width: 76,
-  },
-  shutterInner: {
-    backgroundColor: tokens.colors.panel,
-    borderRadius: 29,
-    height: 58,
-    width: 58,
-  },
   previewStage: {
     backgroundColor: tokens.colors.surface,
     borderColor: tokens.colors.border,
@@ -473,8 +394,5 @@ const styles = StyleSheet.create({
     borderTopColor: tokens.colors.border,
     borderTopWidth: 1,
     padding: tokens.spacing.lg,
-  },
-  disabled: {
-    opacity: 0.55,
   },
 });
