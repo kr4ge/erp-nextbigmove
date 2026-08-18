@@ -1305,6 +1305,7 @@ model PosOrder {
   @@index([tenantId, teamId, dateLocal, isRiskConfirmation], map: "pos_orders_tenant_team_date_risk_confirmation_idx")
   @@index([tenantId, dateLocal, isVoid], map: "pos_orders_tenant_date_void_idx")
   @@index([tenantId, isUndeliverable, undeliverableAt, shopId], map: "pos_orders_tenant_undeliverable_at_shop_idx")
+  @@index([tenantId, wasAbandonedCart, dateLocal], map: "pos_orders_tenant_was_abandoned_cart_idx")
   @@index([dateLocal])
   @@index([mapping])
   @@map("pos_orders")
@@ -1736,6 +1737,7 @@ model WmsInvoiceLine {
   @@unique([invoiceId, lineNo])
   @@index([tenantId, storeId])
   @@index([invoiceId])
+  @@index([invoiceId, lineType])
   @@index([variationId])
   @@map("wms_invoice_lines")
 }
