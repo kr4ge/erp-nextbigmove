@@ -67,3 +67,9 @@ docs/**
 !docs/DOCUMENTATION_INDEX.md
 !docs/team-isolation/**
 !docs/archive/**
+
+# TypeScript incremental build cache
+apps/advertising/tsconfig.tsbuildinfo
+
+# Multer scratch space for manual Meta uploads
+apps/api/tmp/

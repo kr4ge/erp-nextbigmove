@@ -20,6 +20,7 @@ import { RolesModule } from './modules/roles/roles.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { KpisModule } from './modules/kpis/kpis.module';
+import { AdvertisingModule } from './modules/advertising/advertising.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { WmsCoreModule } from './modules/wms-core/wms-core.module';
 import { WmsPurchasingModule } from './modules/wms-purchasing/wms-purchasing.module';
@@ -106,6 +107,7 @@ import { WmsIntegrationsModule } from './modules/wms-integrations/wms-integratio
     AnalyticsModule,
     OrdersModule,
     KpisModule,
+    AdvertisingModule,
     ReportsModule,
     WmsCoreModule,
     WmsPurchasingModule,

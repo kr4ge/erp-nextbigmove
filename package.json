@@ -6,6 +6,7 @@
     "apps/api",
     "apps/admin",
     "apps/web",
+    "apps/advertising",
     "packages/*"
   ],
   "scripts": {

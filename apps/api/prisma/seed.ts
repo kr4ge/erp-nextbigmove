@@ -154,6 +154,9 @@ const PERMISSIONS: { key: string; description: string }[] = [
   { key: 'analytics.sales', description: 'Read sales analytics dashboards' },
   { key: 'analytics.sales_performance', description: 'Read sales performance analytics dashboards' },
   { key: 'analytics.share', description: 'Share analytics data with other teams' },
+  { key: 'advertising.read', description: 'Read advertising performance and verdicts' },
+  { key: 'advertising.manage', description: 'Manage advertising benchmarks, assets and imports' },
+  { key: 'advertising.evaluate', description: 'Run the AI advertising evaluator' },
   { key: 'stock_request.read', description: 'Read ERP stock requests and WMS response queue' },
   { key: 'stock_request.write', description: 'Create ERP stock requests and respond to WMS revisions' },
   { key: 'orders.summary.read', description: 'Read orders summary page' },
@@ -358,6 +361,27 @@ const ROLES: RoleDef[] = [
       'orders.summary.read',
       'meta.read',
       'dashboard.marketing',
+    ],
+    isSystem: true,
+  },
+  {
+    /**
+     * The advertising console and nothing else.
+     *
+     * A media buyer who needs to read the verdicts and run the evaluator, and
+     * who has no business in orders, stock or anyone's payroll. Deliberately a
+     * role of its own rather than permissions bolted onto TENANT_ADMIN or
+     * MARKETING: widening an existing role changes what every current holder of
+     * it can see, and that is not this module's call to make.
+     */
+    key: 'ADVERTISER',
+    name: 'Advertiser',
+    description: 'Advertising console only',
+    scope: RoleScope.TEAM,
+    permissions: [
+      'advertising.read',
+      'advertising.manage',
+      'advertising.evaluate',
     ],
     isSystem: true,
   },

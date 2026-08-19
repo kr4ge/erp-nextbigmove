@@ -1,8 +1,10 @@
 const DEV_FALLBACK_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3002',
+  'http://localhost:3003',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3002',
+  'http://127.0.0.1:3003',
 ];
 
 function normalizeOrigin(origin: string): string {
@@ -32,6 +34,7 @@ export function resolveAllowedCorsOrigins(nodeEnv = process.env.NODE_ENV): strin
 
   addOrigin(process.env.CORS_ORIGIN_WEB);
   addOrigin(process.env.CORS_ORIGIN_ADMIN);
+  addOrigin(process.env.CORS_ORIGIN_ADVERTISING);
   addOriginList(process.env.CORS_ORIGINS);
 
   if (collected.length === 0 && nodeEnv !== 'production') {

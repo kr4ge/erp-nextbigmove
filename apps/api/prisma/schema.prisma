@@ -102,6 +102,10 @@ model Tenant {
   @@index([slug])
   @@index([status])
   @@map("tenants")
+  adBenchmarks      AdBenchmark[]
+  adStrategyEntries AdStrategyEntry[]
+  adLibraryEntries  AdLibraryEntry[]
+  adCreatives       AdCreative[]
 }
 
 enum TenantStatus {
@@ -151,6 +155,9 @@ model Team {
   @@unique([tenantId, teamCode])
   @@index([tenantId])
   @@map("teams")
+  adBenchmarks      AdBenchmark[]
+  adStrategyEntries AdStrategyEntry[]
+  adLibraryEntries  AdLibraryEntry[]
 }
 
 enum TeamStatus {
@@ -391,6 +398,8 @@ model User {
   @@index([tenantId, employeeId])
   @@index([email])
   @@map("users")
+  adStrategyEntries AdStrategyEntry[] @relation("AdStrategyEntryCreatedBy")
+  adLibraryEntries  AdLibraryEntry[]  @relation("AdLibraryEntryCreatedBy")
 }
 
 enum UserRole {
@@ -3031,4 +3040,164 @@ model ReconcileSalesAttribution {
   @@index([tenantId, date, campaignKey])
   @@index([tenantId, date, teamCodeKey, mappingKey])
   @@map("reconcile_sales_attribution")
+}
+
+
+// ===========================================================================
+// Advertising console
+//
+// Everything below is additive: new tables, new enums, and nothing else. The
+// only marks left on existing models are back-relation fields, which Prisma
+// requires to declare a relation and which produce no column, no index and no
+// migration against the ERP or WMS tables.
+// ===========================================================================
+
+enum AdStrategyTag {
+  OFFER
+  AD_COPY
+  TARGETING
+  FB_STRATEGY
+  CREATIVE
+  PRICING
+  OPS
+  OTHER
+}
+
+enum AdLibraryFormat {
+  VIDEO
+  IMAGE
+  CAROUSEL
+  OTHER
+}
+
+/// The floor every ad is measured against. Without one, "good CPP" means
+/// nothing, because there is nothing it is good compared to.
+model AdBenchmark {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId   String? @db.Uuid
+  team     Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  /// Null means the tenant-wide default. Set, and it applies to one Meta ad
+  /// account only — a new brand is not held to a mature one's numbers.
+  accountId String?
+
+  label String @default("Industry benchmark")
+
+  /// Cost per POS purchase — the ceiling, not the aspiration.
+  cpp Decimal @default(300.00) @db.Decimal(12, 2)
+  cpm Decimal @default(150.00) @db.Decimal(12, 2)
+  /// Link clicks over impressions, as a percentage.
+  ctrPct Float @default(2.0)
+  /// Delivered orders over processed orders.
+  deliveryRate Float @default(0.55)
+  cancelRate   Float @default(0.25)
+  rtsRate      Float @default(0.10)
+  /// Delivered COD over spend. The break-even multiple.
+  targetMer Float @default(2.5)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, accountId])
+  @@index([tenantId])
+  @@map("ad_benchmarks")
+}
+
+/// A change someone made, and what happened after.
+///
+/// This is the memory the numbers do not have. A jump in CPP on the 14th means
+/// nothing on its own; next to "raised the price on the 13th" it means
+/// something. `result` is written later, on purpose — the point of the log is
+/// the gap between deciding something and finding out whether it worked.
+model AdStrategyEntry {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId   String? @db.Uuid
+  team     Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  /// The day the change took effect — not the day it was typed up.
+  date        DateTime      @db.Date
+  title       String
+  description String?
+  tag         AdStrategyTag @default(OTHER)
+
+  result          String?
+  resultUpdatedAt DateTime?
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("AdStrategyEntryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, date])
+  @@index([tenantId, teamId, date])
+  @@map("ad_strategy_entries")
+}
+
+/// A swipe file: someone else's ad, kept because it is worth learning from.
+///
+/// The note is the point. A saved ad with no reason attached is a bookmark, and
+/// nobody has ever gone back through a folder of bookmarks.
+model AdLibraryEntry {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId   String? @db.Uuid
+  team     Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  pageName  String
+  sourceUrl String?
+  format    AdLibraryFormat @default(OTHER)
+
+  headline String?
+  bodyCopy String?
+  ctaText  String?
+
+  notes String?
+  tags  String[] @default([])
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("AdLibraryEntryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, teamId])
+  @@map("ad_library_entries")
+}
+
+/// The creative behind the ads — read from Meta, not uploaded by anyone.
+///
+/// The mapping is the point. An ad carries its creative in Meta, so the link is
+/// an exact id-to-id join rather than a guess at a code someone typed into an
+/// ad name. `thumbnailUrl` is Meta-hosted and expires; it is a pointer
+/// refreshed on each sync, never a stored file.
+model AdCreative {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  metaCreativeId String
+  name           String?
+  thumbnailUrl   String?
+  imageUrl       String?
+  videoId        String?
+  title          String?
+  body           String?
+
+  /// Every ad running this creative, by Meta ad id.
+  adIds String[] @default([])
+
+  lastSyncedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, metaCreativeId])
+  @@index([tenantId])
+  @@map("ad_creatives")
 }
