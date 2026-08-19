@@ -92,6 +92,7 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
     completeTask,
     error,
     fetchBasketPlan,
+    fetchTaskDetails,
     filters,
     isLoading,
     isLoadingMore,
@@ -206,8 +207,17 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
     }
 
     setActiveBasketId(null);
-    setActiveTaskId(task.id);
-  }, [fetchBasketPlan, setActiveTaskId]);
+    if (task.status === 'PACKED') {
+      setActiveTaskId(task.id);
+      return;
+    }
+
+    void fetchTaskDetails(task.id).then((result) => {
+      if (!result) {
+        setActiveTaskId(null);
+      }
+    });
+  }, [fetchBasketPlan, fetchTaskDetails, setActiveTaskId]);
 
   const handleDemandWaybill = useCallback(async (basketId: string, code: string) => {
     const result = await scanBasketWaybill(basketId, code);
