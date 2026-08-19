@@ -103,8 +103,11 @@ import {
   type WmsMobileHistoryTypeFilter,
 } from './dto/wms-mobile-history.dto';
 import {
+  WMS_PACKING_POST_COMPLETE_QUEUE,
+  WMS_PACKING_POST_COMPLETE_SYNC_JOB,
   WMS_PICKING_HANDOFF_QUEUE,
   WMS_PICKING_HANDOFF_WAITING_FOR_PRINTING_JOB,
+  type WmsPackingPostCompleteJobData,
   type WmsPickingHandoffWaitingForPrintingJobData,
 } from './wms-mobile.constants';
 
@@ -381,6 +384,8 @@ export class WmsMobileService {
     private readonly ordersService: OrdersService,
     @InjectQueue(WMS_PICKING_HANDOFF_QUEUE)
     private readonly pickingHandoffQueue: Queue<WmsPickingHandoffWaitingForPrintingJobData>,
+    @InjectQueue(WMS_PACKING_POST_COMPLETE_QUEUE)
+    private readonly packingPostCompleteQueue: Queue<WmsPackingPostCompleteJobData>,
   ) {}
 
   private getPickingHandoffQueueJobOptions() {
@@ -403,6 +408,100 @@ export class WmsMobileService {
       timeout,
       removeOnComplete: true,
       removeOnFail: 1000,
+    };
+  }
+
+  private getPackingPostCompleteQueueJobOptions() {
+    const attempts = Math.max(
+      1,
+      Number(process.env.WMS_PACKING_POST_COMPLETE_QUEUE_ATTEMPTS || 4),
+    );
+    const backoffDelay = Math.max(
+      1000,
+      Number(process.env.WMS_PACKING_POST_COMPLETE_QUEUE_BACKOFF_MS || 3000),
+    );
+    const timeout = Math.max(
+      10000,
+      Number(process.env.WMS_PACKING_POST_COMPLETE_QUEUE_TIMEOUT_MS || 60000),
+    );
+
+    return {
+      attempts,
+      backoff: { type: 'exponential' as const, delay: backoffDelay },
+      timeout,
+      removeOnComplete: true,
+      removeOnFail: 1000,
+    };
+  }
+
+  private async enqueuePackingPostCompleteSync(data: WmsPackingPostCompleteJobData) {
+    try {
+      await this.packingPostCompleteQueue.add(
+        WMS_PACKING_POST_COMPLETE_SYNC_JOB,
+        data,
+        {
+          ...this.getPackingPostCompleteQueueJobOptions(),
+          jobId: `packing-post-complete:${data.fulfillmentOrderId}`,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Packing post-complete queue unavailable for ${data.fulfillmentOrderId}; running the sync inline: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      try {
+        await this.processPackingPostCompleteJob(data);
+      } catch (fallbackError) {
+        this.logger.error(
+          `Packing post-complete fallback failed for ${data.fulfillmentOrderId}; the repair sync can recover it later: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+          fallbackError instanceof Error ? fallbackError.stack : undefined,
+        );
+      }
+    }
+  }
+
+  async processPackingPostCompleteJob(data: WmsPackingPostCompleteJobData) {
+    const order = await this.prisma.wmsFulfillmentOrder.findFirst({
+      where: {
+        id: data.fulfillmentOrderId,
+        tenantId: data.tenantId,
+      },
+      select: {
+        id: true,
+        status: true,
+        tenantId: true,
+        storeId: true,
+        shopId: true,
+        posOrderId: true,
+      },
+    });
+
+    if (!order || order.status !== WmsFulfillmentOrderStatus.PACKED) {
+      this.logger.debug(
+        `Skipping stale packing post-complete sync for ${data.fulfillmentOrderId}`,
+      );
+      return { skipped: true };
+    }
+
+    const dispatchSync = await this.wmsInventoryService.syncPackedUnitsToDispatchedForPosOrders({
+      tenantId: order.tenantId,
+      storeId: order.storeId,
+      posOrderRefs: [{
+        shopId: order.shopId,
+        posOrderId: order.posOrderId,
+      }],
+    });
+
+    if (dispatchSync.cogsUpdatedOrders === 0) {
+      await this.wmsInventoryService.syncPosOrderCogsFromMatchedInventoryUnits({
+        fulfillmentOrderIds: [order.id],
+      });
+    }
+
+    return {
+      skipped: false,
+      dispatchedUnits: dispatchSync.dispatchedUnits,
+      deliveredOrders: dispatchSync.deliveredOrders,
+      cogsUpdatedOrders: dispatchSync.cogsUpdatedOrders,
     };
   }
 
@@ -3539,6 +3638,7 @@ export class WmsMobileService {
     const tenantContext = await this.resolveMobileStockContext(user, query as GetWmsMobileStockDto, request);
     const tenantId = tenantContext.tenantId;
     const sessionId = (this.cls.get('sessionId') as string | undefined) || user.sessionId || null;
+    const useCompactResponse = this.wantsCompactPackingResponse(request);
 
     if (!userId) {
       return this.buildEmptyPackingResponse(false);
@@ -3758,7 +3858,7 @@ export class WmsMobileService {
       total = await this.prisma.wmsFulfillmentOrder.count({ where: taskWhere });
       tasks = await this.prisma.wmsFulfillmentOrder.findMany({
         where: taskWhere,
-        include: this.pickingTaskInclude(),
+        include: useCompactResponse ? this.packingQueueTaskInclude() : this.pickingTaskInclude(),
         orderBy: [
           { updatedAt: 'desc' },
           { completedAt: 'desc' },
@@ -3815,7 +3915,7 @@ export class WmsMobileService {
               },
             ],
           },
-          include: this.pickingTaskInclude(),
+          include: useCompactResponse ? this.packingQueueTaskInclude() : this.pickingTaskInclude(),
           orderBy: [
             { updatedAt: 'desc' },
             { completedAt: 'desc' },
@@ -3827,30 +3927,32 @@ export class WmsMobileService {
       }
     }
 
-    await this.wmsStaffActivityService.recordFromRequest({
-      request,
-      tenantId: tenantId ?? activeStore?.tenantId ?? null,
-      actorId: userId,
-      sessionId,
-      actionType: 'PACKING_VIEW',
-      resourceType: 'STOX_PACKING',
-      resourceId: activeStore?.id ?? null,
-      storeId: activeStore?.id ?? null,
-      metadata: {
-        page,
-        pageSize,
-        search: normalizedSearch,
-        total,
-        held: heldCount,
-        packing: packingCount,
-        awaitingTracking: awaitingTrackingCount,
-        packed: packedCount,
-      },
-    });
+    if (!this.isBackgroundPackingRefresh(request)) {
+      await this.wmsStaffActivityService.recordFromRequest({
+        request,
+        tenantId: tenantId ?? activeStore?.tenantId ?? null,
+        actorId: userId,
+        sessionId,
+        actionType: 'PACKING_VIEW',
+        resourceType: 'STOX_PACKING',
+        resourceId: activeStore?.id ?? null,
+        storeId: activeStore?.id ?? null,
+        metadata: {
+          page,
+          pageSize,
+          search: normalizedSearch,
+          total,
+          held: heldCount,
+          packing: packingCount,
+          awaitingTracking: awaitingTrackingCount,
+          packed: packedCount,
+        },
+      });
+    }
 
     return {
       tenantReady: true,
-      serverTime: new Date().toISOString(),
+      ...(useCompactResponse ? {} : { serverTime: new Date().toISOString() }),
       pagination: {
         page,
         pageSize,
@@ -3877,7 +3979,25 @@ export class WmsMobileService {
         awaitingTracking: awaitingTrackingCount,
         packed: packedCount,
       },
-      tasks: tasks.map((task) => this.mapMobilePickingTask(task)),
+      tasks: tasks.map((task) => (
+        useCompactResponse
+          ? this.mapMobilePackingQueueTask(task)
+          : this.mapMobilePickingTask(task)
+      )),
+    };
+  }
+
+  async getPackingTask(
+    user: BootstrapUser,
+    id: string,
+    query: WmsMobilePackScopedDto,
+    request?: Request,
+  ) {
+    const task = await this.findPackingOrderForAction(user, id, query.tenantId, request);
+
+    return {
+      success: true,
+      task: this.mapMobilePickingTask(task),
     };
   }
 
@@ -4485,39 +4605,53 @@ export class WmsMobileService {
       };
     });
 
-    await this.recordStockActivity(user, request, {
-      tenantId: transactionResult.order.tenantId,
-      actionType: 'PACKING_COMPLETE',
-      resourceType: 'WMS_FULFILLMENT_ORDER',
-      resourceId: transactionResult.order.id,
-      storeId: transactionResult.order.storeId,
-      warehouseId: transactionResult.order.warehouseId,
-      metadata: {
-        fulfillmentOrderId: transactionResult.order.id,
-        posOrderId: transactionResult.order.posOrderId,
-        basketCode: transactionResult.basket.barcode,
-        trackingCode: this.normalizeTrackingCode(trackingCode),
-        mode: 'BASKET_DEMAND',
-      },
-    });
+    try {
+      await this.recordStockActivity(user, request, {
+        tenantId: transactionResult.order.tenantId,
+        actionType: 'PACKING_COMPLETE',
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: transactionResult.order.id,
+        storeId: transactionResult.order.storeId,
+        warehouseId: transactionResult.order.warehouseId,
+        metadata: {
+          fulfillmentOrderId: transactionResult.order.id,
+          posOrderId: transactionResult.order.posOrderId,
+          basketCode: transactionResult.basket.barcode,
+          trackingCode: this.normalizeTrackingCode(trackingCode),
+          mode: 'BASKET_DEMAND',
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Packing completed for ${transactionResult.order.id}, but its activity record failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
-    await this.wmsInventoryService.syncPosOrderCogsFromMatchedInventoryUnits({
-      fulfillmentOrderIds: [transactionResult.order.id],
-    });
-
-    await this.wmsInventoryService.syncPackedUnitsToDispatchedForPosOrders({
+    await this.enqueuePackingPostCompleteSync({
+      fulfillmentOrderId: transactionResult.order.id,
       tenantId: transactionResult.order.tenantId,
       storeId: transactionResult.order.storeId,
-      posOrderRefs: [{
-        shopId: transactionResult.order.shopId,
-        posOrderId: transactionResult.order.posOrderId,
-      }],
+      shopId: transactionResult.order.shopId,
+      posOrderId: transactionResult.order.posOrderId,
+      requestedAt: new Date().toISOString(),
     });
 
     const activeOrderId = this.resolveActiveBasketPackOrderId(transactionResult.basket);
     const activeOrder = activeOrderId
       ? (transactionResult.basket.fulfillmentOrders ?? []).find((order: any) => order.id === activeOrderId) ?? null
       : null;
+
+    if (this.wantsPackingDeltaResponse(request)) {
+      return {
+        success: true,
+        responseMode: 'delta-v1' as const,
+        basketId: transactionResult.basket.id,
+        basketStatus: transactionResult.basket.status,
+        completedOrderId: transactionResult.order.id,
+        activeOrderId,
+        plan: this.buildMobileBasketPackPlan(transactionResult.basket, activeOrderId),
+      };
+    }
 
     return {
       success: true,
@@ -4784,6 +4918,7 @@ export class WmsMobileService {
     options: { requirePackingProof?: boolean } = {},
   ) {
     const order = await this.findPackingOrderForAction(user, id, body.tenantId, request);
+    const packingBasketId = order.basket?.id ?? null;
     this.assertPackingTaskInProgress(order);
     this.assertTrackingCodeMatchesOrder(order, body.trackingCode);
 
@@ -4838,32 +4973,46 @@ export class WmsMobileService {
       });
     });
 
-    await this.recordStockActivity(user, request, {
+    try {
+      await this.recordStockActivity(user, request, {
+        tenantId: updatedOrder.tenantId,
+        actionType: 'PACKING_COMPLETE',
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: updatedOrder.id,
+        storeId: updatedOrder.storeId,
+        warehouseId: updatedOrder.warehouseId,
+        metadata: {
+          fulfillmentOrderId: updatedOrder.id,
+          posOrderId: updatedOrder.posOrderId,
+          trackingCode: this.normalizeTrackingCode(body.trackingCode),
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Packing completed for ${updatedOrder.id}, but its activity record failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    await this.enqueuePackingPostCompleteSync({
+      fulfillmentOrderId: updatedOrder.id,
       tenantId: updatedOrder.tenantId,
-      actionType: 'PACKING_COMPLETE',
-      resourceType: 'WMS_FULFILLMENT_ORDER',
-      resourceId: updatedOrder.id,
       storeId: updatedOrder.storeId,
-      warehouseId: updatedOrder.warehouseId,
-      metadata: {
-        fulfillmentOrderId: updatedOrder.id,
-        posOrderId: updatedOrder.posOrderId,
-        trackingCode: this.normalizeTrackingCode(body.trackingCode),
-      },
+      shopId: updatedOrder.shopId,
+      posOrderId: updatedOrder.posOrderId,
+      requestedAt: new Date().toISOString(),
     });
 
-    await this.wmsInventoryService.syncPosOrderCogsFromMatchedInventoryUnits({
-      fulfillmentOrderIds: [updatedOrder.id],
-    });
-
-    await this.wmsInventoryService.syncPackedUnitsToDispatchedForPosOrders({
-      tenantId: updatedOrder.tenantId,
-      storeId: updatedOrder.storeId,
-      posOrderRefs: [{
-        shopId: updatedOrder.shopId,
-        posOrderId: updatedOrder.posOrderId,
-      }],
-    });
+    if (this.wantsPackingDeltaResponse(request)) {
+      return {
+        success: true,
+        responseMode: 'delta-v1' as const,
+        basketId: packingBasketId,
+        basketStatus: null,
+        completedOrderId: updatedOrder.id,
+        activeOrderId: null,
+        plan: null,
+      };
+    }
 
     return {
       success: true,
@@ -10771,6 +10920,168 @@ export class WmsMobileService {
     } satisfies Prisma.WmsFulfillmentOrderInclude;
   }
 
+  private packingQueueTaskInclude() {
+    return {
+      store: {
+        select: {
+          id: true,
+          tenantId: true,
+          name: true,
+          shopName: true,
+          tenant: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      warehouse: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+        },
+      },
+      claimedBy: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      packedBy: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      posOrder: {
+        select: {
+          insertedAt: true,
+          dateLocal: true,
+          deliveredAt: true,
+          status: true,
+          tracking: true,
+        },
+      },
+      basket: {
+        select: {
+          id: true,
+          barcode: true,
+          status: true,
+          maxFulfillmentOrders: true,
+          warehouseId: true,
+          assignedPackerId: true,
+          claimedAt: true,
+          fullAt: true,
+          readyForPackAt: true,
+          fulfillmentOrders: {
+            where: {
+              status: {
+                in: [...ACTIVE_BASKET_ORDER_STATUSES],
+              },
+            },
+            select: {
+              id: true,
+              posOrderId: true,
+              status: true,
+              customerName: true,
+              totalQuantity: true,
+              pickedQuantity: true,
+              posOrder: {
+                select: {
+                  tracking: true,
+                },
+              },
+              store: {
+                select: {
+                  id: true,
+                  name: true,
+                  shopName: true,
+                  tenantId: true,
+                  tenant: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          assignedPicker: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          assignedPacker: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          warehouse: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+        },
+      },
+      basketUnits: {
+        where: {
+          OR: [
+            {
+              status: {
+                in: [...ACTIVE_BASKET_UNIT_STATUSES],
+              },
+            },
+            {
+              status: WmsBasketUnitStatus.REMOVED,
+              packedAt: {
+                not: null,
+              },
+            },
+          ],
+        },
+        select: {
+          status: true,
+          packedAt: true,
+          fulfillmentLineId: true,
+        },
+      },
+      lines: {
+        select: {
+          id: true,
+          variationId: true,
+          productId: true,
+          productName: true,
+          productDisplayId: true,
+          status: true,
+          issueReason: true,
+          quantityRequired: true,
+          quantityAllocated: true,
+          quantityPicked: true,
+          reservations: {
+            select: {
+              status: true,
+              inventoryUnit: {
+                select: {
+                  status: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'asc' }],
+      },
+    } satisfies Prisma.WmsFulfillmentOrderInclude;
+  }
+
   private mobileBasketInclude() {
     return {
       warehouse: {
@@ -10952,6 +11263,98 @@ export class WmsMobileService {
         reservations: line.reservations.map((reservation: any) => this.mapMobilePickReservation(reservation)),
       })),
       nextPick: nextReservation ? this.mapMobilePickReservation(nextReservation) : null,
+    };
+  }
+
+  private mapMobilePackingQueueTask(task: any) {
+    const lines = Array.isArray(task.lines)
+      ? task.lines.filter((line: any) => (
+          line.status !== WmsFulfillmentLineStatus.CANCELED
+          && Math.max(line.quantityRequired ?? 0, 0) > 0
+        ))
+      : [];
+    const isDemandOrder = this.isDemandPickingOrder(task);
+    const packedCount = isDemandOrder
+      ? this.getPackedBasketUnitCount(task)
+      : lines.reduce((total: number, line: any) => (
+          total + (line.reservations ?? []).filter(
+            (reservation: any) => this.isPackedEquivalentInventoryStatus(
+              reservation.inventoryUnit?.status,
+            ),
+          ).length
+        ), 0);
+
+    return {
+      id: task.id,
+      posOrderId: task.posOrderId,
+      shopId: task.shopId,
+      status: task.status,
+      assignmentMode: task.assignmentMode ?? WmsFulfillmentAssignmentMode.SERIAL_RESERVED,
+      statusLabel: this.formatEnumLabel(task.status),
+      issueReason: task.issueReason,
+      customer: {
+        name: task.customerName,
+        phone: task.customerPhone,
+      },
+      totals: {
+        required: task.totalQuantity,
+        allocated: task.allocatedQuantity,
+        picked: task.pickedQuantity,
+        packed: Math.min(packedCount, task.totalQuantity),
+        remaining: Math.max(task.totalQuantity - task.pickedQuantity, 0),
+      },
+      store: task.store
+        ? {
+            id: task.store.id,
+            tenantId: task.store.tenantId,
+            name: task.store.shopName || task.store.name,
+            tenantName: task.store.tenant?.name ?? null,
+          }
+        : null,
+      warehouse: task.warehouse,
+      claimedBy: this.mapActor(task.claimedBy),
+      packedBy: this.mapActor(task.packedBy),
+      claimedAt: task.claimedAt,
+      completedAt: task.completedAt,
+      orderDate: task.posOrder?.insertedAt ?? task.createdAt,
+      orderDateLocal: task.posOrder?.dateLocal ?? null,
+      tracking: task.posOrder?.tracking ?? null,
+      delivery: this.mapTaskDelivery(task),
+      itemChange: null,
+      priority: {
+        isPrioritized: Boolean(task.priorityOverrideAt),
+        prioritizedAt: task.priorityOverrideAt ?? null,
+        reason: task.priorityOverrideReason ?? null,
+        donorReleasedForOrderId: task.priorityReleasedForOrderId ?? null,
+      },
+      createdAt: task.createdAt,
+      basket: task.basket ? this.mapMobilePickBasket(task.basket) : null,
+      lines: lines.map((line: any) => ({
+        id: line.id,
+        variationId: line.variationId,
+        productId: line.productId,
+        productName: line.productName,
+        productDisplayId: line.productDisplayId,
+        status: line.status,
+        statusLabel: this.formatEnumLabel(line.status),
+        issueReason: line.issueReason ?? null,
+        required: line.quantityRequired,
+        allocated: line.quantityAllocated,
+        picked: line.quantityPicked,
+        packed: isDemandOrder
+          ? this.getPackedBasketUnitCountForLine(task, line.id, line.quantityRequired)
+          : Math.min(
+              (line.reservations ?? []).filter(
+                (reservation: any) => this.isPackedEquivalentInventoryStatus(
+                  reservation.inventoryUnit?.status,
+                ),
+              ).length,
+              line.quantityRequired,
+            ),
+        shortage: Math.max(line.quantityRequired - line.quantityAllocated, 0),
+        reservations: [],
+      })),
+      nextPick: null,
     };
   }
 
@@ -11494,6 +11897,27 @@ export class WmsMobileService {
     const responseMode = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
 
     return responseMode === 'delta-v1';
+  }
+
+  private wantsPackingDeltaResponse(request?: Request) {
+    const rawHeader = request?.headers['x-stox-pack-response'];
+    const responseMode = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+
+    return responseMode === 'delta-v1';
+  }
+
+  private wantsCompactPackingResponse(request?: Request) {
+    const rawHeader = request?.headers['x-stox-pack-response'];
+    const responseMode = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+
+    return responseMode === 'compact-v1';
+  }
+
+  private isBackgroundPackingRefresh(request?: Request) {
+    const rawHeader = request?.headers['x-stox-pack-refresh'];
+    const refreshMode = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+
+    return refreshMode === 'background';
   }
 
   private mapMobileHeldBasket(basket: any) {

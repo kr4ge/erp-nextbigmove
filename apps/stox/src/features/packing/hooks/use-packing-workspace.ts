@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { AppState } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
 import { ApiError } from '@/src/shared/services/http';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
@@ -6,6 +7,7 @@ import {
   completeMobilePackingBasketOrder,
   completeMobilePackingTask,
   fetchMobilePackingBasketPlan,
+  fetchMobilePackingTask,
   fetchMobilePackingTasks,
   scanMobilePackingBasketOrderUnit,
   scanMobilePackingBasketWaybill,
@@ -16,6 +18,7 @@ import {
 } from '../services/packing-api';
 import type {
   WmsMobileBasketPackCompleteResponse,
+  WmsMobileBasketPackCompleteLegacyResponse,
   PackingFilters,
   PackingStatusFilter,
   WmsMobileBasketPackPlan,
@@ -23,9 +26,11 @@ import type {
   WmsMobileBasketPackUnitResponse,
   WmsMobileBasketPackWaybillResponse,
   WmsMobilePackingResponse,
+  WmsMobilePackingCompletionDelta,
 } from '../types';
 
 const PACKING_PAGE_SIZE = 10;
+const PACKING_POLL_INTERVAL_MS = 30_000;
 
 type UsePackingWorkspaceParams = {
   bootstrap: BootstrapResponse;
@@ -58,6 +63,7 @@ export function usePackingWorkspace({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const backgroundRefreshInFlightRef = useRef(false);
 
   const loadPackingPage = useCallback(async ({
     append = false,
@@ -197,6 +203,32 @@ export function usePackingWorkspace({
     }
   }, [device, filters.tenantId, session.accessToken]);
 
+  const fetchTaskDetails = useCallback(async (taskId: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return null;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await fetchMobilePackingTask({
+        accessToken: session.accessToken,
+        device,
+        taskId,
+        tenantId: filters.tenantId,
+      });
+      setPacking((current) => current ? replacePackingTask(current, result.task) : current);
+      setActiveTaskId(result.task.id);
+      setError(null);
+      return result.task;
+    } catch (requestError) {
+      setError(resolvePackingError(requestError));
+      return null;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, session.accessToken]);
+
   const fetchBasketPlan = useCallback(async (basketId: string) => {
     if (!device) {
       setError('Device is not ready.');
@@ -317,17 +349,13 @@ export function usePackingWorkspace({
         orderId,
         tenantId: filters.tenantId,
       });
-      applyBasketResult({
-        result,
-        setBasketViews,
-        setPacking,
-      });
+      if (isPackingCompletionDelta(result)) {
+        applyPackingCompletionDelta({ result, setBasketViews, setPacking });
+      } else {
+        applyBasketResult({ result, setBasketViews, setPacking });
+      }
       setActiveTaskId(result.activeOrderId);
       setError(null);
-      await loadPackingPage({
-        loadingKind: 'refresh',
-        page: 1,
-      });
       return true;
     } catch (requestError) {
       setError(resolvePackingError(requestError));
@@ -335,7 +363,7 @@ export function usePackingWorkspace({
     } finally {
       setIsSubmitting(false);
     }
-  }, [device, filters.tenantId, loadPackingPage, session.accessToken]);
+  }, [device, filters.tenantId, session.accessToken]);
 
   const scanUnit = useCallback(async (taskId: string, code: string) => {
     if (!device) {
@@ -406,13 +434,17 @@ export function usePackingWorkspace({
         tenantId: filters.tenantId,
         trackingCode,
       });
-      setPacking((current) => current ? replacePackingTask(current, result.task) : current);
+      setPacking((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return isPackingCompletionDelta(result)
+          ? removePackingTask(current, result.completedOrderId)
+          : replacePackingTask(current, result.task);
+      });
       setActiveTaskId(null);
       setError(null);
-      await loadPackingPage({
-        loadingKind: 'refresh',
-        page: 1,
-      });
       return true;
     } catch (requestError) {
       setError(resolvePackingError(requestError));
@@ -420,7 +452,7 @@ export function usePackingWorkspace({
     } finally {
       setIsSubmitting(false);
     }
-  }, [device, filters.tenantId, loadPackingPage, session.accessToken]);
+  }, [device, filters.tenantId, session.accessToken]);
 
   const voidTask = useCallback(async ({
     taskId,
@@ -491,16 +523,38 @@ export function usePackingWorkspace({
 
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!isSubmitting) {
-        void loadPackingPage({
-          loadingKind: 'refresh',
-          page,
-        });
+      if (
+        isSubmitting
+        || AppState.currentState !== 'active'
+        || backgroundRefreshInFlightRef.current
+        || !device
+      ) {
+        return;
       }
-    }, 10000);
+
+      backgroundRefreshInFlightRef.current = true;
+      void fetchMobilePackingTasks({
+        accessToken: session.accessToken,
+        device,
+        filters,
+        status: statusFilter,
+        page: 1,
+        pageSize: PACKING_PAGE_SIZE,
+        background: true,
+      })
+        .then((result) => {
+          setPacking((current) => current ? mergePackingFirstPage(current, result) : result);
+        })
+        .catch(() => {
+          // Keep foreground errors actionable and background refreshes silent.
+        })
+        .finally(() => {
+          backgroundRefreshInFlightRef.current = false;
+        });
+    }, PACKING_POLL_INTERVAL_MS);
 
     return () => clearInterval(timer);
-  }, [isSubmitting, loadPackingPage, page]);
+  }, [device, filters, isSubmitting, session.accessToken, statusFilter]);
 
   const indexedTasks = useMemo(() => {
     if (!packing) {
@@ -526,6 +580,7 @@ export function usePackingWorkspace({
     completeTask,
     error,
     fetchBasketPlan,
+    fetchTaskDetails,
     filters,
     isLoading,
     isLoadingMore,
@@ -579,6 +634,35 @@ function replacePackingTask(
   };
 }
 
+function removePackingTask(
+  current: WmsMobilePackingResponse,
+  taskId: string,
+): WmsMobilePackingResponse {
+  return {
+    ...current,
+    tasks: current.tasks.filter((task) => task.id !== taskId),
+  };
+}
+
+function mergePackingFirstPage(
+  current: WmsMobilePackingResponse,
+  firstPage: WmsMobilePackingResponse,
+): WmsMobilePackingResponse {
+  const refreshedIds = new Set(firstPage.tasks.map((task) => task.id));
+  const retainedTasks = current.tasks.filter((task) => !refreshedIds.has(task.id));
+  const tasks = [...firstPage.tasks, ...retainedTasks];
+
+  return {
+    ...firstPage,
+    pagination: {
+      ...firstPage.pagination,
+      page: current.pagination.page,
+      hasMore: firstPage.pagination.hasMore,
+    },
+    tasks,
+  };
+}
+
 function replacePackingTasksForBasket(
   current: WmsMobilePackingResponse,
   basketId: string,
@@ -597,7 +681,7 @@ function applyBasketResult(params: {
     | WmsMobileBasketPackPlanResponse
     | WmsMobileBasketPackWaybillResponse
     | WmsMobileBasketPackUnitResponse
-    | WmsMobileBasketPackCompleteResponse;
+    | WmsMobileBasketPackCompleteLegacyResponse;
   setBasketViews: Dispatch<SetStateAction<Record<string, BasketPackView>>>;
   setPacking: Dispatch<SetStateAction<WmsMobilePackingResponse | null>>;
 }) {
@@ -612,6 +696,44 @@ function applyBasketResult(params: {
     },
   }));
   setPacking((current) => current ? replacePackingTasksForBasket(current, result.basket.id, result.tasks) : current);
+}
+
+function isPackingCompletionDelta(
+  result: WmsMobileBasketPackCompleteResponse | Awaited<ReturnType<typeof completeMobilePackingTask>>,
+): result is WmsMobilePackingCompletionDelta {
+  return 'responseMode' in result && result.responseMode === 'delta-v1';
+}
+
+function applyPackingCompletionDelta(params: {
+  result: WmsMobilePackingCompletionDelta;
+  setBasketViews: Dispatch<SetStateAction<Record<string, BasketPackView>>>;
+  setPacking: Dispatch<SetStateAction<WmsMobilePackingResponse | null>>;
+}) {
+  const { result, setBasketViews, setPacking } = params;
+
+  if (result.basketId) {
+    const basketId = result.basketId;
+    setBasketViews((current) => {
+      const existing = current[basketId];
+      if (!existing) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [basketId]: {
+          basket: {
+            ...existing.basket,
+            status: result.basketStatus ?? existing.basket.status,
+          },
+          tasks: existing.tasks.filter((task) => task.id !== result.completedOrderId),
+          plan: result.plan ?? existing.plan,
+        },
+      };
+    });
+  }
+
+  setPacking((current) => current ? removePackingTask(current, result.completedOrderId) : current);
 }
 
 function resolvePackingError(error: unknown) {

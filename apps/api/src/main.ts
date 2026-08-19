@@ -57,6 +57,8 @@ async function bootstrapApi() {
       'X-Device-ID',
       'X-Device-Name',
       'X-STOX-Scan-Response',
+      'X-STOX-Pack-Response',
+      'X-STOX-Pack-Refresh',
     ],
   });
 

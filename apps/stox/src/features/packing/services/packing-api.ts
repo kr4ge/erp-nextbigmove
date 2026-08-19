@@ -8,6 +8,7 @@ import type {
   WmsMobileBasketPackUnitResponse,
   WmsMobileBasketPackWaybillResponse,
   WmsMobilePackingResponse,
+  WmsMobilePackingTaskCompleteResponse,
   WmsPackingProof,
   WmsPackingProofFile,
   WmsPackingProofsResponse,
@@ -24,12 +25,32 @@ export function fetchMobilePackingTasks(params: PackingRequestParams & {
   status?: PackingStatusFilter | null;
   page?: number;
   pageSize?: number;
+  background?: boolean;
 }) {
   return apiRequest<WmsMobilePackingResponse>(buildPackingPath(params), {
     method: 'GET',
     token: params.accessToken,
     device: params.device,
+    headers: {
+      'X-STOX-Pack-Response': 'compact-v1',
+      ...(params.background ? { 'X-STOX-Pack-Refresh': 'background' } : {}),
+    },
   });
+}
+
+export function fetchMobilePackingTask(params: PackingRequestParams & {
+  taskId: string;
+  tenantId?: string | null;
+}) {
+  const query = params.tenantId ? `?tenantId=${encodeURIComponent(params.tenantId)}` : '';
+  return apiRequest<{ success: boolean; task: WmsMobilePickingTask }>(
+    `/wms/mobile/packing/tasks/${params.taskId}${query}`,
+    {
+      method: 'GET',
+      token: params.accessToken,
+      device: params.device,
+    },
+  );
 }
 
 export function startMobilePackingTask(params: PackingRequestParams & {
@@ -92,12 +113,13 @@ export function completeMobilePackingTask(params: PackingRequestParams & {
   tenantId?: string | null;
   trackingCode: string;
 }) {
-  return apiRequest<{ success: boolean; task: WmsMobilePickingTask }>(
+  return apiRequest<WmsMobilePackingTaskCompleteResponse>(
     `/wms/mobile/packing/tasks/${params.taskId}/complete`,
     {
       method: 'POST',
       token: params.accessToken,
       device: params.device,
+      headers: { 'X-STOX-Pack-Response': 'delta-v1' },
       body: {
         tenantId: params.tenantId,
         trackingCode: params.trackingCode,
@@ -194,6 +216,7 @@ export function completeMobilePackingBasketOrder(params: PackingRequestParams & 
       method: 'POST',
       token: params.accessToken,
       device: params.device,
+      headers: { 'X-STOX-Pack-Response': 'delta-v1' },
       body: {
         tenantId: params.tenantId,
       },

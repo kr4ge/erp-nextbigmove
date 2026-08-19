@@ -34,6 +34,11 @@ PANCAKE_WEBHOOK_ALLOW_AUTOMATIC_FULL_RESET=false
 PANCAKE_RECONCILE_QUEUE_ATTEMPTS=3
 PANCAKE_RECONCILE_QUEUE_BACKOFF_MS=4000
 PANCAKE_RECONCILE_QUEUE_TIMEOUT_MS=300000
+
+WMS_PACKING_POST_COMPLETE_QUEUE_CONCURRENCY=2
+WMS_PACKING_POST_COMPLETE_QUEUE_ATTEMPTS=4
+WMS_PACKING_POST_COMPLETE_QUEUE_BACKOFF_MS=3000
+WMS_PACKING_POST_COMPLETE_QUEUE_TIMEOUT_MS=60000
 ```
 
 Do not place secrets in Git. Keep the existing database, Redis, JWT, integration,
@@ -114,6 +119,11 @@ Run a normal STOX basket assignment and serialized-item scan. Initial targets:
 - basket assignment p95 below 5 seconds;
 - serialized scan p95 below 2 seconds;
 - no `P2028`, `P2034`, `40P01`, or transaction-start timeout.
+
+Complete one packing order and confirm the HTTP response returns before the
+post-pack synchronization finishes. The `wms-packing-post-complete` job must be
+consumed by `erp-worker-prod`, and the packed order must still receive its COGS
+and dispatch synchronization.
 
 ## Monitoring period
 

@@ -17,7 +17,7 @@ export type PackingStatusFilter =
 
 export type WmsMobilePackingResponse = {
   tenantReady: boolean;
-  serverTime: string;
+  serverTime?: string;
   pagination: {
     page: number;
     pageSize: number;
@@ -123,11 +123,29 @@ export type WmsMobileBasketPackUnitResponse = WmsMobileBasketPackPlanResponse & 
   completedOrder: WmsMobilePickingTask | null;
 };
 
-export type WmsMobileBasketPackCompleteResponse = WmsMobileBasketPackPlanResponse & {
+export type WmsMobileBasketPackCompleteLegacyResponse = WmsMobileBasketPackPlanResponse & {
   activeOrderId: string | null;
   activeOrder: WmsMobilePickingTask | null;
   completedOrder: WmsMobilePickingTask;
 };
+
+export type WmsMobilePackingCompletionDelta = {
+  success: boolean;
+  responseMode: 'delta-v1';
+  basketId: string | null;
+  basketStatus: string | null;
+  completedOrderId: string;
+  activeOrderId: string | null;
+  plan: WmsMobileBasketPackPlan | null;
+};
+
+export type WmsMobileBasketPackCompleteResponse =
+  | WmsMobileBasketPackCompleteLegacyResponse
+  | WmsMobilePackingCompletionDelta;
+
+export type WmsMobilePackingTaskCompleteResponse =
+  | { success: boolean; task: WmsMobilePickingTask }
+  | WmsMobilePackingCompletionDelta;
 
 export type WmsPackingProofSource = 'CAMERA' | 'FILE' | 'CLIPBOARD';
 

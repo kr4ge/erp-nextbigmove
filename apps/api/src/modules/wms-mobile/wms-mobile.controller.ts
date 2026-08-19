@@ -440,6 +440,16 @@ export class WmsMobileController {
     return this.wmsMobileService.getPackingTasks(req.user, query, req);
   }
 
+  @Get('packing/tasks/:id')
+  @Permissions('wms.dispatch.read', 'wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async getPackingTask(
+    @Request() req,
+    @Param('id') id: string,
+    @Query() query: WmsMobilePackScopedDto,
+  ) {
+    return this.wmsMobileService.getPackingTask(req.user, id, query, req);
+  }
+
   @Get('packing/baskets/:id/plan')
   @Permissions('wms.dispatch.read', 'wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
   async getPackingBasketPlan(
