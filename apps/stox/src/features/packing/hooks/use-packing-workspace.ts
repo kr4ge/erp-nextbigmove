@@ -19,6 +19,7 @@ import {
 import type {
   WmsMobileBasketPackCompleteResponse,
   WmsMobileBasketPackCompleteLegacyResponse,
+  WmsMobileBasketPackUnitLegacyResponse,
   PackingFilters,
   PackingStatusFilter,
   WmsMobileBasketPackPlan,
@@ -27,7 +28,12 @@ import type {
   WmsMobileBasketPackWaybillResponse,
   WmsMobilePackingResponse,
   WmsMobilePackingCompletionDelta,
+  WmsMobilePackingUnitScanDelta,
 } from '../types';
+import {
+  applyPackingScanDeltaToPlan,
+  applyPackingScanDeltaToTask,
+} from '../utils/apply-packing-scan-delta';
 
 const PACKING_PAGE_SIZE = 10;
 const PACKING_POLL_INTERVAL_MS = 30_000;
@@ -314,15 +320,11 @@ export function usePackingWorkspace({
         tenantId: filters.tenantId,
         code,
       });
-      setBasketViews((current) => ({
-        ...current,
-        [basketId]: {
-          basket: result.basket,
-          tasks: result.tasks,
-          plan: result.plan,
-        },
-      }));
-      setPacking((current) => current ? replacePackingTasksForBasket(current, basketId, result.tasks) : current);
+      if (isPackingUnitScanDelta(result)) {
+        applyPackingUnitScanDelta({ result, setBasketViews, setPacking });
+      } else {
+        applyBasketResult({ result, setBasketViews, setPacking });
+      }
       setActiveTaskId(result.activeOrderId);
       setError(null);
       return result;
@@ -680,7 +682,7 @@ function applyBasketResult(params: {
   result:
     | WmsMobileBasketPackPlanResponse
     | WmsMobileBasketPackWaybillResponse
-    | WmsMobileBasketPackUnitResponse
+    | WmsMobileBasketPackUnitLegacyResponse
     | WmsMobileBasketPackCompleteLegacyResponse;
   setBasketViews: Dispatch<SetStateAction<Record<string, BasketPackView>>>;
   setPacking: Dispatch<SetStateAction<WmsMobilePackingResponse | null>>;
@@ -696,6 +698,46 @@ function applyBasketResult(params: {
     },
   }));
   setPacking((current) => current ? replacePackingTasksForBasket(current, result.basket.id, result.tasks) : current);
+}
+
+function isPackingUnitScanDelta(
+  result: WmsMobileBasketPackUnitResponse,
+): result is WmsMobilePackingUnitScanDelta {
+  return 'responseMode' in result && result.responseMode === 'scan-delta-v1';
+}
+
+function applyPackingUnitScanDelta(params: {
+  result: WmsMobilePackingUnitScanDelta;
+  setBasketViews: Dispatch<SetStateAction<Record<string, BasketPackView>>>;
+  setPacking: Dispatch<SetStateAction<WmsMobilePackingResponse | null>>;
+}) {
+  const { result, setBasketViews, setPacking } = params;
+
+  setBasketViews((current) => {
+    const existing = current[result.basketId];
+    if (!existing) {
+      return current;
+    }
+
+    return {
+      ...current,
+      [result.basketId]: {
+        basket: {
+          ...existing.basket,
+          status: result.basketStatus,
+          statusLabel: formatStatusLabel(result.basketStatus),
+        },
+        tasks: existing.tasks.map((task) => applyPackingScanDeltaToTask(task, result)),
+        plan: applyPackingScanDeltaToPlan(existing.plan, result),
+      },
+    };
+  });
+  setPacking((current) => current
+    ? {
+        ...current,
+        tasks: current.tasks.map((task) => applyPackingScanDeltaToTask(task, result)),
+      }
+    : current);
 }
 
 function isPackingCompletionDelta(
@@ -746,4 +788,12 @@ function resolvePackingError(error: unknown) {
   }
 
   return 'Packing sync failed.';
+}
+
+function formatStatusLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }

@@ -4310,6 +4310,10 @@ export class WmsMobileService {
     body: WmsMobilePackScanDto,
     request?: Request,
   ) {
+    if (this.wantsPackingUnitScanDeltaResponse(request)) {
+      return this.scanPackingBasketOrderUnitDelta(user, basketId, orderId, body, request);
+    }
+
     const basket = await this.findPackingBasketForAction(user, basketId, body.tenantId, request);
     this.assertDemandPackingBasket(basket);
 
@@ -4511,6 +4515,352 @@ export class WmsMobileService {
       tasks: this.mapMobileBasketTasks(transactionResult.basket),
       plan: this.buildMobileBasketPackPlan(transactionResult.basket, activeOrderId),
     };
+  }
+
+  private async scanPackingBasketOrderUnitDelta(
+    user: BootstrapUser,
+    basketId: string,
+    orderId: string,
+    body: WmsMobilePackScanDto,
+    request?: Request,
+  ) {
+    const startedAt = Date.now();
+    const basket = await this.findPackingBasketForUnitScanAction(
+      user,
+      basketId,
+      body.tenantId,
+      request,
+    );
+    const scannedCode = this.normalizeScannedCode(body.code);
+    const userId = (user.userId || user.id) ?? null;
+    const now = new Date();
+
+    const transactionResult = await this.prisma.$transaction(async (tx) => {
+      await this.lockBasketForUpdate(tx, basket.id);
+
+      const scopedBasket = await tx.wmsBasket.findUnique({
+        where: { id: basket.id },
+        select: {
+          id: true,
+          tenantId: true,
+          barcode: true,
+          status: true,
+          assignedPackerId: true,
+        },
+      });
+      if (!scopedBasket) {
+        throw new NotFoundException('Pack basket was not found');
+      }
+      if (scopedBasket.status !== WmsBasketStatus.PACKING) {
+        throw new BadRequestException(`Basket ${scopedBasket.barcode} is not in packing state`);
+      }
+
+      const scopedOrder = await tx.wmsFulfillmentOrder.findFirst({
+        where: {
+          id: orderId,
+          basketId: scopedBasket.id,
+          assignmentMode: WmsFulfillmentAssignmentMode.BASKET_DEMAND,
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          storeId: true,
+          warehouseId: true,
+          posOrderId: true,
+          status: true,
+          assignmentMode: true,
+          totalQuantity: true,
+          posOrder: {
+            select: {
+              tracking: true,
+              status: true,
+              isVoid: true,
+              orderSnapshot: true,
+            },
+          },
+          lines: {
+            where: {
+              status: { not: WmsFulfillmentLineStatus.CANCELED },
+              quantityRequired: { gt: 0 },
+            },
+            select: {
+              id: true,
+              variationId: true,
+              productId: true,
+              productName: true,
+              productDisplayId: true,
+              quantityRequired: true,
+              status: true,
+              lineSnapshot: true,
+            },
+          },
+        },
+      });
+      if (!scopedOrder) {
+        throw new NotFoundException('Pack task was not found in this basket');
+      }
+
+      const scopedOrderWithBasket = { ...scopedOrder, basket: scopedBasket };
+      this.assertPackOrderNotCanceledInPos(scopedOrderWithBasket);
+      this.assertPackingTaskInProgress(scopedOrderWithBasket);
+      this.assertOrderHasTracking(scopedOrderWithBasket);
+
+      const scannedUnit = await tx.wmsInventoryUnit.findFirst({
+        where: {
+          tenantId: scopedOrder.tenantId,
+          OR: [
+            { code: scannedCode },
+            { barcode: scannedCode },
+            ...(this.isUuid(scannedCode) ? [{ id: scannedCode }] : []),
+          ],
+        },
+        select: {
+          id: true,
+          code: true,
+          barcode: true,
+          status: true,
+          variationId: true,
+          warehouseId: true,
+          currentLocationId: true,
+        },
+      });
+      if (!scannedUnit) {
+        throw new NotFoundException('Scanned unit was not found');
+      }
+
+      const basketUnit = await tx.wmsBasketUnit.findFirst({
+        where: {
+          basketId: scopedBasket.id,
+          inventoryUnitId: scannedUnit.id,
+          status: { in: [...ACTIVE_BASKET_UNIT_STATUSES] },
+        },
+        select: {
+          id: true,
+          inventoryUnitId: true,
+          variationId: true,
+          productId: true,
+          status: true,
+          fulfillmentOrderId: true,
+          fulfillmentLineId: true,
+        },
+      });
+      if (!basketUnit) {
+        throw new BadRequestException(`Unit ${scannedUnit.code} is not in basket ${scopedBasket.barcode}`);
+      }
+
+      if (basketUnit.fulfillmentOrderId && basketUnit.fulfillmentOrderId !== scopedOrder.id) {
+        const siblingOrder = await tx.wmsFulfillmentOrder.findUnique({
+          where: { id: basketUnit.fulfillmentOrderId },
+          select: { posOrderId: true },
+        });
+        const assignmentLabel = basketUnit.status === WmsBasketUnitStatus.PACKED ? 'packed for' : 'assigned to';
+        throw new ConflictException(
+          `Unit ${scannedUnit.code} is already ${assignmentLabel} order ${siblingOrder?.posOrderId ?? basketUnit.fulfillmentOrderId}`,
+        );
+      }
+
+      const matchingLine = scopedOrder.lines.find((line) => (
+        line.id === basketUnit.fulfillmentLineId
+        || line.variationId === basketUnit.variationId
+      ));
+      if (!matchingLine) {
+        throw new BadRequestException(`Unit ${scannedUnit.code} is not one of the products required by order ${scopedOrder.posOrderId}`);
+      }
+
+      let alreadyProcessed = basketUnit.status === WmsBasketUnitStatus.PACKED;
+      if (!alreadyProcessed) {
+        const packedForLine = await tx.wmsBasketUnit.count({
+          where: {
+            fulfillmentLineId: matchingLine.id,
+            status: WmsBasketUnitStatus.PACKED,
+          },
+        });
+        if (packedForLine >= Math.max(matchingLine.quantityRequired, 0)) {
+          throw new BadRequestException(`Order ${scopedOrder.posOrderId} already has all required ${matchingLine.productName} units packed`);
+        }
+
+        const updateBasketUnitResult = await tx.wmsBasketUnit.updateMany({
+          where: {
+            id: basketUnit.id,
+            status: WmsBasketUnitStatus.PICKED,
+          },
+          data: {
+            status: WmsBasketUnitStatus.PACKED,
+            fulfillmentOrderId: scopedOrder.id,
+            fulfillmentLineId: matchingLine.id,
+            packedById: userId ?? undefined,
+            packedAt: now,
+          },
+        });
+
+        if (updateBasketUnitResult.count === 0) {
+          const concurrentUnit = await tx.wmsBasketUnit.findUnique({
+            where: { id: basketUnit.id },
+            select: { status: true, fulfillmentOrderId: true, fulfillmentLineId: true },
+          });
+          alreadyProcessed = concurrentUnit?.status === WmsBasketUnitStatus.PACKED
+            && concurrentUnit.fulfillmentOrderId === scopedOrder.id
+            && concurrentUnit.fulfillmentLineId === matchingLine.id;
+          if (!alreadyProcessed) {
+            throw new ConflictException(`Unit ${scannedUnit.code} changed before it could be packed`);
+          }
+        }
+
+        if (!alreadyProcessed) {
+          const inventoryUpdateResult = await tx.wmsInventoryUnit.updateMany({
+            where: {
+              id: scannedUnit.id,
+              status: WmsInventoryUnitStatus.PICKED,
+            },
+            data: {
+              status: WmsInventoryUnitStatus.PACKED,
+              updatedById: userId ?? undefined,
+            },
+          });
+          if (inventoryUpdateResult.count === 0) {
+            throw new ConflictException(`Unit ${scannedUnit.code} is no longer ready for packing`);
+          }
+
+          await tx.wmsInventoryMovement.create({
+            data: {
+              tenantId: scopedOrder.tenantId,
+              inventoryUnitId: scannedUnit.id,
+              warehouseId: scannedUnit.warehouseId,
+              fromLocationId: scannedUnit.currentLocationId,
+              toLocationId: null,
+              fromStatus: scannedUnit.status,
+              toStatus: WmsInventoryUnitStatus.PACKED,
+              movementType: WmsInventoryMovementType.PACK,
+              referenceType: 'WMS_FULFILLMENT_ORDER',
+              referenceId: scopedOrder.id,
+              referenceCode: scopedOrder.posOrderId,
+              notes: `STOX basket ${scopedBasket.barcode} packed for order ${scopedOrder.posOrderId}`,
+              actorId: userId,
+              createdAt: now,
+            },
+          });
+        }
+      }
+
+      const [orderPacked, linePacked, basketPacked, basketRequiredAggregate, availableVariationUnits] = await Promise.all([
+        tx.wmsBasketUnit.count({
+          where: { fulfillmentOrderId: scopedOrder.id, status: WmsBasketUnitStatus.PACKED },
+        }),
+        tx.wmsBasketUnit.count({
+          where: { fulfillmentLineId: matchingLine.id, status: WmsBasketUnitStatus.PACKED },
+        }),
+        tx.wmsBasketUnit.count({
+          where: {
+            basketId: scopedBasket.id,
+            status: WmsBasketUnitStatus.PACKED,
+            fulfillmentOrder: {
+              is: { status: { in: [...ACTIVE_BASKET_ORDER_STATUSES] } },
+            },
+          },
+        }),
+        tx.wmsFulfillmentOrder.aggregate({
+          where: {
+            basketId: scopedBasket.id,
+            status: { in: [...ACTIVE_BASKET_ORDER_STATUSES] },
+          },
+          _sum: { totalQuantity: true },
+        }),
+        tx.wmsBasketUnit.count({
+          where: {
+            basketId: scopedBasket.id,
+            variationId: matchingLine.variationId,
+            productId: matchingLine.productId ?? undefined,
+            fulfillmentOrderId: null,
+            status: WmsBasketUnitStatus.PICKED,
+          },
+        }),
+      ]);
+      const orderRequired = Math.max(scopedOrder.totalQuantity, 0);
+      const lineRequired = Math.max(matchingLine.quantityRequired, 0);
+      const basketRequired = Math.max(basketRequiredAggregate._sum.totalQuantity ?? 0, 0);
+
+      return {
+        alreadyProcessed,
+        basket: scopedBasket,
+        order: scopedOrder,
+        line: matchingLine,
+        inventoryUnit: scannedUnit,
+        counters: {
+          basket: {
+            required: basketRequired,
+            packed: Math.min(basketPacked, basketRequired),
+            remaining: Math.max(basketRequired - basketPacked, 0),
+          },
+          order: {
+            required: orderRequired,
+            packed: Math.min(orderPacked, orderRequired),
+            remaining: Math.max(orderRequired - orderPacked, 0),
+            status: scopedOrder.status,
+          },
+          line: {
+            required: lineRequired,
+            packed: Math.min(linePacked, lineRequired),
+            remaining: Math.max(lineRequired - linePacked, 0),
+            status: matchingLine.status,
+          },
+          availableVariationUnits,
+        },
+      };
+    }, { timeout: 10_000 });
+
+    if (!transactionResult.alreadyProcessed) {
+      try {
+        await this.recordStockActivity(user, request, {
+          tenantId: transactionResult.order.tenantId,
+          actionType: 'PACKING_UNIT_SCAN',
+          resourceType: 'WMS_INVENTORY_UNIT',
+          resourceId: transactionResult.inventoryUnit.id,
+          storeId: transactionResult.order.storeId,
+          warehouseId: transactionResult.inventoryUnit.warehouseId,
+          metadata: {
+            fulfillmentOrderId: transactionResult.order.id,
+            fulfillmentLineId: transactionResult.line.id,
+            posOrderId: transactionResult.order.posOrderId,
+            basketCode: transactionResult.basket.barcode,
+            unitCode: transactionResult.inventoryUnit.code,
+            mode: 'BASKET_DEMAND',
+            responseMode: 'scan-delta-v1',
+          },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Packing scan audit failed after commit for basket ${basketId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    const response = {
+      success: true,
+      responseMode: 'scan-delta-v1' as const,
+      alreadyProcessed: transactionResult.alreadyProcessed,
+      requiresRefresh: false,
+      basketId: transactionResult.basket.id,
+      basketStatus: transactionResult.basket.status,
+      activeOrderId: transactionResult.order.id,
+      orderId: transactionResult.order.id,
+      lineId: transactionResult.line.id,
+      packedUnit: {
+        id: transactionResult.inventoryUnit.id,
+        code: transactionResult.inventoryUnit.code,
+        barcode: transactionResult.inventoryUnit.barcode,
+        variationId: transactionResult.inventoryUnit.variationId,
+      },
+      counters: transactionResult.counters,
+      orderReadyToComplete: transactionResult.counters.order.remaining === 0,
+    };
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= 1_000) {
+      this.logger.warn(
+        `Slow STOX packing unit scan basket=${basketId} order=${orderId} durationMs=${elapsedMs}`,
+      );
+    }
+
+    return response;
   }
 
   async completePackingBasketOrder(
@@ -9727,6 +10077,79 @@ export class WmsMobileService {
     }
 
     this.assertLegacyReservedStoxAccessAllowedForBasket(basket);
+    await this.assertPackingBasketUserAccess(user, basket);
+
+    return basket;
+  }
+
+  private async findPackingBasketForUnitScanAction(
+    user: BootstrapUser,
+    id: string,
+    requestedTenantId?: string | null,
+    request?: Request,
+  ) {
+    const tenantContext = await this.resolveMobileStockContext(
+      user,
+      { tenantId: requestedTenantId ?? undefined } as GetWmsMobileStockDto,
+      request,
+    );
+    const fulfillmentGoLiveWhere = this.buildFulfillmentGoLiveWhere(
+      await this.getFulfillmentGoLiveAt(tenantContext.tenantId),
+    );
+    const tenantScopeWhere: Prisma.WmsBasketWhereInput = tenantContext.tenantId
+      ? {
+          OR: [
+            { tenantId: tenantContext.tenantId },
+            {
+              fulfillmentOrders: {
+                some: {
+                  tenantId: tenantContext.tenantId,
+                  ...fulfillmentGoLiveWhere,
+                },
+              },
+            },
+          ],
+        }
+      : {};
+    const basket = await this.prisma.wmsBasket.findFirst({
+      where: {
+        id,
+        status: WmsBasketStatus.PACKING,
+        ...tenantScopeWhere,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        barcode: true,
+        status: true,
+        assignedPackerId: true,
+        fulfillmentOrders: {
+          where: {
+            status: { in: [...ACTIVE_BASKET_ORDER_STATUSES] },
+          },
+          select: {
+            id: true,
+            assignmentMode: true,
+          },
+        },
+      },
+    });
+
+    if (!basket) {
+      throw new NotFoundException('Pack basket was not found');
+    }
+
+    this.assertLegacyReservedStoxAccessAllowedForBasket(basket);
+    this.assertDemandPackingBasket(basket);
+    await this.assertPackingBasketUserAccess(user, basket);
+
+    return basket;
+  }
+
+  private async assertPackingBasketUserAccess(
+    user: BootstrapUser,
+    basket: { assignedPackerId?: string | null },
+  ) {
 
     const userId = user.userId || user.id || null;
     let permissions: string[] = [];
@@ -9749,8 +10172,6 @@ export class WmsMobileService {
     if (!isPackSupervisor && basket.assignedPackerId !== userId) {
       throw new ForbiddenException('This pack basket is assigned to another staff member');
     }
-
-    return basket;
   }
 
   private async findPackingOrderForAction(
@@ -11904,6 +12325,13 @@ export class WmsMobileService {
     const responseMode = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
 
     return responseMode === 'delta-v1';
+  }
+
+  private wantsPackingUnitScanDeltaResponse(request?: Request) {
+    const rawHeader = request?.headers['x-stox-pack-response'];
+    const responseMode = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+
+    return responseMode === 'scan-delta-v1';
   }
 
   private wantsCompactPackingResponse(request?: Request) {
