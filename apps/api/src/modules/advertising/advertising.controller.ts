@@ -134,6 +134,13 @@ export class AdvertisingController {
     return this.advertising.getPosition(query);
   }
 
+  /** Everything the dashboard shows, in one read. */
+  @Get('dashboard')
+  @Permissions('advertising.read')
+  async getDashboard(@Query() query: AdvertisingPeriodDto) {
+    return this.advertising.getDashboard(query);
+  }
+
   /** The benchmark every verdict is measured against. */
   @Get('benchmark')
   @Permissions('advertising.read')

@@ -7,7 +7,7 @@ import apiClient from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { AlertBanner } from '@/components/ui/feedback';
 import { daysAgo } from './_lib/format';
-import type { AdAccountRow, Position } from './_lib/types';
+import type { AdAccountRow, Dashboard, Position } from './_lib/types';
 import { AccountsSection } from './_sections/accounts';
 import { AssetsSection } from './_sections/assets';
 import { DashboardSection } from './_sections/dashboard';
@@ -29,6 +29,7 @@ function ConsoleBody() {
 
   const [position, setPosition] = useState<Position | null>(null);
   const [accounts, setAccounts] = useState<AdAccountRow[]>([]);
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -56,12 +57,14 @@ function ConsoleBody() {
     setLoading(true);
     setError('');
     try {
-      const [positionResponse, accountsResponse] = await Promise.all([
+      const [positionResponse, accountsResponse, dashboardResponse] = await Promise.all([
         apiClient.get<Position>('/advertising/position', { params: { startDate, endDate } }),
         apiClient.get<AdAccountRow[]>('/advertising/accounts', { params: { startDate, endDate } }),
+        apiClient.get<Dashboard>('/advertising/dashboard', { params: { startDate, endDate } }),
       ]);
       setPosition(positionResponse.data);
       setAccounts(accountsResponse.data);
+      setDashboard(dashboardResponse.data);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } }; message?: string };
       setError(e?.response?.data?.message || e?.message || 'Could not load advertising data.');
@@ -141,7 +144,8 @@ function ConsoleBody() {
 
       {section === 'overview' ? (
         <DashboardSection
-          position={position}
+          data={dashboard}
+          loading={loading}
           canEvaluate={can('advertising.evaluate')}
           verdict={verdict}
           evaluating={evaluating}

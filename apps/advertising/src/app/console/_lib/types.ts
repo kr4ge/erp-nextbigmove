@@ -81,3 +81,38 @@ export interface UploadJob {
     reconcileMarketingCompleted: boolean;
   } | null;
 }
+
+export interface Dashboard {
+  period: { start: string; end: string };
+  benchmark: Benchmark;
+  benchmarkIsDefault: boolean;
+  advertising: {
+    spend: number;
+    purchases: number;
+    orderValue: number;
+    delivered: number;
+    cpc: number | null;
+    cpp: number | null;
+    arPct: number | null;
+    creativeTaggedPct: number | null;
+    untaggedSpend: number;
+  };
+  creative: {
+    ctr: number | null;
+    hookRate: number | null;
+    holdRate: number | null;
+    thruPlayRate: number | null;
+    avgWatchSeconds: number | null;
+    cvr: number | null;
+  };
+  attention: { severity: string; message: string }[];
+  daily: {
+    date: string;
+    spend: number;
+    orders: number;
+    orderValue: number;
+    delivered: number;
+    cpp: number | null;
+  }[];
+  markers: { date: string; titles: string[] }[];
+}

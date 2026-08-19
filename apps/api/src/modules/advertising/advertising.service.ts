@@ -3,9 +3,11 @@ import { AdLibraryFormat, AdStrategyTag, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TeamContextService } from '../../common/services/team-context.service';
 import { MediaAssetsService } from '../../common/services/media-assets.service';
+import { parseAdName } from './ad-name';
 import {
   aggregate,
   evaluate,
+  formatPeso,
   rankByContribution,
   type AdEconomics,
   type AdRow,
@@ -515,6 +517,141 @@ export class AdvertisingService {
       spend: spendMap.get(account.accountId)?.spend ?? 0,
       purchases: spendMap.get(account.accountId)?.purchases ?? 0,
     }));
+  }
+
+  /**
+   * Everything the dashboard shows, in one read.
+   *
+   * Metrics the export does not carry come back as null rather than zero. A
+   * hook rate of 0% and a hook rate nobody measured look identical on a card,
+   * and only one of them means the creative failed.
+   */
+  async getDashboard(params: { startDate: string; endDate: string; accountId?: string }) {
+    const context = await this.teamContext.getContext();
+    const { tenantId } = context;
+
+    const where: Prisma.ReconcileMarketingWhereInput = {
+      tenantId,
+      date: { gte: new Date(params.startDate), lte: new Date(params.endDate) },
+      ...(params.accountId ? { accountId: params.accountId } : {}),
+      ...(context.isAdmin || !context.userTeams.length
+        ? {}
+        : { teamId: { in: context.userTeams } }),
+    };
+
+    const rows = await this.prisma.reconcileMarketing.findMany({
+      where,
+      select: {
+        date: true,
+        adId: true,
+        adName: true,
+        spend: true,
+        impressions: true,
+        linkClicks: true,
+        purchasesPos: true,
+        codPos: true,
+        deliveredCodPos: true,
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    const { benchmark, isDefault } = await this.loadBenchmark(tenantId, params.accountId);
+
+    let spend = 0;
+    let impressions = 0;
+    let linkClicks = 0;
+    let purchases = 0;
+    let orderValue = 0;
+    let delivered = 0;
+    let taggedSpend = 0;
+
+    // One bucket per day for the chart and the calendar.
+    const byDay = new Map<string, { spend: number; orders: number; orderValue: number; delivered: number }>();
+
+    for (const row of rows) {
+      const rowSpend = toCentavos(row.spend);
+      spend += rowSpend;
+      impressions += row.impressions;
+      linkClicks += row.linkClicks;
+      purchases += row.purchasesPos;
+      orderValue += toCentavos(row.codPos);
+      delivered += toCentavos(row.deliveredCodPos);
+
+      // Spend an operator can trace back to a creative. The rest is money that
+      // ran under a name nobody can look up.
+      if (parseAdName(row.adName).code) taggedSpend += rowSpend;
+
+      const key = row.date.toISOString().slice(0, 10);
+      const day = byDay.get(key) ?? { spend: 0, orders: 0, orderValue: 0, delivered: 0 };
+      day.spend += rowSpend;
+      day.orders += row.purchasesPos;
+      day.orderValue += toCentavos(row.codPos);
+      day.delivered += toCentavos(row.deliveredCodPos);
+      byDay.set(key, day);
+    }
+
+    const ratio = (a: number, b: number): number | null => (b > 0 ? a / b : null);
+
+    const cpp = ratio(spend, purchases);
+    const daily = Array.from(byDay.entries())
+      .map(([date, d]) => ({ date, ...d, cpp: ratio(d.spend, d.orders) }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Changes logged in the period, so the chart can say what happened that day.
+    const entries = await this.prisma.adStrategyEntry.findMany({
+      where: {
+        tenantId,
+        date: { gte: new Date(params.startDate), lte: new Date(params.endDate) },
+      },
+      select: { date: true, title: true, tag: true },
+      orderBy: { date: 'asc' },
+    });
+
+    const markers = new Map<string, string[]>();
+    for (const entry of entries) {
+      const key = entry.date.toISOString().slice(0, 10);
+      markers.set(key, [...(markers.get(key) ?? []), entry.title]);
+    }
+
+    return {
+      period: { start: params.startDate, end: params.endDate },
+      benchmark,
+      benchmarkIsDefault: isDefault,
+
+      advertising: {
+        spend,
+        purchases,
+        orderValue,
+        delivered,
+        cpc: ratio(spend, linkClicks),
+        cpp,
+        /// Spend over gross sales. Lower is better — it is the share of revenue
+        /// the ads ate.
+        arPct: ratio(spend, orderValue),
+        creativeTaggedPct: ratio(taggedSpend, spend),
+        untaggedSpend: spend - taggedSpend,
+      },
+
+      creative: {
+        ctr: ratio(linkClicks, impressions),
+        // The export carries these; nothing brings them this far yet.
+        hookRate: null as number | null,
+        holdRate: null as number | null,
+        thruPlayRate: null as number | null,
+        avgWatchSeconds: null as number | null,
+        cvr: null as number | null,
+      },
+
+      attention: cpp !== null && cpp > benchmark.cpp
+        ? [{
+          severity: 'warning' as const,
+          message: `CPP ${formatPeso(cpp)} is above your ceiling ${formatPeso(benchmark.cpp)} — trim cost before scaling.`,
+        }]
+        : [],
+
+      daily,
+      markers: Array.from(markers.entries()).map(([date, titles]) => ({ date, titles })),
+    };
   }
 
   /**
