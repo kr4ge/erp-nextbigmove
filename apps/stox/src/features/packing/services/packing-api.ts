@@ -201,6 +201,8 @@ export function scanMobilePackingBasketOrderUnit(params: PackingRequestParams & 
         tenantId: params.tenantId,
         code: params.code,
       },
+      timeoutMs: 15_000,
+      headers: { 'X-STOX-Pack-Response': 'scan-delta-v1' },
     },
   );
 }
