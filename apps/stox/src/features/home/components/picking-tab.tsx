@@ -23,6 +23,7 @@ import type {
 } from '@/src/features/picking/types';
 import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
+import { OrderChangeNotice } from '@/src/features/fulfillment/components/order-change-notice';
 import { tokens } from '@/src/shared/theme/tokens';
 import {
   StockScopeFilterModal,
@@ -101,6 +102,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     picking,
     refreshPicking,
     retryAllocation,
+    returnReworkUnit,
     scanBasketBin,
     scanBasketUnit,
     scanBasket,
@@ -495,6 +497,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
           onClaim={claimTask}
           onRefresh={refreshPicking}
           onRetryAllocation={retryAllocation}
+          onReturnReworkUnit={returnReworkUnit}
           basketPlan={activeTask.basket ? basketPlans[activeTask.basket.id] ?? null : null}
           onFetchBasketPlan={fetchBasketPlan}
           onHandoff={handoffTask}
@@ -1427,6 +1430,7 @@ function PickExecutionStack({
   onHandoff,
   onRefresh,
   onRetryAllocation,
+  onReturnReworkUnit,
   onScanBasketBin,
   onScanBasketUnit,
   onScanBasket,
@@ -1446,6 +1450,7 @@ function PickExecutionStack({
   onHandoff: (taskId: string, packerId: string) => Promise<boolean>;
   onRefresh: () => Promise<void>;
   onRetryAllocation: (taskId: string) => Promise<boolean>;
+  onReturnReworkUnit: (basketId: string, orderId: string, code: string) => Promise<boolean>;
   onScanBasketBin: (basketId: string, code: string) => Promise<boolean>;
   onScanBasketUnit: (basketId: string, binId: string, code: string) => Promise<boolean>;
   onScanBasket: (taskId: string, code: string) => Promise<boolean>;
@@ -1482,6 +1487,17 @@ function PickExecutionStack({
         </View>
         <StatusBadge status={activeTask.status} label={mapPickCardStatus(activeTask.status, activeTask.statusLabel)} />
       </View>
+
+      {tasks.filter((task) => task.itemChange).map((task) => (
+        <OrderChangeNotice
+          key={`change-${task.id}`}
+          change={task.itemChange}
+          disabled={isSubmitting}
+          onReturnUnit={basket && task.itemChange?.returnUnitsRemaining
+            ? (code) => onReturnReworkUnit(basket.id, task.id, code)
+            : undefined}
+        />
+      ))}
 
       {useBasketPicking && basket ? (
         <BasketPickExecutionCard

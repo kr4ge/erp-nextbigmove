@@ -98,6 +98,11 @@ model Tenant {
   roles                               Role[]
   userRoleAssignments                 UserRoleAssignment[]
   userPermissionAssignments           UserPermissionAssignment[]
+  creativeStoreConfigs                CreativeStoreConfig[]
+  creatives                           Creative[]
+  creativeAliases                     CreativeAlias[]
+  creativeStatusEvents                CreativeStatusEvent[]
+  wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
 
   @@index([slug])
   @@index([status])
@@ -385,6 +390,10 @@ model User {
   wmsStaffAssignmentsManaged                WmsStaffAssignment[]           @relation("WmsStaffAssignmentAssignedBy")
   readNotificationStates                    NotificationState[]            @relation("NotificationStateReadBy")
   undeliverableStoreAssignments             UndeliverableStoreAssignment[]
+  creativesCreated                          Creative[]                     @relation("CreativeCreatedBy")
+  creativeAliasesCreated                    CreativeAlias[]                @relation("CreativeAliasCreatedBy")
+  creativeStatusEvents                      CreativeStatusEvent[]          @relation("CreativeStatusEventActor")
+  creativeMetaLinksCreated                  Creative[]                     @relation("CreativeMetaLinkedBy")
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -527,6 +536,7 @@ model PosStore {
   undeliverableStoreAssignments UndeliverableStoreAssignment[]
   undeliverableOrderRemarks     UndeliverableOrderRemark[]
   activeShopOwnership           PosShopOwnership?
+  creativeStoreConfig           CreativeStoreConfig?
 
   @@index([tenantId])
   @@index([tenantId, teamId])
@@ -795,6 +805,27 @@ enum WmsFulfillmentOrderStatus {
   PACKING
   PACKED
   CANCELED
+}
+
+enum WmsFulfillmentChangeState {
+  NONE
+  PICK_REWORK_REQUIRED
+  PACK_REWORK_REQUIRED
+  PACKED_REWORK_REQUIRED
+  EXCEPTION
+}
+
+enum WmsFulfillmentAmendmentStatus {
+  OPEN
+  RESOLVED
+  SUPERSEDED
+}
+
+enum WmsFulfillmentAmendmentStage {
+  PRE_PICK
+  PICKING
+  PACKING
+  PACKED
 }
 
 enum WmsFulfillmentAssignmentMode {
@@ -1206,6 +1237,18 @@ model MetaAdInsight {
   impressions Int     @default(0)
   leads       Int     @default(0) // landing_page_view actions
 
+  // Optional video/delivery metrics. Null means the source export did not
+  // measure or include the field; it must not be rendered as a zero rate.
+  videoPlays3s         Int?
+  thruPlays            Int?
+  frequency            Decimal? @db.Decimal(12, 6)
+  videoAveragePlayTime Decimal? @db.Decimal(12, 4)
+  videoPlays25         Int?
+  videoPlays50         Int?
+  videoPlays75         Int?
+  videoPlays95         Int?
+  videoPlays100        Int?
+
   // Ad status (ACTIVE, PAUSED, etc.)
   status String?
 
@@ -1214,9 +1257,148 @@ model MetaAdInsight {
 
   @@unique([tenantId, accountId, adId, date])
   @@index([tenantId, accountId, date])
+  @@index([tenantId, date])
   @@index([tenantId, teamId, date])
   @@index([date])
   @@map("meta_ad_insights")
+}
+
+// ============================================================================
+// CREATIVE AGENT REGISTRY (Tenant-scoped, POS-store owned)
+// ============================================================================
+enum CreativeKind {
+  VIDEO
+  STATIC
+}
+
+enum CreativeQcStatus {
+  FOR_APPROVAL
+  FOR_REVISION
+  REVISED
+  FOR_POSTING
+  POSTED
+  CANCELLED
+}
+
+enum CreativePerformanceStatus {
+  DRAFT
+  LIVE
+  WINNER
+  FATIGUED
+  RETIRED
+}
+
+enum CreativeStatusDimension {
+  QC
+  PERFORMANCE
+}
+
+enum CreativeMetaLinkSource {
+  AUTO_CODE
+  MANUAL
+}
+
+model CreativeStoreConfig {
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @db.Uuid
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId           String?   @unique @db.Uuid
+  store             PosStore? @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  storeNameSnapshot String
+  shopIdSnapshot    String
+  codePrefix        String
+  active            Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  creatives Creative[]
+
+  @@unique([tenantId, codePrefix])
+  @@index([tenantId, active])
+  @@map("creative_store_configs")
+}
+
+model Creative {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  tenantId           String                    @db.Uuid
+  tenant             Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeConfigId      String                    @db.Uuid
+  storeConfig        CreativeStoreConfig       @relation(fields: [storeConfigId], references: [id], onDelete: Restrict)
+  code               String
+  codeNumber         Int
+  kind               CreativeKind
+  title              String
+  format             String?
+  hookType           String?
+  script             String?
+  notes              String?
+  mediaUrl           String?
+  createdById        String                    @db.Uuid
+  createdBy          User                      @relation("CreativeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  qcStatus           CreativeQcStatus          @default(FOR_APPROVAL)
+  performanceStatus  CreativePerformanceStatus @default(DRAFT)
+  submittedAt        DateTime?
+  approvedAt         DateTime?
+  metaAccountId      String?
+  metaAdId           String?
+  metaAdNameSnapshot String?
+  metaLinkSource     CreativeMetaLinkSource?
+  metaLinkedAt       DateTime?
+  metaLinkedById     String?                   @db.Uuid
+  metaLinkedBy       User?                     @relation("CreativeMetaLinkedBy", fields: [metaLinkedById], references: [id], onDelete: SetNull)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  aliases      CreativeAlias[]
+  statusEvents CreativeStatusEvent[]
+
+  @@unique([tenantId, code])
+  @@unique([storeConfigId, codeNumber])
+  @@unique([tenantId, metaAccountId, metaAdId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, createdById])
+  @@index([tenantId, storeConfigId])
+  @@index([tenantId, qcStatus])
+  @@index([tenantId, performanceStatus])
+  @@index([tenantId, metaAdId])
+  @@map("creatives")
+}
+
+model CreativeAlias {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creativeId      String   @db.Uuid
+  creative        Creative @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  alias           String
+  normalizedAlias String
+  createdById     String?  @db.Uuid
+  createdBy       User?    @relation("CreativeAliasCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+
+  @@unique([tenantId, normalizedAlias])
+  @@index([creativeId])
+  @@index([tenantId, createdAt])
+  @@map("creative_aliases")
+}
+
+model CreativeStatusEvent {
+  id         String                  @id @default(uuid()) @db.Uuid
+  tenantId   String                  @db.Uuid
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creativeId String                  @db.Uuid
+  creative   Creative                @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  dimension  CreativeStatusDimension
+  fromStatus String
+  toStatus   String
+  actorId    String?                 @db.Uuid
+  actor      User?                   @relation("CreativeStatusEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  reason     String?
+  createdAt  DateTime                @default(now())
+
+  @@index([tenantId, creativeId, createdAt])
+  @@index([tenantId, dimension, createdAt])
+  @@map("creative_status_events")
 }
 
 // ============================================================================
@@ -2135,6 +2317,11 @@ model WmsFulfillmentOrder {
   basket                     WmsBasket?                   @relation("WmsBasketFulfillmentOrders", fields: [basketId], references: [id], onDelete: SetNull)
   claimedAt                  DateTime?
   completedAt                DateTime?
+  sourceItemsHash            String?
+  sourceRevision             Int                          @default(0)
+  changeState                WmsFulfillmentChangeState    @default(NONE)
+  changeDetectedAt           DateTime?
+  changeSummary              Json?
   lastSyncedAt               DateTime                     @default(now())
   createdAt                  DateTime                     @default(now())
   updatedAt                  DateTime                     @updatedAt
@@ -2145,6 +2332,7 @@ model WmsFulfillmentOrder {
   basketPickDemands WmsBasketPickDemand[]
   basketUnits       WmsBasketUnit[]
   packingProofs     WmsPackingProof[]
+  amendments        WmsFulfillmentAmendment[]
 
   @@unique([tenantId, shopId, posOrderId])
   @@unique([posOrderDbId])
@@ -2158,7 +2346,32 @@ model WmsFulfillmentOrder {
   @@index([posWarehouseRef])
   @@index([storeId, priorityOverrideAt])
   @@index([priorityReleasedForOrderId])
+  @@index([tenantId, changeState, updatedAt])
   @@map("wms_fulfillment_orders")
+}
+
+model WmsFulfillmentAmendment {
+  id                 String                          @id @default(uuid()) @db.Uuid
+  tenantId           String                          @db.Uuid
+  tenant             Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fulfillmentOrderId String                          @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder             @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  sourceHash         String
+  previousHash       String?
+  sourceRevision     Int
+  detectedStage      WmsFulfillmentAmendmentStage
+  status             WmsFulfillmentAmendmentStatus   @default(OPEN)
+  diff               Json
+  requiredActions    Json
+  detectedAt         DateTime                        @default(now())
+  resolvedAt         DateTime?
+  createdAt          DateTime                        @default(now())
+  updatedAt          DateTime                        @updatedAt
+
+  @@unique([fulfillmentOrderId, sourceHash])
+  @@index([tenantId, status, detectedAt])
+  @@index([fulfillmentOrderId, status])
+  @@map("wms_fulfillment_amendments")
 }
 
 model WmsPackingProof {

@@ -77,7 +77,20 @@ export type WmsFulfillmentQueueTask = {
   } | null;
   itemChange: {
     hasChanged: boolean;
-    message: string | null;
+    autoRebuilt: boolean;
+    requiresAction: boolean;
+    state: 'NONE' | 'PICK_REWORK_REQUIRED' | 'PACK_REWORK_REQUIRED' | 'PACKED_REWORK_REQUIRED' | 'EXCEPTION';
+    detectedAt: string | null;
+    title: string;
+    message: string;
+    addedUnits: number;
+    removedUnits: number;
+    returnUnitsRemaining: number;
+    pickUnitsRequired: number;
+    added: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
+    removed: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
+    increased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
+    decreased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
   } | null;
   priority: {
     isPrioritized: boolean;

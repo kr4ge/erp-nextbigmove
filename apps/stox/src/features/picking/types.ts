@@ -20,6 +20,24 @@ export type PickingAssignmentMode =
   | 'SERIAL_RESERVED'
   | 'BASKET_DEMAND';
 
+export type WmsFulfillmentItemChange = {
+  hasChanged: boolean;
+  autoRebuilt: boolean;
+  requiresAction: boolean;
+  state: 'NONE' | 'PICK_REWORK_REQUIRED' | 'PACK_REWORK_REQUIRED' | 'PACKED_REWORK_REQUIRED' | 'EXCEPTION';
+  detectedAt: string | null;
+  title: string;
+  message: string;
+  addedUnits: number;
+  removedUnits: number;
+  returnUnitsRemaining: number;
+  pickUnitsRequired: number;
+  added: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
+  removed: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
+  increased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
+  decreased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
+};
+
 export type WmsMobilePickingResponse = {
   tenantReady: boolean;
   serverTime: string;
@@ -118,6 +136,7 @@ export type WmsMobilePickingTask = {
     label: string | null;
     deliveredAt: string | null;
   } | null;
+  itemChange: WmsFulfillmentItemChange | null;
   createdAt: string;
   basket: WmsMobilePickBasket | null;
   lines: WmsMobilePickingLine[];

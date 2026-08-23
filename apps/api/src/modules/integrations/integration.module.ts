@@ -21,10 +21,12 @@ import {
 } from './pancake-webhook.constants';
 import { PancakeWebhookQueueProcessor } from './processors/pancake-webhook.processor';
 import { shouldRunPancakeWorkers } from '../../common/runtime/process-role';
+import { CreativeAgentModule } from '../creative-agent/creative-agent.module';
 
 @Module({
   imports: [
     PrismaModule,
+    CreativeAgentModule,
     WmsInventoryModule,
     WmsFulfillmentModule,
     BullModule.registerQueue({

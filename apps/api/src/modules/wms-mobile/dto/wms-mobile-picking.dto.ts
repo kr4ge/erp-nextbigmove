@@ -94,6 +94,8 @@ export class WmsMobilePickBasketUnitScanDto extends WmsMobilePickScanDto {
   binId!: string;
 }
 
+export class WmsMobileFulfillmentReworkReturnDto extends WmsMobilePickScanDto {}
+
 export class WmsMobilePickBasketBatchAssignDto extends WmsMobilePickScopedDto {
   @IsString()
   @MinLength(1)

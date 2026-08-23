@@ -185,9 +185,11 @@ export function FulfillmentQueueTable({
       return leftOrder.localeCompare(rightOrder, undefined, { numeric: true });
     });
   }, [selectedBasket]);
+  const selectedBasketChanges = selectedBasket?.tasks.filter((task) => task.itemChange) ?? [];
   const canHandoffSelectedBasket = Boolean(
     selectedBasket
     && selectedBasket.basket.status === 'FULL_HELD'
+    && !selectedBasketChanges.some((task) => task.itemChange?.requiresAction)
     && canAssignPickBasketPacker
     && onAssignPickBasketPacker,
   );
@@ -392,6 +394,10 @@ export function FulfillmentQueueTable({
               />
             </div>
 
+            {selectedBasketChanges.map((task) => (
+              <OrderChangeAlert key={`basket-change-${task.id}`} task={task} />
+            ))}
+
             {confirmVoidBasketId === selectedBasket.basket.id ? (
               <div className="rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                 Void will return picked units to their original bins, detach already packed history from this basket, and re-evaluate every remaining order inside it.
@@ -512,6 +518,8 @@ export function FulfillmentQueueTable({
                 )}
               />
             </div>
+
+            {selectedTask.itemChange ? <OrderChangeAlert task={selectedTask} /> : null}
 
             {selectedTask.issueReason ? (
               <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3">
@@ -866,6 +874,39 @@ async function handleReleasePriority(params: {
   } finally {
     params.setIsReleasingPriority(false);
   }
+}
+
+function OrderChangeAlert({ task }: { task: WmsFulfillmentQueueTask }) {
+  const change = task.itemChange;
+  if (!change) return null;
+
+  return (
+    <div className={`rounded-[20px] border px-4 py-3 ${change.requiresAction ? 'border-amber-200 bg-amber-50' : 'border-sky-200 bg-sky-50'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className={`text-sm font-semibold ${change.requiresAction ? 'text-amber-950' : 'text-sky-950'}`}>
+            {change.title}
+          </p>
+          <p className={`mt-1 text-[13px] ${change.requiresAction ? 'text-amber-800' : 'text-sky-800'}`}>
+            {change.message}
+          </p>
+        </div>
+        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-primary">
+          Automatic revision
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-[12px] font-semibold text-[#4d6677]">
+        {change.addedUnits > 0 ? <span className="rounded-full bg-white px-2.5 py-1">+{change.addedUnits} to pick</span> : null}
+        {change.removedUnits > 0 ? <span className="rounded-full bg-white px-2.5 py-1">−{change.removedUnits} removed</span> : null}
+        {change.returnUnitsRemaining > 0 ? <span className="rounded-full bg-white px-2.5 py-1">{change.returnUnitsRemaining} to return</span> : null}
+      </div>
+      <p className="mt-3 text-[12px] text-[#667a88]">
+        {change.requiresAction
+          ? 'The picker must finish the highlighted return and pick steps in STOX. Packer assignment and packing remain blocked until then.'
+          : 'The current Pick list already uses the latest POS variations and quantities. No manual sync is needed.'}
+      </p>
+    </div>
+  );
 }
 
 function TaskRow({

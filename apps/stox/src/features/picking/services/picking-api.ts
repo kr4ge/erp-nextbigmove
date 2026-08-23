@@ -232,6 +232,27 @@ export function scanMobilePickingBasketUnit(params: PickingRequestParams & {
   );
 }
 
+export function returnMobileFulfillmentReworkUnit(params: PickingRequestParams & {
+  basketId: string;
+  orderId: string;
+  code: string;
+}) {
+  return apiRequest<{
+    success: boolean;
+    returnedUnit: { id: string; code: string; variationId: string };
+    task: WmsMobilePickingTask | null;
+    plan: WmsMobileBasketPickPlanResponse['plan'];
+  }>(`/wms/mobile/picking/baskets/${params.basketId}/orders/${params.orderId}/rework/return-unit`, {
+    method: 'POST',
+    token: params.accessToken,
+    device: params.device,
+    body: {
+      tenantId: params.tenantId,
+      code: params.code,
+    },
+  });
+}
+
 function buildPickingPath(params: {
   filters: PickingFilters;
   status?: PickingStatus | null;

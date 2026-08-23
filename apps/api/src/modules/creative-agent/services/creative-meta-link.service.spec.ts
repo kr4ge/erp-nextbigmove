@@ -1,0 +1,80 @@
+import { describe, expect, it, jest } from '@jest/globals';
+import { CreativeMetaLinkService } from './creative-meta-link.service';
+
+describe('CreativeMetaLinkService', () => {
+  function createService(options: {
+    insights: Array<{ accountId: string; adId: string; adName: string }>;
+  }) {
+    const transactionClient = {
+      creative: {
+        updateMany: jest.fn<() => Promise<{ count: number }>>().mockResolvedValue({ count: 1 }),
+      },
+      auditLog: { create: jest.fn<() => Promise<object>>().mockResolvedValue({}) },
+    };
+    const prisma = {
+      creative: {
+        findMany: jest.fn<() => Promise<Array<{ id: string; code: string }>>>()
+          .mockResolvedValue([{ id: 'creative-1', code: 'AP-V0001' }]),
+      },
+      metaAdInsight: {
+        findMany: jest.fn<() => Promise<typeof options.insights>>()
+          .mockResolvedValue(options.insights),
+      },
+      $transaction: jest.fn(async (callback: (tx: typeof transactionClient) => Promise<unknown>) => (
+        callback(transactionClient)
+      )),
+    };
+    return {
+      service: new CreativeMetaLinkService(prisma as never),
+      prisma,
+      transactionClient,
+    };
+  }
+
+  it('persists an unambiguous canonical-code match', async () => {
+    const { service, transactionClient } = createService({
+      insights: [{ accountId: 'account-1', adId: 'ad-1', adName: 'AP-V0001' }],
+    });
+
+    await expect(service.reconcileInsights('tenant-1', [
+      { accountId: 'account-1', adId: 'ad-1', adName: 'AP-V0001' },
+    ])).resolves.toBe(1);
+
+    expect(transactionClient.creative.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        metaAccountId: 'account-1',
+        metaAdId: 'ad-1',
+        metaLinkSource: 'AUTO_CODE',
+      }),
+    }));
+  });
+
+  it('leaves a reused code unlinked when it belongs to multiple Meta ads', async () => {
+    const { service, prisma, transactionClient } = createService({
+      insights: [
+        { accountId: 'account-1', adId: 'ad-1', adName: 'AP-V0001' },
+        { accountId: 'account-1', adId: 'ad-2', adName: 'AP-V0001' },
+      ],
+    });
+
+    await expect(service.reconcileInsights('tenant-1', [
+      { accountId: 'account-1', adId: 'ad-2', adName: 'AP-V0001' },
+    ])).resolves.toBe(0);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(transactionClient.creative.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-link when the creative code is only part of the ad name', async () => {
+    const { service, prisma } = createService({ insights: [] });
+
+    await expect(service.reconcileInsights('tenant-1', [
+      { accountId: 'account-1', adId: 'ad-1', adName: 'Launch AP-V0001 today' },
+    ])).resolves.toBe(0);
+
+    expect(prisma.creative.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ code: { in: ['Launch AP-V0001 today'] } }),
+    }));
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});

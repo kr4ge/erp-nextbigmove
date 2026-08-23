@@ -1,0 +1,279 @@
+"use client";
+
+import {
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Library,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/emptystate";
+import { PageHeader } from "@/components/ui/page-header";
+import { useToast } from "@/components/ui/toast";
+import type { VideoRegistrySortKey } from "../_types/video-registry";
+import { useVideoRegistryController } from "../_hooks/use-video-registry-controller";
+import { LinkVideoDialog } from "./link-video-dialog";
+import { RegisterVideoDialog } from "./register-video-dialog";
+import { UnregisteredMetaPanel } from "./unregistered-meta-panel";
+import { VideoRegistryFilterBar } from "./video-registry-filter-bar";
+import { VideoRegistryGrid } from "./video-registry-grid";
+import { VideoRegistryTable } from "./video-registry-table";
+import { VideoReviewDialog } from "./video-review-dialog";
+
+function RegistryLoadingState() {
+  return (
+    <div aria-label="Loading video registry">
+      <div className="animate-pulse space-y-4 p-5">
+        <div className="h-5 w-48 rounded bg-background-secondary" />
+        {[1, 2, 3, 4].map((row) => (
+          <div key={row} className="h-16 rounded-xl bg-background-secondary" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function VideoRegistryScreen() {
+  const controller = useVideoRegistryController();
+  const { addToast } = useToast();
+  const { data, params } = controller;
+
+  const sort = (sortKey: VideoRegistrySortKey) => {
+    controller.updateParams({
+      sortKey,
+      sortDirection:
+        params.sortKey === sortKey && params.sortDirection === "desc"
+          ? "asc"
+          : "desc",
+    });
+  };
+
+  const linkAlias = async (
+    input: Parameters<typeof controller.linkAlias>[0],
+  ) => {
+    await controller.linkAlias(input);
+    addToast(
+      "success",
+      `${input.alias} is now linked to the selected registry video.`,
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Video Registry"
+        description="Keep creative titles, Google Drive sources, Meta ad-name matching, and performance signals in one library."
+        breadcrumbs="Creative Agent"
+        actions={
+          controller.permissions.canEnroll ? (
+            <Button
+              type="button"
+              iconLeft={<Plus className="h-4 w-4" />}
+              onClick={() => controller.openRegistration()}
+            >
+              Enroll creative
+            </Button>
+          ) : null
+        }
+      />
+
+      {data ? (
+        <UnregisteredMetaPanel
+          items={data.unregistered}
+          onRegister={controller.openRegistration}
+          onLink={controller.setLinkingItem}
+          canRegister={controller.permissions.canEnroll}
+          canLink={controller.permissions.canManageAliases}
+        />
+      ) : null}
+
+      <section className="panel overflow-hidden">
+        {data ? (
+          <VideoRegistryFilterBar
+            params={params}
+            searchText={controller.searchText}
+            filters={data.filters}
+            view={controller.view}
+            hasActiveFilters={controller.hasActiveFilters}
+            onParamsChange={controller.updateParams}
+            onSearchTextChange={controller.setSearchText}
+            onViewChange={controller.setView}
+            onReset={controller.resetFilters}
+          />
+        ) : null}
+
+        <div className={data ? "border-t border-border" : undefined}>
+          {controller.isLoading ? <RegistryLoadingState /> : null}
+
+          {!controller.isLoading && controller.error ? (
+            <div
+              className="flex flex-col items-center px-6 py-16 text-center"
+              role="alert"
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-destructive-soft text-destructive">
+                <AlertCircle className="h-6 w-6" />
+              </span>
+              <h2 className="mt-4 text-lg font-semibold text-foreground">
+                The registry could not load
+              </h2>
+              <p className="mt-2 max-w-lg text-sm text-muted">
+                {controller.error}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-5"
+                iconLeft={<RefreshCw className="h-4 w-4" />}
+                onClick={() => controller.retry()}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : null}
+
+          {!controller.isLoading &&
+          !controller.error &&
+          data &&
+          data.items.length === 0 ? (
+            <EmptyState
+              embedded
+              title={
+                controller.hasActiveFilters
+                  ? "No creatives match these filters"
+                  : "Your creative library is empty"
+              }
+              description={
+                controller.hasActiveFilters
+                  ? "Reset or adjust the filters to find another creative."
+                  : "Enroll the first creative to mint its stable code."
+              }
+              actionLabel={
+                controller.hasActiveFilters
+                  ? "Reset filters"
+                  : controller.permissions.canEnroll
+                    ? "Enroll creative"
+                    : undefined
+              }
+              onAction={
+                controller.hasActiveFilters
+                  ? controller.resetFilters
+                  : controller.permissions.canEnroll
+                    ? () => controller.openRegistration()
+                    : undefined
+              }
+              icon={<Library className="h-12 w-12" />}
+            />
+          ) : null}
+
+          {!controller.isLoading &&
+          !controller.error &&
+          data &&
+          data.items.length > 0 ? (
+            <>
+              <div className="flex flex-col gap-2 border-b border-border bg-background-secondary/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted">
+                  <span className="font-semibold text-foreground">
+                    {data.pagination.total}
+                  </span>{" "}
+                  enrolled creatives
+                </p>
+                <p className="text-xs text-muted">
+                  Metrics shown for {params.startDate} to {params.endDate}
+                </p>
+              </div>
+              {controller.view === "table" ? (
+                <VideoRegistryTable
+                  items={data.items}
+                  params={params}
+                  onSort={sort}
+                  onReview={controller.setReviewingItem}
+                />
+              ) : (
+                <div className="p-4">
+                  <VideoRegistryGrid
+                    items={data.items}
+                    onReview={controller.setReviewingItem}
+                  />
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-3 border-t border-border bg-surface px-4 py-3">
+                <p className="text-sm text-muted">
+                  Showing{" "}
+                  {(data.pagination.page - 1) * data.pagination.pageSize + 1}–
+                  {Math.min(
+                    data.pagination.page * data.pagination.pageSize,
+                    data.pagination.total,
+                  )}{" "}
+                  of {data.pagination.total}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface text-muted transition hover:border-primary/30 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+                    aria-label="Previous page"
+                    disabled={data.pagination.page <= 1}
+                    onClick={() =>
+                      controller.updateParams({
+                        page: data.pagination.page - 1,
+                      })
+                    }
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="flex items-center rounded-full border border-border bg-background-secondary px-3.5 text-xs font-semibold text-foreground">
+                    {data.pagination.page} / {data.pagination.totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface text-muted transition hover:border-primary/30 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+                    aria-label="Next page"
+                    disabled={
+                      data.pagination.page >= data.pagination.totalPages
+                    }
+                    onClick={() =>
+                      controller.updateParams({
+                        page: data.pagination.page + 1,
+                      })
+                    }
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </section>
+
+      <RegisterVideoDialog
+        open={controller.isRegisterOpen}
+        stores={controller.stores.map((store) => ({
+          value: store.id,
+          label: store.name,
+          nextCode: store.nextCode,
+        }))}
+        seed={controller.registrationSeed}
+        createdItem={controller.createdItem}
+        isSaving={controller.isMutating}
+        onClose={controller.closeRegistration}
+        onSubmit={controller.registerVideo}
+      />
+      <LinkVideoDialog
+        item={controller.linkingItem}
+        videos={data?.items ?? []}
+        isSaving={controller.isMutating}
+        onClose={() => controller.setLinkingItem(null)}
+        onSubmit={linkAlias}
+      />
+      <VideoReviewDialog
+        item={controller.reviewingItem}
+        permissions={controller.permissions}
+        isSaving={controller.isMutating}
+        onClose={() => controller.setReviewingItem(null)}
+        onTransition={controller.transitionStatus}
+      />
+    </div>
+  );
+}

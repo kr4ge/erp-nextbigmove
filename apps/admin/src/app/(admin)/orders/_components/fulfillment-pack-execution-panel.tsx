@@ -798,7 +798,7 @@ function DemandBasketPackExecutionPanel({
       state.set(order.id, {
         selectable,
         reason: changedInPos
-          ? orderTask?.itemChange?.message ?? 'Items changed in POS · void this order'
+          ? orderTask?.itemChange?.message ?? 'Items changed in POS · complete the automatic Pick rework'
           : canceledInPos
           ? 'Cancelled in POS · void this order'
           : inDispatch
@@ -1042,7 +1042,7 @@ function DemandBasketPackExecutionPanel({
                       <div>
                         <p className="text-[12px] font-semibold text-[#9a3412]">POS items changed for this order.</p>
                         <p className="mt-1 text-[12px] text-[#9a3412]">
-                          {selectedOrderTask.itemChange.message ?? 'Void this order and rebuild it from the latest POS items before packing continues.'}
+                          {selectedOrderTask.itemChange.message ?? 'This order was rebuilt from the latest POS items automatically. Complete its highlighted steps in Pick before packing continues.'}
                         </p>
                       </div>
                     </div>
@@ -1546,7 +1546,7 @@ function DemandPackOrderPlanList({
         const selectable = orderState.selectable;
         const itemChanged = orderTask?.itemChange?.hasChanged === true;
         const helperText = itemChanged
-          ? orderTask?.itemChange?.message ?? 'Items changed in POS · void this order'
+          ? orderTask?.itemChange?.message ?? 'Items changed in POS · complete the automatic Pick rework'
           : orderState.reason ?? order.tracking ?? order.customerName ?? order.statusLabel;
 
         return (

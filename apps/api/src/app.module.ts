@@ -32,6 +32,7 @@ import { WmsReceivingModule } from './modules/wms-receiving/wms-receiving.module
 import { WmsMobileModule } from './modules/wms-mobile/wms-mobile.module';
 import { WmsSettingsModule } from './modules/wms-settings/wms-settings.module';
 import { WmsIntegrationsModule } from './modules/wms-integrations/wms-integrations.module';
+import { CreativeAgentModule } from './modules/creative-agent/creative-agent.module';
 
 @Module({
   imports: [
@@ -118,6 +119,7 @@ import { WmsIntegrationsModule } from './modules/wms-integrations/wms-integratio
     WmsMobileModule,
     WmsSettingsModule,
     WmsIntegrationsModule,
+    CreativeAgentModule,
   ],
   controllers: [],
   providers: [],

@@ -15,4 +15,5 @@ export interface ManualMetaUploadJobData {
   isAdmin: boolean;
   filePath: string;
   originalFileName: string;
+  currencyMultiplier?: number;
 }

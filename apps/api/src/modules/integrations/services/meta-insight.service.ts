@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Decimal } from '@prisma/client/runtime/library';
+import { CreativeMetaLinkService } from '../../creative-agent/services/creative-meta-link.service';
+import type { MetaInsightLinkIdentity } from '../../creative-agent/services/creative-meta-link.service';
 
 interface MetaInsightData {
   accountId: string;
@@ -15,6 +17,15 @@ interface MetaInsightData {
   linkClicks?: number;
   impressions?: number;
   leads?: number;
+  videoPlays3s?: number | null;
+  thruPlays?: number | null;
+  frequency?: number | null;
+  videoAveragePlayTime?: number | null;
+  videoPlays25?: number | null;
+  videoPlays50?: number | null;
+  videoPlays75?: number | null;
+  videoPlays95?: number | null;
+  videoPlays100?: number | null;
   status?: string;
   dateCreated?: string;
   mapping?: string | null;
@@ -22,7 +33,10 @@ interface MetaInsightData {
 
 @Injectable()
 export class MetaInsightService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly creativeMetaLinks: CreativeMetaLinkService,
+  ) {}
 
   /**
    * Extract marketing associate from ad name pattern
@@ -72,6 +86,21 @@ export class MetaInsightService {
     return null;
   }
 
+  private parseOptionalMetric(
+    rawInsight: Record<string, unknown>,
+    field: string,
+    integer: boolean,
+  ): number | null | undefined {
+    if (!Object.prototype.hasOwnProperty.call(rawInsight, field)) return undefined;
+    const rawValue = rawInsight[field];
+    if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0 || (integer && !Number.isInteger(parsed))) {
+      return null;
+    }
+    return parsed;
+  }
+
   private parseMetaInsight(rawInsight: any, accountId: string, multiplier = 1): MetaInsightData {
     // Extract leads from actions array (landing_page_view)
     let leads = 0;
@@ -97,6 +126,15 @@ export class MetaInsightService {
       linkClicks: parseInt(rawInsight.inline_link_clicks || '0', 10),
       impressions: parseInt(rawInsight.impressions || '0', 10),
       leads,
+      videoPlays3s: this.parseOptionalMetric(rawInsight, 'video_plays_3s', true),
+      thruPlays: this.parseOptionalMetric(rawInsight, 'thru_plays', true),
+      frequency: this.parseOptionalMetric(rawInsight, 'frequency', false),
+      videoAveragePlayTime: this.parseOptionalMetric(rawInsight, 'video_average_play_time', false),
+      videoPlays25: this.parseOptionalMetric(rawInsight, 'video_plays_25', true),
+      videoPlays50: this.parseOptionalMetric(rawInsight, 'video_plays_50', true),
+      videoPlays75: this.parseOptionalMetric(rawInsight, 'video_plays_75', true),
+      videoPlays95: this.parseOptionalMetric(rawInsight, 'video_plays_95', true),
+      videoPlays100: this.parseOptionalMetric(rawInsight, 'video_plays_100', true),
       status: rawInsight.status,
       dateCreated: rawInsight.created_time,
       mapping: this.extractMappingFromCampaign(rawInsight.campaign_name),
@@ -115,6 +153,7 @@ export class MetaInsightService {
     multiplier = 1,
   ): Promise<number> {
     let upserted = 0;
+    const persistedInsights = new Map<string, MetaInsightLinkIdentity>();
 
     for (const rawInsight of rawInsights) {
       const insight = this.parseMetaInsight(rawInsight, accountId, multiplier);
@@ -152,6 +191,19 @@ export class MetaInsightService {
           linkClicks: insight.linkClicks || 0,
           impressions: insight.impressions || 0,
           leads: insight.leads || 0,
+          videoPlays3s: insight.videoPlays3s ?? null,
+          thruPlays: insight.thruPlays ?? null,
+          frequency: insight.frequency === undefined || insight.frequency === null
+            ? null
+            : new Decimal(insight.frequency),
+          videoAveragePlayTime: insight.videoAveragePlayTime === undefined || insight.videoAveragePlayTime === null
+            ? null
+            : new Decimal(insight.videoAveragePlayTime),
+          videoPlays25: insight.videoPlays25 ?? null,
+          videoPlays50: insight.videoPlays50 ?? null,
+          videoPlays75: insight.videoPlays75 ?? null,
+          videoPlays95: insight.videoPlays95 ?? null,
+          videoPlays100: insight.videoPlays100 ?? null,
           status: insight.status,
         },
         update: {
@@ -165,13 +217,40 @@ export class MetaInsightService {
           linkClicks: insight.linkClicks || 0,
           impressions: insight.impressions || 0,
           leads: insight.leads || 0,
+          ...(insight.videoPlays3s !== undefined ? { videoPlays3s: insight.videoPlays3s } : {}),
+          ...(insight.thruPlays !== undefined ? { thruPlays: insight.thruPlays } : {}),
+          ...(insight.frequency !== undefined
+            ? { frequency: insight.frequency === null ? null : new Decimal(insight.frequency) }
+            : {}),
+          ...(insight.videoAveragePlayTime !== undefined
+            ? {
+                videoAveragePlayTime: insight.videoAveragePlayTime === null
+                  ? null
+                  : new Decimal(insight.videoAveragePlayTime),
+              }
+            : {}),
+          ...(insight.videoPlays25 !== undefined ? { videoPlays25: insight.videoPlays25 } : {}),
+          ...(insight.videoPlays50 !== undefined ? { videoPlays50: insight.videoPlays50 } : {}),
+          ...(insight.videoPlays75 !== undefined ? { videoPlays75: insight.videoPlays75 } : {}),
+          ...(insight.videoPlays95 !== undefined ? { videoPlays95: insight.videoPlays95 } : {}),
+          ...(insight.videoPlays100 !== undefined ? { videoPlays100: insight.videoPlays100 } : {}),
           status: insight.status,
           teamId,
         },
       });
 
+      persistedInsights.set(`${insight.accountId}:${insight.adId}`, {
+        accountId: insight.accountId,
+        adId: insight.adId,
+        adName: insight.adName,
+      });
       upserted++;
     }
+
+    await this.creativeMetaLinks.reconcileInsights(
+      tenantId,
+      Array.from(persistedInsights.values()),
+    );
 
     return upserted;
   }

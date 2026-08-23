@@ -19,6 +19,7 @@ import {
   WmsBasketStatus,
   WmsBasketUnitStatus,
   WmsFulfillmentAssignmentMode,
+  WmsFulfillmentChangeState,
   WmsStaffAssignmentTaskType,
   WmsStaffActivityOutcome,
   TenantStatus,
@@ -83,6 +84,7 @@ import {
   WmsMobilePickBasketUnitScanDto,
   WmsMobilePickBasketVoidDto,
   WmsMobilePickHandoffDto,
+  WmsMobileFulfillmentReworkReturnDto,
   WmsMobilePickReallocateDto,
   WmsMobilePickResyncDto,
   WmsMobilePickScanDto,
@@ -6988,6 +6990,8 @@ export class WmsMobileService {
       await this.refreshFulfillmentBasketState(tx, order.id, now);
     });
 
+    await this.wmsFulfillmentSyncService.resolveFulfillmentAmendmentIfComplete(order.id);
+
     const updatedOrder = await this.findPickingOrderForAction(user, id, body.tenantId, request);
 
     await this.recordStockActivity(user, request, {
@@ -7480,6 +7484,12 @@ export class WmsMobileService {
       }
       const transactionMs = Date.now() - transactionStartedAt;
 
+      if (transactionResult.taskId) {
+        await this.wmsFulfillmentSyncService.resolveFulfillmentAmendmentIfComplete(
+          transactionResult.taskId,
+        );
+      }
+
       if (transactionResult.alreadyProcessed) {
         if (useDeltaResponse) {
           return this.buildIdempotentBasketScanResult({
@@ -7735,6 +7745,60 @@ export class WmsMobileService {
     };
   }
 
+  async returnFulfillmentReworkUnit(
+    user: BootstrapUser,
+    basketId: string,
+    orderId: string,
+    body: WmsMobileFulfillmentReworkReturnDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    if (!userId) {
+      throw new ForbiddenException('Missing WMS user context');
+    }
+    const basket = await this.findPickingBasketForAction(user, basketId, body.tenantId, request);
+    const order = (basket.fulfillmentOrders ?? []).find((candidate: any) => candidate.id === orderId);
+    if (!order) {
+      throw new NotFoundException('The changed order is no longer inside this basket');
+    }
+
+    const result = await this.wmsFulfillmentSyncService.returnAmendmentBasketUnit({
+      tenantId: order.tenantId,
+      fulfillmentOrderId: order.id,
+      basketId: basket.id,
+      code: this.normalizeScannedCode(body.code),
+      actorId: userId,
+    });
+    const updatedBasket = await this.findPickingBasketForAction(user, basket.id, body.tenantId, request);
+    const updatedTask = this.getMobileBasketOrders(updatedBasket).find((candidate: any) => candidate.id === order.id);
+
+    await this.recordStockActivity(user, request, {
+      tenantId: order.tenantId,
+      actionType: 'FULFILLMENT_AMENDMENT_RETURN',
+      resourceType: 'WMS_INVENTORY_UNIT',
+      resourceId: result.unit.id,
+      taskType: 'PICK',
+      storeId: order.storeId,
+      warehouseId: order.warehouseId,
+      metadata: {
+        fulfillmentOrderId: order.id,
+        posOrderId: order.posOrderId,
+        basketId: basket.id,
+        basketCode: basket.barcode,
+        unitCode: result.unit.code,
+        variationId: result.unit.variationId,
+      },
+    });
+
+    return {
+      success: true,
+      returnedUnit: result.unit,
+      task: updatedTask ? this.mapMobilePickingTask(updatedTask) : null,
+      basket: this.mapMobilePickBasket(updatedBasket),
+      plan: this.buildMobileBasketPickPlan(updatedBasket),
+    };
+  }
+
   async completePickingTask(
     user: BootstrapUser,
     id: string,
@@ -7744,6 +7808,7 @@ export class WmsMobileService {
     const userId = user.userId || user.id || null;
     const order = await this.findPickingOrderForAction(user, id, body.tenantId, request);
     this.assertPickingTaskClaimedByUser(order, userId);
+    await this.assertFulfillmentAmendmentResolved(order);
 
     if (order.pickedQuantity < order.totalQuantity) {
       throw new BadRequestException(`Order ${order.posOrderId} still has units to pick`);
@@ -7751,6 +7816,28 @@ export class WmsMobileService {
 
     const now = order.completedAt ?? new Date();
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      if (order.basket?.id) {
+        await tx.$queryRaw`SELECT "id" FROM "wms_baskets" WHERE "id" = ${order.basket.id}::uuid FOR UPDATE`;
+      }
+      await tx.$queryRaw`SELECT "id" FROM "wms_fulfillment_orders" WHERE "id" = ${order.id}::uuid FOR UPDATE`;
+      const currentOrder = await tx.wmsFulfillmentOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        select: {
+          changeState: true,
+          pickedQuantity: true,
+          totalQuantity: true,
+          posOrderId: true,
+        },
+      });
+      if (currentOrder.changeState !== WmsFulfillmentChangeState.NONE) {
+        throw new ConflictException(
+          `Order ${currentOrder.posOrderId} changed in POS. Finish its updated Pick steps before completing it.`,
+        );
+      }
+      if (currentOrder.pickedQuantity < currentOrder.totalQuantity) {
+        throw new ConflictException(`Order ${currentOrder.posOrderId} was updated and still has units to pick`);
+      }
+
       await tx.wmsFulfillmentOrder.update({
         where: { id: order.id },
         data: {
@@ -7801,6 +7888,7 @@ export class WmsMobileService {
     }
 
     const order = await this.findPickingOrderForAction(user, id, body.tenantId, request);
+    await this.assertFulfillmentAmendmentResolved(order);
 
     const [access, taskAssignment] = await Promise.all([
       this.effectiveAccessService.resolveUserAccess({
@@ -7840,6 +7928,7 @@ export class WmsMobileService {
           id: true,
           posOrderId: true,
           status: true,
+          changeState: true,
           basket: {
             select: {
               id: true,
@@ -7852,6 +7941,12 @@ export class WmsMobileService {
 
       if (!scopedOrder || !scopedOrder.basket) {
         throw new NotFoundException('Pick task was not found');
+      }
+
+      if (scopedOrder.changeState !== WmsFulfillmentChangeState.NONE) {
+        throw new ConflictException(
+          `Order ${scopedOrder.posOrderId} changed in POS. Finish the highlighted return and pick steps before assigning a packer.`,
+        );
       }
 
       if (
@@ -7867,12 +7962,17 @@ export class WmsMobileService {
           id: {
             not: scopedOrder.id,
           },
-          status: {
-            notIn: [
-              WmsFulfillmentOrderStatus.READY_FOR_PACK,
-              WmsFulfillmentOrderStatus.PICKED,
-            ],
-          },
+          OR: [
+            {
+              status: {
+                notIn: [
+                  WmsFulfillmentOrderStatus.READY_FOR_PACK,
+                  WmsFulfillmentOrderStatus.PICKED,
+                ],
+              },
+            },
+            { changeState: { not: WmsFulfillmentChangeState.NONE } },
+          ],
         },
       });
 
@@ -10467,6 +10567,13 @@ export class WmsMobileService {
   }
 
   private assertPackOrderItemsMatchPos(order: any) {
+    if (order.changeState && order.changeState !== WmsFulfillmentChangeState.NONE) {
+      const summary = this.asJsonRecord(order.changeSummary);
+      throw new ConflictException(
+        this.readString(summary?.message)
+        ?? `Order ${order.posOrderId} changed in POS. Its pick list was rebuilt automatically; finish the guided rework before packing.`,
+      );
+    }
     const itemChange = this.resolveFulfillmentOrderItemChange(order);
     if (!itemChange?.hasChanged) {
       return;
@@ -10474,11 +10581,38 @@ export class WmsMobileService {
 
     throw new ConflictException(
       itemChange.message
-      ?? `Order ${order.posOrderId} items changed in POS. Void it from PACK before continuing`,
+      ?? `Order ${order.posOrderId} items changed in POS. Refresh while WMS applies the automatic Pick rework.`,
     );
   }
 
   private resolveFulfillmentOrderItemChange(order: any) {
+    const summary = this.asJsonRecord(order?.changeSummary);
+    if (order?.changeDetectedAt || summary) {
+      const changeState = order.changeState ?? WmsFulfillmentChangeState.NONE;
+      return {
+        hasChanged: changeState !== WmsFulfillmentChangeState.NONE,
+        autoRebuilt: summary?.autoRebuilt === true,
+        requiresAction: changeState !== WmsFulfillmentChangeState.NONE,
+        state: changeState,
+        detectedAt: order.changeDetectedAt ?? null,
+        title: this.readString(summary?.notificationTitle)
+          ?? (changeState === WmsFulfillmentChangeState.NONE
+            ? 'Order updated — pick list refreshed'
+            : 'Order changed — rework required'),
+        message: this.readString(summary?.message)
+          ?? (changeState === WmsFulfillmentChangeState.NONE
+            ? `Order ${order.posOrderId} was updated automatically.`
+            : `Order ${order.posOrderId} changed in POS. Follow the updated pick steps before continuing.`),
+        addedUnits: typeof summary?.addedUnits === 'number' ? summary.addedUnits : 0,
+        removedUnits: typeof summary?.removedUnits === 'number' ? summary.removedUnits : 0,
+        returnUnitsRemaining: typeof summary?.returnUnitsRemaining === 'number' ? summary.returnUnitsRemaining : 0,
+        pickUnitsRequired: typeof summary?.pickUnitsRequired === 'number' ? summary.pickUnitsRequired : 0,
+        added: Array.isArray(summary?.added) ? summary.added : [],
+        removed: Array.isArray(summary?.removed) ? summary.removed : [],
+        increased: Array.isArray(summary?.increased) ? summary.increased : [],
+        decreased: Array.isArray(summary?.decreased) ? summary.decreased : [],
+      };
+    }
     if (!order || !Array.isArray(order.lines) || !order.posOrder?.orderSnapshot) {
       return null;
     }
@@ -10496,10 +10630,7 @@ export class WmsMobileService {
     const fulfillmentSignature = this.buildFulfillmentLineDemandSignature(activeLines);
 
     if (this.areDemandSignaturesEqual(currentSignature, fulfillmentSignature)) {
-      return {
-        hasChanged: false,
-        message: null,
-      };
+      return null;
     }
 
     const activeExecutionStatuses = new Set<WmsFulfillmentOrderStatus>([
@@ -10512,9 +10643,22 @@ export class WmsMobileService {
 
     return {
       hasChanged: true,
+      autoRebuilt: false,
+      requiresAction: true,
+      state: WmsFulfillmentChangeState.EXCEPTION,
+      detectedAt: null,
+      title: 'POS order update detected',
       message: activeExecutionStatuses.has(order.status)
-        ? `Order ${order.posOrderId} items changed in POS. Void this order and rebuild it from the latest POS items.`
-        : `Order ${order.posOrderId} items changed in POS. Refresh fulfillment requirements before claiming it.`,
+        ? `Order ${order.posOrderId} items changed in POS. Refresh while WMS applies the automatic Pick rework.`
+        : `Order ${order.posOrderId} items changed in POS. WMS is refreshing its fulfillment requirements automatically.`,
+      addedUnits: 0,
+      removedUnits: 0,
+      returnUnitsRemaining: 0,
+      pickUnitsRequired: 0,
+      added: [],
+      removed: [],
+      increased: [],
+      decreased: [],
     };
   }
 
@@ -10892,6 +11036,27 @@ export class WmsMobileService {
     if (order.claimedById !== userId) {
       throw new ForbiddenException('This pick task is assigned to another staff member');
     }
+  }
+
+  private async assertFulfillmentAmendmentResolved(order: any) {
+    if (!order?.changeState || order.changeState === WmsFulfillmentChangeState.NONE) {
+      return;
+    }
+
+    await this.wmsFulfillmentSyncService.resolveFulfillmentAmendmentIfComplete(order.id);
+    const current = await this.prisma.wmsFulfillmentOrder.findUnique({
+      where: { id: order.id },
+      select: { changeState: true, changeSummary: true, posOrderId: true },
+    });
+    if (!current || current.changeState === WmsFulfillmentChangeState.NONE) {
+      return;
+    }
+
+    const summary = this.asJsonRecord(current.changeSummary);
+    throw new ConflictException(
+      this.readString(summary?.message)
+      ?? `Order ${current.posOrderId} changed in POS. Finish the highlighted return and pick steps before continuing.`,
+    );
   }
 
   private assertPickingTaskHasBasket(order: any) {
@@ -11741,7 +11906,7 @@ export class WmsMobileService {
       orderDateLocal: task.posOrder?.dateLocal ?? null,
       tracking: task.posOrder?.tracking ?? null,
       delivery: this.mapTaskDelivery(task),
-      itemChange: null,
+      itemChange: this.resolveFulfillmentOrderItemChange(task),
       priority: {
         isPrioritized: Boolean(task.priorityOverrideAt),
         prioritizedAt: task.priorityOverrideAt ?? null,

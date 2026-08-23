@@ -37,6 +37,7 @@ import {
   GetWmsMobilePickBasketLookupDto,
   WmsMobilePickBasketBatchAssignDto,
   WmsMobilePickHandoffDto,
+  WmsMobileFulfillmentReworkReturnDto,
   WmsMobilePickBasketUnitScanDto,
   WmsMobilePickBasketVoidDto,
   WmsMobilePickReallocateDto,
@@ -386,6 +387,24 @@ export class WmsMobileController {
     @Body() body: WmsMobilePickBasketUnitScanDto,
   ) {
     return this.wmsMobileService.scanPickingBasketUnit(req.user, id, body, req);
+  }
+
+  @Post('picking/baskets/:id/orders/:orderId/rework/return-unit')
+  @Permissions(
+    'wms.fulfillment.write',
+    'wms.fulfillment.edit',
+    'wms.fulfillment.override',
+    'wms.dispatch.write',
+    'wms.dispatch.edit',
+    'wms.dispatch.override',
+  )
+  async returnFulfillmentReworkUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Param('orderId') orderId: string,
+    @Body() body: WmsMobileFulfillmentReworkReturnDto,
+  ) {
+    return this.wmsMobileService.returnFulfillmentReworkUnit(req.user, id, orderId, body, req);
   }
 
   @Post('picking/baskets/:id/void')

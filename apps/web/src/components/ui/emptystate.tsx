@@ -7,11 +7,12 @@ type Props = {
   actionLabel?: string;
   onAction?: () => void;
   icon?: ReactNode;
+  embedded?: boolean;
 };
 
-export function EmptyState({ title, description, actionLabel, onAction, icon }: Props) {
+export function EmptyState({ title, description, actionLabel, onAction, icon, embedded = false }: Props) {
   return (
-    <div className="rounded-2xl border border-dashed border-[#E2E8F0] bg-surface p-10 text-center dark:border-border">
+    <div className={embedded ? 'bg-surface px-6 py-16 text-center' : 'rounded-2xl border border-dashed border-[#E2E8F0] bg-surface p-10 text-center dark:border-border'}>
       {icon && <div className="mx-auto mb-4 h-12 w-12 text-[#2563EB]">{icon}</div>}
       <h3 className="text-lg font-semibold text-foreground">{title}</h3>
       <p className="mt-2 text-sm text-[#475569] dark:text-slate-300">{description}</p>

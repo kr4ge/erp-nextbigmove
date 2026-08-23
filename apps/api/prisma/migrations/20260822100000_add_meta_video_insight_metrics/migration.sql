@@ -1,0 +1,10 @@
+ALTER TABLE "meta_ad_insights"
+ADD COLUMN "videoPlays3s" INTEGER,
+ADD COLUMN "thruPlays" INTEGER,
+ADD COLUMN "frequency" DECIMAL(12,6),
+ADD COLUMN "videoAveragePlayTime" DECIMAL(12,4),
+ADD COLUMN "videoPlays25" INTEGER,
+ADD COLUMN "videoPlays50" INTEGER,
+ADD COLUMN "videoPlays75" INTEGER,
+ADD COLUMN "videoPlays95" INTEGER,
+ADD COLUMN "videoPlays100" INTEGER;

@@ -134,6 +134,7 @@ export class WorkflowController {
       filePath: file.path,
       originalFileName: file.originalname || 'upload.csv',
       integrationId: body?.integrationId || undefined,
+      currencyMultiplier: body?.currencyMultiplier,
     });
 
     return { jobId };

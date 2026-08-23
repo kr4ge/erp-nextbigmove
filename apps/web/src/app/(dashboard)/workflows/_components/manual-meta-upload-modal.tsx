@@ -11,12 +11,14 @@ interface ManualMetaUploadModalProps {
   isOpen: boolean;
   integrations: WorkflowMetaIntegrationOption[];
   selectedIntegrationId: string;
+  currencyMultiplier: string;
   selectedFile: File | null;
   isUploading: boolean;
   uploadJob: WorkflowManualMetaUploadJobStatus | null;
   uploadError: string | null;
   onClose: () => void;
   onIntegrationChange: (value: string) => void;
+  onCurrencyMultiplierChange: (value: string) => void;
   onFileChange: (file: File | null) => void;
   onSubmit: () => void;
 }
@@ -25,12 +27,14 @@ export function ManualMetaUploadModal({
   isOpen,
   integrations,
   selectedIntegrationId,
+  currencyMultiplier,
   selectedFile,
   isUploading,
   uploadJob,
   uploadError,
   onClose,
   onIntegrationChange,
+  onCurrencyMultiplierChange,
   onFileChange,
   onSubmit,
 }: ManualMetaUploadModalProps) {
@@ -60,7 +64,7 @@ export function ManualMetaUploadModal({
               disabled={isUploading}
               className="input w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">No integration (auto-match by Account ID)</option>
+              <option value="">No integration (manual CSV upload)</option>
               {integrations.map((integration) => (
                 <option key={integration.id} value={integration.id}>
                   {integration.name}
@@ -68,9 +72,32 @@ export function ManualMetaUploadModal({
               ))}
             </select>
             <p className="text-xs leading-5 text-slate-500 dark:text-slate-300">
-              Choose a Meta integration to restrict the upload to its ad accounts, or leave it on no integration to auto-match rows tenant-wide by <code>Account ID</code>.
+              Optional. Select an integration to use its account mapping, or leave this empty for a standalone manual CSV upload.
             </p>
           </div>
+
+          {!selectedIntegrationId && (
+            <div className="space-y-2">
+              <label className="form-label" htmlFor="manual-meta-currency-multiplier">
+                Currency multiplier
+              </label>
+              <input
+                id="manual-meta-currency-multiplier"
+                type="number"
+                min="0"
+                step="0.0001"
+                inputMode="decimal"
+                value={currencyMultiplier}
+                onChange={(event) => onCurrencyMultiplierChange(event.target.value)}
+                disabled={isUploading}
+                placeholder="Example: 58"
+                className="input w-full"
+              />
+              <p className="text-xs leading-5 text-muted">
+                Leave blank for PHP files. For USD or another currency, enter the conversion rate used to store spend in PHP.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
             <label className="form-label">Upload file</label>
@@ -82,7 +109,7 @@ export function ManualMetaUploadModal({
               className="input block w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm dark:border-border dark:bg-surface dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800 dark:file:bg-slate-700 dark:hover:file:bg-slate-600"
             />
             <p className="text-xs leading-5 text-slate-500 dark:text-slate-300">
-              Supported formats: CSV, XLSX, XLS. The file can include multiple Meta account IDs. If an integration is selected, all rows must belong to that integration.
+              Supported formats: CSV, XLSX, XLS. Legacy exports with Account ID and newer exports with Account name work with or without a Meta integration.
             </p>
             {selectedFile && (
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
