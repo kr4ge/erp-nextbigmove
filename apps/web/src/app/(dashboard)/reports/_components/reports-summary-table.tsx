@@ -19,33 +19,42 @@ type ReportsSummaryTableProps = {
 
 export function ReportsSummaryTable({ items, totals }: ReportsSummaryTableProps) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-border">
+    <div className="max-h-[calc(100vh-12rem)] overflow-auto overscroll-contain rounded-2xl border border-slate-200 dark:border-border">
       <table className="min-w-full border-collapse text-sm">
         <thead>
-          <tr className="bg-slate-50 text-slate-900 dark:bg-background-secondary dark:text-foreground">
+          <tr className="h-11 bg-slate-50 text-slate-900 dark:bg-background-secondary dark:text-foreground">
             <th
               rowSpan={2}
-              className="sticky left-0 z-20 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold dark:border-border dark:bg-background-secondary"
+              className="sticky left-0 top-0 z-40 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold dark:border-border dark:bg-background-secondary"
             >
               POS
             </th>
-            <th colSpan={REPORT_QTY_COLUMNS.length} className="border-b border-r border-slate-200 px-4 py-3 text-center font-semibold dark:border-border">
+            <th
+              colSpan={REPORT_QTY_COLUMNS.length}
+              className="sticky top-0 z-30 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold dark:border-border dark:bg-background-secondary"
+            >
               Qty
             </th>
-            <th colSpan={REPORT_REVENUE_COLUMNS.length} className="border-b border-slate-200 px-4 py-3 text-center font-semibold dark:border-border">
+            <th
+              colSpan={REPORT_REVENUE_COLUMNS.length}
+              className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold dark:border-border dark:bg-background-secondary"
+            >
               Revenue
             </th>
           </tr>
           <tr className="bg-slate-50 text-slate-700 dark:bg-background-secondary dark:text-slate-300">
             {REPORT_QTY_COLUMNS.map((column) => (
-              <th key={`qty-${column.key}`} className="border-b border-r border-slate-200 px-3 py-2 text-center font-medium whitespace-nowrap dark:border-border">
+              <th
+                key={`qty-${column.key}`}
+                className="sticky top-11 z-30 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-center font-medium whitespace-nowrap dark:border-border dark:bg-background-secondary"
+              >
                 {column.label}
               </th>
             ))}
             {REPORT_REVENUE_COLUMNS.map((column, index) => (
               <th
                 key={`revenue-${column.key}`}
-                className={`border-b px-3 py-2 text-center font-medium whitespace-nowrap ${
+                className={`sticky top-11 z-30 border-b bg-slate-50 px-3 py-2 text-center font-medium whitespace-nowrap dark:bg-background-secondary ${
                   index < REPORT_REVENUE_COLUMNS.length - 1 ? 'border-r border-slate-200 dark:border-border' : 'border-slate-200 dark:border-border'
                 }`}
               >
