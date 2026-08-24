@@ -47,6 +47,10 @@ const CREATIVE_LIBRARY_INCLUDE = {
   storeConfig: { select: { id: true, storeId: true, storeNameSnapshot: true, shopIdSnapshot: true, codePrefix: true, active: true } },
   createdBy: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } },
   aliases: { select: { id: true, alias: true, createdAt: true }, orderBy: { createdAt: 'asc' as const } },
+  metaAdLinks: {
+    select: { id: true, accountId: true, adId: true, adNameSnapshot: true, source: true, linkedAt: true },
+    orderBy: { linkedAt: 'asc' as const },
+  },
 } satisfies Prisma.CreativeInclude;
 
 type CreativeLibraryRow = Prisma.CreativeGetPayload<{ include: typeof CREATIVE_LIBRARY_INCLUDE }>;
@@ -101,9 +105,9 @@ export class CreativeLibraryService {
     };
 
     const [linkedCreatives, visibleCreatives, groupedInsights, storeConfigs, accounts, creators] = await Promise.all([
-      this.prisma.creative.findMany({
-        where: { tenantId: context.tenantId, metaAdId: { not: null } },
-        select: { id: true, metaAccountId: true, metaAdId: true },
+      this.prisma.creativeMetaAdLink.findMany({
+        where: { tenantId: context.tenantId },
+        select: { creativeId: true, accountId: true, adId: true },
       }),
       this.prisma.creative.findMany({
         where: creativeWhere,
@@ -147,10 +151,9 @@ export class CreativeLibraryService {
 
     const linkedByMetaAd = new Map(
       linkedCreatives
-        .filter((creative) => creative.metaAccountId && creative.metaAdId)
-        .map((creative) => [
-          `${creative.metaAccountId}:${creative.metaAdId}`,
-          creative.id,
+        .map((link) => [
+          `${link.accountId}:${link.adId}`,
+          link.creativeId,
         ]),
     );
     const metrics = new Map<string, MetricBucket>();
@@ -397,6 +400,7 @@ export class CreativeLibraryService {
       accountIds: Array.from(metrics.accountIds).sort(),
       metaAccountId: creative.metaAccountId,
       metaAdId: creative.metaAdId,
+      metaAdLinks: creative.metaAdLinks,
       metaAdNameSnapshot: creative.metaAdNameSnapshot,
       metaLinkSource: creative.metaLinkSource,
       metaLinkedAt: creative.metaLinkedAt,

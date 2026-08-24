@@ -61,7 +61,12 @@ export class CreativeAliasService {
         creative: {
           select: {
             metaLinkSource: true,
+            metaAccountId: true,
+            metaAdId: true,
             metaAdNameSnapshot: true,
+            metaAdLinks: {
+              select: { id: true, accountId: true, adId: true, adNameSnapshot: true, source: true },
+            },
           },
         },
       },
@@ -77,24 +82,42 @@ export class CreativeAliasService {
       : [];
     const aliasMatchesSnapshot = alias.creative.metaAdNameSnapshot?.trim().toUpperCase()
       === alias.normalizedAlias;
-    const clearsManualLink = alias.creative.metaLinkSource === 'MANUAL'
-      && (
-        aliasMatchesSnapshot
-        || aliasCodes.some((code) => linkedNameCodes.includes(code))
-      );
+    const matchingManualLinks = alias.creative.metaAdLinks.filter((link) => {
+      if (link.source !== 'MANUAL') return false;
+      const normalizedName = link.adNameSnapshot.trim().toUpperCase();
+      if (normalizedName === alias.normalizedAlias) return true;
+      const nameCodes = Array.from(normalizedName.matchAll(new RegExp(CREATIVE_CODE_REGEX.source, 'gi')))
+        .map((match) => match[1]?.toUpperCase())
+        .filter((value): value is string => Boolean(value));
+      return aliasCodes.some((code) => nameCodes.includes(code));
+    });
+    const removesPrimary = matchingManualLinks.some((link) => (
+      link.accountId === alias.creative.metaAccountId && link.adId === alias.creative.metaAdId
+    ));
+    const clearsLegacyManualLink = alias.creative.metaLinkSource === 'MANUAL'
+      && (aliasMatchesSnapshot || aliasCodes.some((code) => linkedNameCodes.includes(code)));
 
     await this.prisma.$transaction(async (tx) => {
       await tx.creativeAlias.delete({ where: { id: alias.id } });
-      if (clearsManualLink) {
+      if (matchingManualLinks.length > 0) {
+        await tx.creativeMetaAdLink.deleteMany({
+          where: { id: { in: matchingManualLinks.map((link) => link.id) }, tenantId: context.tenantId },
+        });
+      }
+      if (removesPrimary || clearsLegacyManualLink) {
+        const nextLink = await tx.creativeMetaAdLink.findFirst({
+          where: { creativeId, tenantId: context.tenantId },
+          orderBy: { linkedAt: 'asc' },
+        });
         await tx.creative.update({
           where: { id: creativeId },
           data: {
-            metaAccountId: null,
-            metaAdId: null,
-            metaAdNameSnapshot: null,
-            metaLinkSource: null,
-            metaLinkedAt: null,
-            metaLinkedById: null,
+            metaAccountId: nextLink?.accountId ?? null,
+            metaAdId: nextLink?.adId ?? null,
+            metaAdNameSnapshot: nextLink?.adNameSnapshot ?? null,
+            metaLinkSource: nextLink?.source ?? null,
+            metaLinkedAt: nextLink?.linkedAt ?? null,
+            metaLinkedById: nextLink?.linkedById ?? null,
           },
         });
       }
@@ -105,7 +128,7 @@ export class CreativeAliasService {
           action: 'creativeAlias.remove',
           resource: 'CreativeAlias',
           resourceId: alias.id,
-          changes: { creativeId, alias: alias.alias, clearedMetaLink: clearsManualLink },
+          changes: { creativeId, alias: alias.alias, removedMetaLinks: matchingManualLinks.length },
         },
       });
     });
@@ -125,9 +148,6 @@ export class CreativeAliasService {
       where: { id: creativeId, tenantId },
     });
     if (!creative) throw new NotFoundException('Creative not found');
-    if (creative.metaAdId) {
-      throw new ConflictException('This registry video is already linked to a Meta ad');
-    }
     if (creative.code === normalizedAlias) {
       throw new ConflictException('The alias is already the canonical creative code');
     }
@@ -140,20 +160,30 @@ export class CreativeAliasService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const linked = await tx.creative.updateMany({
+        const now = new Date();
+        await tx.creativeMetaAdLink.create({
+          data: {
+            tenantId,
+            creativeId: creative.id,
+            accountId: metaInsight.accountId,
+            adId: metaInsight.adId,
+            adNameSnapshot: metaInsight.adName,
+            source: 'MANUAL',
+            linkedById: userId,
+            linkedAt: now,
+          },
+        });
+        await tx.creative.updateMany({
           where: { id: creative.id, tenantId, metaAdId: null },
           data: {
             metaAccountId: metaInsight.accountId,
             metaAdId: metaInsight.adId,
             metaAdNameSnapshot: metaInsight.adName,
             metaLinkSource: 'MANUAL',
-            metaLinkedAt: new Date(),
+            metaLinkedAt: now,
             metaLinkedById: userId,
           },
         });
-        if (linked.count === 0) {
-          throw new ConflictException('This registry video is already linked to a Meta ad');
-        }
         const created = await tx.creativeAlias.create({
           data: { tenantId, creativeId, alias, normalizedAlias, createdById: userId },
         });

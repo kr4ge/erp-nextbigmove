@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 export type MetaInsightLinkIdentity = {
@@ -13,51 +12,53 @@ export class CreativeMetaLinkService {
   constructor(private readonly prisma: PrismaService) {}
 
   async reconcileInsights(tenantId: string, insights: MetaInsightLinkIdentity[]): Promise<number> {
-    const incomingAdNames = Array.from(new Set(insights.map((insight) => insight.adName)));
-    if (incomingAdNames.length === 0) return 0;
+    const identities = new Map<string, MetaInsightLinkIdentity>();
+    for (const insight of insights) {
+      const adName = insight.adName.trim();
+      if (!adName) continue;
+      identities.set(`${insight.accountId}:${insight.adId}`, { ...insight, adName });
+    }
+    if (identities.size === 0) return 0;
 
+    const names = [...new Set([...identities.values()].map((insight) => insight.adName))];
     const creatives = await this.prisma.creative.findMany({
-      where: {
-        tenantId,
-        metaAdId: null,
-        code: { in: incomingAdNames },
-      },
-      select: { id: true, code: true },
+      where: { tenantId, code: { in: names } },
+      select: { id: true, code: true, metaAdId: true },
     });
     let linked = 0;
 
     for (const creative of creatives) {
-      const candidates = await this.prisma.metaAdInsight.findMany({
-        where: {
-          tenantId,
-          adName: creative.code,
-        },
-        select: { accountId: true, adId: true, adName: true },
-      });
-      const identities = new Map(
-        candidates.map((candidate) => [
-          `${candidate.accountId}:${candidate.adId}`,
-          candidate,
-        ]),
-      );
+      const matches = [...identities.values()]
+        .filter((identity) => identity.adName === creative.code)
+        .sort((left, right) => `${left.accountId}:${left.adId}`.localeCompare(`${right.accountId}:${right.adId}`));
+      if (matches.length === 0) continue;
 
-      // A reused code is ambiguous and must be resolved manually.
-      if (identities.size !== 1) continue;
-      const match = identities.values().next().value as MetaInsightLinkIdentity;
-
-      try {
-        const didLink = await this.prisma.$transaction(async (tx) => {
-          const result = await tx.creative.updateMany({
+      const created = await this.prisma.$transaction(async (tx) => {
+        const result = await tx.creativeMetaAdLink.createMany({
+          data: matches.map((match) => ({
+            tenantId,
+            creativeId: creative.id,
+            accountId: match.accountId,
+            adId: match.adId,
+            adNameSnapshot: match.adName,
+            source: 'AUTO_CODE' as const,
+          })),
+          skipDuplicates: true,
+        });
+        if (!creative.metaAdId) {
+          const primary = matches[0];
+          await tx.creative.updateMany({
             where: { id: creative.id, tenantId, metaAdId: null },
             data: {
-              metaAccountId: match.accountId,
-              metaAdId: match.adId,
-              metaAdNameSnapshot: match.adName,
+              metaAccountId: primary.accountId,
+              metaAdId: primary.adId,
+              metaAdNameSnapshot: primary.adName,
               metaLinkSource: 'AUTO_CODE',
               metaLinkedAt: new Date(),
             },
           });
-          if (result.count === 0) return false;
+        }
+        if (result.count > 0) {
           await tx.auditLog.create({
             data: {
               tenantId,
@@ -65,22 +66,15 @@ export class CreativeMetaLinkService {
               resource: 'Creative',
               resourceId: creative.id,
               changes: {
-                accountId: match.accountId,
-                adId: match.adId,
-                adName: match.adName,
+                linkedAds: matches.map((match) => ({ accountId: match.accountId, adId: match.adId, adName: match.adName })),
+                count: result.count,
               },
             },
           });
-          return true;
-        });
-        if (didLink) linked += 1;
-      } catch (error) {
-        // Another sync may have linked either side first. The database unique
-        // constraint is the final authority for the one-to-one relationship.
-        if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) {
-          throw error;
         }
-      }
+        return result.count;
+      });
+      linked += created;
     }
 
     return linked;

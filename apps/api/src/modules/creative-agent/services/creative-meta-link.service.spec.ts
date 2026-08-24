@@ -6,6 +6,9 @@ describe('CreativeMetaLinkService', () => {
     insights: Array<{ accountId: string; adId: string; adName: string }>;
   }) {
     const transactionClient = {
+      creativeMetaAdLink: {
+        createMany: jest.fn<() => Promise<{ count: number }>>().mockImplementation(async () => ({ count: options.insights.length })),
+      },
       creative: {
         updateMany: jest.fn<() => Promise<{ count: number }>>().mockResolvedValue({ count: 1 }),
       },
@@ -49,7 +52,7 @@ describe('CreativeMetaLinkService', () => {
     }));
   });
 
-  it('leaves a reused code unlinked when it belongs to multiple Meta ads', async () => {
+  it('links every Meta ad that exactly reuses the canonical creative code', async () => {
     const { service, prisma, transactionClient } = createService({
       insights: [
         { accountId: 'account-1', adId: 'ad-1', adName: 'AP-V0001' },
@@ -59,10 +62,15 @@ describe('CreativeMetaLinkService', () => {
 
     await expect(service.reconcileInsights('tenant-1', [
       { accountId: 'account-1', adId: 'ad-2', adName: 'AP-V0001' },
-    ])).resolves.toBe(0);
+    ])).resolves.toBe(2);
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(transactionClient.creative.updateMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(transactionClient.creativeMetaAdLink.createMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.arrayContaining([
+        expect.objectContaining({ adId: 'ad-1', creativeId: 'creative-1' }),
+        expect.objectContaining({ adId: 'ad-2', creativeId: 'creative-1' }),
+      ]),
+    }));
   });
 
   it('does not auto-link when the creative code is only part of the ad name', async () => {

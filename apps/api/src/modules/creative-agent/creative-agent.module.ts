@@ -4,6 +4,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CreativeAliasController } from './creative-alias.controller';
 import { CreativeEnrollmentController } from './creative-enrollment.controller';
 import { CreativeLibraryController } from './creative-library.controller';
+import { CreativeOverviewController } from './creative-overview.controller';
 import { CreativeStoreController } from './creative-store.controller';
 import { CreativeWorkflowController } from './creative-workflow.controller';
 import { CreativeAccessService } from './services/creative-access.service';
@@ -12,6 +13,7 @@ import { CreativeEnrollmentService } from './services/creative-enrollment.servic
 import { CreativeLibraryService } from './services/creative-library.service';
 import { CreativeMatchingService } from './services/creative-matching.service';
 import { CreativeMetaLinkService } from './services/creative-meta-link.service';
+import { CreativeOverviewService } from './services/creative-overview.service';
 import { CreativeStoreService } from './services/creative-store.service';
 import { CreativeWorkflowService } from './services/creative-workflow.service';
 
@@ -23,6 +25,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeEnrollmentController,
     CreativeAliasController,
     CreativeWorkflowController,
+    CreativeOverviewController,
   ],
   providers: [
     PermissionsGuard,
@@ -34,6 +37,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeMetaLinkService,
     CreativeAliasService,
     CreativeWorkflowService,
+    CreativeOverviewService,
   ],
   exports: [CreativeMetaLinkService],
 })

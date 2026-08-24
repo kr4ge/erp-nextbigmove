@@ -20,6 +20,10 @@ const CREATIVE_DETAIL_INCLUDE = {
   storeConfig: { select: { id: true, storeId: true, storeNameSnapshot: true, shopIdSnapshot: true, codePrefix: true, active: true } },
   createdBy: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } },
   aliases: { select: { id: true, alias: true, createdAt: true }, orderBy: { createdAt: 'asc' as const } },
+  metaAdLinks: {
+    select: { id: true, accountId: true, adId: true, adNameSnapshot: true, source: true, linkedAt: true },
+    orderBy: { linkedAt: 'asc' as const },
+  },
 } satisfies Prisma.CreativeInclude;
 
 type CreativeDetail = Prisma.CreativeGetPayload<{ include: typeof CREATIVE_DETAIL_INCLUDE }>;
@@ -237,6 +241,17 @@ export class CreativeEnrollmentService {
                 metaLinkSource: metaLink.source,
                 metaLinkedAt: now,
                 metaLinkedById: metaLink.linkedById,
+                metaAdLinks: {
+                  create: {
+                    tenantId,
+                    accountId: metaLink.accountId,
+                    adId: metaLink.adId,
+                    adNameSnapshot: metaLink.adName,
+                    source: metaLink.source,
+                    linkedById: metaLink.linkedById,
+                    linkedAt: now,
+                  },
+                },
               }
             : {}),
         },
@@ -302,8 +317,8 @@ export class CreativeEnrollmentService {
       orderBy: { date: 'desc' },
     });
     if (!insight) throw new NotFoundException('The selected Meta ad was not found in this tenant');
-    const linked = await this.prisma.creative.findFirst({
-      where: { tenantId, metaAccountId: accountId, metaAdId: adId },
+    const linked = await this.prisma.creativeMetaAdLink.findFirst({
+      where: { tenantId, accountId, adId },
       select: { id: true },
     });
     if (linked) throw new ConflictException('This Meta ad is already linked to a creative');

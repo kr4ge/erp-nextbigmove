@@ -102,6 +102,7 @@ model Tenant {
   creatives                           Creative[]
   creativeAliases                     CreativeAlias[]
   creativeStatusEvents                CreativeStatusEvent[]
+  creativeMetaAdLinks                 CreativeMetaAdLink[]
   wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
 
   @@index([slug])
@@ -1351,6 +1352,7 @@ model Creative {
 
   aliases      CreativeAlias[]
   statusEvents CreativeStatusEvent[]
+  metaAdLinks  CreativeMetaAdLink[]
 
   @@unique([tenantId, code])
   @@unique([storeConfigId, codeNumber])
@@ -1362,6 +1364,27 @@ model Creative {
   @@index([tenantId, performanceStatus])
   @@index([tenantId, metaAdId])
   @@map("creatives")
+}
+
+model CreativeMetaAdLink {
+  id             String                 @id @default(uuid()) @db.Uuid
+  tenantId       String                 @db.Uuid
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creativeId     String                 @db.Uuid
+  creative       Creative               @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  accountId      String
+  adId           String
+  adNameSnapshot String
+  source         CreativeMetaLinkSource
+  linkedById     String?                @db.Uuid
+  linkedAt       DateTime               @default(now())
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@unique([tenantId, accountId, adId])
+  @@index([tenantId, creativeId])
+  @@index([creativeId, linkedAt])
+  @@map("creative_meta_ad_links")
 }
 
 model CreativeAlias {
@@ -1794,7 +1817,7 @@ model MediaAsset {
   wmsInvoiceSettingsLogo           WmsInvoiceSettings?        @relation("WmsInvoiceSettingsLogo")
   wmsPurchasingBatchesPaymentProof WmsPurchasingBatch[]       @relation("WmsPurchasingBatchPaymentProofAsset")
   undeliverableAttemptProof        UndeliverableAttemptProof? @relation("UndeliverableAttemptProofAsset")
-  wmsPackingProof                  WmsPackingProof?            @relation("WmsPackingProofAsset")
+  wmsPackingProof                  WmsPackingProof?           @relation("WmsPackingProofAsset")
 
   @@unique([bucket, objectKey])
   @@index([tenantId, kind])
@@ -2326,7 +2349,7 @@ model WmsFulfillmentOrder {
   createdAt                  DateTime                     @default(now())
   updatedAt                  DateTime                     @updatedAt
 
-  legacyBasket      WmsBasket?            @relation("WmsBasketLegacyFulfillmentOrder")
+  legacyBasket      WmsBasket?                @relation("WmsBasketLegacyFulfillmentOrder")
   lines             WmsFulfillmentLine[]
   reservations      WmsPickReservation[]
   basketPickDemands WmsBasketPickDemand[]
@@ -2351,22 +2374,22 @@ model WmsFulfillmentOrder {
 }
 
 model WmsFulfillmentAmendment {
-  id                 String                          @id @default(uuid()) @db.Uuid
-  tenantId           String                          @db.Uuid
-  tenant             Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  fulfillmentOrderId String                          @db.Uuid
-  fulfillmentOrder   WmsFulfillmentOrder             @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  id                 String                        @id @default(uuid()) @db.Uuid
+  tenantId           String                        @db.Uuid
+  tenant             Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fulfillmentOrderId String                        @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder           @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
   sourceHash         String
   previousHash       String?
   sourceRevision     Int
   detectedStage      WmsFulfillmentAmendmentStage
-  status             WmsFulfillmentAmendmentStatus   @default(OPEN)
+  status             WmsFulfillmentAmendmentStatus @default(OPEN)
   diff               Json
   requiredActions    Json
-  detectedAt         DateTime                        @default(now())
+  detectedAt         DateTime                      @default(now())
   resolvedAt         DateTime?
-  createdAt          DateTime                        @default(now())
-  updatedAt          DateTime                        @updatedAt
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
 
   @@unique([fulfillmentOrderId, sourceHash])
   @@index([tenantId, status, detectedAt])
