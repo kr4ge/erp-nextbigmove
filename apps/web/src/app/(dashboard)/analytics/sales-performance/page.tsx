@@ -21,6 +21,10 @@ import {
   formatDeltaPercent,
 } from '../_utils/metrics';
 import { useAnalyticsDateRange } from '../_hooks/use-analytics-date-range';
+import {
+  ANALYTICS_FILTER_DEBOUNCE_MS,
+  useLatestAnalyticsRequest,
+} from '../_hooks/use-latest-analytics-request';
 import { analyticsOverviewApi } from '../_services/analytics-overview-api';
 import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import {
@@ -135,6 +139,14 @@ export default function SalesPerformancePage() {
   const { today, range, startDate, endDate, handleDateRangeChange } = useAnalyticsDateRange();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const {
+    beginRequest: beginOverviewRequest,
+    cancelRequest: cancelOverviewRequest,
+  } = useLatestAnalyticsRequest();
+  const {
+    beginRequest: beginProblematicRequest,
+    cancelRequest: cancelProblematicRequest,
+  } = useLatestAnalyticsRequest();
   const [refreshKey] = useState(0);
   const [deliveryViewSelection, setDeliveryViewSelection] =
     useState<'delivery' | 'risk_confirmation' | 'repurchase'>('delivery');
@@ -153,7 +165,6 @@ export default function SalesPerformancePage() {
   const [chartShopOptions, setChartShopOptions] = useState<string[]>([]);
   const [selectedShops, setSelectedShops] = useState<string[]>([]);
   const [isAllShopsMode, setIsAllShopsMode] = useState(true);
-  const [hasInitializedChartShops, setHasInitializedChartShops] = useState(false);
 
   const lastSunburstHoverKeyRef = useRef<string>('');
 
@@ -224,9 +235,11 @@ export default function SalesPerformancePage() {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
+    cancelOverviewRequest();
+    setIsLoading(true);
+
     const loadOverview = async () => {
-      setIsLoading(true);
+      const request = beginOverviewRequest();
       try {
         const params: Record<string, string | string[]> = {
           start_date: startDate,
@@ -237,25 +250,32 @@ export default function SalesPerformancePage() {
             selectedShops.length > 0 ? selectedShops : ['__no_selection__'];
         }
 
-        const res =
-          await analyticsOverviewApi.getSalesPerformanceStoreConversion<OverviewResponse>(params);
-        if (!isMounted) return;
+        const res = await analyticsOverviewApi.getSalesPerformanceStoreConversion<OverviewResponse>(
+          params,
+          request.signal,
+        );
+        if (!request.isLatest()) return;
         setData(res.data);
         const nextShops = res.data.filters.shops || [];
         setPerformanceShopOptions((prev) => (areArraysEqual(prev, nextShops) ? prev : nextShops));
       } catch (error) {
-        if (isMounted) {
+        if (request.isLatest()) {
           console.error('Failed to load sales performance store conversion', error);
         }
       } finally {
-        if (isMounted) setIsLoading(false);
+        if (request.isLatest()) setIsLoading(false);
+        request.finish();
       }
     };
-    loadOverview();
-    return () => {
-      isMounted = false;
-    };
+
+    const timeoutId = window.setTimeout(() => {
+      void loadOverview();
+    }, ANALYTICS_FILTER_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
   }, [
+    beginOverviewRequest,
+    cancelOverviewRequest,
     endDate,
     isAllShopsMode,
     refreshKey,
@@ -264,11 +284,13 @@ export default function SalesPerformancePage() {
   ]);
 
   useEffect(() => {
-    let isMounted = true;
+    cancelProblematicRequest();
+    setIsProblematicLoading(true);
+
     const loadProblematicDelivery = async () => {
+      const request = beginProblematicRequest();
       setSunburstHoverInfo(null);
       lastSunburstHoverKeyRef.current = '';
-      setIsProblematicLoading(true);
       try {
         const params: Record<string, string | string[]> = {
           start_date: startDate,
@@ -281,27 +303,31 @@ export default function SalesPerformancePage() {
 
         const res = await analyticsOverviewApi.getProblematicDelivery<ProblematicDeliveryResponse>(
           params,
+          request.signal,
         );
-        if (!isMounted) return;
+        if (!request.isLatest()) return;
         setProblematicData(res.data);
         const nextShops = res.data.filters.shops || [];
         setChartShopOptions((prev) => (areArraysEqual(prev, nextShops) ? prev : nextShops));
-        if (!hasInitializedChartShops) setHasInitializedChartShops(true);
       } catch (error) {
-        if (isMounted) {
+        if (request.isLatest()) {
           console.error('Failed to load problematic delivery chart', error);
         }
       } finally {
-        if (isMounted) setIsProblematicLoading(false);
+        if (request.isLatest()) setIsProblematicLoading(false);
+        request.finish();
       }
     };
-    loadProblematicDelivery();
-    return () => {
-      isMounted = false;
-    };
+
+    const timeoutId = window.setTimeout(() => {
+      void loadProblematicDelivery();
+    }, ANALYTICS_FILTER_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
   }, [
+    beginProblematicRequest,
+    cancelProblematicRequest,
     endDate,
-    hasInitializedChartShops,
     isAllShopsMode,
     refreshKey,
     selectedShops,

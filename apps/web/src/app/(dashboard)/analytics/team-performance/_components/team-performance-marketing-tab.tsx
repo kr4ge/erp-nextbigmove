@@ -20,6 +20,10 @@ import {
   AnalyticsTableShell,
 } from '../../_components/analytics-table-shell';
 import { useAnalyticsDateRange } from '../../_hooks/use-analytics-date-range';
+import {
+  ANALYTICS_FILTER_DEBOUNCE_MS,
+  useLatestAnalyticsRequest,
+} from '../../_hooks/use-latest-analytics-request';
 import { useAnalyticsShare } from '../../_hooks/use-analytics-share';
 import { useVisibleAutoRefresh } from '../../_hooks/use-visible-auto-refresh';
 import { useWorkflowTenantEvent } from '../../_hooks/use-workflow-tenant-event';
@@ -111,6 +115,7 @@ export default function MarketingAnalyticsPage() {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { beginRequest, cancelRequest } = useLatestAnalyticsRequest();
   const [selectedAssociates, setSelectedAssociates] = useState<string[]>([]);
   const [isAllAssociatesMode, setIsAllAssociatesMode] = useState(true);
   const [associatesOptions, setAssociatesOptions] = useState<string[]>([]);
@@ -160,6 +165,10 @@ export default function MarketingAnalyticsPage() {
     isAllAssociatesModeRef.current = isAllAssociatesMode;
   }, [isAllAssociatesMode]);
 
+  const associateSelectionKey = isAllAssociatesMode
+    ? '__all__'
+    : [...selectedAssociates].sort().join('|') || '__none__';
+
   const parseErrorMessage = (error: unknown, fallback: string) => {
     if (!error || typeof error !== 'object') return fallback;
     const maybeError = error as {
@@ -173,6 +182,7 @@ export default function MarketingAnalyticsPage() {
   };
 
   const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
+    const request = beginRequest();
     if (!opts?.silent) setIsLoading(true);
     setError(null);
     try {
@@ -194,7 +204,11 @@ export default function MarketingAnalyticsPage() {
       }
       params.set('exclude_cancel', String(excludeCanceled));
       params.set('exclude_restocking', String(excludeRestocking));
-      const res = await analyticsOverviewApi.getMarketingOverview<OverviewResponse>(params);
+      const res = await analyticsOverviewApi.getMarketingOverview<OverviewResponse>(
+        params,
+        request.signal,
+      );
+      if (!request.isLatest()) return;
       setData(res.data);
       const options = res.data.filters.associates || [];
       const normalized = options.map((a) => a.toLowerCase());
@@ -217,11 +231,14 @@ export default function MarketingAnalyticsPage() {
       // Sync selected range if API adjusted it
       syncDateRangeFromApi(res.data.selected.start_date, res.data.selected.end_date);
     } catch (error: unknown) {
+      if (!request.isLatest()) return;
       setError(parseErrorMessage(error, 'Failed to load marketing overview'));
     } finally {
-      if (!opts?.silent) setIsLoading(false);
+      if (request.isLatest()) setIsLoading(false);
+      request.finish();
     }
   }, [
+    beginRequest,
     endDate,
     excludeCanceled,
     excludeRestocking,
@@ -245,8 +262,14 @@ export default function MarketingAnalyticsPage() {
   }, [fetchData]);
 
   useEffect(() => {
-    void fetchData();
-  }, [fetchData, selectedAssociates, isAllAssociatesMode]);
+    cancelRequest();
+    setIsLoading(true);
+    const timeoutId = window.setTimeout(() => {
+      void fetchData();
+    }, ANALYTICS_FILTER_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [associateSelectionKey, cancelRequest, fetchData]);
 
   useVisibleAutoRefresh(() => {
     void fetchData({ silent: true });

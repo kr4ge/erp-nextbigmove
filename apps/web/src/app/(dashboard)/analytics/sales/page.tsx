@@ -39,6 +39,10 @@ import {
   type AnalyticsTableSelectorOption,
 } from '../_components/analytics-table-selector';
 import { useAnalyticsDateRange } from '../_hooks/use-analytics-date-range';
+import {
+  ANALYTICS_FILTER_DEBOUNCE_MS,
+  useLatestAnalyticsRequest,
+} from '../_hooks/use-latest-analytics-request';
 import { useAnalyticsShare } from '../_hooks/use-analytics-share';
 import { analyticsOverviewApi } from '../_services/analytics-overview-api';
 import { useVisibleAutoRefresh } from '../_hooks/use-visible-auto-refresh';
@@ -177,6 +181,7 @@ export default function SalesAnalyticsPage() {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { beginRequest, cancelRequest } = useLatestAnalyticsRequest();
   const [selectedMappings, setSelectedMappings] = useState<string[]>([]);
   const [mappingOptions, setMappingOptions] = useState<string[]>([]);
   const [mappingDisplayMap, setMappingDisplayMap] = useState<Record<string, string>>({});
@@ -235,6 +240,13 @@ export default function SalesAnalyticsPage() {
     startDate === endDate
       ? formatDateRangeButtonDate(startDate)
       : `${formatDateRangeButtonDate(startDate)} - ${formatDateRangeButtonDate(endDate)}`;
+  const mappingSelectionKey =
+    mappingOptions.length === 0 ||
+    selectedMappings.length === 0 ||
+    (selectedMappings.length === mappingOptions.length &&
+      mappingOptions.every((mapping) => selectedMappings.includes(mapping)))
+      ? '__all__'
+      : [...selectedMappings].sort().join('|');
 
   useEffect(() => {
     mappingOptionsRef.current = mappingOptions;
@@ -286,6 +298,7 @@ export default function SalesAnalyticsPage() {
   }, [hasLoadedKpiVisibility, visibleKpiKeys]);
 
   const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
+    const request = beginRequest();
     if (!opts?.silent) setIsLoading(true);
     setError(null);
     try {
@@ -313,7 +326,11 @@ export default function SalesAnalyticsPage() {
       params.set('exclude_repurchase', String(excludeRepurchase));
       params.set('include_tax_12', String(includeTax12));
       params.set('include_tax_1', String(includeTax1));
-      const res = await analyticsOverviewApi.getSalesOverview<OverviewResponse>(params);
+      const res = await analyticsOverviewApi.getSalesOverview<OverviewResponse>(
+        params,
+        request.signal,
+      );
+      if (!request.isLatest()) return;
       setData(res.data);
       const optsList = res.data.filters.mappings || [];
       const normalized = optsList.map((m) => m.toLowerCase());
@@ -328,11 +345,14 @@ export default function SalesAnalyticsPage() {
       }
       syncDateRangeFromApi(res.data.selected.start_date, res.data.selected.end_date);
     } catch (error: unknown) {
+      if (!request.isLatest()) return;
       setError(parseErrorMessage(error, 'Failed to load sales overview'));
     } finally {
-      if (!opts?.silent) setIsLoading(false);
+      if (request.isLatest()) setIsLoading(false);
+      request.finish();
     }
   }, [
+    beginRequest,
     endDate,
     excludeAbandoned,
     excludeCanceled,
@@ -375,8 +395,14 @@ export default function SalesAnalyticsPage() {
   };
 
   useEffect(() => {
-    void fetchData();
-  }, [fetchData, selectedMappings]);
+    cancelRequest();
+    setIsLoading(true);
+    const timeoutId = window.setTimeout(() => {
+      void fetchData();
+    }, ANALYTICS_FILTER_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [cancelRequest, fetchData, mappingSelectionKey]);
 
   useVisibleAutoRefresh(() => {
     void fetchData({ silent: true });
