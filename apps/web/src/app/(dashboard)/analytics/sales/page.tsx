@@ -41,6 +41,7 @@ import {
 import { useAnalyticsDateRange } from '../_hooks/use-analytics-date-range';
 import {
   ANALYTICS_FILTER_DEBOUNCE_MS,
+  buildAnalyticsQueryKey,
   useLatestAnalyticsRequest,
 } from '../_hooks/use-latest-analytics-request';
 import { useAnalyticsShare } from '../_hooks/use-analytics-share';
@@ -247,6 +248,20 @@ export default function SalesAnalyticsPage() {
       mappingOptions.every((mapping) => selectedMappings.includes(mapping)))
       ? '__all__'
       : [...selectedMappings].sort().join('|');
+  const analyticsQueryKey = buildAnalyticsQueryKey(
+    startDate,
+    endDate,
+    mappingSelectionKey,
+    excludeCanceled,
+    excludeRestocking,
+    excludeAbandoned,
+    excludeRts,
+    excludeRepurchase,
+    includeTax12,
+    includeTax1,
+  );
+  const [resolvedQueryKey, setResolvedQueryKey] = useState<string | null>(null);
+  const isResultPending = isLoading || resolvedQueryKey !== analyticsQueryKey;
 
   useEffect(() => {
     mappingOptionsRef.current = mappingOptions;
@@ -332,6 +347,7 @@ export default function SalesAnalyticsPage() {
       );
       if (!request.isLatest()) return;
       setData(res.data);
+      setResolvedQueryKey(analyticsQueryKey);
       const optsList = res.data.filters.mappings || [];
       const normalized = optsList.map((m) => m.toLowerCase());
       setMappingOptions((prev) => (areArraysEqual(prev, normalized) ? prev : normalized));
@@ -346,12 +362,15 @@ export default function SalesAnalyticsPage() {
       syncDateRangeFromApi(res.data.selected.start_date, res.data.selected.end_date);
     } catch (error: unknown) {
       if (!request.isLatest()) return;
+      setData(null);
+      setResolvedQueryKey(analyticsQueryKey);
       setError(parseErrorMessage(error, 'Failed to load sales overview'));
     } finally {
       if (request.isLatest()) setIsLoading(false);
       request.finish();
     }
   }, [
+    analyticsQueryKey,
     beginRequest,
     endDate,
     excludeAbandoned,
@@ -384,7 +403,7 @@ export default function SalesAnalyticsPage() {
       } else {
         addToast('success', 'Reconcile completed successfully');
       }
-      await fetchData({ silent: true });
+      await fetchData();
     } catch (error: unknown) {
       const message = parseErrorMessage(error, 'Failed to reconcile sales data');
       setError(message);
@@ -408,8 +427,8 @@ export default function SalesAnalyticsPage() {
     void fetchData({ silent: true });
   });
 
-  // Realtime refetch on marketing update events (reconcile_sales emits marketing:updated)
-  useWorkflowTenantEvent('marketing:updated', () => {
+  useWorkflowTenantEvent('marketing:updated', (payload) => {
+    if (payload.source === 'reconcile_sales') return;
     fetchDataRef.current?.({ silent: true });
   });
 
@@ -688,7 +707,7 @@ export default function SalesAnalyticsPage() {
     }));
 
   const handleExportProductsCsv = async () => {
-    if (isLoading || exportableProducts.length === 0) return;
+    if (isResultPending || exportableProducts.length === 0) return;
     setIsExportingCsv(true);
     try {
       exportSalesProductsCsv({
@@ -707,7 +726,7 @@ export default function SalesAnalyticsPage() {
   };
 
   const handleExportProductsXlsx = async () => {
-    if (isLoading || exportableProducts.length === 0) return;
+    if (isResultPending || exportableProducts.length === 0) return;
     setIsExportingXlsx(true);
     try {
       await exportSalesProductsXlsx({
@@ -1454,7 +1473,7 @@ export default function SalesAnalyticsPage() {
         )}
 
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isLoading ? (
+          {isResultPending ? (
             <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 8 }).map((_, idx) => (
                 <AnalyticsMetricCardSkeleton key={idx} className="w-full xl:min-w-[180px]" />
@@ -1484,7 +1503,7 @@ export default function SalesAnalyticsPage() {
           )}
         </div>
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isLoading ? (
+          {isResultPending ? (
             <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 3 }).map((_, idx) => (
                 <AnalyticsMetricCardSkeleton key={`sec-skel-${idx}`} className="w-full xl:min-w-[190px]" />
@@ -1540,7 +1559,7 @@ export default function SalesAnalyticsPage() {
                 size="sm"
                 iconLeft={<Download className="h-4 w-4" />}
                 onClick={() => void handleExportProductsCsv()}
-                disabled={isLoading || exportableProducts.length === 0}
+                disabled={isResultPending || exportableProducts.length === 0}
                 loading={isExportingCsv}
                 className='btn-icon'
               >
@@ -1550,7 +1569,7 @@ export default function SalesAnalyticsPage() {
                 size="sm"
                 iconLeft={<FileSpreadsheet className="h-4 w-4" />}
                 onClick={() => void handleExportProductsXlsx()}
-                disabled={isLoading || exportableProducts.length === 0}
+                disabled={isResultPending || exportableProducts.length === 0}
                 loading={isExportingXlsx}
                 className='btn-icon'
               >
@@ -1562,7 +1581,7 @@ export default function SalesAnalyticsPage() {
 
         {tableSelection === 'products' ? (
           <AnalyticsSalesProductsTable
-            isLoading={isLoading}
+            isLoading={isResultPending}
             productStart={productStart}
             productEnd={productEnd}
             totalProducts={totalProducts}
@@ -1581,7 +1600,7 @@ export default function SalesAnalyticsPage() {
           />
         ) : (
           <AnalyticsSalesDeliveryTable
-            isLoading={isLoading}
+            isLoading={isResultPending}
             deliveryStart={deliveryStart}
             deliveryEnd={deliveryEnd}
             totalDelivery={totalDelivery}

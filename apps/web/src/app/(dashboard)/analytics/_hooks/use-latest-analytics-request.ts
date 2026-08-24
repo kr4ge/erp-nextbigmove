@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef } from 'react';
 
 export const ANALYTICS_FILTER_DEBOUNCE_MS = 180;
 
+type AnalyticsQueryPart = string | number | boolean | null | undefined;
+
+export function buildAnalyticsQueryKey(...parts: AnalyticsQueryPart[]) {
+  return JSON.stringify(parts);
+}
+
 type AnalyticsRequestHandle = {
   signal: AbortSignal;
   isLatest: () => boolean;

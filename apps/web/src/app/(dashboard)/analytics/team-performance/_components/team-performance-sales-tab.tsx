@@ -40,6 +40,7 @@ import {
 import { useAnalyticsDateRange } from '../../_hooks/use-analytics-date-range';
 import {
   ANALYTICS_FILTER_DEBOUNCE_MS,
+  buildAnalyticsQueryKey,
   useLatestAnalyticsRequest,
 } from '../../_hooks/use-latest-analytics-request';
 import { analyticsOverviewApi } from '../../_services/analytics-overview-api';
@@ -235,6 +236,19 @@ export default function SalesByTeamAnalyticsPage() {
       mappingOptions.every((mapping) => selectedMappings.includes(mapping)))
       ? '__all__'
       : [...selectedMappings].sort().join('|');
+  const analyticsQueryKey = buildAnalyticsQueryKey(
+    startDate,
+    endDate,
+    selectedTeamCode ?? TEAM_FILTER_ALL,
+    mappingSelectionKey,
+    excludeCanceled,
+    excludeRestocking,
+    excludeRts,
+    includeTax12,
+    includeTax1,
+  );
+  const [resolvedQueryKey, setResolvedQueryKey] = useState<string | null>(null);
+  const isResultPending = isLoading || resolvedQueryKey !== analyticsQueryKey;
 
   useEffect(() => {
     mappingOptionsRef.current = mappingOptions;
@@ -330,6 +344,7 @@ export default function SalesByTeamAnalyticsPage() {
       const response = res.data;
 
       setData(response);
+      setResolvedQueryKey(analyticsQueryKey);
       syncDateRangeFromApi(response.selected.start_date, response.selected.end_date);
 
       const nextTeamDisplayMap = response.filters.teamCodeDisplayMap || {};
@@ -349,6 +364,8 @@ export default function SalesByTeamAnalyticsPage() {
       }
     } catch (nextError: unknown) {
       if (!request.isLatest()) return;
+      setData(null);
+      setResolvedQueryKey(analyticsQueryKey);
       setError(parseErrorMessage(nextError, 'Failed to load sales by team preview'));
     } finally {
       if (request.isLatest()) {
@@ -358,6 +375,7 @@ export default function SalesByTeamAnalyticsPage() {
       request.finish();
     }
   }, [
+    analyticsQueryKey,
     beginRequest,
     endDate,
     excludeCanceled,
@@ -640,7 +658,7 @@ export default function SalesByTeamAnalyticsPage() {
     }));
 
   const handleExportProductsCsv = async () => {
-    if (isLoading || exportableProducts.length === 0) return;
+    if (isResultPending || exportableProducts.length === 0) return;
     setIsExportingCsv(true);
     try {
       exportSalesProductsCsv({
@@ -659,7 +677,7 @@ export default function SalesByTeamAnalyticsPage() {
   };
 
   const handleExportProductsXlsx = async () => {
-    if (isLoading || exportableProducts.length === 0) return;
+    if (isResultPending || exportableProducts.length === 0) return;
     setIsExportingXlsx(true);
     try {
       await exportSalesProductsXlsx({
@@ -1369,7 +1387,7 @@ export default function SalesByTeamAnalyticsPage() {
         {error && <AlertBanner tone="error" message={error} className="mt-4" />}
 
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isLoading ? (
+          {isResultPending ? (
             <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 8 }).map((_, index) => (
                 <AnalyticsMetricCardSkeleton key={index} className="w-full xl:min-w-[180px]" />
@@ -1400,7 +1418,7 @@ export default function SalesByTeamAnalyticsPage() {
         </div>
 
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isLoading ? (
+          {isResultPending ? (
             <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 3 }).map((_, index) => (
                 <AnalyticsMetricCardSkeleton key={`sec-skel-${index}`} className="w-full xl:min-w-[190px]" />
@@ -1455,7 +1473,7 @@ export default function SalesByTeamAnalyticsPage() {
                 size="sm"
                 iconLeft={<Download className="h-4 w-4" />}
                 onClick={() => void handleExportProductsCsv()}
-                disabled={isLoading || exportableProducts.length === 0}
+                disabled={isResultPending || exportableProducts.length === 0}
                 loading={isExportingCsv}
                 className="btn-icon"
               >
@@ -1465,7 +1483,7 @@ export default function SalesByTeamAnalyticsPage() {
                 size="sm"
                 iconLeft={<FileSpreadsheet className="h-4 w-4" />}
                 onClick={() => void handleExportProductsXlsx()}
-                disabled={isLoading || exportableProducts.length === 0}
+                disabled={isResultPending || exportableProducts.length === 0}
                 loading={isExportingXlsx}
                 className="btn-icon"
               >
@@ -1477,7 +1495,7 @@ export default function SalesByTeamAnalyticsPage() {
 
         {tableSelection === 'products' ? (
           <AnalyticsSalesProductsTable
-            isLoading={isLoading}
+            isLoading={isResultPending}
             productStart={productStart}
             productEnd={productEnd}
             totalProducts={totalProducts}
@@ -1495,7 +1513,7 @@ export default function SalesByTeamAnalyticsPage() {
           />
         ) : (
           <AnalyticsSalesDeliveryTable
-            isLoading={isLoading}
+            isLoading={isResultPending}
             deliveryStart={deliveryStart}
             deliveryEnd={deliveryEnd}
             totalDelivery={totalDelivery}
