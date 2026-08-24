@@ -63,6 +63,8 @@ export const DEFAULT_VIDEO_REGISTRY_PARAMS: GetVideoRegistryParams = {
   performanceStatus: '',
   page: 1,
   pageSize: 10,
+  unregisteredPage: 1,
+  unregisteredPageSize: 5,
   sortKey: 'code',
   sortDirection: 'desc',
 };

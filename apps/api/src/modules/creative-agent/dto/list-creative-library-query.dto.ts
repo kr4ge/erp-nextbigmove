@@ -75,6 +75,19 @@ export class ListCreativeLibraryQueryDto {
   pageSize: number = 24;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  unregisteredPage: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  unregisteredPageSize: number = 5;
+
+  @IsOptional()
   @IsIn(CREATIVE_SORT_KEYS)
   sortKey: CreativeSortKey = 'createdAt';
 

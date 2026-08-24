@@ -225,7 +225,7 @@ export class CreativeLibraryService {
     const accountNames = new Map(accounts.map((account) => [account.accountId, account.name]));
     const canManageUnregistered = canReadAll || this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE);
 
-    const unregisteredItems = canManageUnregistered
+    const allUnregisteredItems = canManageUnregistered
       ? Array.from(unregistered.values())
         .map((item) => {
           return {
@@ -245,6 +245,19 @@ export class CreativeLibraryService {
         })
         .sort((left, right) => right.spend - left.spend)
       : [];
+    const unregisteredTotal = allUnregisteredItems.length;
+    const unregisteredTotalPages = Math.max(
+      1,
+      Math.ceil(unregisteredTotal / query.unregisteredPageSize),
+    );
+    const unregisteredPage = Math.min(
+      query.unregisteredPage,
+      unregisteredTotalPages,
+    );
+    const unregisteredItems = allUnregisteredItems.slice(
+      (unregisteredPage - 1) * query.unregisteredPageSize,
+      unregisteredPage * query.unregisteredPageSize,
+    );
 
     return {
       selected: {
@@ -259,6 +272,8 @@ export class CreativeLibraryService {
         performanceStatus: query.performanceStatus ?? '',
         page,
         pageSize: query.pageSize,
+        unregisteredPage,
+        unregisteredPageSize: query.unregisteredPageSize,
         sortKey: query.sortKey,
         sortDirection: query.sortDirection,
       },
@@ -293,6 +308,12 @@ export class CreativeLibraryService {
         reason: 'Video rates are shown when the selected Meta export contains the required raw video columns.',
       },
       pagination: { page, pageSize: query.pageSize, total, totalPages },
+      unregisteredPagination: {
+        page: unregisteredPage,
+        pageSize: query.unregisteredPageSize,
+        total: unregisteredTotal,
+        totalPages: unregisteredTotalPages,
+      },
       generatedAt: new Date().toISOString(),
     };
   }
@@ -302,6 +323,7 @@ export class CreativeLibraryService {
     return {
       selected: response.selected,
       items: response.unregistered,
+      pagination: response.unregisteredPagination,
       summary: response.summary,
       generatedAt: response.generatedAt,
     };

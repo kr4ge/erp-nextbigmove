@@ -121,6 +121,8 @@ export type GetVideoRegistryParams = {
   performanceStatus: "" | CreativePerformanceStatus;
   page: number;
   pageSize: number;
+  unregisteredPage: number;
+  unregisteredPageSize: number;
   sortKey: VideoRegistrySortKey;
   sortDirection: SortDirection;
 };
@@ -132,6 +134,12 @@ export type VideoRegistryResponse = {
   summary: { untaggedSpend: number };
   metricsAvailability: Record<string, boolean | string>;
   pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+  unregisteredPagination: {
     page: number;
     pageSize: number;
     total: number;

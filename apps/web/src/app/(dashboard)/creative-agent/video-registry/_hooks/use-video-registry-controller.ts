@@ -89,6 +89,10 @@ export function useVideoRegistryController() {
     setParams((current) => ({ ...current, ...patch, page: patch.page ?? 1 }));
   }, []);
 
+  const updateUnregisteredPage = useCallback((page: number) => {
+    setParams((current) => ({ ...current, unregisteredPage: page }));
+  }, []);
+
   const resetFilters = useCallback(() => {
     setParams(DEFAULT_VIDEO_REGISTRY_PARAMS);
     setSearchText(DEFAULT_VIDEO_REGISTRY_PARAMS.query);
@@ -163,6 +167,7 @@ export function useVideoRegistryController() {
     permissions,
     hasActiveFilters,
     updateParams,
+    updateUnregisteredPage,
     setSearchText,
     resetFilters,
     setView,

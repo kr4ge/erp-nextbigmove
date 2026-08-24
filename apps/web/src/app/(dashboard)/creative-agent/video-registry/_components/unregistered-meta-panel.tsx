@@ -2,7 +2,11 @@
 
 import { AlertTriangle, Link2, Plus, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { UnregisteredMetaCreative } from "../_types/video-registry";
+import type {
+  UnregisteredMetaCreative,
+  VideoRegistryResponse,
+} from "../_types/video-registry";
+import { RegistryPagination } from "./registry-pagination";
 import {
   formatCurrency,
   formatDate,
@@ -15,6 +19,8 @@ type Props = {
   onLink: (item: UnregisteredMetaCreative) => void;
   canRegister: boolean;
   canLink: boolean;
+  pagination: VideoRegistryResponse["unregisteredPagination"];
+  onPageChange: (page: number) => void;
 };
 
 export function UnregisteredMetaPanel({
@@ -23,8 +29,10 @@ export function UnregisteredMetaPanel({
   onLink,
   canRegister,
   canLink,
+  pagination,
+  onPageChange,
 }: Props) {
-  if (items.length === 0) return null;
+  if (pagination.total === 0) return null;
 
   const sortedItems = [...items].sort(
     (left, right) => right.spend - left.spend,
@@ -54,7 +62,7 @@ export function UnregisteredMetaPanel({
           </div>
         </div>
         <span className="pill self-start border border-warning/30 bg-surface text-warning">
-          {items.length} need attention
+          {pagination.total} need attention
         </span>
       </div>
 
@@ -114,6 +122,13 @@ export function UnregisteredMetaPanel({
           </article>
         ))}
       </div>
+      <RegistryPagination
+        page={pagination.page}
+        pageSize={pagination.pageSize}
+        total={pagination.total}
+        totalPages={pagination.totalPages}
+        onPageChange={onPageChange}
+      />
     </section>
   );
 }

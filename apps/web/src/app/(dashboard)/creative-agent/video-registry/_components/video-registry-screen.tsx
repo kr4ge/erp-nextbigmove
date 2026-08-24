@@ -2,8 +2,6 @@
 
 import {
   AlertCircle,
-  ChevronLeft,
-  ChevronRight,
   Library,
   Plus,
   RefreshCw,
@@ -16,6 +14,7 @@ import type { VideoRegistrySortKey } from "../_types/video-registry";
 import { useVideoRegistryController } from "../_hooks/use-video-registry-controller";
 import { LinkVideoDialog } from "./link-video-dialog";
 import { RegisterVideoDialog } from "./register-video-dialog";
+import { RegistryPagination } from "./registry-pagination";
 import { UnregisteredMetaPanel } from "./unregistered-meta-panel";
 import { VideoRegistryFilterBar } from "./video-registry-filter-bar";
 import { VideoRegistryGrid } from "./video-registry-grid";
@@ -86,6 +85,8 @@ export function VideoRegistryScreen() {
           onLink={controller.setLinkingItem}
           canRegister={controller.permissions.canEnroll}
           canLink={controller.permissions.canManageAliases}
+          pagination={data.unregisteredPagination}
+          onPageChange={controller.updateUnregisteredPage}
         />
       ) : null}
 
@@ -198,50 +199,13 @@ export function VideoRegistryScreen() {
                   />
                 </div>
               )}
-              <div className="flex items-center justify-between gap-3 border-t border-border bg-surface px-4 py-3">
-                <p className="text-sm text-muted">
-                  Showing{" "}
-                  {(data.pagination.page - 1) * data.pagination.pageSize + 1}–
-                  {Math.min(
-                    data.pagination.page * data.pagination.pageSize,
-                    data.pagination.total,
-                  )}{" "}
-                  of {data.pagination.total}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface text-muted transition hover:border-primary/30 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
-                    aria-label="Previous page"
-                    disabled={data.pagination.page <= 1}
-                    onClick={() =>
-                      controller.updateParams({
-                        page: data.pagination.page - 1,
-                      })
-                    }
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="flex items-center rounded-full border border-border bg-background-secondary px-3.5 text-xs font-semibold text-foreground">
-                    {data.pagination.page} / {data.pagination.totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface text-muted transition hover:border-primary/30 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
-                    aria-label="Next page"
-                    disabled={
-                      data.pagination.page >= data.pagination.totalPages
-                    }
-                    onClick={() =>
-                      controller.updateParams({
-                        page: data.pagination.page + 1,
-                      })
-                    }
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+              <RegistryPagination
+                page={data.pagination.page}
+                pageSize={data.pagination.pageSize}
+                total={data.pagination.total}
+                totalPages={data.pagination.totalPages}
+                onPageChange={(page) => controller.updateParams({ page })}
+              />
             </>
           ) : null}
         </div>
