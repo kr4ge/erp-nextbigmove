@@ -57,6 +57,9 @@ export class CreativeInsightService {
   async getQueue(actor: CreativeActor) {
     const context = await this.access.resolve(actor);
     const tenantId = context.tenantId;
+    // Same scoping rule as the library: a creative reads their own work, a
+    // manager reads the tenant. The advertiser never reaches this service.
+    const canReadAll = this.access.canReadAll(context);
     const today = manilaToday();
     const econStart = dayShift(today, -29);
     const weekCurStart = dayShift(today, -6);
@@ -66,7 +69,7 @@ export class CreativeInsightService {
 
     const [creatives, links] = await Promise.all([
       this.prisma.creative.findMany({
-        where: { tenantId },
+        where: { tenantId, ...(canReadAll ? {} : { createdById: context.userId }) },
         select: {
           id: true, code: true, title: true, kind: true, angle: true, hookType: true,
           format: true, remixOfCode: true, performanceStatus: true, createdAt: true,
@@ -204,7 +207,7 @@ export class CreativeInsightService {
     rows.sort((a, b) => order.indexOf(a.verdict) - order.indexOf(b.verdict) || b.metrics.spend30 - a.metrics.spend30);
 
     const latestRun = await this.prisma.creativeInsightRun.findFirst({
-      where: { tenantId },
+      where: { tenantId, createdById: context.userId },
       orderBy: { createdAt: 'desc' },
       select: { id: true, answer: true, model: true, periodStart: true, periodEnd: true, createdAt: true },
     });
@@ -343,7 +346,11 @@ export class CreativeInsightService {
     }
 
     const creative = await this.prisma.creative.findFirst({
-      where: { id: creativeId, tenantId: context.tenantId },
+      where: {
+        id: creativeId,
+        tenantId: context.tenantId,
+        ...(this.access.canReadAll(context) ? {} : { createdById: context.userId }),
+      },
       select: {
         id: true, code: true, title: true, kind: true, angle: true, hookType: true, format: true,
         script: true, notes: true, storeConfigId: true,

@@ -117,9 +117,9 @@ const baseNavigation: NavLink[] = [
     icon: <BarChart3 className={iconClasses} />,
   },
   {
-    href: '/ads-insight',
-    label: 'Ads Insight',
-    description: 'Scale, refresh, or kill — and the next batch',
+    href: '/creative-insights',
+    label: 'Creative Insights',
+    description: 'What to scale, refresh, or let go — and your next batch',
     icon: <Sparkles className={iconClasses} />,
   },
   {
@@ -312,8 +312,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           return hasReports ? [link] : [];
         }
         if (link.href === '/performance') return canShowCreativeWorkspace && canShowPerformance ? [link] : [];
-        // Same audience as the insights endpoint: whoever steers the account.
-        if (link.href === '/ads-insight') return canShowCreativeWorkspace && canReadCreativeAll ? [link] : [];
+        // The creative's own steering view — same audience as Video Registry,
+        // by the owner's explicit call: "para sa creatives, hindi sa advertiser".
+        if (link.href === '/creative-insights') return canShowCreativeWorkspace && canReadCreative ? [link] : [];
         if (link.href === '/assets') return canShowCreativeWorkspace && canShowAssets ? [link] : [];
         if (link.href === '/video-registry') return canShowCreativeWorkspace && canShowVideoRegistry ? [link] : [];
         if (link.href !== '/integrations') return [link];

@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { PanelHeader } from '../../overview/_components/overview-ui';
 import { createVideoRegistryItem } from '../../video-registry/_services/video-registry.service';
-import { fetchInsightQueue, generateVariants, runDiagnose } from '../_services/ads-insight.service';
-import type { InsightQueueResponse, InsightRow, InsightVerdict, VariantBrief, VariantsResponse } from '../_types/ads-insight';
+import { fetchInsightQueue, generateVariants, runDiagnose } from '../_services/creative-insights.service';
+import type { InsightQueueResponse, InsightRow, InsightVerdict, VariantBrief, VariantsResponse } from '../_types/creative-insights';
 import { VariantsDialog } from './variants-dialog';
 
 const pct = (value: number | null | undefined, decimals = 1) =>
@@ -35,7 +35,7 @@ function Trend({ cur, prev }: { cur: number | null; prev: number | null }) {
   );
 }
 
-export function AdsInsightScreen() {
+export function CreativeInsightsScreen() {
   const [data, setData] = useState<InsightQueueResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -51,7 +51,7 @@ export function AdsInsightScreen() {
     setIsLoading(true);
     setError(null);
     try { setData(await fetchInsightQueue()); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Unable to load Ads Insight.'); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Unable to load Creative Insights.'); }
     finally { setIsLoading(false); }
   }, []);
 
@@ -106,15 +106,15 @@ export function AdsInsightScreen() {
   return (
     <div className="mx-auto max-w-screen-xl">
       <PageHeader
-        title="Ads Insight"
-        description="This week's decisions: what to scale, what to refresh before it dies, what to kill — and the next batch to make."
+        title="Creative Insights"
+        description="Your work this week: what to scale, what to refresh before it dies, what to let go — and your next batch."
         breadcrumbs="Creative Workspace"
       />
 
       <div className="space-y-4">
         {error ? (
           <div className="panel panel-content p-6 text-center">
-            <p className="text-sm font-semibold text-foreground">Ads Insight could not load</p>
+            <p className="text-sm font-semibold text-foreground">Creative Insights could not load</p>
             <p className="mt-1 text-sm text-muted">{error}</p>
             <Button variant="secondary" size="sm" className="mt-3" onClick={load}>Try again</Button>
           </div>

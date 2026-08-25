@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { InsightRow, VariantBrief, VariantsResponse } from '../_types/ads-insight';
+import type { InsightRow, VariantBrief, VariantsResponse } from '../_types/creative-insights';
 
 /**
  * The next batch, as cards. Each brief names which axes it moved — that is the

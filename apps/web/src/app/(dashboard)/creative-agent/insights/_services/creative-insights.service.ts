@@ -1,5 +1,5 @@
 import apiClient from '@/lib/api-client';
-import type { InsightQueueResponse, InsightRun, VariantsResponse } from '../_types/ads-insight';
+import type { InsightQueueResponse, InsightRun, VariantsResponse } from '../_types/creative-insights';
 
 function apiError(error: unknown, fallback: string): Error {
   const maybe = error as { response?: { data?: { message?: string } }; message?: string };
@@ -8,7 +8,7 @@ function apiError(error: unknown, fallback: string): Error {
 
 export async function fetchInsightQueue(): Promise<InsightQueueResponse> {
   try { return (await apiClient.get<InsightQueueResponse>('/creative-agent/insights')).data; }
-  catch (error) { throw apiError(error, 'Unable to load Ads Insight.'); }
+  catch (error) { throw apiError(error, 'Unable to load Creative Insights.'); }
 }
 
 export async function runDiagnose(): Promise<InsightRun> {

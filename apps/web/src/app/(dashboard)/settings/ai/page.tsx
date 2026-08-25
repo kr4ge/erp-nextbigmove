@@ -11,7 +11,7 @@ type AiSettingStatus =
 
 /**
  * The Anthropic key, write-only: it is encrypted server-side and only its last
- * four characters ever come back. Powers Ads Insight (one analysis per day,
+ * four characters ever come back. Powers Creative Insights (one analysis per day,
  * always human-clicked) and the variant generator.
  */
 export default function AiSettingsPage() {
@@ -43,7 +43,7 @@ export default function AiSettingsPage() {
       const next = (await apiClient.put<AiSettingStatus>('/ai-settings', { apiKey: draft })).data;
       setStatus(next);
       setDraft('');
-      setNotice('Key saved. Ads Insight analysis and variant generation are now live.');
+      setNotice('Key saved. Creative Insights analysis and variant generation are now live.');
     } catch (err) {
       const maybe = err as { response?: { data?: { message?: string } }; message?: string };
       setError(maybe.response?.data?.message || maybe.message || 'Unable to save the key.');
@@ -53,7 +53,7 @@ export default function AiSettingsPage() {
   };
 
   const remove = async () => {
-    if (!window.confirm('Remove the Anthropic key? Ads Insight analysis and variant generation will stop working until a new one is saved.')) return;
+    if (!window.confirm('Remove the Anthropic key? Creative Insights analysis and variant generation will stop working until a new one is saved.')) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -75,7 +75,7 @@ export default function AiSettingsPage() {
           <KeyRound className="h-4 w-4 text-primary" /> Anthropic API key
         </h2>
         <p className="mt-1 text-sm text-muted">
-          Powers the Ads Insight analysis (limited to one run per day, always started by a person — nothing sends on a schedule)
+          Powers the Creative Insights analysis (limited to one run per day, always started by a person — nothing sends on a schedule)
           and the variant generator. The key is encrypted with this workspace&apos;s own key and is never shown again after saving.
         </p>
       </div>
