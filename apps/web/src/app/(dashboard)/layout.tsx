@@ -16,9 +16,8 @@ import {
   X,
   Moon,
   Sun,
-  Sparkles,
-  LayoutDashboard,
   Video,
+  FolderCheck,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
@@ -111,14 +110,22 @@ const baseNavigation: NavLink[] = [
     ],
   },
   {
-    href: '/creative-agent',
-    label: 'Creative Agent',
-    description: 'Creative library & intelligence',
-    icon: <Sparkles className={iconClasses} />,
-    children: [
-      { href: '/creative-agent/overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
-      { href: '/creative-agent/video-registry', label: 'Video Registry', icon: <Video className="h-4 w-4" /> },
-    ],
+    href: '/performance',
+    label: 'Performance',
+    description: 'Ad spend against POS orders',
+    icon: <BarChart3 className={iconClasses} />,
+  },
+  {
+    href: '/assets',
+    label: 'Assets',
+    description: 'Your creative work and feedback',
+    icon: <FolderCheck className={iconClasses} />,
+  },
+  {
+    href: '/video-registry',
+    label: 'Video Registry',
+    description: 'Creative library and performance',
+    icon: <Video className={iconClasses} />,
   },
   {
     href: '/workflows',
@@ -164,12 +171,18 @@ type DashboardLayoutTeam = {
   teamCode?: string;
 };
 
+type DashboardLayoutRole = {
+  key: string;
+};
+
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<DashboardLayoutUser | null>(null);
   const [tenant, setTenant] = useState<DashboardLayoutTenant | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [roleKeys, setRoleKeys] = useState<string[]>([]);
+  const [hasResolvedRoles, setHasResolvedRoles] = useState(false);
   const [teams, setTeams] = useState<DashboardLayoutTeam[]>([]);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [isLoadingTeams, setIsLoadingTeams] = useState(false);
@@ -248,7 +261,23 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       permissions.includes('orders.undeliverables.read')
       || permissions.includes('orders.undeliverables.read_all');
     const hasReports = permissions.includes('reports.pos_orders.read');
-    const hasCreativeAgent = permissions.includes('creative_agent.read') || permissions.includes('creative_agent.read_all');
+    const canReadCreative = permissions.includes('creative_agent.read');
+    const canReadCreativeAll = permissions.includes('creative_agent.read_all');
+    const canReviewCreative = permissions.includes('creative_agent.review')
+      || permissions.includes('creative_agent.performance.manage');
+    const isTenantAdmin = roleKeys.includes('TENANT_ADMIN');
+    const hasExplicitCreativeRole = roleKeys.some((key) =>
+      ['CREATIVE_MAKER', 'CREATIVE_REVIEWER', 'CREATIVE_MANAGER'].includes(key));
+    // Backend permissions are authoritative (Tenant Admin no longer holds
+    // creative_agent.* by seed); this role check only keeps the nav honest for
+    // admins with stale JWT base permissions until they re-login. When roles
+    // cannot be resolved we fall back to permissions alone rather than hiding
+    // the workspace from every legitimate creative user.
+    const canShowCreativeWorkspace = !hasResolvedRoles || !isTenantAdmin || hasExplicitCreativeRole;
+    // Video Registry belongs to Creative and Manager; Advertising works
+    // through Performance and Assets instead.
+    const canShowVideoRegistry = canReadCreative;
+    const canShowPerformance = canReadCreativeAll && canReviewCreative;
 
     return baseNavigation.flatMap((link) => {
       if (link.href !== '/analytics') {
@@ -271,9 +300,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         if (link.href === '/reports') {
           return hasReports ? [link] : [];
         }
-        if (link.href === '/creative-agent') {
-          return hasCreativeAgent ? [link] : [];
-        }
+        if (link.href === '/performance') return canShowCreativeWorkspace && canShowPerformance ? [link] : [];
+        if (link.href === '/assets') return canShowCreativeWorkspace && (canReadCreative || canReadCreativeAll) ? [link] : [];
+        if (link.href === '/video-registry') return canShowCreativeWorkspace && canShowVideoRegistry ? [link] : [];
         if (link.href !== '/integrations') return [link];
 
         const children = (link.children || []).filter((child) => {
@@ -297,7 +326,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       if (children.length === 0) return [];
       return [{ ...link, children }];
     });
-  }, [permissions]);
+  }, [hasResolvedRoles, permissions, roleKeys]);
 
   const getNavigationNotificationCount = (href: string) => {
     if (href === '/requests') {
@@ -384,21 +413,38 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     const uid = user?.userId || user?.id;
     if (!user || !uid || !user.tenantId) return;
-    const checkPermissions = async () => {
+    const checkAccess = async () => {
       try {
-        const response = await apiClient.get('/auth/permissions', {
-          params: { workspace: 'erp' },
-        });
-        const permissions = response.data.permissions || [];
-        const hasAllTeams = permissions.includes('team.read_all') || permissions.includes('permission.assign');
-        setCanViewAllTeams(hasAllTeams);
-        setPermissions(permissions);
+        const [permissionsResult, rolesResult] = await Promise.allSettled([
+          apiClient.get('/auth/permissions', { params: { workspace: 'erp' } }),
+          apiClient.get('/auth/my-role', { params: { workspace: 'erp' } }),
+        ]);
+
+        if (permissionsResult.status === 'fulfilled') {
+          const nextPermissions = permissionsResult.value.data.permissions || [];
+          const hasAllTeams = nextPermissions.includes('team.read_all') || nextPermissions.includes('permission.assign');
+          setCanViewAllTeams(hasAllTeams);
+          setPermissions(nextPermissions);
+        }
+
+        if (rolesResult.status === 'fulfilled') {
+          const roles = Array.isArray(rolesResult.value.data.roles)
+            ? rolesResult.value.data.roles as DashboardLayoutRole[]
+            : [];
+          setRoleKeys(roles.map((role) => role.key));
+          setHasResolvedRoles(true);
+        } else {
+          setRoleKeys([]);
+          setHasResolvedRoles(false);
+        }
       } catch {
         // Keep current state if fetch fails
         setCanViewAllTeams((prev) => prev);
+        setRoleKeys([]);
+        setHasResolvedRoles(false);
       }
     };
-    checkPermissions();
+    void checkAccess();
   }, [user]);
 
   useEffect(() => {

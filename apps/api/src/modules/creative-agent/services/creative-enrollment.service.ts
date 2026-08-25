@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreativeMetaLinkSource, Prisma } from '@prisma/client';
+import { CreativeMetaLinkSource, CreativeQcStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   CREATIVE_AGENT_PERMISSIONS,
@@ -171,6 +171,9 @@ export class CreativeEnrollmentService {
     if (!this.access.canEdit(context, existing.createdById)) {
       throw new ForbiddenException('You cannot edit this creative');
     }
+    if (!['DRAFT', 'FOR_REVISION'].includes(existing.qcStatus)) {
+      throw new ConflictException('Submit feedback or return this creative for revision before changing its content');
+    }
 
     const data = {
       ...(dto.title !== undefined ? { title: dto.title } : {}),
@@ -217,6 +220,8 @@ export class CreativeEnrollmentService {
   ) {
     const code = requestedCode ?? `${config.codePrefix}-V${String(codeNumber).padStart(4, '0')}`;
     const now = new Date();
+    const submitForApproval = dto.submitForApproval !== false;
+    const initialQcStatus = submitForApproval ? CreativeQcStatus.FOR_APPROVAL : CreativeQcStatus.DRAFT;
     const creative = await this.prisma.$transaction(async (tx) => {
       const created = await tx.creative.create({
         data: {
@@ -232,7 +237,8 @@ export class CreativeEnrollmentService {
           script: dto.script?.trim() || null,
           notes: dto.notes?.trim() || null,
           createdById: userId,
-          submittedAt: now,
+          qcStatus: initialQcStatus,
+          submittedAt: submitForApproval ? now : null,
           ...(metaLink
             ? {
                 metaAccountId: metaLink.accountId,
@@ -263,9 +269,9 @@ export class CreativeEnrollmentService {
           creativeId: created.id,
           dimension: 'QC',
           fromStatus: 'NONE',
-          toStatus: 'FOR_APPROVAL',
+          toStatus: initialQcStatus,
           actorId: userId,
-          reason: 'Creative enrolled',
+          reason: submitForApproval ? 'Creative enrolled and submitted' : 'Creative draft saved',
         },
       });
       await tx.auditLog.create({
@@ -279,6 +285,7 @@ export class CreativeEnrollmentService {
             code,
             storeConfigId: config.id,
             kind: dto.kind,
+            qcStatus: initialQcStatus,
             ...(metaLink
               ? {
                   metaAccountId: metaLink.accountId,

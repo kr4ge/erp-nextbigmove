@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Link2Off, Play, Video } from 'lucide-react';
+import { Facebook, Link2Off, Play, Video } from 'lucide-react';
 import { getGoogleDriveThumbnailUrl } from '../_utils/google-drive-url';
+import { isValidFacebookPostUrl } from '../_utils/facebook-post-url';
 
 type Props = {
   mediaUrl: string | null;
@@ -13,6 +14,8 @@ type Props = {
 
 export function DriveThumbnail({ mediaUrl, title, compact = false, onClick }: Props) {
   const thumbnailUrl = getGoogleDriveThumbnailUrl(mediaUrl);
+  // Facebook posts cannot be thumbnailed or framed; the tile links out instead.
+  const isFacebookPost = mediaUrl ? isValidFacebookPostUrl(mediaUrl) : false;
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -39,10 +42,10 @@ export function DriveThumbnail({ mediaUrl, title, compact = false, onClick }: Pr
     </>
   ) : (
     <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-background-secondary px-2 text-center text-muted">
-      {mediaUrl ? <Link2Off className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+      {isFacebookPost ? <Facebook className="h-5 w-5" /> : mediaUrl ? <Link2Off className="h-5 w-5" /> : <Video className="h-5 w-5" />}
       {!compact ? (
         <span className="text-xs-tight font-medium">
-          {mediaUrl ? 'Preview needs link-sharing on' : 'No Drive link yet'}
+          {isFacebookPost ? 'Open the Facebook post' : mediaUrl ? 'Preview unavailable for this link' : 'No post link yet'}
         </span>
       ) : null}
     </div>

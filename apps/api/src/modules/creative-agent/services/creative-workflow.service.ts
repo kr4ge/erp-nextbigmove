@@ -69,12 +69,17 @@ export class CreativeWorkflowService {
       throw new BadRequestException('A reason is required for revision or cancellation');
     }
 
-    const makerRevision = fromStatus === 'FOR_REVISION' && dto.toStatus === 'REVISED';
-    if (makerRevision) {
-      if (!this.access.canEdit(context, creative.createdById)) {
-        throw new ForbiddenException('Only the maker or an editor can submit a revision');
+    const makerAction = (fromStatus === 'DRAFT' && dto.toStatus === 'FOR_APPROVAL')
+      || (fromStatus === 'FOR_REVISION' && dto.toStatus === 'REVISED')
+      || (creative.createdById === context.userId && dto.toStatus === 'CANCELLED');
+    if (makerAction) {
+      if (creative.createdById !== context.userId || !this.access.canEdit(context, creative.createdById)) {
+        throw new ForbiddenException('Only the creative owner can submit this creative');
       }
     } else {
+      if (creative.createdById === context.userId) {
+        throw new ForbiddenException('A creative cannot review their own submission');
+      }
       this.access.require(context, CREATIVE_AGENT_PERMISSIONS.REVIEW);
     }
 
@@ -100,6 +105,16 @@ export class CreativeWorkflowService {
           reason: dto.reason || null,
         },
       });
+      if (dto.reason) {
+        await tx.creativeReviewComment.create({
+          data: {
+            tenantId: context.tenantId,
+            creativeId: creative.id,
+            authorId: context.userId,
+            message: dto.reason,
+          },
+        });
+      }
       return { creativeId: creative.id, dimension: 'QC', fromStatus, toStatus: dto.toStatus, eventId: event.id };
     });
   }

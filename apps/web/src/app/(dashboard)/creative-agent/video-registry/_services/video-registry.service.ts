@@ -1,6 +1,6 @@
 import axios from 'axios';
 import apiClient from '@/lib/api-client';
-import type { CreativeStatusDimension, CreativeStoreOption, CreateVideoRegistryInput, GetVideoRegistryParams, LinkCreativeAliasInput, VideoRegistryItem, VideoRegistryResponse } from '../_types/video-registry';
+import type { CreativeReviewComment, CreativeStatusDimension, CreativeStoreOption, CreateVideoRegistryInput, GetVideoRegistryParams, LinkCreativeAliasInput, UpdateVideoRegistryInput, VideoRegistryItem, VideoRegistryResponse } from '../_types/video-registry';
 
 function apiError(error: unknown, fallback: string): Error {
   if (axios.isAxiosError(error)) {
@@ -22,7 +22,7 @@ export async function fetchCreativeStores(): Promise<CreativeStoreOption[]> {
   catch (error) { throw apiError(error, 'Unable to load POS stores.'); }
 }
 export async function createVideoRegistryItem(input: CreateVideoRegistryInput): Promise<VideoRegistryItem> {
-  const payload = { storeId: input.storeId, kind: input.kind, title: input.title, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, script: input.script || undefined, notes: input.notes || undefined };
+  const payload = { storeId: input.storeId, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, script: input.script || undefined, notes: input.notes || undefined };
   const enrollsMetaAd = Boolean(input.accountId && input.adId && input.adName);
   try {
     return (enrollsMetaAd
@@ -34,7 +34,7 @@ export async function fetchVideoRegistryItem(id: string): Promise<VideoRegistryI
   try { return (await apiClient.get<VideoRegistryItem>(`/creative-agent/creatives/${id}`)).data; }
   catch (error) { throw apiError(error, 'Unable to load this creative.'); }
 }
-export async function updateVideoRegistryItem(id: string, input: Partial<Pick<CreateVideoRegistryInput, 'title' | 'mediaUrl' | 'format' | 'hookType' | 'script' | 'notes'>>) {
+export async function updateVideoRegistryItem(id: string, input: UpdateVideoRegistryInput): Promise<VideoRegistryItem> {
   try { return (await apiClient.patch<VideoRegistryItem>(`/creative-agent/creatives/${id}`, input)).data; }
   catch (error) { throw apiError(error, 'Unable to update this creative.'); }
 }
@@ -57,4 +57,8 @@ export async function transitionCreativeStatus(id: string, dimension: CreativeSt
 export async function fetchCreativeEvents(id: string) {
   try { return (await apiClient.get(`/creative-agent/creatives/${id}/events`)).data; }
   catch (error) { throw apiError(error, 'Unable to load creative history.'); }
+}
+export async function fetchCreativeReviewComments(id: string) {
+  try { return (await apiClient.get<CreativeReviewComment[]>(`/creative-agent/creatives/${id}/comments`)).data; }
+  catch (error) { throw apiError(error, 'Unable to load creative feedback.'); }
 }

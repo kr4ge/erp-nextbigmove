@@ -10,6 +10,7 @@ import { formatCompactCurrency, formatRate } from '../_utils/video-registry-form
 type Props = {
   items: VideoRegistryItem[];
   params: GetVideoRegistryParams;
+  actionLabel: string;
   onSort: (key: VideoRegistrySortKey) => void;
   onReview: (item: VideoRegistryItem) => void;
 };
@@ -29,7 +30,7 @@ function SortButton({ label, sortKey, params, onSort }: {
   );
 }
 
-export function VideoRegistryTable({ items, params, onSort, onReview }: Props) {
+export function VideoRegistryTable({ items, params, actionLabel, onSort, onReview }: Props) {
   return (
     <div className="overflow-hidden">
       <div className="overflow-x-auto">
@@ -73,7 +74,7 @@ export function VideoRegistryTable({ items, params, onSort, onReview }: Props) {
                 <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{formatRate(item.metrics.holdRate)}</td>
                 <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{formatRate(item.metrics.ctr)}</td>
                 <td className="px-5 py-3.5 text-right">
-                  <Button type="button" size="sm" variant="ghost" iconLeft={<Eye className="h-4 w-4" />} onClick={() => onReview(item)}>Review</Button>
+                  <Button type="button" size="sm" variant="ghost" iconLeft={<Eye className="h-4 w-4" />} onClick={() => onReview(item)}>{actionLabel}</Button>
                 </td>
               </tr>
             ))}

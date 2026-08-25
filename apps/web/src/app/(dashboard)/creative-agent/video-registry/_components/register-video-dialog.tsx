@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, ExternalLink, ImageIcon, Video } from "lucide-react";
+import { ArrowLeft, Check, ImageIcon, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,12 +13,6 @@ import {
 } from "@/components/ui/dialog";
 import { FormInput } from "@/components/ui/form-input";
 import { FormSelect } from "@/components/ui/form-select";
-import { FormTextarea } from "@/components/ui/form-textarea";
-import {
-  HOOK_TYPE_OPTIONS,
-  STATIC_FORMAT_OPTIONS,
-  VIDEO_FORMAT_OPTIONS,
-} from "../_constants/video-registry.constants";
 import type {
   CreativeKind,
   CreateVideoRegistryInput,
@@ -26,8 +20,9 @@ import type {
   UnregisteredMetaCreative,
   VideoRegistryItem,
 } from "../_types/video-registry";
-import { isValidGoogleDriveUrl } from "../_utils/google-drive-url";
+import { isValidFacebookPostUrl } from "../_utils/facebook-post-url";
 import { CreativeCodeField } from "./creative-code-field";
+import { CreativeDetailsFields } from "./creative-details-fields";
 
 type Props = {
   open: boolean;
@@ -100,8 +95,7 @@ export function RegisterVideoDialog({
     setError(null);
   };
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const submitCreative = async (submitForApproval: boolean) => {
     setError(null);
     if (!kind)
       return setError(
@@ -111,15 +105,16 @@ export function RegisterVideoDialog({
       return setError("Choose the store that owns this creative.");
     if (!form.title.trim())
       return setError("Enter the title shown in the video library.");
-    if (form.mediaUrl && !isValidGoogleDriveUrl(form.mediaUrl)) {
+    if (form.mediaUrl && !isValidFacebookPostUrl(form.mediaUrl)) {
       return setError(
-        "Use a valid Google Drive file link, such as /file/d/.../view.",
+        "Use a valid Facebook post link, such as https://www.facebook.com/.../posts/...",
       );
     }
     try {
       await onSubmit({
         ...form,
         kind,
+        submitForApproval,
         hookType: kind === "VIDEO" ? form.hookType : "",
         script: kind === "VIDEO" ? form.script : undefined,
         requestedCode: seed?.code ?? undefined,
@@ -137,6 +132,11 @@ export function RegisterVideoDialog({
     }
   };
 
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    void submitCreative(false);
+  };
+
   return (
     <Dialog
       open={open}
@@ -150,10 +150,9 @@ export function RegisterVideoDialog({
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-success-soft text-success">
               <Check className="h-6 w-6" />
             </span>
-            <DialogTitle className="mt-4 mb-0">Creative enrolled</DialogTitle>
+            <DialogTitle className="mt-4 mb-0">Creative registered</DialogTitle>
             <DialogDescription className="mt-2">
-              Use this exact code as the Meta ad name so performance can match
-              automatically.
+              The creative is in the registry. Continue editing it there any time.
             </DialogDescription>
             <div className="mx-auto mt-6 max-w-md text-left">
               <CreativeCodeField
@@ -172,7 +171,7 @@ export function RegisterVideoDialog({
               <DialogDescription>
                 {step === "kind"
                   ? "Choose the creative type first. The metadata and performance fields will adapt to it."
-                  : `Add the ${kind === "VIDEO" ? "video" : "static"} metadata and Google Drive source.`}
+                  : `Add the ${kind === "VIDEO" ? "video" : "static"} metadata and Facebook post link.`}
               </DialogDescription>
             </DialogHeader>
 
@@ -308,87 +307,13 @@ export function RegisterVideoDialog({
                     />
                   </div>
 
-                  <div
-                    className={`grid gap-4 ${kind === "VIDEO" ? "md:grid-cols-3" : "md:grid-cols-2"}`}
-                  >
-                    {kind === "VIDEO" ? (
-                      <FormSelect
-                        name="hookType"
-                        label="Hook type"
-                        value={form.hookType}
-                        onChange={(event) =>
-                          setField("hookType", event.target.value)
-                        }
-                        options={HOOK_TYPE_OPTIONS}
-                        placeholder="Choose hook"
-                      />
-                    ) : null}
-                    <FormSelect
-                      name="format"
-                      label={`${kind === "VIDEO" ? "Video" : "Static"} format`}
-                      value={form.format}
-                      onChange={(event) =>
-                        setField("format", event.target.value)
-                      }
-                      options={
-                        kind === "VIDEO"
-                          ? VIDEO_FORMAT_OPTIONS
-                          : STATIC_FORMAT_OPTIONS
-                      }
-                      placeholder="Choose format"
-                    />
-                    <FormInput
-                      name="status"
-                      label="Performance status"
-                      value="Draft"
-                      readOnly
-                      className="read-only-input"
-                    />
-                  </div>
-
-                  <FormInput
-                    name="mediaUrl"
-                    type="url"
-                    label={`Google Drive ${kind === "VIDEO" ? "video" : "asset"} link`}
-                    value={form.mediaUrl}
-                    onChange={(event) =>
-                      setField("mediaUrl", event.target.value)
-                    }
-                    placeholder="https://drive.google.com/file/d/.../view"
-                    helper="Optional for now. Turn on link sharing so the library preview can load."
+                  <CreativeDetailsFields
+                    kind={kind as CreativeKind}
+                    value={form}
+                    onChange={(field, value) => setField(field, value)}
+                    showTitle={false}
+                    showPerformanceStatus
                   />
-
-                  {kind === "VIDEO" ? (
-                    <FormTextarea
-                      name="script"
-                      label="Video script or concept / angle"
-                      value={form.script}
-                      onChange={(event) =>
-                        setField("script", event.target.value)
-                      }
-                      placeholder="Capture the opening hook, angle, or full script..."
-                      className="min-h-32"
-                    />
-                  ) : null}
-                  <FormTextarea
-                    name="notes"
-                    label="Internal notes"
-                    value={form.notes}
-                    onChange={(event) => setField("notes", event.target.value)}
-                    placeholder="Add revision notes, variants, or context..."
-                    className="min-h-24"
-                  />
-
-                  {form.mediaUrl && isValidGoogleDriveUrl(form.mediaUrl) ? (
-                    <a
-                      href={form.mediaUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
-                    >
-                      Check Drive file <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  ) : null}
                 </div>
               )}
 
@@ -421,9 +346,7 @@ export function RegisterVideoDialog({
                 </Button>
               )}
               {step === "details" ? (
-                <Button type="submit" loading={isSaving}>
-                  Complete enrollment
-                </Button>
+                <Button type="submit" loading={isSaving}>Register creative</Button>
               ) : null}
             </DialogFooter>
           </form>

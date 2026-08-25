@@ -1,8 +1,21 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { CreativeKind, CreativeStatusDimension, Prisma } from '@prisma/client';
+import { CreativeKind, CreativePerformanceStatus, CreativeStatusDimension, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { GetCreativeOverviewQueryDto, type CreativeOverviewSortKey } from '../dto/get-creative-overview-query.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
+import {
+  bandScore,
+  craftVerdict,
+  CREATIVE_CRAFT_FLOORS,
+  CREATIVE_FLOORS_PROVISIONAL,
+  isImpossibleRate,
+  median,
+  round,
+  safeRatio,
+  SCORECARD_BAND_WEIGHTS,
+  scorecardVerdict,
+  weightedBandScore,
+} from '../utils/creative-metrics';
 import { CreativeAccessService } from './creative-access.service';
 
 type MetricTotals = {
@@ -21,10 +34,21 @@ const emptyMetrics = (): MetricTotals => ({
   completionDenominator: 0, frequencyNumerator: 0, frequencyDenominator: 0,
 });
 const METRIC_KEYS = Object.keys(emptyMetrics()) as Array<keyof MetricTotals>;
-const round = (value: number, decimals = 4) => Number(value.toFixed(decimals));
-const ratio = (numerator: number, denominator: number) => denominator > 0 ? round(numerator / denominator) : null;
 const money = (value: number) => round(value, 2);
 const toNumber = (value: Prisma.Decimal | number | null | undefined) => Number(value ?? 0);
+
+/** Collects rates withheld by the impossible-rate guard so one warning can name every broken stage. */
+class RateGuard {
+  readonly stages = new Map<string, number>();
+  rate(stage: string, numerator: number, denominator: number): number | null {
+    if (isImpossibleRate(numerator, denominator)) {
+      this.stages.set(stage, (this.stages.get(stage) ?? 0) + 1);
+      return null;
+    }
+    return safeRatio(numerator, denominator);
+  }
+  get count() { return [...this.stages.values()].reduce((sum, value) => sum + value, 0); }
+}
 
 @Injectable()
 export class CreativeOverviewService {
@@ -39,6 +63,7 @@ export class CreativeOverviewService {
     const selectedLens = query.lens === 'BUSINESS' && canViewMoney ? 'BUSINESS' : 'CREATIVE';
     const defaultSortKey: CreativeOverviewSortKey = selectedLens === 'BUSINESS' ? 'netMargin' : 'creativeScore';
     const requestedSortKey = query.sortKey === 'creativeScore' && selectedLens === 'BUSINESS' ? defaultSortKey : query.sortKey;
+    const guard = new RateGuard();
     const where: Prisma.CreativeWhereInput = {
       tenantId: context.tenantId,
       ...(!canReadAll ? { createdById: context.userId } : query.creatorId ? { createdById: query.creatorId } : {}),
@@ -82,12 +107,12 @@ export class CreativeOverviewService {
     const { metricsByAd, descriptorByAd } = await this.loadAdMetrics(context.tenantId, adIds, range.start, range.end);
     const baseRows = creatives.map((creative) => {
       const metrics = this.sumMetrics(creativeAdIds.get(creative.id) ?? [], metricsByAd);
-      const hookRate = creative.kind === CreativeKind.VIDEO ? ratio(metrics.hookNumerator, metrics.hookDenominator) : null;
-      const holdRate = creative.kind === CreativeKind.VIDEO ? ratio(metrics.holdNumerator, metrics.holdDenominator) : null;
-      const completionRate = creative.kind === CreativeKind.VIDEO ? ratio(metrics.completionNumerator, metrics.completionDenominator) : null;
-      const ctr = ratio(metrics.linkClicks, metrics.impressions);
-      const lpRate = ratio(metrics.landingPageViews, metrics.linkClicks);
-      const conversionRate = ratio(metrics.orders, metrics.landingPageViews);
+      const hookRate = creative.kind === CreativeKind.VIDEO ? guard.rate('hook', metrics.hookNumerator, metrics.hookDenominator) : null;
+      const holdRate = creative.kind === CreativeKind.VIDEO ? guard.rate('hold', metrics.holdNumerator, metrics.holdDenominator) : null;
+      const completionRate = creative.kind === CreativeKind.VIDEO ? guard.rate('completion', metrics.completionNumerator, metrics.completionDenominator) : null;
+      const ctr = guard.rate('ctr', metrics.linkClicks, metrics.impressions);
+      const lpRate = guard.rate('lp rate', metrics.landingPageViews, metrics.linkClicks);
+      const conversionRate = guard.rate('order rate', metrics.orders, metrics.landingPageViews);
       const resolved = metrics.delivered + metrics.cancelled + metrics.rts;
       const linkedAdIds = creativeAdIds.get(creative.id) ?? [];
       const topAd = linkedAdIds.map((adId) => descriptorByAd.get(adId)).filter((value): value is AdDescriptor => Boolean(value)).sort((a, b) => b.spend - a.spend)[0] ?? null;
@@ -103,8 +128,11 @@ export class CreativeOverviewService {
           creativeScore: null as number | null, winnerScore: null as number | null,
           decision: 'NOT_CONFIGURED' as const, bottleneck: null as string | null,
           hookRate, holdRate, completionRate, ctr, lpRate, conversionRate,
-          deliveryRate: ratio(metrics.delivered, resolved), cancellationRate: ratio(metrics.cancelled, resolved),
-          rtsRate: ratio(metrics.rts, resolved), frequency: ratio(metrics.frequencyNumerator, metrics.frequencyDenominator),
+          deliveryRate: guard.rate('delivery', metrics.delivered, resolved),
+          cancellationRate: guard.rate('cancel', metrics.cancelled, resolved),
+          rtsRate: guard.rate('rts', metrics.rts, resolved),
+          // Frequency is a plain weighted average, not a rate — values above 1 are normal.
+          frequency: safeRatio(metrics.frequencyNumerator, metrics.frequencyDenominator),
           impressions: metrics.impressions, linkClicks: metrics.linkClicks,
           landingPageViews: metrics.landingPageViews, orders: metrics.orders, deliveredOrders: metrics.delivered,
           ...(canViewMoney ? {
@@ -118,9 +146,9 @@ export class CreativeOverviewService {
     });
     const storeMedians = this.storeMedians(baseRows);
     const scoredRows = baseRows.map((row) => {
-      const median = storeMedians.get(row.store.id ?? '') ?? null;
-      row.metrics.creativeScore = this.creativeScore(row.kind, row.metrics, median);
-      row.metrics.bottleneck = this.bottleneck(row.kind, row.metrics, median);
+      const storeMedian = storeMedians.get(row.store.id ?? '') ?? null;
+      row.metrics.creativeScore = this.creativeScore(row.kind, row.metrics, storeMedian);
+      row.metrics.bottleneck = this.bottleneck(row.kind, row.metrics, storeMedian);
       return row;
     });
     const sorted = this.sortRows(scoredRows, requestedSortKey, query.sortDirection, canViewMoney);
@@ -139,8 +167,26 @@ export class CreativeOverviewService {
     const items = ranked.slice((page - 1) * query.pageSize, page * query.pageSize);
     const totals = baseRows.reduce((acc, row) => this.addMetrics(acc, row._totals), emptyMetrics());
     const decisions = await this.decisionMetrics(context.tenantId, creatives.map((creative) => creative.id), range.start, range.end);
+    const outputCount = creatives.filter((creative) => creative.createdAt >= range.start && creative.createdAt <= range.end).length;
     const linkedCreatives = baseRows.filter((row) => row.linked).length;
     const missingVideoMetrics = baseRows.filter((row) => row.kind === CreativeKind.VIDEO && row.metrics.impressions > 0 && row.metrics.hookRate === null).length;
+    const kpis = {
+      hookRate: this.metric(guard, 'hook', totals.hookNumerator, totals.hookDenominator),
+      holdRate: this.metric(guard, 'hold', totals.holdNumerator, totals.holdDenominator),
+      completionRate: this.metric(guard, 'completion', totals.completionNumerator, totals.completionDenominator),
+      ctr: this.metric(guard, 'ctr', totals.linkClicks, totals.impressions),
+      cvr: this.metric(guard, 'cvr', totals.orders, totals.linkClicks),
+      output: { value: outputCount, numerator: null, denominator: null },
+      approvalRate: this.metric(guard, 'approval', decisions.approved, decisions.approved + decisions.cancelled),
+      medianTurnaroundHours: { value: decisions.medianTurnaroundHours, numerator: null, denominator: decisions.turnaroundCount },
+    };
+    const scorecard = this.buildScorecard({
+      kpis, decisions, outputCount, days: range.days,
+      scope: canReadAll && !query.creatorId ? 'TEAM' : 'PERSONAL',
+      qcCensus: this.qcCensus(creatives),
+    });
+    const craftBoard = this.buildCraftBoard(baseRows);
+    const withheldStages = [...guard.stages.keys()];
     return {
       selected: { startDate: range.startKey, endDate: range.endKey, query: query.query ?? '', storeId: query.storeId ?? '', kind: query.kind ?? '', creatorId: query.creatorId ?? '', lens: selectedLens, sortKey: requestedSortKey, sortDirection: query.sortDirection },
       permissions: { canReadAll, canViewMoney },
@@ -148,18 +194,22 @@ export class CreativeOverviewService {
         stores: stores.filter((store) => store.storeId).map((store) => ({ value: store.storeId as string, label: store.storeNameSnapshot })),
         creators: creatorRows.map(({ createdBy }) => ({ value: createdBy.id, label: this.personName(createdBy) })).sort((a, b) => a.label.localeCompare(b.label)),
       },
-      kpis: {
-        hookRate: this.metric(totals.hookNumerator, totals.hookDenominator), holdRate: this.metric(totals.holdNumerator, totals.holdDenominator),
-        completionRate: this.metric(totals.completionNumerator, totals.completionDenominator), ctr: this.metric(totals.linkClicks, totals.impressions),
-        cvr: this.metric(totals.orders, totals.linkClicks),
-        output: { value: creatives.filter((creative) => creative.createdAt >= range.start && creative.createdAt <= range.end).length, numerator: null, denominator: null },
-        approvalRate: this.metric(decisions.approved, decisions.approved + decisions.cancelled),
-        medianTurnaroundHours: { value: decisions.medianTurnaroundHours, numerator: null, denominator: decisions.turnaroundCount },
+      floors: {
+        values: { ...CREATIVE_CRAFT_FLOORS },
+        provisional: CREATIVE_FLOORS_PROVISIONAL,
       },
+      capabilities: {
+        callDeck: { available: false, reason: 'Call tracking is not connected to this workspace yet.' },
+        landingPages: { available: false, reason: 'Landing-page performance is not tracked by this workspace yet.' },
+      },
+      kpis,
+      scorecard,
+      craftBoard,
       warnings: [
         ...(baseRows.length > 0 && linkedCreatives < baseRows.length ? [{ code: 'UNLINKED_CREATIVES', severity: 'warning', message: `${baseRows.length - linkedCreatives} registered creative${baseRows.length - linkedCreatives === 1 ? ' is' : 's are'} not linked to a Meta ad.` }] : []),
         ...(missingVideoMetrics > 0 ? [{ code: 'MISSING_VIDEO_METRICS', severity: 'info', message: `${missingVideoMetrics} video creative${missingVideoMetrics === 1 ? '' : 's'} have impressions but no measured 3-second play data in this range.` }] : []),
         ...(totals.impressions === 0 ? [{ code: 'NO_DELIVERY_DATA', severity: 'info', message: 'No linked reconciled delivery data was found for the selected range.' }] : []),
+        ...(guard.count > 0 ? [{ code: 'IMPOSSIBLE_RATES', severity: 'warning', message: `${guard.count} rate${guard.count === 1 ? ' was' : 's were'} withheld because a source reported an impossible value above 100% (${withheldStages.join(', ')}).` }] : []),
       ],
       items, pagination: { page, pageSize: query.pageSize, total, totalPages }, generatedAt: new Date().toISOString(),
     };
@@ -206,30 +256,123 @@ export class CreativeOverviewService {
     return { metricsByAd, descriptorByAd };
   }
 
+  /**
+   * The personal (or team-aggregate) craft scorecard. Band values are weighted
+   * aggregates over the scoped rows — never averages of per-creative rates.
+   * The quota band is intentionally unavailable: no daily-quota model exists,
+   * and an unmeasurable band is reweighted out rather than counted as zero.
+   */
+  private buildScorecard(input: {
+    kpis: Record<'hookRate' | 'holdRate' | 'completionRate' | 'ctr' | 'approvalRate', { value: number | null }>;
+    decisions: { approved: number; cancelled: number; medianTurnaroundHours: number | null; turnaroundCount: number };
+    outputCount: number;
+    days: number;
+    scope: 'PERSONAL' | 'TEAM';
+    qcCensus: Array<{ status: string; count: number }>;
+  }) {
+    const { kpis, decisions, outputCount, days, scope, qcCensus } = input;
+    const hookRate = kpis.hookRate.value;
+    const holdRate = kpis.holdRate.value;
+    const completionRate = kpis.completionRate.value;
+    const ctr = kpis.ctr.value;
+    const approvalRate = kpis.approvalRate.value;
+    const bands = [
+      { key: 'hookRate' as const, value: hookRate, floor: CREATIVE_CRAFT_FLOORS.hookRate as number | null, score: bandScore(hookRate, CREATIVE_CRAFT_FLOORS.hookRate) },
+      { key: 'holdRate' as const, value: holdRate, floor: CREATIVE_CRAFT_FLOORS.holdRate as number | null, score: bandScore(holdRate, CREATIVE_CRAFT_FLOORS.holdRate) },
+      { key: 'completionRate' as const, value: completionRate, floor: CREATIVE_CRAFT_FLOORS.completionRate as number | null, score: bandScore(completionRate, CREATIVE_CRAFT_FLOORS.completionRate) },
+      { key: 'ctr' as const, value: ctr, floor: CREATIVE_CRAFT_FLOORS.ctr as number | null, score: bandScore(ctr, CREATIVE_CRAFT_FLOORS.ctr) },
+      // Approval has no craft floor; the band maps the finished-decision rate straight onto 0…10.
+      { key: 'approvalRate' as const, value: approvalRate, floor: null, score: approvalRate === null ? null : round(approvalRate * 10, 1) },
+    ].map((band) => ({ ...band, weight: SCORECARD_BAND_WEIGHTS[band.key] }));
+    const overall = weightedBandScore(bands);
+    return {
+      scope,
+      overall,
+      verdict: scorecardVerdict(overall),
+      bands,
+      efficiency: {
+        approvedCount: decisions.approved,
+        cancelledCount: decisions.cancelled,
+        outputCount,
+        approvedPerDay: days > 0 ? round(decisions.approved / days, 2) : null,
+        quotaConfigured: false,
+        quotaAttainment: null,
+        medianTurnaroundHours: decisions.medianTurnaroundHours,
+      },
+      qcCensus,
+    };
+  }
+
+  private qcCensus(creatives: Array<{ qcStatus: string }>) {
+    const counts = new Map<string, number>();
+    for (const creative of creatives) counts.set(creative.qcStatus, (counts.get(creative.qcStatus) ?? 0) + 1);
+    return [...counts.entries()].map(([status, count]) => ({ status, count }));
+  }
+
+  /**
+   * Money-free craft board. Videos are graded on hook/hold/completion, statics
+   * on the click; cancel rate is the one non-craft term — a promise-match
+   * signal expressed as a percentage so no peso figure is needed.
+   */
+  private buildCraftBoard(rows: Array<{
+    id: string; code: string; title: string; kind: CreativeKind; mediaUrl: string | null;
+    performanceStatus: CreativePerformanceStatus;
+    metrics: { hookRate: number | null; holdRate: number | null; completionRate: number | null; ctr: number | null; cancellationRate: number | null; impressions: number };
+  }>) {
+    const gradeable = rows.filter((row) => row.metrics.impressions > 0);
+    const toCraftRow = (row: (typeof gradeable)[number]) => {
+      const fatiguing = row.performanceStatus === CreativePerformanceStatus.FATIGUED;
+      const signals = {
+        hookRate: row.metrics.hookRate, holdRate: row.metrics.holdRate,
+        completionRate: row.metrics.completionRate, ctr: row.metrics.ctr,
+        cancellationRate: row.metrics.cancellationRate, fatiguing,
+      };
+      const { verdict, reason } = craftVerdict(row.kind, signals);
+      return {
+        id: row.id, code: row.code, title: row.title, kind: row.kind, mediaUrl: row.mediaUrl,
+        fatiguing, hookRate: signals.hookRate, holdRate: signals.holdRate,
+        completionRate: signals.completionRate, ctr: signals.ctr,
+        cancellationRate: signals.cancellationRate, verdict, reason,
+      };
+    };
+    const byRateDesc = (key: 'hookRate' | 'ctr') =>
+      (a: ReturnType<typeof toCraftRow>, b: ReturnType<typeof toCraftRow>) => {
+        if (a[key] === null && b[key] === null) return a.code.localeCompare(b.code);
+        if (a[key] === null) return 1;
+        if (b[key] === null) return -1;
+        return (b[key] as number) - (a[key] as number);
+      };
+    return {
+      videos: gradeable.filter((row) => row.kind === CreativeKind.VIDEO).map(toCraftRow).sort(byRateDesc('hookRate')),
+      statics: gradeable.filter((row) => row.kind === CreativeKind.STATIC).map(toCraftRow).sort(byRateDesc('ctr')),
+      ungradedCount: rows.length - gradeable.length,
+    };
+  }
+
   private sumMetrics(adIds: string[], source: Map<string, MetricTotals>) { return adIds.reduce((total, adId) => this.addMetrics(total, source.get(adId) ?? emptyMetrics()), emptyMetrics()); }
   private addMetrics(target: MetricTotals, source: MetricTotals) { for (const key of METRIC_KEYS) target[key] += source[key]; return target; }
   private storeMedians(rows: Array<{ store: { id: string | null }; metrics: { conversionRate: number | null } }>) {
     const grouped = new Map<string, number[]>();
     for (const row of rows) if (row.metrics.conversionRate !== null) grouped.set(row.store.id ?? '', [...(grouped.get(row.store.id ?? '') ?? []), row.metrics.conversionRate]);
     const result = new Map<string, number>();
-    for (const [key, rates] of grouped) { rates.sort((a, b) => a - b); const middle = Math.floor(rates.length / 2); result.set(key, rates.length % 2 ? rates[middle] : (rates[middle - 1] + rates[middle]) / 2); }
+    for (const [key, rates] of grouped) { const value = median(rates); if (value !== null) result.set(key, value); }
     return result;
   }
-  private creativeScore(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, median: number | null) {
+  private creativeScore(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, storeMedian: number | null) {
     const candidates = [
       ...(kind === CreativeKind.VIDEO ? [{ value: values.hookRate, target: 0.2, weight: 0.25 }, { value: values.holdRate, target: 0.45, weight: 0.2 }] : []),
       { value: values.deliveryRate, target: 0.55, weight: 0.25 }, { value: values.ctr, target: 0.015, weight: 0.15 },
-      { value: values.conversionRate, target: median && median > 0 ? median : null, weight: 0.15 },
+      { value: values.conversionRate, target: storeMedian && storeMedian > 0 ? storeMedian : null, weight: 0.15 },
     ];
     const measured = candidates.filter((item): item is { value: number; target: number; weight: number } => item.value !== null && item.target !== null);
     const weight = measured.reduce((sum, item) => sum + item.weight, 0);
     return weight === 0 ? null : round(measured.reduce((sum, item) => sum + Math.min(item.value / item.target, 1.5) * item.weight, 0) / weight * 100, 1);
   }
-  private bottleneck(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, median: number | null) {
+  private bottleneck(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, storeMedian: number | null) {
     if (kind === CreativeKind.VIDEO && values.hookRate !== null && values.hookRate < 0.2) return 'HOOK';
     if (kind === CreativeKind.VIDEO && values.holdRate !== null && values.holdRate < 0.45) return 'HOLD';
     if (values.ctr !== null && values.ctr < 0.015) return 'CTR';
-    if (values.conversionRate !== null && median && values.conversionRate < median * 0.6) return 'ORDER_RATE';
+    if (values.conversionRate !== null && storeMedian && values.conversionRate < storeMedian * 0.6) return 'ORDER_RATE';
     if (values.deliveryRate !== null && values.deliveryRate < 0.55) return 'DELIVERY';
     return null;
   }
@@ -241,11 +384,13 @@ export class CreativeOverviewService {
     ]);
     const approved = new Set(events.filter((event) => event.toStatus === 'FOR_POSTING').map((event) => event.creativeId)).size;
     const cancelled = new Set(events.filter((event) => event.toStatus === 'CANCELLED').map((event) => event.creativeId)).size;
-    const hours = approvedCreatives.map((creative) => ((creative.approvedAt as Date).getTime() - (creative.submittedAt as Date).getTime()) / 3_600_000).sort((a, b) => a - b);
-    const middle = Math.floor(hours.length / 2); const median = !hours.length ? null : hours.length % 2 ? hours[middle] : (hours[middle - 1] + hours[middle]) / 2;
-    return { approved, cancelled, medianTurnaroundHours: median === null ? null : round(median, 1), turnaroundCount: hours.length };
+    const hours = approvedCreatives.map((creative) => ((creative.approvedAt as Date).getTime() - (creative.submittedAt as Date).getTime()) / 3_600_000);
+    const medianHours = median(hours);
+    return { approved, cancelled, medianTurnaroundHours: medianHours === null ? null : round(medianHours, 1), turnaroundCount: hours.length };
   }
-  private metric(numerator: number, denominator: number) { return { value: ratio(numerator, denominator), numerator, denominator }; }
+  private metric(guard: RateGuard, stage: string, numerator: number, denominator: number) {
+    return { value: guard.rate(stage, numerator, denominator), numerator, denominator };
+  }
   private sortRows<T extends { code: string; metrics: Record<string, unknown> }>(rows: T[], requested: CreativeOverviewSortKey, direction: 'asc' | 'desc', canViewMoney: boolean) {
     const key = !canViewMoney && ['spend', 'netMargin', 'costPerOrder', 'deliveredCostPerOrder'].includes(requested) ? 'creativeScore' : requested;
     const multiplier = direction === 'asc' ? 1 : -1;
@@ -257,6 +402,7 @@ export class CreativeOverviewService {
     const start = startDate ? new Date(`${startDate}T00:00:00.000Z`) : defaultStart; const end = endDate ? new Date(`${endDate}T23:59:59.999Z`) : defaultEnd;
     if (start > end) throw new BadRequestException('startDate must be on or before endDate');
     if ((end.getTime() - start.getTime()) / 86_400_000 > 366) throw new BadRequestException('Creative overview supports a maximum date range of 366 days');
-    return { start, end, startKey: start.toISOString().slice(0, 10), endKey: end.toISOString().slice(0, 10) };
+    const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
+    return { start, end, days, startKey: start.toISOString().slice(0, 10), endKey: end.toISOString().slice(0, 10) };
   }
 }

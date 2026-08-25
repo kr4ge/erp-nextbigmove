@@ -7,6 +7,7 @@ type Props =
   | { type: 'performance'; status: CreativePerformanceStatus };
 
 const qcTone: Record<CreativeQcStatus, string> = {
+  DRAFT: 'border-border bg-background-secondary text-muted',
   FOR_APPROVAL: 'border-warning/30 bg-warning-soft/60 text-warning',
   FOR_REVISION: 'border-destructive/30 bg-destructive-soft/40 text-destructive',
   REVISED: 'border-info/30 bg-info-soft text-info',
@@ -35,4 +36,3 @@ export function RegistryStatusPill(props: Props) {
     </span>
   );
 }
-

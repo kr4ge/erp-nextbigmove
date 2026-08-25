@@ -5,6 +5,7 @@ import type {
 } from '../_types/video-registry';
 
 export const QC_STATUS_LABELS: Record<CreativeQcStatus, string> = {
+  DRAFT: 'Draft',
   FOR_APPROVAL: 'For approval',
   FOR_REVISION: 'For revision',
   REVISED: 'Revised',

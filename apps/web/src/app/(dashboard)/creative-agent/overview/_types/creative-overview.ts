@@ -65,6 +65,76 @@ export type CreativeOverviewItem = {
   };
 };
 
+export type ScorecardBandKey = 'hookRate' | 'holdRate' | 'completionRate' | 'ctr' | 'approvalRate';
+
+export type ScorecardBand = {
+  key: ScorecardBandKey;
+  value: number | null;
+  floor: number | null;
+  score: number | null;
+  weight: number;
+};
+
+export type CreativeScorecard = {
+  scope: 'PERSONAL' | 'TEAM';
+  overall: number | null;
+  verdict: string | null;
+  bands: ScorecardBand[];
+  efficiency: {
+    approvedCount: number;
+    cancelledCount: number;
+    outputCount: number;
+    approvedPerDay: number | null;
+    quotaConfigured: boolean;
+    quotaAttainment: number | null;
+    medianTurnaroundHours: number | null;
+  };
+  qcCensus: Array<{ status: string; count: number }>;
+};
+
+export type CraftVerdict = 'SCALE' | 'REFRESH' | 'RETIRE';
+
+export type CraftBoardRow = {
+  id: string;
+  code: string;
+  title: string;
+  kind: 'VIDEO' | 'STATIC';
+  mediaUrl: string | null;
+  fatiguing: boolean;
+  hookRate: number | null;
+  holdRate: number | null;
+  completionRate: number | null;
+  ctr: number | null;
+  cancellationRate: number | null;
+  verdict: CraftVerdict;
+  reason: string;
+};
+
+export type CraftBoard = {
+  videos: CraftBoardRow[];
+  statics: CraftBoardRow[];
+  ungradedCount: number;
+};
+
+export type OverviewFloors = {
+  values: {
+    hookRate: number;
+    holdRate: number;
+    completionRate: number;
+    ctr: number;
+    cancellationRate: number;
+  };
+  provisional: boolean;
+};
+
+/** Panels whose data source does not exist in this ERP yet report themselves unavailable instead of faking data. */
+export type OverviewCapability = { available: boolean; reason?: string };
+
+export type OverviewCapabilities = {
+  callDeck: OverviewCapability;
+  landingPages: OverviewCapability;
+};
+
 export type CreativeOverviewResponse = {
   selected: Omit<CreativeOverviewParams, 'page' | 'pageSize'>;
   permissions: { canReadAll: boolean; canViewMoney: boolean };
@@ -72,7 +142,11 @@ export type CreativeOverviewResponse = {
     stores: Array<{ value: string; label: string }>;
     creators: Array<{ value: string; label: string }>;
   };
+  floors: OverviewFloors;
+  capabilities: OverviewCapabilities;
   kpis: Record<string, OverviewMetric>;
+  scorecard: CreativeScorecard;
+  craftBoard: CraftBoard;
   warnings: Array<{ code: string; severity: 'info' | 'warning'; message: string }>;
   items: CreativeOverviewItem[];
   pagination: { page: number; pageSize: number; total: number; totalPages: number };

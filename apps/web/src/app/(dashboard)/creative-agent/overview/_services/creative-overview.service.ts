@@ -9,8 +9,8 @@ export async function fetchCreativeOverview(params: CreativeOverviewParams): Pro
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const message = error.response?.data?.message;
-      throw new Error(Array.isArray(message) ? message.join(', ') : message || 'Unable to load Creative Agent overview.');
+      throw new Error(Array.isArray(message) ? message.join(', ') : message || 'Unable to load the creative dashboard.');
     }
-    throw error instanceof Error ? error : new Error('Unable to load Creative Agent overview.');
+    throw error instanceof Error ? error : new Error('Unable to load the creative dashboard.');
   }
 }

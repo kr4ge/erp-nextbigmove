@@ -34,7 +34,7 @@ export function useCreativeOverviewController() {
     setIsLoading(true);
     setError(null);
     try { setData(await fetchCreativeOverview(params)); }
-    catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Unable to load Creative Agent overview.'); }
+    catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Unable to load the creative dashboard.'); }
     finally { setIsLoading(false); }
   }, [params]);
 

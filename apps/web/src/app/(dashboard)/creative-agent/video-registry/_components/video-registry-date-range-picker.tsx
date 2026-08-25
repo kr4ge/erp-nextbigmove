@@ -14,6 +14,8 @@ type Props = {
   startDate: string;
   endDate: string;
   onChange: (range: { startDate: string; endDate: string }) => void;
+  /** Denser variant matching h-9 / rounded-lg filter rails. */
+  compact?: boolean;
 };
 
 function parseYmd(value: string): Date {
@@ -35,7 +37,7 @@ function formatLabel(value: string): string {
     .format(parseYmd(value));
 }
 
-export function VideoRegistryDateRangePicker({ startDate, endDate, onChange }: Props) {
+export function VideoRegistryDateRangePicker({ startDate, endDate, onChange, compact = false }: Props) {
   const label = startDate === endDate
     ? formatLabel(startDate)
     : `${formatLabel(startDate)} – ${formatLabel(endDate)}`;
@@ -57,7 +59,7 @@ export function VideoRegistryDateRangePicker({ startDate, endDate, onChange }: P
         primaryColor="orange"
         readOnly
         maxDate={new Date()}
-        inputClassName="h-10 w-full cursor-pointer rounded-xl border border-border bg-surface p-0 text-transparent caret-transparent placeholder:text-transparent focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10"
+        inputClassName={`${compact ? 'h-9 rounded-lg border-border/60' : 'h-10 rounded-xl border-border'} w-full cursor-pointer border bg-surface p-0 text-transparent caret-transparent placeholder:text-transparent focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10`}
         containerClassName="relative"
         popupClassName={(defaultClassName: string) => `${defaultClassName} z-50 kpi-datepicker-light`}
         displayFormat="MM/DD/YYYY"
@@ -65,10 +67,10 @@ export function VideoRegistryDateRangePicker({ startDate, endDate, onChange }: P
         toggleIcon={() => (
           <span className="flex min-w-0 items-center gap-2">
             <CalendarDays className="h-4 w-4 shrink-0" />
-            <span className="truncate text-sm-custom font-semibold">{label}</span>
+            <span className={`truncate ${compact ? 'text-xs font-medium' : 'text-sm-custom font-semibold'}`}>{label}</span>
           </span>
         )}
-        toggleClassName="absolute inset-0 flex cursor-pointer items-center justify-start rounded-xl border border-border px-3 text-foreground transition hover:border-primary/40"
+        toggleClassName={`absolute inset-0 flex cursor-pointer items-center justify-start border px-3 text-foreground transition hover:border-primary/40 ${compact ? 'rounded-lg border-border/60' : 'rounded-xl border-border'}`}
         placeholder=" "
       />
     </div>

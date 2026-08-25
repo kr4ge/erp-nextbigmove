@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Param, ParseUUIDPipe, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, HttpCode, Param, ParseUUIDPipe, Post, Request, UseGuards } from '@nestjs/common';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
-import { CreateCreativeAliasDto, LinkUnregisteredCreativeDto } from './dto/creative-alias.dto';
+import { CreateCreativeAliasDto, LinkUnregisteredCreativeDto, UnlinkMetaAdDto } from './dto/creative-alias.dto';
 import { CreativeAliasService } from './services/creative-alias.service';
 import type { CreativeActor } from './types/creative-actor.type';
 
@@ -18,6 +18,13 @@ export class CreativeAliasController {
   @Permissions('creative_agent.alias.manage')
   link(@Request() req: CreativeRequest, @Body() body: LinkUnregisteredCreativeDto) {
     return this.aliases.linkUnregistered(req.user, body);
+  }
+
+  @Post('meta-links/unlink')
+  @HttpCode(200)
+  @Permissions('creative_agent.alias.manage')
+  unlink(@Request() req: CreativeRequest, @Body() body: UnlinkMetaAdDto) {
+    return this.aliases.unlinkMetaAd(req.user, body.accountId, body.adId);
   }
 
   @Post('creatives/:id/aliases')

@@ -6,16 +6,20 @@ import { usePermissions } from '@/hooks/use-permissions';
 import {
   createVideoRegistryItem,
   fetchCreativeStores,
+  fetchCreativeReviewComments,
   fetchVideoRegistry,
   linkCreativeAlias,
   transitionCreativeStatus,
+  updateVideoRegistryItem,
 } from '../_services/video-registry.service';
 import type {
   CreativeStatusDimension,
+  CreativeReviewComment,
   CreativeStoreOption,
   CreateVideoRegistryInput,
   GetVideoRegistryParams,
   LinkCreativeAliasInput,
+  UpdateVideoRegistryInput,
   UnregisteredMetaCreative,
   VideoRegistryItem,
   VideoRegistryResponse,
@@ -24,10 +28,11 @@ import type {
 
 const SEARCH_DEBOUNCE_MS = 300;
 
-export function useVideoRegistryController() {
+export function useVideoRegistryController(initialQuery = '') {
   const permissionsQuery = usePermissions();
-  const [params, setParams] = useState<GetVideoRegistryParams>(DEFAULT_VIDEO_REGISTRY_PARAMS);
-  const [searchText, setSearchText] = useState(DEFAULT_VIDEO_REGISTRY_PARAMS.query);
+  const normalizedInitialQuery = initialQuery.trim();
+  const [params, setParams] = useState<GetVideoRegistryParams>(() => ({ ...DEFAULT_VIDEO_REGISTRY_PARAMS, query: normalizedInitialQuery }));
+  const [searchText, setSearchText] = useState(normalizedInitialQuery);
   const [data, setData] = useState<VideoRegistryResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +41,9 @@ export function useVideoRegistryController() {
   const [registrationSeed, setRegistrationSeed] = useState<UnregisteredMetaCreative | null>(null);
   const [linkingItem, setLinkingItem] = useState<UnregisteredMetaCreative | null>(null);
   const [reviewingItem, setReviewingItem] = useState<VideoRegistryItem | null>(null);
+  const [editingItem, setEditingItem] = useState<VideoRegistryItem | null>(null);
+  const [reviewComments, setReviewComments] = useState<CreativeReviewComment[]>([]);
+  const [isLoadingReviewComments, setIsLoadingReviewComments] = useState(false);
   const [createdItem, setCreatedItem] = useState<VideoRegistryItem | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const [stores, setStores] = useState<CreativeStoreOption[]>([]);
@@ -133,14 +141,49 @@ export function useVideoRegistryController() {
     }
   }, [loadRegistry]);
 
+  const openReview = useCallback(async (item: VideoRegistryItem) => {
+    setReviewingItem(item);
+    setReviewComments([]);
+    setIsLoadingReviewComments(true);
+    try {
+      setReviewComments(await fetchCreativeReviewComments(item.id));
+    } catch {
+      setReviewComments([]);
+    } finally {
+      setIsLoadingReviewComments(false);
+    }
+  }, []);
+
+  const closeReview = useCallback(() => {
+    setReviewingItem(null);
+    setReviewComments([]);
+  }, []);
+
+  const openEdit = useCallback((item: VideoRegistryItem) => {
+    setReviewingItem(null);
+    setReviewComments([]);
+    setEditingItem(item);
+  }, []);
+
+  const updateCreative = useCallback(async (id: string, input: UpdateVideoRegistryInput) => {
+    setIsMutating(true);
+    try {
+      await updateVideoRegistryItem(id, input);
+      setEditingItem(null);
+      await loadRegistry({ silent: true });
+    } finally {
+      setIsMutating(false);
+    }
+  }, [loadRegistry]);
+
   const transitionStatus = useCallback(async (creativeId: string, dimension: CreativeStatusDimension, toStatus: string, reason?: string) => {
     setIsMutating(true);
     try {
       await transitionCreativeStatus(creativeId, dimension, toStatus, reason);
-      setReviewingItem(null);
+      closeReview();
       await loadRegistry({ silent: true });
     } finally { setIsMutating(false); }
-  }, [loadRegistry]);
+  }, [closeReview, loadRegistry]);
 
   const hasActiveFilters = useMemo(
     () => Boolean(
@@ -161,6 +204,9 @@ export function useVideoRegistryController() {
     registrationSeed,
     linkingItem,
     reviewingItem,
+    editingItem,
+    reviewComments,
+    isLoadingReviewComments,
     createdItem,
     isMutating,
     stores,
@@ -174,10 +220,14 @@ export function useVideoRegistryController() {
     openRegistration,
     closeRegistration,
     setLinkingItem,
-    setReviewingItem,
+    openReview,
+    openEdit,
+    closeReview,
+    setEditingItem,
     registerVideo,
     linkAlias,
     transitionStatus,
+    updateCreative,
     retry: loadRegistry,
   };
 }

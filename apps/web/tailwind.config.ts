@@ -62,6 +62,7 @@ const config: Config = {
           soft: 'rgb(var())',
           foreground: 'rgb(var(--muted-foreground))',
         },
+        faint: 'rgb(var(--faint))',
         popover: {
           DEFAULT: 'rgb(var(--popover))',
           foreground: 'rgb(var(--popover-foreground))',
@@ -75,6 +76,9 @@ const config: Config = {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+      },
+      boxShadow: {
+        card: 'var(--shadow-card)',
       },
       fontSize: {
         'xs-tight': '10px',
