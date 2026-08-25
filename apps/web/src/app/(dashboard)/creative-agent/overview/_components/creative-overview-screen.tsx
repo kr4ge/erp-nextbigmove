@@ -8,24 +8,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { PageHeader } from '@/components/ui/page-header';
 import { VideoRegistryDateRangePicker } from '../../video-registry/_components/video-registry-date-range-picker';
 import { useCreativeOverviewController } from '../_hooks/use-creative-overview-controller';
-import type { CreativeOverviewItem, OverviewMetric, OverviewSortKey } from '../_types/creative-overview';
-import { formatCount, formatHours, formatPercent } from '../_utils/creative-overview-format';
+import type { CreativeOverviewItem, OverviewSortKey } from '../_types/creative-overview';
+import { formatCount, formatPercent } from '../_utils/creative-overview-format';
 import { CreativeCraftBoard } from './creative-craft-board';
 import { CreativeLeaderboard } from './creative-leaderboard';
 import { CreativeScorecard } from './creative-scorecard';
-import { PanelHeader, StatTile } from './overview-ui';
+import { PanelHeader } from './overview-ui';
 import { creativeQueryHref } from '../../video-registry/_utils/creative-navigation';
 
 const selectClass = 'h-9 rounded-lg border border-border/60 bg-surface px-2.5 text-xs font-medium text-foreground outline-none transition hover:border-border focus:border-primary/40 focus:ring-2 focus:ring-primary/10';
-
-type KpiDefinition = {
-  title: string;
-  metric: OverviewMetric | undefined;
-  format: (value: number | null | undefined) => string;
-  info: string;
-  /** Floor for the healthy tone; a scoreboard, not an alarm — nothing renders red here. */
-  floor?: number;
-};
 
 function DetailDialog({ item, showAssets, onClose }: { item: CreativeOverviewItem; showAssets: boolean; onClose: () => void }) {
   const metrics = [
@@ -75,17 +66,6 @@ export function CreativeOverviewScreen() {
   const { data, params } = controller;
   const [selected, setSelected] = useState<CreativeOverviewItem | null>(null);
   const floors = data?.floors;
-  const kpis: KpiDefinition[] = [
-    { title: 'Hook', metric: data?.kpis.hookRate, format: formatPercent, info: '3-second plays ÷ video impressions across every creative in the period.', floor: floors?.values.hookRate },
-    { title: 'Hold', metric: data?.kpis.holdRate, format: formatPercent, info: 'ThruPlays ÷ 3-second plays.', floor: floors?.values.holdRate },
-    { title: 'Completion', metric: data?.kpis.completionRate, format: formatPercent, info: 'ThruPlays ÷ video impressions.', floor: floors?.values.completionRate },
-    { title: 'CTR', metric: data?.kpis.ctr, format: formatPercent, info: 'Link clicks ÷ impressions.', floor: floors?.values.ctr },
-    { title: 'CVR', metric: data?.kpis.cvr, format: formatPercent, info: 'Attributed orders ÷ link clicks — did the click become an order?' },
-    { title: 'Output', metric: data?.kpis.output, format: formatCount, info: 'Creatives registered in the period.' },
-    { title: 'Approval', metric: data?.kpis.approvalRate, format: (value) => formatPercent(value, 0), info: 'Approved ÷ (approved + cancelled) in QC.' },
-    { title: 'Turnaround', metric: data?.kpis.medianTurnaroundHours, format: formatHours, info: 'Median hours from submission to approval.' },
-  ];
-
   return (
     <div className="mx-auto max-w-screen-xl">
       <PageHeader
@@ -149,23 +129,6 @@ export function CreativeOverviewScreen() {
 
         <CreativeScorecard scorecard={data?.scorecard} floors={floors} isLoading={controller.isLoading} />
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
-          {kpis.map((kpi) => {
-            const value = kpi.metric?.value ?? null;
-            const healthy = kpi.floor != null && value != null && value >= kpi.floor;
-            return (
-              <StatTile
-                key={kpi.title}
-                label={kpi.title}
-                info={kpi.info}
-                value={kpi.format(value)}
-                tone={healthy ? 'good' : 'neutral'}
-                compact
-              />
-            );
-          })}
-        </div>
-
         <section className="panel panel-content shadow-card transition-colors hover:border-border/40">
           <PanelHeader
             title={data?.permissions.canReadAll ? 'Leaderboard' : 'My creative performance'}
@@ -190,6 +153,10 @@ export function CreativeOverviewScreen() {
                   {params.lens === 'CREATIVE' ? (
                     <>
                       <option value="creativeScore:desc">Creative score</option>
+                      <option value="orders:desc">Orders</option>
+                      {/* Ascending: AR% is a cost ratio, so the best sit at the top. */}
+                      <option value="arPct:asc">AR% — lowest first</option>
+                      <option value="spend:desc">Ad Spent</option>
                       <option value="hookRate:desc">Hook rate</option>
                       <option value="holdRate:desc">Hold rate</option>
                       <option value="ctr:desc">CTR</option>
@@ -198,7 +165,8 @@ export function CreativeOverviewScreen() {
                     <>
                       <option value="netMargin:desc">Net margin</option>
                       <option value="orders:desc">Orders</option>
-                      <option value="spend:desc">Spend</option>
+                      <option value="arPct:asc">AR% — lowest first</option>
+                      <option value="spend:desc">Ad Spent</option>
                     </>
                   )}
                   <option value="code:asc">Code A–Z</option>

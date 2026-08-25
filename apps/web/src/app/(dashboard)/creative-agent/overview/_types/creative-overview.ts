@@ -1,5 +1,5 @@
 export type OverviewLens = 'CREATIVE' | 'BUSINESS';
-export type OverviewSortKey = 'creativeScore' | 'spend' | 'orders' | 'netMargin' | 'deliveryRate'
+export type OverviewSortKey = 'creativeScore' | 'spend' | 'arPct' | 'orders' | 'netMargin' | 'deliveryRate'
   | 'costPerOrder' | 'deliveredCostPerOrder' | 'cancellationRate' | 'rtsRate' | 'frequency'
   | 'hookRate' | 'holdRate' | 'ctr' | 'lpRate' | 'conversionRate' | 'code';
 
@@ -35,6 +35,8 @@ export type CreativeOverviewItem = {
   adCount: number;
   topAd: { adId: string; adName: string; campaignName: string; adsetId: string; spend: number } | null;
   testing: boolean;
+  /** Met the owner's rule: 10+ orders at or under the AR% ceiling. */
+  isWinner: boolean;
   rank: number | null;
   medal: number | null;
   metrics: {
@@ -55,7 +57,8 @@ export type CreativeOverviewItem = {
     impressions: number;
     linkClicks: number;
     landingPageViews: number;
-    spend?: number;
+    spend: number;
+    arPct: number | null;
     orders: number;
     deliveredOrders: number;
     costPerOrder?: number | null;
@@ -65,7 +68,17 @@ export type CreativeOverviewItem = {
   };
 };
 
-export type ScorecardBandKey = 'hookRate' | 'holdRate' | 'completionRate' | 'ctr' | 'approvalRate';
+export type ScorecardBandKey = 'hookRate' | 'holdRate' | 'completionRate' | 'ctr';
+export type ScorecardKpiKey = 'dailySpend' | 'adSpendRatio' | 'creativeOutput';
+
+/** One of the three weighted KPIs that produce the 1–10 score. */
+export type ScorecardKpiBand = {
+  key: ScorecardKpiKey;
+  value: number | null;
+  target: number;
+  score: number | null;
+  weight: number;
+};
 
 export type ScorecardBand = {
   key: ScorecardBandKey;
@@ -80,6 +93,7 @@ export type CreativeScorecard = {
   overall: number | null;
   verdict: string | null;
   bands: ScorecardBand[];
+  kpiBands: ScorecardKpiBand[];
   efficiency: {
     approvedCount: number;
     cancelledCount: number;
@@ -88,6 +102,20 @@ export type CreativeScorecard = {
     quotaConfigured: boolean;
     quotaAttainment: number | null;
     medianTurnaroundHours: number | null;
+  };
+  production: {
+    published: number;
+    publishedVideos: number;
+    publishedStatics: number;
+    winners: number;
+    /** winners ÷ published; null when nothing was published in the range. */
+    winRate: number | null;
+    adSpend: number;
+    arPct: number | null;
+    /** How many of the scoped creatives are linked to a Meta ad at all. */
+    linkedCount: number;
+    scopedCount: number;
+    rule: { minOrders: number; arCeiling: number; provisional: boolean };
   };
   revisionCensus: Array<{ status: string; count: number }>;
 };
@@ -125,6 +153,13 @@ export type OverviewFloors = {
     cancellationRate: number;
   };
   provisional: boolean;
+  scorecard?: {
+    dailySpend: number;
+    adSpendRatio: number;
+    publishedPerPeriod: number;
+    winRate: number;
+    outputProvisional: boolean;
+  };
 };
 
 /** Panels whose data source does not exist in this ERP yet report themselves unavailable instead of faking data. */

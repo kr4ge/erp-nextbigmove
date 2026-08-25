@@ -43,6 +43,12 @@ export type VideoRegistryMetrics = {
   linkClicks: number;
   videoPlays3s: number | null;
   thruPlays: number | null;
+  /** Reconciled POS orders attributed to this creative's linked ads. */
+  orders: number;
+  /** Spend ÷ sales net of cancelled/RTS/restocked/abandoned. A cost ratio, so it may exceed 1. */
+  arPct: number | null;
+  /** Orders ÷ link clicks. */
+  cvr: number | null;
   hookRate: number | null;
   holdRate: number | null;
   completionRate: number | null;

@@ -278,6 +278,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     // through Performance and Assets instead.
     const canShowVideoRegistry = canReadCreative;
     const canShowPerformance = canReadCreativeAll && canReviewCreative;
+    // Assets is the review-everyone's-work view, so it hangs off read_all. A
+    // creative with only `read` already has Video Registry, which lists the
+    // same library — showing both put the same shelf on the nav twice.
+    const canShowAssets = canReadCreativeAll;
 
     return baseNavigation.flatMap((link) => {
       if (link.href !== '/analytics') {
@@ -301,7 +305,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           return hasReports ? [link] : [];
         }
         if (link.href === '/performance') return canShowCreativeWorkspace && canShowPerformance ? [link] : [];
-        if (link.href === '/assets') return canShowCreativeWorkspace && (canReadCreative || canReadCreativeAll) ? [link] : [];
+        if (link.href === '/assets') return canShowCreativeWorkspace && canShowAssets ? [link] : [];
         if (link.href === '/video-registry') return canShowCreativeWorkspace && canShowVideoRegistry ? [link] : [];
         if (link.href !== '/integrations') return [link];
 

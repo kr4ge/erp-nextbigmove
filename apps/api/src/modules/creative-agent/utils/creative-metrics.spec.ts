@@ -61,7 +61,7 @@ describe('creative metric helpers', () => {
     expect(scorecardVerdict(7.6)).toMatch(/Strong/);
     expect(scorecardVerdict(6.5)).toMatch(/Solid/);
     expect(scorecardVerdict(4.5)).toMatch(/Mixed/);
-    expect(scorecardVerdict(2)).toMatch(/Below the bar/);
+    expect(scorecardVerdict(2)).toMatch(/Below target/);
     expect(scorecardVerdict(null)).toBeNull();
   });
 
