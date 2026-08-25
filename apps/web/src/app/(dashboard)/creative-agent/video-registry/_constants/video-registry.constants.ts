@@ -1,17 +1,12 @@
 import type {
   CreativePerformanceStatus,
-  CreativeQcStatus,
   GetVideoRegistryParams,
 } from '../_types/video-registry';
 
-export const QC_STATUS_LABELS: Record<CreativeQcStatus, string> = {
-  DRAFT: 'Draft',
-  FOR_APPROVAL: 'For approval',
-  FOR_REVISION: 'For revision',
-  REVISED: 'Revised',
-  FOR_POSTING: 'For posting',
-  POSTED: 'Posted',
-  CANCELLED: 'Cancelled',
+export const REVISION_STATE_LABELS: Record<string, string> = {
+  NONE: 'No requests',
+  NEEDS_REVISION: 'Needs revision',
+  RESOLVED: 'Revision resolved',
 };
 
 export const PERFORMANCE_STATUS_LABELS: Record<CreativePerformanceStatus, string> = {
@@ -60,7 +55,7 @@ export const DEFAULT_VIDEO_REGISTRY_PARAMS: GetVideoRegistryParams = {
   accountId: '',
   storeId: '',
   creatorId: '',
-  qcStatus: '',
+  revisionState: '',
   performanceStatus: '',
   page: 1,
   pageSize: 10,

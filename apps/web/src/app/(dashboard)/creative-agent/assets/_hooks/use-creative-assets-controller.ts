@@ -7,14 +7,14 @@ import type { UpdateVideoRegistryInput } from '../../video-registry/_types/video
 import { addCreativeAssetComment, fetchCreativeAssetComments, fetchCreativeAssets } from '../_services/creative-assets.service';
 import type { CreativeAsset, CreativeAssetComment, CreativeAssetsParams, CreativeAssetsResponse, CreativeAssetsView } from '../_types/creative-assets';
 
-const DEFAULT_PARAMS: CreativeAssetsParams = { query: '', storeId: '', creatorId: '', creativeId: '', qcStatus: '', queue: '', page: 1, pageSize: 12 };
+const DEFAULT_PARAMS: CreativeAssetsParams = { query: '', storeId: '', creatorId: '', creativeId: '', revisionState: '', queue: '', page: 1, pageSize: 12 };
 
-const QC_STATUS_VALUES = ['DRAFT', 'FOR_APPROVAL', 'FOR_REVISION', 'REVISED', 'FOR_POSTING', 'POSTED', 'CANCELLED'];
+const REVISION_STATE_VALUES = ['NONE', 'NEEDS_REVISION', 'RESOLVED'];
 
 export type CreativeAssetsInitialFilters = {
   query?: string;
   creativeId?: string;
-  qcStatus?: string;
+  revisionState?: string;
   queue?: string;
 };
 
@@ -28,8 +28,8 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
     ...DEFAULT_PARAMS,
     query: normalizedInitialQuery,
     creativeId: initial.creativeId ?? '',
-    qcStatus: QC_STATUS_VALUES.includes(initial.qcStatus ?? '')
-      ? (initial.qcStatus as CreativeAssetsParams['qcStatus'])
+    revisionState: REVISION_STATE_VALUES.includes(initial.revisionState ?? '')
+      ? (initial.revisionState as CreativeAssetsParams['revisionState'])
       : '',
     queue: initial.queue === 'REVIEW' ? 'REVIEW' : '',
   }));
@@ -69,8 +69,8 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
   useEffect(() => {
     if (appliedReviewerDefault.current || !canReview || !canReadAllPermission) return;
     appliedReviewerDefault.current = true;
-    if (initial.qcStatus || initial.queue || initial.creativeId || normalizedInitialQuery) return;
-    setParams((current) => (current.qcStatus || current.queue ? current : { ...current, queue: 'REVIEW', page: 1 }));
+    if (initial.revisionState || initial.queue || initial.creativeId || normalizedInitialQuery) return;
+    setParams((current) => (current.revisionState || current.queue ? current : { ...current, queue: 'REVIEW', page: 1 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canReview, canReadAllPermission]);
 
@@ -118,7 +118,7 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
   const transition = useCallback(async (toStatus: string, reason?: string) => {
     if (!selected) return;
     setIsMutating(true);
-    try { await transitionCreativeStatus(selected.id, 'QC', toStatus, reason); setSelected(null); setComments([]); await load(true); }
+    try { await transitionCreativeStatus(selected.id, 'REVISION', toStatus, reason); setSelected(null); setComments([]); await load(true); }
     finally { setIsMutating(false); }
   }, [load, selected]);
 

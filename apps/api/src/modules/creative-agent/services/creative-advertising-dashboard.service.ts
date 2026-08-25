@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CreativeQcStatus, CreativeStatusDimension, Prisma } from '@prisma/client';
+import { CreativeRevisionState, CreativeStatusDimension, Prisma } from '@prisma/client';
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
@@ -73,7 +73,7 @@ export class CreativeAdvertisingDashboardService {
       filters,
       creators,
       videoTotals,
-      reviewPipeline,
+      revisionPipeline,
       calendar,
       trend,
       freshness,
@@ -87,7 +87,7 @@ export class CreativeAdvertisingDashboardService {
         select: { createdBy: { select: { id: true, firstName: true, lastName: true, email: true } } },
       }),
       this.loadVideoTotals(tenantId, range, query.accountId, scopedAdIds),
-      this.loadReviewPipeline(tenantId, range, creativeScopeWhere),
+      this.loadRevisionPipeline(tenantId, range, creativeScopeWhere),
       this.loadCalendar(tenantId, range, query.accountId, scopedAdIds, creativeScopeWhere),
       this.loadTrend(tenantId, range, query.accountId, scopedAdIds),
       this.loadFreshness(tenantId),
@@ -161,7 +161,7 @@ export class CreativeAdvertisingDashboardService {
       verdictsSuppressed: scope.verdictsSuppressed,
       unlinkedSpend: scope.unlinkedSpend,
       freshness,
-      oldestWaitingHours: reviewPipeline.oldestWaitingHours,
+      oldestWaitingHours: revisionPipeline.oldestWaitingHours,
       todayKey: range.todayKey,
     });
 
@@ -186,7 +186,7 @@ export class CreativeAdvertisingDashboardService {
       },
       alerts,
       kpis,
-      reviewPipeline: reviewPipeline.summary,
+      revisionPipeline: revisionPipeline.summary,
       calendar,
       trend,
       needsAction,
@@ -256,78 +256,70 @@ export class CreativeAdvertisingDashboardService {
     };
   }
 
-  private async loadReviewPipeline(
+  /**
+   * Feedback pipeline. Approval no longer exists — a linked creative is
+   * already running — so this tracks open change requests and how quickly
+   * they get resolved.
+   */
+  private async loadRevisionPipeline(
     tenantId: string,
     range: AdvertisingDateRange,
     creativeScopeWhere: Prisma.CreativeWhereInput,
   ) {
-    const [statusCounts, postedEvents, decisionEvents, approvedCreatives, oldestWaiting] = await Promise.all([
+    const [stateCounts, requestedEvents, resolvedCreatives, oldestOpen, commentedCount] = await Promise.all([
       this.prisma.creative.groupBy({
-        by: ['qcStatus'],
-        where: {
-          ...creativeScopeWhere,
-          qcStatus: { in: [CreativeQcStatus.FOR_APPROVAL, CreativeQcStatus.REVISED, CreativeQcStatus.FOR_POSTING] },
-        },
+        by: ['revisionState'],
+        where: creativeScopeWhere,
         _count: { _all: true },
       }),
       this.prisma.creativeStatusEvent.findMany({
         where: {
           tenantId,
-          dimension: CreativeStatusDimension.QC,
-          toStatus: 'POSTED',
+          dimension: CreativeStatusDimension.REVISION,
+          toStatus: 'NEEDS_REVISION',
           createdAt: { gte: range.start, lte: range.end },
           creative: creativeScopeWhere,
         },
         select: { creativeId: true },
       }),
-      this.prisma.creativeStatusEvent.findMany({
-        where: {
-          tenantId,
-          dimension: CreativeStatusDimension.QC,
-          toStatus: { in: ['FOR_POSTING', 'CANCELLED'] },
-          createdAt: { gte: range.start, lte: range.end },
-          creative: creativeScopeWhere,
-        },
-        select: { creativeId: true, toStatus: true },
-      }),
       this.prisma.creative.findMany({
         where: {
           ...creativeScopeWhere,
-          approvedAt: { gte: range.start, lte: range.end },
-          submittedAt: { not: null },
+          revisionResolvedAt: { gte: range.start, lte: range.end },
+          revisionRequestedAt: { not: null },
         },
-        select: { submittedAt: true, approvedAt: true },
+        select: { revisionRequestedAt: true, revisionResolvedAt: true },
       }),
       this.prisma.creative.findFirst({
         where: {
           ...creativeScopeWhere,
-          qcStatus: { in: [CreativeQcStatus.FOR_APPROVAL, CreativeQcStatus.REVISED] },
-          submittedAt: { not: null },
+          revisionState: CreativeRevisionState.NEEDS_REVISION,
+          revisionRequestedAt: { not: null },
         },
-        orderBy: { submittedAt: 'asc' },
-        select: { submittedAt: true },
+        orderBy: { revisionRequestedAt: 'asc' },
+        select: { revisionRequestedAt: true },
+      }),
+      this.prisma.creative.count({
+        where: { ...creativeScopeWhere, reviewComments: { some: {} } },
       }),
     ]);
-    const count = (status: CreativeQcStatus) =>
-      statusCounts.find((row) => row.qcStatus === status)?._count._all ?? 0;
-    const approved = new Set(decisionEvents.filter((event) => event.toStatus === 'FOR_POSTING').map((event) => event.creativeId)).size;
-    const cancelled = new Set(decisionEvents.filter((event) => event.toStatus === 'CANCELLED').map((event) => event.creativeId)).size;
-    const hours = approvedCreatives.map((creative) =>
-      ((creative.approvedAt as Date).getTime() - (creative.submittedAt as Date).getTime()) / 3_600_000);
+    const count = (state: CreativeRevisionState) =>
+      stateCounts.find((row) => row.revisionState === state)?._count._all ?? 0;
+    const hours = resolvedCreatives.map((creative) =>
+      ((creative.revisionResolvedAt as Date).getTime() - (creative.revisionRequestedAt as Date).getTime()) / 3_600_000);
     const medianHours = median(hours);
-    const oldestWaitingHours = oldestWaiting?.submittedAt
-      ? (Date.now() - oldestWaiting.submittedAt.getTime()) / 3_600_000
+    const oldestWaitingHours = oldestOpen?.revisionRequestedAt
+      ? (Date.now() - oldestOpen.revisionRequestedAt.getTime()) / 3_600_000
       : null;
     return {
       summary: {
-        awaitingReview: count(CreativeQcStatus.FOR_APPROVAL),
-        revised: count(CreativeQcStatus.REVISED),
-        readyForPosting: count(CreativeQcStatus.FOR_POSTING),
-        postedInPeriod: new Set(postedEvents.map((event) => event.creativeId)).size,
-        medianTurnaroundHours: medianHours === null ? null : round(medianHours, 1),
-        approvalRate: approved + cancelled > 0 ? round(approved / (approved + cancelled)) : null,
-        approvedCount: approved,
-        cancelledCount: cancelled,
+        needsRevision: count(CreativeRevisionState.NEEDS_REVISION),
+        resolved: count(CreativeRevisionState.RESOLVED),
+        noRequests: count(CreativeRevisionState.NONE),
+        requestedInPeriod: new Set(requestedEvents.map((event) => event.creativeId)).size,
+        resolvedInPeriod: resolvedCreatives.length,
+        medianResolutionHours: medianHours === null ? null : round(medianHours, 1),
+        withFeedback: commentedCount,
       },
       oldestWaitingHours,
     };

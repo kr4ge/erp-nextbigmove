@@ -1,18 +1,12 @@
-export type CreativeQcStatus =
-  | "DRAFT"
-  | "FOR_APPROVAL"
-  | "FOR_REVISION"
-  | "REVISED"
-  | "FOR_POSTING"
-  | "POSTED"
-  | "CANCELLED";
+/** Advertising's request-for-changes signal — not an approval gate. */
+export type CreativeRevisionState = "NONE" | "NEEDS_REVISION" | "RESOLVED";
 export type CreativePerformanceStatus =
   | "DRAFT"
   | "LIVE"
   | "WINNER"
   | "FATIGUED"
   | "RETIRED";
-export type CreativeStatusDimension = "QC" | "PERFORMANCE";
+export type CreativeStatusDimension = "REVISION" | "PERFORMANCE";
 export type VideoRegistryView = "table" | "tiles";
 export type CreativeKind = "VIDEO" | "STATIC";
 export type VideoRegistrySortKey =
@@ -79,9 +73,12 @@ export type VideoRegistryItem = {
   script: string | null;
   notes: string | null;
   mediaUrl: string | null;
+  /** Signed URL for the cached post cover, when captured. */
+  thumbnailUrl?: string | null;
+  thumbnailIsVideo?: boolean;
   aliases: string[];
   aliasRecords?: Array<{ id: string; alias: string; createdAt: string }>;
-  qcStatus: CreativeQcStatus;
+  revisionState: CreativeRevisionState;
   performanceStatus: CreativePerformanceStatus;
   metrics: VideoRegistryMetrics;
   submittedAt?: string | null;
@@ -114,7 +111,7 @@ export type VideoRegistryFilterOptions = {
   stores: RegistryOption[];
   creators: RegistryOption[];
   accounts: RegistryOption[];
-  qcStatuses: RegistryOption[];
+  revisionStates: RegistryOption[];
   performanceStatuses: RegistryOption[];
 };
 export type GetVideoRegistryParams = {
@@ -125,7 +122,7 @@ export type GetVideoRegistryParams = {
   accountId: string;
   storeId: string;
   creatorId: string;
-  qcStatus: "" | CreativeQcStatus;
+  revisionState: "" | CreativeRevisionState;
   performanceStatus: "" | CreativePerformanceStatus;
   page: number;
   pageSize: number;

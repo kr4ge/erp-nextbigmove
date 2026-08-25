@@ -11,7 +11,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { CreativeKind, CreativePerformanceStatus, CreativeQcStatus } from '@prisma/client';
+import { CreativeKind, CreativePerformanceStatus, CreativeRevisionState } from '@prisma/client';
 
 export const CREATIVE_SORT_KEYS = ['code', 'title', 'createdAt', 'spend', 'impressions', 'hookRate', 'holdRate', 'ctr'] as const;
 export type CreativeSortKey = (typeof CREATIVE_SORT_KEYS)[number];
@@ -53,8 +53,8 @@ export class ListCreativeLibraryQueryDto {
 
   @IsOptional()
   @Transform(({ value }) => value === '' ? undefined : value)
-  @IsEnum(CreativeQcStatus)
-  qcStatus?: CreativeQcStatus;
+  @IsEnum(CreativeRevisionState)
+  revisionState?: CreativeRevisionState;
 
   @IsOptional()
   @Transform(({ value }) => value === '' ? undefined : value)

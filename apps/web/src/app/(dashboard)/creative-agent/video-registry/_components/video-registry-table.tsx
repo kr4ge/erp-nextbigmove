@@ -52,7 +52,7 @@ export function VideoRegistryTable({ items, params, actionLabel, onSort, onRevie
           <tbody className="bg-surface">
             {items.map((item) => (
               <tr key={item.id} className="transition hover:bg-background-secondary/50 [&>td]:border-t [&>td]:border-border">
-                <td className="px-5 py-3.5"><DriveThumbnail compact mediaUrl={item.mediaUrl} title={item.title} onClick={() => onReview(item)} /></td>
+                <td className="px-5 py-3.5"><DriveThumbnail compact mediaUrl={item.mediaUrl} title={item.title} cachedThumbnailUrl={item.thumbnailUrl} isVideo={item.thumbnailIsVideo} onClick={() => onReview(item)} /></td>
                 <td className="max-w-xs px-5 py-3.5">
                   <button type="button" onClick={() => onReview(item)} className="block max-w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                     <span className="block truncate font-semibold text-foreground">{item.title}</span>
@@ -67,7 +67,7 @@ export function VideoRegistryTable({ items, params, actionLabel, onSort, onRevie
                   <span className="block whitespace-nowrap font-semibold text-foreground">{item.creator.name}</span>
                   <span className="mt-1 block max-w-48 truncate text-xs text-muted">{item.store.name}</span>
                 </td>
-                <td className="px-5 py-3.5"><RegistryStatusPill type="qc" status={item.qcStatus} /></td>
+                <td className="px-5 py-3.5">{item.revisionState !== 'NONE' ? <RegistryStatusPill type="revision" status={item.revisionState} /> : <span className="text-xs text-muted">—</span>}</td>
                 <td className="px-5 py-3.5"><RegistryStatusPill type="performance" status={item.performanceStatus} /></td>
                 <td className="whitespace-nowrap px-5 py-3.5 text-right font-semibold text-foreground">{formatCompactCurrency(item.metrics.spend)}</td>
                 <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{formatRate(item.metrics.hookRate)}</td>

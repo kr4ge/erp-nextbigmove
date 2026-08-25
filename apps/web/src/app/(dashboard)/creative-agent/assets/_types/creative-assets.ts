@@ -1,4 +1,4 @@
-import type { CreativeKind, CreativePerformanceStatus, CreativeQcStatus } from '../../video-registry/_types/video-registry';
+import type { CreativeKind, CreativePerformanceStatus, CreativeRevisionState } from '../../video-registry/_types/video-registry';
 
 export type CreativeAsset = {
   id: string;
@@ -10,7 +10,9 @@ export type CreativeAsset = {
   hookType: string | null;
   script: string | null;
   notes: string | null;
-  qcStatus: CreativeQcStatus;
+  revisionState: CreativeRevisionState;
+  revisionRequestedAt: string | null;
+  revisionResolvedAt: string | null;
   performanceStatus: CreativePerformanceStatus;
   creator: { id: string; name: string; avatar: string | null };
   store: { id: string | null; name: string };
@@ -19,6 +21,9 @@ export type CreativeAsset = {
   lastCommentAt: string | null;
   linked: boolean;
   metaAdIds: string[];
+  /** Signed URL for the cached Facebook post cover, when one was captured. */
+  thumbnailUrl: string | null;
+  thumbnailIsVideo: boolean;
   submittedAt: string | null;
   approvedAt: string | null;
   createdAt: string;
@@ -38,7 +43,7 @@ export type CreativeAssetsParams = {
   storeId: string;
   creatorId: string;
   creativeId: string;
-  qcStatus: '' | CreativeQcStatus;
+  revisionState: '' | CreativeRevisionState;
   queue: '' | 'REVIEW';
   page: number;
   pageSize: number;
@@ -50,7 +55,7 @@ export type CreativeAssetsResponse = {
   filters: {
     stores: Array<{ value: string; label: string }>;
     creators: Array<{ value: string; label: string }>;
-    statuses: Array<{ value: CreativeQcStatus; label: string }>;
+    revisionStates: Array<{ value: CreativeRevisionState; label: string }>;
   };
   summary: Record<string, number>;
   items: CreativeAsset[];

@@ -29,7 +29,10 @@ function createHarness(permissions: string[]) {
       findMany: jest.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
     },
   };
-  return { service: new CreativeAssetsService(prisma as never, access), prisma };
+  const mediaAssets = {
+    createSignedAssetUrl: jest.fn<() => Promise<string | null>>().mockResolvedValue(null),
+  } as never;
+  return { service: new CreativeAssetsService(prisma as never, access, mediaAssets), prisma };
 }
 
 const baseQuery = { page: 1, pageSize: 12 };
@@ -65,13 +68,13 @@ describe('CreativeAssetsService access', () => {
       .rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('narrows the REVIEW queue to reviewer-actionable states, oldest first', async () => {
+  it('narrows the REVIEW queue to open change requests, oldest first', async () => {
     const { service, prisma } = createHarness(['creative_agent.read_all', 'creative_agent.review']);
     await service.list({ userId: 'user-1', tenantId: 'tenant-1' }, { ...baseQuery, queue: 'REVIEW' } as never);
     const call = (prisma.creative.findMany.mock.calls as unknown as Array<[{
-      where: { qcStatus: { in: string[] } }; orderBy: unknown[];
+      where: { revisionState: { in: string[] } }; orderBy: unknown[];
     }]>)[0][0];
-    expect(call.where.qcStatus.in).toEqual(['FOR_APPROVAL', 'REVISED', 'FOR_POSTING']);
-    expect(call.orderBy).toEqual([{ submittedAt: 'asc' }, { code: 'asc' }]);
+    expect(call.where.revisionState.in).toEqual(['NEEDS_REVISION']);
+    expect(call.orderBy).toEqual([{ revisionRequestedAt: 'asc' }, { code: 'asc' }]);
   });
 });

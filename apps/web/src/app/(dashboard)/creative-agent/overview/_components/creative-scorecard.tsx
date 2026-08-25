@@ -7,7 +7,7 @@ import {
   formatPercent,
   formatScore,
   PILL_TONE_CLASS,
-  QC_STATUS_META,
+  REVISION_STATE_META,
   RATE_TONE_TEXT,
   type RateTone,
 } from '../_utils/creative-overview-format';
@@ -18,10 +18,10 @@ const BAND_LABELS: Record<ScorecardBandKey, { label: string; info: string }> = {
   holdRate: { label: 'Hold', info: 'ThruPlays ÷ 3-second plays.' },
   completionRate: { label: 'Completion', info: 'ThruPlays ÷ video impressions.' },
   ctr: { label: 'CTR', info: 'Link clicks ÷ impressions.' },
-  approvalRate: { label: 'Approval rate', info: 'Approved ÷ (approved + cancelled) in QC — finished decisions only.' },
+  approvalRate: { label: 'Resolution rate', info: 'Revision requests resolved ÷ total requests raised.' },
 };
 
-const QC_ORDER = ['DRAFT', 'FOR_APPROVAL', 'FOR_REVISION', 'REVISED', 'FOR_POSTING', 'POSTED', 'CANCELLED'];
+const REVISION_ORDER = ['NEEDS_REVISION', 'RESOLVED', 'NONE'];
 
 /**
  * Band tone: at or above the floor scores 7 and reads healthy; anything under
@@ -57,9 +57,9 @@ export function CreativeScorecard({ scorecard, floors, isLoading }: {
   const tone = overallTone(overall);
   const fillPct = overall == null ? 0 : ((overall - 1) / 9) * 100;
   const isTeam = scorecard?.scope === 'TEAM';
-  const census = (scorecard?.qcCensus ?? [])
+  const census = (scorecard?.revisionCensus ?? [])
     .filter((entry) => entry.count > 0)
-    .sort((a, b) => QC_ORDER.indexOf(a.status) - QC_ORDER.indexOf(b.status));
+    .sort((a, b) => REVISION_ORDER.indexOf(a.status) - REVISION_ORDER.indexOf(b.status));
 
   if (isLoading && !scorecard) {
     return (
@@ -130,42 +130,42 @@ export function CreativeScorecard({ scorecard, floors, isLoading }: {
         <PanelHeader
           title="Efficiency contribution"
           description={isTeam
-            ? 'How much finished work the team put out, and how fast it cleared review.'
-            : 'How much finished work you put out, and how fast it cleared review.'}
+            ? 'How much work the team registered, and how quickly revision requests were resolved.'
+            : 'How much work you registered, and how quickly revision requests were resolved.'}
         />
         <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile
-            label="Approved"
-            info="Creatives whose QC decision reached For Posting in the period."
+            label="Resolved"
+            info="Revision requests resolved in the period."
             value={formatCount(scorecard?.efficiency.approvedCount)}
             sub={`${formatCount(scorecard?.efficiency.outputCount)} registered in period`}
           />
           <StatTile
             label="Turnaround (median)"
-            info="Median hours from submission to approval — rows with both timestamps only."
+            info="Median hours from revision request to resolution."
             value={formatHours(scorecard?.efficiency.medianTurnaroundHours)}
-            sub="submitted → approved"
+            sub="requested → resolved"
           />
           <StatTile
             label="Per day"
-            info="Approved creatives ÷ days in the selected period."
+            info="Resolved requests ÷ days in the selected period."
             value={formatScore(scorecard?.efficiency.approvedPerDay, 2)}
             sub={scorecard?.efficiency.quotaConfigured
               ? `${formatPercent(scorecard.efficiency.quotaAttainment, 0)} of quota`
               : 'no quota set'}
           />
           <StatTile
-            label="Approval rate"
-            info="Approved ÷ (approved + cancelled). Only finished decisions count."
+            label="Resolution rate"
+            info="Requests resolved ÷ requests raised."
             value={formatPercent(scorecard?.bands.find((band) => band.key === 'approvalRate')?.value, 0)}
-            sub={`${formatCount(scorecard?.efficiency.cancelledCount)} cancelled`}
+            sub={`${formatCount(scorecard?.efficiency.cancelledCount)} still open`}
           />
         </div>
         {census.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2 border-t border-border/40 px-5 py-3">
-            <span className="text-xs-tight font-semibold uppercase tracking-wide text-faint">In the loop</span>
+            <span className="text-xs-tight font-semibold uppercase tracking-wide text-faint">Revision status</span>
             {census.map((entry) => {
-              const meta = QC_STATUS_META[entry.status] ?? { label: entry.status, tone: 'neutral' as const };
+              const meta = REVISION_STATE_META[entry.status] ?? { label: entry.status, tone: 'neutral' as const };
               return (
                 <span key={entry.status} className={PILL_TONE_CLASS[meta.tone]}>
                   {meta.label} · {entry.count}

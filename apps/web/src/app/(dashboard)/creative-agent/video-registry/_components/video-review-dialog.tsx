@@ -22,7 +22,7 @@ export function VideoReviewDialog({ item, comments, isLoadingComments, permissio
   // Facebook blocks embedding, so a post link gets an explicit open-out card
   // rather than an iframe that silently renders blank.
   const facebookUrl = item?.mediaUrl && isValidFacebookPostUrl(item.mediaUrl) ? item.mediaUrl : null;
-  const canEditContent = Boolean(item && ['DRAFT', 'FOR_REVISION'].includes(item.qcStatus) && (permissions.canEdit || permissions.canEditAll));
+  const canEditContent = Boolean(item && (permissions.canEdit || permissions.canEditAll));
   const transition = async (dimension: CreativeStatusDimension, status: string) => {
     if ((status === 'FOR_REVISION' || status === 'CANCELLED') && !reason.trim()) return setError('Add a reason before sending back or cancelling.');
     setError(null);
@@ -31,35 +31,62 @@ export function VideoReviewDialog({ item, comments, isLoadingComments, permissio
   };
   return (
     <Dialog open={Boolean(item)} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto p-0">
+      <DialogContent className="max-h-[90vh] w-[min(72rem,94vw)] !max-w-none overflow-hidden p-0">
         {item ? (
-          <div className="grid lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
-            <div className="min-h-80 bg-slate-950">
+          <div className="grid h-[90vh] grid-rows-[auto_minmax(0,1fr)] lg:h-[85vh] lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:grid-rows-1">
+            <div className="flex max-h-[38vh] min-h-0 items-stretch overflow-hidden bg-slate-950 lg:max-h-none">
               {previewUrl ? (
-                <iframe src={previewUrl} title={`Preview for ${item.title}`} className="h-full min-h-[32rem] w-full" allow="autoplay" sandbox="allow-scripts allow-same-origin allow-popups" />
+                <iframe src={previewUrl} title={`Preview for ${item.title}`} className="h-full min-h-[16rem] w-full" allow="autoplay" sandbox="allow-scripts allow-same-origin allow-popups" />
+              ) : item.thumbnailUrl ? (
+                // Cached cover from the post's og:image, served from object storage.
+                <a
+                  href={facebookUrl ?? '#'}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group relative flex h-full w-full min-h-0 items-center justify-center overflow-hidden"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={item.thumbnailUrl} alt={`Cover for ${item.title}`} className="max-h-full w-full object-contain" />
+                  {item.thumbnailIsVideo ? (
+                    <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-surface/90 text-primary shadow-sm">
+                        <Video className="h-6 w-6" />
+                      </span>
+                    </span>
+                  ) : null}
+                  {facebookUrl ? (
+                    <span className="absolute inset-x-0 bottom-0 bg-slate-950/80 py-2 text-center text-xs font-semibold text-slate-100 transition group-hover:bg-slate-950">
+                      Open Facebook post
+                    </span>
+                  ) : null}
+                </a>
               ) : facebookUrl ? (
-                <div className="flex min-h-[32rem] flex-col items-center justify-center gap-3 px-8 text-center text-slate-300">
+                <div className="flex h-full min-h-[16rem] w-full flex-col items-center justify-center gap-3 px-6 text-center text-slate-300">
                   <Video className="h-10 w-10" />
                   <p className="font-semibold">Facebook post</p>
-                  <p className="max-w-sm text-sm text-slate-400">Facebook does not allow embedding, so the post opens in a new tab.</p>
+                  <p className="text-sm text-slate-400">Facebook does not allow embedding, so the post opens in a new tab.</p>
                   <a href={facebookUrl} target="_blank" rel="noreferrer" className="btn btn-sm btn-primary-soft">Open Facebook post</a>
                 </div>
               ) : (
-                <div className="flex min-h-[32rem] flex-col items-center justify-center gap-3 px-8 text-center text-slate-300">
+                <div className="flex h-full min-h-[16rem] w-full flex-col items-center justify-center gap-3 px-6 text-center text-slate-300">
                   <Video className="h-10 w-10" />
                   <p className="font-semibold">No post link yet</p>
                   <p className="max-w-sm text-sm text-slate-400">Add the Facebook post link so reviewers can open the live creative.</p>
                 </div>
               )}
             </div>
-            <div className="p-6">
+            <div className="min-h-0 min-w-0 overflow-y-auto p-6">
               <DialogHeader>
                 <DialogTitle className="pr-8 leading-snug">{item.title}</DialogTitle>
                 <DialogDescription><code className="font-bold text-primary">{item.code}</code> · {item.store.name} · {item.kind === 'VIDEO' ? 'Video' : 'Static'}</DialogDescription>
               </DialogHeader>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <RegistryStatusPill type="qc" status={item.qcStatus} />
+              {/* QC and performance are separate state machines that can both
+                  read "Draft"; the prefixes keep the two pills distinguishable. */}
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <RegistryStatusPill type="performance" status={item.performanceStatus} />
+                {item.revisionState !== 'NONE' ? (
+                  <RegistryStatusPill type="revision" status={item.revisionState} />
+                ) : null}
               </div>
               <dl className="mt-5 grid grid-cols-2 gap-3 rounded-xl bg-background-secondary p-4">
                 {[
@@ -80,7 +107,7 @@ export function VideoReviewDialog({ item, comments, isLoadingComments, permissio
               </div>
               <div className="mt-5 border-t border-border pt-5">
                 <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><MessageSquare className="h-3.5 w-3.5" /> QC feedback</p>
-                <div className="mt-3 max-h-48 space-y-2 overflow-y-auto">
+                <div className="mt-3 space-y-2">
                   {isLoadingComments ? <p className="text-sm text-muted">Loading feedback…</p> : comments.length ? comments.map((comment) => <article key={comment.id} className="rounded-xl border border-border bg-background-secondary p-3"><div className="flex items-center justify-between gap-2"><p className="font-semibold text-foreground">{comment.author.name}</p><time className="text-xs text-muted">{new Date(comment.createdAt).toLocaleString('en-PH')}</time></div><p className="mt-1 whitespace-pre-wrap text-foreground">{comment.message}</p></article>) : <p className="rounded-xl border border-dashed border-border p-3 text-sm text-muted">No QC feedback yet.</p>}
                 </div>
               </div>
@@ -88,14 +115,11 @@ export function VideoReviewDialog({ item, comments, isLoadingComments, permissio
                 <div className="mt-5 space-y-3 border-t border-border pt-5">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted">Workflow actions</p>
                   {canEditContent ? <p className="rounded-xl bg-primary-soft p-3 text-sm text-primary-soft-foreground">Edit and save the requested changes before submitting this creative for approval.</p> : null}
-                  {permissions.canReview ? <textarea value={reason} onChange={(event) => setReason(event.target.value)} className="input min-h-20 w-full resize-y" placeholder="Reason required when sending back or cancelling" /> : null}
+                  {permissions.canReview ? <textarea value={reason} onChange={(event) => setReason(event.target.value)} className="input min-h-20 w-full resize-y" placeholder="Describe the changes you are asking for" /> : null}
                   <div className="flex flex-wrap gap-2">
                     {canEditContent ? <Button size="sm" variant="outline" iconLeft={<Pencil className="h-4 w-4" />} onClick={() => onEdit(item)}>Edit creative</Button> : null}
-                    {item.qcStatus === 'FOR_REVISION' && (permissions.canEdit || permissions.canEditAll) ? <Button size="sm" loading={isSaving} onClick={() => transition('QC', 'REVISED')}>Submit revision</Button> : null}
-                    {permissions.canReview && ['FOR_APPROVAL', 'REVISED'].includes(item.qcStatus) ? <Button size="sm" loading={isSaving} onClick={() => transition('QC', 'FOR_POSTING')}>Approve for posting</Button> : null}
-                    {permissions.canReview && ['FOR_APPROVAL', 'REVISED', 'FOR_POSTING'].includes(item.qcStatus) ? <Button size="sm" variant="outline" loading={isSaving} onClick={() => transition('QC', 'FOR_REVISION')}>Send back</Button> : null}
-                    {permissions.canReview && item.qcStatus === 'FOR_POSTING' ? <Button size="sm" loading={isSaving} onClick={() => transition('QC', 'POSTED')}>Mark posted</Button> : null}
-                    {permissions.canReview && !['POSTED', 'CANCELLED'].includes(item.qcStatus) ? <Button size="sm" variant="danger" loading={isSaving} onClick={() => transition('QC', 'CANCELLED')}>Cancel</Button> : null}
+                    {permissions.canReview && item.revisionState !== 'NEEDS_REVISION' ? <Button size="sm" variant="outline" loading={isSaving} onClick={() => transition('REVISION', 'NEEDS_REVISION')}>Request revision</Button> : null}
+                    {item.revisionState === 'NEEDS_REVISION' ? <Button size="sm" loading={isSaving} onClick={() => transition('REVISION', 'RESOLVED')}>Mark resolved</Button> : null}
                     {permissions.canManagePerformance && item.performanceStatus === 'DRAFT' ? <Button size="sm" variant="outline" loading={isSaving} onClick={() => transition('PERFORMANCE', 'LIVE')}>Set live</Button> : null}
                     {permissions.canManagePerformance && item.performanceStatus === 'LIVE' ? <><Button size="sm" variant="outline" loading={isSaving} onClick={() => transition('PERFORMANCE', 'WINNER')}>Mark winner</Button><Button size="sm" variant="outline" loading={isSaving} onClick={() => transition('PERFORMANCE', 'FATIGUED')}>Mark fatigued</Button></> : null}
                     {permissions.canManagePerformance && item.performanceStatus === 'FATIGUED' ? <Button size="sm" variant="outline" loading={isSaving} onClick={() => transition('PERFORMANCE', 'LIVE')}>Return live</Button> : null}

@@ -10,11 +10,27 @@ type Props = {
   title: string;
   compact?: boolean;
   onClick?: () => void;
+  /**
+   * Signed URL for a cover image the ERP already cached (resolved from the
+   * Facebook post's og:image). Preferred over any URL-derived thumbnail
+   * because it is stored by us and never expires.
+   */
+  cachedThumbnailUrl?: string | null;
+  /** Draws the play affordance for video posts and reels. */
+  isVideo?: boolean;
 };
 
-export function DriveThumbnail({ mediaUrl, title, compact = false, onClick }: Props) {
-  const thumbnailUrl = getGoogleDriveThumbnailUrl(mediaUrl);
-  // Facebook posts cannot be thumbnailed or framed; the tile links out instead.
+export function DriveThumbnail({
+  mediaUrl,
+  title,
+  compact = false,
+  onClick,
+  cachedThumbnailUrl = null,
+  isVideo = false,
+}: Props) {
+  // Cached cover wins; a Drive link can still derive one directly.
+  const thumbnailUrl = cachedThumbnailUrl ?? getGoogleDriveThumbnailUrl(mediaUrl);
+  // A Facebook post with no cached cover yet cannot be framed — link out.
   const isFacebookPost = mediaUrl ? isValidFacebookPostUrl(mediaUrl) : false;
   const [failed, setFailed] = useState(false);
 
@@ -25,7 +41,7 @@ export function DriveThumbnail({ mediaUrl, title, compact = false, onClick }: Pr
   const dimensions = compact ? 'h-14 w-20' : 'aspect-video w-full';
   const content = thumbnailUrl && !failed ? (
     <>
-      {/* Drive thumbnails are runtime URLs and intentionally bypass Next's image proxy. */}
+      {/* Runtime URLs (Drive or signed object storage) intentionally bypass Next's image proxy. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={thumbnailUrl}
@@ -34,7 +50,7 @@ export function DriveThumbnail({ mediaUrl, title, compact = false, onClick }: Pr
         className="h-full w-full object-cover"
         onError={() => setFailed(true)}
       />
-      <span className="absolute inset-0 flex items-center justify-center bg-foreground/10 opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+      <span className={`absolute inset-0 flex items-center justify-center bg-foreground/10 transition ${isVideo ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'}`}>
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface/90 text-primary shadow-sm">
           <Play className="h-4 w-4 fill-current" />
         </span>

@@ -26,7 +26,7 @@ export type CreativeOverviewItem = {
   kind: 'VIDEO' | 'STATIC';
   store: { id: string | null; name: string };
   creator: { id: string; name: string };
-  qcStatus: string;
+  revisionState: string;
   performanceStatus: string;
   mediaUrl: string | null;
   linked: boolean;
@@ -89,7 +89,7 @@ export type CreativeScorecard = {
     quotaAttainment: number | null;
     medianTurnaroundHours: number | null;
   };
-  qcCensus: Array<{ status: string; count: number }>;
+  revisionCensus: Array<{ status: string; count: number }>;
 };
 
 export type CraftVerdict = 'SCALE' | 'REFRESH' | 'RETIRE';
