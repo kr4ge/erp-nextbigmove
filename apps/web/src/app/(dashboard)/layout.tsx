@@ -16,6 +16,9 @@ import {
   X,
   Moon,
   Sun,
+  Sparkles,
+  LayoutDashboard,
+  Video,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
@@ -105,6 +108,16 @@ const baseNavigation: NavLink[] = [
       { href: '/integrations', label: 'Create Integration', icon: <Layers className="h-4 w-4" /> },
       { href: '/integrations/store', label: 'Stores', icon: <StoreIcon className="h-4 w-4" /> },
       { href: '/integrations/meta', label: 'Meta', icon: <Network className="h-4 w-4" /> },
+    ],
+  },
+  {
+    href: '/creative-agent',
+    label: 'Creative Agent',
+    description: 'Creative library & intelligence',
+    icon: <Sparkles className={iconClasses} />,
+    children: [
+      { href: '/creative-agent/overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
+      { href: '/creative-agent/video-registry', label: 'Video Registry', icon: <Video className="h-4 w-4" /> },
     ],
   },
   {
@@ -235,6 +248,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       permissions.includes('orders.undeliverables.read')
       || permissions.includes('orders.undeliverables.read_all');
     const hasReports = permissions.includes('reports.pos_orders.read');
+    const hasCreativeAgent = permissions.includes('creative_agent.read') || permissions.includes('creative_agent.read_all');
 
     return baseNavigation.flatMap((link) => {
       if (link.href !== '/analytics') {
@@ -256,6 +270,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
         if (link.href === '/reports') {
           return hasReports ? [link] : [];
+        }
+        if (link.href === '/creative-agent') {
+          return hasCreativeAgent ? [link] : [];
         }
         if (link.href !== '/integrations') return [link];
 

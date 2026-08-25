@@ -84,12 +84,16 @@ export const workflowsService = {
 
   async uploadManualMetaFile(payload: {
     integrationId?: string;
+    currencyMultiplier?: number;
     file: File;
   }) {
     const form = new FormData();
     form.append('file', payload.file);
     if (payload.integrationId) {
       form.append('integrationId', payload.integrationId);
+    }
+    if (payload.currencyMultiplier != null) {
+      form.append('currencyMultiplier', String(payload.currencyMultiplier));
     }
 
     const response = await apiClient.post<{ jobId: string }>(

@@ -38,6 +38,11 @@ import {
   type AnalyticsTableSelectorOption,
 } from '../../_components/analytics-table-selector';
 import { useAnalyticsDateRange } from '../../_hooks/use-analytics-date-range';
+import {
+  ANALYTICS_FILTER_DEBOUNCE_MS,
+  buildAnalyticsQueryKey,
+  useLatestAnalyticsRequest,
+} from '../../_hooks/use-latest-analytics-request';
 import { analyticsOverviewApi } from '../../_services/analytics-overview-api';
 import {
   salesMetricDefinitions as metricDefinitions,
@@ -178,6 +183,7 @@ export default function SalesByTeamAnalyticsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { beginRequest, cancelRequest } = useLatestAnalyticsRequest();
   const [selectedTeamCode, setSelectedTeamCode] = useState<string | null>(null);
   const [teamCodeDisplayMap, setTeamCodeDisplayMap] = useState<Record<string, string>>({});
   const [selectedMappings, setSelectedMappings] = useState<string[]>([]);
@@ -223,6 +229,26 @@ export default function SalesByTeamAnalyticsPage() {
     startDate === endDate
       ? formatDateRangeButtonDate(startDate)
       : `${formatDateRangeButtonDate(startDate)} - ${formatDateRangeButtonDate(endDate)}`;
+  const mappingSelectionKey =
+    mappingOptions.length === 0 ||
+    selectedMappings.length === 0 ||
+    (selectedMappings.length === mappingOptions.length &&
+      mappingOptions.every((mapping) => selectedMappings.includes(mapping)))
+      ? '__all__'
+      : [...selectedMappings].sort().join('|');
+  const analyticsQueryKey = buildAnalyticsQueryKey(
+    startDate,
+    endDate,
+    selectedTeamCode ?? TEAM_FILTER_ALL,
+    mappingSelectionKey,
+    excludeCanceled,
+    excludeRestocking,
+    excludeRts,
+    includeTax12,
+    includeTax1,
+  );
+  const [resolvedQueryKey, setResolvedQueryKey] = useState<string | null>(null);
+  const isResultPending = isLoading || resolvedQueryKey !== analyticsQueryKey;
 
   useEffect(() => {
     mappingOptionsRef.current = mappingOptions;
@@ -278,6 +304,7 @@ export default function SalesByTeamAnalyticsPage() {
   }, [hasLoadedKpiVisibility, visibleKpiKeys]);
 
   const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
+    const request = beginRequest();
     if (!opts?.silent) setIsLoading(true);
     if (opts?.silent) setIsRefreshing(true);
     setError(null);
@@ -309,10 +336,15 @@ export default function SalesByTeamAnalyticsPage() {
       params.set('exclude_rts', String(excludeRts));
       params.set('include_tax_12', String(includeTax12));
       params.set('include_tax_1', String(includeTax1));
-      const res = await analyticsOverviewApi.getSalesByTeamOverview<OverviewResponse>(params);
+      const res = await analyticsOverviewApi.getSalesByTeamOverview<OverviewResponse>(
+        params,
+        request.signal,
+      );
+      if (!request.isLatest()) return;
       const response = res.data;
 
       setData(response);
+      setResolvedQueryKey(analyticsQueryKey);
       syncDateRangeFromApi(response.selected.start_date, response.selected.end_date);
 
       const nextTeamDisplayMap = response.filters.teamCodeDisplayMap || {};
@@ -331,12 +363,20 @@ export default function SalesByTeamAnalyticsPage() {
         setSelectedMappings((prev) => (areArraysEqual(prev, bounded) ? prev : bounded));
       }
     } catch (nextError: unknown) {
+      if (!request.isLatest()) return;
+      setData(null);
+      setResolvedQueryKey(analyticsQueryKey);
       setError(parseErrorMessage(nextError, 'Failed to load sales by team preview'));
     } finally {
-      if (!opts?.silent) setIsLoading(false);
-      if (opts?.silent) setIsRefreshing(false);
+      if (request.isLatest()) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+      request.finish();
     }
   }, [
+    analyticsQueryKey,
+    beginRequest,
     endDate,
     excludeCanceled,
     excludeRestocking,
@@ -353,8 +393,14 @@ export default function SalesByTeamAnalyticsPage() {
   }, [fetchData]);
 
   useEffect(() => {
-    void fetchData();
-  }, [fetchData, selectedMappings]);
+    cancelRequest();
+    setIsLoading(true);
+    const timeoutId = window.setTimeout(() => {
+      void fetchData();
+    }, ANALYTICS_FILTER_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [cancelRequest, fetchData, mappingSelectionKey]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -612,7 +658,7 @@ export default function SalesByTeamAnalyticsPage() {
     }));
 
   const handleExportProductsCsv = async () => {
-    if (isLoading || exportableProducts.length === 0) return;
+    if (isResultPending || exportableProducts.length === 0) return;
     setIsExportingCsv(true);
     try {
       exportSalesProductsCsv({
@@ -631,7 +677,7 @@ export default function SalesByTeamAnalyticsPage() {
   };
 
   const handleExportProductsXlsx = async () => {
-    if (isLoading || exportableProducts.length === 0) return;
+    if (isResultPending || exportableProducts.length === 0) return;
     setIsExportingXlsx(true);
     try {
       await exportSalesProductsXlsx({
@@ -1341,7 +1387,7 @@ export default function SalesByTeamAnalyticsPage() {
         {error && <AlertBanner tone="error" message={error} className="mt-4" />}
 
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isLoading ? (
+          {isResultPending ? (
             <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 8 }).map((_, index) => (
                 <AnalyticsMetricCardSkeleton key={index} className="w-full xl:min-w-[180px]" />
@@ -1372,7 +1418,7 @@ export default function SalesByTeamAnalyticsPage() {
         </div>
 
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isLoading ? (
+          {isResultPending ? (
             <div className="flex w-full flex-col gap-3 xl:flex-row">
               {Array.from({ length: 3 }).map((_, index) => (
                 <AnalyticsMetricCardSkeleton key={`sec-skel-${index}`} className="w-full xl:min-w-[190px]" />
@@ -1427,7 +1473,7 @@ export default function SalesByTeamAnalyticsPage() {
                 size="sm"
                 iconLeft={<Download className="h-4 w-4" />}
                 onClick={() => void handleExportProductsCsv()}
-                disabled={isLoading || exportableProducts.length === 0}
+                disabled={isResultPending || exportableProducts.length === 0}
                 loading={isExportingCsv}
                 className="btn-icon"
               >
@@ -1437,7 +1483,7 @@ export default function SalesByTeamAnalyticsPage() {
                 size="sm"
                 iconLeft={<FileSpreadsheet className="h-4 w-4" />}
                 onClick={() => void handleExportProductsXlsx()}
-                disabled={isLoading || exportableProducts.length === 0}
+                disabled={isResultPending || exportableProducts.length === 0}
                 loading={isExportingXlsx}
                 className="btn-icon"
               >
@@ -1449,7 +1495,7 @@ export default function SalesByTeamAnalyticsPage() {
 
         {tableSelection === 'products' ? (
           <AnalyticsSalesProductsTable
-            isLoading={isLoading}
+            isLoading={isResultPending}
             productStart={productStart}
             productEnd={productEnd}
             totalProducts={totalProducts}
@@ -1467,7 +1513,7 @@ export default function SalesByTeamAnalyticsPage() {
           />
         ) : (
           <AnalyticsSalesDeliveryTable
-            isLoading={isLoading}
+            isLoading={isResultPending}
             deliveryStart={deliveryStart}
             deliveryEnd={deliveryEnd}
             totalDelivery={totalDelivery}

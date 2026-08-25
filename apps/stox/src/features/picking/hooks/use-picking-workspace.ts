@@ -10,6 +10,7 @@ import {
   retryMobilePickingAllocation,
   scanMobilePickingBasketBin,
   scanMobilePickingBasketUnit,
+  returnMobileFulfillmentReworkUnit,
   scanMobilePickingBasket,
   scanMobilePickingBin,
   scanMobilePickingUnit,
@@ -431,6 +432,38 @@ export function usePickingWorkspace({
     }
   }, [device, filters.tenantId, session.accessToken]);
 
+  const returnReworkUnit = useCallback(async (basketId: string, orderId: string, code: string) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return false;
+    }
+    setIsSubmitting(true);
+    try {
+      const result = await returnMobileFulfillmentReworkUnit({
+        accessToken: session.accessToken,
+        device,
+        tenantId: filters.tenantId,
+        basketId,
+        orderId,
+        code,
+      });
+      setBasketPlans((current) => ({ ...current, [basketId]: result.plan }));
+      if (result.task) {
+        const updatedTask = result.task;
+        setPicking((current) => current ? replacePickingTask(current, updatedTask) : current);
+        setActiveTaskId(updatedTask.id);
+      }
+      await loadPickingPage({ loadingKind: 'refresh', page: 1, preserveLoadedPages: page });
+      setError(null);
+      return true;
+    } catch (requestError) {
+      setError(resolvePickingError(requestError));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, loadPickingPage, page, session.accessToken]);
+
   const handoffTask = useCallback(async (taskId: string, packerId: string) => {
     if (!device) {
       setError('Device is not ready.');
@@ -586,6 +619,7 @@ export function usePickingWorkspace({
     picking,
     refreshPicking,
     retryAllocation,
+    returnReworkUnit,
     scanBasketBin,
     scanBasketUnit,
     scanBasket,

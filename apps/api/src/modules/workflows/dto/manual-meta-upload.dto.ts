@@ -58,6 +58,46 @@ export class ManualMetaUploadRowDto {
   @IsNumber()
   websitePurchases: number;
 
+  @IsNumber()
+  @IsOptional()
+  videoPlays3s?: number | null;
+
+  @IsNumber()
+  @IsOptional()
+  thruPlays?: number | null;
+
+  @IsNumber()
+  @IsOptional()
+  frequency?: number | null;
+
+  @IsNumber()
+  @IsOptional()
+  videoAveragePlayTime?: number | null;
+
+  @IsNumber()
+  @IsOptional()
+  videoPlays25?: number | null;
+
+  @IsNumber()
+  @IsOptional()
+  videoPlays50?: number | null;
+
+  @IsNumber()
+  @IsOptional()
+  videoPlays75?: number | null;
+
+  @IsNumber()
+  @IsOptional()
+  videoPlays95?: number | null;
+
+  @IsNumber()
+  @IsOptional()
+  videoPlays100?: number | null;
+
+  @IsString()
+  @IsOptional()
+  spendCurrency?: string;
+
   @IsString()
   @IsNotEmpty()
   reportingStarts: string;

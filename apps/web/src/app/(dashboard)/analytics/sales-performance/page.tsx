@@ -21,6 +21,11 @@ import {
   formatDeltaPercent,
 } from '../_utils/metrics';
 import { useAnalyticsDateRange } from '../_hooks/use-analytics-date-range';
+import {
+  ANALYTICS_FILTER_DEBOUNCE_MS,
+  buildAnalyticsQueryKey,
+  useLatestAnalyticsRequest,
+} from '../_hooks/use-latest-analytics-request';
 import { analyticsOverviewApi } from '../_services/analytics-overview-api';
 import { DashboardSection } from '../../dashboard/_components/dashboard-section';
 import {
@@ -135,6 +140,14 @@ export default function SalesPerformancePage() {
   const { today, range, startDate, endDate, handleDateRangeChange } = useAnalyticsDateRange();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const {
+    beginRequest: beginOverviewRequest,
+    cancelRequest: cancelOverviewRequest,
+  } = useLatestAnalyticsRequest();
+  const {
+    beginRequest: beginProblematicRequest,
+    cancelRequest: cancelProblematicRequest,
+  } = useLatestAnalyticsRequest();
   const [refreshKey] = useState(0);
   const [deliveryViewSelection, setDeliveryViewSelection] =
     useState<'delivery' | 'risk_confirmation' | 'repurchase'>('delivery');
@@ -153,7 +166,6 @@ export default function SalesPerformancePage() {
   const [chartShopOptions, setChartShopOptions] = useState<string[]>([]);
   const [selectedShops, setSelectedShops] = useState<string[]>([]);
   const [isAllShopsMode, setIsAllShopsMode] = useState(true);
-  const [hasInitializedChartShops, setHasInitializedChartShops] = useState(false);
 
   const lastSunburstHoverKeyRef = useRef<string>('');
 
@@ -170,6 +182,21 @@ export default function SalesPerformancePage() {
   const selectedShopLabel =
     isAllShopsMode ? 'All shops' : `${selectedShops.length} selected`;
   const hasChartShopOptions = chartShopOptions.length > 0;
+  const shopSelectionKey = isAllShopsMode
+    ? '__all__'
+    : [...selectedShops].sort().join('|') || '__none__';
+  const analyticsQueryKey = buildAnalyticsQueryKey(
+    startDate,
+    endDate,
+    shopSelectionKey,
+    refreshKey,
+  );
+  const [resolvedOverviewQueryKey, setResolvedOverviewQueryKey] = useState<string | null>(null);
+  const [resolvedProblematicQueryKey, setResolvedProblematicQueryKey] = useState<string | null>(null);
+  const isOverviewResultPending =
+    isLoading || resolvedOverviewQueryKey !== analyticsQueryKey;
+  const isProblematicResultPending =
+    isProblematicLoading || resolvedProblematicQueryKey !== analyticsQueryKey;
 
   const salesPerformanceDateRangeIsToday = startDate === today && endDate === today;
   const formatDateRangeButtonDate = (dateStr: string) => {
@@ -224,9 +251,11 @@ export default function SalesPerformancePage() {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
+    cancelOverviewRequest();
+    setIsLoading(true);
+
     const loadOverview = async () => {
-      setIsLoading(true);
+      const request = beginOverviewRequest();
       try {
         const params: Record<string, string | string[]> = {
           start_date: startDate,
@@ -237,25 +266,36 @@ export default function SalesPerformancePage() {
             selectedShops.length > 0 ? selectedShops : ['__no_selection__'];
         }
 
-        const res =
-          await analyticsOverviewApi.getSalesPerformanceStoreConversion<OverviewResponse>(params);
-        if (!isMounted) return;
+        const res = await analyticsOverviewApi.getSalesPerformanceStoreConversion<OverviewResponse>(
+          params,
+          request.signal,
+        );
+        if (!request.isLatest()) return;
         setData(res.data);
+        setResolvedOverviewQueryKey(analyticsQueryKey);
         const nextShops = res.data.filters.shops || [];
         setPerformanceShopOptions((prev) => (areArraysEqual(prev, nextShops) ? prev : nextShops));
       } catch (error) {
-        if (isMounted) {
+        if (request.isLatest()) {
+          setData(null);
+          setResolvedOverviewQueryKey(analyticsQueryKey);
           console.error('Failed to load sales performance store conversion', error);
         }
       } finally {
-        if (isMounted) setIsLoading(false);
+        if (request.isLatest()) setIsLoading(false);
+        request.finish();
       }
     };
-    loadOverview();
-    return () => {
-      isMounted = false;
-    };
+
+    const timeoutId = window.setTimeout(() => {
+      void loadOverview();
+    }, ANALYTICS_FILTER_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
   }, [
+    beginOverviewRequest,
+    analyticsQueryKey,
+    cancelOverviewRequest,
     endDate,
     isAllShopsMode,
     refreshKey,
@@ -264,11 +304,13 @@ export default function SalesPerformancePage() {
   ]);
 
   useEffect(() => {
-    let isMounted = true;
+    cancelProblematicRequest();
+    setIsProblematicLoading(true);
+
     const loadProblematicDelivery = async () => {
+      const request = beginProblematicRequest();
       setSunburstHoverInfo(null);
       lastSunburstHoverKeyRef.current = '';
-      setIsProblematicLoading(true);
       try {
         const params: Record<string, string | string[]> = {
           start_date: startDate,
@@ -281,27 +323,35 @@ export default function SalesPerformancePage() {
 
         const res = await analyticsOverviewApi.getProblematicDelivery<ProblematicDeliveryResponse>(
           params,
+          request.signal,
         );
-        if (!isMounted) return;
+        if (!request.isLatest()) return;
         setProblematicData(res.data);
+        setResolvedProblematicQueryKey(analyticsQueryKey);
         const nextShops = res.data.filters.shops || [];
         setChartShopOptions((prev) => (areArraysEqual(prev, nextShops) ? prev : nextShops));
-        if (!hasInitializedChartShops) setHasInitializedChartShops(true);
       } catch (error) {
-        if (isMounted) {
+        if (request.isLatest()) {
+          setProblematicData(null);
+          setResolvedProblematicQueryKey(analyticsQueryKey);
           console.error('Failed to load problematic delivery chart', error);
         }
       } finally {
-        if (isMounted) setIsProblematicLoading(false);
+        if (request.isLatest()) setIsProblematicLoading(false);
+        request.finish();
       }
     };
-    loadProblematicDelivery();
-    return () => {
-      isMounted = false;
-    };
+
+    const timeoutId = window.setTimeout(() => {
+      void loadProblematicDelivery();
+    }, ANALYTICS_FILTER_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
   }, [
+    beginProblematicRequest,
+    analyticsQueryKey,
+    cancelProblematicRequest,
     endDate,
-    hasInitializedChartShops,
     isAllShopsMode,
     refreshKey,
     selectedShops,
@@ -1001,7 +1051,7 @@ export default function SalesPerformancePage() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {isLoading
+          {isOverviewResultPending
             ? Array.from({ length: metricDefinitions.length }).map((_, idx) => (
                 <AnalyticsMetricCardSkeleton key={idx} />
               ))
@@ -1042,7 +1092,7 @@ export default function SalesPerformancePage() {
         </div>
 
         <AnalyticsSalesPerformanceStoreTable
-          isLoading={isLoading}
+          isLoading={isOverviewResultPending}
           rows={pagedStoreRows}
           storeStart={storeStart}
           storeEnd={storeEnd}
@@ -1099,7 +1149,7 @@ export default function SalesPerformancePage() {
             )}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
-            {deliveryViewSelection === 'repurchase' && !isProblematicLoading && !hasChartShopOptions ? (
+            {deliveryViewSelection === 'repurchase' && !isProblematicResultPending && !hasChartShopOptions ? (
               <p className="flex h-10 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 dark:border-border dark:bg-background-secondary dark:text-slate-300">
                 No shops to filter.
               </p>
@@ -1166,7 +1216,7 @@ export default function SalesPerformancePage() {
         <div className="p-1 sm:p-2">
           {deliveryViewSelection === 'risk_confirmation' ? (
             <AnalyticsRiskConfirmationTable
-              isLoading={isProblematicLoading}
+              isLoading={isProblematicResultPending}
               rows={pagedRiskRows}
               riskStart={riskStart}
               riskEnd={riskEnd}
@@ -1180,7 +1230,7 @@ export default function SalesPerformancePage() {
             />
           ) : deliveryViewSelection === 'repurchase' ? (
             <AnalyticsSalesPerformanceRepurchaseTable
-              isLoading={isProblematicLoading}
+              isLoading={isProblematicResultPending}
               rows={pagedRepurchaseRows}
               grandTotals={repurchaseGrandTotals}
               repurchaseStart={repurchaseStart}
@@ -1208,7 +1258,7 @@ export default function SalesPerformancePage() {
                   COD: {formatCurrency(problematicData?.onDeliveryAllTime?.totalCod || 0)}
                 </p>
               </div>
-              {isProblematicLoading ? (
+              {isProblematicResultPending ? (
                 <div className="h-[140px] w-full animate-pulse rounded-lg bg-slate-100" />
               ) : (problematicData?.onDeliveryTrend?.length || 0) > 0 ? (
                 <ReactECharts option={onDeliverySparklineOption} style={{ height: 140 }} />
@@ -1228,7 +1278,7 @@ export default function SalesPerformancePage() {
                   COD: {formatCurrency(problematicData?.undeliverableAllTime?.totalCod || 0)}
                 </p>
               </div>
-              {isProblematicLoading ? (
+              {isProblematicResultPending ? (
                 <div className="h-[140px] w-full animate-pulse rounded-lg bg-slate-100" />
               ) : (problematicData?.undeliverableTrend?.length || 0) > 0 ? (
                 <ReactECharts option={undeliverableSparklineOption} style={{ height: 140 }} />
@@ -1250,7 +1300,7 @@ export default function SalesPerformancePage() {
                   COD: {formatCurrency(problematicData?.deliveredInRange?.totalCod || 0)}
                 </p>
               </div>
-              {isProblematicLoading ? (
+              {isProblematicResultPending ? (
                 <div className="h-[140px] w-full animate-pulse rounded-lg bg-slate-100" />
               ) : (problematicData?.deliveredInRangeTrend?.length || 0) > 0 ? (
                 <ReactECharts option={deliveredInRangeSparklineOption} style={{ height: 140 }} />
@@ -1272,7 +1322,7 @@ export default function SalesPerformancePage() {
                   COD: {formatCurrency(problematicData?.returnedInRange?.totalCod || 0)}
                 </p>
               </div>
-              {isProblematicLoading ? (
+              {isProblematicResultPending ? (
                 <div className="h-[140px] w-full animate-pulse rounded-lg bg-slate-100" />
               ) : (problematicData?.returnedInRangeTrend?.length || 0) > 0 ? (
                 <ReactECharts option={returnedInRangeSparklineOption} style={{ height: 140 }} />
@@ -1286,7 +1336,7 @@ export default function SalesPerformancePage() {
           <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
             <div className="xl:col-span-2 rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:bg-background-secondary dark:border-border">
               <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">RTS Reason Data</p>
-              {isProblematicLoading ? (
+              {isProblematicResultPending ? (
                 <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100 dark:bg-background-secondary" />
               ) : (problematicData?.data?.length || 0) > 0 ? (
                 <>
@@ -1353,7 +1403,7 @@ export default function SalesPerformancePage() {
             </div>
             <div className="xl:col-span-3 rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:bg-background-secondary dark:border-border">
               <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">Delivered vs RTS Trend</p>
-              {isProblematicLoading ? (
+              {isProblematicResultPending ? (
                 <div className="h-[500px] w-full animate-pulse rounded-xl bg-slate-100 dark:bg-surface" />
               ) : (problematicData?.trend?.length || 0) > 0 ? (
                 <ReactECharts

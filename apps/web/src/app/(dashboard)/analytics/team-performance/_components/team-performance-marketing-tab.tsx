@@ -20,6 +20,11 @@ import {
   AnalyticsTableShell,
 } from '../../_components/analytics-table-shell';
 import { useAnalyticsDateRange } from '../../_hooks/use-analytics-date-range';
+import {
+  ANALYTICS_FILTER_DEBOUNCE_MS,
+  buildAnalyticsQueryKey,
+  useLatestAnalyticsRequest,
+} from '../../_hooks/use-latest-analytics-request';
 import { useAnalyticsShare } from '../../_hooks/use-analytics-share';
 import { useVisibleAutoRefresh } from '../../_hooks/use-visible-auto-refresh';
 import { useWorkflowTenantEvent } from '../../_hooks/use-workflow-tenant-event';
@@ -111,6 +116,7 @@ export default function MarketingAnalyticsPage() {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { beginRequest, cancelRequest } = useLatestAnalyticsRequest();
   const [selectedAssociates, setSelectedAssociates] = useState<string[]>([]);
   const [isAllAssociatesMode, setIsAllAssociatesMode] = useState(true);
   const [associatesOptions, setAssociatesOptions] = useState<string[]>([]);
@@ -160,6 +166,20 @@ export default function MarketingAnalyticsPage() {
     isAllAssociatesModeRef.current = isAllAssociatesMode;
   }, [isAllAssociatesMode]);
 
+  const associateSelectionKey = isAllAssociatesMode
+    ? '__all__'
+    : [...selectedAssociates].sort().join('|') || '__none__';
+  const analyticsQueryKey = buildAnalyticsQueryKey(
+    startDate,
+    endDate,
+    associateSelectionKey,
+    tableSelection,
+    excludeCanceled,
+    excludeRestocking,
+  );
+  const [resolvedQueryKey, setResolvedQueryKey] = useState<string | null>(null);
+  const isResultPending = isLoading || resolvedQueryKey !== analyticsQueryKey;
+
   const parseErrorMessage = (error: unknown, fallback: string) => {
     if (!error || typeof error !== 'object') return fallback;
     const maybeError = error as {
@@ -173,6 +193,7 @@ export default function MarketingAnalyticsPage() {
   };
 
   const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
+    const request = beginRequest();
     if (!opts?.silent) setIsLoading(true);
     setError(null);
     try {
@@ -194,8 +215,13 @@ export default function MarketingAnalyticsPage() {
       }
       params.set('exclude_cancel', String(excludeCanceled));
       params.set('exclude_restocking', String(excludeRestocking));
-      const res = await analyticsOverviewApi.getMarketingOverview<OverviewResponse>(params);
+      const res = await analyticsOverviewApi.getMarketingOverview<OverviewResponse>(
+        params,
+        request.signal,
+      );
+      if (!request.isLatest()) return;
       setData(res.data);
+      setResolvedQueryKey(analyticsQueryKey);
       const options = res.data.filters.associates || [];
       const normalized = options.map((a) => a.toLowerCase());
       setAssociatesOptions((prev) => (areArraysEqual(prev, options) ? prev : options));
@@ -217,11 +243,17 @@ export default function MarketingAnalyticsPage() {
       // Sync selected range if API adjusted it
       syncDateRangeFromApi(res.data.selected.start_date, res.data.selected.end_date);
     } catch (error: unknown) {
+      if (!request.isLatest()) return;
+      setData(null);
+      setResolvedQueryKey(analyticsQueryKey);
       setError(parseErrorMessage(error, 'Failed to load marketing overview'));
     } finally {
-      if (!opts?.silent) setIsLoading(false);
+      if (request.isLatest()) setIsLoading(false);
+      request.finish();
     }
   }, [
+    analyticsQueryKey,
+    beginRequest,
     endDate,
     excludeCanceled,
     excludeRestocking,
@@ -245,8 +277,14 @@ export default function MarketingAnalyticsPage() {
   }, [fetchData]);
 
   useEffect(() => {
-    void fetchData();
-  }, [fetchData, selectedAssociates, isAllAssociatesMode]);
+    cancelRequest();
+    setIsLoading(true);
+    const timeoutId = window.setTimeout(() => {
+      void fetchData();
+    }, ANALYTICS_FILTER_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [associateSelectionKey, cancelRequest, fetchData]);
 
   useVisibleAutoRefresh(() => {
     void fetchData({ silent: true });
@@ -256,7 +294,8 @@ export default function MarketingAnalyticsPage() {
     fetchDataRef.current = fetchData;
   }, [fetchData]);
 
-  useWorkflowTenantEvent('marketing:updated', () => {
+  useWorkflowTenantEvent('marketing:updated', (payload) => {
+    if (payload.source === 'reconcile_sales') return;
     fetchDataRef.current?.({ silent: true });
   });
 
@@ -506,7 +545,7 @@ export default function MarketingAnalyticsPage() {
         )}
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {isLoading
+          {isResultPending
             ? Array.from({ length: metricDefinitions.length }).map((_, idx) => (
                 <AnalyticsMetricCardSkeleton key={idx} />
               ))
@@ -554,7 +593,7 @@ export default function MarketingAnalyticsPage() {
             onNext={() => setTopAssocPage((p) => (topAssocCanNext ? p + 1 : p))}
             canPrevious={topAssocCanPrev}
             canNext={topAssocCanNext}
-            isLoading={isLoading}
+            isLoading={isResultPending}
           >
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
@@ -573,7 +612,7 @@ export default function MarketingAnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
-                  {isLoading ? (
+                  {isResultPending ? (
                     <AnalyticsTableLoadingRows colCount={10} />
                   ) : (
                     pagedTopAssociates.map((row, idx) => (
@@ -593,7 +632,7 @@ export default function MarketingAnalyticsPage() {
                       </tr>
                     ))
                   )}
-                  {!isLoading && (!topAssociates || topAssociates.length === 0) ? (
+                  {!isResultPending && (!topAssociates || topAssociates.length === 0) ? (
                     <AnalyticsTableEmptyRow colSpan={10} message="No associates found for this range." />
                   ) : null}
                 </tbody>
@@ -609,7 +648,7 @@ export default function MarketingAnalyticsPage() {
             onNext={() => setTopCampaignPage((p) => (topCampaignCanNext ? p + 1 : p))}
             canPrevious={topCampaignCanPrev}
             canNext={topCampaignCanNext}
-            isLoading={isLoading}
+            isLoading={isResultPending}
           >
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
@@ -624,7 +663,7 @@ export default function MarketingAnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
-                  {isLoading ? (
+                  {isResultPending ? (
                     <AnalyticsTableLoadingRows colCount={6} />
                   ) : (
                     pagedTopCampaigns.map((row, idx) => (
@@ -644,7 +683,7 @@ export default function MarketingAnalyticsPage() {
                       </tr>
                     ))
                   )}
-                  {!isLoading && (!topCampaigns || topCampaigns.length === 0) ? (
+                  {!isResultPending && (!topCampaigns || topCampaigns.length === 0) ? (
                     <AnalyticsTableEmptyRow colSpan={6} message="No campaigns found for this range." />
                   ) : null}
                 </tbody>
@@ -660,7 +699,7 @@ export default function MarketingAnalyticsPage() {
             onNext={() => setTopCreativePage((p) => (topCreativeCanNext ? p + 1 : p))}
             canPrevious={topCreativeCanPrev}
             canNext={topCreativeCanNext}
-            isLoading={isLoading}
+            isLoading={isResultPending}
           >
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 dark:divide-border">
@@ -676,7 +715,7 @@ export default function MarketingAnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white dark:divide-border dark:bg-surface">
-                  {isLoading ? (
+                  {isResultPending ? (
                     <AnalyticsTableLoadingRows colCount={7} />
                   ) : (
                     pagedTopCreatives.map((row, idx) => (
@@ -699,7 +738,7 @@ export default function MarketingAnalyticsPage() {
                       </tr>
                     ))
                   )}
-                  {!isLoading && (!topCreatives || topCreatives.length === 0) ? (
+                  {!isResultPending && (!topCreatives || topCreatives.length === 0) ? (
                     <AnalyticsTableEmptyRow colSpan={7} message="No creatives found for this range." />
                   ) : null}
                 </tbody>

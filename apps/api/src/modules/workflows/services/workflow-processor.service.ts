@@ -418,6 +418,21 @@ export class WorkflowProcessorService {
         errors,
       });
 
+      // Range workflows update analytics one day at a time. Emit one tenant-level
+      // completion event so dashboards refresh only after the final day is ready.
+      this.executionGateway.emitTenantEvent(
+        context.tenantId,
+        null,
+        'marketing:updated',
+        {
+          tenantId: context.tenantId,
+          teamId: null,
+          executionId,
+          source: 'workflow_completed',
+          timestamp: completedAt.toISOString(),
+        },
+      );
+
       if (hasErrors) {
         const summary = this.summarizeErrors(errors);
         this.logger.warn(

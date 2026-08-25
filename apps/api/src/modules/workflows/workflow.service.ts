@@ -45,6 +45,7 @@ type ManualMetaUploadStage =
 
 type ColumnKey =
   | 'accountId'
+  | 'accountName'
   | 'campaignId'
   | 'campaignName'
   | 'adsetId'
@@ -58,10 +59,34 @@ type ColumnKey =
   | 'impressions'
   | 'websitePurchases'
   | 'reportingStarts'
-  | 'reportingEnds';
+  | 'reportingEnds'
+  | 'videoPlays3s'
+  | 'thruPlays'
+  | 'frequency'
+  | 'videoAveragePlayTime'
+  | 'videoPlays25'
+  | 'videoPlays50'
+  | 'videoPlays75'
+  | 'videoPlays95'
+  | 'videoPlays100';
+
+type ManualMetaAccount = {
+  accountId: string;
+  name: string;
+  teamId: string | null;
+  integrationId: string;
+  currency: string | null;
+  currencyMultiplier: unknown;
+};
+
+type ResolvedUploadColumns = {
+  indexes: Record<ColumnKey, number>;
+  spendCurrency: string | null;
+};
 
 const HEADER_ALIASES: Record<ColumnKey, string[]> = {
   accountId: ['accountid'],
+  accountName: ['accountname'],
   campaignId: ['campaignid'],
   campaignName: ['campaignname'],
   adsetId: ['adsetid'],
@@ -69,17 +94,25 @@ const HEADER_ALIASES: Record<ColumnKey, string[]> = {
   adId: ['adid'],
   adName: ['adname'],
   dateCreated: ['datecreated'],
-  amountSpent: ['amountspent', 'amountspentphp'],
+  amountSpent: ['amountspent', 'amountspentphp', 'amountspentusd'],
   linkClicks: ['linkclicks'],
   clicks: ['clicksall', 'clicks'],
   impressions: ['impressions'],
   websitePurchases: ['websitepurchases'],
   reportingStarts: ['reportingstarts'],
   reportingEnds: ['reportingends'],
+  videoPlays3s: ['3secondvideoplays'],
+  thruPlays: ['thruplays'],
+  frequency: ['frequency'],
+  videoAveragePlayTime: ['videoaverageplaytime'],
+  videoPlays25: ['videoplaysat25'],
+  videoPlays50: ['videoplaysat50'],
+  videoPlays75: ['videoplaysat75'],
+  videoPlays95: ['videoplaysat95'],
+  videoPlays100: ['videoplaysat100'],
 };
 
 const REQUIRED_COLUMNS: ColumnKey[] = [
-  'accountId',
   'campaignId',
   'campaignName',
   'adsetId',
@@ -87,9 +120,7 @@ const REQUIRED_COLUMNS: ColumnKey[] = [
   'adName',
   'amountSpent',
   'linkClicks',
-  'clicks',
   'impressions',
-  'websitePurchases',
   'reportingStarts',
   'reportingEnds',
 ];
@@ -165,6 +196,10 @@ export class WorkflowService {
 
   private normalizeAccountId(value: string): string {
     return String(value || '').trim().replace(/^act_/i, '');
+  }
+
+  private normalizeAccountName(value: string): string {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
   private isIsoDate(value: string): boolean {
@@ -261,6 +296,15 @@ export class WorkflowService {
       inline_link_clicks: String(row.linkClicks),
       clicks: String(row.clicks),
       impressions: String(row.impressions),
+      video_plays_3s: row.videoPlays3s ?? null,
+      thru_plays: row.thruPlays ?? null,
+      frequency: row.frequency ?? null,
+      video_average_play_time: row.videoAveragePlayTime ?? null,
+      video_plays_25: row.videoPlays25 ?? null,
+      video_plays_50: row.videoPlays50 ?? null,
+      video_plays_75: row.videoPlays75 ?? null,
+      video_plays_95: row.videoPlays95 ?? null,
+      video_plays_100: row.videoPlays100 ?? null,
       created_time: row.dateCreated?.trim() || null,
       actions: [
         {
@@ -303,6 +347,24 @@ export class WorkflowService {
       throw new BadRequestException(`Row ${rowNumber}: ${label} must be a non-negative whole number`);
     }
     return parsed;
+  }
+
+  private parseOptionalWholeNumber(
+    value: unknown,
+    label: string,
+    rowNumber: number,
+  ): number | null {
+    if (this.toCellString(value) === '') return null;
+    return this.parseWholeNumber(value, label, rowNumber);
+  }
+
+  private parseOptionalDecimal(
+    value: unknown,
+    label: string,
+    rowNumber: number,
+  ): number | null {
+    if (this.toCellString(value) === '') return null;
+    return this.parseDecimal(value, label, rowNumber);
   }
 
   private pad(value: number): string {
@@ -351,7 +413,7 @@ export class WorkflowService {
     throw new BadRequestException(`Row ${rowNumber}: ${label} must be a valid date`);
   }
 
-  private resolveColumnIndexes(headerRow: unknown[]): Record<ColumnKey, number> {
+  private resolveColumnIndexes(headerRow: unknown[]): ResolvedUploadColumns {
     const normalizedHeaders = headerRow.map((value) => this.normalizeHeader(value));
     const indexes = {} as Record<ColumnKey, number>;
 
@@ -366,7 +428,17 @@ export class WorkflowService {
       throw new BadRequestException(`Missing required header(s): ${missing.join(', ')}`);
     }
 
-    return indexes;
+    if (indexes.accountId < 0 && indexes.accountName < 0) {
+      throw new BadRequestException('Missing required header: accountId or accountName');
+    }
+
+    const amountSpentHeader = this.toCellString(headerRow[indexes.amountSpent]);
+    const currencyMatch = amountSpentHeader.match(/\(([A-Z]{3})\)\s*$/i);
+
+    return {
+      indexes,
+      spendCurrency: currencyMatch?.[1]?.toUpperCase() ?? null,
+    };
   }
 
   private getCell(row: unknown[], index: number): unknown {
@@ -380,13 +452,14 @@ export class WorkflowService {
 
   private isSummaryRow(row: unknown[], indexes: Record<ColumnKey, number>): boolean {
     const accountId = this.toCellString(this.getCell(row, indexes.accountId)).toLowerCase();
+    const accountName = this.toCellString(this.getCell(row, indexes.accountName)).toLowerCase();
     const campaignId = this.toCellString(this.getCell(row, indexes.campaignId));
     const adsetId = this.toCellString(this.getCell(row, indexes.adsetId));
     const adId = this.toCellString(this.getCell(row, indexes.adId));
     const adName = this.toCellString(this.getCell(row, indexes.adName));
 
     return (
-      accountId === 'multiple'
+      (accountId === 'multiple' || accountName === 'multiple')
       && campaignId === ''
       && adsetId === ''
       && adId === ''
@@ -399,20 +472,25 @@ export class WorkflowService {
     indexes: Record<ColumnKey, number>,
   ): boolean {
     return [
-      indexes.accountId,
       indexes.campaignId,
       indexes.campaignName,
       indexes.adsetId,
       indexes.adId,
       indexes.adName,
-    ].every((index) => this.toCellString(this.getCell(row, index)) !== '');
+    ].every((index) => this.toCellString(this.getCell(row, index)) !== '')
+      && (
+        this.toCellString(this.getCell(row, indexes.accountId)) !== ''
+        || this.toCellString(this.getCell(row, indexes.accountName)) !== ''
+      );
   }
 
   private parseUploadRow(
     row: unknown[],
     rowNumber: number,
-    indexes: Record<ColumnKey, number>,
+    columns: ResolvedUploadColumns,
+    accountNameMap: Map<string, ManualMetaAccount | null>,
   ): ManualMetaUploadRowDto | null {
+    const { indexes, spendCurrency } = columns;
     if (this.isEmptyRow(row)) return null;
     if (this.isSummaryRow(row, indexes)) return null;
     if (!this.hasRequiredIdentityValues(row, indexes)) return null;
@@ -428,8 +506,28 @@ export class WorkflowService {
       rowNumber,
     );
 
+    const providedAccountId = this.normalizeAccountId(
+      this.toCellString(this.getCell(row, indexes.accountId)),
+    );
+    const providedAccountName = this.toCellString(this.getCell(row, indexes.accountName));
+    const normalizedAccountName = this.normalizeAccountName(providedAccountName);
+    const accountFromName = providedAccountName
+      ? accountNameMap.get(normalizedAccountName)
+      : undefined;
+    if (!providedAccountId && accountFromName === null) {
+      throw new BadRequestException(`Row ${rowNumber}: Account name "${providedAccountName}" is ambiguous`);
+    }
+
+    const linkClicks = this.parseWholeNumber(
+      this.getCell(row, indexes.linkClicks),
+      'Link clicks',
+      rowNumber,
+    );
+
     return {
-      accountId: this.toCellString(this.getCell(row, indexes.accountId)),
+      accountId: providedAccountId
+        || accountFromName?.accountId
+        || `manual:${normalizedAccountName}`,
       campaignId: this.toCellString(this.getCell(row, indexes.campaignId)),
       campaignName: this.toCellString(this.getCell(row, indexes.campaignName)),
       adsetId: this.toCellString(this.getCell(row, indexes.adsetId)),
@@ -443,14 +541,42 @@ export class WorkflowService {
         false,
       ) || undefined,
       amountSpent: this.parseDecimal(this.getCell(row, indexes.amountSpent), 'Amount spent', rowNumber),
-      linkClicks: this.parseWholeNumber(this.getCell(row, indexes.linkClicks), 'Link clicks', rowNumber),
-      clicks: this.parseWholeNumber(this.getCell(row, indexes.clicks), 'Clicks (all)', rowNumber),
+      linkClicks,
+      clicks: indexes.clicks >= 0
+        ? this.parseWholeNumber(this.getCell(row, indexes.clicks), 'Clicks (all)', rowNumber)
+        : linkClicks,
       impressions: this.parseWholeNumber(this.getCell(row, indexes.impressions), 'Impressions', rowNumber),
       websitePurchases: this.parseWholeNumber(
         this.getCell(row, indexes.websitePurchases),
         'Website purchases',
         rowNumber,
       ),
+      videoPlays3s: this.parseOptionalWholeNumber(
+        this.getCell(row, indexes.videoPlays3s),
+        '3-second video plays',
+        rowNumber,
+      ),
+      thruPlays: this.parseOptionalWholeNumber(
+        this.getCell(row, indexes.thruPlays),
+        'ThruPlays',
+        rowNumber,
+      ),
+      frequency: this.parseOptionalDecimal(
+        this.getCell(row, indexes.frequency),
+        'Frequency',
+        rowNumber,
+      ),
+      videoAveragePlayTime: this.parseOptionalDecimal(
+        this.getCell(row, indexes.videoAveragePlayTime),
+        'Video average play time',
+        rowNumber,
+      ),
+      videoPlays25: this.parseOptionalWholeNumber(this.getCell(row, indexes.videoPlays25), 'Video plays at 25%', rowNumber),
+      videoPlays50: this.parseOptionalWholeNumber(this.getCell(row, indexes.videoPlays50), 'Video plays at 50%', rowNumber),
+      videoPlays75: this.parseOptionalWholeNumber(this.getCell(row, indexes.videoPlays75), 'Video plays at 75%', rowNumber),
+      videoPlays95: this.parseOptionalWholeNumber(this.getCell(row, indexes.videoPlays95), 'Video plays at 95%', rowNumber),
+      videoPlays100: this.parseOptionalWholeNumber(this.getCell(row, indexes.videoPlays100), 'Video plays at 100%', rowNumber),
+      spendCurrency: spendCurrency ?? undefined,
       reportingStarts,
       reportingEnds,
     };
@@ -524,6 +650,7 @@ export class WorkflowService {
     filePath: string;
     originalFileName: string;
     integrationId?: string;
+    currencyMultiplier?: number;
   }): Promise<string> {
     const { tenantId, teamIds, userTeams, isAdmin } = await this.teamContext.getContext();
     const allowedTeams = (teamIds && teamIds.length > 0 ? teamIds : userTeams) || [];
@@ -537,6 +664,7 @@ export class WorkflowService {
         isAdmin,
         filePath: input.filePath,
         originalFileName: input.originalFileName,
+        currencyMultiplier: input.currencyMultiplier,
       },
       {
         removeOnComplete: 100,
@@ -590,25 +718,77 @@ export class WorkflowService {
     };
   }
 
+  private resolveManualUploadMultiplier(
+    account: ManualMetaAccount | null,
+    sourceCurrency?: string,
+    fallbackCurrencyMultiplier?: number,
+  ): number {
+    const normalizedSourceCurrency = sourceCurrency?.toUpperCase() ?? null;
+    const accountCurrency = account?.currency?.toUpperCase() ?? null;
+
+    // Legacy PHP exports already contain converted values, even when the
+    // underlying Meta account is configured in USD. Preserve their 1:1
+    // import behavior; validate/configure conversion only for source files
+    // that report a non-PHP currency.
+    if (
+      normalizedSourceCurrency
+      && normalizedSourceCurrency !== 'PHP'
+      && accountCurrency
+      && normalizedSourceCurrency !== accountCurrency
+    ) {
+      throw new BadRequestException(
+        `Meta account ${account?.accountId || 'from the upload'} is configured as ${accountCurrency}, but the file reports ${normalizedSourceCurrency}`,
+      );
+    }
+
+    const multiplier = normalizedSourceCurrency && normalizedSourceCurrency !== 'PHP'
+      ? Number(account?.currencyMultiplier ?? fallbackCurrencyMultiplier)
+      : 1;
+    if (!Number.isFinite(multiplier) || multiplier <= 0) {
+      throw new BadRequestException(
+        account
+          ? `Set a positive ${normalizedSourceCurrency} currency multiplier for Meta account ${account.accountId} before uploading this file`
+          : `Enter a positive ${normalizedSourceCurrency} currency multiplier for this manual upload`,
+      );
+    }
+
+    return multiplier;
+  }
+
   private async processManualMetaChunk(params: {
     tenantId: string;
     selectedIntegrationTeamId: string | null;
-    accountMap: Map<string, { accountId: string; teamId: string | null; integrationId: string }>;
+    accountMap: Map<string, ManualMetaAccount>;
     rows: ManualMetaUploadRowDto[];
     affectedDates: Set<string>;
+    fallbackCurrencyMultiplier?: number;
   }): Promise<number> {
-    const groupedInsights = new Map<string, { teamId: string | null; rawInsights: any[] }>();
+    const groupedInsights = new Map<string, {
+      teamId: string | null;
+      multiplier: number;
+      rawInsights: Array<Record<string, unknown>>;
+    }>();
 
     for (const row of params.rows) {
       const accountId = this.normalizeAccountId(row.accountId);
-      const account = params.accountMap.get(accountId);
+      const account = params.accountMap.get(accountId) ?? null;
       const teamId = account?.teamId ?? params.selectedIntegrationTeamId ?? null;
+      const sourceCurrency = row.spendCurrency?.toUpperCase() ?? null;
+      const multiplier = this.resolveManualUploadMultiplier(
+        account,
+        sourceCurrency ?? undefined,
+        params.fallbackCurrencyMultiplier,
+      );
       const existingGroup = groupedInsights.get(accountId);
       if (existingGroup) {
+        if (existingGroup.multiplier !== multiplier) {
+          throw new BadRequestException(`Meta account ${accountId} has inconsistent spend currencies in this file`);
+        }
         existingGroup.rawInsights.push(this.toUploadedRawInsight(row));
       } else {
         groupedInsights.set(accountId, {
           teamId,
+          multiplier,
           rawInsights: [this.toUploadedRawInsight(row)],
         });
       }
@@ -622,11 +802,21 @@ export class WorkflowService {
         accountId,
         group.rawInsights,
         group.teamId,
-        1,
+        group.multiplier,
       );
     }
 
     return upserted;
+  }
+
+  private shouldCleanupManualMetaUploadFile(
+    job: Job<ManualMetaUploadJobData>,
+    processingCompleted: boolean,
+  ): boolean {
+    if (processingCompleted) return true;
+    const configuredAttempts = Math.max(1, Number(job.opts.attempts ?? 1));
+    const currentAttempt = job.attemptsMade + 1;
+    return currentAttempt >= configuredAttempts;
   }
 
   private async resolveManualUploadAccounts(params: {
@@ -637,7 +827,8 @@ export class WorkflowService {
     integrationId?: string;
   }): Promise<{
     selectedIntegrationTeamId: string | null;
-    accountMap: Map<string, { accountId: string; teamId: string | null; integrationId: string }>;
+    accountMap: Map<string, ManualMetaAccount>;
+    accountNameMap: Map<string, ManualMetaAccount | null>;
   }> {
     const tenantHasTeams =
       params.tenantHasTeams
@@ -686,18 +877,19 @@ export class WorkflowService {
       selectedIntegration?.id,
     );
 
-    if (!accountWhere) {
-      throw new BadRequestException('No accessible Meta ad accounts found for this upload');
-    }
-
-    const accounts = await this.prisma.metaAdAccount.findMany({
-      where: accountWhere,
-      select: {
-        accountId: true,
-        teamId: true,
-        integrationId: true,
-      },
-    });
+    const accounts = accountWhere
+      ? await this.prisma.metaAdAccount.findMany({
+          where: accountWhere,
+          select: {
+            accountId: true,
+            name: true,
+            teamId: true,
+            integrationId: true,
+            currency: true,
+            currencyMultiplier: true,
+          },
+        })
+      : [];
 
     const accountMap = new Map(
       accounts.map((account) => [
@@ -705,10 +897,16 @@ export class WorkflowService {
         account,
       ]),
     );
+    const accountNameMap = new Map<string, ManualMetaAccount | null>();
+    for (const account of accounts) {
+      const key = this.normalizeAccountName(account.name);
+      accountNameMap.set(key, accountNameMap.has(key) ? null : account);
+    }
 
     return {
       selectedIntegrationTeamId: selectedIntegration?.teamId ?? null,
       accountMap,
+      accountNameMap,
     };
   }
 
@@ -724,6 +922,7 @@ export class WorkflowService {
     const chunkSize = Math.max(1, Number(process.env.MANUAL_META_UPLOAD_BATCH_SIZE || '500'));
     let rowsReceived = 0;
     let insightsUpserted = 0;
+    let processingCompleted = false;
     const affectedDates = new Set<string>();
 
     await this.updateManualUploadJobProgress(job, {
@@ -735,7 +934,7 @@ export class WorkflowService {
       datesProcessed: [],
     });
 
-    const { selectedIntegrationTeamId, accountMap } = await this.resolveManualUploadAccounts({
+    const { selectedIntegrationTeamId, accountMap, accountNameMap } = await this.resolveManualUploadAccounts({
       tenantId: job.data.tenantId,
       allowedTeams: job.data.allowedTeams,
       isAdmin: job.data.isAdmin,
@@ -765,6 +964,7 @@ export class WorkflowService {
         accountMap,
         rows: chunk,
         affectedDates,
+        fallbackCurrencyMultiplier: job.data.currencyMultiplier,
       });
     };
 
@@ -774,7 +974,7 @@ export class WorkflowService {
         const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
         let headerParsed = false;
-        let indexes: Record<ColumnKey, number> | null = null;
+        let columns: ResolvedUploadColumns | null = null;
         let lineNumber = 0;
         const buffer: ManualMetaUploadRowDto[] = [];
 
@@ -783,13 +983,13 @@ export class WorkflowService {
           const row = this.parseCsvLine(line);
 
           if (!headerParsed) {
-            indexes = this.resolveColumnIndexes(row);
+            columns = this.resolveColumnIndexes(row);
             headerParsed = true;
             continue;
           }
 
-          if (!indexes) continue;
-          const parsedRow = this.parseUploadRow(row, lineNumber, indexes);
+          if (!columns) continue;
+          const parsedRow = this.parseUploadRow(row, lineNumber, columns, accountNameMap);
           if (!parsedRow) {
             continue;
           }
@@ -842,7 +1042,7 @@ export class WorkflowService {
           range: headerEncodedRange,
         }) as unknown[][];
 
-        const indexes = this.resolveColumnIndexes(headerRows?.[0] || []);
+        const columns = this.resolveColumnIndexes(headerRows?.[0] || []);
         const dataStart = headerRowIdx + 1;
         const buffer: ManualMetaUploadRowDto[] = [];
 
@@ -861,7 +1061,12 @@ export class WorkflowService {
 
           rows.forEach((row, idx) => {
             const rowNumber = start + idx + 1;
-            const parsedRow = this.parseUploadRow(Array.isArray(row) ? row : [], rowNumber, indexes);
+            const parsedRow = this.parseUploadRow(
+              Array.isArray(row) ? row : [],
+              rowNumber,
+              columns,
+              accountNameMap,
+            );
             if (!parsedRow) return;
             rowsReceived += 1;
             buffer.push(parsedRow);
@@ -929,6 +1134,7 @@ export class WorkflowService {
         datesProcessed,
       });
 
+      processingCompleted = true;
       return result;
     } catch (error: any) {
       await this.updateManualUploadJobProgress(job, {
@@ -942,10 +1148,12 @@ export class WorkflowService {
       });
       throw error;
     } finally {
-      try {
-        await fsp.unlink(job.data.filePath);
-      } catch {
-        // ignore cleanup failure
+      if (this.shouldCleanupManualMetaUploadFile(job, processingCompleted)) {
+        try {
+          await fsp.unlink(job.data.filePath);
+        } catch {
+          // The file may already be absent after a completed/final attempt.
+        }
       }
     }
   }

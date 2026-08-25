@@ -23,6 +23,7 @@ export function useWorkflowsController() {
   const [metaIntegrations, setMetaIntegrations] = useState<WorkflowMetaIntegrationOption[]>([]);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedIntegrationId, setSelectedIntegrationId] = useState('');
+  const [manualCurrencyMultiplier, setManualCurrencyMultiplier] = useState('');
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
   const [isUploadingMeta, setIsUploadingMeta] = useState(false);
   const [manualUploadJob, setManualUploadJob] = useState<WorkflowManualMetaUploadJobStatus | null>(
@@ -124,6 +125,7 @@ export function useWorkflowsController() {
     if (isUploadingMeta) return;
     setShowUploadModal(false);
     setSelectedUploadFile(null);
+    setManualCurrencyMultiplier('');
     setManualUploadJob(null);
     setManualUploadError(null);
   }, [isUploadingMeta]);
@@ -141,6 +143,9 @@ export function useWorkflowsController() {
     try {
       const { jobId } = await workflowsService.uploadManualMetaFile({
         integrationId: selectedIntegrationId || undefined,
+        currencyMultiplier: manualCurrencyMultiplier
+          ? Number(manualCurrencyMultiplier)
+          : undefined,
         file: selectedUploadFile,
       });
 
@@ -176,6 +181,7 @@ export function useWorkflowsController() {
 
           setShowUploadModal(false);
           setSelectedUploadFile(null);
+          setManualCurrencyMultiplier('');
           setManualUploadJob(null);
           return;
         }
@@ -203,7 +209,7 @@ export function useWorkflowsController() {
     } finally {
       setIsUploadingMeta(false);
     }
-  }, [addToast, selectedIntegrationId, selectedUploadFile]);
+  }, [addToast, manualCurrencyMultiplier, selectedIntegrationId, selectedUploadFile]);
 
   const navigateToView = useCallback(
     (workflow: WorkflowItem) => {
@@ -228,6 +234,7 @@ export function useWorkflowsController() {
     metaIntegrations,
     showUploadModal,
     selectedIntegrationId,
+    manualCurrencyMultiplier,
     selectedUploadFile,
     isUploadingMeta,
     manualUploadJob,
@@ -237,6 +244,7 @@ export function useWorkflowsController() {
     openUploadModal,
     closeUploadModal,
     setSelectedIntegrationId,
+    setManualCurrencyMultiplier,
     setSelectedUploadFile,
     handleUploadMeta,
     navigateToNew,

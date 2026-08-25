@@ -17,7 +17,7 @@ export type PackingStatusFilter =
 
 export type WmsMobilePackingResponse = {
   tenantReady: boolean;
-  serverTime: string;
+  serverTime?: string;
   pagination: {
     page: number;
     pageSize: number;
@@ -117,17 +117,78 @@ export type WmsMobileBasketPackWaybillResponse = WmsMobileBasketPackPlanResponse
   activeOrder: WmsMobilePickingTask;
 };
 
-export type WmsMobileBasketPackUnitResponse = WmsMobileBasketPackPlanResponse & {
+export type WmsMobileBasketPackUnitLegacyResponse = WmsMobileBasketPackPlanResponse & {
   activeOrderId: string | null;
   activeOrder: WmsMobilePickingTask | null;
   completedOrder: WmsMobilePickingTask | null;
 };
 
-export type WmsMobileBasketPackCompleteResponse = WmsMobileBasketPackPlanResponse & {
+export type WmsMobilePackingUnitScanDelta = {
+  success: boolean;
+  responseMode: 'scan-delta-v1';
+  alreadyProcessed: boolean;
+  requiresRefresh: boolean;
+  basketId: string;
+  basketStatus: string;
+  activeOrderId: string;
+  orderId: string;
+  lineId: string;
+  packedUnit: {
+    id: string;
+    code: string;
+    barcode: string;
+    variationId: string;
+  };
+  counters: {
+    basket: {
+      required: number;
+      packed: number;
+      remaining: number;
+    };
+    order: {
+      required: number;
+      packed: number;
+      remaining: number;
+      status: string;
+    };
+    line: {
+      required: number;
+      packed: number;
+      remaining: number;
+      status: string;
+    };
+    availableVariationUnits: number;
+  };
+  orderReadyToComplete: boolean;
+};
+
+export type WmsMobileBasketPackUnitResponse =
+  | WmsMobileBasketPackUnitLegacyResponse
+  | WmsMobilePackingUnitScanDelta;
+
+export type WmsMobileBasketPackCompleteLegacyResponse = WmsMobileBasketPackPlanResponse & {
   activeOrderId: string | null;
   activeOrder: WmsMobilePickingTask | null;
   completedOrder: WmsMobilePickingTask;
 };
+
+export type WmsMobilePackingCompletionDelta = {
+  success: boolean;
+  responseMode: 'delta-v1';
+  basketId: string | null;
+  basketStatus: string | null;
+  completedOrderId: string;
+  activeOrderId: string | null;
+  plan: WmsMobileBasketPackPlan | null;
+};
+
+export type WmsMobileBasketPackCompleteResponse =
+  | WmsMobileBasketPackCompleteLegacyResponse
+  | WmsMobilePackingCompletionDelta;
+
+export type WmsMobilePackingTaskCompleteResponse =
+  | { success: boolean; task: WmsMobilePickingTask }
+  | WmsMobilePackingCompletionDelta;
 
 export type WmsPackingProofSource = 'CAMERA' | 'FILE' | 'CLIPBOARD';
 

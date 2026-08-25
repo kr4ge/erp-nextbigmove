@@ -37,6 +37,7 @@ import {
   GetWmsMobilePickBasketLookupDto,
   WmsMobilePickBasketBatchAssignDto,
   WmsMobilePickHandoffDto,
+  WmsMobileFulfillmentReworkReturnDto,
   WmsMobilePickBasketUnitScanDto,
   WmsMobilePickBasketVoidDto,
   WmsMobilePickReallocateDto,
@@ -388,6 +389,24 @@ export class WmsMobileController {
     return this.wmsMobileService.scanPickingBasketUnit(req.user, id, body, req);
   }
 
+  @Post('picking/baskets/:id/orders/:orderId/rework/return-unit')
+  @Permissions(
+    'wms.fulfillment.write',
+    'wms.fulfillment.edit',
+    'wms.fulfillment.override',
+    'wms.dispatch.write',
+    'wms.dispatch.edit',
+    'wms.dispatch.override',
+  )
+  async returnFulfillmentReworkUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Param('orderId') orderId: string,
+    @Body() body: WmsMobileFulfillmentReworkReturnDto,
+  ) {
+    return this.wmsMobileService.returnFulfillmentReworkUnit(req.user, id, orderId, body, req);
+  }
+
   @Post('picking/baskets/:id/void')
   @Permissions('wms.fulfillment.override')
   async voidPickingBasket(
@@ -438,6 +457,16 @@ export class WmsMobileController {
   @Permissions('wms.dispatch.read', 'wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
   async getPackingTasks(@Request() req, @Query() query: GetWmsMobilePackingTasksDto) {
     return this.wmsMobileService.getPackingTasks(req.user, query, req);
+  }
+
+  @Get('packing/tasks/:id')
+  @Permissions('wms.dispatch.read', 'wms.dispatch.write', 'wms.dispatch.edit', 'wms.dispatch.override')
+  async getPackingTask(
+    @Request() req,
+    @Param('id') id: string,
+    @Query() query: WmsMobilePackScopedDto,
+  ) {
+    return this.wmsMobileService.getPackingTask(req.user, id, query, req);
   }
 
   @Get('packing/baskets/:id/plan')

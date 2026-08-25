@@ -24,6 +24,7 @@ import type {
 import { PackingProofModal } from '@/src/features/packing/components/packing-proof-modal';
 import { usePackingProof } from '@/src/features/packing/hooks/use-packing-proof';
 import type { WmsMobilePickingTask } from '@/src/features/picking/types';
+import { OrderChangeNotice } from '@/src/features/fulfillment/components/order-change-notice';
 import { PrimaryButton } from '@/src/shared/components/primary-button';
 import { SurfaceCard } from '@/src/shared/components/surface-card';
 import { TextField } from '@/src/shared/components/text-field';
@@ -92,6 +93,7 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
     completeTask,
     error,
     fetchBasketPlan,
+    fetchTaskDetails,
     filters,
     isLoading,
     isLoadingMore,
@@ -206,8 +208,17 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
     }
 
     setActiveBasketId(null);
-    setActiveTaskId(task.id);
-  }, [fetchBasketPlan, setActiveTaskId]);
+    if (task.status === 'PACKED') {
+      setActiveTaskId(task.id);
+      return;
+    }
+
+    void fetchTaskDetails(task.id).then((result) => {
+      if (!result) {
+        setActiveTaskId(null);
+      }
+    });
+  }, [fetchBasketPlan, fetchTaskDetails, setActiveTaskId]);
 
   const handleDemandWaybill = useCallback(async (basketId: string, code: string) => {
     const result = await scanBasketWaybill(basketId, code);
@@ -320,6 +331,7 @@ function PackingWorkspaceTab({ bootstrap, device, session }: PackingTabProps) {
             onScanWaybill={handleDemandWaybill}
             plan={activeBasketView.plan}
             session={session}
+            tasks={activeBasketView.tasks}
           />
         ) : activeTask ? (
           <PackExecutionCard
@@ -651,6 +663,7 @@ function DemandPackExecutionCard({
   onScanWaybill,
   plan,
   session,
+  tasks,
 }: {
   basket: WmsMobilePickingTask['basket'];
   device: DeviceIdentity | null;
@@ -662,6 +675,7 @@ function DemandPackExecutionCard({
   onScanWaybill: (basketId: string, code: string) => Promise<boolean>;
   plan: WmsMobileBasketPackPlan;
   session: StoredSession;
+  tasks: WmsMobilePickingTask[];
 }) {
   const [proofVisible, setProofVisible] = useState(false);
   const [waybillCode, setWaybillCode] = useState('');
@@ -670,6 +684,9 @@ function DemandPackExecutionCard({
   const unitSubmitInFlightRef = useRef(false);
   const selectedOrder = plan.activeOrder;
   const selectedOrderId = selectedOrder?.id ?? null;
+  const changedTask = tasks.find((task) => (
+    task.id === selectedOrderId && task.itemChange
+  )) ?? tasks.find((task) => task.itemChange?.hasChanged) ?? null;
   const basketLabel = basket?.barcode ?? plan.basketCode;
   const remainingOrders = plan.orderProgress.remaining;
   const availableUnitCount = plan.availableUnits.reduce((total, unit) => total + unit.unitCount, 0);
@@ -825,6 +842,8 @@ function DemandPackExecutionCard({
       />
 
       <SurfaceCard style={styles.executionCard}>
+        <OrderChangeNotice change={changedTask?.itemChange ?? null} disabled />
+
         <View style={styles.taskProgressRow}>
           <View>
             <Text style={styles.bigProgress}>{plan.totals.packed}/{plan.totals.required}</Text>
@@ -1134,6 +1153,8 @@ function PackExecutionCard({
       </View>
 
       <SurfaceCard style={styles.executionCard}>
+        <OrderChangeNotice change={task.itemChange} disabled />
+
         <View style={styles.taskProgressRow}>
           <View>
             <Text style={styles.bigProgress}>{task.totals.packed}/{task.totals.required}</Text>

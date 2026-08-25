@@ -798,7 +798,7 @@ function validateBasketPackResponse(
       .map((task) => `#${task.posOrderId}`)
       .join(', ');
     issues.push(
-      `POS items changed after WMS picked these orders: ${sampleOrders}${changedTasks.length > 3 ? ', ...' : ''}. Void and rebuild them before packing continues.`,
+      `POS items changed after WMS picked these orders: ${sampleOrders}${changedTasks.length > 3 ? ', ...' : ''}. Their requirements were rebuilt automatically and must be finished in Pick before packing continues.`,
     );
   }
 

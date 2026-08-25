@@ -1036,9 +1036,10 @@ export class PosOrderService {
         continue;
       }
 
-      const items = Array.isArray(rawOrder.items) ? rawOrder.items : [];
+      const hasItemsPayload = Array.isArray(rawOrder.items);
+      const items = hasItemsPayload ? rawOrder.items : [];
       const hasProduct = items.some((item: any) => !!item?.product_id);
-      const isNoProductOrder = items.length === 0 || !hasProduct;
+      const isNoProductOrder = hasItemsPayload && (items.length === 0 || !hasProduct);
 
       try {
         const order = await this.parsePosOrder(
@@ -1047,6 +1048,39 @@ export class PosOrderService {
           rawOrder,
           initialValueOffer,
         );
+        if (!hasItemsPayload || rawOrder.status === undefined || rawOrder.status === null) {
+          const previous = await this.prisma.posOrder.findUnique({
+            where: {
+              tenantId_shopId_posOrderId: {
+                tenantId,
+                shopId: order.shopId,
+                posOrderId: order.posOrderId,
+              },
+            },
+            select: {
+              orderSnapshot: true,
+              itemData: true,
+              totalQuantity: true,
+              isVoid: true,
+              status: true,
+            },
+          });
+          const previousSnapshot = previous?.orderSnapshot && typeof previous.orderSnapshot === 'object'
+            && !Array.isArray(previous.orderSnapshot)
+            ? previous.orderSnapshot as Record<string, unknown>
+            : null;
+          if (!hasItemsPayload && order.orderSnapshot && previousSnapshot && Array.isArray(previousSnapshot.items)) {
+            order.orderSnapshot.items = previousSnapshot.items;
+            order.itemData = Array.isArray(previous?.itemData)
+              ? previous.itemData
+              : order.itemData;
+            order.totalQuantity = previous?.totalQuantity ?? order.totalQuantity;
+            order.isVoid = previous?.isVoid ?? order.isVoid;
+          }
+          if (rawOrder.status === undefined || rawOrder.status === null) {
+            order.status = previous?.status ?? order.status;
+          }
+        }
         if (isNoProductOrder) {
           order.isVoid = true;
         }
@@ -1161,7 +1195,7 @@ export class PosOrderService {
 
         upserted++;
         if (
-          order.status === 1
+          (order.status === 1 || order.status === 12)
           && !order.isVoid
           && order.shopId
           && order.posOrderId

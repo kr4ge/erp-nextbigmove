@@ -4,6 +4,8 @@ import { workflowSocket } from '@/lib/socket-client';
 type WorkflowTenantPayload = {
   tenantId?: string;
   teamId?: string | null;
+  source?: string;
+  executionId?: string;
 };
 
 function resolveTenantScope() {
