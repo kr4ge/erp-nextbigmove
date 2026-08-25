@@ -16,6 +16,7 @@ export const CREATIVE_AGENT_PERMISSIONS = {
 } as const;
 
 export const QC_TRANSITIONS: Record<string, readonly string[]> = {
+  DRAFT: ['FOR_APPROVAL', 'CANCELLED'],
   FOR_APPROVAL: ['FOR_REVISION', 'FOR_POSTING', 'CANCELLED'],
   FOR_REVISION: ['REVISED', 'CANCELLED'],
   REVISED: ['FOR_REVISION', 'FOR_POSTING', 'CANCELLED'],

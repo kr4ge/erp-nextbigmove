@@ -80,6 +80,8 @@ import {
   salesMetricDefinitions,
 } from "./_utils/dashboard";
 import { formatDeltaPercent } from "../analytics/_utils/metrics";
+import { CreativeOverviewScreen } from "../creative-agent/overview/_components/creative-overview-screen";
+import { AdvertisingDashboardScreen } from "../creative-agent/advertising/dashboard/_components/advertising-dashboard-screen";
 
 const Datepicker = dynamic(() => import("react-tailwindcss-datepicker"), {
   ssr: false,
@@ -660,6 +662,26 @@ export default function DashboardPage() {
   const canViewSalesDashboard = useMemo(
     () => perms.includes("dashboard.sales"),
     [perms],
+  );
+  // Advertising (read_all + review/performance.manage) outranks the personal
+  // creative dashboard; a Manager holds both and lands on the operational view.
+  const canViewAdvertisingDashboard = useMemo(
+    () => perms.includes("creative_agent.read_all")
+      && (perms.includes("creative_agent.review") || perms.includes("creative_agent.performance.manage"))
+      && !canViewExecutives
+      && !canViewMarketingLeader
+      && !canViewMarketingDashboard
+      && !canViewSalesDashboard,
+    [perms, canViewExecutives, canViewMarketingLeader, canViewMarketingDashboard, canViewSalesDashboard],
+  );
+  const canViewCreativeDashboard = useMemo(
+    () => perms.includes("creative_agent.read")
+      && !canViewAdvertisingDashboard
+      && !canViewExecutives
+      && !canViewMarketingLeader
+      && !canViewMarketingDashboard
+      && !canViewSalesDashboard,
+    [perms, canViewAdvertisingDashboard, canViewExecutives, canViewMarketingLeader, canViewMarketingDashboard, canViewSalesDashboard],
   );
   const executiveOrdersSummaryDonutOption = useMemo(
     () =>
@@ -3221,7 +3243,11 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {canViewExecutives
+      {canViewAdvertisingDashboard
+        ? <AdvertisingDashboardScreen />
+        : canViewCreativeDashboard
+        ? <CreativeOverviewScreen />
+        : canViewExecutives
         ? renderExecutiveDashboard()
         : canViewMarketingLeader
           ? renderLeaderDashboard()

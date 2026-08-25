@@ -2,6 +2,7 @@ import { Transform } from 'class-transformer';
 import { CreativeKind } from '@prisma/client';
 import {
   IsEnum,
+  IsBoolean,
   IsOptional,
   IsString,
   IsUUID,
@@ -12,6 +13,10 @@ import {
 } from 'class-validator';
 
 export class EnrollCreativeDto {
+  @IsOptional()
+  @IsBoolean()
+  submitForApproval?: boolean;
+
   @IsUUID()
   storeId!: string;
 
@@ -27,7 +32,7 @@ export class EnrollCreativeDto {
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsUrl({ protocols: ['https'], require_protocol: true })
-  @Matches(/^https:\/\/(?:drive|docs)\.google\.com\//i, { message: 'mediaUrl must be a Google Drive URL' })
+  @Matches(/^https:\/\/(?:[a-z0-9-]+\.)?(?:facebook\.com|fb\.com|fb\.watch)\//i, { message: 'mediaUrl must be a Facebook post URL' })
   @MaxLength(2048)
   mediaUrl?: string;
 

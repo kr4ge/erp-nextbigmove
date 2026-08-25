@@ -1,5 +1,5 @@
-import { VideoRegistryScreen } from './_components/video-registry-screen';
+import { redirect } from 'next/navigation';
 
 export default function VideoRegistryPage() {
-  return <VideoRegistryScreen />;
+  redirect('/video-registry');
 }

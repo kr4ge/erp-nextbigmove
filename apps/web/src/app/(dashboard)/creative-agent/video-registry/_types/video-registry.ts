@@ -1,4 +1,5 @@
 export type CreativeQcStatus =
+  | "DRAFT"
   | "FOR_APPROVAL"
   | "FOR_REVISION"
   | "REVISED"
@@ -88,6 +89,13 @@ export type VideoRegistryItem = {
   createdAt: string;
   updatedAt: string;
 };
+export type CreativeReviewComment = {
+  id: string;
+  message: string;
+  createdAt: string;
+  updatedAt: string;
+  author: RegistryPerson;
+};
 export type UnregisteredMetaCreative = {
   key: string;
   code: string | null;
@@ -148,6 +156,7 @@ export type VideoRegistryResponse = {
   generatedAt: string;
 };
 export type CreateVideoRegistryInput = {
+  submitForApproval?: boolean;
   kind: CreativeKind;
   storeId: string;
   title: string;
@@ -162,6 +171,10 @@ export type CreateVideoRegistryInput = {
   accountId?: string;
   adId?: string;
 };
+export type UpdateVideoRegistryInput = Pick<
+  CreateVideoRegistryInput,
+  "title" | "mediaUrl" | "format" | "hookType" | "script" | "notes"
+>;
 export type LinkCreativeAliasInput = {
   unregisteredKey: string;
   creativeId: string;

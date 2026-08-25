@@ -7,7 +7,7 @@ import { formatCompactCurrency, formatRate } from '../_utils/video-registry-form
 import { DriveThumbnail } from './drive-thumbnail';
 import { RegistryStatusPill } from './registry-status-pill';
 
-export function VideoRegistryGrid({ items, onReview }: { items: VideoRegistryItem[]; onReview: (item: VideoRegistryItem) => void }) {
+export function VideoRegistryGrid({ items, actionLabel, onReview }: { items: VideoRegistryItem[]; actionLabel: string; onReview: (item: VideoRegistryItem) => void }) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
@@ -25,7 +25,7 @@ export function VideoRegistryGrid({ items, onReview }: { items: VideoRegistryIte
                 </div>
               </div>
               <Button type="button" size="sm" variant="ghost" iconLeft={<Eye className="h-4 w-4" />} onClick={() => onReview(item)}>
-                Review
+                {actionLabel}
               </Button>
             </div>
             <p className="mt-2 text-xs text-muted">{item.creator.name} · {item.store.name}</p>

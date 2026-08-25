@@ -1,5 +1,5 @@
-import { CreativeOverviewScreen } from './_components/creative-overview-screen';
+import { redirect } from 'next/navigation';
 
 export default function CreativeAgentOverviewPage() {
-  return <CreativeOverviewScreen />;
+  redirect('/dashboard');
 }

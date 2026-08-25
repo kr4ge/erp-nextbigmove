@@ -14,6 +14,7 @@ import type { VideoRegistrySortKey } from "../_types/video-registry";
 import { useVideoRegistryController } from "../_hooks/use-video-registry-controller";
 import { LinkVideoDialog } from "./link-video-dialog";
 import { RegisterVideoDialog } from "./register-video-dialog";
+import { EditCreativeDialog } from "./edit-creative-dialog";
 import { RegistryPagination } from "./registry-pagination";
 import { UnregisteredMetaPanel } from "./unregistered-meta-panel";
 import { VideoRegistryFilterBar } from "./video-registry-filter-bar";
@@ -34,8 +35,8 @@ function RegistryLoadingState() {
   );
 }
 
-export function VideoRegistryScreen() {
-  const controller = useVideoRegistryController();
+export function VideoRegistryScreen({ initialQuery = '' }: { initialQuery?: string }) {
+  const controller = useVideoRegistryController(initialQuery);
   const { addToast } = useToast();
   const { data, params } = controller;
 
@@ -59,12 +60,37 @@ export function VideoRegistryScreen() {
     );
   };
 
+  const updateCreative = async (id: string, input: Parameters<typeof controller.updateCreative>[1]) => {
+    await controller.updateCreative(id, input);
+    addToast("success", "Creative changes saved. You can now submit it for approval.");
+  };
+
+  const transitionStatus = async (...args: Parameters<typeof controller.transitionStatus>) => {
+    await controller.transitionStatus(...args);
+    const [, dimension, status] = args;
+    const labels: Record<string, string> = {
+      FOR_APPROVAL: "Creative submitted for approval. Advertising acts next.",
+      REVISED: "Revision submitted. Advertising acts next.",
+      FOR_POSTING: "Creative approved for posting.",
+      FOR_REVISION: "Creative returned for revision.",
+      POSTED: "Creative marked as posted.",
+      CANCELLED: "Creative cancelled.",
+      LIVE: "Creative marked live.",
+      WINNER: "Creative marked as a winner.",
+      FATIGUED: "Creative marked as fatigued.",
+      RETIRED: "Creative retired.",
+    };
+    addToast("success", labels[status] ?? `${dimension === "QC" ? "Approval" : "Performance"} status updated.`);
+  };
+
+  const registryActionLabel = controller.permissions.canReview ? "Review" : "Open";
+
   return (
     <div className="space-y-5">
       <PageHeader
         title="Video Registry"
-        description="Keep creative titles, Google Drive sources, Meta ad-name matching, and performance signals in one library."
-        breadcrumbs="Creative Agent"
+        description="Keep creative titles, Facebook post links, Meta ad-name matching, and performance signals in one library."
+        breadcrumbs="Video Registry"
         actions={
           controller.permissions.canEnroll ? (
             <Button
@@ -188,14 +214,16 @@ export function VideoRegistryScreen() {
                 <VideoRegistryTable
                   items={data.items}
                   params={params}
+                  actionLabel={registryActionLabel}
                   onSort={sort}
-                  onReview={controller.setReviewingItem}
+                  onReview={(item) => void controller.openReview(item)}
                 />
               ) : (
                 <div className="p-4">
                   <VideoRegistryGrid
                     items={data.items}
-                    onReview={controller.setReviewingItem}
+                    actionLabel={registryActionLabel}
+                    onReview={(item) => void controller.openReview(item)}
                   />
                 </div>
               )}
@@ -233,10 +261,19 @@ export function VideoRegistryScreen() {
       />
       <VideoReviewDialog
         item={controller.reviewingItem}
+        comments={controller.reviewComments}
+        isLoadingComments={controller.isLoadingReviewComments}
         permissions={controller.permissions}
         isSaving={controller.isMutating}
-        onClose={() => controller.setReviewingItem(null)}
-        onTransition={controller.transitionStatus}
+        onClose={controller.closeReview}
+        onEdit={controller.openEdit}
+        onTransition={transitionStatus}
+      />
+      <EditCreativeDialog
+        item={controller.editingItem}
+        isSaving={controller.isMutating}
+        onClose={() => controller.setEditingItem(null)}
+        onSave={updateCreative}
       />
     </div>
   );

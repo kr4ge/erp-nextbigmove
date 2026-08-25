@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 export class UpdateCreativeDto {
   @IsOptional()
@@ -11,8 +11,10 @@ export class UpdateCreativeDto {
 
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @ValidateIf((_, value) => value !== '')
   @IsUrl({ protocols: ['https'], require_protocol: true })
-  @Matches(/^https:\/\/(?:drive|docs)\.google\.com\//i, { message: 'mediaUrl must be a Google Drive URL' })
+  @Matches(/^https:\/\/(?:[a-z0-9-]+\.)?(?:facebook\.com|fb\.com|fb\.watch)\//i, { message: 'mediaUrl must be a Facebook post URL' })
   @MaxLength(2048)
   mediaUrl?: string;
 

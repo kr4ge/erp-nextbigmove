@@ -44,7 +44,7 @@ export class CreativeAccessService {
 
   require(context: CreativeAccessContext, ...permissions: string[]): void {
     if (!permissions.some((permission) => this.has(context, permission))) {
-      throw new ForbiddenException('Insufficient Creative Agent permissions');
+      throw new ForbiddenException('Insufficient creative workspace permissions');
     }
   }
 

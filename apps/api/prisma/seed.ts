@@ -285,15 +285,11 @@ const ROLES: RoleDef[] = [
       'analytics.sales',
       'analytics.sales_performance',
       'analytics.share',
-      'creative_agent.read',
-      'creative_agent.read_all',
-      'creative_agent.enroll',
-      'creative_agent.edit',
-      'creative_agent.edit_all',
-      'creative_agent.alias.manage',
-      'creative_agent.review',
-      'creative_agent.performance.manage',
-      'creative_agent.stores.manage',
+      // Tenant Admin deliberately holds NO creative_agent.* permissions.
+      // The Creative/Advertising workspace is authorized by explicit role
+      // assignment (CREATIVE_MAKER / CREATIVE_REVIEWER / CREATIVE_MANAGER);
+      // an admin who needs it must be assigned CREATIVE_MANAGER. Re-seeding
+      // prunes the previously granted creative permissions from this role.
       'stock_request.read',
       'stock_request.write',
       'orders.summary.read',
@@ -376,16 +372,13 @@ const ROLES: RoleDef[] = [
       'orders.summary.read',
       'meta.read',
       'dashboard.marketing',
-      'creative_agent.read',
-      'creative_agent.enroll',
-      'creative_agent.edit',
     ],
     isSystem: true,
   },
   {
     key: 'CREATIVE_MANAGER',
     name: 'Creative Manager',
-    description: 'Manage the tenant Creative Agent registry and workflow',
+    description: 'Manage the tenant creative workspace and workflow',
     scope: RoleScope.TENANT,
     permissions: [
       'creative_agent.read',
@@ -402,18 +395,23 @@ const ROLES: RoleDef[] = [
   },
   {
     key: 'CREATIVE_MAKER',
-    name: 'Creative Maker',
-    description: 'Enroll and manage their own Creative Agent records',
+    name: 'Creative',
+    description: 'Create, submit, and revise their own creative records',
     scope: RoleScope.TENANT,
     permissions: ['creative_agent.read', 'creative_agent.enroll', 'creative_agent.edit'],
     isSystem: true,
   },
   {
     key: 'CREATIVE_REVIEWER',
-    name: 'Creative Reviewer',
-    description: 'Review Creative Agent records across the tenant',
+    name: 'Advertising',
+    description: 'Review submitted creatives, manage Meta links, and steer creative performance',
     scope: RoleScope.TENANT,
-    permissions: ['creative_agent.read_all', 'creative_agent.review'],
+    permissions: [
+      'creative_agent.read_all',
+      'creative_agent.review',
+      'creative_agent.alias.manage',
+      'creative_agent.performance.manage',
+    ],
     isSystem: true,
   },
   {
