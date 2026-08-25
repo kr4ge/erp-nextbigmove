@@ -31,6 +31,12 @@ export class UpdateCreativeDto {
   hookType?: string;
 
   @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(500)
+  angle?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(20000)
   script?: string;

@@ -49,6 +49,17 @@ export class EnrollCreativeDto {
   hookType?: string;
 
   @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(500)
+  angle?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @Matches(/^[A-Z]{2,6}-V\d{3,6}$/, { message: 'remixOfCode must be a registry code like TB-V0001' })
+  remixOfCode?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(20000)
   script?: string;

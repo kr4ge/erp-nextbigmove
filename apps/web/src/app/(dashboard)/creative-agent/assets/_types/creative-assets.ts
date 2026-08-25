@@ -8,6 +8,7 @@ export type CreativeAsset = {
   mediaUrl: string | null;
   format: string | null;
   hookType: string | null;
+  angle: string | null;
   script: string | null;
   notes: string | null;
   revisionState: CreativeRevisionState;

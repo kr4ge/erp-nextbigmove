@@ -22,7 +22,7 @@ export async function fetchCreativeStores(): Promise<CreativeStoreOption[]> {
   catch (error) { throw apiError(error, 'Unable to load POS stores.'); }
 }
 export async function createVideoRegistryItem(input: CreateVideoRegistryInput): Promise<VideoRegistryItem> {
-  const payload = { storeId: input.storeId, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, script: input.script || undefined, notes: input.notes || undefined };
+  const payload = { storeId: input.storeId, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, angle: input.angle || undefined, remixOfCode: input.remixOfCode || undefined, script: input.script || undefined, notes: input.notes || undefined };
   const enrollsMetaAd = Boolean(input.accountId && input.adId && input.adName);
   try {
     return (enrollsMetaAd

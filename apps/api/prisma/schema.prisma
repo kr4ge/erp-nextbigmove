@@ -102,6 +102,7 @@ model Tenant {
   creatives                           Creative[]
   creativeAliases                     CreativeAlias[]
   creativeStatusEvents                CreativeStatusEvent[]
+  creativeInsightRuns                 CreativeInsightRun[]
   creativeMetaAdLinks                 CreativeMetaAdLink[]
   creativeReviewComments              CreativeReviewComment[]
   wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
@@ -1343,6 +1344,14 @@ model Creative {
   title              String
   format             String?
   hookType           String?
+  /// The big idea in the creative's own words ("nanay ng picky eater, guilt
+  /// angle"). hookType is the coarse category; this is the free-text one the
+  /// Ads Insight analysis learns from.
+  angle              String?
+  /// Registry code of the winner this creative was remixed from. Set at
+  /// enrolment, never edited — it is how the lineage report answers whether
+  /// refreshes beat their parents.
+  remixOfCode        String?
   script             String?
   notes              String?
   mediaUrl           String?
@@ -1427,6 +1436,26 @@ model CreativeAlias {
   @@index([creativeId])
   @@index([tenantId, createdAt])
   @@map("creative_aliases")
+}
+
+/// One saved Ads Insight analysis — the LLM's winners-vs-losers read for a
+/// period. Persisted so this month's read can be compared with last month's,
+/// and so a ₱-costing model call is never repeated just to re-open a page.
+model CreativeInsightRun {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+  model       String
+  answer      String
+  /// What the model was shown, compressed: codes + counts, for audit.
+  inputSummary Json?
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("creative_insight_runs")
 }
 
 model CreativeStatusEvent {

@@ -18,6 +18,7 @@ import {
   Sun,
   Video,
   FolderCheck,
+  Sparkles,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
@@ -114,6 +115,12 @@ const baseNavigation: NavLink[] = [
     label: 'Performance',
     description: 'Ad spend against POS orders',
     icon: <BarChart3 className={iconClasses} />,
+  },
+  {
+    href: '/ads-insight',
+    label: 'Ads Insight',
+    description: 'Scale, refresh, or kill — and the next batch',
+    icon: <Sparkles className={iconClasses} />,
   },
   {
     href: '/assets',
@@ -305,6 +312,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           return hasReports ? [link] : [];
         }
         if (link.href === '/performance') return canShowCreativeWorkspace && canShowPerformance ? [link] : [];
+        // Same audience as the insights endpoint: whoever steers the account.
+        if (link.href === '/ads-insight') return canShowCreativeWorkspace && canReadCreativeAll ? [link] : [];
         if (link.href === '/assets') return canShowCreativeWorkspace && canShowAssets ? [link] : [];
         if (link.href === '/video-registry') return canShowCreativeWorkspace && canShowVideoRegistry ? [link] : [];
         if (link.href !== '/integrations') return [link];

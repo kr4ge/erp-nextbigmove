@@ -95,7 +95,9 @@ export type ScorecardKpiKey = keyof typeof SCORECARD_KPI_WEIGHTS;
  */
 export const SCORECARD_KPI_TARGETS = {
   dailySpend: 50_000,
-  adSpendRatio: 0.33,
+  /** The owner's hard ceiling. 33% exists in their sheet only as headroom —
+   *  30% is the line everything is graded against, matching the winner rule. */
+  adSpendRatio: 0.3,
   /** Creative output is half volume, half quality — these are the two halves. */
   publishedPerPeriod: 8,
   winRate: 0.3,

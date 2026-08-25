@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { CommonServicesModule } from '../../common/services/services.module';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CreativeAdvertisingDashboardController } from './creative-advertising-dashboard.controller';
+import { CreativeInsightController } from './creative-insight.controller';
 import { CreativeAliasController } from './creative-alias.controller';
 import { CreativeAssetsController } from './creative-assets.controller';
 import { CreativeEnrollmentController } from './creative-enrollment.controller';
@@ -12,6 +13,7 @@ import { CreativeStoreController } from './creative-store.controller';
 import { CreativeWorkflowController } from './creative-workflow.controller';
 import { CreativeAccessService } from './services/creative-access.service';
 import { CreativeAdvertisingDashboardService } from './services/creative-advertising-dashboard.service';
+import { CreativeInsightService } from './services/creative-insight.service';
 import { CreativeAssetsService } from './services/creative-assets.service';
 import { CreativeAliasService } from './services/creative-alias.service';
 import { CreativeEnrollmentService } from './services/creative-enrollment.service';
@@ -36,6 +38,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeAssetsController,
     CreativePerformanceController,
     CreativeAdvertisingDashboardController,
+    CreativeInsightController,
   ],
   providers: [
     PermissionsGuard,
@@ -51,6 +54,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeAssetsService,
     CreativePerformanceService,
     CreativeAdvertisingDashboardService,
+    CreativeInsightService,
     CreativeThumbnailService,
   ],
   exports: [CreativeMetaLinkService],

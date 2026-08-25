@@ -472,6 +472,8 @@ export class CreativeLibraryService {
       creator: { id: creative.createdBy.id, name: creatorName, avatar: creative.createdBy.avatar },
       format: creative.format,
       hookType: creative.hookType,
+      angle: creative.angle,
+      remixOfCode: creative.remixOfCode,
       script: creative.script,
       notes: creative.notes,
       mediaUrl: creative.mediaUrl,

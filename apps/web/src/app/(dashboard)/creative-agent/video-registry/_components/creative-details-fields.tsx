@@ -88,6 +88,15 @@ export function CreativeDetailsFields({
       </div>
 
       <FormInput
+        name="angle"
+        label="Angle / big idea"
+        value={value.angle ?? ""}
+        onChange={(event) => onChange("angle", event.target.value)}
+        placeholder='e.g. "guilt ng nanay ng picky eater" or "budget-conscious na first-time mom"'
+        helper="The idea in your own words — Ads Insight learns from this, so the more specific, the better the analysis."
+      />
+
+      <FormInput
         name="mediaUrl"
         type="url"
         label="Facebook post link"

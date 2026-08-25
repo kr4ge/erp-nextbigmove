@@ -40,6 +40,7 @@ const EMPTY_FORM = {
   mediaUrl: "",
   format: "",
   hookType: "",
+    angle: "",
   script: "",
   notes: "",
 };
@@ -89,6 +90,7 @@ export function RegisterVideoDialog({
       ...current,
       format: "",
       hookType: "",
+      angle: "",
       script: "",
     }));
     setStep("details");

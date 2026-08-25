@@ -180,6 +180,7 @@ export class CreativeEnrollmentService {
       ...(dto.mediaUrl !== undefined ? { mediaUrl: dto.mediaUrl || null } : {}),
       ...(dto.format !== undefined ? { format: dto.format || null } : {}),
       ...(dto.hookType !== undefined ? { hookType: dto.hookType || null } : {}),
+      ...(dto.angle !== undefined ? { angle: dto.angle || null } : {}),
       ...(dto.script !== undefined ? { script: dto.script.trim() || null } : {}),
       ...(dto.notes !== undefined ? { notes: dto.notes.trim() || null } : {}),
     };
@@ -246,6 +247,8 @@ export class CreativeEnrollmentService {
           mediaUrl: dto.mediaUrl || null,
           format: dto.format || null,
           hookType: dto.hookType || null,
+          angle: dto.angle || null,
+          remixOfCode: dto.remixOfCode || null,
           script: dto.script?.trim() || null,
           notes: dto.notes?.trim() || null,
           createdById: userId,

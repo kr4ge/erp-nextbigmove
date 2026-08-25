@@ -16,6 +16,7 @@ export type EditableCreative = {
   mediaUrl: string | null;
   format: string | null;
   hookType: string | null;
+  angle: string | null;
   script: string | null;
   notes: string | null;
 };
@@ -33,6 +34,7 @@ function toForm(item: EditableCreative): UpdateVideoRegistryInput {
     mediaUrl: item.mediaUrl ?? "",
     format: item.format ?? "",
     hookType: item.hookType ?? "",
+    angle: item.angle ?? "",
     script: item.script ?? "",
     notes: item.notes ?? "",
   };

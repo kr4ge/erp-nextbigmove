@@ -76,6 +76,8 @@ export type VideoRegistryItem = {
   creator: RegistryPerson;
   format: string | null;
   hookType: string | null;
+  angle: string | null;
+  remixOfCode: string | null;
   script: string | null;
   notes: string | null;
   mediaUrl: string | null;
@@ -166,6 +168,8 @@ export type CreateVideoRegistryInput = {
   mediaUrl: string;
   format: string;
   hookType: string;
+  angle?: string;
+  remixOfCode?: string;
   script?: string;
   notes?: string;
   requestedCode?: string;
@@ -176,7 +180,7 @@ export type CreateVideoRegistryInput = {
 };
 export type UpdateVideoRegistryInput = Pick<
   CreateVideoRegistryInput,
-  "title" | "mediaUrl" | "format" | "hookType" | "script" | "notes"
+  "title" | "mediaUrl" | "format" | "hookType" | "angle" | "script" | "notes"
 >;
 export type LinkCreativeAliasInput = {
   unregisteredKey: string;
