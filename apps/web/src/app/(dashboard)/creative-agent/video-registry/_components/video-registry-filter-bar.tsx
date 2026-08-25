@@ -113,13 +113,13 @@ export function VideoRegistryFilterBar({
               <option value="STATIC">Static</option>
             </select>
             <select
-              value={params.qcStatus}
-              onChange={(event) => onParamsChange({ qcStatus: event.target.value as GetVideoRegistryParams['qcStatus'] })}
+              value={params.revisionState}
+              onChange={(event) => onParamsChange({ revisionState: event.target.value as GetVideoRegistryParams['revisionState'] })}
               className={`${selectClassName} w-40`}
               aria-label="Filter by approval status"
             >
               <option value="">All approvals</option>
-              {filters.qcStatuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {filters.revisionStates.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
             <select
               value={params.performanceStatus}

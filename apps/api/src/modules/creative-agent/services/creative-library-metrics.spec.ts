@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { CreativeLibraryService } from './creative-library.service';
 
 describe('CreativeLibraryService metric formulas', () => {
-  const service = new CreativeLibraryService({} as never, {} as never);
+  const service = new CreativeLibraryService({} as never, {} as never, {} as never);
   const serialize = (kind: 'VIDEO' | 'STATIC', video: Record<string, number> = {}) => {
     const creative = {
       id: 'creative-1',

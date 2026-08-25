@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreativeMetaLinkSource, CreativeQcStatus, Prisma } from '@prisma/client';
+import { CreativeMetaLinkSource, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   CREATIVE_AGENT_PERMISSIONS,
@@ -15,6 +15,7 @@ import { UpdateCreativeDto } from '../dto/update-creative.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
 import { CreativeAccessService } from './creative-access.service';
 import { CreativeStoreService } from './creative-store.service';
+import { CreativeThumbnailService } from './creative-thumbnail.service';
 
 const CREATIVE_DETAIL_INCLUDE = {
   storeConfig: { select: { id: true, storeId: true, storeNameSnapshot: true, shopIdSnapshot: true, codePrefix: true, active: true } },
@@ -41,6 +42,7 @@ export class CreativeEnrollmentService {
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
     private readonly stores: CreativeStoreService,
+    private readonly thumbnails: CreativeThumbnailService,
   ) {}
 
   async enroll(actor: CreativeActor, dto: EnrollCreativeDto) {
@@ -171,9 +173,7 @@ export class CreativeEnrollmentService {
     if (!this.access.canEdit(context, existing.createdById)) {
       throw new ForbiddenException('You cannot edit this creative');
     }
-    if (!['DRAFT', 'FOR_REVISION'].includes(existing.qcStatus)) {
-      throw new ConflictException('Submit feedback or return this creative for revision before changing its content');
-    }
+
 
     const data = {
       ...(dto.title !== undefined ? { title: dto.title } : {}),
@@ -202,6 +202,20 @@ export class CreativeEnrollmentService {
       });
       return creative;
     });
+
+    // Refresh the cached cover after the write commits. Capture is best-effort
+    // and never blocks the save: a creative without a thumbnail still works.
+    if (dto.mediaUrl !== undefined) {
+      if (dto.mediaUrl) {
+        await this.thumbnails.captureForCreative(updated.id, context.tenantId, dto.mediaUrl);
+      } else {
+        await this.thumbnails.clearForCreative(updated.id, context.tenantId);
+      }
+      return this.serializeCreative(await this.prisma.creative.findFirstOrThrow({
+        where: { id: updated.id, tenantId: context.tenantId },
+        include: this.detailInclude(),
+      }));
+    }
     return this.serializeCreative(updated);
   }
 
@@ -220,8 +234,6 @@ export class CreativeEnrollmentService {
   ) {
     const code = requestedCode ?? `${config.codePrefix}-V${String(codeNumber).padStart(4, '0')}`;
     const now = new Date();
-    const submitForApproval = dto.submitForApproval !== false;
-    const initialQcStatus = submitForApproval ? CreativeQcStatus.FOR_APPROVAL : CreativeQcStatus.DRAFT;
     const creative = await this.prisma.$transaction(async (tx) => {
       const created = await tx.creative.create({
         data: {
@@ -237,8 +249,7 @@ export class CreativeEnrollmentService {
           script: dto.script?.trim() || null,
           notes: dto.notes?.trim() || null,
           createdById: userId,
-          qcStatus: initialQcStatus,
-          submittedAt: submitForApproval ? now : null,
+          submittedAt: now,
           ...(metaLink
             ? {
                 metaAccountId: metaLink.accountId,
@@ -263,17 +274,6 @@ export class CreativeEnrollmentService {
         },
         include: this.detailInclude(),
       });
-      await tx.creativeStatusEvent.create({
-        data: {
-          tenantId,
-          creativeId: created.id,
-          dimension: 'QC',
-          fromStatus: 'NONE',
-          toStatus: initialQcStatus,
-          actorId: userId,
-          reason: submitForApproval ? 'Creative enrolled and submitted' : 'Creative draft saved',
-        },
-      });
       await tx.auditLog.create({
         data: {
           tenantId,
@@ -285,8 +285,7 @@ export class CreativeEnrollmentService {
             code,
             storeConfigId: config.id,
             kind: dto.kind,
-            qcStatus: initialQcStatus,
-            ...(metaLink
+              ...(metaLink
               ? {
                   metaAccountId: metaLink.accountId,
                   metaAdId: metaLink.adId,
@@ -298,6 +297,15 @@ export class CreativeEnrollmentService {
       });
       return created;
     });
+
+    // Best-effort cover capture for a newly registered creative.
+    if (dto.mediaUrl) {
+      await this.thumbnails.captureForCreative(creative.id, tenantId, dto.mediaUrl);
+      return this.serializeCreative(await this.prisma.creative.findFirstOrThrow({
+        where: { id: creative.id, tenantId },
+        include: this.detailInclude(),
+      }));
+    }
     return this.serializeCreative(creative);
   }
 

@@ -69,18 +69,14 @@ export function VideoRegistryScreen({ initialQuery = '' }: { initialQuery?: stri
     await controller.transitionStatus(...args);
     const [, dimension, status] = args;
     const labels: Record<string, string> = {
-      FOR_APPROVAL: "Creative submitted for approval. Advertising acts next.",
-      REVISED: "Revision submitted. Advertising acts next.",
-      FOR_POSTING: "Creative approved for posting.",
-      FOR_REVISION: "Creative returned for revision.",
-      POSTED: "Creative marked as posted.",
-      CANCELLED: "Creative cancelled.",
+      NEEDS_REVISION: "Revision requested. The creator will see your feedback in Assets.",
+      RESOLVED: "Revision marked resolved.",
       LIVE: "Creative marked live.",
       WINNER: "Creative marked as a winner.",
       FATIGUED: "Creative marked as fatigued.",
       RETIRED: "Creative retired.",
     };
-    addToast("success", labels[status] ?? `${dimension === "QC" ? "Approval" : "Performance"} status updated.`);
+    addToast("success", labels[status] ?? `${dimension === "REVISION" ? "Revision" : "Performance"} status updated.`);
   };
 
   const registryActionLabel = controller.permissions.canReview ? "Review" : "Open";

@@ -677,6 +677,7 @@ enum MediaAssetKind {
   INVOICE_LOGO_IMAGE
   UNDELIVERABLE_REMARK_PROOF_IMAGE
   WMS_PACKING_PROOF_IMAGE
+  CREATIVE_THUMBNAIL_IMAGE
 }
 
 enum WmsPackingProofSource {
@@ -1274,14 +1275,13 @@ enum CreativeKind {
   STATIC
 }
 
-enum CreativeQcStatus {
-  DRAFT
-  FOR_APPROVAL
-  FOR_REVISION
-  REVISED
-  FOR_POSTING
-  POSTED
-  CANCELLED
+/// Advertising's request-for-changes signal. A creative linked to a running
+/// Meta ad is already live, so there is no approval gate — this only tracks
+/// whether changes have been asked for and not yet resolved.
+enum CreativeRevisionState {
+  NONE
+  NEEDS_REVISION
+  RESOLVED
 }
 
 enum CreativePerformanceStatus {
@@ -1293,8 +1293,8 @@ enum CreativePerformanceStatus {
 }
 
 enum CreativeStatusDimension {
-  QC
   PERFORMANCE
+  REVISION
 }
 
 enum CreativeMetaLinkSource {
@@ -1339,7 +1339,9 @@ model Creative {
   mediaUrl           String?
   createdById        String                    @db.Uuid
   createdBy          User                      @relation("CreativeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  qcStatus           CreativeQcStatus          @default(DRAFT)
+  revisionState      CreativeRevisionState     @default(NONE)
+  revisionRequestedAt DateTime?
+  revisionResolvedAt  DateTime?
   performanceStatus  CreativePerformanceStatus @default(DRAFT)
   submittedAt        DateTime?
   approvedAt         DateTime?
@@ -1350,6 +1352,15 @@ model Creative {
   metaLinkedAt       DateTime?
   metaLinkedById     String?                   @db.Uuid
   metaLinkedBy       User?                     @relation("CreativeMetaLinkedBy", fields: [metaLinkedById], references: [id], onDelete: SetNull)
+
+  // Cached cover image resolved from the Facebook post's og:image. The CDN URL
+  // Facebook hands out expires in days, so the bytes are copied into object
+  // storage once and served from there instead of being hot-linked.
+  thumbnailAssetId     String?     @db.Uuid
+  thumbnailAsset       MediaAsset? @relation("CreativeThumbnailAsset", fields: [thumbnailAssetId], references: [id], onDelete: SetNull)
+  thumbnailSourceUrl   String?
+  thumbnailCapturedAt  DateTime?
+  thumbnailIsVideo     Boolean     @default(false)
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
 
@@ -1364,7 +1375,7 @@ model Creative {
   @@index([tenantId, createdAt])
   @@index([tenantId, createdById])
   @@index([tenantId, storeConfigId])
-  @@index([tenantId, qcStatus])
+  @@index([tenantId, revisionState])
   @@index([tenantId, performanceStatus])
   @@index([tenantId, metaAdId])
   @@map("creatives")
@@ -1839,6 +1850,7 @@ model MediaAsset {
   wmsPurchasingBatchesPaymentProof WmsPurchasingBatch[]       @relation("WmsPurchasingBatchPaymentProofAsset")
   undeliverableAttemptProof        UndeliverableAttemptProof? @relation("UndeliverableAttemptProofAsset")
   wmsPackingProof                  WmsPackingProof?           @relation("WmsPackingProofAsset")
+  creativeThumbnails               Creative[]                 @relation("CreativeThumbnailAsset")
 
   @@unique([bucket, objectKey])
   @@index([tenantId, kind])

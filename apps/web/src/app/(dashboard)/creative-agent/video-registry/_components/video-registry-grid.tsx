@@ -13,7 +13,7 @@ export function VideoRegistryGrid({ items, actionLabel, onReview }: { items: Vid
       {items.map((item) => (
         <article key={item.id} className="panel overflow-hidden">
           <div className="p-3 pb-0">
-            <DriveThumbnail mediaUrl={item.mediaUrl} title={item.title} onClick={() => onReview(item)} />
+            <DriveThumbnail mediaUrl={item.mediaUrl} title={item.title} cachedThumbnailUrl={item.thumbnailUrl} isVideo={item.thumbnailIsVideo} onClick={() => onReview(item)} />
           </div>
           <div className="p-4">
             <div className="flex items-start justify-between gap-3">
@@ -29,9 +29,13 @@ export function VideoRegistryGrid({ items, actionLabel, onReview }: { items: Vid
               </Button>
             </div>
             <p className="mt-2 text-xs text-muted">{item.creator.name} · {item.store.name}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <RegistryStatusPill type="qc" status={item.qcStatus} />
+            {/* One status badge. A revision pill appears only when Advertising
+                has actually asked for something. */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <RegistryStatusPill type="performance" status={item.performanceStatus} />
+              {item.revisionState !== 'NONE' ? (
+                <RegistryStatusPill type="revision" status={item.revisionState} />
+              ) : null}
             </div>
             <dl className="mt-4 grid grid-cols-4 gap-2 border-t border-border pt-4">
               {(item.kind === 'VIDEO' ? [

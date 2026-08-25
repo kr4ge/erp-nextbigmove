@@ -1,14 +1,14 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   CreativePerformanceStatus,
-  CreativeQcStatus,
+  CreativeRevisionState,
   CreativeStatusDimension,
 } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   CREATIVE_AGENT_PERMISSIONS,
   PERFORMANCE_TRANSITIONS,
-  QC_TRANSITIONS,
+  REVISION_TRANSITIONS,
 } from '../creative-agent.constants';
 import { TransitionCreativeStatusDto } from '../dto/transition-creative-status.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
@@ -29,8 +29,8 @@ export class CreativeWorkflowService {
     });
     if (!creative) throw new NotFoundException('Creative not found');
 
-    if (dto.dimension === CreativeStatusDimension.QC) {
-      return this.transitionQc(context, creative, dto);
+    if (dto.dimension === CreativeStatusDimension.REVISION) {
+      return this.transitionRevision(context, creative, dto);
     }
     return this.transitionPerformance(context, creative, dto);
   }
@@ -53,44 +53,51 @@ export class CreativeWorkflowService {
     });
   }
 
-  private async transitionQc(
+  /**
+   * Revision requests replace the old QC approval gate. There is no approval
+   * to grant — a linked creative is already running — so this only records
+   * that Advertising asked for changes, and that the creator addressed them.
+   */
+  private async transitionRevision(
     context: CreativeAccessContext,
-    creative: { id: string; createdById: string; qcStatus: CreativeQcStatus; submittedAt: Date | null; approvedAt: Date | null },
+    creative: { id: string; createdById: string; revisionState: CreativeRevisionState },
     dto: TransitionCreativeStatusDto,
   ) {
-    if (!Object.values(CreativeQcStatus).includes(dto.toStatus as CreativeQcStatus)) {
-      throw new ConflictException('Invalid QC status');
+    if (!Object.values(CreativeRevisionState).includes(dto.toStatus as CreativeRevisionState)) {
+      throw new ConflictException('Invalid revision state');
     }
-    const fromStatus = creative.qcStatus as string;
-    if (!(QC_TRANSITIONS[fromStatus] ?? []).includes(dto.toStatus)) {
-      throw new ConflictException(`QC transition ${fromStatus} → ${dto.toStatus} is not allowed`);
+    const fromStatus = creative.revisionState as string;
+    if (!(REVISION_TRANSITIONS[fromStatus] ?? []).includes(dto.toStatus)) {
+      throw new ConflictException(`Revision transition ${fromStatus} → ${dto.toStatus} is not allowed`);
     }
-    if (['FOR_REVISION', 'CANCELLED'].includes(dto.toStatus) && !dto.reason) {
-      throw new BadRequestException('A reason is required for revision or cancellation');
+    // A request for changes without a reason is not actionable feedback.
+    if (dto.toStatus === 'NEEDS_REVISION' && !dto.reason) {
+      throw new BadRequestException('Describe the changes you are asking for');
     }
 
-    const makerAction = (fromStatus === 'DRAFT' && dto.toStatus === 'FOR_APPROVAL')
-      || (fromStatus === 'FOR_REVISION' && dto.toStatus === 'REVISED')
-      || (creative.createdById === context.userId && dto.toStatus === 'CANCELLED');
-    if (makerAction) {
-      if (creative.createdById !== context.userId || !this.access.canEdit(context, creative.createdById)) {
-        throw new ForbiddenException('Only the creative owner can submit this creative');
-      }
-    } else {
+    if (dto.toStatus === 'NEEDS_REVISION') {
+      // Only a reviewer asks for changes, and never on their own creative.
       if (creative.createdById === context.userId) {
-        throw new ForbiddenException('A creative cannot review their own submission');
+        throw new ForbiddenException('You cannot request revisions on your own creative');
       }
       this.access.require(context, CREATIVE_AGENT_PERMISSIONS.REVIEW);
+    } else if (
+      creative.createdById !== context.userId
+      && !this.access.has(context, CREATIVE_AGENT_PERMISSIONS.REVIEW)
+    ) {
+      // The owner resolves their own request; a reviewer may also close it out.
+      throw new ForbiddenException('Only the creative owner or a reviewer can resolve this request');
     }
 
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
       const updateResult = await tx.creative.updateMany({
-        where: { id: creative.id, tenantId: context.tenantId, qcStatus: creative.qcStatus },
+        where: { id: creative.id, tenantId: context.tenantId, revisionState: creative.revisionState },
         data: {
-          qcStatus: dto.toStatus as CreativeQcStatus,
-          ...(dto.toStatus === 'FOR_POSTING' && !creative.approvedAt ? { approvedAt: now } : {}),
-          ...(!creative.submittedAt ? { submittedAt: now } : {}),
+          revisionState: dto.toStatus as CreativeRevisionState,
+          ...(dto.toStatus === 'NEEDS_REVISION'
+            ? { revisionRequestedAt: now, revisionResolvedAt: null }
+            : { revisionResolvedAt: now }),
         },
       });
       if (updateResult.count !== 1) throw new ConflictException('Creative status changed; refresh and retry');
@@ -98,13 +105,15 @@ export class CreativeWorkflowService {
         data: {
           tenantId: context.tenantId,
           creativeId: creative.id,
-          dimension: 'QC',
+          dimension: CreativeStatusDimension.REVISION,
           fromStatus,
           toStatus: dto.toStatus,
           actorId: context.userId,
           reason: dto.reason || null,
         },
       });
+      // The reason becomes the opening message of the thread, so feedback and
+      // history never drift apart.
       if (dto.reason) {
         await tx.creativeReviewComment.create({
           data: {
@@ -115,7 +124,7 @@ export class CreativeWorkflowService {
           },
         });
       }
-      return { creativeId: creative.id, dimension: 'QC', fromStatus, toStatus: dto.toStatus, eventId: event.id };
+      return { creativeId: creative.id, dimension: 'REVISION', fromStatus, toStatus: dto.toStatus, eventId: event.id };
     });
   }
 

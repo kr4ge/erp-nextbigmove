@@ -81,7 +81,7 @@ export class CreativeOverviewService {
     };
     const [creatives, stores, creatorRows] = await Promise.all([
       this.prisma.creative.findMany({ where, select: {
-        id: true, code: true, title: true, kind: true, mediaUrl: true, qcStatus: true,
+        id: true, code: true, title: true, kind: true, mediaUrl: true, revisionState: true,
         performanceStatus: true, createdAt: true, submittedAt: true, approvedAt: true,
         metaAdId: true, metaAdLinks: { select: { adId: true }, orderBy: { linkedAt: 'asc' } },
         storeConfig: { select: { storeId: true, storeNameSnapshot: true } },
@@ -121,7 +121,7 @@ export class CreativeOverviewService {
         mediaUrl: creative.mediaUrl,
         store: { id: creative.storeConfig.storeId, name: creative.storeConfig.storeNameSnapshot },
         creator: { id: creative.createdBy.id, name: this.personName(creative.createdBy) },
-        qcStatus: creative.qcStatus, performanceStatus: creative.performanceStatus,
+        revisionState: creative.revisionState, performanceStatus: creative.performanceStatus,
         linked: linkedAdIds.length > 0, metaAdId: linkedAdIds[0] ?? null, metaAdIds: linkedAdIds,
         adCount: linkedAdIds.length, topAd, testing: metrics.spend < 3_000 && metrics.orders < 10,
         metrics: {
@@ -183,7 +183,7 @@ export class CreativeOverviewService {
     const scorecard = this.buildScorecard({
       kpis, decisions, outputCount, days: range.days,
       scope: canReadAll && !query.creatorId ? 'TEAM' : 'PERSONAL',
-      qcCensus: this.qcCensus(creatives),
+      revisionCensus: this.revisionCensus(creatives),
     });
     const craftBoard = this.buildCraftBoard(baseRows);
     const withheldStages = [...guard.stages.keys()];
@@ -268,9 +268,9 @@ export class CreativeOverviewService {
     outputCount: number;
     days: number;
     scope: 'PERSONAL' | 'TEAM';
-    qcCensus: Array<{ status: string; count: number }>;
+    revisionCensus: Array<{ status: string; count: number }>;
   }) {
-    const { kpis, decisions, outputCount, days, scope, qcCensus } = input;
+    const { kpis, decisions, outputCount, days, scope, revisionCensus } = input;
     const hookRate = kpis.hookRate.value;
     const holdRate = kpis.holdRate.value;
     const completionRate = kpis.completionRate.value;
@@ -299,13 +299,13 @@ export class CreativeOverviewService {
         quotaAttainment: null,
         medianTurnaroundHours: decisions.medianTurnaroundHours,
       },
-      qcCensus,
+      revisionCensus,
     };
   }
 
-  private qcCensus(creatives: Array<{ qcStatus: string }>) {
+  private revisionCensus(creatives: Array<{ revisionState: string }>) {
     const counts = new Map<string, number>();
-    for (const creative of creatives) counts.set(creative.qcStatus, (counts.get(creative.qcStatus) ?? 0) + 1);
+    for (const creative of creatives) counts.set(creative.revisionState, (counts.get(creative.revisionState) ?? 0) + 1);
     return [...counts.entries()].map(([status, count]) => ({ status, count }));
   }
 
@@ -379,11 +379,11 @@ export class CreativeOverviewService {
   private async decisionMetrics(tenantId: string, creativeIds: string[], start: Date, end: Date) {
     if (!creativeIds.length) return { approved: 0, cancelled: 0, medianTurnaroundHours: null, turnaroundCount: 0 };
     const [events, approvedCreatives] = await Promise.all([
-      this.prisma.creativeStatusEvent.findMany({ where: { tenantId, creativeId: { in: creativeIds }, dimension: CreativeStatusDimension.QC, toStatus: { in: ['FOR_POSTING', 'CANCELLED'] }, createdAt: { gte: start, lte: end } }, select: { creativeId: true, toStatus: true } }),
+      this.prisma.creativeStatusEvent.findMany({ where: { tenantId, creativeId: { in: creativeIds }, dimension: CreativeStatusDimension.REVISION, toStatus: { in: ['NEEDS_REVISION', 'RESOLVED'] }, createdAt: { gte: start, lte: end } }, select: { creativeId: true, toStatus: true } }),
       this.prisma.creative.findMany({ where: { tenantId, id: { in: creativeIds }, approvedAt: { gte: start, lte: end }, submittedAt: { not: null } }, select: { submittedAt: true, approvedAt: true } }),
     ]);
-    const approved = new Set(events.filter((event) => event.toStatus === 'FOR_POSTING').map((event) => event.creativeId)).size;
-    const cancelled = new Set(events.filter((event) => event.toStatus === 'CANCELLED').map((event) => event.creativeId)).size;
+    const approved = new Set(events.filter((event) => event.toStatus === 'RESOLVED').map((event) => event.creativeId)).size;
+    const cancelled = new Set(events.filter((event) => event.toStatus === 'NEEDS_REVISION').map((event) => event.creativeId)).size;
     const hours = approvedCreatives.map((creative) => ((creative.approvedAt as Date).getTime() - (creative.submittedAt as Date).getTime()) / 3_600_000);
     const medianHours = median(hours);
     return { approved, cancelled, medianTurnaroundHours: medianHours === null ? null : round(medianHours, 1), turnaroundCount: hours.length };

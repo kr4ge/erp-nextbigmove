@@ -42,6 +42,10 @@ export class MediaAssetsService {
     process.env.OBJECT_STORAGE_PACKING_PROOF_MAX_FILE_MB,
     30,
   );
+  private readonly creativeThumbnailMaxFileMb = this.parsePositiveInt(
+    process.env.OBJECT_STORAGE_CREATIVE_THUMBNAIL_MAX_FILE_MB,
+    8,
+  );
 
   constructor(
     private readonly prisma: PrismaService,
@@ -110,6 +114,28 @@ export class MediaAssetsService {
       tooLargeLabel: 'Packing proof image',
       resizeWidth: 1920,
       resizeHeight: 1920,
+    });
+  }
+
+  /**
+   * Caches a creative's cover image (resolved from a Facebook post's og:image).
+   * Reuses the shared pipeline, so the bytes are re-encoded to WebP and stored
+   * in the same bucket as every other media asset.
+   */
+  async uploadCreativeThumbnailImage(
+    file: UploadedImageFile | undefined,
+    tenantId: string,
+  ): Promise<UploadedAssetView> {
+    return this.uploadImageAsset({
+      file,
+      tenantId,
+      kind: MediaAssetKind.CREATIVE_THUMBNAIL_IMAGE,
+      maxFileMb: this.creativeThumbnailMaxFileMb,
+      objectPrefix: 'creative-thumbnails',
+      requiredMessage: 'Creative thumbnail image is required',
+      tooLargeLabel: 'Creative thumbnail image',
+      resizeWidth: 960,
+      resizeHeight: 960,
     });
   }
 

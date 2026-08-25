@@ -59,20 +59,16 @@ export const RATE_TONE_TEXT: Record<RateTone, string> = {
   neutral: 'text-foreground',
 };
 
-/** One severity definition drives every QC status pill so a status reads the same on every screen. */
+/** One severity definition drives every status pill so a state reads the same on every screen. */
 export type PillTone = 'neutral' | 'info' | 'success' | 'warning' | 'destructive';
 
-export const QC_STATUS_META: Record<string, { label: string; tone: PillTone }> = {
-  DRAFT: { label: 'Draft', tone: 'neutral' },
-  FOR_APPROVAL: { label: 'For Approval', tone: 'info' },
-  FOR_REVISION: { label: 'For Revision', tone: 'warning' },
-  REVISED: { label: 'Revised', tone: 'info' },
-  FOR_POSTING: { label: 'For Posting', tone: 'success' },
-  POSTED: { label: 'Posted', tone: 'success' },
-  CANCELLED: { label: 'Cancelled', tone: 'destructive' },
-};
-
 const PILL_BASE = 'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs-tight font-semibold uppercase tracking-wide';
+
+export const REVISION_STATE_META: Record<string, { label: string; tone: PillTone }> = {
+  NONE: { label: 'No requests', tone: 'neutral' },
+  NEEDS_REVISION: { label: 'Needs Revision', tone: 'warning' },
+  RESOLVED: { label: 'Resolved', tone: 'success' },
+};
 
 export const PILL_TONE_CLASS: Record<PillTone, string> = {
   neutral: `${PILL_BASE} bg-secondary/40 text-muted dark:bg-secondary/15 dark:text-slate-300`,

@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { CreativePerformanceStatus, CreativeQcStatus, Prisma } from '@prisma/client';
+import { CreativePerformanceStatus, CreativeRevisionState, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CREATIVE_AGENT_PERMISSIONS } from '../creative-agent.constants';
 import { ListCreativeLibraryQueryDto } from '../dto/list-creative-library-query.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
+import { MediaAssetsService } from '../../../common/services/media-assets.service';
 import { CreativeAccessService } from './creative-access.service';
 
 type MetricBucket = {
@@ -51,6 +52,7 @@ const CREATIVE_LIBRARY_INCLUDE = {
     select: { id: true, accountId: true, adId: true, adNameSnapshot: true, source: true, linkedAt: true },
     orderBy: { linkedAt: 'asc' as const },
   },
+  thumbnailAsset: { select: { objectKey: true, contentType: true } },
 } satisfies Prisma.CreativeInclude;
 
 type CreativeLibraryRow = Prisma.CreativeGetPayload<{ include: typeof CREATIVE_LIBRARY_INCLUDE }>;
@@ -73,6 +75,7 @@ export class CreativeLibraryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
+    private readonly mediaAssets: MediaAssetsService,
   ) {}
 
   async list(actor: CreativeActor, query: ListCreativeLibraryQueryDto) {
@@ -95,7 +98,7 @@ export class CreativeLibraryService {
           : {}),
       ...(query.kind ? { kind: query.kind } : {}),
       ...(query.storeId ? { storeConfig: { storeId: query.storeId } } : {}),
-      ...(query.qcStatus ? { qcStatus: query.qcStatus } : {}),
+      ...(query.revisionState ? { revisionState: query.revisionState } : {}),
       ...(query.performanceStatus ? { performanceStatus: query.performanceStatus } : {}),
     };
     const insightWhere: Prisma.MetaAdInsightWhereInput = {
@@ -225,6 +228,14 @@ export class CreativeLibraryService {
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
     const page = Math.min(query.page, totalPages);
     const pageItems = items.slice((page - 1) * query.pageSize, page * query.pageSize);
+    // Sign only the page slice; objects stay private and URLs are short-lived.
+    await Promise.all(pageItems.map(async (item) => {
+      const objectKey = item.thumbnailObjectKey as string | null;
+      item.thumbnailUrl = objectKey
+        ? await this.mediaAssets.createSignedAssetUrl({ objectKey })
+        : null;
+      delete item.thumbnailObjectKey;
+    }));
     const accountNames = new Map(accounts.map((account) => [account.accountId, account.name]));
     const canManageUnregistered = canReadAll || this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE);
 
@@ -271,7 +282,7 @@ export class CreativeLibraryService {
         storeId: query.storeId ?? '',
         accountId: query.accountId ?? '',
         creatorId: query.creatorId ?? '',
-        qcStatus: query.qcStatus ?? '',
+        revisionState: query.revisionState ?? '',
         performanceStatus: query.performanceStatus ?? '',
         page,
         pageSize: query.pageSize,
@@ -291,7 +302,7 @@ export class CreativeLibraryService {
           label: [createdBy.firstName, createdBy.lastName].filter(Boolean).join(' ') || createdBy.email,
         })),
         accounts: accounts.map((account) => ({ value: account.accountId, label: account.name })),
-        qcStatuses: Object.values(CreativeQcStatus).map((value) => ({ value, label: this.humanize(value) })),
+        revisionStates: Object.values(CreativeRevisionState).map((value) => ({ value, label: this.humanize(value) })),
         performanceStatuses: Object.values(CreativePerformanceStatus).map((value) => ({ value, label: this.humanize(value) })),
       },
       items: pageItems,
@@ -410,9 +421,11 @@ export class CreativeLibraryService {
       script: creative.script,
       notes: creative.notes,
       mediaUrl: creative.mediaUrl,
+      thumbnailIsVideo: creative.thumbnailIsVideo,
+      thumbnailObjectKey: creative.thumbnailAsset?.objectKey ?? null,
       aliases: creative.aliases.map((alias) => alias.alias),
       aliasRecords: creative.aliases,
-      qcStatus: creative.qcStatus,
+      revisionState: creative.revisionState,
       performanceStatus: creative.performanceStatus,
       metrics: {
         spend: this.roundMoney(metrics.spend),

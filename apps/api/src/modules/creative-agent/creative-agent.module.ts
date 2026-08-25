@@ -21,6 +21,7 @@ import { CreativeMetaLinkService } from './services/creative-meta-link.service';
 import { CreativeOverviewService } from './services/creative-overview.service';
 import { CreativePerformanceService } from './services/creative-performance.service';
 import { CreativeStoreService } from './services/creative-store.service';
+import { CreativeThumbnailService } from './services/creative-thumbnail.service';
 import { CreativeWorkflowService } from './services/creative-workflow.service';
 
 @Module({
@@ -50,6 +51,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeAssetsService,
     CreativePerformanceService,
     CreativeAdvertisingDashboardService,
+    CreativeThumbnailService,
   ],
   exports: [CreativeMetaLinkService],
 })

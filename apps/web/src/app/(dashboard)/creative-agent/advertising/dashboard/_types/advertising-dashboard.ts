@@ -70,15 +70,14 @@ export type AdvertisingDashboardResponse = {
       cvr: DashboardMetric;
     };
   };
-  reviewPipeline: {
-    awaitingReview: number;
-    revised: number;
-    readyForPosting: number;
-    postedInPeriod: number;
-    medianTurnaroundHours: number | null;
-    approvalRate: number | null;
-    approvedCount: number;
-    cancelledCount: number;
+  revisionPipeline: {
+    needsRevision: number;
+    resolved: number;
+    noRequests: number;
+    requestedInPeriod: number;
+    resolvedInPeriod: number;
+    medianResolutionHours: number | null;
+    withFeedback: number;
   };
   calendar: { month: string; monthLabel: string; days: CalendarDay[] };
   trend: TrendPoint[];

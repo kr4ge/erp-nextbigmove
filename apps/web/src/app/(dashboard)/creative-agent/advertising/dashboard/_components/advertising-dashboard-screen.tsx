@@ -40,7 +40,7 @@ export function AdvertisingDashboardScreen() {
   const { data, params } = controller;
   const advertising = data?.kpis.advertising;
   const creative = data?.kpis.creative;
-  const pipeline = data?.reviewPipeline;
+  const pipeline = data?.revisionPipeline;
   const ceiling = data?.scope.ceiling;
   const criticalAlertCount = data?.alerts.filter((alert) => alert.severity === 'critical').length ?? 0;
   // Summed from the very rows the chart plots, so the header figures and the
@@ -170,20 +170,20 @@ export function AdvertisingDashboardScreen() {
           </div>
         </section>
 
-        {/* 4 · Review pipeline */}
+        {/* 4 · Feedback pipeline. Approval is gone — a linked creative is
+            already running — so this tracks open change requests instead. */}
         <section className="panel panel-content shadow-card">
           <PanelHeader
-            title="Review pipeline"
-            description="The approval queue you own. Counts deep-link into Assets."
+            title="Feedback pipeline"
+            description="Change requests you have open with the creative team. Counts deep-link into Assets."
             right={<Link href="/assets?queue=REVIEW" className="btn btn-sm btn-outline">Open queue</Link>}
           />
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
-            <Link href="/assets?qcStatus=FOR_APPROVAL"><StatTile compact label="Awaiting review" value={formatCount(pipeline?.awaitingReview)} sub="For Approval" /></Link>
-            <Link href="/assets?qcStatus=REVISED"><StatTile compact label="Resubmitted" value={formatCount(pipeline?.revised)} sub="Revised" /></Link>
-            <Link href="/assets?qcStatus=FOR_POSTING"><StatTile compact label="Ready to post" value={formatCount(pipeline?.readyForPosting)} sub="For Posting" /></Link>
-            <Link href="/assets?qcStatus=POSTED"><StatTile compact label="Posted" value={formatCount(pipeline?.postedInPeriod)} sub="in selected period" /></Link>
-            <StatTile compact label="Turnaround" info="Median hours from submission to approval, rows with both timestamps only." value={formatHours(pipeline?.medianTurnaroundHours)} sub="submitted → approved" />
-            <StatTile compact label="Approval rate" info="Approved ÷ (approved + cancelled) — finished decisions only." value={formatPercent(pipeline?.approvalRate, 0)} sub={`${formatCount(pipeline?.cancelledCount)} cancelled`} />
+          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-5">
+            <Link href="/assets?revisionState=NEEDS_REVISION"><StatTile compact label="Needs revision" info="Creatives with an open request for changes." value={formatCount(pipeline?.needsRevision)} tone={(pipeline?.needsRevision ?? 0) > 0 ? 'warn' : 'neutral'} sub="awaiting the creator" /></Link>
+            <Link href="/assets?revisionState=RESOLVED"><StatTile compact label="Resolved" value={formatCount(pipeline?.resolved)} sub="changes addressed" /></Link>
+            <StatTile compact label="Requested" info="Revision requests opened during the selected period." value={formatCount(pipeline?.requestedInPeriod)} sub="in selected period" />
+            <StatTile compact label="Resolution time" info="Median hours from request to resolution." value={formatHours(pipeline?.medianResolutionHours)} sub="requested → resolved" />
+            <StatTile compact label="With feedback" info="Creatives that have at least one message in their thread." value={formatCount(pipeline?.withFeedback)} sub="have a thread" />
           </div>
         </section>
 

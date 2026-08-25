@@ -15,14 +15,15 @@ export const CREATIVE_AGENT_PERMISSIONS = {
   STORES_MANAGE: 'creative_agent.stores.manage',
 } as const;
 
-export const QC_TRANSITIONS: Record<string, readonly string[]> = {
-  DRAFT: ['FOR_APPROVAL', 'CANCELLED'],
-  FOR_APPROVAL: ['FOR_REVISION', 'FOR_POSTING', 'CANCELLED'],
-  FOR_REVISION: ['REVISED', 'CANCELLED'],
-  REVISED: ['FOR_REVISION', 'FOR_POSTING', 'CANCELLED'],
-  FOR_POSTING: ['FOR_REVISION', 'POSTED', 'CANCELLED'],
-  POSTED: [],
-  CANCELLED: [],
+/**
+ * Revision is a request-for-changes signal, not an approval gate: a creative
+ * linked to a running Meta ad is already live. Advertising opens a request,
+ * the creator resolves it, and either side can reopen.
+ */
+export const REVISION_TRANSITIONS: Record<string, readonly string[]> = {
+  NONE: ['NEEDS_REVISION'],
+  NEEDS_REVISION: ['RESOLVED'],
+  RESOLVED: ['NEEDS_REVISION'],
 };
 
 export const PERFORMANCE_TRANSITIONS: Record<string, readonly string[]> = {

@@ -188,7 +188,7 @@ export function useVideoRegistryController(initialQuery = '') {
   const hasActiveFilters = useMemo(
     () => Boolean(
       params.query || params.kind || params.accountId || params.storeId || params.creatorId ||
-      params.qcStatus || params.performanceStatus,
+      params.revisionState || params.performanceStatus,
     ),
     [params],
   );

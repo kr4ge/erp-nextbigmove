@@ -1,12 +1,11 @@
 import { Transform, Type } from 'class-transformer';
-import { CreativeQcStatus } from '@prisma/client';
+import { CreativeRevisionState } from '@prisma/client';
 import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 export class ListCreativeAssetsQueryDto {
   /**
-   * REVIEW narrows the list to the advertising approval queue
-   * (FOR_APPROVAL, REVISED, FOR_POSTING), oldest submission first.
-   * An explicit qcStatus wins over the queue preset.
+   * REVIEW narrows the list to creatives with an open request for changes,
+   * oldest request first. An explicit revisionState wins over the preset.
    */
   @IsOptional()
   @Transform(({ value }) => value === '' ? undefined : value)
@@ -37,8 +36,8 @@ export class ListCreativeAssetsQueryDto {
 
   @IsOptional()
   @Transform(({ value }) => value === '' ? undefined : value)
-  @IsEnum(CreativeQcStatus)
-  qcStatus?: CreativeQcStatus;
+  @IsEnum(CreativeRevisionState)
+  revisionState?: CreativeRevisionState;
 
   @IsOptional()
   @Type(() => Number)

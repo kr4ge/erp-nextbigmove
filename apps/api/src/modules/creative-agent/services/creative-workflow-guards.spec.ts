@@ -9,6 +9,13 @@ const REVIEWER_CONTEXT = {
   permissions: new Set(['creative_agent.read_all', 'creative_agent.review']),
 };
 
+const OWNER_CONTEXT = {
+  tenantId: 'tenant-1',
+  userId: 'maker-1',
+  isSuperAdmin: false,
+  permissions: new Set(['creative_agent.read', 'creative_agent.edit']),
+};
+
 function createHarness(options: {
   creative: Record<string, unknown>;
   updateCount?: number;
@@ -50,69 +57,91 @@ const baseCreative = {
   id: 'creative-1',
   tenantId: 'tenant-1',
   createdById: 'maker-1',
-  qcStatus: 'FOR_APPROVAL',
-  submittedAt: new Date('2026-08-01T00:00:00Z'),
-  approvedAt: null,
+  revisionState: 'NONE',
+  performanceStatus: 'LIVE',
 };
 
-describe('QC workflow guards', () => {
-  it('rejects a reviewer approving their own submission', async () => {
+const request = (extra: Record<string, unknown> = {}) =>
+  ({ dimension: 'REVISION', toStatus: 'NEEDS_REVISION', ...extra }) as never;
+
+describe('revision request guards', () => {
+  it('requires a description of the changes being asked for', async () => {
+    const { service } = createHarness({ creative: baseCreative });
+    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', request()))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects requesting revisions on your own creative', async () => {
     const { service } = createHarness({
       creative: { ...baseCreative, createdById: 'reviewer-1' },
     });
-    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', {
-      dimension: 'QC', toStatus: 'FOR_POSTING',
-    } as never)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', request({ reason: 'Tighten the hook' })))
+      .rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('rejects a revision without a reason', async () => {
-    const { service } = createHarness({ creative: baseCreative });
-    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', {
-      dimension: 'QC', toStatus: 'FOR_REVISION',
-    } as never)).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('rejects a cancellation without a reason', async () => {
-    const { service } = createHarness({ creative: baseCreative });
-    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', {
-      dimension: 'QC', toStatus: 'CANCELLED',
-    } as never)).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('returns 409 when a concurrent reviewer already moved the status', async () => {
-    const { service } = createHarness({ creative: baseCreative, updateCount: 0 });
-    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', {
-      dimension: 'QC', toStatus: 'FOR_POSTING',
-    } as never)).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it('approves with a compare-and-swap on the current status and write-once approvedAt', async () => {
+  it('opens a request with a compare-and-swap and stamps the requested time', async () => {
     const { service, tx } = createHarness({ creative: baseCreative });
-    await service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', {
-      dimension: 'QC', toStatus: 'FOR_POSTING',
-    } as never);
+    await service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', request({ reason: 'Tighten the hook' }));
     const call = (tx.creative.updateMany.mock.calls as unknown as Array<[{
       where: Record<string, unknown>; data: Record<string, unknown>;
     }]>)[0][0];
-    expect(call.where).toMatchObject({ id: 'creative-1', tenantId: 'tenant-1', qcStatus: 'FOR_APPROVAL' });
-    expect(call.data.approvedAt).toBeInstanceOf(Date);
+    expect(call.where).toMatchObject({ id: 'creative-1', tenantId: 'tenant-1', revisionState: 'NONE' });
+    expect(call.data.revisionState).toBe('NEEDS_REVISION');
+    expect(call.data.revisionRequestedAt).toBeInstanceOf(Date);
+    expect(call.data.revisionResolvedAt).toBeNull();
   });
 
-  it('does not reset approvedAt on a re-approval after a revision cycle', async () => {
-    const { service, tx } = createHarness({
-      creative: { ...baseCreative, qcStatus: 'REVISED', approvedAt: new Date('2026-08-02T00:00:00Z') },
-    });
-    await service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', {
-      dimension: 'QC', toStatus: 'FOR_POSTING',
-    } as never);
+  it('turns the reason into the opening message of the thread', async () => {
+    const { service, tx } = createHarness({ creative: baseCreative });
+    await service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', request({ reason: 'Tighten the hook' }));
+    expect(tx.creativeReviewComment.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ message: 'Tighten the hook', authorId: 'reviewer-1' }),
+    }));
+  });
+
+  it('returns 409 when someone else already changed the state', async () => {
+    const { service } = createHarness({ creative: baseCreative, updateCount: 0 });
+    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', request({ reason: 'Tighten the hook' })))
+      .rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects an illegal transition', async () => {
+    const { service } = createHarness({ creative: { ...baseCreative, revisionState: 'NEEDS_REVISION' } });
+    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', request({ reason: 'again' })))
+      .rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe('revision resolution', () => {
+  const openCreative = { ...baseCreative, revisionState: 'NEEDS_REVISION' };
+  const resolve = { dimension: 'REVISION', toStatus: 'RESOLVED' } as never;
+
+  it('lets the owner resolve their own request without a reason', async () => {
+    const { service, tx } = createHarness({ creative: openCreative, context: OWNER_CONTEXT });
+    await service.transition({ userId: 'maker-1', tenantId: 'tenant-1' }, 'creative-1', resolve);
     const call = (tx.creative.updateMany.mock.calls as unknown as Array<[{ data: Record<string, unknown> }]>)[0][0];
-    expect(call.data.approvedAt).toBeUndefined();
+    expect(call.data.revisionState).toBe('RESOLVED');
+    expect(call.data.revisionResolvedAt).toBeInstanceOf(Date);
   });
 
-  it('rejects an illegal transition with a conflict', async () => {
-    const { service } = createHarness({ creative: { ...baseCreative, qcStatus: 'POSTED' } });
-    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', {
-      dimension: 'QC', toStatus: 'FOR_REVISION', reason: 'nope',
-    } as never)).rejects.toBeInstanceOf(ConflictException);
+  it('lets a reviewer close out a request too', async () => {
+    const { service } = createHarness({ creative: openCreative });
+    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', resolve))
+      .resolves.toMatchObject({ toStatus: 'RESOLVED', dimension: 'REVISION' });
+  });
+
+  it('rejects an unrelated user resolving the request', async () => {
+    const { service } = createHarness({
+      creative: openCreative,
+      context: { ...OWNER_CONTEXT, userId: 'someone-else' },
+    });
+    await expect(service.transition({ userId: 'someone-else', tenantId: 'tenant-1' }, 'creative-1', resolve))
+      .rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows reopening a resolved request', async () => {
+    const { service } = createHarness({ creative: { ...baseCreative, revisionState: 'RESOLVED' } });
+    await expect(service.transition({ userId: 'reviewer-1', tenantId: 'tenant-1' }, 'creative-1', request({ reason: 'Still off' })))
+      .resolves.toMatchObject({ toStatus: 'NEEDS_REVISION' });
   });
 });
