@@ -9900,6 +9900,50 @@ export class WmsMobileService {
     );
   }
 
+  private async reconcileCanceledBasketOrders(
+    basket: any,
+    actorId: string | null,
+  ) {
+    const orders = Array.isArray(basket.fulfillmentOrders)
+      ? basket.fulfillmentOrders
+      : basket.fulfillmentOrder
+        ? [basket.fulfillmentOrder]
+        : [];
+    const canceledOrders = orders.filter((order: any) => (
+      order.posOrder?.status === CANCELED_POS_ORDER_STATUS
+      || Boolean(order.posOrder?.isVoid)
+    ));
+
+    if (canceledOrders.length === 0) {
+      return 0;
+    }
+
+    const result = await this.wmsFulfillmentSyncService.reconcileCanceledPickingOrderRefs({
+      actorId,
+      orders: canceledOrders
+        .filter((order: any) => (
+          typeof order.tenantId === 'string'
+          && typeof order.storeId === 'string'
+          && typeof order.shopId === 'string'
+          && typeof order.posOrderId === 'string'
+        ))
+        .map((order: any) => ({
+          tenantId: order.tenantId,
+          storeId: order.storeId,
+          shopId: order.shopId,
+          posOrderId: order.posOrderId,
+        })),
+    });
+
+    if (result.cleanedOrders > 0) {
+      this.logger.warn(
+        `Released ${result.cleanedOrders} canceled POS order(s) from basket ${basket.barcode}`,
+      );
+    }
+
+    return result.cleanedOrders;
+  }
+
   private async findPickingBasketForAction(
     user: BootstrapUser,
     id: string,
@@ -9929,7 +9973,7 @@ export class WmsMobileService {
           ],
         }
       : {};
-    const basket = await this.prisma.wmsBasket.findFirst({
+    let basket = await this.prisma.wmsBasket.findFirst({
       where: {
         id,
         ...tenantScopeWhere,
@@ -9942,7 +9986,6 @@ export class WmsMobileService {
     }
 
     this.assertLegacyReservedStoxAccessAllowedForBasket(basket);
-    this.assertBasketActivePickOrdersPosConfirmed(basket);
 
     const userId = user.userId || user.id || null;
     if (userId) {
@@ -9956,6 +9999,21 @@ export class WmsMobileService {
       ]);
       this.assertPickExecutionAccess(user, access.permissions, taskAssignment);
     }
+
+    if (await this.reconcileCanceledBasketOrders(basket, userId)) {
+      basket = await this.prisma.wmsBasket.findFirst({
+        where: {
+          id,
+          ...tenantScopeWhere,
+        },
+        include: this.mobileBasketInclude(),
+      });
+      if (!basket) {
+        throw new NotFoundException('Pick basket was not found after canceled orders were released');
+      }
+    }
+
+    this.assertBasketActivePickOrdersPosConfirmed(basket);
 
     return basket;
   }
@@ -9989,7 +10047,7 @@ export class WmsMobileService {
           ],
         }
       : {};
-    const basket = await this.prisma.wmsBasket.findFirst({
+    const basketQuery = {
       where: {
         id,
         ...tenantScopeWhere,
@@ -10013,6 +10071,7 @@ export class WmsMobileService {
             posOrderId: true,
             tenantId: true,
             storeId: true,
+            shopId: true,
             status: true,
             assignmentMode: true,
             posOrder: {
@@ -10060,14 +10119,14 @@ export class WmsMobileService {
           ],
         },
       },
-    });
+    } satisfies Prisma.WmsBasketFindFirstArgs;
+    let basket = await this.prisma.wmsBasket.findFirst(basketQuery);
 
     if (!basket) {
       throw new NotFoundException('Pick basket was not found');
     }
 
     this.assertLegacyReservedStoxAccessAllowedForBasket(basket);
-    this.assertBasketActivePickOrdersPosConfirmed(basket);
 
     const userId = user.userId || user.id || null;
     if (userId) {
@@ -10081,6 +10140,15 @@ export class WmsMobileService {
       ]);
       this.assertPickExecutionAccess(user, access.permissions, taskAssignment);
     }
+
+    if (await this.reconcileCanceledBasketOrders(basket, userId)) {
+      basket = await this.prisma.wmsBasket.findFirst(basketQuery);
+      if (!basket) {
+        throw new NotFoundException('Pick basket was not found after canceled orders were released');
+      }
+    }
+
+    this.assertBasketActivePickOrdersPosConfirmed(basket);
 
     return basket;
   }
@@ -10161,7 +10229,7 @@ export class WmsMobileService {
           ],
         }
       : {};
-    const basket = await this.prisma.wmsBasket.findFirst({
+    let basket = await this.prisma.wmsBasket.findFirst({
       where: {
         id,
         status: {
@@ -10178,6 +10246,25 @@ export class WmsMobileService {
 
     this.assertLegacyReservedStoxAccessAllowedForBasket(basket);
     await this.assertPackingBasketUserAccess(user, basket);
+
+    const userId = user.userId || user.id || null;
+    if (await this.reconcileCanceledBasketOrders(basket, userId)) {
+      basket = await this.prisma.wmsBasket.findFirst({
+        where: {
+          id,
+          status: {
+            in: [...PACK_QUEUE_BASKET_STATUSES],
+          },
+          ...tenantScopeWhere,
+        },
+        include: this.mobileBasketInclude(),
+      });
+      if (!basket) {
+        throw new ConflictException(
+          'Canceled POS orders were released and this basket left the pack queue. Refresh the queue.',
+        );
+      }
+    }
 
     return basket;
   }
@@ -10211,7 +10298,7 @@ export class WmsMobileService {
           ],
         }
       : {};
-    const basket = await this.prisma.wmsBasket.findFirst({
+    const basketQuery = {
       where: {
         id,
         status: WmsBasketStatus.PACKING,
@@ -10229,11 +10316,23 @@ export class WmsMobileService {
           },
           select: {
             id: true,
+            tenantId: true,
+            storeId: true,
+            shopId: true,
+            posOrderId: true,
+            status: true,
             assignmentMode: true,
+            posOrder: {
+              select: {
+                status: true,
+                isVoid: true,
+              },
+            },
           },
         },
       },
-    });
+    } satisfies Prisma.WmsBasketFindFirstArgs;
+    let basket = await this.prisma.wmsBasket.findFirst(basketQuery);
 
     if (!basket) {
       throw new NotFoundException('Pack basket was not found');
@@ -10242,6 +10341,17 @@ export class WmsMobileService {
     this.assertLegacyReservedStoxAccessAllowedForBasket(basket);
     this.assertDemandPackingBasket(basket);
     await this.assertPackingBasketUserAccess(user, basket);
+
+    const userId = user.userId || user.id || null;
+    if (await this.reconcileCanceledBasketOrders(basket, userId)) {
+      basket = await this.prisma.wmsBasket.findFirst(basketQuery);
+      if (!basket) {
+        throw new ConflictException(
+          'Canceled POS orders were released and this basket left the pack queue. Refresh the queue.',
+        );
+      }
+      this.assertDemandPackingBasket(basket);
+    }
 
     return basket;
   }

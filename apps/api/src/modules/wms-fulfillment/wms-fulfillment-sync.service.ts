@@ -588,6 +588,63 @@ export class WmsFulfillmentSyncService {
     return { syncedOrders };
   }
 
+  async reconcileCanceledPickingOrderRefs(params: {
+    actorId: string | null;
+    orders: Array<{
+      tenantId: string;
+      storeId: string;
+      shopId: string;
+      posOrderId: string;
+    }>;
+  }) {
+    const uniqueOrders = Array.from(
+      new Map(
+        params.orders
+          .filter((order) => (
+            order.tenantId
+            && order.storeId
+            && order.shopId
+            && order.posOrderId
+          ))
+          .map((order) => [
+            `${order.tenantId}::${order.storeId}::${order.shopId}::${order.posOrderId}`,
+            order,
+          ] as const),
+      ).values(),
+    );
+
+    const ordersByStore = new Map<string, typeof uniqueOrders>();
+    for (const order of uniqueOrders) {
+      const scopeKey = `${order.tenantId}::${order.storeId}::${order.shopId}`;
+      const scopedOrders = ordersByStore.get(scopeKey) ?? [];
+      scopedOrders.push(order);
+      ordersByStore.set(scopeKey, scopedOrders);
+    }
+
+    let cleanedOrders = 0;
+    for (const scopedOrders of ordersByStore.values()) {
+      const [scope] = scopedOrders;
+      const store = {
+        id: scope.storeId,
+        tenantId: scope.tenantId,
+        shopId: scope.shopId,
+      };
+      const result = await this.syncCanceledPickingOrders({
+        tenantId: scope.tenantId,
+        storeId: scope.storeId,
+        stores: [store],
+        actorId: params.actorId,
+        posOrderRefs: scopedOrders.map((order) => ({
+          shopId: order.shopId,
+          posOrderId: order.posOrderId,
+        })),
+      }, [store]);
+      cleanedOrders += result.cleanedOrders;
+    }
+
+    return { cleanedOrders };
+  }
+
   private async syncCanceledPickingOrders(
     params: {
       tenantId: string | null;
