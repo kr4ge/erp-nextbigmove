@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CreativeActor } from '../types/creative-actor.type';
 import { ADVERTISING_PROVISIONAL_DEFAULTS } from '../utils/advertising-metrics';
 import { round } from '../utils/creative-metrics';
+import { AiSettingsService } from '../../ai-settings/ai-settings.service';
 import { CreativeAccessService } from './creative-access.service';
 
 const MODEL = 'claude-sonnet-5';
@@ -43,6 +44,7 @@ export class CreativeInsightService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
+    private readonly aiSettings: AiSettingsService,
   ) {}
 
   /**
@@ -207,12 +209,19 @@ export class CreativeInsightService {
       select: { id: true, answer: true, model: true, periodStart: true, periodEnd: true, createdAt: true },
     });
 
+    // The daily gate is Manila-calendar, matching every other day boundary in
+    // this module: one analysis per day, always a person clicking, never a cron.
+    const diagnoseUsedToday = Boolean(
+      latestRun && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(latestRun.createdAt) === today,
+    );
+
     return {
       window: { econStart: econStart.toISOString().slice(0, 10), end: today, rule: { arCeiling: ceiling, killLine: warning, evidenceSpend: EVIDENCE_SPEND, evidenceOrders: EVIDENCE_ORDERS } },
       counts: order.reduce((acc, key) => ({ ...acc, [key]: rows.filter((row) => row.verdict === key).length }), {} as Record<InsightVerdict, number>),
       rows,
       latestRun,
-      aiConfigured: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+      diagnoseUsedToday,
+      aiConfigured: Boolean(await this.aiSettings.resolveKey(tenantId)),
     };
   }
 
@@ -222,12 +231,20 @@ export class CreativeInsightService {
    */
   async diagnose(actor: CreativeActor) {
     const context = await this.access.resolve(actor);
-    const key = process.env.ANTHROPIC_API_KEY?.trim();
+    const key = await this.aiSettings.resolveKey(context.tenantId);
     if (!key) {
-      throw new ServiceUnavailableException('No Anthropic API key configured. Set ANTHROPIC_API_KEY on the API to enable Ads Insight analysis.');
+      throw new ServiceUnavailableException('No Anthropic API key configured. Ask the main admin to add one in Settings → AI.');
     }
 
     const queue = await this.getQueue(actor);
+    // One per day, by the owner's rule — a human clicks it, the gate just
+    // stops a second click (or an eager teammate) from double-spending.
+    if (queue.diagnoseUsedToday && queue.latestRun) {
+      throw new HttpException(
+        `Today's analysis already ran at ${new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(queue.latestRun.createdAt)}. One per day — it is on the page below; run again tomorrow.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     const graded = queue.rows.filter((row) => row.verdict !== 'TESTING');
     const winners = graded.filter((row) => row.isWinner);
     if (graded.length < 3 || winners.length < 1) {
@@ -273,16 +290,22 @@ export class CreativeInsightService {
     ].join('\n\n');
 
     const client = new Anthropic({ apiKey: key });
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 2000,
-      system: [
+    let response: Anthropic.Message;
+    try {
+      response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 2000,
+        system: [
         `You are the creative strategist for this account. Analyze ONLY the data provided — never invent creatives, numbers, or audience facts. Cite creative codes for every claim.`,
         `Answer in five short sections, markdown headers: "What the winners share", "What the losers share", "Make more of this", "Stop making this", "Three sharpest next tests".`,
         `In "Three sharpest next tests", each test must name the element being changed (hook / angle / format / avatar / opening visual) and which winner it builds on. Keep the whole answer under 500 words. If the sample is thin, say plainly which conclusions are weak.`,
       ].join('\n'),
-      messages: [{ role: 'user', content: prompt }],
-    });
+        messages: [{ role: 'user', content: prompt }],
+      });
+    } catch (error) {
+      // A dead or wrong key must read as configuration, not as a crash.
+      throw new ServiceUnavailableException(`The AI call failed: ${(error as Error).message}`);
+    }
     const answer = response.content
       .filter((item): item is Anthropic.TextBlock => item.type === 'text')
       .map((item) => item.text).join('\n').trim();
@@ -314,9 +337,9 @@ export class CreativeInsightService {
    */
   async variants(actor: CreativeActor, creativeId: string) {
     const context = await this.access.resolve(actor);
-    const key = process.env.ANTHROPIC_API_KEY?.trim();
+    const key = await this.aiSettings.resolveKey(context.tenantId);
     if (!key) {
-      throw new ServiceUnavailableException('No Anthropic API key configured. Set ANTHROPIC_API_KEY on the API to enable variant generation.');
+      throw new ServiceUnavailableException('No Anthropic API key configured. Ask the main admin to add one in Settings → AI.');
     }
 
     const creative = await this.prisma.creative.findFirst({
@@ -343,9 +366,11 @@ export class CreativeInsightService {
     const latest = queue.latestRun?.answer ? queue.latestRun.answer.slice(0, 1200) : null;
 
     const client = new Anthropic({ apiKey: key });
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 3000,
+    let response: Anthropic.Message;
+    try {
+      response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 3000,
       system: [
         `You generate ad variant briefs for a PH COD e-commerce brand. Respond with ONLY a JSON array, no prose before or after.`,
         `Exactly 6 objects, each: {"title": string, "hook": string (the spoken/on-screen first line), "angle": string, "hookType": one of "PAIN_POINT"|"CURIOSITY"|"SOCIAL_PROOF"|"BEFORE_AFTER", "format": one of "UGC"|"TESTIMONIAL"|"PRODUCT_DEMO"|"PROBLEM_SOLUTION", "script": string (8-12 short lines, Taglish is fine), "rationale": string (one sentence, tied to the data), "differsBy": string[] (which axes moved)}.`,
@@ -362,8 +387,11 @@ export class CreativeInsightService {
           creative.script ? `script:\n${creative.script.slice(0, 1500)}` : null,
           latest ? `\nAccount-level learnings from the last analysis (use them):\n${latest}` : null,
         ].filter(Boolean).join('\n'),
-      }],
-    });
+        }],
+      });
+    } catch (error) {
+      throw new ServiceUnavailableException(`The AI call failed: ${(error as Error).message}`);
+    }
 
     const raw = response.content
       .filter((item): item is Anthropic.TextBlock => item.type === 'text')

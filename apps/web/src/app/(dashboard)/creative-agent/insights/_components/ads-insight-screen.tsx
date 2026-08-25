@@ -62,7 +62,7 @@ export function AdsInsightScreen() {
     setDiagnoseError(null);
     try {
       const run = await runDiagnose();
-      setData((current) => (current ? { ...current, latestRun: run } : current));
+      setData((current) => (current ? { ...current, latestRun: run, diagnoseUsedToday: true } : current));
     } catch (err) {
       setDiagnoseError(err instanceof Error ? err.message : 'Analysis failed.');
     } finally {
@@ -204,16 +204,26 @@ export function AdsInsightScreen() {
         <section className="panel panel-content shadow-card">
           <PanelHeader
             title="What's working — winners vs losers"
-            description="Claude reads every judged creative's script, ad copy, tags, and numbers, and says what the winners share, what the losers share, and the three sharpest next tests."
+            description="Claude reads every judged creative's script, ad copy, tags, and numbers, and says what the winners share, what the losers share, and the three sharpest next tests. One run per day — you click it, nothing sends on its own."
             right={(
-              <Button variant="primary" size="sm" iconLeft={diagnosing ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} onClick={diagnose} disabled={diagnosing || !data?.aiConfigured} title={data?.aiConfigured === false ? 'Set ANTHROPIC_API_KEY on the API to enable' : undefined}>
-                {diagnosing ? 'Analyzing…' : data?.latestRun ? 'Run again' : 'Run analysis'}
+              <Button
+                variant="primary" size="sm"
+                iconLeft={diagnosing ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                onClick={diagnose}
+                disabled={diagnosing || !data?.aiConfigured || data?.diagnoseUsedToday}
+                title={data?.aiConfigured === false
+                  ? 'Ask the main admin to add the Anthropic key in Settings → AI'
+                  : data?.diagnoseUsedToday
+                    ? 'Today’s run is done — back tomorrow'
+                    : undefined}
+              >
+                {diagnosing ? 'Analyzing…' : data?.diagnoseUsedToday ? 'Done for today' : 'Run analysis'}
               </Button>
             )}
           />
           <div className="p-5">
             {data?.aiConfigured === false ? (
-              <p className="text-sm text-muted">AI analysis is off — set <code>ANTHROPIC_API_KEY</code> on the API server to enable this and the variant generator.</p>
+              <p className="text-sm text-muted">AI analysis is off — ask the main admin to add the Anthropic key in <span className="font-medium text-foreground">Settings → AI</span>.</p>
             ) : diagnoseError ? (
               <p className="text-sm text-destructive">{diagnoseError}</p>
             ) : data?.latestRun ? (

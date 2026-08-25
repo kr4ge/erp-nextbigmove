@@ -103,6 +103,7 @@ model Tenant {
   creativeAliases                     CreativeAlias[]
   creativeStatusEvents                CreativeStatusEvent[]
   creativeInsightRuns                 CreativeInsightRun[]
+  aiSetting                           AiSetting?
   creativeMetaAdLinks                 CreativeMetaAdLink[]
   creativeReviewComments              CreativeReviewComment[]
   wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
@@ -1436,6 +1437,21 @@ model CreativeAlias {
   @@index([creativeId])
   @@index([tenantId, createdAt])
   @@map("creative_aliases")
+}
+
+/// The tenant's Anthropic key, set by the main admin in Settings → AI and
+/// encrypted with the tenant's own key — same scheme as integration
+/// credentials. Only the last four characters ever leave the server again.
+model AiSetting {
+  tenantId        String   @id @db.Uuid
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encryptedApiKey String
+  keyLast4        String
+  updatedById     String?  @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("ai_settings")
 }
 
 /// One saved Ads Insight analysis — the LLM's winners-vs-losers read for a

@@ -45,6 +45,8 @@ export type InsightQueueResponse = {
   counts: Record<InsightVerdict, number>;
   rows: InsightRow[];
   latestRun: InsightRun | null;
+  /** True when today's one allowed analysis has already been run (Manila day). */
+  diagnoseUsedToday: boolean;
   aiConfigured: boolean;
 };
 

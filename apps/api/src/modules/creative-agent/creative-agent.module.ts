@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AiSettingsModule } from '../ai-settings/ai-settings.module';
 import { CommonServicesModule } from '../../common/services/services.module';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CreativeAdvertisingDashboardController } from './creative-advertising-dashboard.controller';
@@ -27,7 +28,7 @@ import { CreativeThumbnailService } from './services/creative-thumbnail.service'
 import { CreativeWorkflowService } from './services/creative-workflow.service';
 
 @Module({
-  imports: [CommonServicesModule],
+  imports: [CommonServicesModule, AiSettingsModule],
   controllers: [
     CreativeStoreController,
     CreativeLibraryController,
