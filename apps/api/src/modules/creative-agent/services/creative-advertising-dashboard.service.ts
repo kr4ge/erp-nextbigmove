@@ -23,7 +23,7 @@ import {
 } from '../utils/advertising-metrics';
 import { isImpossibleRate, median, round } from '../utils/creative-metrics';
 import { CreativeAccessService } from './creative-access.service';
-import { CreativePerformanceService, type AdvertisingDateRange } from './creative-performance.service';
+import { CreativePerformanceService, UNMATCHED_AD_NAME, type AdvertisingDateRange } from './creative-performance.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -44,6 +44,22 @@ type Metric = {
 };
 
 type Alert = { code: string; severity: 'critical' | 'warning'; message: string; href?: string };
+
+/**
+ * One value per calendar day in the selected range, in the same order as the
+ * range. `null` marks a day the metric genuinely has no value for — a ratio
+ * with an empty denominator. Plotting those as zero would draw a cliff that
+ * never happened, so the sparkline skips them instead.
+ */
+type Spark = Array<number | null>;
+type AdvertisingSparklines = {
+  costPerClick: Spark;
+  costPerOrder: Spark;
+  posOrders: Spark;
+  adSpendRatio: Spark;
+  totalSpend: Spark;
+  linkedSpendCoverage: Spark;
+};
 
 @Injectable()
 export class CreativeAdvertisingDashboardService {
@@ -76,6 +92,7 @@ export class CreativeAdvertisingDashboardService {
       revisionPipeline,
       calendar,
       trend,
+      sparklines,
       freshness,
       missingVideoCount,
       needsAction,
@@ -90,6 +107,7 @@ export class CreativeAdvertisingDashboardService {
       this.loadRevisionPipeline(tenantId, range, creativeScopeWhere),
       this.loadCalendar(tenantId, range, query.accountId, scopedAdIds, creativeScopeWhere),
       this.loadTrend(tenantId, range, query.accountId, scopedAdIds),
+      this.loadSparklines(tenantId, range, query.accountId, scopedAdIds),
       this.loadFreshness(tenantId),
       this.countMissingVideoMetrics(tenantId, range, query.accountId, scopedAdIds),
       this.loadNeedsAction(actor, range, query),
@@ -189,6 +207,7 @@ export class CreativeAdvertisingDashboardService {
       revisionPipeline: revisionPipeline.summary,
       calendar,
       trend,
+      sparklines,
       needsAction,
       dataConfidence: {
         latestInsightDate: freshness.latestInsightDate,
@@ -444,6 +463,92 @@ export class CreativeAdvertisingDashboardService {
       });
     }
     return points;
+  }
+
+  /**
+   * The per-day series behind the six Advertising-metrics tiles.
+   *
+   * Every series is computed with the SAME formula and the SAME row scope as
+   * the tile it sits under — attributed rows only, synthetic unmatched rows
+   * excluded null-safely — so the curve and the headline number can never tell
+   * different stories. Ratios emit null on a day with an empty denominator
+   * rather than a zero, because "no orders that day" is not "cost per order
+   * was ₱0".
+   */
+  private async loadSparklines(
+    tenantId: string,
+    range: AdvertisingDateRange,
+    accountId: string | undefined,
+    scopedAdIds: string[] | null,
+  ): Promise<AdvertisingSparklines> {
+    const attributedWhere: Prisma.ReconcileMarketingWhereInput = {
+      tenantId,
+      date: { gte: range.start, lte: range.end },
+      ...(accountId ? { accountId } : {}),
+      ...(scopedAdIds ? { adId: { in: scopedAdIds } } : {}),
+      OR: [{ adName: null }, { adName: { not: UNMATCHED_AD_NAME } }],
+    };
+
+    const linkRows = await this.prisma.creativeMetaAdLink.findMany({
+      where: { tenantId },
+      select: { adId: true },
+    });
+    // The linked numerator stays inside the same ad-id scope as the
+    // denominator, mirroring computeScope — otherwise a store filter can push
+    // daily coverage past 100%.
+    const linkedAdIdSet = new Set(linkRows.map((row) => row.adId));
+    const linkedAdIds = scopedAdIds
+      ? scopedAdIds.filter((adId) => linkedAdIdSet.has(adId))
+      : [...linkedAdIdSet];
+
+    const [daily, linkedDaily] = await Promise.all([
+      this.prisma.reconcileMarketing.groupBy({
+        by: ['date'],
+        where: attributedWhere,
+        _sum: {
+          spend: true, linkClicks: true, purchasesPos: true, codPos: true,
+          canceledCodPos: true, rtsCodPos: true, restockingCodPos: true, abandonedCodPos: true,
+        },
+        orderBy: { date: 'asc' },
+      }),
+      this.prisma.reconcileMarketing.groupBy({
+        by: ['date'],
+        // An empty linked set must still be a real query returning nothing —
+        // short-circuiting to [] would type the result as never[].
+        where: { ...attributedWhere, adId: { in: linkedAdIds } },
+        _sum: { spend: true },
+        orderBy: { date: 'asc' },
+      }),
+    ]);
+
+    const toNum = (value: Prisma.Decimal | number | null) => Number(value ?? 0);
+    const byDate = new Map(daily.map((row) => [row.date.toISOString().slice(0, 10), row]));
+    const linkedByDate = new Map(linkedDaily.map((row) => [row.date.toISOString().slice(0, 10), toNum(row._sum.spend)]));
+
+    const series: AdvertisingSparklines = {
+      costPerClick: [], costPerOrder: [], posOrders: [],
+      adSpendRatio: [], totalSpend: [], linkedSpendCoverage: [],
+    };
+
+    for (let cursor = dayjs(range.startKey); !cursor.isAfter(dayjs(range.endKey), 'day'); cursor = cursor.add(1, 'day')) {
+      const dateKey = cursor.format('YYYY-MM-DD');
+      const sums = byDate.get(dateKey)?._sum;
+      const spend = toNum(sums?.spend ?? 0);
+      const linkClicks = sums?.linkClicks ?? 0;
+      const orders = sums?.purchasesPos ?? 0;
+      const grossSales = toNum(sums?.codPos ?? 0);
+      const adjustedSales = Math.max(0, grossSales
+        - toNum(sums?.canceledCodPos ?? 0) - toNum(sums?.rtsCodPos ?? 0)
+        - toNum(sums?.restockingCodPos ?? 0) - toNum(sums?.abandonedCodPos ?? 0));
+
+      series.costPerClick.push(costPerClick(spend, linkClicks));
+      series.costPerOrder.push(costPerOrder(spend, orders));
+      series.posOrders.push(orders);
+      series.adSpendRatio.push(adSpendRatio(spend, adjustedSales));
+      series.totalSpend.push(round(spend, 2));
+      series.linkedSpendCoverage.push(spend > 0 ? round((linkedByDate.get(dateKey) ?? 0) / spend) : null);
+    }
+    return series;
   }
 
   private async loadFreshness(tenantId: string) {

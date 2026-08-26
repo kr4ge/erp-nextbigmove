@@ -42,6 +42,7 @@ export function AdvertisingDashboardScreen() {
   const creative = data?.kpis.creative;
   const pipeline = data?.revisionPipeline;
   const ceiling = data?.scope.ceiling;
+  const spark = data?.sparklines;
   const criticalAlertCount = data?.alerts.filter((alert) => alert.severity === 'critical').length ?? 0;
   // Summed from the very rows the chart plots, so the header figures and the
   // curve can never disagree about the same period.
@@ -149,12 +150,12 @@ export function AdvertisingDashboardScreen() {
               : 'No cost ceiling can be derived yet — deliver reconciled orders to earn one.'}
           />
           <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
-            <StatTile compact label="Cost per click" info="Spend ÷ link clicks." value={formatCurrency(advertising?.costPerClick.value)} sub={metricSub(advertising?.costPerClick, 'spend ÷ link clicks')} />
-            <StatTile compact label="Cost per order" info="Spend ÷ POS orders placed — never pixel purchases." value={formatCurrency(advertising?.costPerOrder.value)} tone={cppTone} sub={ceiling?.workingCeiling != null ? `vs ${formatCurrency(ceiling.workingCeiling)} ceiling` : 'no ceiling yet'} />
-            <StatTile compact label="POS orders" info="Orders placed, from the POS — the only order source that counts." value={formatCount(advertising?.posOrders.value)} sub="orders placed · from POS" />
-            <StatTile compact label="Ad spend ratio" info="Spend ÷ net-of-cancel/RTS sales, per the Marketing KPI exclusion policy. Lower is better. AR% for short." value={formatPercent(advertising?.adSpendRatio.value)} tone={arTone(advertising?.adSpendRatio.value)} sub="AR% · lower is better" />
-            <StatTile compact label="Total ad spend" info="All spend in the selected period." value={formatCurrency(advertising?.totalSpend.value)} sub="this period" />
-            <StatTile compact label="Linked-spend coverage" info="Spend on Meta ads linked to a registered creative ÷ all spend. Untraceable money earns nobody credit." value={formatPercent(advertising?.linkedSpendCoverage.value, 0)} sub={metricSub(advertising?.linkedSpendCoverage, 'of spend is linked')} />
+            <StatTile compact label="Cost per click" info="Spend ÷ link clicks." value={formatCurrency(advertising?.costPerClick.value)} sub={metricSub(advertising?.costPerClick, 'spend ÷ link clicks')} spark={spark?.costPerClick} />
+            <StatTile compact label="Cost per order" info="Spend ÷ POS orders placed — never pixel purchases." value={formatCurrency(advertising?.costPerOrder.value)} tone={cppTone} sub={ceiling?.workingCeiling != null ? `vs ${formatCurrency(ceiling.workingCeiling)} ceiling` : 'no ceiling yet'} spark={spark?.costPerOrder} />
+            <StatTile compact label="POS orders" info="Orders placed, from the POS — the only order source that counts." value={formatCount(advertising?.posOrders.value)} sub="orders placed · from POS" spark={spark?.posOrders} />
+            <StatTile compact label="Ad spend ratio" info="Spend ÷ net-of-cancel/RTS sales, per the Marketing KPI exclusion policy. Lower is better. AR% for short." value={formatPercent(advertising?.adSpendRatio.value)} tone={arTone(advertising?.adSpendRatio.value)} sub="AR% · lower is better" spark={spark?.adSpendRatio} />
+            <StatTile compact label="Total ad spend" info="All spend in the selected period." value={formatCurrency(advertising?.totalSpend.value)} sub="this period" spark={spark?.totalSpend} />
+            <StatTile compact label="Linked-spend coverage" info="Spend on Meta ads linked to a registered creative ÷ all spend. Untraceable money earns nobody credit." value={formatPercent(advertising?.linkedSpendCoverage.value, 0)} sub={metricSub(advertising?.linkedSpendCoverage, 'of spend is linked')} spark={spark?.linkedSpendCoverage} />
           </div>
         </section>
 

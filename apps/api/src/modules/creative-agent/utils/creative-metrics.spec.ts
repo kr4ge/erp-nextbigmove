@@ -3,6 +3,10 @@ import { CreativeKind } from '@prisma/client';
 import {
   bandScore,
   craftVerdict,
+  creativeCScore,
+  creativeVerdict,
+  C_SCORE_STATIC_WEIGHTS,
+  C_SCORE_WEIGHTS,
   CREATIVE_CRAFT_FLOORS,
   guardedRatio,
   isImpossibleRate,
@@ -92,5 +96,149 @@ describe('creative metric helpers', () => {
   it('keeps the kill lines derived from the floors', () => {
     expect(CREATIVE_CRAFT_FLOORS.hookRate * 0.8).toBeCloseTo(0.24);
     expect(CREATIVE_CRAFT_FLOORS.cancellationRate * 1.25).toBeCloseTo(0.3125);
+  });
+
+  describe('creativeCScore', () => {
+    const video = {
+      kind: CreativeKind.VIDEO,
+      arCeiling: 0.3,
+      storeMedianCvr: null,
+      cvr: null,
+    };
+
+    it('separates a proven winner from a money-loser', () => {
+      // The Test Brand fixtures: TB-V0001 the winner, TB-V0002 the loser.
+      const winner = creativeCScore({
+        ...video, arPct: 0.288, orders: 42, spend: 44_000,
+        hookRate: 0.297, holdRate: 0.421, ctr: 0.019,
+      });
+      const loser = creativeCScore({
+        ...video, arPct: 0.62, orders: 3, spend: 33_500,
+        hookRate: 0.157, holdRate: 0.268, ctr: 0.015,
+      });
+      expect(winner).toBeCloseTo(8.5, 0);
+      expect(loser).toBeCloseTo(4.0, 0);
+      // The loser's CTR is on target — money is what separates them, which is
+      // exactly what the old craft-only score could not see.
+      expect((winner as number) - (loser as number)).toBeGreaterThan(4);
+    });
+
+    it('only credits spend that held at or under the AR% ceiling', () => {
+      const at29 = creativeCScore({ ...video, arPct: 0.29, orders: 12, spend: 40_000, hookRate: null, holdRate: null, ctr: null });
+      const at31 = creativeCScore({ ...video, arPct: 0.31, orders: 12, spend: 40_000, hookRate: null, holdRate: null, ctr: null });
+      // Same spend, but only the held one earns the proven-spend band; over the
+      // ceiling that weight folds into AR% instead.
+      expect(at29 as number).toBeGreaterThan(at31 as number);
+    });
+
+    it('grades a static on money plus click and conversion', () => {
+      const image = creativeCScore({
+        kind: CreativeKind.STATIC, arCeiling: 0.3, storeMedianCvr: 0.08,
+        arPct: 0.25, orders: 15, spend: 25_000,
+        hookRate: null, holdRate: null, ctr: 0.02, cvr: 0.08,
+      });
+      expect(image).not.toBeNull();
+      expect(image as number).toBeGreaterThan(7);
+    });
+
+    it('hands the hook and hold weight to a static CTR and CVR, not to money', () => {
+      // Both kinds must land on the same 60/40 money-to-craft balance, or an
+      // image ends up graded almost entirely on economics.
+      const money = C_SCORE_WEIGHTS.arPct + C_SCORE_WEIGHTS.orders + C_SCORE_WEIGHTS.provenSpend;
+      const videoCraft = C_SCORE_WEIGHTS.hookRate + C_SCORE_WEIGHTS.holdRate + C_SCORE_WEIGHTS.ctr + C_SCORE_WEIGHTS.cvr;
+      const staticCraft = C_SCORE_STATIC_WEIGHTS.ctr + C_SCORE_STATIC_WEIGHTS.cvr;
+      expect(money).toBeCloseTo(0.6);
+      expect(videoCraft).toBeCloseTo(0.4);
+      expect(staticCraft).toBeCloseTo(0.4);
+    });
+
+    it('lets a static craft failure actually move the score', () => {
+      const money = {
+        kind: CreativeKind.STATIC, arCeiling: 0.3, storeMedianCvr: 0.05,
+        arPct: 0.25, orders: 15, spend: 25_000, hookRate: null, holdRate: null,
+      };
+      const strongCraft = creativeCScore({ ...money, ctr: 0.03, cvr: 0.1 }) as number;
+      const weakCraft = creativeCScore({ ...money, ctr: 0.005, cvr: 0.01 }) as number;
+      // Identical economics; only the click and the conversion differ. Under
+      // plain renormalization this gap was far narrower.
+      expect(strongCraft - weakCraft).toBeGreaterThan(2.5);
+    });
+
+    it('scores spend against zero net sales as burned money, not missing data', () => {
+      const burned = creativeCScore({ ...video, arPct: null, orders: 0, spend: 10_000, hookRate: 0.3, holdRate: 0.35, ctr: 0.02 });
+      // Strong craft cannot rescue a creative that sold nothing.
+      expect(burned as number).toBeLessThan(4);
+    });
+
+    it('returns null when nothing ever ran', () => {
+      expect(creativeCScore({ ...video, arPct: null, orders: 0, spend: 0, hookRate: null, holdRate: null, ctr: null })).toBeNull();
+    });
+
+    it('floors the CVR bar so a broken store cannot grade itself against a broken median', () => {
+      const vsLowMedian = creativeCScore({ ...video, storeMedianCvr: 0.01, cvr: 0.02, arPct: 0.25, orders: 12, spend: 25_000, hookRate: null, holdRate: null, ctr: null });
+      const vsFloor = creativeCScore({ ...video, storeMedianCvr: null, cvr: 0.02, arPct: 0.25, orders: 12, spend: 25_000, hookRate: null, holdRate: null, ctr: null });
+      // A 1% median must not turn a 2% CVR into a perfect band; both grade
+      // against the 5% floor.
+      expect(vsLowMedian).toEqual(vsFloor);
+    });
+  });
+
+  describe('creativeVerdict', () => {
+    const base = {
+      testing: false, arCeiling: 0.3, killLine: 0.5,
+      fatiguing: false, bottleneck: null as string | null,
+    };
+
+    it('withholds a verdict until there is evidence', () => {
+      const out = creativeVerdict({ ...base, testing: true, orders: 1, spend: 400, arPct: 0.2 });
+      expect(out.verdict).toBe('TESTING');
+      expect(out.reason).toMatch(/Not enough evidence/);
+    });
+
+    it('scales a winner that is not fatiguing', () => {
+      const out = creativeVerdict({ ...base, orders: 42, spend: 44_000, arPct: 0.288 });
+      expect(out.verdict).toBe('SCALE');
+      expect(out.reason).toMatch(/42 orders at 28.8% AR%/);
+    });
+
+    it('refreshes a winner that is fatiguing rather than scaling it', () => {
+      const out = creativeVerdict({ ...base, orders: 42, spend: 44_000, arPct: 0.288, fatiguing: true });
+      expect(out.verdict).toBe('REFRESH');
+      expect(out.reason).toMatch(/proven/);
+    });
+
+    it('kills past the kill line and names the broken step', () => {
+      const out = creativeVerdict({ ...base, orders: 3, spend: 33_500, arPct: 0.62, bottleneck: 'HOOK' });
+      expect(out.verdict).toBe('KILL');
+      expect(out.reason).toMatch(/Hook is under target/);
+    });
+
+    it('blames the offer, not the cut, when the money fails on a clean funnel', () => {
+      const out = creativeVerdict({ ...base, orders: 4, spend: 33_500, arPct: 0.62 });
+      expect(out.verdict).toBe('KILL');
+      // The one pairing that must never send someone off to re-shoot.
+      expect(out.reason).toMatch(/leak is after the click/);
+    });
+
+    it('kills money spent with nothing sold back', () => {
+      expect(creativeVerdict({ ...base, orders: 0, spend: 12_000, arPct: null }).verdict).toBe('KILL');
+      expect(creativeVerdict({ ...base, orders: 0, spend: 12_000, arPct: 0.4 }).reason).toMatch(/not one order/);
+    });
+
+    it('refreshes the drift between the ceiling and the kill line', () => {
+      const drifted = creativeVerdict({ ...base, orders: 19, spend: 19_500, arPct: 0.361 });
+      expect(drifted.verdict).toBe('REFRESH');
+      expect(drifted.reason).toMatch(/drifted past the 30.0% ceiling/);
+
+      const broken = creativeVerdict({ ...base, orders: 19, spend: 19_500, arPct: 0.361, bottleneck: 'HOOK' });
+      expect(broken.verdict).toBe('REFRESH');
+      expect(broken.reason).toMatch(/Hook is the first step under target/);
+    });
+
+    it('refreshes an efficient creative that is short of the order bar', () => {
+      const out = creativeVerdict({ ...base, orders: 4, spend: 5_000, arPct: 0.2 });
+      expect(out.verdict).toBe('REFRESH');
+      expect(out.reason).toMatch(/short of the 10-order bar/);
+    });
   });
 });

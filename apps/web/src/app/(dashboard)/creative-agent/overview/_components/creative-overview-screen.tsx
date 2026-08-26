@@ -132,7 +132,7 @@ export function CreativeOverviewScreen() {
         <section className="panel panel-content shadow-card transition-colors hover:border-border/40">
           <PanelHeader
             title={data?.permissions.canReadAll ? 'Leaderboard' : 'My creative performance'}
-            description="Ranked by Creative Score — the funnel the editor controls. Bottleneck names the first step that broke."
+            description="Ranked by C-Score (1–10): money first — AR%, orders, and spend that held — with hook, hold, CTR, and CVR explaining why. Click any column name to sort; click again to flip the direction."
             right={(
               <>
                 {data?.permissions.canViewMoney ? (
@@ -160,6 +160,7 @@ export function CreativeOverviewScreen() {
                       <option value="hookRate:desc">Hook rate</option>
                       <option value="holdRate:desc">Hold rate</option>
                       <option value="ctr:desc">CTR</option>
+                      <option value="conversionRate:desc">CVR</option>
                     </>
                   ) : (
                     <>

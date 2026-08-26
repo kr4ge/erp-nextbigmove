@@ -13,6 +13,9 @@ import {
   SCORECARD_KPI_TARGETS,
   SCORECARD_KPI_WEIGHTS,
   SCORECARD_OUTPUT_TARGETS_PROVISIONAL,
+  C_SCORE_TARGETS,
+  creativeCScore,
+  creativeVerdict,
   creativeOutputScore,
   median,
   round,
@@ -155,6 +158,7 @@ export class CreativeOverviewService {
         metrics: {
           creativeScore: null as number | null, winnerScore: null as number | null,
           decision: 'NOT_CONFIGURED' as const, bottleneck: null as string | null,
+          verdict: null as string | null, verdictReason: null as string | null,
           hookRate, holdRate, completionRate, ctr, lpRate, conversionRate,
           deliveryRate: guard.rate('delivery', metrics.delivered, resolved),
           cancellationRate: guard.rate('cancel', metrics.cancelled, resolved),
@@ -181,8 +185,35 @@ export class CreativeOverviewService {
     const storeMedians = this.storeMedians(baseRows);
     const scoredRows = baseRows.map((row) => {
       const storeMedian = storeMedians.get(row.store.id ?? '') ?? null;
-      row.metrics.creativeScore = this.creativeScore(row.kind, row.metrics, storeMedian);
+      // Graded against the same AR% ceiling the winner rule uses, so a 10 on
+      // C-Score and a Winner pill can never point in opposite directions.
+      row.metrics.creativeScore = creativeCScore({
+        kind: row.kind,
+        arPct: row.metrics.arPct,
+        arCeiling: winnerRule.ceiling,
+        orders: row.metrics.orders,
+        spend: row.metrics.spend,
+        hookRate: row.metrics.hookRate,
+        holdRate: row.metrics.holdRate,
+        ctr: row.metrics.ctr,
+        cvr: row.metrics.conversionRate,
+        storeMedianCvr: storeMedian,
+      });
       row.metrics.bottleneck = this.bottleneck(row.kind, row.metrics, storeMedian);
+      // Money decides, craft explains. Runs after the bottleneck so the reason
+      // can name the step that broke.
+      const { verdict, reason } = creativeVerdict({
+        testing: row.testing,
+        orders: row.metrics.orders,
+        spend: row.metrics.spend,
+        arPct: row.metrics.arPct,
+        arCeiling: winnerRule.ceiling,
+        killLine: ADVERTISING_PROVISIONAL_DEFAULTS.adSpendRatioWarning,
+        fatiguing: row.performanceStatus === CreativePerformanceStatus.FATIGUED,
+        bottleneck: row.metrics.bottleneck,
+      });
+      row.metrics.verdict = verdict;
+      row.metrics.verdictReason = reason;
       return row;
     });
     const sorted = this.sortRows(scoredRows, requestedSortKey, query.sortDirection, canViewMoney);
@@ -458,22 +489,16 @@ export class CreativeOverviewService {
     for (const [key, rates] of grouped) { const value = median(rates); if (value !== null) result.set(key, value); }
     return result;
   }
-  private creativeScore(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, storeMedian: number | null) {
-    const candidates = [
-      ...(kind === CreativeKind.VIDEO ? [{ value: values.hookRate, target: 0.2, weight: 0.25 }, { value: values.holdRate, target: 0.45, weight: 0.2 }] : []),
-      { value: values.deliveryRate, target: 0.55, weight: 0.25 }, { value: values.ctr, target: 0.015, weight: 0.15 },
-      { value: values.conversionRate, target: storeMedian && storeMedian > 0 ? storeMedian : null, weight: 0.15 },
-    ];
-    const measured = candidates.filter((item): item is { value: number; target: number; weight: number } => item.value !== null && item.target !== null);
-    const weight = measured.reduce((sum, item) => sum + item.weight, 0);
-    return weight === 0 ? null : round(measured.reduce((sum, item) => sum + Math.min(item.value / item.target, 1.5) * item.weight, 0) / weight * 100, 1);
-  }
-  private bottleneck(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, storeMedian: number | null) {
-    if (kind === CreativeKind.VIDEO && values.hookRate !== null && values.hookRate < 0.2) return 'HOOK';
-    if (kind === CreativeKind.VIDEO && values.holdRate !== null && values.holdRate < 0.45) return 'HOLD';
-    if (values.ctr !== null && values.ctr < 0.015) return 'CTR';
+  /**
+   * The funnel step that broke first, using the same bars C-Score grades
+   * against so the two never disagree. Delivery is gone from the ladder — it
+   * is a fulfilment outcome, not a step the editor's cut controls.
+   */
+  private bottleneck(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; conversionRate: number | null }, storeMedian: number | null) {
+    if (kind === CreativeKind.VIDEO && values.hookRate !== null && values.hookRate < C_SCORE_TARGETS.hookRate) return 'HOOK';
+    if (kind === CreativeKind.VIDEO && values.holdRate !== null && values.holdRate < C_SCORE_TARGETS.holdRate) return 'HOLD';
+    if (values.ctr !== null && values.ctr < C_SCORE_TARGETS.ctr) return 'CTR';
     if (values.conversionRate !== null && storeMedian && values.conversionRate < storeMedian * 0.6) return 'ORDER_RATE';
-    if (values.deliveryRate !== null && values.deliveryRate < 0.55) return 'DELIVERY';
     return null;
   }
   private async decisionMetrics(tenantId: string, creativeIds: string[], start: Date, end: Date) {

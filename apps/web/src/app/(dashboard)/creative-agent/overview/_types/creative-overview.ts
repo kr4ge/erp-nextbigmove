@@ -44,6 +44,9 @@ export type CreativeOverviewItem = {
     winnerScore: number | null;
     decision: 'NOT_CONFIGURED';
     bottleneck: string | null;
+    /** SCALE | REFRESH | KILL | TESTING — money decides it, craft explains it. */
+    verdict: string | null;
+    verdictReason: string | null;
     hookRate: number | null;
     holdRate: number | null;
     completionRate: number | null;

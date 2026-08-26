@@ -8,9 +8,23 @@ import {
   formatDecimal as decimal,
   formatPercent as percent,
   PILL_TONE_CLASS,
-  titleCase,
 } from '../_utils/creative-overview-format';
 
+
+/** Scale is the good outcome, kill the bad one, refresh the work-to-do middle. */
+const VERDICT_CLASS: Record<string, string> = {
+  SCALE: 'border-success/30 bg-success-soft/40 text-success',
+  REFRESH: 'border-warning/30 bg-warning-soft/60 text-warning',
+  KILL: 'border-destructive/30 bg-destructive-soft/40 text-destructive',
+  TESTING: 'pill-neutral',
+};
+
+const VERDICT_LABEL: Record<string, string> = {
+  SCALE: 'Scale',
+  REFRESH: 'Refresh',
+  KILL: 'Kill',
+  TESTING: 'Testing',
+};
 
 type Column = {
   key: string;
@@ -32,7 +46,9 @@ const COLUMNS: Column[] = [
   // AR% is a cost ratio: lower is better, so the healthy colour is the low end.
   { key: 'arPct', label: 'AR%', lens: 'SHARED', sortKey: 'arPct', width: 'w-24', align: 'right', render: (item) => item.metrics.arPct == null ? '—' : <span className={item.isWinner ? 'font-semibold text-success' : ''}>{percent(item.metrics.arPct)}</span> },
   { key: 'adSpent', label: 'Ad Spent', lens: 'SHARED', sortKey: 'spend', width: 'w-28', align: 'right', render: (item) => currency(item.metrics.spend) },
-  { key: 'delivery', label: 'Delivery', lens: 'SHARED', sortKey: 'deliveryRate', width: 'w-28', align: 'right', render: (item) => percent(item.metrics.deliveryRate) },
+  // Delivery is a fulfilment outcome, not something the editor's cut controls —
+  // it belongs to the business lens, and the creative table stays the funnel.
+  { key: 'delivery', label: 'Delivery', lens: 'BUSINESS', sortKey: 'deliveryRate', width: 'w-28', align: 'right', render: (item) => percent(item.metrics.deliveryRate) },
   { key: 'hook', label: 'Hook', lens: 'SHARED', sortKey: 'hookRate', width: 'w-24', align: 'right', render: (item) => item.kind === 'STATIC' ? <span className="text-xs text-muted">Static</span> : percent(item.metrics.hookRate) },
   { key: 'hold', label: 'Hold', lens: 'SHARED', sortKey: 'holdRate', width: 'w-24', align: 'right', render: (item) => item.kind === 'STATIC' ? '—' : percent(item.metrics.holdRate) },
   { key: 'ctr', label: 'CTR', lens: 'SHARED', sortKey: 'ctr', width: 'w-24', align: 'right', render: (item) => percent(item.metrics.ctr) },
@@ -44,10 +60,16 @@ const COLUMNS: Column[] = [
   { key: 'frequency', label: 'Frequency', lens: 'BUSINESS', sortKey: 'frequency', width: 'w-28', align: 'right', render: (item) => decimal(item.metrics.frequency) },
   { key: 'winner', label: 'Winner score', lens: 'BUSINESS', width: 'w-36', align: 'right', render: () => <span className="text-xs text-muted">Not configured</span> },
   { key: 'decision', label: 'Decision', lens: 'BUSINESS', width: 'w-36', render: () => <span className={PILL_TONE_CLASS.neutral}>Not configured</span> },
-  { key: 'lpRate', label: 'LP rate', lens: 'CREATIVE', sortKey: 'lpRate', width: 'w-28', align: 'right', render: (item) => percent(item.metrics.lpRate) },
-  { key: 'orderRate', label: 'Order rate', lens: 'CREATIVE', sortKey: 'conversionRate', width: 'w-28', align: 'right', render: (item) => percent(item.metrics.conversionRate) },
+  // Orders / landing-page views — the same ratio the advertising dashboard
+  // calls CVR, so it carries that name here too rather than a second label for
+  // one number.
+  { key: 'cvr', label: 'CVR', lens: 'CREATIVE', sortKey: 'conversionRate', width: 'w-24', align: 'right', render: (item) => percent(item.metrics.conversionRate) },
   { key: 'score', label: 'C-Score', lens: 'CREATIVE', sortKey: 'creativeScore', width: 'w-28', align: 'right', render: (item) => item.metrics.creativeScore == null ? '—' : item.metrics.creativeScore.toFixed(1) },
-  { key: 'bottleneck', label: 'Bottleneck', lens: 'CREATIVE', width: 'w-32', render: (item) => item.metrics.bottleneck ? <span className={PILL_TONE_CLASS.destructive}>{titleCase(item.metrics.bottleneck)}</span> : <span className="text-muted">—</span> },
+  // The payoff column. The reason lives in the tooltip so the verdict can be
+  // scanned down the page while the "why" stays one hover away.
+  { key: 'verdict', label: 'Verdict', lens: 'CREATIVE', width: 'w-32', render: (item) => item.metrics.verdict
+    ? <span className={`pill ${VERDICT_CLASS[item.metrics.verdict] ?? VERDICT_CLASS.TESTING}`} title={item.metrics.verdictReason ?? undefined}>{VERDICT_LABEL[item.metrics.verdict] ?? item.metrics.verdict}</span>
+    : <span className="text-muted">—</span> },
 ];
 
 export function CreativeLeaderboard({ items, lens, isLoading, sortKey, sortDirection, onSort, onSelect }: {
@@ -62,7 +84,7 @@ export function CreativeLeaderboard({ items, lens, isLoading, sortKey, sortDirec
   const columns = COLUMNS.filter((column) => column.lens === 'SHARED' || column.lens === lens);
   return (
     <div className="overflow-x-auto">
-      <table className={`w-full table-auto text-left ${lens === 'BUSINESS' ? 'min-w-[1900px]' : 'min-w-[1280px]'}`}>
+      <table className={`w-full table-auto text-left ${lens === 'BUSINESS' ? 'min-w-[1900px]' : 'min-w-[1260px]'}`}>
         <thead className="border-b border-border/60 text-xs-tight font-semibold uppercase tracking-wide text-faint">
           <tr>{columns.map((column) => <th key={column.key} className={`${column.width} whitespace-nowrap px-3 py-3 ${column.align === 'right' ? 'text-right' : ''} ${column.key === 'rank' ? 'sticky left-0 z-20 bg-surface' : ''} ${column.key === 'ad' ? 'sticky left-20 z-20 bg-surface' : ''}`} aria-sort={column.sortKey === sortKey ? (sortDirection === 'asc' ? 'ascending' : 'descending') : undefined}>{column.sortKey ? <button type="button" className={`inline-flex items-center gap-1 ${column.align === 'right' ? 'w-full justify-end' : ''}`} onClick={() => onSort(column.sortKey as OverviewSortKey)}>{column.label}{column.sortKey === sortKey ? sortDirection === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" /> : null}</button> : column.label}</th>)}</tr>
         </thead>
