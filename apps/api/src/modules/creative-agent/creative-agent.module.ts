@@ -11,6 +11,7 @@ import { CreativeLibraryController } from './creative-library.controller';
 import { CreativeOverviewController } from './creative-overview.controller';
 import { CreativePerformanceController } from './creative-performance.controller';
 import { CreativeStoreController } from './creative-store.controller';
+import { CreativeStrategyController } from './creative-strategy.controller';
 import { CreativeWorkflowController } from './creative-workflow.controller';
 import { CreativeAccessService } from './services/creative-access.service';
 import { CreativeAdvertisingDashboardService } from './services/creative-advertising-dashboard.service';
@@ -24,6 +25,7 @@ import { CreativeMetaLinkService } from './services/creative-meta-link.service';
 import { CreativeOverviewService } from './services/creative-overview.service';
 import { CreativePerformanceService } from './services/creative-performance.service';
 import { CreativeStoreService } from './services/creative-store.service';
+import { CreativeStrategyService } from './services/creative-strategy.service';
 import { CreativeThumbnailService } from './services/creative-thumbnail.service';
 import { CreativeWorkflowService } from './services/creative-workflow.service';
 
@@ -40,6 +42,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativePerformanceController,
     CreativeAdvertisingDashboardController,
     CreativeInsightController,
+    CreativeStrategyController,
   ],
   providers: [
     PermissionsGuard,
@@ -56,6 +59,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativePerformanceService,
     CreativeAdvertisingDashboardService,
     CreativeInsightService,
+    CreativeStrategyService,
     CreativeThumbnailService,
   ],
   exports: [CreativeMetaLinkService],

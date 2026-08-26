@@ -103,6 +103,7 @@ model Tenant {
   creativeAliases                     CreativeAlias[]
   creativeStatusEvents                CreativeStatusEvent[]
   creativeInsightRuns                 CreativeInsightRun[]
+  creativeStrategyEntries             CreativeStrategyEntry[]
   aiSetting                           AiSetting?
   creativeMetaAdLinks                 CreativeMetaAdLink[]
   creativeReviewComments              CreativeReviewComment[]
@@ -402,6 +403,7 @@ model User {
   readNotificationStates                    NotificationState[]            @relation("NotificationStateReadBy")
   undeliverableStoreAssignments             UndeliverableStoreAssignment[]
   creativesCreated                          Creative[]                     @relation("CreativeCreatedBy")
+  creativeStrategyEntries                   CreativeStrategyEntry[]        @relation("CreativeStrategyAuthor")
   creativeAliasesCreated                    CreativeAlias[]                @relation("CreativeAliasCreatedBy")
   creativeStatusEvents                      CreativeStatusEvent[]          @relation("CreativeStatusEventActor")
   creativeMetaLinksCreated                  Creative[]                     @relation("CreativeMetaLinkedBy")
@@ -1347,12 +1349,14 @@ model Creative {
   hookType           String?
   /// The big idea in the creative's own words ("nanay ng picky eater, guilt
   /// angle"). hookType is the coarse category; this is the free-text one the
-  /// Ads Insight analysis learns from.
+  /// Creative Insights analysis learns from.
   angle              String?
   /// Registry code of the winner this creative was remixed from. Set at
   /// enrolment, never edited — it is how the lineage report answers whether
   /// refreshes beat their parents.
   remixOfCode        String?
+  /// The spoken / on-screen script of the video itself. The ad copy is not
+  /// mirrored here — it already lives on the Facebook page post.
   script             String?
   notes              String?
   mediaUrl           String?
@@ -1387,6 +1391,7 @@ model Creative {
   statusEvents   CreativeStatusEvent[]
   metaAdLinks    CreativeMetaAdLink[]
   reviewComments CreativeReviewComment[]
+  strategyEntries CreativeStrategyEntry[]
 
   @@unique([tenantId, code])
   @@unique([storeConfigId, codeNumber])
@@ -1472,6 +1477,51 @@ model CreativeInsightRun {
 
   @@index([tenantId, createdAt])
   @@map("creative_insight_runs")
+}
+
+/// Strategy Log — one dated line per decision the creative made, and the
+/// outcome written back once it has played out. This is what turns "the
+/// numbers moved" into "the numbers moved when we changed this", and it is the
+/// memory Creative Insights reads so its analysis knows what was actually
+/// tried instead of inferring it from metrics alone.
+model CreativeStrategyEntry {
+  id              String                @id @default(uuid()) @db.Uuid
+  tenantId        String                @db.Uuid
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// The day the change TOOK EFFECT, not the day it was typed — a change
+  /// logged late still has to line up with the week its numbers moved.
+  date            DateTime              @db.Date
+  title           String
+  description     String?
+  /// Free text, not an enum: the fixed list covers the usual moves, and a
+  /// typed-in type is kept as-is so the vocabulary can grow without a migration.
+  tag             String                @default("OTHER")
+  /// Written after the fact. Half the value of the log lives here — an entry
+  /// with no result says what was tried, one with a result says what works.
+  result          String?
+  resultUpdatedAt DateTime?
+  /// AUTO_ENROLMENT rows are receipts the registry wrote when a creative was
+  /// enrolled, so a new video never depends on someone remembering to log it.
+  source          CreativeStrategySource @default(MANUAL)
+  /// Set on the auto rows, so an entry can be traced back to the creative it
+  /// records. Nulled rather than deleted if that creative ever goes away — the
+  /// decision still happened.
+  creativeId      String?               @db.Uuid
+  creative        Creative?             @relation(fields: [creativeId], references: [id], onDelete: SetNull)
+  createdById     String                @db.Uuid
+  createdBy       User                  @relation("CreativeStrategyAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([tenantId, date])
+  @@index([tenantId, createdById, date])
+  @@index([creativeId])
+  @@map("creative_strategy_entries")
+}
+
+enum CreativeStrategySource {
+  MANUAL
+  AUTO_ENROLMENT
 }
 
 model CreativeStatusEvent {

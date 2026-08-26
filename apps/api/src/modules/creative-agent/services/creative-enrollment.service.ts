@@ -4,11 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreativeMetaLinkSource, Prisma } from '@prisma/client';
+import { CreativeMetaLinkSource, CreativeStrategySource, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   CREATIVE_AGENT_PERMISSIONS,
   CREATIVE_CODE_MINT_RETRIES,
+  formatCreativeCode,
+  parseCreativeCode,
 } from '../creative-agent.constants';
 import { EnrollCreativeDto, EnrollUnregisteredCreativeDto } from '../dto/enroll-creative.dto';
 import { UpdateCreativeDto } from '../dto/update-creative.dto';
@@ -92,12 +94,23 @@ export class CreativeEnrollmentService {
       if (metaInsight.adName !== dto.requestedCode) {
         throw new ConflictException('The requested creative code must exactly match the Meta ad name');
       }
-      const prefix = dto.requestedCode.split('-V')[0];
-      if (prefix !== config.codePrefix) {
-        throw new ConflictException(`Code ${dto.requestedCode} belongs to the ${prefix} store prefix`);
+      const parsed = parseCreativeCode(dto.requestedCode);
+      if (!parsed) {
+        throw new ConflictException(`${dto.requestedCode} is not a registry code`);
+      }
+      if (parsed.codePrefix !== config.codePrefix) {
+        throw new ConflictException(`Code ${dto.requestedCode} belongs to the ${parsed.codePrefix} store prefix`);
+      }
+      // The kind letter has to agree with what is being enrolled, or the code
+      // would say "image" on a video and the ad name would lie about itself.
+      const expectedLetter = dto.kind === 'VIDEO' ? 'V' : 'I';
+      if (parsed.letter !== expectedLetter) {
+        throw new ConflictException(
+          `Code ${dto.requestedCode} is tagged ${parsed.letter === 'V' ? 'video' : 'image'}, but this is being enrolled as a ${dto.kind === 'VIDEO' ? 'video' : 'static'}`,
+        );
       }
       await this.assertCodeAvailable(context.tenantId, dto.requestedCode);
-      const codeNumber = Number(dto.requestedCode.split('-V')[1]);
+      const codeNumber = parsed.codeNumber;
 
       try {
         return await this.createCreative(
@@ -233,7 +246,7 @@ export class CreativeEnrollmentService {
     requestedCode?: string,
     metaLink?: CreativeMetaLinkInput,
   ) {
-    const code = requestedCode ?? `${config.codePrefix}-V${String(codeNumber).padStart(4, '0')}`;
+    const code = requestedCode ?? formatCreativeCode(config.codePrefix, dto.kind, codeNumber);
     const now = new Date();
     const creative = await this.prisma.$transaction(async (tx) => {
       const created = await tx.creative.create({
@@ -276,6 +289,26 @@ export class CreativeEnrollmentService {
             : {}),
         },
         include: this.detailInclude(),
+      });
+      // The Strategy Log entry rides the same transaction as the enrolment.
+      // Making it a separate chore is how it silently stops happening — and a
+      // log missing every new creative cannot explain why the numbers moved.
+      await tx.creativeStrategyEntry.create({
+        data: {
+          tenantId,
+          date: new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(now)),
+          title: `New ${dto.kind === 'VIDEO' ? 'video' : 'static'}: ${code} — ${dto.title}`,
+          description: [
+            dto.angle ? `Angle: ${dto.angle}.` : null,
+            dto.hookType ? `Hook: ${dto.hookType}.` : null,
+            dto.format ? `Format: ${dto.format}.` : null,
+            dto.remixOfCode ? `Remix of ${dto.remixOfCode}.` : null,
+          ].filter(Boolean).join(' ') || null,
+          tag: 'NEW_CREATIVE',
+          creativeId: created.id,
+          createdById: userId,
+          source: CreativeStrategySource.AUTO_ENROLMENT,
+        },
       });
       await tx.auditLog.create({
         data: {

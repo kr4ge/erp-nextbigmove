@@ -7,6 +7,7 @@ import { ADVERTISING_PROVISIONAL_DEFAULTS } from '../utils/advertising-metrics';
 import { round } from '../utils/creative-metrics';
 import { AiSettingsService } from '../../ai-settings/ai-settings.service';
 import { CreativeAccessService } from './creative-access.service';
+import { CreativeStrategyService } from './creative-strategy.service';
 
 const MODEL = 'claude-sonnet-5';
 
@@ -80,6 +81,7 @@ export class CreativeInsightService {
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
     private readonly aiSettings: AiSettingsService,
+    private readonly strategy: CreativeStrategyService,
   ) {}
 
   /**
@@ -333,6 +335,15 @@ export class CreativeInsightService {
       ].filter(Boolean).join('\n');
     };
 
+    // The Strategy Log is the memory the metrics do not carry: it says what was
+    // deliberately changed and when, so a shift in the numbers can be attributed
+    // instead of guessed at.
+    const strategyLog = await this.strategy.contextForAi(
+      context.tenantId,
+      context.userId,
+      this.access.canReadAll(context),
+    );
+
     const prompt = [
       `Creative performance for a PH COD e-commerce brand — rolling last 30 days (${computed.window.econStart} to ${computed.window.end}). The winner bar is 10+ orders at AR% (spend ÷ net sales) ≤ 30%. The reader is the CREATIVE who makes the videos, not the media buyer.`,
       ``,
@@ -341,6 +352,13 @@ export class CreativeInsightService {
       ``,
       `=== NON-WINNERS (${graded.length - winners.length}) ===`,
       ...graded.filter((row) => !row.isWinner).map(block),
+      ...(strategyLog.length
+        ? [
+            ``,
+            `=== STRATEGY LOG — what was deliberately changed, most recent first (${strategyLog.length}) ===`,
+            ...strategyLog,
+          ]
+        : []),
     ].join('\n\n');
 
     const client = new Anthropic({ apiKey: key });
@@ -352,6 +370,7 @@ export class CreativeInsightService {
         system: [
           `You are the creative strategist writing for the video creative of this account. Analyze ONLY the data provided — never invent creatives, numbers, or audience facts. Cite creative codes for every claim.`,
           `Answer in four short sections, markdown headers: "What the winners share", "What the losers share", "Best angles to make more of", "Variations to try next".`,
+          `A STRATEGY LOG may be included — the moves the creative deliberately made, dated, some with a recorded outcome. Use it to attribute: when a logged change lines up with a creative's numbers, say so and name the entry. Never treat an unproven entry as proven, and never invent a change that is not listed.`,
           `"Variations to try next" is the payoff: 3-5 concrete variation ideas, each naming which winner it builds on and which element changes (hook / angle / format / avatar / opening visual). Keep the ideas diverse — each should move different elements, because the ad platform suppresses near-duplicates. Keep the whole answer under 500 words. If the sample is thin, say plainly which conclusions are weak.`,
         ].join('\n'),
         messages: [{ role: 'user', content: prompt }],
@@ -416,7 +435,7 @@ export class CreativeInsightService {
       ? await this.prisma.adCreative.findFirst({ where: { tenantId: context.tenantId, adIds: { hasSome: adIds } }, select: { title: true, body: true } })
       : null;
     if (!creative.script && !copyRow?.body) {
-      throw new ServiceUnavailableException(`${creative.code} has no script and no synced ad copy — nothing to remix. Paste the script in the registry first.`);
+      throw new ServiceUnavailableException(`${creative.code} has no video script and no synced ad copy — nothing to remix. Paste the script in the video registry first.`);
     }
 
     const computed = await this.computeRows(actor);

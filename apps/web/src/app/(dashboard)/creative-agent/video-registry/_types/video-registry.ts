@@ -27,6 +27,8 @@ export type RegistryOption = {
   label: string;
   active?: boolean;
   nextCode?: string;
+  /** Per-kind preview: the letter differs (V video, I image), the number does not. */
+  nextCodes?: Partial<Record<CreativeKind, string>>;
 };
 export type RegistryStore = {
   id: string | null;
@@ -196,6 +198,7 @@ export type CreativeStoreOption = {
   avatarUrl: string | null;
   enabled: boolean;
   nextCode: string;
+  nextCodes?: Partial<Record<CreativeKind, string>>;
   registry: {
     id: string;
     codePrefix: string;

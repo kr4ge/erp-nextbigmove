@@ -28,7 +28,7 @@ function CollapsibleField({ label, filled, children }: {
       <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
         <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
         <span className="form-label">{label}</span>
-        <span className="ml-auto text-xs text-muted">{filled ? "Added" : "Optional"}</span>
+        {filled ? <span className="ml-auto text-xs text-muted">Added</span> : null}
       </summary>
       <div className="border-t border-border/60 p-4 pt-3">{children}</div>
     </details>
@@ -93,8 +93,20 @@ export function CreativeDetailsFields({
         value={value.angle ?? ""}
         onChange={(event) => onChange("angle", event.target.value)}
         placeholder='e.g. "guilt ng nanay ng picky eater" or "budget-conscious na first-time mom"'
-        helper="The idea in your own words — Ads Insight learns from this, so the more specific, the better the analysis."
+        helper="The idea in your own words — Creative Insights learns from this, so the more specific, the better the analysis."
       />
+
+      {kind === "VIDEO" ? (
+        <FormTextarea
+          name="script"
+          label="Video script"
+          value={value.script ?? ""}
+          onChange={(event) => onChange("script", event.target.value)}
+          placeholder="What the talent says and what appears on screen, hook first..."
+          helper="The spoken and on-screen lines of the video itself. The ad copy stays on the Facebook post."
+          className="min-h-32"
+        />
+      ) : null}
 
       <FormInput
         name="mediaUrl"
@@ -103,21 +115,8 @@ export function CreativeDetailsFields({
         value={value.mediaUrl}
         onChange={(event) => onChange("mediaUrl", event.target.value)}
         placeholder="https://www.facebook.com/.../posts/..."
-        helper="Optional. Paste the public Facebook post link for this creative. Clear this field to remove the current source."
+        helper="Paste the public Facebook post link for this creative. Clear this field to remove the current source."
       />
-
-      {kind === "VIDEO" ? (
-        <CollapsibleField label="Ad copy" filled={Boolean(value.script?.trim())}>
-          <FormTextarea
-            name="script"
-            label=""
-            value={value.script ?? ""}
-            onChange={(event) => onChange("script", event.target.value)}
-            placeholder="Paste the ad copy that runs with this creative..."
-            className="min-h-32"
-          />
-        </CollapsibleField>
-      ) : null}
 
       <CollapsibleField label="Internal notes" filled={Boolean(value.notes?.trim())}>
         <FormTextarea

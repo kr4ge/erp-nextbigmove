@@ -241,6 +241,7 @@ export function VideoRegistryScreen({ initialQuery = '' }: { initialQuery?: stri
           value: store.id,
           label: store.name,
           nextCode: store.nextCode,
+          nextCodes: store.nextCodes,
         }))}
         seed={controller.registrationSeed}
         createdItem={controller.createdItem}

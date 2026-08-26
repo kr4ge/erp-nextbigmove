@@ -11,6 +11,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { CREATIVE_CODE_EXACT_REGEX } from '../creative-agent.constants';
 
 export class EnrollCreativeDto {
   @IsOptional()
@@ -56,7 +57,7 @@ export class EnrollCreativeDto {
 
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
-  @Matches(/^[A-Z]{2,6}-V\d{3,6}$/, { message: 'remixOfCode must be a registry code like TB-V0001' })
+  @Matches(CREATIVE_CODE_EXACT_REGEX, { message: 'remixOfCode must be a registry code like TB-V0001 or TB-I0002' })
   remixOfCode?: string;
 
   @IsOptional()
@@ -73,7 +74,7 @@ export class EnrollCreativeDto {
 export class EnrollUnregisteredCreativeDto extends EnrollCreativeDto {
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
-  @Matches(/^[A-Z]{2,6}-V\d{3,6}$/)
+  @Matches(CREATIVE_CODE_EXACT_REGEX)
   requestedCode?: string;
 
   @IsString()

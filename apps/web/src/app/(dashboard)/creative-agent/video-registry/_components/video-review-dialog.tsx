@@ -100,7 +100,8 @@ export function VideoReviewDialog({ item, comments, isLoadingComments, permissio
               </dl>
               <div className="mt-5 space-y-4 text-sm">
                 <div><p className="text-xs font-semibold uppercase tracking-wide text-muted">Details</p><p className="mt-1 text-foreground">{item.creator.name} · {item.format ?? 'Format not set'} · {item.hookType ?? 'Hook not set'}</p></div>
-                {item.script ? <div><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><FileText className="h-3.5 w-3.5" /> Script / angle</p><p className="mt-1 whitespace-pre-wrap text-foreground">{item.script}</p></div> : null}
+                {item.angle ? <div><p className="text-xs font-semibold uppercase tracking-wide text-muted">Angle / big idea</p><p className="mt-1 text-foreground">{item.angle}</p></div> : null}
+                {item.script ? <div><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><FileText className="h-3.5 w-3.5" /> Video script</p><p className="mt-1 whitespace-pre-wrap text-foreground">{item.script}</p></div> : null}
                 {item.notes ? <div><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><StickyNote className="h-3.5 w-3.5" /> Notes</p><p className="mt-1 whitespace-pre-wrap text-foreground">{item.notes}</p></div> : null}
                 {item.aliases.length ? <div><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><Link2 className="h-3.5 w-3.5" /> Meta aliases</p><p className="mt-1 font-mono text-foreground">{item.aliases.join(', ')}</p></div> : null}
                 <p className="text-xs text-muted">Updated {formatDate(item.updatedAt)}</p>

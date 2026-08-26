@@ -135,6 +135,12 @@ const baseNavigation: NavLink[] = [
     icon: <Video className={iconClasses} />,
   },
   {
+    href: '/strategy-log',
+    label: 'Strategy Log',
+    description: 'What you changed, and what it did',
+    icon: <ClipboardList className={iconClasses} />,
+  },
+  {
     href: '/workflows',
     label: 'Workflows',
     description: 'Automated data sync',
@@ -317,6 +323,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         if (link.href === '/creative-insights') return canShowCreativeWorkspace && canReadCreative ? [link] : [];
         if (link.href === '/assets') return canShowCreativeWorkspace && canShowAssets ? [link] : [];
         if (link.href === '/video-registry') return canShowCreativeWorkspace && canShowVideoRegistry ? [link] : [];
+        // Unlike Creative Insights, the log is deliberately open to read_all too:
+        // a manager reading what the team changed is the point of keeping it.
+        if (link.href === '/strategy-log') {
+          return canShowCreativeWorkspace && (canReadCreative || canReadCreativeAll) ? [link] : [];
+        }
         if (link.href !== '/integrations') return [link];
 
         const children = (link.children || []).filter((child) => {

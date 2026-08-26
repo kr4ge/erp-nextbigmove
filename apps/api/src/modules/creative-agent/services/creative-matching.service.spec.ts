@@ -57,6 +57,30 @@ describe('CreativeMatchingService', () => {
     expect(service.match('NRO-V0001234', references).source).toBe('UNTAGGED');
   });
 
+  it('finds the code inside a full Ad Tag', () => {
+    // The Ad Tag pasted into Meta is "title - editor - code". Matching has to
+    // survive the two human-readable segments in front of the code, or the
+    // whole tag format would silently orphan every ad that uses it.
+    expect(service.match('Picky Eater Opening Hook V3 - Cathy Creative - NRO-V0001', references)).toMatchObject({
+      source: 'CODE',
+      creativeId: 'creative-1',
+      detectedCode: 'NRO-V0001',
+    });
+  });
+
+  it('matches image codes as well as video codes', () => {
+    const withStatic = [...references, { creativeId: 'creative-4', code: 'NRO-I0003', aliases: [] }];
+    expect(service.match('Lunchbox Benefit Graphic - Cathy Creative - NRO-I0003', withStatic)).toMatchObject({
+      source: 'CODE',
+      creativeId: 'creative-4',
+      detectedCode: 'NRO-I0003',
+    });
+    expect(service.match('testing NRO-I0100', references)).toMatchObject({
+      source: 'UNREGISTERED',
+      detectedCode: 'NRO-I0100',
+    });
+  });
+
   it('returns untagged when no registry code is present', () => {
     expect(service.match('summer sale hero', references)).toEqual({
       source: 'UNTAGGED',

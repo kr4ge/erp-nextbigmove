@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CREATIVE_CODE_REGEX } from '../creative-agent.constants';
+import { CREATIVE_CODE_EXACT_REGEX, CREATIVE_CODE_REGEX } from '../creative-agent.constants';
 
 export type CreativeMatchSource = 'CODE' | 'ALIAS' | 'UNREGISTERED' | 'UNTAGGED';
 
@@ -42,7 +42,7 @@ export class CreativeMatchingService {
         const alias = normalize(rawAlias);
         if (!alias) continue;
         exactAliases.set(alias, { creativeId: reference.creativeId, source: 'ALIAS' });
-        if (/^[A-Z]{2,6}-V\d{3,6}$/.test(alias)) {
+        if (CREATIVE_CODE_EXACT_REGEX.test(alias)) {
           codeTokens.push({ token: alias, creativeId: reference.creativeId, source: 'ALIAS' });
         }
       }

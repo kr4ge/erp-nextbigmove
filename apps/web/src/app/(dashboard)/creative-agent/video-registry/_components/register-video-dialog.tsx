@@ -23,6 +23,7 @@ import type {
 import { isValidFacebookPostUrl } from "../_utils/facebook-post-url";
 import { CreativeCodeField } from "./creative-code-field";
 import { CreativeDetailsFields } from "./creative-details-fields";
+import { readEditorName } from "../_utils/ad-tag";
 
 type Props = {
   open: boolean;
@@ -70,7 +71,16 @@ export function RegisterVideoDialog({
     () => stores.find((store) => store.value === form.storeId) ?? null,
     [form.storeId, stores],
   );
-  const codePreview = seed?.code ?? selectedStore?.nextCode ?? null;
+  // The kind decides the code's letter (V for video, I for image), so the
+  // preview cannot be resolved until step 1 is answered.
+  const codePreview = seed?.code
+    ?? (kind ? selectedStore?.nextCodes?.[kind] : null)
+    ?? selectedStore?.nextCode
+    ?? null;
+  // Read once on mount: the signed-in person does not change mid-dialog, and
+  // touching localStorage on every keystroke would be wasteful.
+  const [editorName, setEditorName] = useState("");
+  useEffect(() => { setEditorName(readEditorName()); }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -157,9 +167,13 @@ export function RegisterVideoDialog({
               The creative is in the registry. Continue editing it there any time.
             </DialogDescription>
             <div className="mx-auto mt-6 max-w-md text-left">
+              {/* The saved record, not the form draft — this is the tag as the
+                  registry actually stored it. */}
               <CreativeCodeField
                 code={createdItem.code}
-                helper="Paste this exact value into the Meta ad name without brackets or additional text."
+                title={createdItem.title}
+                editor={createdItem.creator.name}
+                helper="Paste this as the Meta ad name. Keep the code at the end exactly — that is what the registry matches on."
               />
             </div>
             <Button type="button" className="mt-6" onClick={onClose}>
@@ -305,7 +319,9 @@ export function RegisterVideoDialog({
                     />
                     <CreativeCodeField
                       code={codePreview}
-                      helper="Preview only until enrollment is saved. Use the final code exactly—without brackets or extra text."
+                      title={form.title}
+                      editor={editorName}
+                      helper="Paste this as the Meta ad name. Preview only until enrollment is saved — the code at the end is what the registry matches on, so keep it exactly."
                     />
                   </div>
 
