@@ -71,6 +71,40 @@ export function SectionHeader({ eyebrow, title, description }: {
 }
 
 /** label + value + optional sub — used everywhere outside the story cards. */
+/**
+ * One tile carrying two related counts.
+ *
+ * Used where a single number would blend two different questions — returning
+ * stock is still at risk, returned stock is waiting to be re-shelved — and
+ * summing them would hide both.
+ */
+export function SplitTile({ label, left, right, tone = 'unknown', info }: {
+  label: string;
+  left: { caption: string; value: string };
+  right: { caption: string; value: string };
+  tone?: Tone;
+  info?: string;
+}) {
+  return (
+    <div className="stat-tile">
+      <p className="stat-label">
+        {label}
+        {info ? <InfoTip text={info} /> : null}
+      </p>
+      <div className="mt-1 flex items-end gap-4">
+        {[left, right].map((part, index) => (
+          <div key={part.caption} className={index === 1 ? 'border-l border-border/50 pl-4' : ''}>
+            <p className={`stat-value text-lg-loose ${index === 0 && tone !== 'unknown' ? TONE_TEXT[tone] : ''}`}>
+              {part.value}
+            </p>
+            <p className="stat-sub">{part.caption}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Tile({ label, value, sub, tone = 'unknown', info }: {
   label: string;
   value: string;

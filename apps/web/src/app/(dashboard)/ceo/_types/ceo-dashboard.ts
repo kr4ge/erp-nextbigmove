@@ -86,6 +86,7 @@ export type CeoDashboardResponse = {
     promised: number;
     inTransit: number;
     returning: number;
+    returned: number;
     sold: number;
     dispatchedAllTime: number;
     unsellable: number;

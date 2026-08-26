@@ -16,6 +16,7 @@ import {
   peso,
   SectionHeader,
   StoryCard,
+  SplitTile,
   Tile,
 } from './ceo-ui';
 import { LossBarPanel } from './loss-bar-panel';
@@ -227,24 +228,25 @@ export function CeoDashboardScreen() {
               <Tile
                 label="In Warehouse"
                 value={count(data.stock.onHand)}
-                sub={data.stock.onHand === 0 ? 'record a count to start' : 'on the shelf, sellable'}
+                sub={data.stock.onHand === 0 ? 'record a count to start' : 'in the warehouse'}
               />
               <Tile
                 label="Incoming"
                 info="Approved quantities on purchasing batches that have not yet been received into the warehouse."
                 value={data.stock.incoming === 0 ? '—' : count(data.stock.incoming)}
-                sub={data.stock.incoming === 0 ? 'nothing ordered' : 'ordered, not yet received'}
+                sub={data.stock.incoming === 0 ? 'nothing staged' : 'staged, not yet shelved'}
               />
               <Tile
                 label="In Transit"
                 value={count(data.stock.inTransit)}
-                sub="riding with couriers"
+                sub="shipped, not yet delivered"
               />
-              <Tile
-                label="Returning"
-                value={count(data.stock.returning)}
+              <SplitTile
+                label="Returns"
+                info="Returning is still with the courier on its way back. Returned has arrived and needs re-shelving."
+                left={{ caption: 'Returning', value: count(data.stock.returning) }}
+                right={{ caption: 'Returned', value: count(data.stock.returned) }}
                 tone={data.stock.returning > 0 ? 'warning' : 'unknown'}
-                sub="coming back, not yet received"
               />
               <Tile
                 label="Sold"

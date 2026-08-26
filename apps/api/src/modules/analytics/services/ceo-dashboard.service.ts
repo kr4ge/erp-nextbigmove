@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma, WmsInventoryUnitStatus, WmsPurchasingBatchStatus } from '@prisma/client';
+import { Prisma, WmsInventoryUnitStatus } from '@prisma/client';
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
@@ -26,7 +26,8 @@ const MANILA_TZ = 'Asia/Manila';
 /** A repeat order must follow a delivered first order by at least this long. */
 const REPEAT_GAP_DAYS = 10;
 /** Pancake status codes. */
-const STATUS = { delivered: 3, rtsA: 4, rtsB: 5, cancelled: 6, deleted: 7, shipped: 2 } as const;
+/** POS order statuses. 4 is travelling back, 5 has already arrived. */
+const STATUS = { delivered: 3, returning: 4, returned: 5, cancelled: 6, deleted: 7, shipped: 2 } as const;
 
 const toNumber = (value: Prisma.Decimal | number | null | undefined) => Number(value ?? 0);
 
@@ -533,29 +534,11 @@ export class CeoDashboardService {
    * running balance and "riding with a courier" is about now, not a period.
    */
   private async loadStockAndSupply(tenantId: string, averageUnitsShippedPerDay: number | null, deliveredUnits: number) {
-    const [grouped, incomingLines, soldAllTime] = await Promise.all([
+    const [grouped, soldAllTime] = await Promise.all([
       this.prisma.wmsInventoryUnit.groupBy({
         by: ['status'],
         where: { tenantId },
         _count: { _all: true },
-      }),
-      // Ordered from suppliers but not yet on the shelf. Batches that have
-      // been received are excluded — those units already count as on-hand.
-      this.prisma.wmsPurchasingBatchLine.aggregate({
-        where: {
-          tenantId,
-          batch: {
-            status: {
-              in: [
-                WmsPurchasingBatchStatus.AWAITING_PRODUCTS,
-                WmsPurchasingBatchStatus.SHIPPED,
-                WmsPurchasingBatchStatus.RECEIVING_READY,
-                WmsPurchasingBatchStatus.RECEIVING_EXCEPTION,
-              ],
-            },
-          },
-        },
-        _sum: { approvedQuantity: true, requestedQuantity: true },
       }),
       // Units dispatched through the WMS. Delivery itself is confirmed in POS,
       // not in WMS (fulfilment orders stop at PACKED), so this counts what the
@@ -568,12 +551,23 @@ export class CeoDashboardService {
       .filter((row) => statuses.includes(row.status))
       .reduce((sum, row) => sum + row._count._all, 0);
 
-    // On the shelf and sellable. EXPIRED/DAMAGED/LOST/DEADSTOCK are excluded:
-    // they are physically present but cannot be sold.
-    const onHand = countOf('RECEIVED', 'STAGED', 'PUTAWAY');
+    // Everything physically inside the building. PICKED and PACKED units have
+    // been pulled for an order but have not left, so they are still warehouse
+    // stock. EXPIRED/DAMAGED/LOST/DEADSTOCK are excluded: present, but not
+    // sellable.
+    const onHand = countOf('RECEIVED', 'PUTAWAY', 'PICKED', 'PACKED');
     const promised = countOf('RESERVED', 'PICKED', 'PACKED');
-    const inTransit = countOf('DISPATCHED');
-    const returning = countOf('RTS');
+    // Units that left the building. A unit stays DISPATCHED in WMS even after
+    // its order is delivered or returned — WMS is never told — so the POS order
+    // status is what separates "still riding" from "already resolved".
+    const inTransit = await this.countUnitsByOrderStatus(tenantId, [STATUS.shipped]);
+    // Split rather than summed: 4 is still travelling back, 5 has arrived. They
+    // answer different questions — one is money still at risk, the other is
+    // stock to re-shelve — so the tile shows both instead of one blended number.
+    const [returning, returned] = await Promise.all([
+      this.countUnitsByOrderStatus(tenantId, [STATUS.returning]),
+      this.countUnitsByOrderStatus(tenantId, [STATUS.returned]),
+    ]);
     const unsellable = countOf('EXPIRED', 'DEADSTOCK', 'DAMAGED', 'LOST');
 
     // The tile that matters: when the shelf empties at the pace you ship.
@@ -581,7 +575,10 @@ export class CeoDashboardService {
       ? round(onHand / averageUnitsShippedPerDay, 1)
       : null;
 
-    const incoming = incomingLines._sum.approvedQuantity ?? incomingLines._sum.requestedQuantity ?? 0;
+    // Staged units are in the building but not yet on a shelf, so they are the
+    // stock arriving rather than stock you can pick. Purchase batches were the
+    // previous source, but they measure supplier intent, not units present.
+    const incoming = countOf('STAGED');
 
     return {
       available: grouped.length > 0,
@@ -590,6 +587,7 @@ export class CeoDashboardService {
       promised,
       inTransit,
       returning,
+      returned,
       sold: deliveredUnits,
       dispatchedAllTime: soldAllTime,
       unsellable,
@@ -635,6 +633,33 @@ export class CeoDashboardService {
       options,
       defaultShopId: options.length === 1 ? options[0].value : null,
     };
+  }
+
+  /**
+   * Dispatched units whose POS order sits in one of the given statuses.
+   *
+   * A unit is marked DISPATCHED when it leaves the warehouse and is never
+   * updated again — WMS fulfilment stops at PACKED and delivery is confirmed in
+   * POS. Counting DISPATCHED alone therefore returns everything ever shipped,
+   * not what is on the road today. Joining through the basket to the POS order
+   * is what makes "in transit" and "returning" mean what they say.
+   */
+  private async countUnitsByOrderStatus(tenantId: string, statuses: number[]): Promise<number> {
+    return this.prisma.wmsInventoryUnit.count({
+      where: {
+        tenantId,
+        status: WmsInventoryUnitStatus.DISPATCHED,
+        basketUnits: {
+          some: {
+            basket: {
+              fulfillmentOrders: {
+                some: { posOrder: { status: { in: statuses }, isVoid: false } },
+              },
+            },
+          },
+        },
+      },
+    });
   }
 
   private async loadFreshness(tenantId: string) {
