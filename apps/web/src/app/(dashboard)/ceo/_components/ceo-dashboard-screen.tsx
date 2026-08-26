@@ -220,7 +220,7 @@ export function CeoDashboardScreen() {
             <SectionHeader
               eyebrow="Can we keep selling"
               title="Stock & supply"
-              description="Units, not pesos, following one item down the line: on the shelf, promised to someone, riding with a courier, coming back. On-hand stock is a running balance, so this panel ignores the date range."
+              description="Units, not pesos, following one item down the line: in the warehouse, arriving, shipped, coming back. Follows the store filter, but on-hand stock is a running balance so it ignores the date range."
             />
             {/* Six tiles, 3 × 2 — one item's journey down the line. Values are
                 toned only where the number carries a warning. */}

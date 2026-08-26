@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma, WmsInventoryUnitStatus } from '@prisma/client';
+import { Prisma, WmsFulfillmentOrderStatus, WmsInventoryUnitStatus } from '@prisma/client';
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
@@ -101,9 +101,14 @@ export class CeoDashboardService {
     const fulfillmentCost = toNumber(sums.sfSdrPos) + toNumber(sums.ffSdrPos)
       + toNumber(sums.ifSdrPos) + toNumber(sums.codFeeDeliveredPos);
 
-    const deliveredUnits = await this.loadDeliveredUnits(tenantId, range);
+    const deliveredUnits = await this.loadDeliveredUnits(tenantId, range, query.shopIds);
     const rangeDays = Math.max(1, Math.round((range.end.getTime() - range.start.getTime()) / 86_400_000));
-    const stock = await this.loadStockAndSupply(tenantId, deliveredUnits > 0 ? deliveredUnits / rangeDays : null, deliveredUnits);
+    const stock = await this.loadStockAndSupply(
+      tenantId,
+      deliveredUnits > 0 ? deliveredUnits / rangeDays : null,
+      deliveredUnits,
+      query.shopIds,
+    );
     const margin = computeMargin({
       deliveredValue,
       deliveredOrders: counts.delivered,
@@ -451,10 +456,15 @@ export class CeoDashboardService {
   }
 
   /** Units inside delivered orders, for the per-unit cost of goods. */
-  private async loadDeliveredUnits(tenantId: string, range: { startKey: string; endKey: string }) {
+  private async loadDeliveredUnits(
+    tenantId: string,
+    range: { startKey: string; endKey: string },
+    shopIds?: string[],
+  ) {
     const result = await this.prisma.posOrder.aggregate({
       where: {
         tenantId,
+        ...(shopIds?.length ? { shopId: { in: shopIds } } : {}),
         dateLocal: { gte: range.startKey, lte: range.endKey },
         status: STATUS.delivered,
         isVoid: false,
@@ -533,18 +543,26 @@ export class CeoDashboardService {
    * Deliberately NOT filtered by the selected date range — on-hand stock is a
    * running balance and "riding with a courier" is about now, not a period.
    */
-  private async loadStockAndSupply(tenantId: string, averageUnitsShippedPerDay: number | null, deliveredUnits: number) {
+  private async loadStockAndSupply(
+    tenantId: string,
+    averageUnitsShippedPerDay: number | null,
+    deliveredUnits: number,
+    shopIds?: string[],
+  ) {
+    // WMS rows carry a real storeId foreign key, so scoping is exact here —
+    // unlike the reconciled money panels, which depend on ad-level attribution.
+    const storeScope = shopIds?.length ? { store: { shopId: { in: shopIds } } } : {};
     const [grouped, soldAllTime] = await Promise.all([
       this.prisma.wmsInventoryUnit.groupBy({
         by: ['status'],
-        where: { tenantId },
+        where: { tenantId, ...storeScope },
         _count: { _all: true },
       }),
       // Units dispatched through the WMS. Delivery itself is confirmed in POS,
       // not in WMS (fulfilment orders stop at PACKED), so this counts what the
       // warehouse sent out and never came back.
       this.prisma.wmsInventoryUnit.count({
-        where: { tenantId, status: WmsInventoryUnitStatus.DISPATCHED },
+        where: { tenantId, status: WmsInventoryUnitStatus.DISPATCHED, ...storeScope },
       }),
     ]);
     const countOf = (...statuses: string[]) => grouped
@@ -560,13 +578,13 @@ export class CeoDashboardService {
     // Units that left the building. A unit stays DISPATCHED in WMS even after
     // its order is delivered or returned — WMS is never told — so the POS order
     // status is what separates "still riding" from "already resolved".
-    const inTransit = await this.countUnitsByOrderStatus(tenantId, [STATUS.shipped]);
+    const inTransit = await this.countUnitsByOrderStatus(tenantId, [STATUS.shipped], shopIds);
     // Split rather than summed: 4 is still travelling back, 5 has arrived. They
     // answer different questions — one is money still at risk, the other is
     // stock to re-shelve — so the tile shows both instead of one blended number.
     const [returning, returned] = await Promise.all([
-      this.countUnitsByOrderStatus(tenantId, [STATUS.returning]),
-      this.countUnitsByOrderStatus(tenantId, [STATUS.returned]),
+      this.countUnitsByOrderStatus(tenantId, [STATUS.returning], shopIds),
+      this.countUnitsByOrderStatus(tenantId, [STATUS.returned], shopIds),
     ]);
     const unsellable = countOf('EXPIRED', 'DEADSTOCK', 'DAMAGED', 'LOST');
 
@@ -636,30 +654,29 @@ export class CeoDashboardService {
   }
 
   /**
-   * Dispatched units whose POS order sits in one of the given statuses.
+   * Units on fulfilment orders whose POS order sits in one of these statuses.
    *
-   * A unit is marked DISPATCHED when it leaves the warehouse and is never
-   * updated again — WMS fulfilment stops at PACKED and delivery is confirmed in
-   * POS. Counting DISPATCHED alone therefore returns everything ever shipped,
-   * not what is on the road today. Joining through the basket to the POS order
-   * is what makes "in transit" and "returning" mean what they say.
+   * Counting inventory units by their own status does not work here: a unit is
+   * left DISPATCHED forever because WMS fulfilment stops at PACKED and delivery
+   * is only ever confirmed in POS. WMS Dispatch resolves this by reading the
+   * POS status off the fulfilment order, and this mirrors that exactly so the
+   * two screens agree.
    */
-  private async countUnitsByOrderStatus(tenantId: string, statuses: number[]): Promise<number> {
-    return this.prisma.wmsInventoryUnit.count({
+  private async countUnitsByOrderStatus(
+    tenantId: string,
+    statuses: number[],
+    shopIds?: string[],
+  ): Promise<number> {
+    const result = await this.prisma.wmsFulfillmentOrder.aggregate({
       where: {
         tenantId,
-        status: WmsInventoryUnitStatus.DISPATCHED,
-        basketUnits: {
-          some: {
-            basket: {
-              fulfillmentOrders: {
-                some: { posOrder: { status: { in: statuses }, isVoid: false } },
-              },
-            },
-          },
-        },
+        status: WmsFulfillmentOrderStatus.PACKED,
+        posOrder: { is: { status: { in: statuses }, isVoid: false } },
+        ...(shopIds?.length ? { store: { shopId: { in: shopIds } } } : {}),
       },
+      _sum: { totalQuantity: true },
     });
+    return result._sum.totalQuantity ?? 0;
   }
 
   private async loadFreshness(tenantId: string) {
