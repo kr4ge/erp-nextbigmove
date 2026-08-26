@@ -1,6 +1,19 @@
-export type InsightVerdict = 'SCALE' | 'REFRESH' | 'WATCH' | 'KILL' | 'TESTING';
+export type SuggestionUrgency = 'REFRESH_NOW' | 'MORE_VARIATIONS';
+export type OtherStatus = 'GATHERING_DATA' | 'NO_SIGNAL';
 
-export type InsightRow = {
+export type InsightMetrics = {
+  spend30: number;
+  orders30: number;
+  arPct30: number | null;
+  hookCur: number | null;
+  hookPrev: number | null;
+  ctrCur: number | null;
+  ctrPrev: number | null;
+  frequency: number | null;
+};
+
+/** A creative worth making fresh versions of, and why. */
+export type InsightSuggestion = {
   id: string;
   code: string;
   title: string;
@@ -9,22 +22,21 @@ export type InsightRow = {
   hookType: string | null;
   format: string | null;
   remixOfCode: string | null;
-  performanceStatus: string;
   creator: string;
-  verdict: InsightVerdict;
-  reason: string;
   isWinner: boolean;
   fatiguing: boolean;
-  metrics: {
-    spend30: number;
-    orders30: number;
-    arPct30: number | null;
-    hookCur: number | null;
-    hookPrev: number | null;
-    ctrCur: number | null;
-    ctrPrev: number | null;
-    frequency: number | null;
-  };
+  urgency: SuggestionUrgency;
+  reason: string;
+  metrics: InsightMetrics;
+};
+
+/** A creative not (yet) worth refreshing, with a neutral note — no verdicts here. */
+export type InsightOther = {
+  id: string;
+  code: string;
+  title: string;
+  status: OtherStatus;
+  note: string;
 };
 
 export type InsightRun = {
@@ -42,10 +54,10 @@ export type InsightQueueResponse = {
     end: string;
     rule: { arCeiling: number; killLine: number; evidenceSpend: number; evidenceOrders: number };
   };
-  counts: Record<InsightVerdict, number>;
-  rows: InsightRow[];
+  suggestions: InsightSuggestion[];
+  others: InsightOther[];
   latestRun: InsightRun | null;
-  /** True when today's one allowed analysis has already been run (Manila day). */
+  /** True when today's one allowed analysis has already been run (Manila day, per user). */
   diagnoseUsedToday: boolean;
   aiConfigured: boolean;
 };

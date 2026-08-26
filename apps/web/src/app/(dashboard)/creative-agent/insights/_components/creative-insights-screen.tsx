@@ -7,19 +7,15 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PanelHeader } from '../../overview/_components/overview-ui';
 import { createVideoRegistryItem } from '../../video-registry/_services/video-registry.service';
 import { fetchInsightQueue, generateVariants, runDiagnose } from '../_services/creative-insights.service';
-import type { InsightQueueResponse, InsightRow, InsightVerdict, VariantBrief, VariantsResponse } from '../_types/creative-insights';
+import type { InsightQueueResponse, InsightSuggestion, SuggestionUrgency, VariantBrief, VariantsResponse } from '../_types/creative-insights';
 import { VariantsDialog } from './variants-dialog';
 
 const pct = (value: number | null | undefined, decimals = 1) =>
   value == null ? '—' : `${(value * 100).toFixed(decimals)}%`;
-const peso = (value: number) => `₱${Math.round(value).toLocaleString('en-PH')}`;
 
-const VERDICT_META: Record<InsightVerdict, { label: string; className: string }> = {
-  SCALE: { label: 'Scale', className: 'bg-success-soft/40 text-success' },
-  REFRESH: { label: 'Refresh', className: 'bg-warning-soft text-warning' },
-  KILL: { label: 'Kill', className: 'bg-destructive-soft/50 text-destructive' },
-  WATCH: { label: 'Watch', className: 'bg-info-soft text-info' },
-  TESTING: { label: 'Testing', className: 'bg-secondary/40 text-muted dark:bg-secondary/15 dark:text-slate-300' },
+const URGENCY_META: Record<SuggestionUrgency, { label: string; className: string }> = {
+  REFRESH_NOW: { label: 'Refresh now', className: 'bg-warning-soft text-warning' },
+  MORE_VARIATIONS: { label: 'Proven winner', className: 'bg-success-soft/40 text-success' },
 };
 
 /** Week-over-week cell: current value with last week's beside it when it moved. */
@@ -41,7 +37,7 @@ export function CreativeInsightsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
-  const [variantsFor, setVariantsFor] = useState<InsightRow | null>(null);
+  const [variantsFor, setVariantsFor] = useState<InsightSuggestion | null>(null);
   const [variants, setVariants] = useState<VariantsResponse | null>(null);
   const [variantsBusy, setVariantsBusy] = useState(false);
   const [variantsError, setVariantsError] = useState<string | null>(null);
@@ -70,7 +66,7 @@ export function CreativeInsightsScreen() {
     }
   };
 
-  const openVariants = async (row: InsightRow) => {
+  const openVariants = async (row: InsightSuggestion) => {
     setVariantsFor(row);
     setVariants(null);
     setVariantsError(null);
@@ -94,20 +90,18 @@ export function CreativeInsightsScreen() {
       angle: brief.angle,
       remixOfCode: variantsFor.code,
       script: [`HOOK: ${brief.hook}`, '', brief.script].join('\n'),
-      notes: `Ads Insight variant of ${variantsFor.code} — ${brief.rationale}`,
+      notes: `Creative Insights variant of ${variantsFor.code} — ${brief.rationale}`,
     });
     setEnrollNotice(`${created.code} enrolled as a variant of ${variantsFor.code}.`);
     await load();
     return created.code;
   };
 
-  const counts = data?.counts;
-
   return (
     <div className="mx-auto max-w-screen-xl">
       <PageHeader
         title="Creative Insights"
-        description="Your work this week: what to scale, what to refresh before it dies, what to let go — and your next batch."
+        description="Which of your creatives deserve fresh versions, and the angles that are working — so your next batch is ready before the current one fades."
         breadcrumbs="Creative Workspace"
       />
 
@@ -129,29 +123,19 @@ export function CreativeInsightsScreen() {
 
         <section className="panel panel-content shadow-card">
           <PanelHeader
-            title="Decide queue"
+            title="Make these next"
             description={data
-              ? `Economics over ${data.window.econStart} to ${data.window.end}; fatigue compared week-over-week. Winner bar: 10+ orders at AR% ≤ ${pct(data.window.rule.arCeiling, 0)}; kill line ${pct(data.window.rule.killLine, 0)}.`
-              : 'Economics over the last 30 days; fatigue compared week-over-week.'}
-            right={counts ? (
-              <div className="flex flex-wrap items-center gap-2">
-                {(Object.keys(VERDICT_META) as InsightVerdict[]).map((key) => (
-                  <span key={key} className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${VERDICT_META[key].className}`}>
-                    {VERDICT_META[key].label} · {counts[key] ?? 0}
-                  </span>
-                ))}
-              </div>
-            ) : undefined}
+              ? `Suggested refreshes from ${data.window.econStart} to ${data.window.end}. A creative lands here by earning it — a winner worth more variations, or a performer starting to fade.`
+              : 'Suggested refreshes from your last 30 days.'}
           />
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-sm">
+            <table className="w-full min-w-[1000px] text-sm">
               <thead>
                 <tr className="border-b border-border/20 text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="px-5 py-3 font-medium">Verdict</th>
+                  <th className="px-5 py-3 font-medium">Suggestion</th>
                   <th className="px-3 py-3 font-medium">Creative</th>
                   <th className="px-3 py-3 text-right font-medium">Orders</th>
                   <th className="px-3 py-3 text-right font-medium">AR%</th>
-                  <th className="px-3 py-3 text-right font-medium">Ad Spent</th>
                   <th className="px-3 py-3 text-right font-medium">Hook (wk)</th>
                   <th className="px-3 py-3 text-right font-medium">CTR (wk)</th>
                   <th className="px-3 py-3 font-medium">Why</th>
@@ -160,15 +144,19 @@ export function CreativeInsightsScreen() {
               </thead>
               <tbody>
                 {isLoading && !data ? (
-                  <tr><td colSpan={9} className="px-5 py-10 text-center text-muted">Loading the queue…</td></tr>
-                ) : data && data.rows.length === 0 ? (
-                  <tr><td colSpan={9} className="px-5 py-10 text-center text-muted">No creatives enrolled yet — the queue starts at the Video Registry.</td></tr>
+                  <tr><td colSpan={8} className="px-5 py-10 text-center text-muted">Reading your last 30 days…</td></tr>
+                ) : data && data.suggestions.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                      Nothing to refresh yet — a creative lands here once it proves itself (10+ orders under the AR% bar) or starts to fade while working. Keep publishing; the registry is where it starts.
+                    </td>
+                  </tr>
                 ) : (
-                  data?.rows.map((row) => (
+                  data?.suggestions.map((row) => (
                     <tr key={row.id} className="border-b border-border/10 align-top last:border-0">
                       <td className="px-5 py-3.5">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${VERDICT_META[row.verdict].className}`}>
-                          {VERDICT_META[row.verdict].label}
+                        <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${URGENCY_META[row.urgency].className}`}>
+                          {URGENCY_META[row.urgency].label}
                         </span>
                       </td>
                       <td className="px-3 py-3.5">
@@ -182,16 +170,13 @@ export function CreativeInsightsScreen() {
                       </td>
                       <td className="px-3 py-3.5 text-right tabular-nums">{row.metrics.orders30 || '—'}</td>
                       <td className="px-3 py-3.5 text-right tabular-nums">{pct(row.metrics.arPct30)}</td>
-                      <td className="px-3 py-3.5 text-right font-semibold">{peso(row.metrics.spend30)}</td>
                       <td className="px-3 py-3.5 text-right tabular-nums"><Trend cur={row.metrics.hookCur} prev={row.metrics.hookPrev} /></td>
                       <td className="px-3 py-3.5 text-right tabular-nums"><Trend cur={row.metrics.ctrCur} prev={row.metrics.ctrPrev} /></td>
                       <td className="max-w-[300px] px-3 py-3.5 text-xs leading-snug text-muted">{row.reason}</td>
                       <td className="px-5 py-3.5 text-right">
-                        {row.verdict === 'SCALE' || row.verdict === 'REFRESH' ? (
-                          <Button variant="secondary" size="sm" iconLeft={<Wand2 className="h-4 w-4" />} onClick={() => openVariants(row)} disabled={!data.aiConfigured} title={data.aiConfigured ? 'Generate variant briefs' : 'Set ANTHROPIC_API_KEY on the API to enable'}>
-                            Variants
-                          </Button>
-                        ) : null}
+                        <Button variant="secondary" size="sm" iconLeft={<Wand2 className="h-4 w-4" />} onClick={() => openVariants(row)} disabled={!data.aiConfigured} title={data.aiConfigured ? 'Generate variant briefs' : 'Ask the main admin to add the Anthropic key in Settings → AI'}>
+                          Variants
+                        </Button>
                       </td>
                     </tr>
                   ))
@@ -199,12 +184,28 @@ export function CreativeInsightsScreen() {
               </tbody>
             </table>
           </div>
+          {data && data.others.length > 0 ? (
+            <details className="border-t border-border/40 px-5 py-3">
+              <summary className="cursor-pointer text-xs font-medium text-muted">
+                Not in the list yet · {data.others.length} creative{data.others.length === 1 ? '' : 's'}
+              </summary>
+              <ul className="mt-2 space-y-1.5">
+                {data.others.map((row) => (
+                  <li key={row.id} className="text-xs text-muted">
+                    <span className="font-mono font-semibold text-foreground">{row.code}</span>
+                    <span className="ml-2">{row.title}</span>
+                    <span className="ml-2">— {row.note}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
         </section>
 
         <section className="panel panel-content shadow-card">
           <PanelHeader
             title="What's working — winners vs losers"
-            description="Claude reads every judged creative's script, ad copy, tags, and numbers, and says what the winners share, what the losers share, and the three sharpest next tests. One run per day — you click it, nothing sends on its own."
+            description="The overall read of your rolling last 30 days: what the winners share, what the losers share, the best angles, and the variations to try next. One run per day — you click it, nothing sends on its own."
             right={(
               <Button
                 variant="primary" size="sm"
@@ -234,7 +235,7 @@ export function CreativeInsightsScreen() {
                 <div className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">{data.latestRun.answer}</div>
               </div>
             ) : (
-              <p className="text-sm text-muted">No analysis yet. Run it once there are a few judged creatives — it refuses to guess from thin data.</p>
+              <p className="text-sm text-muted">No analysis yet. Run it once a few of your creatives have real results — it refuses to guess from thin data.</p>
             )}
           </div>
         </section>

@@ -11,9 +11,8 @@ import { CreativeAccessService } from './creative-access.service';
 const MODEL = 'claude-sonnet-5';
 
 /**
- * The queue's evidence gate mirrors the leaderboard's "Testing" pill: below
- * this spend AND order count, a creative has not bought enough data to be
- * judged at all.
+ * Below this spend AND order count a creative has not bought enough data to
+ * teach anything — mirrors the leaderboard's "Testing" pill.
  */
 const EVIDENCE_SPEND = 3_000;
 const EVIDENCE_ORDERS = 10;
@@ -22,7 +21,14 @@ const EVIDENCE_ORDERS = 10;
 const FATIGUE_MIN_IMPRESSIONS = 1_000;
 const FATIGUE_DECAY = 0.8;
 
-export type InsightVerdict = 'SCALE' | 'REFRESH' | 'WATCH' | 'KILL' | 'TESTING';
+/**
+ * This screen speaks to the creative, so its outputs are make-suggestions,
+ * never media-buying verdicts — scale/kill is the advertiser's vocabulary and
+ * their own dashboard's job. REFRESH_NOW outranks MORE_VARIATIONS because a
+ * fatiguing performer has a deadline and a proven winner does not.
+ */
+export type SuggestionUrgency = 'REFRESH_NOW' | 'MORE_VARIATIONS';
+export type OtherStatus = 'GATHERING_DATA' | 'NO_SIGNAL';
 
 type EconTotals = { spend: number; orders: number; grossSales: number; excludedSales: number };
 type WeekTotals = { impressions: number; linkClicks: number; videoPlays3s: number; frequencyNumerator: number; frequencyDenominator: number };
@@ -38,6 +44,35 @@ function dayShift(ymd: string, days: number): Date {
   date.setUTCDate(date.getUTCDate() + days);
   return date;
 }
+const pctText = (value: number | null) => (value === null ? '—' : `${(value * 100).toFixed(1)}%`);
+const pesoText = (value: number) => `₱${Math.round(value).toLocaleString('en-PH')}`;
+
+type InternalRow = {
+  id: string;
+  code: string;
+  title: string;
+  kind: string;
+  angle: string | null;
+  hookType: string | null;
+  format: string | null;
+  remixOfCode: string | null;
+  creator: string;
+  isWinner: boolean;
+  fatiguing: boolean;
+  hasEvidence: boolean;
+  hookDecayed: boolean;
+  ctrDecayed: boolean;
+  metrics: {
+    spend30: number;
+    orders30: number;
+    arPct30: number | null;
+    hookCur: number | null;
+    hookPrev: number | null;
+    ctrCur: number | null;
+    ctrPrev: number | null;
+    frequency: number | null;
+  };
+};
 
 @Injectable()
 export class CreativeInsightService {
@@ -48,18 +83,14 @@ export class CreativeInsightService {
   ) {}
 
   /**
-   * The Decide queue: every creative sorted into what to do with it this week.
-   *
-   * Deterministic on purpose — a verdict that costs money to recompute, or that
-   * two people can read differently, cannot run a weekly rhythm. The LLM is for
-   * the "why" and the "what next", never for the verdict itself.
+   * The shared computation behind every endpoint: per-creative economics over a
+   * rolling 30 Manila days, and week-over-week delivery for fatigue. Scoped the
+   * way the library is — a creative reads their own work, a manager the tenant.
    */
-  async getQueue(actor: CreativeActor) {
+  private async computeRows(actor: CreativeActor) {
     const context = await this.access.resolve(actor);
-    const tenantId = context.tenantId;
-    // Same scoping rule as the library: a creative reads their own work, a
-    // manager reads the tenant. The advertiser never reaches this service.
     const canReadAll = this.access.canReadAll(context);
+    const tenantId = context.tenantId;
     const today = manilaToday();
     const econStart = dayShift(today, -29);
     const weekCurStart = dayShift(today, -6);
@@ -72,7 +103,7 @@ export class CreativeInsightService {
         where: { tenantId, ...(canReadAll ? {} : { createdById: context.userId }) },
         select: {
           id: true, code: true, title: true, kind: true, angle: true, hookType: true,
-          format: true, remixOfCode: true, performanceStatus: true, createdAt: true,
+          format: true, remixOfCode: true, createdAt: true,
           metaAdId: true, metaAdLinks: { select: { adId: true } },
           createdBy: { select: { firstName: true, lastName: true, email: true } },
         },
@@ -80,7 +111,9 @@ export class CreativeInsightService {
       this.prisma.creativeMetaAdLink.findMany({ where: { tenantId }, select: { adId: true, creativeId: true } }),
     ]);
 
-    const creativeByAd = new Map(links.map((link) => [link.adId, link.creativeId]));
+    const visibleIds = new Set(creatives.map((creative) => creative.id));
+    const creativeByAd = new Map<string, string>();
+    for (const link of links) if (visibleIds.has(link.creativeId)) creativeByAd.set(link.adId, link.creativeId);
     for (const creative of creatives) {
       if (creative.metaAdId && !creativeByAd.has(creative.metaAdId)) creativeByAd.set(creative.metaAdId, creative.id);
     }
@@ -133,7 +166,7 @@ export class CreativeInsightService {
     const ceiling = ADVERTISING_PROVISIONAL_DEFAULTS.adSpendRatioHealthy;
     const warning = ADVERTISING_PROVISIONAL_DEFAULTS.adSpendRatioWarning;
 
-    const rows = creatives.map((creative) => {
+    const rows: InternalRow[] = creatives.map((creative) => {
       const totals = econ.get(creative.id) ?? emptyEcon();
       const cur = weekCur.get(creative.id) ?? emptyWeek();
       const prev = weekPrev.get(creative.id) ?? emptyWeek();
@@ -152,45 +185,15 @@ export class CreativeInsightService {
       const audienceNotFresh = freqCur === null || freqPrev === null || freqCur >= freqPrev;
       const fatiguing = measurable && (hookDecayed || ctrDecayed) && audienceNotFresh;
 
-      const hasEvidence = totals.spend >= EVIDENCE_SPEND || totals.orders >= EVIDENCE_ORDERS;
-      const isWinner = totals.orders >= EVIDENCE_ORDERS && arPct !== null && arPct <= ceiling;
-
-      const pct = (value: number | null) => (value === null ? '—' : `${(value * 100).toFixed(1)}%`);
-      const peso = (value: number) => `₱${Math.round(value).toLocaleString('en-PH')}`;
-
-      let verdict: InsightVerdict;
-      let reason: string;
-      if (!hasEvidence) {
-        verdict = 'TESTING';
-        reason = `Still buying data — ${peso(totals.spend)} of ${peso(EVIDENCE_SPEND)} spend, ${totals.orders} of ${EVIDENCE_ORDERS} orders.`;
-      } else if (arPct !== null && arPct > warning) {
-        verdict = 'KILL';
-        reason = `AR% ${pct(arPct)} is past the ${pct(warning)} kill line on ${peso(totals.spend)} of evidence.`;
-      } else if (totals.orders === 0) {
-        verdict = 'KILL';
-        reason = `${peso(totals.spend)} spent in 30 days with zero attributed orders.`;
-      } else if (fatiguing) {
-        verdict = 'REFRESH';
-        reason = `Decaying week-over-week — ${hookDecayed ? `hook ${pct(hookPrev)} → ${pct(hookCur)}` : `CTR ${pct(ctrPrev)} → ${pct(ctrCur)}`} with frequency ${freqCur === null ? 'n/a' : freqCur.toFixed(1)}. Refresh before it dies, not after.`;
-      } else if (isWinner) {
-        verdict = 'SCALE';
-        reason = `Winner — ${totals.orders} orders at ${pct(arPct)} AR% (bar: ${pct(ceiling)}), no fatigue signal.`;
-      } else {
-        verdict = 'WATCH';
-        reason = arPct === null
-          ? `Spending with sales not yet attributable — check the Meta link before judging.`
-          : arPct > ceiling
-            ? `AR% ${pct(arPct)} sits between the ${pct(ceiling)} bar and the ${pct(warning)} kill line.`
-            : `Efficient at ${pct(arPct)} but only ${totals.orders} of ${EVIDENCE_ORDERS} orders — let it earn the verdict.`;
-      }
-
       const creatorName = [creative.createdBy.firstName, creative.createdBy.lastName].filter(Boolean).join(' ') || creative.createdBy.email;
       return {
         id: creative.id, code: creative.code, title: creative.title, kind: creative.kind,
         angle: creative.angle, hookType: creative.hookType, format: creative.format,
-        remixOfCode: creative.remixOfCode, performanceStatus: creative.performanceStatus,
-        creator: creatorName,
-        verdict, reason, isWinner, fatiguing,
+        remixOfCode: creative.remixOfCode, creator: creatorName,
+        isWinner: totals.orders >= EVIDENCE_ORDERS && arPct !== null && arPct <= ceiling,
+        fatiguing,
+        hasEvidence: totals.spend >= EVIDENCE_SPEND || totals.orders >= EVIDENCE_ORDERS,
+        hookDecayed, ctrDecayed,
         metrics: {
           spend30: round(totals.spend, 2), orders30: totals.orders,
           arPct30: arPct === null ? null : round(arPct, 4),
@@ -203,52 +206,100 @@ export class CreativeInsightService {
       };
     });
 
-    const order: InsightVerdict[] = ['SCALE', 'REFRESH', 'KILL', 'WATCH', 'TESTING'];
-    rows.sort((a, b) => order.indexOf(a.verdict) - order.indexOf(b.verdict) || b.metrics.spend30 - a.metrics.spend30);
+    return {
+      context, canReadAll, today, rows, warning,
+      window: {
+        econStart: econStart.toISOString().slice(0, 10),
+        end: today,
+        rule: { arCeiling: ceiling, killLine: warning, evidenceSpend: EVIDENCE_SPEND, evidenceOrders: EVIDENCE_ORDERS },
+      },
+    };
+  }
 
-    const latestRun = await this.prisma.creativeInsightRun.findFirst({
-      where: { tenantId, createdById: context.userId },
+  /** Latest analysis run for THIS user — the run and its daily slot are personal. */
+  private async latestRunFor(tenantId: string, userId: string) {
+    return this.prisma.creativeInsightRun.findFirst({
+      where: { tenantId, createdById: userId },
       orderBy: { createdAt: 'desc' },
       select: { id: true, answer: true, model: true, periodStart: true, periodEnd: true, createdAt: true },
     });
+  }
 
-    // The daily gate is Manila-calendar, matching every other day boundary in
-    // this module: one analysis per day, always a person clicking, never a cron.
+  /**
+   * The creative's view: which of their creatives deserve fresh versions.
+   *
+   * A fatiguing performer comes first — it has a deadline. A proven winner
+   * follows — it has earned more variations. Everything else sits in a quiet
+   * "not yet" list with neutral reasons: what to DO about an underperformer is
+   * the advertiser's dashboard, not this one.
+   */
+  async getQueue(actor: CreativeActor) {
+    const computed = await this.computeRows(actor);
+    const { rows, context, today } = computed;
+
+    const suggestions = rows
+      .filter((row) =>
+        (row.fatiguing && row.metrics.orders30 > 0 && (row.metrics.arPct30 === null || row.metrics.arPct30 <= computed.warning))
+        || (row.isWinner && !row.fatiguing))
+      .map((row) => {
+        const urgency: SuggestionUrgency = row.fatiguing ? 'REFRESH_NOW' : 'MORE_VARIATIONS';
+        const reason = row.fatiguing
+          ? `Was landing, now decaying — ${row.hookDecayed ? `hook ${pctText(row.metrics.hookPrev)} → ${pctText(row.metrics.hookCur)}` : `CTR ${pctText(row.metrics.ctrPrev)} → ${pctText(row.metrics.ctrCur)}`} this week. Make fresh versions before it dies.`
+          : `Proven winner — ${row.metrics.orders30} orders at ${pctText(row.metrics.arPct30)} AR%. Worth more variations while it's working.`;
+        return { ...row, urgency, reason };
+      })
+      .sort((a, b) => (a.urgency === b.urgency ? b.metrics.spend30 - a.metrics.spend30 : a.urgency === 'REFRESH_NOW' ? -1 : 1));
+
+    const suggestedIds = new Set(suggestions.map((row) => row.id));
+    const others = rows
+      .filter((row) => !suggestedIds.has(row.id))
+      .map((row) => ({
+        id: row.id, code: row.code, title: row.title,
+        status: (row.hasEvidence ? 'NO_SIGNAL' : 'GATHERING_DATA') as OtherStatus,
+        note: row.hasEvidence
+          ? 'No strong signal in the last 30 days — nothing to refresh from yet.'
+          : `Still gathering data — ${pesoText(row.metrics.spend30)} of ${pesoText(EVIDENCE_SPEND)} spend, ${row.metrics.orders30} of ${EVIDENCE_ORDERS} orders.`,
+      }));
+
+    const latestRun = await this.latestRunFor(context.tenantId, context.userId);
     const diagnoseUsedToday = Boolean(
       latestRun && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(latestRun.createdAt) === today,
     );
 
     return {
-      window: { econStart: econStart.toISOString().slice(0, 10), end: today, rule: { arCeiling: ceiling, killLine: warning, evidenceSpend: EVIDENCE_SPEND, evidenceOrders: EVIDENCE_ORDERS } },
-      counts: order.reduce((acc, key) => ({ ...acc, [key]: rows.filter((row) => row.verdict === key).length }), {} as Record<InsightVerdict, number>),
-      rows,
+      window: computed.window,
+      suggestions: suggestions.map(({ hasEvidence, hookDecayed, ctrDecayed, ...row }) => row),
+      others,
       latestRun,
       diagnoseUsedToday,
-      aiConfigured: Boolean(await this.aiSettings.resolveKey(tenantId)),
+      aiConfigured: Boolean(await this.aiSettings.resolveKey(context.tenantId)),
     };
   }
 
   /**
-   * The winners-vs-losers read. Losers are half the value: winners alone say
-   * what to copy, losers say what to stop paying for.
+   * The rolling-30-day read: what the winners share, what the losers share,
+   * the best angles, and the variations worth making next. Losers are half the
+   * value — winners alone say what to copy, losers say what to stop making.
    */
   async diagnose(actor: CreativeActor) {
-    const context = await this.access.resolve(actor);
+    const computed = await this.computeRows(actor);
+    const { context, rows, today } = computed;
     const key = await this.aiSettings.resolveKey(context.tenantId);
     if (!key) {
       throw new ServiceUnavailableException('No Anthropic API key configured. Ask the main admin to add one in Settings → AI.');
     }
 
-    const queue = await this.getQueue(actor);
     // One per day, by the owner's rule — a human clicks it, the gate just
-    // stops a second click (or an eager teammate) from double-spending.
-    if (queue.diagnoseUsedToday && queue.latestRun) {
+    // stops a second click from double-spending.
+    const latestRun = await this.latestRunFor(context.tenantId, context.userId);
+    if (latestRun && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(latestRun.createdAt) === today) {
       throw new HttpException(
-        `Today's analysis already ran at ${new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(queue.latestRun.createdAt)}. One per day — it is on the page below; run again tomorrow.`,
+        `Today's analysis already ran at ${new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(latestRun.createdAt)}. One per day — it is on the page below; run again tomorrow.`,
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    const graded = queue.rows.filter((row) => row.verdict !== 'TESTING');
+
+    const graded = rows.filter((row) => row.hasEvidence);
     const winners = graded.filter((row) => row.isWinner);
     if (graded.length < 3 || winners.length < 1) {
       throw new ServiceUnavailableException(
@@ -269,21 +320,21 @@ export class CreativeInsightService {
     for (const copy of copies) for (const adId of copy.adIds) copyByAd.set(adId, { title: copy.title, body: copy.body });
 
     const clip = (value: string | null | undefined, max: number) => (value ? value.replace(/\s+/g, ' ').slice(0, max) : null);
-    const block = (row: (typeof graded)[number]) => {
+    const block = (row: InternalRow) => {
       const extra = detailById.get(row.id);
       const adIdsForRow = extra ? [...extra.metaAdLinks.map((link) => link.adId), ...(extra.metaAdId ? [extra.metaAdId] : [])] : [];
       const copy = adIdsForRow.map((adId) => copyByAd.get(adId)).find(Boolean);
       return [
-        `${row.code} · ${row.kind} · ${row.isWinner ? 'WINNER' : 'NON-WINNER'} · verdict ${row.verdict}`,
+        `${row.code} · ${row.kind} · ${row.isWinner ? 'WINNER' : 'NON-WINNER'}${row.fatiguing ? ' · FATIGUING' : ''}`,
         `angle: ${row.angle ?? '—'} | hookType: ${row.hookType ?? '—'} | format: ${row.format ?? '—'}`,
-        `orders30: ${row.metrics.orders30} | AR%: ${row.metrics.arPct30 === null ? '—' : (row.metrics.arPct30 * 100).toFixed(1) + '%'} | spend30: ₱${Math.round(row.metrics.spend30)} | hook: ${row.metrics.hookCur === null ? '—' : (row.metrics.hookCur * 100).toFixed(1) + '%'} | ctr: ${row.metrics.ctrCur === null ? '—' : (row.metrics.ctrCur * 100).toFixed(1) + '%'}`,
+        `orders30: ${row.metrics.orders30} | AR%: ${pctText(row.metrics.arPct30)} | spend30: ${pesoText(row.metrics.spend30)} | hook: ${pctText(row.metrics.hookCur)} | ctr: ${pctText(row.metrics.ctrCur)}`,
         copy?.body ? `ad copy: ${clip(copy.body, 300)}` : null,
         extra?.script ? `script: ${clip(extra.script, 600)}` : 'script: (none pasted)',
       ].filter(Boolean).join('\n');
     };
 
     const prompt = [
-      `Creative performance data for a PH COD e-commerce brand, last 30 days. The winner bar is 10+ orders at AR% (spend ÷ net sales) ≤ 30%.`,
+      `Creative performance for a PH COD e-commerce brand — rolling last 30 days (${computed.window.econStart} to ${computed.window.end}). The winner bar is 10+ orders at AR% (spend ÷ net sales) ≤ 30%. The reader is the CREATIVE who makes the videos, not the media buyer.`,
       ``,
       `=== WINNERS (${winners.length}) ===`,
       ...winners.map(block),
@@ -299,10 +350,10 @@ export class CreativeInsightService {
         model: MODEL,
         max_tokens: 2000,
         system: [
-        `You are the creative strategist for this account. Analyze ONLY the data provided — never invent creatives, numbers, or audience facts. Cite creative codes for every claim.`,
-        `Answer in five short sections, markdown headers: "What the winners share", "What the losers share", "Make more of this", "Stop making this", "Three sharpest next tests".`,
-        `In "Three sharpest next tests", each test must name the element being changed (hook / angle / format / avatar / opening visual) and which winner it builds on. Keep the whole answer under 500 words. If the sample is thin, say plainly which conclusions are weak.`,
-      ].join('\n'),
+          `You are the creative strategist writing for the video creative of this account. Analyze ONLY the data provided — never invent creatives, numbers, or audience facts. Cite creative codes for every claim.`,
+          `Answer in four short sections, markdown headers: "What the winners share", "What the losers share", "Best angles to make more of", "Variations to try next".`,
+          `"Variations to try next" is the payoff: 3-5 concrete variation ideas, each naming which winner it builds on and which element changes (hook / angle / format / avatar / opening visual). Keep the ideas diverse — each should move different elements, because the ad platform suppresses near-duplicates. Keep the whole answer under 500 words. If the sample is thin, say plainly which conclusions are weak.`,
+        ].join('\n'),
         messages: [{ role: 'user', content: prompt }],
       });
     } catch (error) {
@@ -316,8 +367,8 @@ export class CreativeInsightService {
     const run = await this.prisma.creativeInsightRun.create({
       data: {
         tenantId: context.tenantId,
-        periodStart: new Date(`${queue.window.econStart}T00:00:00.000Z`),
-        periodEnd: new Date(`${queue.window.end}T00:00:00.000Z`),
+        periodStart: new Date(`${computed.window.econStart}T00:00:00.000Z`),
+        periodEnd: new Date(`${computed.window.end}T00:00:00.000Z`),
         model: MODEL,
         answer,
         inputSummary: {
@@ -368,9 +419,10 @@ export class CreativeInsightService {
       throw new ServiceUnavailableException(`${creative.code} has no script and no synced ad copy — nothing to remix. Paste the script in the registry first.`);
     }
 
-    const queue = await this.getQueue(actor);
-    const row = queue.rows.find((item) => item.id === creative.id);
-    const latest = queue.latestRun?.answer ? queue.latestRun.answer.slice(0, 1200) : null;
+    const computed = await this.computeRows(actor);
+    const row = computed.rows.find((item) => item.id === creative.id);
+    const latest = await this.latestRunFor(context.tenantId, context.userId);
+    const latestContext = latest?.answer ? latest.answer.slice(0, 1200) : null;
 
     const client = new Anthropic({ apiKey: key });
     let response: Anthropic.Message;
@@ -378,22 +430,22 @@ export class CreativeInsightService {
       response = await client.messages.create({
         model: MODEL,
         max_tokens: 3000,
-      system: [
-        `You generate ad variant briefs for a PH COD e-commerce brand. Respond with ONLY a JSON array, no prose before or after.`,
-        `Exactly 6 objects, each: {"title": string, "hook": string (the spoken/on-screen first line), "angle": string, "hookType": one of "PAIN_POINT"|"CURIOSITY"|"SOCIAL_PROOF"|"BEFORE_AFTER", "format": one of "UGC"|"TESTIMONIAL"|"PRODUCT_DEMO"|"PROBLEM_SOLUTION", "script": string (8-12 short lines, Taglish is fine), "rationale": string (one sentence, tied to the data), "differsBy": string[] (which axes moved)}.`,
-        `Diversity is mandatory: every variant differs from the ORIGINAL and from every OTHER variant on at least two axes among hook, angle, format, avatar/talent, opening visual. Use at least 3 distinct hookTypes and at least 2 formats across the 6. Near-duplicates get suppressed by the ad platform — do not produce them.`,
-      ].join('\n'),
-      messages: [{
-        role: 'user',
-        content: [
-          `ORIGINAL ${creative.code} · ${creative.kind}`,
-          `title: ${creative.title}`,
-          `angle: ${creative.angle ?? '—'} | hookType: ${creative.hookType ?? '—'} | format: ${creative.format ?? '—'}`,
-          row ? `performance 30d: ${row.metrics.orders30} orders · AR% ${row.metrics.arPct30 === null ? '—' : (row.metrics.arPct30 * 100).toFixed(1) + '%'} · hook ${row.metrics.hookCur === null ? '—' : (row.metrics.hookCur * 100).toFixed(1) + '%'} · verdict ${row.verdict}` : null,
-          copyRow?.body ? `ad copy: ${copyRow.body.slice(0, 400)}` : null,
-          creative.script ? `script:\n${creative.script.slice(0, 1500)}` : null,
-          latest ? `\nAccount-level learnings from the last analysis (use them):\n${latest}` : null,
-        ].filter(Boolean).join('\n'),
+        system: [
+          `You generate ad variant briefs for a PH COD e-commerce brand. Respond with ONLY a JSON array, no prose before or after.`,
+          `Exactly 6 objects, each: {"title": string, "hook": string (the spoken/on-screen first line), "angle": string, "hookType": one of "PAIN_POINT"|"CURIOSITY"|"SOCIAL_PROOF"|"BEFORE_AFTER", "format": one of "UGC"|"TESTIMONIAL"|"PRODUCT_DEMO"|"PROBLEM_SOLUTION", "script": string (8-12 short lines, Taglish is fine), "rationale": string (one sentence, tied to the data), "differsBy": string[] (which axes moved)}.`,
+          `Diversity is mandatory: every variant differs from the ORIGINAL and from every OTHER variant on at least two axes among hook, angle, format, avatar/talent, opening visual. Use at least 3 distinct hookTypes and at least 2 formats across the 6. Near-duplicates get suppressed by the ad platform — do not produce them.`,
+        ].join('\n'),
+        messages: [{
+          role: 'user',
+          content: [
+            `ORIGINAL ${creative.code} · ${creative.kind}`,
+            `title: ${creative.title}`,
+            `angle: ${creative.angle ?? '—'} | hookType: ${creative.hookType ?? '—'} | format: ${creative.format ?? '—'}`,
+            row ? `performance 30d: ${row.metrics.orders30} orders · AR% ${pctText(row.metrics.arPct30)} · hook ${pctText(row.metrics.hookCur)}${row.fatiguing ? ' · FATIGUING — the refresh should feel new, not like a re-run' : ''}` : null,
+            copyRow?.body ? `ad copy: ${copyRow.body.slice(0, 400)}` : null,
+            creative.script ? `script:\n${creative.script.slice(0, 1500)}` : null,
+            latestContext ? `\nAccount-level learnings from the last analysis (use them):\n${latestContext}` : null,
+          ].filter(Boolean).join('\n'),
         }],
       });
     } catch (error) {

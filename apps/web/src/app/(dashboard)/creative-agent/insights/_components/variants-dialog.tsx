@@ -3,14 +3,14 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { InsightRow, VariantBrief, VariantsResponse } from '../_types/creative-insights';
+import type { InsightSuggestion, VariantBrief, VariantsResponse } from '../_types/creative-insights';
 
 /**
  * The next batch, as cards. Each brief names which axes it moved — that is the
  * Andromeda constraint made visible, so nobody quietly enrolls six near-clones.
  */
 export function VariantsDialog({ parent, busy, error, result, onEnroll, onClose }: {
-  parent: InsightRow;
+  parent: InsightSuggestion;
   busy: boolean;
   error: string | null;
   result: VariantsResponse | null;
