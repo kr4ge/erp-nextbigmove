@@ -8,7 +8,7 @@ import type { CeoDashboardParams, CeoDashboardResponse } from '../_types/ceo-das
 /** Month to date, in the tenant's timezone — the reference's default lens. */
 function buildDefaultParams(): CeoDashboardParams {
   const today = manilaToday();
-  return { startDate: `${today.slice(0, 7)}-01`, endDate: today, accountId: '' };
+  return { startDate: `${today.slice(0, 7)}-01`, endDate: today, accountId: '', shopIds: [] };
 }
 
 export function useCeoDashboardController() {
@@ -36,6 +36,34 @@ export function useCeoDashboardController() {
   }, [params]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // A single-store tenant has nothing to choose between, so pin its store once
+  // the first response names it. Guarded by a ref rather than by the current
+  // value: without it, clearing the selection would immediately re-pin and the
+  // control would appear stuck.
+  const pinnedDefault = useRef(false);
+  useEffect(() => {
+    if (pinnedDefault.current) return;
+    const defaultShopId = data?.filters.defaultShopId;
+    if (!defaultShopId) return;
+    pinnedDefault.current = true;
+    setParams((current) => (current.shopIds.length ? current : { ...current, shopIds: [defaultShopId] }));
+  }, [data]);
+
+  // Changing the date range can drop stores out of the option list. A selection
+  // left pointing at one of them would silently filter every figure to nothing,
+  // so stale ids are pruned once the new options arrive.
+  useEffect(() => {
+    const options = data?.filters.stores;
+    if (!options) return;
+    setParams((current) => {
+      if (!current.shopIds.length) return current;
+      const allowed = new Set(options.map((option) => option.value));
+      const next = current.shopIds.filter((id) => allowed.has(id));
+      if (next.length === current.shopIds.length) return current;
+      return { ...current, shopIds: next };
+    });
+  }, [data]);
 
   const updateParams = useCallback((patch: Partial<CeoDashboardParams>) => {
     setParams((current) => ({ ...current, ...patch }));

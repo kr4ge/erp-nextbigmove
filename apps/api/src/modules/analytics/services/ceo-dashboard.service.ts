@@ -52,9 +52,17 @@ export class CeoDashboardService {
       tenantId,
       date: { gte: range.start, lte: range.end },
       ...(query.accountId ? { accountId: query.accountId } : {}),
+      // `shops` is the set of shops an ad's matched orders landed in. Rows that
+      // matched no orders carry an empty array and are excluded by this filter,
+      // which is correct: unattributed spend cannot be claimed by a store.
+      // array_contains tests one value at a time, so a multi-store selection is
+      // a union rather than a single predicate.
+      ...(query.shopIds?.length
+        ? { OR: query.shopIds.map((shopId) => ({ shops: { array_contains: [shopId] } })) }
+        : {}),
     };
 
-    const [totals, trendRows, freshness, accounts, retention] = await Promise.all([
+    const [totals, trendRows, freshness, accounts, retention, stores] = await Promise.all([
       this.prisma.reconcileMarketing.aggregate({
         where,
         _sum: {
@@ -70,6 +78,7 @@ export class CeoDashboardService {
         where: { tenantId }, select: { accountId: true, name: true }, orderBy: { name: 'asc' },
       }),
       this.loadRetention(tenantId, range),
+      this.loadStoreOptions(tenantId, range),
     ]);
 
     const sums = totals._sum;
@@ -125,8 +134,14 @@ export class CeoDashboardService {
     });
 
     return {
-      selected: { startDate: range.startKey, endDate: range.endKey, accountId: query.accountId ?? '' },
-      filters: { accounts: accounts.map((a) => ({ value: a.accountId, label: a.name })) },
+      selected: { startDate: range.startKey, endDate: range.endKey, accountId: query.accountId ?? '', shopIds: query.shopIds ?? [] },
+      filters: {
+        accounts: accounts.map((a) => ({ value: a.accountId, label: a.name })),
+        stores: stores.options,
+        // A tenant with exactly one store has nothing to choose between, so the
+        // dashboard pins it instead of offering a meaningless "All stores".
+        defaultShopId: stores.defaultShopId,
+      },
       freshness,
       integrity: {
         checks: integrity,
@@ -584,6 +599,44 @@ export class CeoDashboardService {
   }
 
   /** How long ago each feed last brought data in — not timestamps, currency. */
+  /**
+   * Stores this tenant can scope the dashboard to.
+   *
+   * Only active stores that actually carry reconciled orders are offered: a
+   * store with nothing attributed to it would render an all-em-dash dashboard
+   * and read as broken rather than empty.
+   */
+  private async loadStoreOptions(tenantId: string, range: { start: Date; end: Date }) {
+    const stores = await this.prisma.posStore.findMany({
+      where: { tenantId, status: 'ACTIVE', OR: [{ enabled: true }, { enabled: null }] },
+      select: { shopId: true, shopName: true, name: true },
+      orderBy: { shopName: 'asc' },
+    });
+    if (stores.length === 0) return { options: [], defaultShopId: null };
+
+    // Scoped to the selected range: a store with nothing reconciled in this
+    // window has no numbers to show, so offering it would only produce an
+    // all-em-dash dashboard.
+    const withData = await this.prisma.$queryRaw<Array<{ shop: string }>>`
+      SELECT DISTINCT jsonb_array_elements_text(shops) AS shop
+      FROM reconcile_marketing
+      WHERE "tenantId" = ${tenantId}::uuid
+        AND date >= ${range.start}
+        AND date <= ${range.end}
+    `;
+    const attributed = new Set(withData.map((row) => row.shop));
+    const usable = stores.filter((store) => attributed.has(store.shopId));
+
+    const options = usable.map((store) => ({
+      value: store.shopId,
+      label: store.shopName || store.name,
+    }));
+    return {
+      options,
+      defaultShopId: options.length === 1 ? options[0].value : null,
+    };
+  }
+
   private async loadFreshness(tenantId: string) {
     const [orders, spend] = await Promise.all([
       this.prisma.posOrder.aggregate({ where: { tenantId }, _max: { insertedAt: true } }),

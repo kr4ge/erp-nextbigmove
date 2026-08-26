@@ -4,6 +4,7 @@ export type CeoDashboardParams = {
   startDate: string;
   endDate: string;
   accountId: string;
+  shopIds: string[];
 };
 
 export type IntegrityCheck = {
@@ -63,7 +64,11 @@ export type LossSegment = {
 
 export type CeoDashboardResponse = {
   selected: CeoDashboardParams;
-  filters: { accounts: Array<{ value: string; label: string }> };
+  filters: {
+    accounts: Array<{ value: string; label: string }>;
+    stores: Array<{ value: string; label: string }>;
+    defaultShopId: string | null;
+  };
   freshness: { ordersSyncedAt: string | null; adSpendImportedDate: string | null };
   integrity: { checks: IntegrityCheck[]; passed: boolean };
   trend: CeoTrendPoint[];

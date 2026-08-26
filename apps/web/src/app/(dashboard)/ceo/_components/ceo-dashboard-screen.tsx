@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { VideoRegistryDateRangePicker } from '../../creative-agent/video-registry/_components/video-registry-date-range-picker';
+import { AnalyticsMultiSelectPicker } from '../../analytics/_components/analytics-multi-select-picker';
 import { useCeoDashboardController } from '../_hooks/use-ceo-dashboard-controller';
 import { CeoTrendChart } from './ceo-trend-chart';
 import { HeadlineKpiRow } from './headline-kpi-row';
@@ -46,6 +47,15 @@ export function CeoDashboardScreen() {
   const controller = useCeoDashboardController();
   const { data, params } = controller;
   const failedChecks = (data?.integrity.checks ?? []).filter((check) => !check.passed);
+  const storeOptions = data?.filters.stores ?? [];
+  // No explicit selection means every store in range — the same lens the API
+  // applies when shopIds is omitted.
+  const allStoresSelected = params.shopIds.length === 0;
+  const selectedStoreLabel = allStoresSelected
+    ? 'All stores'
+    : params.shopIds.length === 1
+      ? storeOptions.find((option) => option.value === params.shopIds[0])?.label ?? '1 selected'
+      : `${params.shopIds.length} selected`;
   const breakdown = data?.breakdown ?? {};
 
   return (
@@ -76,6 +86,26 @@ export function CeoDashboardScreen() {
               {data?.filters.accounts.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           ) : null}
+          <AnalyticsMultiSelectPicker
+            className="relative"
+            selectTitle="Select stores"
+            selectedLabel={selectedStoreLabel}
+            options={storeOptions}
+            allChecked={allStoresSelected}
+            isChecked={(value) => allStoresSelected || params.shopIds.includes(value)}
+            onToggleAll={() => controller.updateParams({ shopIds: [] })}
+            onToggle={(value) => {
+              // Toggling out of "all" starts from the full set, so unchecking
+              // one store leaves the rest selected rather than clearing them.
+              const current = allStoresSelected ? storeOptions.map((option) => option.value) : params.shopIds;
+              const next = current.includes(value)
+                ? current.filter((id) => id !== value)
+                : [...current, value];
+              controller.updateParams({ shopIds: next });
+            }}
+            onOnly={(value) => controller.updateParams({ shopIds: [value] })}
+            onClear={() => controller.updateParams({ shopIds: [] })}
+          />
           {data ? (
             <p className="text-xs-tight text-faint">
               Orders synced {relativeTime(data.freshness.ordersSyncedAt)} · ad spend imported{' '}

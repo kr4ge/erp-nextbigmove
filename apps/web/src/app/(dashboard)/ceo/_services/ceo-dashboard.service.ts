@@ -4,7 +4,13 @@ import type { CeoDashboardParams, CeoDashboardResponse } from '../_types/ceo-das
 
 export async function fetchCeoDashboard(params: CeoDashboardParams): Promise<CeoDashboardResponse> {
   try {
-    const query = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== ''));
+    // shopIds travels as a comma-separated list; an empty selection is omitted
+    // entirely so the API reads it as "every store in range".
+    const { shopIds, ...rest } = params;
+    const query: Record<string, string> = Object.fromEntries(
+      Object.entries(rest).filter(([, value]) => value !== ''),
+    ) as Record<string, string>;
+    if (shopIds.length) query.shopIds = shopIds.join(',');
     const { data } = await apiClient.get<CeoDashboardResponse>('/analytics/ceo/dashboard', { params: query });
     return data;
   } catch (error) {
