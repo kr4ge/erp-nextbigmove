@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, ImageIcon, Video } from "lucide-react";
+import { ArrowLeft, ImageIcon, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +21,8 @@ import type {
   VideoRegistryItem,
 } from "../_types/video-registry";
 import { isValidFacebookPostUrl } from "../_utils/facebook-post-url";
+import { validateCreativeTitle } from "../_utils/creative-title";
+import { readCurrentUserName } from "../_utils/current-user-name";
 import { CreativeCodeField } from "./creative-code-field";
 import { CreativeDetailsFields } from "./creative-details-fields";
 
@@ -28,7 +30,6 @@ type Props = {
   open: boolean;
   stores: RegistryOption[];
   seed: UnregisteredMetaCreative | null;
-  createdItem: VideoRegistryItem | null;
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (input: CreateVideoRegistryInput) => Promise<VideoRegistryItem>;
@@ -48,12 +49,16 @@ export function RegisterVideoDialog({
   open,
   stores,
   seed,
-  createdItem,
   isSaving,
   onClose,
   onSubmit,
 }: Props) {
   const [step, setStep] = useState<"kind" | "details">("kind");
+  const [creatorName, setCreatorName] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCreatorName(readCurrentUserName());
+  }, []);
   const [kind, setKind] = useState<CreativeKind | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +110,8 @@ export function RegisterVideoDialog({
       return setError("Choose the store that owns this creative.");
     if (!form.title.trim())
       return setError("Enter the title shown in the video library.");
+    const titleError = validateCreativeTitle(form.title);
+    if (titleError) return setError(titleError);
     if (form.mediaUrl && !isValidFacebookPostUrl(form.mediaUrl)) {
       return setError(
         "Use a valid Facebook post link, such as https://www.facebook.com/.../posts/...",
@@ -145,26 +152,6 @@ export function RegisterVideoDialog({
       }}
     >
       <DialogContent className="flex max-h-[90vh] w-11/12 max-w-5xl flex-col overflow-hidden p-0 sm:max-w-5xl">
-        {createdItem ? (
-          <div className="px-6 py-8 text-center sm:px-10">
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-success-soft text-success">
-              <Check className="h-6 w-6" />
-            </span>
-            <DialogTitle className="mt-4 mb-0">Creative registered</DialogTitle>
-            <DialogDescription className="mt-2">
-              The creative is in the registry. Continue editing it there any time.
-            </DialogDescription>
-            <div className="mx-auto mt-6 max-w-md text-left">
-              <CreativeCodeField
-                code={createdItem.code}
-                helper="Paste this exact value into the Meta ad name without brackets or additional text."
-              />
-            </div>
-            <Button type="button" className="mt-6" onClick={onClose}>
-              Done
-            </Button>
-          </div>
-        ) : (
           <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
             <DialogHeader className="shrink-0 border-b border-border px-6 py-5 sm:px-8">
               <DialogTitle className="mb-0">Enroll a creative</DialogTitle>
@@ -299,11 +286,14 @@ export function RegisterVideoDialog({
                           ? "e.g. Picky Eater Opening Hook V3"
                           : "e.g. Lunchbox Benefit Graphic V2"
                       }
+                      error={validateCreativeTitle(form.title) ?? undefined}
                       required
                     />
                     <CreativeCodeField
                       code={codePreview}
-                      helper="Preview only until enrollment is saved. Use the final code exactly—without brackets or extra text."
+                      title={form.title}
+                      creator={creatorName}
+                      helper="Paste this exact value as the Meta ad name. The code at the end is what links the ad back to this creative."
                     />
                   </div>
 
@@ -350,7 +340,6 @@ export function RegisterVideoDialog({
               ) : null}
             </DialogFooter>
           </form>
-        )}
       </DialogContent>
     </Dialog>
   );

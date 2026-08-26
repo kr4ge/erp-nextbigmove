@@ -139,6 +139,8 @@ export type PerformanceResponse = {
   filters: {
     stores: Array<{ value: string; label: string }>;
     accounts: Array<{ value: string; label: string }>;
+    /** Set when the tenant has exactly one usable store; the picker is then pinned. */
+    defaultStoreId?: string | null;
   };
   scope: ScopeInfo;
   items: PerformanceRow[];

@@ -51,6 +51,8 @@ export type AdvertisingDashboardResponse = {
     stores: Array<{ value: string; label: string }>;
     accounts: Array<{ value: string; label: string }>;
     creators: Array<{ value: string; label: string }>;
+    /** Set when the tenant has exactly one usable store; the picker is then pinned. */
+    defaultStoreId?: string | null;
   };
   alerts: DashboardAlert[];
   kpis: {

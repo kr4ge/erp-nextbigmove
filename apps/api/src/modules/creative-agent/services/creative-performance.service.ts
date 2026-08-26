@@ -30,6 +30,7 @@ import {
 } from '../utils/advertising-metrics';
 import { advertisingVerdict, type AdvertisingVerdict } from '../utils/advertising-verdict';
 import { guardedRatio, round, safeRatio } from '../utils/creative-metrics';
+import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
 
 dayjs.extend(utc);
@@ -167,20 +168,24 @@ export class CreativePerformanceService {
     const context = await this.access.resolve(actor);
     this.access.require(context, CREATIVE_AGENT_PERMISSIONS.READ_ALL);
     const range = this.resolveDateRange(query.startDate, query.endDate);
-    const storeAdIds = await this.resolveScopedAdIds(context.tenantId, query.storeId, query.creatorId);
+    const storeOptions = await loadCreativeStoreOptions(this.prisma, context.tenantId);
+    // One usable store means there is nothing to choose between: pin it.
+    const effectiveStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
+    const storeAdIds = await this.resolveScopedAdIds(context.tenantId, effectiveStoreId, query.creatorId);
     const scope = await this.computeScope(context.tenantId, range, {
       accountId: query.accountId, storeAdIds,
     });
 
-    const [filters, page] = await Promise.all([
-      this.loadFilterOptions(context.tenantId),
-      this.queryRows(context.tenantId, range, scope, query, storeAdIds),
+    const [accounts, page] = await Promise.all([
+      this.loadAccountOptions(context.tenantId),
+      this.queryRows(context.tenantId, range, scope, query, storeAdIds, effectiveStoreId),
     ]);
+    const filters = { stores: storeOptions.stores, accounts };
 
     return {
       selected: {
         startDate: range.startKey, endDate: range.endKey,
-        query: query.query ?? '', storeId: query.storeId ?? '', accountId: query.accountId ?? '',
+        query: query.query ?? '', storeId: effectiveStoreId ?? '', accountId: query.accountId ?? '',
         adId: query.adId ?? '', campaignId: query.campaignId ?? '', creativeId: query.creativeId ?? '', creatorId: query.creatorId ?? '',
         group: query.group, verdict: query.verdict, linkStatus: query.linkStatus,
         hideNoOrders: query.hideNoOrders ?? false, minSpend: query.minSpend ?? null,
@@ -332,23 +337,13 @@ export class CreativePerformanceService {
     };
   }
 
-  async loadFilterOptions(tenantId: string) {
-    const [stores, accounts] = await Promise.all([
-      this.prisma.creativeStoreConfig.findMany({
-        where: { tenantId, active: true, storeId: { not: null } },
-        select: { storeId: true, storeNameSnapshot: true },
-        orderBy: { storeNameSnapshot: 'asc' },
-      }),
-      this.prisma.metaAdAccount.findMany({
-        where: { tenantId },
-        select: { accountId: true, name: true },
-        orderBy: { name: 'asc' },
-      }),
-    ]);
-    return {
-      stores: stores.map((store) => ({ value: store.storeId as string, label: store.storeNameSnapshot })),
-      accounts: accounts.map((account) => ({ value: account.accountId, label: account.name })),
-    };
+  async loadAccountOptions(tenantId: string) {
+    const accounts = await this.prisma.metaAdAccount.findMany({
+      where: { tenantId },
+      select: { accountId: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    return accounts.map((account) => ({ value: account.accountId, label: account.name }));
   }
 
   resolveDateRange(startDate?: string, endDate?: string): AdvertisingDateRange {
@@ -401,18 +396,19 @@ export class CreativePerformanceService {
     scope: AdvertisingScope,
     query: ListAdvertisingPerformanceQueryDto,
     storeAdIds: string[] | null,
+    storeId: string | undefined,
   ) {
     if (storeAdIds !== null && storeAdIds.length === 0) {
       return { items: [], total: 0, totalPages: 1, page: 1 };
     }
-    const sql = this.buildSql(tenantId, range, scope, query, storeAdIds);
+    const sql = this.buildSql(tenantId, range, scope, query, storeAdIds, storeId);
     let rows = await this.prisma.$queryRaw<RawRow[]>(sql);
     if (rows.length === 0 && query.page > 1) {
       // Past-the-end page (e.g. the result set shrank under the client):
       // re-serve page 1 so the total and rows stay truthful.
       const firstPage = { ...query, page: 1 } as ListAdvertisingPerformanceQueryDto;
       Object.setPrototypeOf(firstPage, Object.getPrototypeOf(query));
-      rows = await this.prisma.$queryRaw<RawRow[]>(this.buildSql(tenantId, range, scope, firstPage, storeAdIds));
+      rows = await this.prisma.$queryRaw<RawRow[]>(this.buildSql(tenantId, range, scope, firstPage, storeAdIds, storeId));
       query = firstPage;
     }
     const total = rows.length > 0 ? Number(rows[0].total_rows) : 0;
@@ -535,6 +531,7 @@ export class CreativePerformanceService {
     scope: AdvertisingScope,
     query: ListAdvertisingPerformanceQueryDto,
     storeAdIds: string[] | null,
+    storeId: string | undefined,
   ): Prisma.Sql {
     const group = query.group;
     const groupKeyRecon = group === 'CAMPAIGNS'
@@ -734,8 +731,8 @@ export class CreativePerformanceService {
     if (query.creativeId) outerFilters.push(Prisma.sql`b.creative_id = ${query.creativeId}::uuid`);
     // Campaigns mode with a store filter is already narrowed inside recon
     // via storeAdIds; ads/creatives modes additionally pin the decorated store.
-    if (query.storeId && group !== 'CAMPAIGNS') {
-      outerFilters.push(Prisma.sql`b.store_id = ${query.storeId}::uuid`);
+    if (storeId && group !== 'CAMPAIGNS') {
+      outerFilters.push(Prisma.sql`b.store_id = ${storeId}::uuid`);
     }
     if (query.query) {
       const like = `%${query.query}%`;

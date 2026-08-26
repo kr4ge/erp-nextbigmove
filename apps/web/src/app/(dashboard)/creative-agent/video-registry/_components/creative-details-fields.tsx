@@ -2,6 +2,7 @@
 
 import { ChevronDown, ExternalLink } from "lucide-react";
 import { FormInput } from "@/components/ui/form-input";
+import { validateCreativeTitle } from "../_utils/creative-title";
 import { FormSelect } from "@/components/ui/form-select";
 import { FormTextarea } from "@/components/ui/form-textarea";
 import {
@@ -59,6 +60,7 @@ export function CreativeDetailsFields({
           value={value.title}
           onChange={(event) => onChange("title", event.target.value)}
           placeholder={kind === "VIDEO" ? "e.g. Picky Eater Opening Hook V3" : "e.g. Lunchbox Benefit Graphic V2"}
+          error={validateCreativeTitle(value.title) ?? undefined}
           required
         />
       ) : null}

@@ -54,6 +54,7 @@ export type CreativeAssetsResponse = {
   selected: CreativeAssetsParams;
   filters: {
     stores: Array<{ value: string; label: string }>;
+    defaultStoreId?: string | null;
     creators: Array<{ value: string; label: string }>;
     revisionStates: Array<{ value: CreativeRevisionState; label: string }>;
   };

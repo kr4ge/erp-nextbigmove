@@ -140,6 +140,7 @@ export type CreativeOverviewResponse = {
   permissions: { canReadAll: boolean; canViewMoney: boolean };
   filters: {
     stores: Array<{ value: string; label: string }>;
+    defaultStoreId?: string | null;
     creators: Array<{ value: string; label: string }>;
   };
   floors: OverviewFloors;

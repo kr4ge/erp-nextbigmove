@@ -6,6 +6,7 @@ import { CreateCreativeReviewCommentDto } from '../dto/create-creative-review-co
 import { ListCreativeAssetsQueryDto } from '../dto/list-creative-assets-query.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
 import { MediaAssetsService } from '../../../common/services/media-assets.service';
+import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
 
 /** Open change requests are what a reviewer actually needs to act on. */
@@ -34,6 +35,8 @@ export class CreativeAssetsService {
     const ownershipWhere: Prisma.CreativeWhereInput = canReadAll
       ? (query.creatorId ? { createdById: query.creatorId } : {})
       : { createdById: context.userId };
+    const storeOptions = await loadCreativeStoreOptions(this.prisma, context.tenantId, canReadAll ? null : context.userId);
+    const effectiveStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
     const where: Prisma.CreativeWhereInput = {
       tenantId: context.tenantId,
       ...ownershipWhere,
@@ -45,7 +48,7 @@ export class CreativeAssetsService {
           : query.queue === 'REVIEW'
             ? { revisionState: { in: REVIEW_QUEUE_STATES } }
             : {}),
-      ...(query.storeId ? { storeConfig: { storeId: query.storeId } } : {}),
+      ...(effectiveStoreId ? { storeConfig: { storeId: effectiveStoreId } } : {}),
       ...(query.query ? { OR: [
         { code: { contains: query.query, mode: 'insensitive' } },
         { title: { contains: query.query, mode: 'insensitive' } },
@@ -88,10 +91,7 @@ export class CreativeAssetsService {
         },
       }),
       this.prisma.creative.count({ where }),
-      this.prisma.creativeStoreConfig.findMany({
-        where: { tenantId: context.tenantId, active: true, storeId: { not: null } },
-        select: { storeId: true, storeNameSnapshot: true }, orderBy: { storeNameSnapshot: 'asc' },
-      }),
+      Promise.resolve(storeOptions),
       this.prisma.creative.findMany({
         where: { tenantId: context.tenantId, ...(!canReadAll ? { createdById: context.userId } : {}) }, distinct: ['createdById'],
         select: { createdBy: { select: { id: true, firstName: true, lastName: true, email: true } } },
@@ -110,9 +110,10 @@ export class CreativeAssetsService {
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
     return {
       permissions: { canReadAll },
-      selected: { query: query.query ?? '', storeId: query.storeId ?? '', creatorId: query.creatorId ?? '', revisionState: query.revisionState ?? '', queue: query.queue ?? '', page: query.page, pageSize: query.pageSize },
+      selected: { query: query.query ?? '', storeId: effectiveStoreId ?? '', creatorId: query.creatorId ?? '', revisionState: query.revisionState ?? '', queue: query.queue ?? '', page: query.page, pageSize: query.pageSize },
       filters: {
-        stores: stores.map((store) => ({ value: store.storeId as string, label: store.storeNameSnapshot })),
+        stores: stores.stores,
+        defaultStoreId: stores.defaultStoreId,
         creators: creators.map(({ createdBy }) => ({ value: createdBy.id, label: this.personName(createdBy) })).sort((a, b) => a.label.localeCompare(b.label)),
         revisionStates: REVISION_STATES.map((state) => ({ value: state, label: this.humanize(state) })),
       },

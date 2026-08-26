@@ -1,5 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { CreativeMetaLinkService } from './creative-meta-link.service';
+import { codeCandidatesFor, CreativeMetaLinkService } from './creative-meta-link.service';
 
 describe('CreativeMetaLinkService', () => {
   function createService(options: {
@@ -84,5 +84,32 @@ describe('CreativeMetaLinkService', () => {
       where: expect.objectContaining({ code: { in: ['Launch AP-V0001 today'] } }),
     }));
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('codeCandidatesFor', () => {
+  it('matches a bare code', () => {
+    expect(codeCandidatesFor('NRO-0041')).toContain('NRO-0041');
+  });
+
+  it('reads the code from the last underscore segment of a paste-ready ad name', () => {
+    expect(codeCandidatesFor('Test 1_Frage Perez_NRO-0041')).toContain('NRO-0041');
+  });
+
+  it('tolerates surrounding whitespace', () => {
+    expect(codeCandidatesFor('  Test 1_Frage Perez_NRO-0041  ')).toContain('NRO-0041');
+  });
+
+  it('ignores a code that is not the final segment', () => {
+    // Prose mentioning a code must not link; only the trailing segment counts.
+    expect(codeCandidatesFor('NRO-0041_retest_v2')).not.toContain('NRO-0041');
+  });
+
+  it('never matches a code buried mid-name without underscores', () => {
+    expect(codeCandidatesFor('promo NRO-0041 retest')).toEqual(['promo NRO-0041 retest']);
+  });
+
+  it('returns nothing for an empty name', () => {
+    expect(codeCandidatesFor('   ')).toEqual([]);
   });
 });

@@ -243,7 +243,6 @@ export function VideoRegistryScreen({ initialQuery = '' }: { initialQuery?: stri
           nextCode: store.nextCode,
         }))}
         seed={controller.registrationSeed}
-        createdItem={controller.createdItem}
         isSaving={controller.isMutating}
         onClose={controller.closeRegistration}
         onSubmit={controller.registerVideo}

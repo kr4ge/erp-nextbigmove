@@ -227,6 +227,13 @@ export class CreativeLibraryService {
     const total = items.length;
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
     const page = Math.min(query.page, totalPages);
+    // A store with no creative in it can never change what this screen shows.
+    const configIdsWithCreatives = new Set(visibleCreatives.map((creative) => creative.storeConfigId));
+    const usableStores = storeConfigs.filter(
+      (config) => config.storeId && configIdsWithCreatives.has(config.id),
+    );
+    const defaultStoreId = usableStores.length === 1 ? usableStores[0].storeId : null;
+
     const pageItems = items.slice((page - 1) * query.pageSize, page * query.pageSize);
     // Sign only the page slice; objects stay private and URLs are short-lived.
     await Promise.all(pageItems.map(async (item) => {
@@ -292,11 +299,14 @@ export class CreativeLibraryService {
         sortDirection: query.sortDirection,
       },
       filters: {
-        stores: storeConfigs.filter((config) => config.storeId).map((config) => ({
-          value: config.storeId!,
-          label: `${config.storeNameSnapshot} (${config.codePrefix})`,
-          active: config.active,
-        })),
+        stores: storeConfigs
+          .filter((config) => config.storeId && configIdsWithCreatives.has(config.id))
+          .map((config) => ({
+            value: config.storeId!,
+            label: `${config.storeNameSnapshot} (${config.codePrefix})`,
+            active: config.active,
+          })),
+        defaultStoreId,
         creators: creators.map(({ createdBy }) => ({
           value: createdBy.id,
           label: [createdBy.firstName, createdBy.lastName].filter(Boolean).join(' ') || createdBy.email,

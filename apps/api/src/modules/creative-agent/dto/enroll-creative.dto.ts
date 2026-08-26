@@ -12,6 +12,17 @@ import {
   MinLength,
 } from 'class-validator';
 
+/**
+ * The paste-ready Meta ad name is `title_creator_CODE`, and auto-matching reads
+ * the code from the LAST underscore-delimited segment. An underscore inside the
+ * title adds a segment and silently breaks that match, so it is rejected here as
+ * well as in the UI — the API is reachable without the form.
+ */
+export const NO_UNDERSCORE = {
+  pattern: /^[^_]*$/,
+  message: 'title must not contain underscores; they separate the parts of the Meta ad name',
+} as const;
+
 export class EnrollCreativeDto {
   @IsOptional()
   @IsBoolean()
@@ -27,6 +38,7 @@ export class EnrollCreativeDto {
   @IsString()
   @MinLength(1)
   @MaxLength(200)
+  @Matches(NO_UNDERSCORE.pattern, { message: NO_UNDERSCORE.message })
   title!: string;
 
   @IsOptional()

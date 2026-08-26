@@ -22,6 +22,7 @@ import {
   resolvedRates,
 } from '../utils/advertising-metrics';
 import { isImpossibleRate, median, round } from '../utils/creative-metrics';
+import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
 import { CreativePerformanceService, type AdvertisingDateRange } from './creative-performance.service';
 
@@ -58,19 +59,22 @@ export class CreativeAdvertisingDashboardService {
     this.access.require(context, CREATIVE_AGENT_PERMISSIONS.READ_ALL);
     const tenantId = context.tenantId;
     const range = this.performance.resolveDateRange(query.startDate, query.endDate);
-    const scopedAdIds = await this.performance.resolveScopedAdIds(tenantId, query.storeId, query.creatorId);
+    const storeOptions = await loadCreativeStoreOptions(this.prisma, tenantId);
+    // A single usable store is pinned rather than offered as a choice.
+    const effectiveStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
+    const scopedAdIds = await this.performance.resolveScopedAdIds(tenantId, effectiveStoreId, query.creatorId);
     const scope = await this.performance.computeScope(tenantId, range, {
       accountId: query.accountId,
       storeAdIds: scopedAdIds,
     });
     const creativeScopeWhere: Prisma.CreativeWhereInput = {
       tenantId,
-      ...(query.storeId ? { storeConfig: { storeId: query.storeId } } : {}),
+      ...(effectiveStoreId ? { storeConfig: { storeId: effectiveStoreId } } : {}),
       ...(query.creatorId ? { createdById: query.creatorId } : {}),
     };
 
     const [
-      filters,
+      accountOptions,
       creators,
       videoTotals,
       revisionPipeline,
@@ -80,7 +84,7 @@ export class CreativeAdvertisingDashboardService {
       missingVideoCount,
       needsAction,
     ] = await Promise.all([
-      this.performance.loadFilterOptions(tenantId),
+      this.performance.loadAccountOptions(tenantId),
       this.prisma.creative.findMany({
         where: { tenantId },
         distinct: ['createdById'],
@@ -92,7 +96,7 @@ export class CreativeAdvertisingDashboardService {
       this.loadTrend(tenantId, range, query.accountId, scopedAdIds),
       this.loadFreshness(tenantId),
       this.countMissingVideoMetrics(tenantId, range, query.accountId, scopedAdIds),
-      this.loadNeedsAction(actor, range, query),
+      this.loadNeedsAction(actor, range, query, effectiveStoreId),
     ]);
 
     let withheldRates = 0;
@@ -168,15 +172,15 @@ export class CreativeAdvertisingDashboardService {
     return {
       selected: {
         startDate: range.startKey, endDate: range.endKey,
-        storeId: query.storeId ?? '', accountId: query.accountId ?? '', creatorId: query.creatorId ?? '',
+        storeId: effectiveStoreId ?? '', accountId: query.accountId ?? '', creatorId: query.creatorId ?? '',
       },
       permissions: {
         canManageLinks: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE),
         canReview: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.REVIEW),
       },
       filters: {
-        stores: filters.stores,
-        accounts: filters.accounts,
+        stores: storeOptions.stores,
+        accounts: accountOptions,
         creators: creators
           .map(({ createdBy }) => ({
             value: createdBy.id,
@@ -481,11 +485,12 @@ export class CreativeAdvertisingDashboardService {
     actor: CreativeActor,
     range: AdvertisingDateRange,
     query: GetAdvertisingDashboardQueryDto,
+    effectiveStoreId: string | undefined,
   ) {
     const performanceQuery = new ListAdvertisingPerformanceQueryDto();
     performanceQuery.startDate = range.startKey;
     performanceQuery.endDate = range.endKey;
-    performanceQuery.storeId = query.storeId;
+    performanceQuery.storeId = effectiveStoreId;
     performanceQuery.accountId = query.accountId;
     performanceQuery.creatorId = query.creatorId;
     performanceQuery.group = 'ADS';
