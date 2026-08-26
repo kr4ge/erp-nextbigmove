@@ -14,7 +14,11 @@ import type { ReactNode } from 'react';
 export function ChartFrame({ isEmpty, emptyLabel = 'No data in this range.', height = 'h-64', children }: {
   isEmpty?: boolean;
   emptyLabel?: string;
-  /** Tailwind height class; must be a resolved height, not a percentage. */
+  /**
+   * Tailwind height class; must resolve to a real height, not a percentage.
+   * Pass a flex-fill class (e.g. "min-h-0 flex-1") when the parent is a flex
+   * column that already has a bounded height of its own.
+   */
   height?: string;
   children: ReactNode;
 }) {
