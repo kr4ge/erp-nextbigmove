@@ -18,8 +18,12 @@ export default function WorkflowsPage() {
     metaIntegrations,
     showUploadModal,
     selectedIntegrationId,
+    manualCurrency,
+    setManualCurrency,
     manualCurrencyMultiplier,
-    selectedUploadFile,
+    pendingUploads,
+    addPendingUploads,
+    removePendingUpload,
     isUploadingMeta,
     manualUploadJob,
     manualUploadError,
@@ -28,7 +32,6 @@ export default function WorkflowsPage() {
     closeUploadModal,
     setSelectedIntegrationId,
     setManualCurrencyMultiplier,
-    setSelectedUploadFile,
     handleUploadMeta,
     navigateToNew,
     navigateToView,
@@ -101,15 +104,18 @@ export default function WorkflowsPage() {
         isOpen={showUploadModal}
         integrations={metaIntegrations}
         selectedIntegrationId={selectedIntegrationId}
+        currency={manualCurrency}
+        onCurrencyChange={setManualCurrency}
         currencyMultiplier={manualCurrencyMultiplier}
-        selectedFile={selectedUploadFile}
+        pendingUploads={pendingUploads}
         isUploading={isUploadingMeta}
         uploadJob={manualUploadJob}
         uploadError={manualUploadError}
         onClose={closeUploadModal}
         onIntegrationChange={setSelectedIntegrationId}
         onCurrencyMultiplierChange={setManualCurrencyMultiplier}
-        onFileChange={setSelectedUploadFile}
+        onAddFiles={addPendingUploads}
+        onRemoveFile={removePendingUpload}
         onSubmit={handleUploadMeta}
       />
     </div>

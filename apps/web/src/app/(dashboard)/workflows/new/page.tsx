@@ -148,9 +148,10 @@ export default function CreateWorkflowPage() {
       setTeamId(candidate);
       setFormData((prev) => ({ ...prev, teamId: candidate }));
     } else if (list.length === 0) {
+      // Tenants without teams create tenant-wide workflows; the API resolves
+      // the team to null itself, so there is nothing to pick and nothing wrong.
       setTeamId('');
       setFormData((prev) => ({ ...prev, teamId: undefined }));
-      setError('You must belong to a team before creating a workflow.');
     }
   }, [teamsQuery.data]);
 
@@ -320,6 +321,7 @@ export default function CreateWorkflowPage() {
             />
           </div>
 
+          {teams.length > 0 && (
           <div>
             <label className="form-label">Team</label>
             <select
@@ -344,8 +346,9 @@ export default function CreateWorkflowPage() {
           ))}
         </select>
           </div>
+          )}
 
-          {canShareWorkflows && (
+          {canShareWorkflows && teams.length > 0 && (
             <div>
               <label className="form-label">
                 Share with teams
@@ -375,7 +378,7 @@ export default function CreateWorkflowPage() {
           <div className="flex justify-end gap-3">
             <button
               onClick={() => setStep(2)}
-              disabled={!formData.name || !formData.teamId}
+              disabled={!formData.name || (teams.length > 0 && !formData.teamId)}
               className="btn btn-lg btn-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:border-border dark:disabled:bg-surface dark:disabled:text-slate-500"
             >
               Next Step
