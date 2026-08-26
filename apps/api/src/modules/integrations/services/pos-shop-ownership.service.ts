@@ -787,10 +787,33 @@ export class PosShopOwnershipService {
       let targetTenantId: string | null = null;
       let targetStore: RoutableStore | null = null;
 
+      // An order already written under some tenant normally stays there, so a
+      // re-fetch never yanks live history between partners. The exception is a
+      // completed cutover: if the prior tenant's store for this shop is no
+      // longer an enabled owner and a different tenant now holds ownership,
+      // the shop has moved and the ingest should follow it. Without this, a
+      // forward-only cutover leaves pre-cutover orders permanently pinned to
+      // the old tenant no matter what date range is fetched.
       if (existingTenants.length === 1) {
-        targetTenantId = existingTenants[0];
-        targetStore =
-          storeByTenantShop.get(`${targetTenantId}:${entry.shopId}`) || null;
+        const existingTenantId = existingTenants[0];
+        const existingStore =
+          storeByTenantShop.get(`${existingTenantId}:${entry.shopId}`) || null;
+        const existingStoreIsActive =
+          !!existingStore &&
+          existingStore.status === 'ACTIVE' &&
+          existingStore.enabled !== false;
+
+        if (
+          !existingStoreIsActive &&
+          ownership &&
+          ownership.tenantId !== existingTenantId
+        ) {
+          targetTenantId = ownership.tenantId;
+          targetStore = storeById.get(ownership.storeId) || null;
+        } else {
+          targetTenantId = existingTenantId;
+          targetStore = existingStore;
+        }
       } else if (existingTenants.length > 1) {
         if (ownership && existingTenants.includes(ownership.tenantId)) {
           targetTenantId = ownership.tenantId;
