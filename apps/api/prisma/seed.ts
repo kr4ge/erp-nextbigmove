@@ -404,13 +404,32 @@ const ROLES: RoleDef[] = [
   {
     key: 'CREATIVE_REVIEWER',
     name: 'Advertising',
-    description: 'Review submitted creatives, manage Meta links, and steer creative performance',
+    description: 'Review submitted creatives, manage Meta links, steer creative performance, and import ad spend',
     scope: RoleScope.TENANT,
     permissions: [
       'creative_agent.read_all',
       'creative_agent.review',
       'creative_agent.alias.manage',
       'creative_agent.performance.manage',
+      // Advertisers own the Meta spend import end to end: they manage the
+      // integrations it reads from, build and run the workflows that pull it,
+      // and read the POS reports it reconciles against.
+      'integration.create',
+      'integration.read',
+      'integration.update',
+      'integration.test',
+      'integration.share',
+      // Stores and Meta are integration sub-pages gated on their own keys.
+      'pos.read',
+      'meta.read',
+      // Create/read/run workflows and upload Meta spend. No delete: removing a
+      // workflow discards another team's schedule and its execution history.
+      'workflow.create',
+      'workflow.read',
+      'workflow.update',
+      'workflow.execute',
+      'workflow.view_executions',
+      'reports.pos_orders.read',
     ],
     isSystem: true,
   },

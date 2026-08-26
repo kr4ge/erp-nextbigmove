@@ -85,6 +85,18 @@ const baseNavigation: NavLink[] = [
     icon: <Package className={iconClasses} />,
   },
   {
+    href: '/performance',
+    label: 'Performance',
+    description: 'Ad spend against POS orders',
+    icon: <BarChart3 className={iconClasses} />,
+  },
+  {
+    href: '/assets',
+    label: 'Assets',
+    description: 'Your creative work and feedback',
+    icon: <FolderCheck className={iconClasses} />,
+  },
+  {
     href: '/reports',
     label: 'Reports',
     description: 'Tenant-wide POS exports',
@@ -108,18 +120,6 @@ const baseNavigation: NavLink[] = [
       { href: '/integrations/store', label: 'Stores', icon: <StoreIcon className="h-4 w-4" /> },
       { href: '/integrations/meta', label: 'Meta', icon: <Network className="h-4 w-4" /> },
     ],
-  },
-  {
-    href: '/performance',
-    label: 'Performance',
-    description: 'Ad spend against POS orders',
-    icon: <BarChart3 className={iconClasses} />,
-  },
-  {
-    href: '/assets',
-    label: 'Assets',
-    description: 'Your creative work and feedback',
-    icon: <FolderCheck className={iconClasses} />,
   },
   {
     href: '/video-registry',
@@ -256,7 +256,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       permissions.includes('stock_request.read')
       || permissions.includes('stock_request.write');
     const hasOrderSummary = permissions.includes('orders.summary.read');
-    const hasOrderConfirmation = permissions.includes('pos.read');
+    // Confirmation is an Orders screen, so it follows an orders permission.
+    // Keying it on pos.read pulled the whole Orders group in for any role that
+    // needed pos.read purely to reach the Stores integration page.
+    const hasOrderConfirmation = permissions.includes('orders.summary.read');
     const hasUndeliverables =
       permissions.includes('orders.undeliverables.read')
       || permissions.includes('orders.undeliverables.read_all');
