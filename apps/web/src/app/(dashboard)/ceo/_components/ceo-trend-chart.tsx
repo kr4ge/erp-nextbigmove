@@ -25,8 +25,9 @@ import {
 import type { CeoTrendPoint } from '../_types/ceo-dashboard';
 
 /**
- * Legend order is alphabetical rather than stacking order, matching the
- * reference: the reader scans it as an index, not as a z-order.
+ * Legend order follows render order in recharts, so the money series are drawn
+ * alphabetically and Orders is drawn last — it is a count, not pesos, so it
+ * reads after the money story rather than inside it.
  */
 const SERIES = {
   spend: 'Ad spend',
@@ -132,11 +133,6 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             )}
           />
 
-          <Line
-            yAxisId="orders" type="monotone" dataKey={SERIES.orders}
-            stroke={ORDERS_COLOR} strokeWidth={2}
-            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
-          />
           {/* Dashed = a cost or a loss; solid = money moving toward you. */}
           <Line
             yAxisId="money" type="monotone" dataKey={SERIES.spend}
@@ -166,6 +162,11 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
           <Line
             yAxisId="money" type="monotone" dataKey={SERIES.orderValue}
             stroke={ORDER_VALUE_COLOR} strokeWidth={2.5}
+            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
+          />
+          <Line
+            yAxisId="orders" type="monotone" dataKey={SERIES.orders}
+            stroke={ORDERS_COLOR} strokeWidth={2}
             dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
           />
         </ComposedChart>
