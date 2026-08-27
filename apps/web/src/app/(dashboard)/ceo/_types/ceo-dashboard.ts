@@ -67,7 +67,6 @@ export type CeoDashboardResponse = {
   filters: {
     accounts: Array<{ value: string; label: string }>;
     stores: Array<{ value: string; label: string }>;
-    defaultShopId: string | null;
   };
   freshness: { ordersSyncedAt: string | null; adSpendImportedDate: string | null };
   integrity: { checks: IntegrityCheck[]; passed: boolean };

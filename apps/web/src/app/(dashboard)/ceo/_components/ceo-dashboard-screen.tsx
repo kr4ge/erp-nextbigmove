@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { VideoRegistryDateRangePicker } from '../../creative-agent/video-registry/_components/video-registry-date-range-picker';
 import { AnalyticsMultiSelectPicker } from '../../analytics/_components/analytics-multi-select-picker';
 import { useCeoDashboardController } from '../_hooks/use-ceo-dashboard-controller';
-import { CeoTrendChart } from './ceo-trend-chart';
+import { CeoOrdersChart, CeoTrendChart } from './ceo-trend-chart';
 import { HeadlineKpiRow } from './headline-kpi-row';
 import {
   CollapsibleSection,
@@ -191,6 +191,14 @@ export function CeoDashboardScreen() {
               <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border/50 p-4">
                 {data ? <CeoTrendChart trend={data.trend} /> : <p className="py-16 text-center text-sm text-muted">Loading…</p>}
               </div>
+              {/* Orders placed sits below on its own axis: it is a count, not
+                  money, so it cannot share the peso scale above. */}
+              {data ? (
+                <div className="mt-3 rounded-lg border border-border/50 p-4">
+                  <p className="stat-label mb-1">Orders placed</p>
+                  <CeoOrdersChart trend={data.trend} />
+                </div>
+              ) : null}
             </div>
           </section>
 

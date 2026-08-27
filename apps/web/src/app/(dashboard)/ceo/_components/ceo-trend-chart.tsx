@@ -32,6 +32,7 @@ const SERIES = {
   spend: 'Ad spend',
   cancelled: 'Cancelled ₱',
   delivered: 'Delivered ₱',
+  inTransit: 'In transit ₱',
   orderValue: 'Order value ₱',
   orders: 'Orders',
   rts: 'RTS ₱',
@@ -54,8 +55,8 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
     [SERIES.delivered]: point.deliveredValue,
     [SERIES.cancelled]: point.cancelledValue,
     [SERIES.rts]: point.rtsValue,
+    [SERIES.inTransit]: point.inTransitValue,
     [SERIES.spend]: point.spend,
-    [SERIES.orders]: point.orders,
     __deliveredOrders: point.deliveredOrders,
   }));
   const hasValues = rows.some((row) =>
@@ -91,21 +92,12 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             axisLine={false}
             tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
           />
-          <YAxis
-            yAxisId="orders"
-            orientation="right"
-            width={34}
-            tickLine={false}
-            axisLine={false}
-            tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
-          />
 
           <Tooltip
             cursor={CHART_CURSOR}
             contentStyle={CHART_TOOLTIP_STYLE}
             labelStyle={{ color: CHART_COLORS.foreground, fontWeight: 600, marginBottom: 4 }}
             formatter={(value, name, item) => {
-              if (name === SERIES.orders) return [`${Number(value)} placed`, name];
               const amount = formatPesoFull(Number(value));
               const payload = item?.payload as { __deliveredOrders?: number } | undefined;
               if (name === SERIES.delivered && payload?.__deliveredOrders != null) {
@@ -123,15 +115,6 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             )}
           />
 
-          {/* Bars first so every line paints over them. */}
-          <Bar
-            yAxisId="orders"
-            dataKey={SERIES.orders}
-            fill={CHART_COLORS.grid}
-            fillOpacity={0.45}
-            barSize={12}
-            isAnimationActive={false}
-          />
           {/* Dashed = a cost or a loss; solid = money moving toward you. */}
           <Line
             yAxisId="money" type="monotone" dataKey={SERIES.spend}
@@ -154,10 +137,67 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
           />
           <Line
+            yAxisId="money" type="monotone" dataKey={SERIES.inTransit}
+            stroke={CHART_COLORS.warning} strokeWidth={2} strokeDasharray="2 3"
+            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
+          />
+          <Line
             yAxisId="money" type="monotone" dataKey={SERIES.orderValue}
             stroke={ORDER_VALUE_COLOR} strokeWidth={2.5}
             dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
           />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </ChartFrame>
+  );
+}
+
+
+/**
+ * Orders placed per day, on its own axis below the money chart.
+ *
+ * Order COUNT cannot share the peso scale, and sitting behind the money lines
+ * as pale bars made it decoration rather than something you could read. Its own
+ * panel gives it a real axis while keeping the shared x-axis alignment.
+ */
+export function CeoOrdersChart({ trend }: { trend: CeoTrendPoint[] }) {
+  const rows = trend.map((point) => ({
+    label: point.label ?? point.date.slice(5),
+    [SERIES.orders]: point.orders,
+    __delivered: point.deliveredOrders,
+  }));
+  const hasValues = rows.some((row) => row[SERIES.orders] > 0);
+
+  return (
+    <ChartFrame isEmpty={rows.length === 0 || !hasValues} emptyLabel="No orders in this range." height="h-40">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={rows} margin={{ top: 4, right: 4, left: -6, bottom: 0 }}>
+          <CartesianGrid stroke={CHART_COLORS.grid} strokeOpacity={0.45} vertical={false} />
+          <XAxis
+            dataKey="label"
+            minTickGap={CHART_X_MIN_TICK_GAP}
+            tickLine={false}
+            axisLine={{ stroke: CHART_COLORS.grid, strokeOpacity: 0.8 }}
+            tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
+            tickMargin={8}
+          />
+          <YAxis
+            width={56}
+            allowDecimals={false}
+            tickLine={false}
+            axisLine={false}
+            tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
+          />
+          <Tooltip
+            cursor={CHART_CURSOR}
+            contentStyle={CHART_TOOLTIP_STYLE}
+            labelStyle={{ color: CHART_COLORS.foreground, fontWeight: 600, marginBottom: 4 }}
+            formatter={(value, name, item) => {
+              const payload = item?.payload as { __delivered?: number } | undefined;
+              return [`${Number(value)} placed · ${payload?.__delivered ?? 0} delivered`, name];
+            }}
+          />
+          <Bar dataKey={SERIES.orders} fill={CHART_COLORS.primary} fillOpacity={0.55} barSize={12} isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
     </ChartFrame>

@@ -37,19 +37,6 @@ export function useCeoDashboardController() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // A single-store tenant has nothing to choose between, so pin its store once
-  // the first response names it. Guarded by a ref rather than by the current
-  // value: without it, clearing the selection would immediately re-pin and the
-  // control would appear stuck.
-  const pinnedDefault = useRef(false);
-  useEffect(() => {
-    if (pinnedDefault.current) return;
-    const defaultShopId = data?.filters.defaultShopId;
-    if (!defaultShopId) return;
-    pinnedDefault.current = true;
-    setParams((current) => (current.shopIds.length ? current : { ...current, shopIds: [defaultShopId] }));
-  }, [data]);
-
   // Changing the date range can drop stores out of the option list. A selection
   // left pointing at one of them would silently filter every figure to nothing,
   // so stale ids are pruned once the new options arrive.
