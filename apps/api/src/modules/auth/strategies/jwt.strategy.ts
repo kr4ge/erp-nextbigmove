@@ -41,6 +41,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         typeof payload.sessionId === 'string' && payload.sessionId.trim().length > 0
           ? payload.sessionId
           : null,
+      // Carried through so writes can be attributed to the real actor and the
+      // session can be handed back. Absent on a normal sign-in.
+      impersonatedBy:
+        typeof payload.impersonatedBy === 'string' ? payload.impersonatedBy : null,
+      originalSessionId:
+        typeof payload.originalSessionId === 'string' ? payload.originalSessionId : null,
     };
   }
 }

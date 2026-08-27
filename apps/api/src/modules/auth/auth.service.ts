@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -9,6 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { RegisterDto, LoginDto, RefreshTokenDto } from './dto';
 import { toStoredPermissionWorkspace } from '../../common/rbac/permission-workspace';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
+import { EffectiveAccessService } from '../../common/services/effective-access.service';
 
 @Injectable()
 export class AuthService {
@@ -17,6 +18,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
+    private readonly effectiveAccessService: EffectiveAccessService,
   ) {}
 
   /**
@@ -358,12 +360,17 @@ export class AuthService {
     tenantId: string | null,
     role: string,
     sessionId: string,
+    impersonation?: { impersonatedBy: string; originalSessionId: string | null },
   ) {
     const payload = {
       userId,
       tenantId,
       role,
       sessionId,
+      // Present only while viewing as someone else. The real actor travels
+      // inside the token so returning does not depend on the client holding on
+      // to the admin's own token.
+      ...(impersonation ?? {}),
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -382,6 +389,131 @@ export class AuthService {
       refreshToken,
       sessionId,
     };
+  }
+
+  /**
+   * Issue a token that acts as another user in the same tenant.
+   *
+   * Permissions are resolved server-side from the token's userId on every
+   * request, so a token minted for the target grants exactly their access —
+   * no module needs to know impersonation exists. What the token adds is the
+   * real actor, so writes can be attributed and the session can be handed back.
+   */
+  async impersonate(actor: { userId: string; tenantId: string | null; sessionId: string | null; impersonatedBy?: string }, targetUserId: string, request?: any) {
+    if (actor.impersonatedBy) {
+      throw new ForbiddenException('Already viewing as another user');
+    }
+    if (actor.userId === targetUserId) {
+      throw new BadRequestException('You are already signed in as this user');
+    }
+    if (!actor.tenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    const target = await this.prisma.user.findFirst({
+      where: { id: targetUserId, tenantId: actor.tenantId },
+      include: { tenant: true },
+    });
+    if (!target) {
+      throw new NotFoundException('User not found in this tenant');
+    }
+    if (target.status !== 'ACTIVE') {
+      throw new BadRequestException('Cannot view as a deactivated user');
+    }
+    // SUPER_ADMIN bypasses every permission check, so impersonating one would
+    // escalate a tenant admin to platform-wide access.
+    if (target.role === 'SUPER_ADMIN') {
+      throw new ForbiddenException('This user cannot be impersonated');
+    }
+
+    const targetAccess = await this.effectiveAccessService.resolveUserAccess({
+      userId: target.id,
+      tenantId: actor.tenantId,
+      basePermissions: [],
+    });
+    // Blocked both ways round: chaining through another admin would put every
+    // account in the tenant one hop away from a single compromised session.
+    if (targetAccess.permissions.includes('user.impersonate')) {
+      throw new ForbiddenException('Cannot view as a user who can impersonate others');
+    }
+
+    const sessionId = crypto.randomUUID();
+    const tokens = await this.generateTokens(
+      target.id,
+      target.tenantId,
+      target.role,
+      sessionId,
+      { impersonatedBy: actor.userId, originalSessionId: actor.sessionId },
+    );
+
+    await this.recordImpersonationAudit(request, {
+      tenantId: actor.tenantId,
+      actorId: actor.userId,
+      action: 'IMPERSONATION_STARTED',
+      targetUserId: target.id,
+      sessionId,
+    });
+
+    return {
+      user: this.sanitizeUser(target),
+      tenant: target.tenant ? this.sanitizeTenant(target.tenant) : null,
+      impersonatedBy: actor.userId,
+      ...tokens,
+    };
+  }
+
+  /** Hand the session back to the admin who started it. */
+  async stopImpersonation(actor: { userId: string; tenantId: string | null; impersonatedBy?: string }, request?: any) {
+    if (!actor.impersonatedBy) {
+      throw new BadRequestException('This session is not viewing as another user');
+    }
+
+    const admin = await this.prisma.user.findFirst({
+      where: { id: actor.impersonatedBy },
+      include: { tenant: true },
+    });
+    if (!admin || admin.status !== 'ACTIVE') {
+      throw new UnauthorizedException('The original session is no longer valid');
+    }
+
+    const sessionId = crypto.randomUUID();
+    const tokens = await this.generateTokens(admin.id, admin.tenantId, admin.role, sessionId);
+
+    await this.recordImpersonationAudit(request, {
+      tenantId: admin.tenantId,
+      actorId: admin.id,
+      action: 'IMPERSONATION_ENDED',
+      targetUserId: actor.userId,
+      sessionId,
+    });
+
+    return {
+      user: this.sanitizeUser(admin),
+      tenant: admin.tenant ? this.sanitizeTenant(admin.tenant) : null,
+      ...tokens,
+    };
+  }
+
+  private async recordImpersonationAudit(request: any, params: {
+    tenantId: string | null;
+    actorId: string;
+    action: string;
+    targetUserId: string;
+    sessionId: string;
+  }) {
+    if (!params.tenantId) return;
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: params.tenantId,
+        userId: params.actorId,
+        action: params.action,
+        resource: 'user',
+        resourceId: params.targetUserId,
+        changes: { targetUserId: params.targetUserId, sessionId: params.sessionId },
+        ipAddress: request?.ip ?? null,
+        userAgent: request?.headers?.['user-agent'] ?? null,
+      },
+    });
   }
 
   /**

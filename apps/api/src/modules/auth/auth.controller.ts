@@ -1,7 +1,9 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request, Patch, BadRequestException, UnauthorizedException, Query } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request, Patch, BadRequestException, UnauthorizedException, Query, Param } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, RefreshTokenDto, UpdateProfileDto } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { PermissionWorkspaceQueryDto } from '../../common/dto/permission-workspace-query.dto';
@@ -188,4 +190,26 @@ export class AuthController {
 
     return { roles };
   }
+
+  /**
+   * View the app as another user in this tenant.
+   *
+   * Gated on user.impersonate rather than on a role name so it can be revoked
+   * without editing code. The tenant boundary, SUPER_ADMIN block, and the
+   * admin-to-admin block are enforced in the service.
+   */
+  @Post('impersonate/:userId')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('user.impersonate')
+  async impersonate(@Param('userId') userId: string, @Request() req) {
+    return this.authService.impersonate(req.user, userId, req);
+  }
+
+  /** Return to the admin session that started the impersonation. */
+  @Post('impersonate/stop')
+  @UseGuards(JwtAuthGuard)
+  async stopImpersonation(@Request() req) {
+    return this.authService.stopImpersonation(req.user, req);
+  }
+
 }
