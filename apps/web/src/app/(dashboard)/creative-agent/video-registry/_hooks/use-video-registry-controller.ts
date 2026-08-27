@@ -44,7 +44,6 @@ export function useVideoRegistryController(initialQuery = '') {
   const [editingItem, setEditingItem] = useState<VideoRegistryItem | null>(null);
   const [reviewComments, setReviewComments] = useState<CreativeReviewComment[]>([]);
   const [isLoadingReviewComments, setIsLoadingReviewComments] = useState(false);
-  const [createdItem, setCreatedItem] = useState<VideoRegistryItem | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const [stores, setStores] = useState<CreativeStoreOption[]>([]);
 
@@ -107,7 +106,6 @@ export function useVideoRegistryController(initialQuery = '') {
   }, []);
 
   const openRegistration = useCallback((seed?: UnregisteredMetaCreative) => {
-    setCreatedItem(null);
     setRegistrationSeed(seed ?? null);
     setIsRegisterOpen(true);
   }, []);
@@ -115,14 +113,17 @@ export function useVideoRegistryController(initialQuery = '') {
   const closeRegistration = useCallback(() => {
     setIsRegisterOpen(false);
     setRegistrationSeed(null);
-    setCreatedItem(null);
   }, []);
 
   const registerVideo = useCallback(async (input: CreateVideoRegistryInput) => {
     setIsMutating(true);
     try {
       const created = await createVideoRegistryItem(input);
-      setCreatedItem(created);
+      // The enrollment form already exposes the copyable ad name, so there is
+      // nothing left to confirm — close out and let the row in the registry be
+      // the receipt.
+      setIsRegisterOpen(false);
+      setRegistrationSeed(null);
       await loadRegistry({ silent: true });
       return created;
     } finally {
@@ -207,7 +208,6 @@ export function useVideoRegistryController(initialQuery = '') {
     editingItem,
     reviewComments,
     isLoadingReviewComments,
-    createdItem,
     isMutating,
     stores,
     permissions,

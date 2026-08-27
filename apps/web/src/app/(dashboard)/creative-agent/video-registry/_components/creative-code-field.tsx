@@ -3,61 +3,58 @@
 import { useEffect, useState } from "react";
 import { Check, Clipboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AD_TAG_SEPARATOR, buildAdTag } from "../_utils/ad-tag";
+import { buildAdName } from "../../assets/_components/copy-code-button";
+import { validateCreativeTitle } from "../_utils/creative-title";
 
 type Props = {
-  /** The registry code — the only part Meta matching actually reads. */
   code: string | null;
-  /** Library title as typed; the tag updates live with it. */
-  title?: string;
-  /** The person enrolling — their name rides along so an ad can be traced to an owner. */
-  editor?: string;
+  title?: string | null;
+  creator?: string | null;
   helper?: string;
 };
 
 /**
- * The Ad Tag: the full string to paste as the Meta ad name, assembled from the
- * title, the editor, and the registry code.
+ * Shows the paste-ready Meta ad name, `title_creator_CODE`.
  *
- * The parts are rendered separately so the shape stays legible while the title
- * is still empty — a lone code gives no hint that two more fields belong in
- * front of it.
+ * Copy is deliberately blocked while the name would be wrong rather than
+ * copying a partial value: a title that is blank or contains an underscore
+ * produces a name that auto-matching cannot read back, and the failure would
+ * only surface much later as an ad that never links to its creative.
  */
-export function CreativeCodeField({ code, title = "", editor = "", helper }: Props) {
+export function CreativeCodeField({ code, title, creator, helper }: Props) {
   const [copied, setCopied] = useState(false);
-  const trimmedTitle = title.trim();
-  const adTag = code ? buildAdTag({ title: trimmedTitle, editor, code }) : null;
+
+  const trimmedTitle = title?.trim() ?? "";
+  const titleError = validateCreativeTitle(trimmedTitle);
+  const blocked = !code || !trimmedTitle || Boolean(titleError);
+  const adName = code ? buildAdName({ title: trimmedTitle, creator, code }) : null;
 
   useEffect(() => {
     setCopied(false);
-  }, [adTag]);
+  }, [adName]);
 
-  const copyTag = async () => {
-    if (!adTag) return;
-    await navigator.clipboard.writeText(adTag);
+  const copyCode = async () => {
+    if (blocked || !adName) return;
+    await navigator.clipboard.writeText(adName);
     setCopied(true);
   };
 
+  const blockedReason = !code
+    ? "Select a store"
+    : titleError
+      ? "Remove the underscore from the title to copy the ad name."
+      : !trimmedTitle
+        ? "Add a library title to copy the full ad name."
+        : null;
+
   return (
     <div className="space-y-1.5">
-      <span className="form-label">Ad tag</span>
+      <span className="form-label">Ad name</span>
       <div className="input flex min-h-11 items-center justify-between gap-3 py-1.5">
-        <code className="min-w-0 truncate text-sm">
-          {code ? (
-            <>
-              <span className={trimmedTitle ? "text-foreground" : "text-muted"}>
-                {trimmedTitle || "Library title"}
-              </span>
-              <span className="text-muted">{AD_TAG_SEPARATOR}</span>
-              <span className={editor ? "text-foreground" : "text-muted"}>
-                {editor || "Editor"}
-              </span>
-              <span className="text-muted">{AD_TAG_SEPARATOR}</span>
-              <span className="font-bold text-foreground">{code}</span>
-            </>
-          ) : (
-            <span className="text-muted">Select a store</span>
-          )}
+        <code
+          className={`min-w-0 truncate font-bold ${adName && !blocked ? "text-foreground" : "text-muted"}`}
+        >
+          {adName ?? "Select a store"}
         </code>
         <Button
           type="button"
@@ -71,13 +68,17 @@ export function CreativeCodeField({ code, title = "", editor = "", helper }: Pro
               <Clipboard className="h-4 w-4" />
             )
           }
-          disabled={!adTag}
-          onClick={copyTag}
+          disabled={blocked}
+          onClick={copyCode}
         >
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
-      {helper ? <p className="text-xs text-muted">{helper}</p> : null}
+      {blockedReason ? (
+        <p className="text-xs text-destructive">{blockedReason}</p>
+      ) : helper ? (
+        <p className="text-xs text-muted">{helper}</p>
+      ) : null}
     </div>
   );
 }

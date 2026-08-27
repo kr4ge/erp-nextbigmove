@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import { IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { NO_UNDERSCORE } from './enroll-creative.dto';
 
 export class UpdateCreativeDto {
   @IsOptional()
@@ -7,6 +8,7 @@ export class UpdateCreativeDto {
   @IsString()
   @MinLength(1)
   @MaxLength(200)
+  @Matches(NO_UNDERSCORE.pattern, { message: NO_UNDERSCORE.message })
   title?: string;
 
   @IsOptional()

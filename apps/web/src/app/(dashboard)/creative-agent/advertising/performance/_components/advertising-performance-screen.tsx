@@ -101,10 +101,16 @@ export function AdvertisingPerformanceScreen({ initialFilters = {} }: { initialF
               />
             </label>
             <VideoRegistryDateRangePicker compact startDate={params.startDate} endDate={params.endDate} onChange={(range) => controller.updateParams(range)} />
-            <select value={params.storeId} onChange={(event) => controller.updateParams({ storeId: event.target.value })} className={`${selectClass} w-32`} aria-label="Filter by store">
-              <option value="">All stores</option>
-              {data?.filters.stores.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            {data?.filters.defaultStoreId ? (
+              <span className="flex h-9 items-center rounded-lg border border-border/60 bg-secondary/20 px-2.5 text-xs font-medium text-muted dark:bg-background-secondary">
+                {data.filters.stores[0]?.label ?? 'Store'}
+              </span>
+            ) : (
+              <select value={params.storeId} onChange={(event) => controller.updateParams({ storeId: event.target.value })} className={`${selectClass} w-32`} aria-label="Filter by store">
+                <option value="">All stores</option>
+                {data?.filters.stores.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            )}
             {(data?.filters.accounts.length ?? 0) > 1 ? (
               <select value={params.accountId} onChange={(event) => controller.updateParams({ accountId: event.target.value })} className={`${selectClass} w-36`} aria-label="Filter by Meta account">
                 <option value="">All accounts</option>

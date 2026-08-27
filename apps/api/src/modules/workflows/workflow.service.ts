@@ -156,8 +156,13 @@ export class WorkflowService {
       return { tenantId, where: base, allowedTeams: [], isAdmin, tenantHasTeams };
     }
 
+    // A user on no team is scoped to the tenant, not to a team: they see every
+    // workflow in it. Deliberately WIDER than a team member's view, whose scope
+    // is unchanged. Permissions still gate what they can do.
     if (!isAdmin && allowedTeams.length === 0) {
-      return { tenantId, where: null, allowedTeams, isAdmin, tenantHasTeams };
+      const base: any = { tenantId };
+      if (id) base.id = id;
+      return { tenantId, where: base, allowedTeams, isAdmin, tenantHasTeams };
     }
 
     const base: any = { tenantId };

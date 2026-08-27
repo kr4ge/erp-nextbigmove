@@ -3,7 +3,9 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CommonServicesModule } from '../../common/services/services.module';
 import { MarketingAnalyticsController } from './marketing-analytics.controller';
 import { MarketingAnalyticsService } from './marketing-analytics.service';
+import { CeoDashboardController } from './ceo-dashboard.controller';
 import { SalesAnalyticsController } from './sales-analytics.controller';
+import { CeoDashboardService } from './services/ceo-dashboard.service';
 import { SalesAnalyticsService } from './sales-analytics.service';
 import { AnalyticsCacheService } from './analytics-cache.service';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -26,6 +28,7 @@ import { AnalyticsRequestCoordinatorService } from './analytics-request-coordina
     SalesAttributionAnalyticsController,
     AnalyticsShareController,
     SalesPerformanceController,
+    CeoDashboardController,
   ],
   providers: [
     MarketingAnalyticsService,
@@ -33,6 +36,7 @@ import { AnalyticsRequestCoordinatorService } from './analytics-request-coordina
     SalesAttributionAnalyticsService,
     AnalyticsShareService,
     SalesPerformanceService,
+    CeoDashboardService,
     AnalyticsCacheService,
     AnalyticsRequestCoordinatorService,
     ReconcileMarketingService,

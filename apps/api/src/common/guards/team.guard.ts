@@ -109,8 +109,16 @@ export class TeamGuard implements CanActivate {
       }
     }
 
+    // A user who belongs to no team is not misconfigured: tenants can run
+    // without teams entirely, and even a tenant that uses them may have people
+    // outside any one of them. Treat them as tenant-wide rather than locking
+    // them out of every team-scoped module. Their own writes land with a null
+    // team, which is what makes the record visible tenant-wide rather than to
+    // one team. Permissions still gate what they can reach.
     if (teamIds.length === 0) {
-      throw new BadRequestException('Team ID is required (provide X-Team-ID header or teamId param)');
+      this.cls.set('teamId', null);
+      this.cls.set('teamIds', []);
+      return true;
     }
 
     for (const id of teamIds) {
@@ -161,7 +169,14 @@ export class TeamGuard implements CanActivate {
         return true;
       }
 
-      throw new ForbiddenException('You are not a member of any team');
+      // No membership anywhere: the user is tenant-scoped rather than blocked.
+      // The requested team id is dropped instead of honoured, so this cannot be
+      // used to read one specific team the user has no claim to — the services
+      // fall back to the tenant-wide filter. Reaching here usually means a
+      // stale X-Team-ID left in local storage.
+      this.cls.set('teamId', null);
+      this.cls.set('teamIds', []);
+      return true;
     }
 
     this.cls.set('teamId', teamIds[0]);

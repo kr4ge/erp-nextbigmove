@@ -2617,8 +2617,11 @@ export class IntegrationService {
       return { where: base, tenantId, allowedTeams: [], tenantHasTeams };
     }
 
+    // A user on no team is scoped to the tenant, not to a team: they see every
+    // integration in it. This is deliberately WIDER than a team member's view,
+    // whose scope is unchanged. Permissions still gate what they can do.
     if (!isAdmin && allowedTeams.length === 0) {
-      return { where: null, tenantId, allowedTeams, tenantHasTeams };
+      return { where: base, tenantId, allowedTeams, tenantHasTeams };
     }
 
     if (isAdmin && !restrictAdminToScope) {
@@ -2626,7 +2629,7 @@ export class IntegrationService {
     }
 
     if (allowedTeams.length === 0) {
-      return { where: null, tenantId, allowedTeams, tenantHasTeams };
+      return { where: base, tenantId, allowedTeams, tenantHasTeams };
     }
 
     return {
@@ -3016,17 +3019,19 @@ export class IntegrationService {
 
     let baseWhere: any = { tenantId };
     const shouldRestrictAdminToScope = isAdmin && allowedTeams.length > 0;
-    if (tenantHasTeams && (!isAdmin || shouldRestrictAdminToScope)) {
+    if (tenantHasTeams && allowedTeams.length > 0 && (!isAdmin || shouldRestrictAdminToScope)) {
       if (allowedTeams.length === 0) {
-        return [];
+        // Teamless: tenant-scoped, no team restriction.
+        baseWhere = { tenantId };
+      } else {
+        baseWhere = {
+          tenantId,
+          OR: [
+            { teamId: { in: allowedTeams } },
+            { sharedTeams: { some: { teamId: { in: allowedTeams } } } },
+          ],
+        };
       }
-      baseWhere = {
-        tenantId,
-        OR: [
-          { teamId: { in: allowedTeams } },
-          { sharedTeams: { some: { teamId: { in: allowedTeams } } } },
-        ],
-      };
     }
 
     let where: any = baseWhere;
@@ -3060,11 +3065,9 @@ export class IntegrationService {
 
     // Admins with no scope see all; otherwise restrict to owned or shared integrations
     let where: any = { tenantId };
-    const shouldRestrict = tenantHasTeams && (!isAdmin || (isAdmin && allowedTeams.length > 0));
+    // A teamless user is tenant-scoped, so no team restriction applies.
+    const shouldRestrict = tenantHasTeams && allowedTeams.length > 0 && (!isAdmin || (isAdmin && allowedTeams.length > 0));
     if (shouldRestrict) {
-      if (allowedTeams.length === 0) {
-        return [];
-      }
       where = {
         tenantId,
         OR: [
@@ -3105,11 +3108,12 @@ export class IntegrationService {
 
     // Admins with no scope see all; otherwise restrict to owned or shared integrations
     let where: any = { id, tenantId };
-    const shouldRestrict = tenantHasTeams && (!isAdmin || (isAdmin && allowedTeams.length > 0));
+    // A teamless user is tenant-scoped, so no team restriction applies.
+    const shouldRestrict = tenantHasTeams && allowedTeams.length > 0 && (!isAdmin || (isAdmin && allowedTeams.length > 0));
     if (shouldRestrict) {
-      if (allowedTeams.length === 0) {
-        throw new NotFoundException(`Store with ID ${id} not found`);
-      }
+      // No team means no team-owned records to match; the null-team branch in
+      // the filter below is what such a user can legitimately reach.
+
       where = {
         id,
         tenantId,
@@ -3865,10 +3869,10 @@ export class IntegrationService {
 
     const where: any = { id, tenantId };
     const shouldRestrictAdminToScope = isAdmin && allowedTeams.length > 0;
-    if (tenantHasTeams && (!isAdmin || shouldRestrictAdminToScope)) {
-      if (allowedTeams.length === 0) {
-        throw new NotFoundException(`Integration with ID ${id} not found`);
-      }
+    if (tenantHasTeams && allowedTeams.length > 0 && (!isAdmin || shouldRestrictAdminToScope)) {
+      // No team means no team-owned records to match; the null-team branch in
+      // the filter below is what such a user can legitimately reach.
+
       where.OR = [
         { teamId: { in: allowedTeams } },
         { sharedTeams: { some: { teamId: { in: allowedTeams } } } },
@@ -3896,10 +3900,10 @@ export class IntegrationService {
 
     const where: any = { id, tenantId };
     const shouldRestrictAdminToScope = isAdmin && allowedTeams.length > 0;
-    if (tenantHasTeams && (!isAdmin || shouldRestrictAdminToScope)) {
-      if (allowedTeams.length === 0) {
-        throw new NotFoundException(`Integration with ID ${id} not found`);
-      }
+    if (tenantHasTeams && allowedTeams.length > 0 && (!isAdmin || shouldRestrictAdminToScope)) {
+      // No team means no team-owned records to match; the null-team branch in
+      // the filter below is what such a user can legitimately reach.
+
       where.OR = [
         { teamId: { in: allowedTeams } },
         { sharedTeams: { some: { teamId: { in: allowedTeams } } } },
@@ -4016,10 +4020,10 @@ export class IntegrationService {
 
     let where: any = { id, tenantId };
     const shouldRestrictAdminToScope = isAdmin && allowedTeams.length > 0;
-    if (tenantHasTeams && (!isAdmin || shouldRestrictAdminToScope)) {
-      if (allowedTeams.length === 0) {
-        throw new NotFoundException(`Integration with ID ${id} not found`);
-      }
+    if (tenantHasTeams && allowedTeams.length > 0 && (!isAdmin || shouldRestrictAdminToScope)) {
+      // No team means no team-owned records to match; the null-team branch in
+      // the filter below is what such a user can legitimately reach.
+
       where = {
         ...where,
         OR: [
@@ -5241,11 +5245,12 @@ export class IntegrationService {
 
     // Build sharing-aware where clause (same logic as listPosStores/getPosStore)
     let where: any = { tenantId, shopId: shopId.toString() };
-    const shouldRestrict = tenantHasTeams && (!isAdmin || (isAdmin && allowedTeams.length > 0));
+    // A teamless user is tenant-scoped, so no team restriction applies.
+    const shouldRestrict = tenantHasTeams && allowedTeams.length > 0 && (!isAdmin || (isAdmin && allowedTeams.length > 0));
     if (shouldRestrict) {
-      if (allowedTeams.length === 0) {
-        throw new NotFoundException(`Store with shop ID ${shopId} not found`);
-      }
+      // No team means no team-owned records to match; the null-team branch in
+      // the filter below is what such a user can legitimately reach.
+
       where = {
         tenantId,
         shopId: shopId.toString(),

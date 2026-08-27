@@ -25,6 +25,7 @@ import {
   weightedBandScore,
 } from '../utils/creative-metrics';
 import { ADVERTISING_PROVISIONAL_DEFAULTS } from '../utils/advertising-metrics';
+import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
 
 type MetricTotals = {
@@ -89,10 +90,12 @@ export class CreativeOverviewService {
     const defaultSortKey: CreativeOverviewSortKey = selectedLens === 'BUSINESS' ? 'netMargin' : 'creativeScore';
     const requestedSortKey = query.sortKey === 'creativeScore' && selectedLens === 'BUSINESS' ? defaultSortKey : query.sortKey;
     const guard = new RateGuard();
+    const storeOptions = await loadCreativeStoreOptions(this.prisma, context.tenantId, canReadAll ? null : context.userId);
+    const effectiveStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
     const where: Prisma.CreativeWhereInput = {
       tenantId: context.tenantId,
       ...(!canReadAll ? { createdById: context.userId } : query.creatorId ? { createdById: query.creatorId } : {}),
-      ...(query.storeId ? { storeConfig: { storeId: query.storeId } } : {}),
+      ...(effectiveStoreId ? { storeConfig: { storeId: effectiveStoreId } } : {}),
       ...(query.kind ? { kind: query.kind } : {}),
       ...(query.query ? { OR: [
         { code: { contains: query.query, mode: 'insensitive' } },
@@ -112,10 +115,7 @@ export class CreativeOverviewService {
         storeConfig: { select: { storeId: true, storeNameSnapshot: true } },
         createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
       } }),
-      this.prisma.creativeStoreConfig.findMany({
-        where: { tenantId: context.tenantId, active: true, storeId: { not: null } },
-        select: { storeId: true, storeNameSnapshot: true }, orderBy: { storeNameSnapshot: 'asc' },
-      }),
+      Promise.resolve(storeOptions),
       this.prisma.creative.findMany({
         where: { tenantId: context.tenantId, ...(!canReadAll ? { createdById: context.userId } : {}) },
         distinct: ['createdById'], select: { createdBy: { select: { id: true, firstName: true, lastName: true, email: true } } },
@@ -283,10 +283,11 @@ export class CreativeOverviewService {
     const craftBoard = this.buildCraftBoard(baseRows);
     const withheldStages = [...guard.stages.keys()];
     return {
-      selected: { startDate: range.startKey, endDate: range.endKey, query: query.query ?? '', storeId: query.storeId ?? '', kind: query.kind ?? '', creatorId: query.creatorId ?? '', lens: selectedLens, sortKey: requestedSortKey, sortDirection: query.sortDirection },
+      selected: { startDate: range.startKey, endDate: range.endKey, query: query.query ?? '', storeId: effectiveStoreId ?? '', kind: query.kind ?? '', creatorId: query.creatorId ?? '', lens: selectedLens, sortKey: requestedSortKey, sortDirection: query.sortDirection },
       permissions: { canReadAll, canViewMoney },
       filters: {
-        stores: stores.filter((store) => store.storeId).map((store) => ({ value: store.storeId as string, label: store.storeNameSnapshot })),
+        stores: stores.stores,
+        defaultStoreId: stores.defaultStoreId,
         creators: creatorRows.map(({ createdBy }) => ({ value: createdBy.id, label: this.personName(createdBy) })).sort((a, b) => a.label.localeCompare(b.label)),
       },
       floors: {

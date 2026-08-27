@@ -205,8 +205,11 @@ export class TeamContextService {
       return candidate || null;
     }
 
-    // Non-admins must have team context
+    // A non-admin who belongs to no team writes with a null team, which makes
+    // the record tenant-wide. Requiring a team here would leave such a user
+    // able to read the workspace but never to create anything in it.
     if (!candidate) {
+      if (userTeams.length === 0) return null;
       throw new ForbiddenException('Team context is required');
     }
 

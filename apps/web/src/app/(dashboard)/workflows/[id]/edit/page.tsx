@@ -417,23 +417,24 @@ export default function EditWorkflowPage({ params }: { params: { id: string } })
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-4 focus:ring-orange-100 dark:border-border dark:bg-surface dark:text-foreground"
               />
 
-              <div className="mt-4 space-y-2">
-                <label className="form-label">Team</label>
-                <select
-                  value={teamId || ''}
-                  onChange={(e) => setTeamId(e.target.value)}
-                  className="input"
-                >
-                  {teams.length === 0 && <option value="">No teams</option>}
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {teams.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <label className="form-label">Team</label>
+                  <select
+                    value={teamId || ''}
+                    onChange={(e) => setTeamId(e.target.value)}
+                    className="input"
+                  >
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-              {canShareWorkflows && (
+              {canShareWorkflows && teams.length > 0 && (
                 <div className="mt-4 space-y-2">
                   <label className="form-label">Share with teams</label>
                   <div className="space-y-2 rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-border dark:bg-surface">
