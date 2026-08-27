@@ -192,6 +192,20 @@ export class AuthController {
   }
 
   /**
+   * Return to the admin session that started the impersonation.
+   *
+   * Declared BEFORE the :userId route: nest matches in declaration order, so
+   * with the parameterised route first this path binds to it as
+   * userId === 'stop' and the caller — who holds no user.impersonate — is
+   * rejected, stranding them in the impersonated session.
+   */
+  @Post('impersonate/stop')
+  @UseGuards(JwtAuthGuard)
+  async stopImpersonation(@Request() req) {
+    return this.authService.stopImpersonation(req.user, req);
+  }
+
+  /**
    * View the app as another user in this tenant.
    *
    * Gated on user.impersonate rather than on a role name so it can be revoked
@@ -203,13 +217,6 @@ export class AuthController {
   @Permissions('user.impersonate')
   async impersonate(@Param('userId') userId: string, @Request() req) {
     return this.authService.impersonate(req.user, userId, req);
-  }
-
-  /** Return to the admin session that started the impersonation. */
-  @Post('impersonate/stop')
-  @UseGuards(JwtAuthGuard)
-  async stopImpersonation(@Request() req) {
-    return this.authService.stopImpersonation(req.user, req);
   }
 
 }

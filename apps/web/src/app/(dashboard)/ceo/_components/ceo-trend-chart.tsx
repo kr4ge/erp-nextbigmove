@@ -140,11 +140,6 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
           />
           <Line
-            yAxisId="money" type="monotone" dataKey={SERIES.rts}
-            stroke={CHART_COLORS.primary} strokeWidth={2} strokeDasharray="5 4"
-            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
-          />
-          <Line
             yAxisId="money" type="monotone" dataKey={SERIES.cancelled}
             stroke={CHART_COLORS.destructive} strokeWidth={2}
             dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
@@ -157,6 +152,11 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
           <Line
             yAxisId="money" type="monotone" dataKey={SERIES.inTransit}
             stroke={CHART_COLORS.warning} strokeWidth={2} strokeDasharray="2 3"
+            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
+          />
+          <Line
+            yAxisId="money" type="monotone" dataKey={SERIES.rts}
+            stroke={CHART_COLORS.primary} strokeWidth={2} strokeDasharray="5 4"
             dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
           />
           <Line

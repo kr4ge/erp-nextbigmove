@@ -40,14 +40,12 @@ export async function startImpersonation(userId: string): Promise<void> {
 
 /** Hand the session back to the admin who started it. */
 export async function stopImpersonation(): Promise<void> {
-  try {
-    const { data } = await apiClient.post('/auth/impersonate/stop');
-    applySession(data);
-  } finally {
-    // Cleared even on failure: leaving the flag set would strand the banner on
-    // a session that is no longer impersonating anything.
-    window.localStorage.removeItem(IMPERSONATION_KEY);
-  }
+  // The flag is cleared only after the swap succeeds. Clearing it first — or in
+  // a finally — hides the banner while the token is still the impersonated one,
+  // which strands the admin in that session with no way back.
+  const { data } = await apiClient.post('/auth/impersonate/stop');
+  applySession(data);
+  window.localStorage.removeItem(IMPERSONATION_KEY);
   window.location.href = '/settings/users';
 }
 

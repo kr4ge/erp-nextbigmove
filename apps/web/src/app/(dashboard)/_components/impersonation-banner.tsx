@@ -13,6 +13,7 @@ import { getImpersonation, stopImpersonation, type ImpersonationBanner as Banner
 export function ImpersonationBanner() {
   const [banner, setBanner] = useState<Banner | null>(null);
   const [isExiting, setIsExiting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Read after mount: touching localStorage during render desyncs the
   // server-rendered markup.
@@ -32,12 +33,17 @@ export function ImpersonationBanner() {
         disabled={isExiting}
         onClick={() => {
           setIsExiting(true);
-          void stopImpersonation().catch(() => setIsExiting(false));
+          setError(null);
+          void stopImpersonation().catch((exitError) => {
+            setIsExiting(false);
+            setError(exitError?.response?.data?.message ?? 'Could not exit. Try again.');
+          });
         }}
         className="rounded-md bg-surface px-2.5 py-1 text-xs font-semibold text-foreground transition hover:opacity-90 disabled:opacity-60"
       >
         {isExiting ? 'Exiting…' : 'Exit'}
       </button>
+      {error ? <span className="text-xs font-normal">{error}</span> : null}
     </div>
   );
 }
