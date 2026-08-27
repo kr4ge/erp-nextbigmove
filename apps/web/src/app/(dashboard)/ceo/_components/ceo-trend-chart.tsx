@@ -41,6 +41,9 @@ const SERIES = {
 /** Order value is the top line, so it carries the warm accent. */
 const ORDER_VALUE_COLOR = '#B7791F';
 
+/** Orders is the only non-money series, so it reads on a colour of its own. */
+const ORDERS_COLOR = '#8B5CF6';
+
 /**
  * Delivered cash vs orders placed, ad spend, and money lost to cancels/RTS.
  *
@@ -56,6 +59,7 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
     [SERIES.cancelled]: point.cancelledValue,
     [SERIES.rts]: point.rtsValue,
     [SERIES.inTransit]: point.inTransitValue,
+    [SERIES.orders]: point.orders,
     [SERIES.spend]: point.spend,
     __deliveredOrders: point.deliveredOrders,
   }));
@@ -93,11 +97,24 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
           />
 
+          {/* Orders is a COUNT, so it cannot share the peso scale — it gets
+              its own axis on the right. */}
+          <YAxis
+            yAxisId="orders"
+            orientation="right"
+            width={34}
+            allowDecimals={false}
+            tickLine={false}
+            axisLine={false}
+            tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
+          />
+
           <Tooltip
             cursor={CHART_CURSOR}
             contentStyle={CHART_TOOLTIP_STYLE}
             labelStyle={{ color: CHART_COLORS.foreground, fontWeight: 600, marginBottom: 4 }}
             formatter={(value, name, item) => {
+              if (name === SERIES.orders) return [`${Number(value)} placed`, name];
               const amount = formatPesoFull(Number(value));
               const payload = item?.payload as { __deliveredOrders?: number } | undefined;
               if (name === SERIES.delivered && payload?.__deliveredOrders != null) {
@@ -115,6 +132,11 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             )}
           />
 
+          <Line
+            yAxisId="orders" type="monotone" dataKey={SERIES.orders}
+            stroke={ORDERS_COLOR} strokeWidth={2}
+            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
+          />
           {/* Dashed = a cost or a loss; solid = money moving toward you. */}
           <Line
             yAxisId="money" type="monotone" dataKey={SERIES.spend}
@@ -152,54 +174,3 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
   );
 }
 
-
-/**
- * Orders placed per day, on its own axis below the money chart.
- *
- * Order COUNT cannot share the peso scale, and sitting behind the money lines
- * as pale bars made it decoration rather than something you could read. Its own
- * panel gives it a real axis while keeping the shared x-axis alignment.
- */
-export function CeoOrdersChart({ trend }: { trend: CeoTrendPoint[] }) {
-  const rows = trend.map((point) => ({
-    label: point.label ?? point.date.slice(5),
-    [SERIES.orders]: point.orders,
-    __delivered: point.deliveredOrders,
-  }));
-  const hasValues = rows.some((row) => row[SERIES.orders] > 0);
-
-  return (
-    <ChartFrame isEmpty={rows.length === 0 || !hasValues} emptyLabel="No orders in this range." height="h-40">
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={{ top: 4, right: 4, left: -6, bottom: 0 }}>
-          <CartesianGrid stroke={CHART_COLORS.grid} strokeOpacity={0.45} vertical={false} />
-          <XAxis
-            dataKey="label"
-            minTickGap={CHART_X_MIN_TICK_GAP}
-            tickLine={false}
-            axisLine={{ stroke: CHART_COLORS.grid, strokeOpacity: 0.8 }}
-            tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
-            tickMargin={8}
-          />
-          <YAxis
-            width={56}
-            allowDecimals={false}
-            tickLine={false}
-            axisLine={false}
-            tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
-          />
-          <Tooltip
-            cursor={CHART_CURSOR}
-            contentStyle={CHART_TOOLTIP_STYLE}
-            labelStyle={{ color: CHART_COLORS.foreground, fontWeight: 600, marginBottom: 4 }}
-            formatter={(value, name, item) => {
-              const payload = item?.payload as { __delivered?: number } | undefined;
-              return [`${Number(value)} placed · ${payload?.__delivered ?? 0} delivered`, name];
-            }}
-          />
-          <Bar dataKey={SERIES.orders} fill={CHART_COLORS.primary} fillOpacity={0.55} barSize={12} isAnimationActive={false} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    </ChartFrame>
-  );
-}
