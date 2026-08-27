@@ -192,9 +192,11 @@ export function CeoDashboardScreen() {
                 {data ? <CeoTrendChart trend={data.trend} /> : <p className="py-16 text-center text-sm text-muted">Loading…</p>}
               </div>
               {/* Orders placed sits below on its own axis: it is a count, not
-                  money, so it cannot share the peso scale above. */}
+                  money, so it cannot share the peso scale above. shrink-0 keeps
+                  it out of the flex-1 fight with the money chart, which would
+                  otherwise claim the whole column and squeeze this to nothing. */}
               {data ? (
-                <div className="mt-3 rounded-lg border border-border/50 p-4">
+                <div className="mt-3 shrink-0 rounded-lg border border-border/50 p-4">
                   <p className="stat-label mb-1">Orders placed</p>
                   <CeoOrdersChart trend={data.trend} />
                 </div>
