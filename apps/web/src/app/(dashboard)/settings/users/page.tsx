@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import { startImpersonation } from '@/lib/impersonation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
@@ -73,6 +74,19 @@ export default function UsersPage() {
   const { addToast } = useToast();
   const [isReady, setIsReady] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const [canImpersonate, setCanImpersonate] = useState(false);
+  // Impersonating yourself is rejected server-side; hiding it keeps the menu honest.
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('user');
+      const parsed = raw ? JSON.parse(raw) : null;
+      setCurrentUserId(parsed?.id ?? parsed?.userId ?? null);
+    } catch {
+      setCurrentUserId(null);
+    }
+  }, []);
   const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
   const [permissionCheckResolved, setPermissionCheckResolved] = useState(false);
   const [permissionToastShown, setPermissionToastShown] = useState(false);
@@ -103,13 +117,16 @@ export default function UsersPage() {
           ? response.data.permissions
           : [];
         const hasPermission = permissions.includes('user.manage');
+        const canImpersonateUsers = permissions.includes('user.impersonate');
         if (!cancelled) {
           setCanManage(hasPermission);
+          setCanImpersonate(canImpersonateUsers);
           setPermissionCheckResolved(true);
         }
       } catch {
         if (!cancelled) {
           setCanManage(false);
+          setCanImpersonate(false);
         }
       } finally {
         if (!cancelled) {
@@ -386,6 +403,23 @@ export default function UsersPage() {
                 <DropdownMenuItem onClick={() => openEditModal(row.original)}>
                   Edit
                 </DropdownMenuItem>
+                {canImpersonate && row.original.id !== currentUserId ? (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      void startImpersonation(row.original.id).catch((error) => {
+                        // The server enforces the real rules — tenant, super
+                        // admin, admin-to-admin — so surface its reason rather
+                        // than trying to predict them here.
+                        addToast(
+                          'error',
+                          error?.response?.data?.message ?? 'Unable to view as this user.',
+                        );
+                      });
+                    }}
+                  >
+                    View as this user
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   onClick={() => setUserToDelete(row.original)}
                   className="text-rose-600 focus:text-rose-600"

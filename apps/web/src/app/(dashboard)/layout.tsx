@@ -1,5 +1,7 @@
 'use client';
 
+import { ImpersonationBanner } from './_components/impersonation-banner';
+
 import { ReactNode, useEffect, useState, useRef, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -1237,6 +1239,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
         {/* Main content area - rounded top-left corner for App Shell look */}
         <main className="flex-1 overflow-y-auto bg-background lg:rounded-tl-[1.75rem]">
+          <ImpersonationBanner />
           <div className="mx-auto min-h-full w-full max-w-[1560px] px-3 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-4 sm:pb-7 lg:px-5 lg:pb-8">
             {children}
           </div>

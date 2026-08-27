@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { ClsService } from 'nestjs-cls';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -45,7 +46,10 @@ ensureHoistedPrismaEngineLibrary();
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private readonly cls: ClsService,
+  ) {
     super({
       datasources: {
         db: {
@@ -59,6 +63,27 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleInit() {
+    // Stamp the real actor onto audit rows written during an impersonated
+    // session. Done here rather than at each of the 14 auditLog.create call
+    // sites so a new one cannot silently miss it: without this, a write made
+    // while viewing as someone else records only that person, with no trace of
+    // the admin who actually did it.
+    this.$use(async (params, next) => {
+      if (params.model === 'AuditLog' && params.action === 'create') {
+        const impersonatedBy = this.cls.get('impersonatedBy');
+        if (impersonatedBy) {
+          const data = params.args?.data;
+          if (data && typeof data === 'object') {
+            data.changes = {
+              ...(typeof data.changes === 'object' && data.changes !== null ? data.changes : {}),
+              impersonatedBy,
+            };
+          }
+        }
+      }
+      return next(params);
+    });
+
     await this.$connect();
     console.log('✅ Database connected');
 
