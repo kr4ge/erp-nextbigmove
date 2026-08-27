@@ -4,6 +4,8 @@ export type CreativeAsset = {
   id: string;
   code: string;
   title: string;
+  /** Pancake custom ID of the advertised item; null on pre-item creatives. */
+  customId: string | null;
   kind: CreativeKind;
   mediaUrl: string | null;
   format: string | null;

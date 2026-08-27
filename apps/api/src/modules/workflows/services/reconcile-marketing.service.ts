@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
+import {
+  deriveAssociateFromAdName,
+  deriveMappingFromAdName,
+} from '../../creative-agent/utils/ad-name-convention';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { normalizeAdId } from '../utils/normalize-ad-id';
 
@@ -461,8 +465,9 @@ export class ReconcileMarketingService {
           campaignName: insight.campaignName,
           adsetId: insight.adsetId,
           adName: insight.adName,
-          marketingAssociate: insight.marketingAssociate,
-          mapping: insight.mapping || null,
+          marketingAssociate: insight.marketingAssociate
+            || deriveAssociateFromAdName(insight.adName),
+          mapping: insight.mapping || deriveMappingFromAdName(insight.adName),
           teamCode: insight.teamCode || null,
           dateCreated: metaDateCreated,
           spend: insight.spend,
@@ -554,8 +559,9 @@ export class ReconcileMarketingService {
           normalizedAdId: norm || null,
           campaignName: insight.campaignName,
           adName: insight.adName,
-          marketingAssociate: insight.marketingAssociate,
-          mapping: insight.mapping || null,
+          marketingAssociate: insight.marketingAssociate
+            || deriveAssociateFromAdName(insight.adName),
+          mapping: insight.mapping || deriveMappingFromAdName(insight.adName),
           teamCode: insight.teamCode || null,
           dateCreated: metaDateCreated,
           spend: insight.spend,

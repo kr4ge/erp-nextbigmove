@@ -113,3 +113,17 @@ describe('codeCandidatesFor', () => {
     expect(codeCandidatesFor('   ')).toEqual([]);
   });
 });
+
+describe('codeCandidatesFor — new convention', () => {
+  it('links the new format via its mid-name code segment', () => {
+    expect(codeCandidatesFor('OGM-100_Kidney Hook_NRO-V0069_Josiah')).toContain('NRO-V0069');
+  });
+
+  it('still links the legacy copy format via its last segment', () => {
+    expect(codeCandidatesFor('Test 1_Frage Perez_NRO-V0041')).toContain('NRO-V0041');
+  });
+
+  it('still never links a code mentioned in prose', () => {
+    expect(codeCandidatesFor('promo NRO-V0041 retest')).toEqual(['promo NRO-V0041 retest']);
+  });
+});

@@ -8,6 +8,7 @@ import { validateCreativeTitle } from "../_utils/creative-title";
 
 type Props = {
   code: string | null;
+  customId?: string | null;
   title?: string | null;
   creator?: string | null;
   helper?: string;
@@ -21,13 +22,15 @@ type Props = {
  * produces a name that auto-matching cannot read back, and the failure would
  * only surface much later as an ad that never links to its creative.
  */
-export function CreativeCodeField({ code, title, creator, helper }: Props) {
+export function CreativeCodeField({ code, customId, title, creator, helper }: Props) {
   const [copied, setCopied] = useState(false);
 
   const trimmedTitle = title?.trim() ?? "";
   const titleError = validateCreativeTitle(trimmedTitle);
-  const blocked = !code || !trimmedTitle || Boolean(titleError);
-  const adName = code ? buildAdName({ title: trimmedTitle, creator, code }) : null;
+  // The item is required at enrollment, so a missing customId means the name
+  // is not final yet — copying a half-name that maps to nothing helps nobody.
+  const blocked = !code || !trimmedTitle || Boolean(titleError) || !customId?.trim();
+  const adName = code ? buildAdName({ title: trimmedTitle, creator, code, customId }) : null;
 
   useEffect(() => {
     setCopied(false);
@@ -41,11 +44,13 @@ export function CreativeCodeField({ code, title, creator, helper }: Props) {
 
   const blockedReason = !code
     ? "Select a store"
-    : titleError
-      ? "Remove the underscore from the title to copy the ad name."
-      : !trimmedTitle
-        ? "Add a library title to copy the full ad name."
-        : null;
+    : !customId?.trim()
+      ? "Choose the item this creative sells to complete the ad name."
+      : titleError
+        ? "Remove the underscore from the title to copy the ad name."
+        : !trimmedTitle
+          ? "Add a library title to copy the full ad name."
+          : null;
 
   return (
     <div className="space-y-1.5">

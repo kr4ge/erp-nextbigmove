@@ -409,6 +409,8 @@ export class CreativeLibraryService {
       id: creative.id,
       code: creative.code,
       title: creative.title,
+      customId: creative.posCustomId ?? null,
+      productName: creative.posProductName ?? null,
       store: {
         id: creative.storeConfig.storeId,
         configId: creative.storeConfig.id,

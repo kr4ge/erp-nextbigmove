@@ -23,6 +23,10 @@ import type {
 import { isValidFacebookPostUrl } from "../_utils/facebook-post-url";
 import { validateCreativeTitle } from "../_utils/creative-title";
 import { readCurrentUserName } from "../_utils/current-user-name";
+import {
+  fetchStoreEnrollmentItems,
+  type StoreEnrollmentItem,
+} from "../_services/video-registry.service";
 import { CreativeCodeField } from "./creative-code-field";
 import { CreativeDetailsFields } from "./creative-details-fields";
 
@@ -37,6 +41,7 @@ type Props = {
 
 const EMPTY_FORM = {
   storeId: "",
+  variationId: "",
   title: "",
   mediaUrl: "",
   format: "",
@@ -76,16 +81,45 @@ export function RegisterVideoDialog({
   );
   const codePreview = seed?.code ?? selectedStore?.nextCode ?? null;
 
+  // The items the chosen store sells. The name is what the user picks; the
+  // customId is what leads the generated ad name, so the selection is required
+  // before the paste-ready name exists.
+  const [items, setItems] = useState<StoreEnrollmentItem[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  useEffect(() => {
+    if (!form.storeId) { setItems([]); return; }
+    let cancelled = false;
+    setItemsLoading(true);
+    fetchStoreEnrollmentItems(form.storeId)
+      .then((list) => { if (!cancelled) setItems(list); })
+      .catch(() => { if (!cancelled) setItems([]); })
+      .finally(() => { if (!cancelled) setItemsLoading(false); });
+    return () => { cancelled = true; };
+  }, [form.storeId]);
+  const selectedItem = useMemo(
+    () => items.find((item) => item.variationId === form.variationId) ?? null,
+    [items, form.variationId],
+  );
+
   useEffect(() => {
     if (!open) return;
     setStep("kind");
     setKind(null);
-    setForm({ ...EMPTY_FORM, storeId: seedStoreId });
+    setForm({
+      ...EMPTY_FORM,
+      // One store means nothing to choose; the picker still renders so the
+      // user sees which store owns the code prefix.
+      storeId: seedStoreId || (stores.length === 1 ? stores[0].value : ""),
+    });
     setError(null);
   }, [open, seedStoreId, seed?.key]);
 
   const setField = (field: keyof typeof EMPTY_FORM, value: string) => {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => (
+      field === "storeId"
+        ? { ...current, storeId: value, variationId: "" }
+        : { ...current, [field]: value }
+    ));
   };
 
   const selectKind = (nextKind: CreativeKind) => {
@@ -108,6 +142,8 @@ export function RegisterVideoDialog({
       );
     if (!form.storeId)
       return setError("Choose the store that owns this creative.");
+    if (!form.variationId)
+      return setError("Choose the item this creative advertises.");
     if (!form.title.trim())
       return setError("Enter the title shown in the video library.");
     const titleError = validateCreativeTitle(form.title);
@@ -260,7 +296,7 @@ export function RegisterVideoDialog({
                   ) : null}
 
                   <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="lg:col-span-2">
+                    <div>
                       <FormSelect
                         name="storeId"
                         label="Store"
@@ -271,6 +307,24 @@ export function RegisterVideoDialog({
                         options={stores}
                         placeholder="Choose the store"
                         helper="The registry creates the code prefix automatically from the store name."
+                        required
+                      />
+                    </div>
+                    <div>
+                      <FormSelect
+                        name="variationId"
+                        label="Item this creative sells"
+                        value={form.variationId}
+                        onChange={(event) => setField("variationId", event.target.value)}
+                        options={items.map((item) => ({ value: item.variationId, label: item.name }))}
+                        placeholder={
+                          !form.storeId ? "Choose the store first"
+                            : itemsLoading ? "Loading items…"
+                            : items.length === 0 ? "No items with a custom ID in this store"
+                            : "Choose the item"
+                        }
+                        disabled={!form.storeId || itemsLoading || items.length === 0}
+                        helper="Its Pancake custom ID leads the generated ad name and becomes the reconciliation mapping."
                         required
                       />
                     </div>
@@ -291,6 +345,7 @@ export function RegisterVideoDialog({
                     />
                     <CreativeCodeField
                       code={codePreview}
+                      customId={selectedItem?.customId ?? null}
                       title={form.title}
                       creator={creatorName}
                       helper="Paste this exact value as the Meta ad name. The code at the end is what links the ad back to this creative."

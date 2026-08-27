@@ -67,6 +67,8 @@ export type VideoRegistryItem = {
   metaAdNameSnapshot: string | null;
   metaLinkSource: "AUTO_CODE" | "MANUAL" | null;
   metaLinkedAt: string | null;
+  customId: string | null;
+  productName: string | null;
   creator: RegistryPerson;
   format: string | null;
   hookType: string | null;
@@ -156,6 +158,8 @@ export type CreateVideoRegistryInput = {
   submitForApproval?: boolean;
   kind: CreativeKind;
   storeId: string;
+  /** The POS variation this creative advertises; its customId leads the ad name. */
+  variationId: string;
   title: string;
   mediaUrl: string;
   format: string;

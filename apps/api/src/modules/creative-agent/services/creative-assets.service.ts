@@ -78,6 +78,7 @@ export class CreativeAssetsService {
         orderBy,
         select: {
           id: true, code: true, title: true, kind: true, mediaUrl: true, format: true, hookType: true,
+          posCustomId: true,
           script: true, notes: true, revisionState: true, performanceStatus: true, createdById: true,
           revisionRequestedAt: true, revisionResolvedAt: true,
           submittedAt: true, approvedAt: true, createdAt: true, updatedAt: true, metaAdId: true,
@@ -123,6 +124,7 @@ export class CreativeAssetsService {
         if (linkedAdIds.length === 0 && item.metaAdId) linkedAdIds.push(item.metaAdId);
         return {
           id: item.id, code: item.code, title: item.title, kind: item.kind, mediaUrl: item.mediaUrl,
+          customId: item.posCustomId ?? null,
           format: item.format, hookType: item.hookType, script: item.script, notes: item.notes,
           revisionState: item.revisionState, performanceStatus: item.performanceStatus,
           revisionRequestedAt: item.revisionRequestedAt, revisionResolvedAt: item.revisionResolvedAt,

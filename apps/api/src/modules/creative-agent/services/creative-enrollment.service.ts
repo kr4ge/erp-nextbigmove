@@ -49,6 +49,7 @@ export class CreativeEnrollmentService {
     const context = await this.access.resolve(actor);
     this.access.require(context, CREATIVE_AGENT_PERMISSIONS.ENROLL);
     const config = await this.getActiveStoreConfig(context.tenantId, dto.storeId);
+    const item = await this.resolveStoreItem(context.tenantId, dto.storeId, dto.variationId);
 
     for (let attempt = 1; attempt <= CREATIVE_CODE_MINT_RETRIES; attempt += 1) {
       try {
@@ -61,7 +62,7 @@ export class CreativeEnrollmentService {
         if (codeNumber > 999999) {
           throw new ConflictException(`The ${config.codePrefix} creative code range is exhausted`);
         }
-        return await this.createCreative(context.tenantId, context.userId, config, dto, codeNumber);
+        return await this.createCreative(context.tenantId, context.userId, config, dto, codeNumber, undefined, undefined, item);
       } catch (error) {
         const isUniqueCollision = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
         if (!isUniqueCollision || attempt === CREATIVE_CODE_MINT_RETRIES) {
@@ -223,6 +224,52 @@ export class CreativeEnrollmentService {
     return this.stores.getOrCreateActiveConfig(tenantId, storeId);
   }
 
+  /**
+   * The items a store sells, for the enrollment dropdown. The name is what the
+   * user reads; the customId is what the generated ad name carries — it is the
+   * partner's own Pancake identifier, set before the store was synced.
+   */
+  async listStoreItems(actor: CreativeActor, storeId: string) {
+    const context = await this.access.resolve(actor);
+    this.access.require(context, CREATIVE_AGENT_PERMISSIONS.ENROLL);
+    const products = await this.prisma.posProduct.findMany({
+      where: {
+        // PosProduct has no tenant column; the boundary rides on the store.
+        store: { is: { tenantId: context.tenantId } },
+        storeId,
+        variationId: { not: null },
+        customId: { not: null },
+      },
+      select: { variationId: true, customId: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    return {
+      items: products
+        .filter((product) => product.variationId && product.customId?.trim())
+        .map((product) => ({
+          variationId: product.variationId!,
+          customId: product.customId!.trim(),
+          name: product.name,
+        })),
+    };
+  }
+
+  private async resolveStoreItem(tenantId: string, storeId: string, variationId: string) {
+    const product = await this.prisma.posProduct.findFirst({
+      where: { store: { is: { tenantId } }, storeId, variationId },
+      select: { variationId: true, customId: true, name: true },
+    });
+    if (!product) {
+      throw new ConflictException('The selected item does not belong to this store');
+    }
+    if (!product.customId?.trim()) {
+      throw new ConflictException(
+        'This item has no custom ID in Pancake, so an ad name cannot be generated for it',
+      );
+    }
+    return { variationId, customId: product.customId.trim(), name: product.name };
+  }
+
   private async createCreative(
     tenantId: string,
     userId: string,
@@ -231,6 +278,7 @@ export class CreativeEnrollmentService {
     codeNumber: number,
     requestedCode?: string,
     metaLink?: CreativeMetaLinkInput,
+    item?: { variationId: string; customId: string; name: string },
   ) {
     const code = requestedCode ?? `${config.codePrefix}-V${String(codeNumber).padStart(4, '0')}`;
     const now = new Date();
@@ -248,6 +296,9 @@ export class CreativeEnrollmentService {
           hookType: dto.hookType || null,
           script: dto.script?.trim() || null,
           notes: dto.notes?.trim() || null,
+          posVariationId: item?.variationId ?? null,
+          posCustomId: item?.customId ?? null,
+          posProductName: item?.name ?? null,
           createdById: userId,
           submittedAt: now,
           ...(metaLink

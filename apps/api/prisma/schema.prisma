@@ -1337,6 +1337,13 @@ model Creative {
   script             String?
   notes              String?
   mediaUrl           String?
+  // The item this creative advertises, chosen at enrollment. customId is the
+  // partner's own Pancake identifier and becomes the ad-name mapping segment;
+  // the name is a display snapshot so the registry stays readable if the POS
+  // product is renamed or removed.
+  posVariationId     String?
+  posCustomId        String?
+  posProductName     String?
   createdById        String                    @db.Uuid
   createdBy          User                      @relation("CreativeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   revisionState      CreativeRevisionState     @default(NONE)

@@ -1,4 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import {
+  deriveAssociateFromAdName,
+  deriveMappingFromAdName,
+} from '../../creative-agent/utils/ad-name-convention';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Decimal } from '@prisma/client/runtime/library';
 import { CreativeMetaLinkService } from '../../creative-agent/services/creative-meta-link.service';
@@ -44,6 +48,11 @@ export class MetaInsightService {
    */
   private extractMarketingAssociate(adName: string): string | null {
     if (!adName) return null;
+
+    // New-convention names declare the creator explicitly; only legacy names
+    // fall through to the positional token guess below.
+    const declared = deriveAssociateFromAdName(adName);
+    if (declared) return declared;
 
     const parts = adName.split('_');
     // Match example: EVIL EYE_UGC_1001_ALY_001 => ALY (4th token, index 3)
@@ -137,7 +146,12 @@ export class MetaInsightService {
       videoPlays100: this.parseOptionalMetric(rawInsight, 'video_plays_100', true),
       status: rawInsight.status,
       dateCreated: rawInsight.created_time,
-      mapping: this.extractMappingFromCampaign(rawInsight.campaign_name),
+      // Campaign-name parsing is the legacy source; a new-convention ad name
+      // declares its mapping directly and wins nothing by depending on how the
+      // campaign happens to be named.
+      mapping:
+        deriveMappingFromAdName(rawInsight.ad_name)
+        ?? this.extractMappingFromCampaign(rawInsight.campaign_name),
     };
   }
 

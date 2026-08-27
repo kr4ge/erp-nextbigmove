@@ -4,17 +4,26 @@ import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 
 /**
- * Builds the paste-ready Meta ad name: `title_creator_CODE`.
+ * Builds the paste-ready Meta ad name.
  *
- * The code is what makes attribution roll up, so it is always present and
- * always exact; the title and creator ride in front only to make the ad
- * legible inside the ad platform. Empty parts are dropped rather than leaving
- * a dangling separator.
+ * With a customId (creatives enrolled against a POS item):
+ *   `customId_title_CODE_creator` — the customId becomes the reconciliation
+ *   mapping and the creator feeds marketing targets, both read back by shape.
+ * Without one (older creatives): the legacy `title_creator_CODE`, which the
+ * matcher still links via its last segment. Empty parts are dropped rather
+ * than leaving a dangling separator.
  */
-export function buildAdName(parts: { title?: string | null; creator?: string | null; code: string }): string {
-  return [parts.title?.trim(), parts.creator?.trim(), parts.code.trim()]
-    .filter((part): part is string => Boolean(part))
-    .join('_');
+export function buildAdName(parts: {
+  title?: string | null;
+  creator?: string | null;
+  code: string;
+  customId?: string | null;
+}): string {
+  const customId = parts.customId?.trim();
+  const segments = customId
+    ? [customId, parts.title?.trim(), parts.code.trim(), parts.creator?.trim()]
+    : [parts.title?.trim(), parts.creator?.trim(), parts.code.trim()];
+  return segments.filter((part): part is string => Boolean(part)).join('_');
 }
 
 /**
@@ -23,14 +32,15 @@ export function buildAdName(parts: { title?: string | null; creator?: string | n
  * system: pasting a title and forgetting to append the code, silently
  * breaking attribution for that creative forever.
  */
-export function CopyCodeButton({ code, title, creator, className = '' }: {
+export function CopyCodeButton({ code, title, creator, customId, className = '' }: {
   code: string;
   title?: string | null;
   creator?: string | null;
+  customId?: string | null;
   className?: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const adName = buildAdName({ title, creator, code });
+  const adName = buildAdName({ title, creator, code, customId });
 
   return (
     <button

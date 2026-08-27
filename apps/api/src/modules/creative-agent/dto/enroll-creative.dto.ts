@@ -41,6 +41,16 @@ export class EnrollCreativeDto {
   @Matches(NO_UNDERSCORE.pattern, { message: NO_UNDERSCORE.message })
   title!: string;
 
+  /**
+   * The POS variation this creative advertises. Required: its customId is the
+   * first segment of the generated ad name and becomes the reconciliation
+   * mapping, so a creative without one cannot produce a new-convention name.
+   */
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  variationId!: string;
+
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsUrl({ protocols: ['https'], require_protocol: true })

@@ -21,6 +21,16 @@ export async function fetchCreativeStores(): Promise<CreativeStoreOption[]> {
   try { return (await apiClient.get<CreativeStoreOption[]>('/creative-agent/stores')).data; }
   catch (error) { throw apiError(error, 'Unable to load POS stores.'); }
 }
+export type StoreEnrollmentItem = { variationId: string; customId: string; name: string };
+
+/** Items the store sells; the customId becomes the ad name's first segment. */
+export async function fetchStoreEnrollmentItems(storeId: string): Promise<StoreEnrollmentItem[]> {
+  const { data } = await apiClient.get<{ items: StoreEnrollmentItem[] }>(
+    `/creative-agent/stores/${storeId}/items`,
+  );
+  return data.items;
+}
+
 export async function createVideoRegistryItem(input: CreateVideoRegistryInput): Promise<VideoRegistryItem> {
   const payload = { storeId: input.storeId, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, script: input.script || undefined, notes: input.notes || undefined };
   const enrollsMetaAd = Boolean(input.accountId && input.adId && input.adName);
