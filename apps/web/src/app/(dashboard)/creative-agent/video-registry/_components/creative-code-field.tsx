@@ -55,7 +55,11 @@ export function CreativeCodeField({ code, customId, title, creator, helper }: Pr
   return (
     <div className="space-y-1.5">
       <span className="form-label">Ad name</span>
-      <div className="input flex min-h-11 items-center justify-between gap-3 py-1.5">
+      {/* !py-0.5: the dialog's density layer sets .input padding with a
+          higher-specificity selector; the inner button already sets the
+          height, so extra padding only made this box taller than its
+          neighbours. */}
+      <div className="input flex items-center justify-between gap-3 !py-0.5">
         <code
           className={`min-w-0 truncate font-bold ${adName && !blocked ? "text-foreground" : "text-muted"}`}
         >
@@ -65,7 +69,7 @@ export function CreativeCodeField({ code, customId, title, creator, helper }: Pr
           type="button"
           variant="ghost"
           size="sm"
-          className="shrink-0 border-0 text-primary"
+          className="h-8 shrink-0 border-0 px-2 text-primary"
           iconLeft={
             copied ? (
               <Check className="h-4 w-4" />

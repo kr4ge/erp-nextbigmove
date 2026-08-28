@@ -17,11 +17,9 @@ export function readCurrentUserName(): string | null {
     const raw = window.localStorage.getItem("user");
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { firstName?: string; lastName?: string };
-    const name = [parsed.firstName, parsed.lastName]
-      .map((part) => part?.trim())
-      .filter(Boolean)
-      .join(" ");
-    return name || null;
+    // First name only: the server decides when a namesake forces the
+    // initial or surname, so this fallback never guesses at that.
+    return parsed.firstName?.trim() || parsed.lastName?.trim() || null;
   } catch {
     return null;
   }

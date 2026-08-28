@@ -20,6 +20,8 @@ export type SortDirection = "asc" | "desc";
 export type RegistryPerson = {
   id: string;
   name: string;
+  /** The creator segment used in ad names: first name, disambiguated per tenant. */
+  adName?: string;
   avatar?: string | null;
 };
 export type RegistryOption = {
@@ -140,6 +142,8 @@ export type VideoRegistryResponse = {
   unregistered: UnregisteredMetaCreative[];
   summary: { untaggedSpend: number };
   metricsAvailability: Record<string, boolean | string>;
+  /** The signed-in user's own creator segment, for the enroll preview. */
+  viewer?: { adNameCreator: string | null };
   pagination: {
     page: number;
     pageSize: number;
@@ -206,4 +210,13 @@ export type CreativePermissions = {
   canManageAliases: boolean;
   canReview: boolean;
   canManagePerformance: boolean;
+};
+
+/** A hook type or format the tenant can pick; `custom` marks tenant additions. */
+export type CreativeOption = { value: string; label: string; custom: boolean };
+export type CreativeOptionField = "HOOK_TYPE" | "VIDEO_FORMAT" | "STATIC_FORMAT";
+export type CreativeOptions = {
+  hookTypes: CreativeOption[];
+  videoFormats: CreativeOption[];
+  staticFormats: CreativeOption[];
 };

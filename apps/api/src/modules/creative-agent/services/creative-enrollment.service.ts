@@ -78,6 +78,9 @@ export class CreativeEnrollmentService {
     const context = await this.access.resolve(actor);
     this.access.require(context, CREATIVE_AGENT_PERMISSIONS.ENROLL);
     const config = await this.getActiveStoreConfig(context.tenantId, dto.storeId);
+    // The DTO inherits variationId, so an ad enrolled from the unregistered
+    // list declares its item exactly like a fresh enrollment does.
+    const item = await this.resolveStoreItem(context.tenantId, dto.storeId, dto.variationId);
     const metaInsight = await this.findMetaInsight(
       context.tenantId,
       dto.accountId,
@@ -109,6 +112,7 @@ export class CreativeEnrollmentService {
           codeNumber,
           dto.requestedCode,
           metaLink,
+          item,
         );
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -137,6 +141,7 @@ export class CreativeEnrollmentService {
           codeNumber,
           undefined,
           metaLink,
+          item,
         );
       } catch (error) {
         const isUniqueCollision = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';

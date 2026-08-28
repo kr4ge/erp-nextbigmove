@@ -28,6 +28,10 @@ function createHarness(permissions: string[]) {
     creativeStoreConfig: {
       findMany: jest.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
     },
+    // Creator labels are built from the tenant's users; an empty tenant is fine.
+    user: {
+      findMany: jest.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
+    },
   };
   const mediaAssets = {
     createSignedAssetUrl: jest.fn<() => Promise<string | null>>().mockResolvedValue(null),

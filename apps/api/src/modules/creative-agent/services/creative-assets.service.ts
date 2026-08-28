@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CreativeRevisionState, Prisma } from '@prisma/client';
+import { buildAdNameCreatorLabels } from '../../../common/utils/ad-name-creator';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CREATIVE_AGENT_PERMISSIONS } from '../creative-agent.constants';
 import { CreateCreativeReviewCommentDto } from '../dto/create-creative-review-comment.dto';
@@ -31,6 +32,10 @@ export class CreativeAssetsService {
     // READ_ALL admits the Advertising reviewer persona (read_all + review),
     // which owns the tenant-wide approval queue but holds neither read nor edit.
     this.access.require(context, CREATIVE_AGENT_PERMISSIONS.READ, CREATIVE_AGENT_PERMISSIONS.READ_ALL, CREATIVE_AGENT_PERMISSIONS.EDIT);
+    const creatorLabels = buildAdNameCreatorLabels(await this.prisma.user.findMany({
+      where: { tenantId: context.tenantId, status: 'ACTIVE' },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    }));
     const canReadAll = this.access.canReadAll(context);
     const ownershipWhere: Prisma.CreativeWhereInput = canReadAll
       ? (query.creatorId ? { createdById: query.creatorId } : {})
@@ -128,7 +133,7 @@ export class CreativeAssetsService {
           format: item.format, hookType: item.hookType, script: item.script, notes: item.notes,
           revisionState: item.revisionState, performanceStatus: item.performanceStatus,
           revisionRequestedAt: item.revisionRequestedAt, revisionResolvedAt: item.revisionResolvedAt,
-          creator: { id: item.createdBy.id, name: this.personName(item.createdBy), avatar: item.createdBy.avatar },
+          creator: { id: item.createdBy.id, name: this.personName(item.createdBy), adName: creatorLabels.get(item.createdBy.id) ?? this.personName(item.createdBy), avatar: item.createdBy.avatar },
           store: { id: item.storeConfig.storeId, name: item.storeConfig.storeNameSnapshot },
           isOwnSubmission: item.createdById === context.userId,
           commentCount: item._count.reviewComments,

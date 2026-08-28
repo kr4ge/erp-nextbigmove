@@ -43,6 +43,7 @@ model Tenant {
   // Relations
   users                               User[]
   memberships                         TenantMembership[]
+  creativeFieldOptions                CreativeFieldOption[]
   integrations                        Integration[]
   analyticsEvents                     AnalyticsEvent[]
   pancakeWebhookLogs                  PancakeWebhookLog[]
@@ -3337,4 +3338,28 @@ model TenantMembership {
   @@unique([userId, tenantId])
   @@index([tenantId, status])
   @@map("tenant_memberships")
+}
+
+enum CreativeOptionField {
+  HOOK_TYPE
+  VIDEO_FORMAT
+  STATIC_FORMAT
+}
+
+/// Tenant-wide vocabulary for the open-ended creative fields. A hook type or
+/// format added from one enrollment appears in every dialog in the tenant,
+/// rather than living only on the creative it was typed into.
+model CreativeFieldOption {
+  id          String              @id @default(uuid()) @db.Uuid
+  tenantId    String              @db.Uuid
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  field       CreativeOptionField
+  value       String
+  label       String
+  createdById String?             @db.Uuid
+  createdAt   DateTime            @default(now())
+
+  @@unique([tenantId, field, value])
+  @@index([tenantId, field])
+  @@map("creative_field_options")
 }

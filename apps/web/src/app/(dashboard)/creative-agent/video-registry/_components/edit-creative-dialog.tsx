@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import type { CreativeKind, UpdateVideoRegistryInput } from "../_types/video-registry";
 import { isValidFacebookPostUrl } from "../_utils/facebook-post-url";
 import { CreativeDetailsFields } from "./creative-details-fields";
+import { useCreativeOptions } from "../_hooks/use-creative-options";
 
 export type EditableCreative = {
   id: string;
@@ -40,6 +41,7 @@ function toForm(item: EditableCreative): UpdateVideoRegistryInput {
 
 export function EditCreativeDialog({ item, isSaving, onClose, onSave }: Props) {
   const [form, setForm] = useState<UpdateVideoRegistryInput | null>(null);
+  const { options: creativeOptions, addOption } = useCreativeOptions(form !== null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -82,7 +84,7 @@ export function EditCreativeDialog({ item, isSaving, onClose, onSave }: Props) {
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            <CreativeDetailsFields kind={item.kind} value={form} onChange={setField} />
+            <CreativeDetailsFields kind={item.kind} options={creativeOptions} onCreateOption={addOption} value={form} onChange={setField} />
             {error ? <p className="mt-4 rounded-xl border border-destructive/30 bg-destructive-soft p-3 text-sm text-destructive" role="alert">{error}</p> : null}
           </div>
           <DialogFooter className="shrink-0 border-t border-border bg-surface px-6 py-4">

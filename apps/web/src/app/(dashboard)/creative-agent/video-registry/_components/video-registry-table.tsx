@@ -1,6 +1,7 @@
 'use client';
 
 import { ArrowDown, ArrowUp, ArrowUpDown, Eye } from 'lucide-react';
+import { CopyCodeButton } from "../../assets/_components/copy-code-button";
 import { Button } from '@/components/ui/button';
 import type { GetVideoRegistryParams, VideoRegistryItem, VideoRegistrySortKey } from '../_types/video-registry';
 import { DriveThumbnail } from './drive-thumbnail';
@@ -57,7 +58,7 @@ export function VideoRegistryTable({ items, params, actionLabel, onSort, onRevie
                   <button type="button" onClick={() => onReview(item)} className="block max-w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                     <span className="block truncate font-semibold text-foreground">{item.title}</span>
                     <span className="mt-1 flex items-center gap-2">
-                      <code className="text-xs font-semibold text-primary">{item.code}</code>
+                      <span className="inline-flex items-center gap-1"><code className="text-xs font-semibold text-primary">{item.code}</code><CopyCodeButton code={item.code} title={item.title} creator={item.creator.adName ?? item.creator.name} customId={item.customId} /></span>
                       <span className="pill border border-border bg-background-secondary text-muted">{item.kind === 'VIDEO' ? 'Video' : 'Static'}</span>
                     </span>
                   </button>

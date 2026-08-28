@@ -16,7 +16,7 @@ export type CreativeAsset = {
   revisionRequestedAt: string | null;
   revisionResolvedAt: string | null;
   performanceStatus: CreativePerformanceStatus;
-  creator: { id: string; name: string; avatar: string | null };
+  creator: { id: string; name: string; adName?: string; avatar: string | null };
   store: { id: string | null; name: string };
   isOwnSubmission: boolean;
   commentCount: number;

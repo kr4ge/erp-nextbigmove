@@ -1,6 +1,9 @@
 import axios from 'axios';
 import apiClient from '@/lib/api-client';
-import type { CreativeReviewComment, CreativeStatusDimension, CreativeStoreOption, CreateVideoRegistryInput, GetVideoRegistryParams, LinkCreativeAliasInput, UpdateVideoRegistryInput, VideoRegistryItem, VideoRegistryResponse } from '../_types/video-registry';
+import type {
+  CreativeOption,
+  CreativeOptionField,
+  CreativeOptions, CreativeReviewComment, CreativeStatusDimension, CreativeStoreOption, CreateVideoRegistryInput, GetVideoRegistryParams, LinkCreativeAliasInput, UpdateVideoRegistryInput, VideoRegistryItem, VideoRegistryResponse } from '../_types/video-registry';
 
 function apiError(error: unknown, fallback: string): Error {
   if (axios.isAxiosError(error)) {
@@ -32,7 +35,9 @@ export async function fetchStoreEnrollmentItems(storeId: string): Promise<StoreE
 }
 
 export async function createVideoRegistryItem(input: CreateVideoRegistryInput): Promise<VideoRegistryItem> {
-  const payload = { storeId: input.storeId, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, script: input.script || undefined, notes: input.notes || undefined };
+  // Explicit whitelist: every field the enroll DTO accepts must be listed here
+  // or it never leaves the browser, however correct the form state is.
+  const payload = { storeId: input.storeId, variationId: input.variationId, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, script: input.script || undefined, notes: input.notes || undefined };
   const enrollsMetaAd = Boolean(input.accountId && input.adId && input.adName);
   try {
     return (enrollsMetaAd
@@ -71,4 +76,18 @@ export async function fetchCreativeEvents(id: string) {
 export async function fetchCreativeReviewComments(id: string) {
   try { return (await apiClient.get<CreativeReviewComment[]>(`/creative-agent/creatives/${id}/comments`)).data; }
   catch (error) { throw apiError(error, 'Unable to load creative feedback.'); }
+}
+
+/** Tenant-wide hook types and formats: defaults plus what this tenant added. */
+export async function fetchCreativeOptions(): Promise<CreativeOptions> {
+  const { data } = await apiClient.get<CreativeOptions>('/creative-agent/options');
+  return data;
+}
+
+/** Add a value for everyone in the tenant; returns the stored option. */
+export async function createCreativeOption(field: CreativeOptionField, label: string): Promise<CreativeOption> {
+  try {
+    const { data } = await apiClient.post<CreativeOption>('/creative-agent/options', { field, label });
+    return data;
+  } catch (error) { throw apiError(error, 'Unable to add that option.'); }
 }

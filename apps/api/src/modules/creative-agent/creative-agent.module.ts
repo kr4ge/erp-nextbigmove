@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { CommonServicesModule } from '../../common/services/services.module';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { CreativeOptionsController } from './creative-options.controller';
+import { CreativeOptionsService } from './services/creative-options.service';
 import { CreativeAdvertisingDashboardController } from './creative-advertising-dashboard.controller';
 import { CreativeAliasController } from './creative-alias.controller';
 import { CreativeAssetsController } from './creative-assets.controller';
@@ -36,6 +38,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeAssetsController,
     CreativePerformanceController,
     CreativeAdvertisingDashboardController,
+    CreativeOptionsController,
   ],
   providers: [
     PermissionsGuard,
@@ -52,6 +55,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativePerformanceService,
     CreativeAdvertisingDashboardService,
     CreativeThumbnailService,
+    CreativeOptionsService,
   ],
   exports: [CreativeMetaLinkService],
 })
