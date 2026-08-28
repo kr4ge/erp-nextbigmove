@@ -57,6 +57,10 @@ apiClient.interceptors.response.use(
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         localStorage.removeItem('current_tenant_id');
+        // An expired impersonated session must not leave its banner behind for
+        // whoever logs in next. Literal key: importing the impersonation module
+        // here would be circular (it imports this client).
+        localStorage.removeItem('impersonating_user');
         window.location.href = '/login';
       }
     }

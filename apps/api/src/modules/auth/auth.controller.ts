@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request, Patch, BadRequestException, UnauthorizedException, Query, Param } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request, Patch, BadRequestException, UnauthorizedException, Query, Param, ParseUUIDPipe } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, RefreshTokenDto, UpdateProfileDto } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -72,6 +72,7 @@ export class AuthController {
   async getProfile(@Request() req) {
     return {
       user: req.user,
+      memberships: await this.authService.listMemberships(req.user.userId || req.user.id),
     };
   }
 
@@ -189,6 +190,13 @@ export class AuthController {
       .map((role) => ({ id: role.id, key: role.key, name: role.name, scope: role.scope }));
 
     return { roles };
+  }
+
+  /** Move this session to another tenant the user belongs to. */
+  @Post('switch-tenant/:tenantId')
+  @UseGuards(JwtAuthGuard)
+  async switchTenant(@Param('tenantId', ParseUUIDPipe) tenantId: string, @Request() req) {
+    return this.authService.switchTenant(req.user, tenantId, req);
   }
 
   /**

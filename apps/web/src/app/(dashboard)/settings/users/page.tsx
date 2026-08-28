@@ -28,7 +28,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, Plus, Users as UsersIcon } from 'lucide-react';
+import { MoreHorizontal, Plus, UserPlus, Users as UsersIcon } from 'lucide-react';
 
 type User = {
   id: string;
@@ -184,6 +184,12 @@ export default function UsersPage() {
   });
 
   const [createOpen, setCreateOpen] = useState(false);
+  // "Add existing user": grants an identity that already exists (in any tenant)
+  // membership here — no second password, no second account.
+  const [addExistingOpen, setAddExistingOpen] = useState(false);
+  const [existingEmail, setExistingEmail] = useState('');
+  const [existingRoleId, setExistingRoleId] = useState('');
+  const [isAddingExisting, setIsAddingExisting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
@@ -470,6 +476,14 @@ export default function UsersPage() {
           >
             Add new user
           </Button>
+          <Button
+            variant="secondary"
+            iconLeft={<UserPlus className="h-4 w-4" />}
+            onClick={() => { setExistingEmail(''); setExistingRoleId(''); setAddExistingOpen(true); }}
+            className='btn-icon'
+          >
+            Add existing user
+          </Button>
         </div>
 
         <div className="p-4">
@@ -494,6 +508,69 @@ export default function UsersPage() {
           )}
         </div>
       </Card>
+
+      <Dialog open={addExistingOpen} onOpenChange={setAddExistingOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add existing user</DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setIsAddingExisting(true);
+              try {
+                await apiClient.post('/users/add-existing', {
+                  email: existingEmail.trim(),
+                  ...(existingRoleId ? { roleId: existingRoleId } : {}),
+                });
+                addToast('success', 'User added to this workspace.');
+                setAddExistingOpen(false);
+                await queryClient.invalidateQueries({ queryKey: ['users'] });
+              } catch (error: any) {
+                addToast('error', error?.response?.data?.message ?? 'Could not add that user.');
+              } finally {
+                setIsAddingExisting(false);
+              }
+            }}
+          >
+            <p className="text-sm text-muted">
+              Enter the email of someone who already has an account. They keep their password and can switch into this workspace from the header.
+            </p>
+            <div className="space-y-1.5">
+              <label className="form-label" htmlFor="existing-user-email">Email</label>
+              <input
+                id="existing-user-email"
+                type="email"
+                required
+                value={existingEmail}
+                onChange={(e) => setExistingEmail(e.target.value)}
+                className="input w-full"
+                placeholder="name@company.com"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="form-label" htmlFor="existing-user-role">Role in this workspace</label>
+              <select
+                id="existing-user-role"
+                value={existingRoleId}
+                onChange={(e) => setExistingRoleId(e.target.value)}
+                className="input w-full"
+              >
+                <option value="">No role yet</option>
+                {(erpRoles ?? []).map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted">Roles are per workspace — this does not change what they can do elsewhere.</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setAddExistingOpen(false)}>Cancel</Button>
+              <Button type="submit" variant="primary" loading={isAddingExisting}>Add to workspace</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-xl">

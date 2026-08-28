@@ -2,6 +2,7 @@ import { Injectable, ConflictException, ForbiddenException, NotFoundException } 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreateUserDto } from './dto/create-user.dto';
+import { AddExistingUserDto } from './dto/add-existing-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
 import {
@@ -114,6 +115,73 @@ export class UserService {
     });
   }
 
+  /**
+   * Add an identity that already exists to this tenant. Creates a membership
+   * (and optional role/team assignments) — never a second account.
+   */
+  async addExisting(dto: AddExistingUserDto) {
+    const tenantId = this.getTenant();
+    const email = dto.email.trim().toLowerCase();
+
+    const matches = await this.prisma.user.findMany({
+      where: { email: { equals: email, mode: 'insensitive' }, status: 'ACTIVE' },
+      select: { id: true, tenantId: true, email: true, firstName: true, lastName: true, role: true, status: true },
+      take: 2,
+    });
+    if (matches.length === 0) {
+      throw new NotFoundException('No account with that email. Create a new user instead.');
+    }
+    if (matches.length > 1) {
+      // Pre-membership duplicates: two rows, one email. Which identity gets the
+      // grant is not ours to guess.
+      throw new ConflictException('More than one account uses that email; merge them before granting access');
+    }
+    const identity = matches[0];
+    if (identity.role === 'SUPER_ADMIN') {
+      throw new ForbiddenException('Platform administrators cannot be added to a tenant');
+    }
+    if (identity.tenantId === tenantId) {
+      throw new ConflictException('That user already belongs to this workspace');
+    }
+    const existing = await this.prisma.tenantMembership.findUnique({
+      where: { userId_tenantId: { userId: identity.id, tenantId } },
+    });
+    if (existing?.status === 'ACTIVE') {
+      throw new ConflictException('That user already belongs to this workspace');
+    }
+
+    const tenantRole = dto.roleId ? await this.getValidatedRole(dto.roleId, tenantId, 'erp') : null;
+    const wmsRole = dto.wmsRoleId ? await this.getValidatedRole(dto.wmsRoleId, tenantId, 'wms') : null;
+    const teamRole = dto.teamRoleId ? await this.getValidatedRole(dto.teamRoleId, tenantId, 'erp') : null;
+
+    await this.prisma.tenantMembership.upsert({
+      where: { userId_tenantId: { userId: identity.id, tenantId } },
+      update: { status: 'ACTIVE', defaultTeamId: dto.teamId ?? null, addedById: this.cls.get('userId') ?? null },
+      create: {
+        userId: identity.id, tenantId, status: 'ACTIVE',
+        defaultTeamId: dto.teamId ?? null, addedById: this.cls.get('userId') ?? null,
+      },
+    });
+
+    if (dto.teamId) {
+      await this.prisma.teamMembership.upsert({
+        where: { tenantId_userId_teamId: { tenantId, userId: identity.id, teamId: dto.teamId } },
+        update: { status: 'ACTIVE', isDefault: true },
+        create: { tenantId, teamId: dto.teamId, userId: identity.id, status: 'ACTIVE', isDefault: true },
+      });
+    }
+    await this.replaceTenantScopedRoleAssignment(identity.id, tenantId, tenantRole?.id, 'erp');
+    await this.replaceTenantScopedRoleAssignment(identity.id, tenantId, wmsRole?.id, 'wms');
+    if (teamRole?.id && dto.teamId) {
+      await this.prisma.userRoleAssignment.deleteMany({ where: { userId: identity.id, tenantId, teamId: dto.teamId } });
+      await this.prisma.userRoleAssignment.create({
+        data: { userId: identity.id, roleId: teamRole.id, tenantId, teamId: dto.teamId, workspace: toStoredPermissionWorkspace('erp') },
+      });
+    }
+
+    return { ...identity, membershipTenantId: tenantId };
+  }
+
   async create(dto: CreateUserDto) {
     const tenantId = this.getTenant();
 
@@ -219,7 +287,11 @@ export class UserService {
     const tenantId = this.getTenant();
     const users = await this.prisma.user.findMany({
       where: {
-        tenantId,
+        // Rows homed here plus identities granted membership from elsewhere.
+        OR: [
+          { tenantId },
+          { tenantMemberships: { some: { tenantId, status: 'ACTIVE' } } },
+        ],
         NOT: {
           userRoleAssignments: {
             some: {
