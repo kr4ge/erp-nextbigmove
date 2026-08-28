@@ -15,7 +15,8 @@ export class CreativeAliasController {
   constructor(private readonly aliases: CreativeAliasService) {}
 
   @Post('unregistered/link')
-  @Permissions('creative_agent.alias.manage')
+  // enroll can link too, but only to their OWN creative — enforced in the service.
+  @Permissions('creative_agent.alias.manage', 'creative_agent.enroll')
   link(@Request() req: CreativeRequest, @Body() body: LinkUnregisteredCreativeDto) {
     return this.aliases.linkUnregistered(req.user, body);
   }

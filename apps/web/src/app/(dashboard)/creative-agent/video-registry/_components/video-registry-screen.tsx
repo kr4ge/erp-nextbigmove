@@ -106,7 +106,7 @@ export function VideoRegistryScreen({ initialQuery = '' }: { initialQuery?: stri
           onRegister={controller.openRegistration}
           onLink={controller.setLinkingItem}
           canRegister={controller.permissions.canEnroll}
-          canLink={controller.permissions.canManageAliases}
+          canLink={controller.permissions.canManageAliases || controller.permissions.canEnroll}
           pagination={data.unregisteredPagination}
           onPageChange={controller.updateUnregisteredPage}
         />

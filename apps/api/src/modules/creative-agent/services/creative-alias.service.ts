@@ -21,7 +21,24 @@ export class CreativeAliasService {
 
   async linkUnregistered(actor: CreativeActor, dto: LinkUnregisteredCreativeDto) {
     const context = await this.access.resolve(actor);
-    this.access.require(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE);
+    // Either tenant-wide linkers (alias.manage) or makers linking their own work
+    // (enroll). Makers are confined to creatives they created; a full linker may
+    // attach an ad to any creative in the tenant.
+    this.access.require(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE, CREATIVE_AGENT_PERMISSIONS.ENROLL);
+    const canLinkAny = context.permissions.has(CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE);
+    const target = await this.prisma.creative.findFirst({
+      where: {
+        id: dto.creativeId,
+        tenantId: context.tenantId,
+        ...(canLinkAny ? {} : { createdById: context.userId }),
+      },
+      select: { id: true },
+    });
+    if (!target) {
+      throw new NotFoundException(
+        canLinkAny ? 'Creative not found in this tenant' : 'You can only link ads to creatives you created',
+      );
+    }
     const metaInsight = await this.prisma.metaAdInsight.findFirst({
       where: {
         tenantId: context.tenantId,

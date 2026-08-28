@@ -31,7 +31,8 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
     revisionState: REVISION_STATE_VALUES.includes(initial.revisionState ?? '')
       ? (initial.revisionState as CreativeAssetsParams['revisionState'])
       : '',
-    queue: initial.queue === 'REVIEW' ? 'REVIEW' : '',
+    // Assets opens on all creatives; the review queue is reachable via filters.
+    queue: '',
   }));
   const [searchText, setSearchText] = useState(normalizedInitialQuery);
   const [data, setData] = useState<CreativeAssetsResponse | null>(null);
@@ -70,7 +71,6 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
     if (appliedReviewerDefault.current || !canReview || !canReadAllPermission) return;
     appliedReviewerDefault.current = true;
     if (initial.revisionState || initial.queue || initial.creativeId || normalizedInitialQuery) return;
-    setParams((current) => (current.revisionState || current.queue ? current : { ...current, queue: 'REVIEW', page: 1 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canReview, canReadAllPermission]);
 

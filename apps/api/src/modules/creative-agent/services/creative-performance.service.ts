@@ -170,8 +170,18 @@ export class CreativePerformanceService {
     const range = this.resolveDateRange(query.startDate, query.endDate);
     const storeOptions = await loadCreativeStoreOptions(this.prisma, context.tenantId);
     // One usable store means there is nothing to choose between: pin it.
-    const effectiveStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
-    const storeAdIds = await this.resolveScopedAdIds(context.tenantId, effectiveStoreId, query.creatorId);
+    const requestedStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
+    let storeAdIds = await this.resolveScopedAdIds(context.tenantId, requestedStoreId, query.creatorId);
+    // An auto-PINNED store (no explicit query.storeId) that has no linked ads
+    // would otherwise blank the whole page. Fall through to tenant-wide so the
+    // unlinked spend is still visible; an EXPLICIT store choice is respected.
+    let effectiveStoreId = requestedStoreId;
+    if (!query.storeId && storeAdIds !== null && storeAdIds.length === 0) {
+      effectiveStoreId = undefined;
+      storeAdIds = query.creatorId
+        ? await this.resolveScopedAdIds(context.tenantId, undefined, query.creatorId)
+        : null;
+    }
     const scope = await this.computeScope(context.tenantId, range, {
       accountId: query.accountId, storeAdIds,
     });

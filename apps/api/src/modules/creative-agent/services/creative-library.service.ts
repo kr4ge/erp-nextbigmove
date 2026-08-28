@@ -249,7 +249,11 @@ export class CreativeLibraryService {
       delete item.thumbnailObjectKey;
     }));
     const accountNames = new Map(accounts.map((account) => [account.accountId, account.name]));
-    const canManageUnregistered = canReadAll || this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE);
+    // enroll may also see it, to link an ad to their own creative or register
+    // a new one from it.
+    const canManageUnregistered = canReadAll
+      || this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE)
+      || this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ENROLL);
 
     const allUnregisteredItems = canManageUnregistered
       ? Array.from(unregistered.values())
