@@ -343,6 +343,25 @@ export class ReconcileMarketingService {
       },
     });
 
+    // A creative link is a structured bridge from ad -> creative -> posCustomId,
+    // so an ad whose NAME carries no code (legacy names, or a customId that was
+    // dropped) still gets a mapping once it is linked. Read straight from the
+    // link + creative columns — no ad-name round-trip.
+    const linkedAdIds = Array.from(new Set(metaInsights.map((row) => row.adId).filter(Boolean)));
+    const linkMappingByAdId = new Map<string, string>();
+    if (linkedAdIds.length > 0) {
+      const links = await this.prisma.creativeMetaAdLink.findMany({
+        where: { tenantId, adId: { in: linkedAdIds } },
+        select: { adId: true, creative: { select: { posCustomId: true } } },
+      });
+      for (const link of links) {
+        const customId = link.creative?.posCustomId?.trim().toLowerCase();
+        // A link uniquely owns (tenantId, adId); if two accounts reused an adId,
+        // first non-empty customId wins — deterministic and harmless.
+        if (customId && !linkMappingByAdId.has(link.adId)) linkMappingByAdId.set(link.adId, customId);
+      }
+    }
+
     // Load POS orders for the day
     const posOrders: PosOrderLite[] = await this.prisma.posOrder.findMany({
       where: {
@@ -467,7 +486,7 @@ export class ReconcileMarketingService {
           adName: insight.adName,
           marketingAssociate: insight.marketingAssociate
             || deriveAssociateFromAdName(insight.adName),
-          mapping: insight.mapping || deriveMappingFromAdName(insight.adName),
+          mapping: insight.mapping || deriveMappingFromAdName(insight.adName) || linkMappingByAdId.get(insight.adId) || null,
           teamCode: insight.teamCode || null,
           dateCreated: metaDateCreated,
           spend: insight.spend,
@@ -561,7 +580,7 @@ export class ReconcileMarketingService {
           adName: insight.adName,
           marketingAssociate: insight.marketingAssociate
             || deriveAssociateFromAdName(insight.adName),
-          mapping: insight.mapping || deriveMappingFromAdName(insight.adName),
+          mapping: insight.mapping || deriveMappingFromAdName(insight.adName) || linkMappingByAdId.get(insight.adId) || null,
           teamCode: insight.teamCode || null,
           dateCreated: metaDateCreated,
           spend: insight.spend,
