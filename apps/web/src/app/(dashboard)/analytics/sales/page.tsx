@@ -21,7 +21,6 @@ import { DashboardSection } from '../../dashboard/_components/dashboard-section'
 import { AnalyticsKpiVisibilityDialog } from '../_components/analytics-kpi-visibility-dialog';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
 import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
-import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
 import {
   AnalyticsSalesDeliveryTable,
   type SalesDeliveryRowItem,
@@ -839,7 +838,17 @@ export default function SalesAnalyticsPage() {
           statusShare,
         };
       })
-    : [];
+    : metricDefinitions.map((def) => ({
+        ...def,
+        current: 0,
+        previous: 0,
+        delta: null as number | null,
+        countCurrent: def.countKey ? 0 : null,
+        countPrev: def.countKey ? 0 : null,
+        countDelta: null as number | null,
+        isStatusMetric: false,
+        statusShare: null as number | null,
+      }));
   const visibleMetricValues = metricValues.filter((metric) =>
     visibleKpiKeys.includes(String(metric.key)),
   );
@@ -1206,6 +1215,7 @@ export default function SalesAnalyticsPage() {
   };
 
   const renderCard = (m: (typeof metricValues)[number]) => {
+    const cardLoading = isResultPending;
     const tooltip =
       m.key === 'cm_rts_forecast'
         ? buildCmRtsTooltip(data?.kpis)
@@ -1220,6 +1230,7 @@ export default function SalesAnalyticsPage() {
     return (
       <AnalyticsMetricCard
         key={m.key}
+        loading={cardLoading}
         label={m.label}
         value={m.current}
         format={m.format}
@@ -1473,13 +1484,7 @@ export default function SalesAnalyticsPage() {
         )}
 
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isResultPending ? (
-            <div className="flex w-full flex-col gap-3 xl:flex-row">
-              {Array.from({ length: 8 }).map((_, idx) => (
-                <AnalyticsMetricCardSkeleton key={idx} className="w-full xl:min-w-[180px]" />
-              ))}
-            </div>
-          ) : (
+          {(
             <>
               {visibleMetricValues.length === 0 ? (
                 <div className="flex w-full items-center justify-center rounded-lg border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
@@ -1503,13 +1508,7 @@ export default function SalesAnalyticsPage() {
           )}
         </div>
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isResultPending ? (
-            <div className="flex w-full flex-col gap-3 xl:flex-row">
-              {Array.from({ length: 3 }).map((_, idx) => (
-                <AnalyticsMetricCardSkeleton key={`sec-skel-${idx}`} className="w-full xl:min-w-[190px]" />
-              ))}
-            </div>
-          ) : (
+          {(
             <>
               {visibleSecondaryCards.length === 0 ? null : (
                 <>

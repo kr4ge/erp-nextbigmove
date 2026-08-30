@@ -1,6 +1,7 @@
 'use client';
 
 import { InfoTip } from '../../creative-agent/overview/_components/overview-ui';
+import { Spinner } from '@/components/ui/spinner';
 import type { CeoDashboardResponse } from '../_types/ceo-dashboard';
 import { multiple, peso, TONE_FILL, TONE_TEXT } from './ceo-ui';
 import type { Tone } from '../_types/ceo-dashboard';
@@ -20,7 +21,7 @@ const TONE_PILL: Record<Tone, string> = {
  * edge. Different people read the two differently and showing both costs
  * nothing.
  */
-export function SafetyMarginPanel({ safety }: { safety: CeoDashboardResponse['safetyMargin'] | undefined }) {
+export function SafetyMarginPanel({ safety, loading }: { safety: CeoDashboardResponse['safetyMargin'] | undefined; loading?: boolean }) {
   const tone = safety?.tone ?? 'unknown';
   const headroom = safety?.headroom ?? null;
   const label = headroom === null
@@ -45,7 +46,7 @@ export function SafetyMarginPanel({ safety }: { safety: CeoDashboardResponse['sa
         </div>
         <div className="px-4 py-4">
           <p className={`text-4xl font-semibold leading-none tracking-tight tabular-nums ${TONE_TEXT[tone]} ${tone === 'critical' ? 'motion-safe:animate-pulse' : ''}`}>
-            {multiple(headroom)}
+            {loading ? <Spinner className="h-6 w-6" /> : multiple(headroom)}
           </p>
 
           {/* Three bands with a marker. The scale tops out at 4× — beyond that
@@ -88,11 +89,11 @@ export function SafetyMarginPanel({ safety }: { safety: CeoDashboardResponse['sa
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="stat-label">CPP<InfoTip text="Ad spend ÷ orders placed — what you actually pay to buy one order." /></p>
-              <p className="mt-0.5 text-xl font-semibold text-foreground tabular-nums">{peso(safety?.cpp)}</p>
+              <p className="mt-0.5 text-xl font-semibold text-foreground tabular-nums">{loading ? <Spinner className="h-4 w-4" /> : peso(safety?.cpp)}</p>
             </div>
             <div className="text-right">
               <p className="stat-label justify-end">Break-even<InfoTip text="deliveryRate × margin − rtsRate × RTS cost. The most an order can afford to have cost in ads." /></p>
-              <p className="mt-0.5 text-xl font-semibold text-foreground tabular-nums">{peso(safety?.breakevenCpp)}</p>
+              <p className="mt-0.5 text-xl font-semibold text-foreground tabular-nums">{loading ? <Spinner className="h-4 w-4" /> : peso(safety?.breakevenCpp)}</p>
             </div>
           </div>
 

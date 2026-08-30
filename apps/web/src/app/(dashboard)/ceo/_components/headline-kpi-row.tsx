@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { Area, AreaChart, ResponsiveContainer } from 'recharts';
 import { CheckCircle2, RotateCcw, ShoppingCart, Truck, Volume2 } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
 import { InfoTip } from '../../creative-agent/overview/_components/overview-ui';
 import type { CeoDashboardResponse, CeoTrendPoint } from '../_types/ceo-dashboard';
 import { count, percent, peso } from './ceo-ui';
@@ -22,7 +23,7 @@ const TONE: Record<CardTone, { stroke: string; iconBg: string; iconText: string 
   destructive: { stroke: 'rgb(var(--destructive))', iconBg: 'bg-destructive-soft/50', iconText: 'text-destructive' },
 };
 
-function KpiCard({ label, value, sub, icon, tone, trend, sparkKey, info }: {
+function KpiCard({ label, value, sub, icon, tone, trend, sparkKey, info, loading }: {
   label: string;
   value: string;
   sub: string;
@@ -31,6 +32,7 @@ function KpiCard({ label, value, sub, icon, tone, trend, sparkKey, info }: {
   trend: CeoTrendPoint[];
   sparkKey: string;
   info?: string;
+  loading?: boolean;
 }) {
   const palette = TONE[tone];
   const series = trend.map((point) => ({
@@ -50,8 +52,14 @@ function KpiCard({ label, value, sub, icon, tone, trend, sparkKey, info }: {
           {icon}
         </span>
       </div>
-      <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground tabular-nums">{value}</p>
-      <p className="mt-0.5 text-xs text-muted">{sub}</p>
+      {loading ? (
+        <div className="mt-2 flex h-8 items-center text-muted"><Spinner className="h-5 w-5" /></div>
+      ) : (
+        <>
+          <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground tabular-nums">{value}</p>
+          <p className="mt-0.5 text-xs text-muted">{sub}</p>
+        </>
+      )}
       {/* The sparkline is decoration for scanning, not a readable axis. */}
       <div className="mt-3 h-10" aria-hidden="true">
         {hasShape ? (
@@ -80,31 +88,35 @@ function KpiCard({ label, value, sub, icon, tone, trend, sparkKey, info }: {
   );
 }
 
-export function HeadlineKpiRow({ data }: { data: CeoDashboardResponse | null }) {
+export function HeadlineKpiRow({ data, loading }: { data: CeoDashboardResponse | null; loading?: boolean }) {
   const headline = data?.headline;
   const trend = data?.trend ?? [];
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5">
       <KpiCard
+        loading={loading}
         label="Order amount" tone="primary" trend={trend} sparkKey="orderValue"
         icon={<ShoppingCart className="h-4 w-4" />}
         value={peso(headline?.orderAmount.value)}
         sub={`${count(headline?.orderAmount.count)} placed`}
       />
       <KpiCard
+        loading={loading}
         label="In transit amount" tone="info" trend={trend} sparkKey="inTransitValue"
         icon={<Truck className="h-4 w-4" />}
         value={peso(headline?.inTransitAmount.value)}
         sub={`${count(headline?.inTransitAmount.count)} riding`}
       />
       <KpiCard
+        loading={loading}
         label="Delivered amount" tone="success" trend={trend} sparkKey="deliveredValue"
         icon={<CheckCircle2 className="h-4 w-4" />}
         value={peso(headline?.deliveredAmount.value)}
         sub={`${count(headline?.deliveredAmount.count)} delivered`}
       />
       <KpiCard
+        loading={loading}
         label="Ad spent" tone="spend" trend={trend} sparkKey="spend"
         icon={<Volume2 className="h-4 w-4" />}
         info="Total ad spend in the period, with the average daily pace beneath it."
@@ -112,6 +124,7 @@ export function HeadlineKpiRow({ data }: { data: CeoDashboardResponse | null }) 
         sub={`${peso(headline?.adSpend.perDay)}/day`}
       />
       <KpiCard
+        loading={loading}
         label="RTS rate" tone="destructive" trend={trend} sparkKey="rtsValue"
         icon={<RotateCcw className="h-4 w-4" />}
         info="Returned ÷ units that shipped (delivered + returned). Cancelled orders are excluded because they never left the warehouse — break-even uses a different RTS figure measured on all resolved orders."

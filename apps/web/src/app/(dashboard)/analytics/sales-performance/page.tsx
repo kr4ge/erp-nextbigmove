@@ -1051,14 +1051,11 @@ export default function SalesPerformancePage() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {isOverviewResultPending
-            ? Array.from({ length: metricDefinitions.length }).map((_, idx) => (
-                <AnalyticsMetricCardSkeleton key={idx} />
-              ))
-            : metrics.map((m) => {
+          {metrics.map((m) => {
                 return (
                   <AnalyticsMetricCard
                     key={m.key}
+                    loading={isOverviewResultPending}
                     label={m.label}
                     value={m.current}
                     format={m.format}

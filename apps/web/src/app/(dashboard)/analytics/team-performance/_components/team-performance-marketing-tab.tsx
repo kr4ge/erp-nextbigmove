@@ -375,7 +375,12 @@ export default function MarketingAnalyticsPage() {
       previous,
       delta,
     };
-  }) : [];
+  }) : metricDefinitions.map((def) => ({
+    ...def,
+    current: 0,
+    previous: 0,
+    delta: null as number | null,
+  }));
 
   const lastUpdatedLabel = lastUpdated
     ? new Date(lastUpdated).toLocaleString()
@@ -545,14 +550,11 @@ export default function MarketingAnalyticsPage() {
         )}
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {isResultPending
-            ? Array.from({ length: metricDefinitions.length }).map((_, idx) => (
-                <AnalyticsMetricCardSkeleton key={idx} />
-              ))
-            : metrics.map((m) => {
+          {metrics.map((m) => {
                 return (
                   <AnalyticsMetricCard
                     key={m.key}
+                    loading={isResultPending}
                     label={m.label}
                     value={m.current}
                     format={m.format}
