@@ -60,17 +60,29 @@ export class CreativeAdvertisingDashboardService {
     const tenantId = context.tenantId;
     const range = this.performance.resolveDateRange(query.startDate, query.endDate);
     const storeOptions = await loadCreativeStoreOptions(this.prisma, tenantId);
-    // A single usable store is pinned rather than offered as a choice.
-    const effectiveStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
-    const scopedAdIds = await this.performance.resolveScopedAdIds(tenantId, effectiveStoreId, query.creatorId);
+    // Multi-select stores/creators; the single fields stay for older clients. An
+    // explicit selection wins; with none, a lone store is auto-pinned as before.
+    const storeIds = query.storeIds?.length
+      ? query.storeIds
+      : query.storeId
+        ? [query.storeId]
+        : storeOptions.defaultStoreId
+          ? [storeOptions.defaultStoreId]
+          : [];
+    const creatorIds = query.creatorIds?.length
+      ? query.creatorIds
+      : query.creatorId
+        ? [query.creatorId]
+        : [];
+    const scopedAdIds = await this.performance.resolveScopedAdIds(tenantId, storeIds, creatorIds);
     const scope = await this.performance.computeScope(tenantId, range, {
       accountId: query.accountId,
       storeAdIds: scopedAdIds,
     });
     const creativeScopeWhere: Prisma.CreativeWhereInput = {
       tenantId,
-      ...(effectiveStoreId ? { storeConfig: { storeId: effectiveStoreId } } : {}),
-      ...(query.creatorId ? { createdById: query.creatorId } : {}),
+      ...(storeIds.length ? { storeConfig: { storeId: { in: storeIds } } } : {}),
+      ...(creatorIds.length ? { createdById: { in: creatorIds } } : {}),
     };
 
     const [
@@ -96,7 +108,7 @@ export class CreativeAdvertisingDashboardService {
       this.loadTrend(tenantId, range, query.accountId, scopedAdIds),
       this.loadFreshness(tenantId),
       this.countMissingVideoMetrics(tenantId, range, query.accountId, scopedAdIds),
-      this.loadNeedsAction(actor, range, query, effectiveStoreId),
+      this.loadNeedsAction(actor, range, query, storeIds, creatorIds),
     ]);
 
     let withheldRates = 0;
@@ -172,7 +184,8 @@ export class CreativeAdvertisingDashboardService {
     return {
       selected: {
         startDate: range.startKey, endDate: range.endKey,
-        storeId: effectiveStoreId ?? '', accountId: query.accountId ?? '', creatorId: query.creatorId ?? '',
+        storeId: '', accountId: query.accountId ?? '', creatorId: '',
+        storeIds, creatorIds,
       },
       permissions: {
         canManageLinks: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE),
@@ -485,14 +498,17 @@ export class CreativeAdvertisingDashboardService {
     actor: CreativeActor,
     range: AdvertisingDateRange,
     query: GetAdvertisingDashboardQueryDto,
-    effectiveStoreId: string | undefined,
+    storeIds: string[],
+    creatorIds: string[],
   ) {
     const performanceQuery = new ListAdvertisingPerformanceQueryDto();
     performanceQuery.startDate = range.startKey;
     performanceQuery.endDate = range.endKey;
-    performanceQuery.storeId = effectiveStoreId;
+    // The performance list scopes by a single store/creator, so a lone
+    // selection pins it and a multi-selection leaves it tenant-wide here.
+    performanceQuery.storeId = storeIds.length === 1 ? storeIds[0] : undefined;
     performanceQuery.accountId = query.accountId;
-    performanceQuery.creatorId = query.creatorId;
+    performanceQuery.creatorId = creatorIds.length === 1 ? creatorIds[0] : undefined;
     performanceQuery.group = 'ADS';
     performanceQuery.verdict = 'NEEDS_ACTION';
     performanceQuery.sortKey = 'spend';

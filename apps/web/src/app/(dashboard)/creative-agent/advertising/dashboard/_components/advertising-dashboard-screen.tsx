@@ -14,6 +14,7 @@ import {
 } from '../../../overview/_utils/creative-overview-format';
 import { VideoRegistryDateRangePicker } from '../../../video-registry/_components/video-registry-date-range-picker';
 import { VerdictPill } from '../../performance/_constants/performance-columns';
+import { AnalyticsMultiSelectPicker } from '../../../../analytics/_components/analytics-multi-select-picker';
 import { useAdvertisingDashboardController } from '../_hooks/use-advertising-dashboard-controller';
 import type { DashboardMetric } from '../_types/advertising-dashboard';
 import { AdvertisingCalendar } from './advertising-calendar';
@@ -38,6 +39,34 @@ function arTone(value: number | null | undefined): RateTone {
 export function AdvertisingDashboardScreen() {
   const controller = useAdvertisingDashboardController();
   const { data, params } = controller;
+
+  // Store/creator filters use the standard multi-select picker: an empty
+  // array means "All", and toggling out of All expands to the full set first
+  // so unchecking one option keeps the rest selected.
+  const storeOptions = data?.filters.stores ?? [];
+  const creatorOptions = data?.filters.creators ?? [];
+  const allStoresSelected = params.storeIds.length === 0;
+  const allCreatorsSelected = params.creatorIds.length === 0;
+  const selectedStoreLabel = allStoresSelected
+    ? 'All stores'
+    : params.storeIds.length === 1
+      ? storeOptions.find((option) => option.value === params.storeIds[0])?.label ?? '1 selected'
+      : `${params.storeIds.length} selected`;
+  const selectedCreatorLabel = allCreatorsSelected
+    ? 'All creators'
+    : params.creatorIds.length === 1
+      ? creatorOptions.find((option) => option.value === params.creatorIds[0])?.label ?? '1 selected'
+      : `${params.creatorIds.length} selected`;
+  const toggleStore = (value: string) => {
+    const current = allStoresSelected ? storeOptions.map((option) => option.value) : params.storeIds;
+    const next = current.includes(value) ? current.filter((id) => id !== value) : [...current, value];
+    controller.updateParams({ storeIds: next });
+  };
+  const toggleCreator = (value: string) => {
+    const current = allCreatorsSelected ? creatorOptions.map((option) => option.value) : params.creatorIds;
+    const next = current.includes(value) ? current.filter((id) => id !== value) : [...current, value];
+    controller.updateParams({ creatorIds: next });
+  };
   const advertising = data?.kpis.advertising;
   const creative = data?.kpis.creative;
   const pipeline = data?.revisionPipeline;
@@ -78,10 +107,18 @@ export function AdvertisingDashboardScreen() {
               {data.filters.stores[0]?.label ?? 'Store'}
             </span>
           ) : (
-            <select value={params.storeId} onChange={(event) => controller.updateParams({ storeId: event.target.value })} className={`${selectClass} w-36`} aria-label="Filter by store">
-              <option value="">All stores</option>
-              {data?.filters.stores.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            <AnalyticsMultiSelectPicker
+              className="relative"
+              selectTitle="Select stores"
+              selectedLabel={selectedStoreLabel}
+              options={storeOptions}
+              allChecked={allStoresSelected}
+              isChecked={(value) => allStoresSelected || params.storeIds.includes(value)}
+              onToggleAll={() => controller.updateParams({ storeIds: [] })}
+              onToggle={toggleStore}
+              onOnly={(value) => controller.updateParams({ storeIds: [value] })}
+              onClear={() => controller.updateParams({ storeIds: [] })}
+            />
           )}
           {(data?.filters.accounts.length ?? 0) > 1 ? (
             <select value={params.accountId} onChange={(event) => controller.updateParams({ accountId: event.target.value })} className={`${selectClass} w-40`} aria-label="Filter by Meta account">
@@ -89,10 +126,18 @@ export function AdvertisingDashboardScreen() {
               {data?.filters.accounts.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           ) : null}
-          <select value={params.creatorId} onChange={(event) => controller.updateParams({ creatorId: event.target.value })} className={`${selectClass} w-36`} aria-label="Filter by creator">
-            <option value="">All creators</option>
-            {data?.filters.creators.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          <AnalyticsMultiSelectPicker
+            className="relative"
+            selectTitle="Select creators"
+            selectedLabel={selectedCreatorLabel}
+            options={creatorOptions}
+            allChecked={allCreatorsSelected}
+            isChecked={(value) => allCreatorsSelected || params.creatorIds.includes(value)}
+            onToggleAll={() => controller.updateParams({ creatorIds: [] })}
+            onToggle={toggleCreator}
+            onOnly={(value) => controller.updateParams({ creatorIds: [value] })}
+            onClear={() => controller.updateParams({ creatorIds: [] })}
+          />
         </div>
 
         {controller.error ? (

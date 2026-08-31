@@ -385,14 +385,20 @@ export class CreativePerformanceService {
   }
 
   /** Ad ids linked to creatives of one store and/or creator; null = unscoped. */
-  async resolveScopedAdIds(tenantId: string, storeId?: string, creatorId?: string): Promise<string[] | null> {
-    if (!storeId && !creatorId) return null;
+  async resolveScopedAdIds(
+    tenantId: string,
+    store?: string | string[],
+    creator?: string | string[],
+  ): Promise<string[] | null> {
+    const storeIds = ([] as string[]).concat(store ?? []).filter(Boolean);
+    const creatorIds = ([] as string[]).concat(creator ?? []).filter(Boolean);
+    if (storeIds.length === 0 && creatorIds.length === 0) return null;
     const links = await this.prisma.creativeMetaAdLink.findMany({
       where: {
         tenantId,
         creative: {
-          ...(storeId ? { storeConfig: { storeId } } : {}),
-          ...(creatorId ? { createdById: creatorId } : {}),
+          ...(storeIds.length ? { storeConfig: { storeId: { in: storeIds } } } : {}),
+          ...(creatorIds.length ? { createdById: { in: creatorIds } } : {}),
         },
       },
       select: { adId: true },

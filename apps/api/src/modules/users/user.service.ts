@@ -311,6 +311,11 @@ export class UserService {
         createdAt: true,
         lastLoginAt: true,
         userRoleAssignments: {
+          // Scope to the tenant being viewed: a user may hold a different role
+          // in another tenant (e.g. Tenant Admin here, Creative elsewhere), and
+          // an unfiltered include leaks that other assignment into this grid,
+          // making the row show the wrong role.
+          where: { tenantId },
           select: {
             roleId: true,
             teamId: true,

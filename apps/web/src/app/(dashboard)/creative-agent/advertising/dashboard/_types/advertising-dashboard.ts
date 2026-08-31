@@ -4,8 +4,10 @@ export type DashboardParams = {
   startDate: string;
   endDate: string;
   storeId: string;
+  storeIds: string[];
   accountId: string;
   creatorId: string;
+  creatorIds: string[];
 };
 
 export type DashboardMetric = {
