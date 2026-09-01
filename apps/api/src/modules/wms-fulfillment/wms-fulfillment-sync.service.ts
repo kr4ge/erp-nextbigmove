@@ -1,4 +1,6 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Queue } from 'bull';
 import {
   Prisma,
   WmsBasketStatus,
@@ -21,6 +23,11 @@ import {
   finalizeCompleteDemandAllocation,
   normalizeDemandAllocation,
 } from './wms-demand-allocation.utils';
+import {
+  WMS_DEMAND_QUEUE_REFRESH_JOB,
+  WMS_DEMAND_QUEUE_REFRESH_QUEUE,
+  type WmsDemandQueueRefreshJobData,
+} from './wms-fulfillment.constants';
 import {
   buildFulfillmentDemandHash,
   diffFulfillmentDemand,
@@ -117,9 +124,13 @@ type DemandFulfillmentReadinessRecord = Prisma.WmsFulfillmentOrderGetPayload<{
 
 @Injectable()
 export class WmsFulfillmentSyncService {
+  private readonly logger = new Logger(WmsFulfillmentSyncService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly wmsInventoryCogsService: WmsInventoryCogsService,
+    @InjectQueue(WMS_DEMAND_QUEUE_REFRESH_QUEUE)
+    private readonly demandQueueRefreshQueue: Queue<WmsDemandQueueRefreshJobData>,
   ) {}
 
   private isBasketDemandPickingEnabled() {
@@ -147,6 +158,36 @@ export class WmsFulfillmentSyncService {
         ? Math.floor(configuredMaxWait)
         : 10000,
     };
+  }
+
+  private getDemandQueueRefreshJobOptions() {
+    const transactionTimeout = this.getDemandQueueRefreshTransactionOptions().timeout;
+
+    return {
+      attempts: 4,
+      backoff: { type: 'exponential' as const, delay: 3000 },
+      timeout: Math.max(120000, transactionTimeout * 4),
+      removeOnComplete: true,
+      removeOnFail: 1000,
+    };
+  }
+
+  private async enqueueDemandQueueRefresh(data: WmsDemandQueueRefreshJobData) {
+    try {
+      await this.demandQueueRefreshQueue.add(
+        WMS_DEMAND_QUEUE_REFRESH_JOB,
+        data,
+        {
+          ...this.getDemandQueueRefreshJobOptions(),
+          jobId: `wms-demand-refresh:${data.tenantId}:${data.storeId}:${data.requestedAt}`,
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Unable to enqueue WMS demand queue refresh tenant=${data.tenantId} store=${data.storeId}; periodic reconciliation must recover it: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
   }
 
   private getDemandPriorityBucket(order: {
@@ -717,7 +758,7 @@ export class WmsFulfillmentSyncService {
 
     const now = new Date();
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const fulfillmentOrders = await tx.wmsFulfillmentOrder.findMany({
         where: {
           posOrderDbId: {
@@ -820,22 +861,23 @@ export class WmsFulfillmentSyncService {
         await this.refreshDemandBasketStateTx(tx, basketId, now);
       }
 
-      for (const scopeKey of scopeKeys) {
-        const [tenantId, storeId] = scopeKey.split('::');
-        if (!tenantId || !storeId) {
-          continue;
-        }
-
-        await this.refreshDemandFulfillmentQueueTx(tx, {
-          tenantId,
-          storeId,
-        }, now);
-      }
-
       return {
         cleanedOrders: fulfillmentOrders.length,
+        refreshScopes: Array.from(scopeKeys).flatMap((scopeKey) => {
+          const [tenantId, storeId] = scopeKey.split('::');
+          return tenantId && storeId ? [{ tenantId, storeId }] : [];
+        }),
       };
-    });
+    }, this.getDemandQueueRefreshTransactionOptions());
+
+    await Promise.all(result.refreshScopes.map((scope) => (
+      this.enqueueDemandQueueRefresh({
+        ...scope,
+        requestedAt: now.toISOString(),
+      })
+    )));
+
+    return { cleanedOrders: result.cleanedOrders };
   }
 
   private async buildTenantGoLiveOrderFilters(tenantIds: string[]): Promise<Prisma.PosOrderWhereInput[]> {
