@@ -670,7 +670,11 @@ export class SalesAnalyticsService {
       net_margin: net,
       rts_count: this.toNumber(sum?._sum?.rtsCount) - repurchaseAdj.rtsCount,
       delivered_count: this.toNumber(sum?._sum?.deliveredCount) - repurchaseAdj.deliveredCount,
-      cod_raw: cod,
+      // Repurchase-adjusted like its siblings below, so the per-product
+      // CM (RTS %) revenue base matches the KPI/Total (which use gross_cod =
+      // cod - repurchaseAdj.codRaw). Leaving this raw inflated the product
+      // row's forecast by the repurchase COD.
+      cod_raw: cod - repurchaseAdj.codRaw,
       purchases_raw: purchasesRaw,
       sf_raw: sf - repurchaseAdj.sf,
       ff_raw: ff - repurchaseAdj.ff,
