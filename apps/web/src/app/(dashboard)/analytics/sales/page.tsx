@@ -49,7 +49,6 @@ import { useVisibleAutoRefresh } from '../_hooks/use-visible-auto-refresh';
 import { useWorkflowTenantEvent } from '../_hooks/use-workflow-tenant-event';
 import {
   type SalesOverviewResponse as OverviewResponse,
-  type SalesStoreBreakdownResponse,
   salesMetricDefinitions as metricDefinitions,
   salesSecondaryMetricDefinitions as secondaryMetricDefinitions,
 } from '../_types/sales';
@@ -206,9 +205,11 @@ export default function SalesAnalyticsPage() {
   );
   const [hasLoadedKpiVisibility, setHasLoadedKpiVisibility] = useState(false);
   const pageSize = 10;
-  const [tableSelection, setTableSelection] = useState<'products' | 'delivery' | 'stores'>('products');
-  const [storeData, setStoreData] = useState<SalesStoreBreakdownResponse | null>(null);
-  const [isStoreLoading, setIsStoreLoading] = useState(false);
+  const [tableSelection, setTableSelection] = useState<'products' | 'delivery'>('products');
+  // Page-level dimension tab: the Store tab mirrors the whole page (same KPI
+  // boxes, same math) with everything grouped and filtered by store instead of
+  // product mapping — the API returns the identical response shape.
+  const [dimension, setDimension] = useState<'product' | 'store'>('product');
   const [productPage, setProductPage] = useState(1);
   const [deliveryPage, setDeliveryPage] = useState(1);
   const [isReconciling, setIsReconciling] = useState(false);
@@ -250,7 +251,7 @@ export default function SalesAnalyticsPage() {
       mappingOptions.every((mapping) => selectedMappings.includes(mapping)))
       ? '__all__'
       : [...selectedMappings].sort().join('|');
-  const analyticsQueryKey = buildAnalyticsQueryKey(
+  const analyticsQueryKey = `${dimension}:` + buildAnalyticsQueryKey(
     startDate,
     endDate,
     mappingSelectionKey,
@@ -343,10 +344,9 @@ export default function SalesAnalyticsPage() {
       params.set('exclude_repurchase', String(excludeRepurchase));
       params.set('include_tax_12', String(includeTax12));
       params.set('include_tax_1', String(includeTax1));
-      const res = await analyticsOverviewApi.getSalesOverview<OverviewResponse>(
-        params,
-        request.signal,
-      );
+      const res = dimension === 'store'
+        ? await analyticsOverviewApi.getSalesStoreOverview<OverviewResponse>(params, request.signal)
+        : await analyticsOverviewApi.getSalesOverview<OverviewResponse>(params, request.signal);
       if (!request.isLatest()) return;
       setData(res.data);
       setResolvedQueryKey(analyticsQueryKey);
@@ -374,6 +374,7 @@ export default function SalesAnalyticsPage() {
   }, [
     analyticsQueryKey,
     beginRequest,
+    dimension,
     endDate,
     excludeAbandoned,
     excludeCanceled,
@@ -425,45 +426,21 @@ export default function SalesAnalyticsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [cancelRequest, fetchData, mappingSelectionKey]);
 
-  // Store tab data is fetched lazily with the SAME filter params as the
-  // overview call, so both tabs answer the same question over the same rows.
+  // Switching dimension swaps what the picker's options mean (mappings vs
+  // stores), so selection state is cleared and the new overview refetched.
+  const isFirstDimensionRender = useRef(true);
   useEffect(() => {
-    if (tableSelection !== 'stores') return;
-    let cancelled = false;
-    const run = async () => {
-      setIsStoreLoading(true);
-      try {
-        const params = new URLSearchParams();
-        params.set('start_date', startDate);
-        params.set('end_date', endDate);
-        const normalizedOptions = mappingOptions.map((m) => m.toLowerCase());
-        const allSelected =
-          selectedMappings.length === 0 ||
-          (selectedMappings.length === normalizedOptions.length &&
-            normalizedOptions.every((m) => selectedMappings.includes(m)));
-        if (!allSelected) selectedMappings.forEach((m) => params.append('mapping', m));
-        params.set('exclude_cancel', String(excludeCanceled));
-        params.set('exclude_restocking', String(excludeRestocking));
-        params.set('exclude_abandoned', String(excludeAbandoned));
-        params.set('exclude_rts', String(excludeRts));
-        params.set('exclude_repurchase', String(excludeRepurchase));
-        params.set('include_tax_12', String(includeTax12));
-        params.set('include_tax_1', String(includeTax1));
-        const res = await analyticsOverviewApi.getSalesStoreBreakdown<SalesStoreBreakdownResponse>(params);
-        if (!cancelled) setStoreData(res.data);
-      } catch {
-        if (!cancelled) setStoreData(null);
-      } finally {
-        if (!cancelled) setIsStoreLoading(false);
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-    // analyticsQueryKey encodes every filter the request reads.
+    if (isFirstDimensionRender.current) {
+      isFirstDimensionRender.current = false;
+      return;
+    }
+    setMappingOptions([]);
+    setSelectedMappings([]);
+    setTableSelection('products');
+    setProductPage(1);
+    setDeliveryPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableSelection, analyticsQueryKey]);
+  }, [dimension]);
 
   useVisibleAutoRefresh(() => {
     void fetchData({ silent: true });
@@ -494,7 +471,7 @@ export default function SalesAnalyticsPage() {
   }));
   const selectedMappingLabel =
     selectedMappings.length === mappingOptions.length
-      ? 'All mappings'
+      ? (dimension === 'store' ? 'All stores' : 'All mappings')
       : `${selectedMappings.length} selected`;
   const isChecked = (norm: string) => selectedMappings.includes(norm);
   const setSort = (key: NonNullable<typeof sortKey>, dir: 'asc' | 'desc') => {
@@ -589,10 +566,7 @@ export default function SalesAnalyticsPage() {
     : null;
 
   const products = data?.products || [];
-  // The Store tab reuses the exact product-row pipeline (same shape, same
-  // derived math) — only the source rows change, so the two tabs cannot drift.
-  const breakdownRows = tableSelection === 'stores' ? storeData?.stores ?? [] : products;
-  const sortableProducts: SalesProductRowItem[] = breakdownRows.map((row, index) => {
+  const sortableProducts: SalesProductRowItem[] = products.map((row, index) => {
     const norm = (row.mapping || '__null__').toLowerCase();
     const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
     const adjustedGrossCod = Math.max(
@@ -899,9 +873,8 @@ export default function SalesAnalyticsPage() {
     visibleKpiKeys.includes(String(metric.key)),
   );
 
-  const tableOptions: AnalyticsTableSelectorOption<'products' | 'delivery' | 'stores'>[] = [
-    { key: 'products', label: 'Revenue per Product' },
-    { key: 'stores', label: 'Revenue per Store' },
+  const tableOptions: AnalyticsTableSelectorOption<'products' | 'delivery'>[] = [
+    { key: 'products', label: dimension === 'store' ? 'Revenue per Store' : 'Revenue per Product' },
     { key: 'delivery', label: 'Delivery Status' },
   ];
 
@@ -1304,6 +1277,24 @@ export default function SalesAnalyticsPage() {
 
   return (
     <div className="space-y-5">
+      <div className="overflow-x-auto">
+        <div className="flex min-w-max gap-6 border-b border-slate-200 sm:min-w-0 dark:border-border">
+          {([['product', 'Product'], ['store', 'Store']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setDimension(key)}
+              className={`whitespace-nowrap pb-3 text-sm font-semibold transition-colors ${
+                dimension === key
+                  ? 'border-b-2 border-primary text-orange-600'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between dark:border-border">
         <div className="space-y-1.5">
           <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
@@ -1314,7 +1305,7 @@ export default function SalesAnalyticsPage() {
               Business Performance
             </h1>
             <p className="text-sm-custom text-slate-500 dark:text-slate-300">
-              Monitor sales performance by mapping.
+              {dimension === 'store' ? 'Monitor sales performance by store.' : 'Monitor sales performance by mapping.'}
             </p>
           </div>
         </div>
@@ -1332,7 +1323,7 @@ export default function SalesAnalyticsPage() {
               <AnalyticsMultiSelectPicker
                 className="relative z-30 [&>button]:h-10 [&>button]:rounded-r-none [&>button]:rounded-l-xl [&>button]:border-r-0 [&>button]:border-slate-200"
                 selectedLabel={selectedMappingLabel}
-                selectTitle="Select mappings"
+                selectTitle={dimension === 'store' ? 'Select stores' : 'Select mappings'}
                 options={mappingPickerOptions}
                 allChecked={
                   mappingOptions.length > 0 &&
@@ -1625,10 +1616,10 @@ export default function SalesAnalyticsPage() {
           )}
         </div>
 
-        {tableSelection !== 'delivery' ? (
+        {tableSelection === 'products' ? (
           <AnalyticsSalesProductsTable
-            isLoading={tableSelection === 'stores' ? isStoreLoading : isResultPending}
-            entityLabel={tableSelection === 'stores' ? 'Store' : 'Product'}
+            isLoading={isResultPending}
+            entityLabel={dimension === 'store' ? 'Store' : 'Product'}
             productStart={productStart}
             productEnd={productEnd}
             totalProducts={totalProducts}

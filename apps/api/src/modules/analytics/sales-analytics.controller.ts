@@ -48,9 +48,9 @@ export class SalesAnalyticsController {
     });
   }
 
-  @Get('store-breakdown')
+  @Get('store-overview')
   @Permissions('analytics.sales')
-  async getStoreBreakdown(
+  async getStoreOverview(
     @Query('start_date') startDate?: string,
     @Query('end_date') endDate?: string,
     @Query('mapping') mapping?: string | string[],
@@ -67,7 +67,7 @@ export class SalesAnalyticsController {
       if (val === undefined) return defaultVal;
       return !['false', '0', 'no', 'off'].includes(val.toLowerCase());
     };
-    return this.salesAnalyticsService.getStoreBreakdown({
+    return this.salesAnalyticsService.getStoreOverview({
       startDate,
       endDate,
       mappings,

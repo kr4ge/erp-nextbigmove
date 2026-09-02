@@ -204,9 +204,3 @@ export const salesSecondaryMetricDefinitions: Array<{
   { key: 'contribution_margin', label: 'Contribution Margin (₱)', format: 'currency' },
   { key: 'net_margin', label: 'Net Margin (₱)', format: 'currency' },
 ];
-
-export type SalesStoreBreakdownResponse = {
-  stores: Array<SalesOverviewResponse['products'][number] & { store_id: string | null }>;
-  selected: { start_date: string; end_date: string; mappings: string[] };
-  lastUpdatedAt: string | null;
-};
