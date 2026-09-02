@@ -128,9 +128,15 @@ export class CreativeOverviewService {
           creativeScore: null as number | null, winnerScore: null as number | null,
           decision: 'NOT_CONFIGURED' as const, bottleneck: null as string | null,
           hookRate, holdRate, completionRate, ctr, lpRate, conversionRate,
-          deliveryRate: guard.rate('delivery', metrics.delivered, resolved),
-          cancellationRate: guard.rate('cancel', metrics.cancelled, resolved),
-          rtsRate: guard.rate('rts', metrics.rts, resolved),
+          // Displayed rates follow the analytics/sales conventions (cancellation
+          // and delivery over ALL attributed orders, RTS over delivered+RTS) so
+          // a creative whose only finished orders are cancellations no longer
+          // reads a meaningless 100%. The resolved-based delivery rate is kept
+          // separately: the reference C-Score's 0.80 ceiling is defined on it.
+          deliveryRate: guard.rate('delivery rate', metrics.delivered, metrics.orders),
+          cancellationRate: guard.rate('cancel', metrics.cancelled, metrics.orders),
+          rtsRate: guard.rate('rts', metrics.rts, metrics.delivered + metrics.rts),
+          deliveryRateResolved: guard.rate('delivery', metrics.delivered, resolved),
           // Frequency is a plain weighted average, not a rate — values above 1 are normal.
           frequency: safeRatio(metrics.frequencyNumerator, metrics.frequencyDenominator),
           impressions: metrics.impressions, linkClicks: metrics.linkClicks,
@@ -151,8 +157,8 @@ export class CreativeOverviewService {
     const storeMedians = this.storeMedians(baseRows);
     const scoredRows = baseRows.map((row) => {
       const storeMedian = storeMedians.get(row.store.id ?? '') ?? null;
-      row.metrics.creativeScore = this.creativeScore(row.kind, row.metrics, storeMedian);
-      row.metrics.bottleneck = this.bottleneck(row.kind, row.metrics, storeMedian);
+      row.metrics.creativeScore = this.creativeScore(row.kind, { ...row.metrics, deliveryRate: row.metrics.deliveryRateResolved }, storeMedian);
+      row.metrics.bottleneck = this.bottleneck(row.kind, { ...row.metrics, deliveryRate: row.metrics.deliveryRateResolved }, storeMedian);
       return row;
     });
     const sorted = this.sortRows(scoredRows, requestedSortKey, query.sortDirection, canViewMoney);

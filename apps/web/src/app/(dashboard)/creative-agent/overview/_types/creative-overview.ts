@@ -49,6 +49,7 @@ export type CreativeOverviewItem = {
     lpRate: number | null;
     conversionRate: number | null;
     deliveryRate: number | null;
+    deliveryRateResolved?: number | null;
     cancellationRate: number | null;
     rtsRate: number | null;
     frequency: number | null;
