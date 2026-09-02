@@ -196,9 +196,14 @@ export class CreativeOverviewService {
       // without raising a data warning.
       mar: { value: safeRatio(totals.spend, totals.revenue), numerator: money(totals.spend), denominator: money(totals.revenue) },
       delivered: { value: totals.delivered, numerator: null, denominator: null },
-      cancellationRate: this.metric(guard, 'cancellation rate', totals.cancelled, totals.delivered + totals.cancelled + totals.rts),
-      rtsRate: this.metric(guard, 'rts rate', totals.rts, totals.delivered + totals.cancelled + totals.rts),
-      deliveryRate: this.metric(guard, 'delivery rate', totals.delivered, totals.delivered + totals.cancelled + totals.rts),
+      // Dashboard tiles follow the analytics/sales conventions so the two
+      // screens read the same way: cancellation and delivery are shares of ALL
+      // attributed orders (raw), RTS is rts ÷ (delivered + rts). The
+      // per-creative leaderboard/C-Score keep the resolved-based craft
+      // convention, which the reference C-Score ceilings assume.
+      cancellationRate: this.metric(guard, 'cancellation rate', totals.cancelled, totals.orders),
+      rtsRate: this.metric(guard, 'rts rate', totals.rts, totals.delivered + totals.rts),
+      deliveryRate: this.metric(guard, 'delivery rate', totals.delivered, totals.orders),
     };
     const scorecard = this.buildScorecard({
       kpis, decisions, outputCount, days: range.days,

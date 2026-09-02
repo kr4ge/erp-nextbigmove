@@ -86,9 +86,9 @@ export function CreativeOverviewScreen() {
     { label: 'MAR% (AR%)', info: 'Ad spend ÷ attributed revenue — same AR % formula as Business Performance.', value: formatPercent(data?.kpis.mar?.value ?? null), sub: rateSub(data?.kpis.mar?.value) ?? 'spend ÷ revenue' },
     { label: 'Video Output', info: 'Creatives you enrolled in the period.', value: formatCount(data?.kpis.output?.value ?? null), sub: 'enrolled in period' },
     { label: 'Delivered', info: 'Delivered orders across your linked ads.', value: formatCount(data?.kpis.delivered?.value ?? null), sub: 'orders delivered' },
-    { label: 'Cancellation Rate', info: 'Cancelled ÷ resolved (delivered + cancelled + RTS).', value: formatPercent(data?.kpis.cancellationRate?.value ?? null), sub: rateSub(data?.kpis.cancellationRate?.value) ?? 'of resolved orders' },
-    { label: 'RTS Rate', info: 'RTS ÷ resolved (delivered + cancelled + RTS).', value: formatPercent(data?.kpis.rtsRate?.value ?? null), sub: rateSub(data?.kpis.rtsRate?.value) ?? 'of resolved orders' },
-    { label: 'Delivery Rate', info: 'Delivered ÷ resolved (delivered + cancelled + RTS).', value: formatPercent(data?.kpis.deliveryRate?.value ?? null), sub: rateSub(data?.kpis.deliveryRate?.value) ?? 'of resolved orders' },
+    { label: 'Cancellation Rate', info: 'Cancelled ÷ all attributed orders — same convention as Business Performance.', value: formatPercent(data?.kpis.cancellationRate?.value ?? null), sub: rateSub(data?.kpis.cancellationRate?.value) ?? 'of all orders' },
+    { label: 'RTS Rate', info: 'RTS ÷ (delivered + RTS) — same convention as Business Performance.', value: formatPercent(data?.kpis.rtsRate?.value ?? null), sub: rateSub(data?.kpis.rtsRate?.value) ?? 'of delivered + RTS' },
+    { label: 'Delivery Rate', info: 'Delivered ÷ all attributed orders — same convention as Business Performance.', value: formatPercent(data?.kpis.deliveryRate?.value ?? null), sub: rateSub(data?.kpis.deliveryRate?.value) ?? 'of all orders' },
   ];
 
   return (
