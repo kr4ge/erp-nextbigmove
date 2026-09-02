@@ -1,5 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { buildProductMappingKey } from '../../workflows/utils/product-mapping-key';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { createHash } from 'crypto';
@@ -438,9 +439,22 @@ export class PosOrderService {
         storeId,
         productId: { in: productIds },
       },
-      select: { mapping: true },
+      select: { mapping: true, variationId: true },
     });
 
+    // Single, uniquely-identifiable product -> store the precise store+variation
+    // key so the per-product breakdown can name it. (storeId, variationId) is
+    // unique in pos_products, so this can't collide across stores/variations.
+    const distinctVariationIds = Array.from(
+      new Set(products.map((p) => (p.variationId || '').trim()).filter((v) => v.length > 0)),
+    );
+    if (distinctVariationIds.length === 1) {
+      const key = buildProductMappingKey(storeId, distinctVariationIds[0]);
+      if (key) return key;
+    }
+
+    // Multi-product or no variationId -> fall back to the coarse mapping label
+    // (unchanged behaviour), keeping the ad<->sales join intact.
     const mappings = products
       .map((p) => (p.mapping || '').trim())
       .filter((m) => m.length > 0)

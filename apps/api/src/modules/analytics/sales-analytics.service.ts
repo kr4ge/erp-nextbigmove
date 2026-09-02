@@ -8,6 +8,7 @@ import * as timezone from 'dayjs/plugin/timezone';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { AnalyticsCacheService } from './analytics-cache.service';
 import { ReconcileMarketingService } from '../workflows/services/reconcile-marketing.service';
+import { resolveMappingDisplayNames } from '../workflows/utils/product-mapping-key';
 import { ReconcileSalesService } from '../workflows/services/reconcile-sales.service';
 import { ReconcileSalesAttributionService } from '../workflows/services/reconcile-sales-attribution.service';
 import { AnalyticsRequestCoordinatorService } from './analytics-request-coordinator.service';
@@ -1253,6 +1254,11 @@ export class SalesAnalyticsService {
         mappingOptions.push(norm);
       }
     });
+
+    // pv:: keys -> product names, ua:: keys -> "Unassigned — {store}"; coarse
+    // labels pass through untouched.
+    await resolveMappingDisplayNames(this.prisma, mappingDisplayMap);
+
     if (nullCount > 0) {
       const key = this.normalize('__null__');
       mappingDisplayMap[key] = `Unassigned (${nullCount})`;
