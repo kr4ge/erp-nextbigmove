@@ -48,6 +48,39 @@ export class SalesAnalyticsController {
     });
   }
 
+  @Get('store-breakdown')
+  @Permissions('analytics.sales')
+  async getStoreBreakdown(
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+    @Query('mapping') mapping?: string | string[],
+    @Query('exclude_cancel') excludeCancel?: string,
+    @Query('exclude_restocking') excludeRestocking?: string,
+    @Query('exclude_abandoned') excludeAbandoned?: string,
+    @Query('exclude_rts') excludeRts?: string,
+    @Query('exclude_repurchase') excludeRepurchase?: string,
+    @Query('include_tax_12') includeTax12?: string,
+    @Query('include_tax_1') includeTax1?: string,
+  ) {
+    const mappings = Array.isArray(mapping) ? mapping : mapping ? [mapping] : [];
+    const parseBool = (val: string | undefined, defaultVal = true) => {
+      if (val === undefined) return defaultVal;
+      return !['false', '0', 'no', 'off'].includes(val.toLowerCase());
+    };
+    return this.salesAnalyticsService.getStoreBreakdown({
+      startDate,
+      endDate,
+      mappings,
+      excludeCancel: parseBool(excludeCancel, true),
+      excludeRestocking: parseBool(excludeRestocking, true),
+      excludeAbandoned: parseBool(excludeAbandoned, true),
+      excludeRts: parseBool(excludeRts, true),
+      excludeRepurchase: parseBool(excludeRepurchase, true),
+      includeTax12: parseBool(includeTax12, false),
+      includeTax1: parseBool(includeTax1, false),
+    });
+  }
+
   @Get('executive-overview')
   @Permissions('dashboard.executives')
   async getExecutiveOverview(

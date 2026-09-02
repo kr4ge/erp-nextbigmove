@@ -8,7 +8,11 @@ import * as timezone from 'dayjs/plugin/timezone';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { AnalyticsCacheService } from './analytics-cache.service';
 import { ReconcileMarketingService } from '../workflows/services/reconcile-marketing.service';
-import { resolveMappingDisplayNames } from '../workflows/utils/product-mapping-key';
+import {
+  parseProductMappingKey,
+  parseUnassignedMappingKey,
+  resolveMappingDisplayNames,
+} from '../workflows/utils/product-mapping-key';
 import { ReconcileSalesService } from '../workflows/services/reconcile-sales.service';
 import { ReconcileSalesAttributionService } from '../workflows/services/reconcile-sales-attribution.service';
 import { AnalyticsRequestCoordinatorService } from './analytics-request-coordinator.service';
@@ -1380,6 +1384,206 @@ export class SalesAnalyticsService {
     };
 
     this.logger.log(`CACHE SET ${cacheKey}`);
+    await this.analyticsCache.set(cacheKey, response);
+    return response;
+  }
+
+  /**
+   * Revenue-per-store breakdown for the sales page's Store tab.
+   *
+   * Reads reconcile_marketing (per-ad grain — the only reconcile table that
+   * still knows which store a row touched; reconcile_sales collapses the store
+   * away at aggregation). Totals across the two tables are identical, so this
+   * tab ties out with the product tab and the KPI boxes by construction.
+   *
+   * Every row is assigned to EXACTLY ONE store bucket via a fallback chain, so
+   * buckets partition the data — no row is ever counted twice and the buckets
+   * always sum to the tenant total:
+   *   1. shops[0]                      — store from matched POS orders
+   *   2. creative link -> storeConfig  — human-confirmed bridge for unmatched ads
+   *   3. mapping -> store              — pv::/ua:: keys embed the storeId; a
+   *      coarse label resolves only when its products live in ONE store
+   *   4. "Unattributed"                — genuinely unknowable (kept visible so
+   *      per-store CPP/margins are not silently overstated)
+   */
+  async getStoreBreakdown(params: SalesOverviewParams) {
+    const { startDate, endDate, mappings = [], excludeCancel = true, excludeRestocking = true, excludeAbandoned = true, excludeRts = true, excludeRepurchase = true, includeTax12 = false, includeTax1 = false } = params;
+
+    const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+    const endStr = (endDate && endDate.trim()) || startStr;
+    if (!dayjs(startStr, 'YYYY-MM-DD', true).isValid() || !dayjs(endStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid date format. Expected YYYY-MM-DD');
+    }
+    if (endStr < startStr) {
+      throw new BadRequestException('start_date must be before or equal to end_date');
+    }
+    const startDate_dt = new Date(`${startStr}T00:00:00.000Z`);
+    const endDate_dt = new Date(`${endStr}T00:00:00.000Z`);
+
+    const normalizedMappings = mappings.map((m) => this.normalize(m)).filter((v) => v.length > 0);
+    const includeNull = normalizedMappings.includes(this.normalize('__null__'));
+    const tenantId = this.teamContext.getTenantId();
+
+    const cacheVersion = await this.analyticsCache.getVersion(tenantId);
+    const cacheKeyPayload = {
+      responseShapeVersion: 1,
+      start: startStr,
+      end: endStr,
+      mappings: [...normalizedMappings].sort(),
+      excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, excludeRepurchase,
+      includeTax12, includeTax1,
+    };
+    const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales-stores:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
+    const cached = await this.analyticsCache.get(cacheKey);
+    if (cached) return cached;
+
+    const mappingFilter =
+      normalizedMappings.length > 0
+        ? {
+            OR: [
+              ...normalizedMappings
+                .filter((m) => m !== this.normalize('__null__'))
+                .map((m) => ({ mapping: { equals: m, mode: 'insensitive' as const } })),
+              ...(includeNull ? [{ mapping: null as any }] : []),
+            ],
+          }
+        : {};
+
+    // The same metric columns computeProductRow reads for the product tab —
+    // identical math, different grouping.
+    const metricFields = [
+      'spend', 'purchasesPos', 'processedPurchasesPos', 'codPos', 'deliveredCodPos', 'rtsCodPos',
+      'canceledCodPos', 'restockingCodPos', 'currentAbandonedCodPos', 'deliveredCount', 'rtsCount',
+      'canceledCount', 'restockingCount', 'currentAbandonedCount', 'cogsPos', 'cogsCanceledPos',
+      'cogsRestockingPos', 'cogsRtsPos', 'cogsDeliveredPos', 'sfPos', 'ffPos', 'ifPos',
+      'sfSdrPos', 'ffSdrPos', 'ifSdrPos', 'codFeePos', 'codFeeDeliveredPos',
+      'repurchaseCount', 'repurchaseProcessedPurchasesPos', 'repurchaseCodPos', 'repurchaseDeliveredCodPos',
+      'repurchaseRtsCodPos', 'repurchaseCanceledCodPos', 'repurchaseRestockingCodPos',
+      'repurchaseCurrentAbandonedCodPos', 'repurchaseConfirmedCodPos', 'repurchaseUnconfirmedCodPos',
+      'repurchaseWaitingPickupCodPos', 'repurchaseShippedCodPos', 'repurchaseDeliveredCount',
+      'repurchaseRtsCount', 'repurchaseCanceledCount', 'repurchaseRestockingCount',
+      'repurchaseCurrentAbandonedCount', 'repurchaseConfirmedCount', 'repurchaseUnconfirmedCount',
+      'repurchaseWaitingPickupCount', 'repurchaseShippedCount', 'repurchaseCogsPos',
+      'repurchaseCogsCanceledPos', 'repurchaseCogsRestockingPos', 'repurchaseCogsRtsPos',
+      'repurchaseCogsDeliveredPos', 'repurchaseSfPos', 'repurchaseFfPos', 'repurchaseIfPos',
+      'repurchaseSfSdrPos', 'repurchaseFfSdrPos', 'repurchaseIfSdrPos', 'repurchaseCodFeePos',
+      'repurchaseCodFeeDeliveredPos',
+    ] as const;
+
+    const select: Record<string, boolean> = { adId: true, mapping: true, shops: true, updatedAt: true };
+    for (const f of metricFields) select[f] = true;
+
+    const [rows, tenantStores] = await Promise.all([
+      this.prisma.reconcileMarketing.findMany({
+        where: { tenantId, date: { gte: startDate_dt, lte: endDate_dt }, ...mappingFilter },
+        select: select as any,
+      }) as Promise<Array<Record<string, any>>>,
+      this.prisma.posStore.findMany({
+        where: { tenantId },
+        select: { id: true, shopId: true, name: true },
+      }),
+    ]);
+
+    const storeByShopId = new Map(tenantStores.map((s) => [s.shopId, s.id]));
+    const storeNameById = new Map(tenantStores.map((s) => [s.id.toLowerCase(), s.name]));
+
+    // Fallback 2: creative link -> store, for rows with no matched orders.
+    const unshoppedAdIds = [
+      ...new Set(
+        rows
+          .filter((r) => !(Array.isArray(r.shops) && r.shops.length > 0))
+          .map((r) => r.adId as string)
+          .filter(Boolean),
+      ),
+    ];
+    const storeByAdId = new Map<string, string>();
+    if (unshoppedAdIds.length > 0) {
+      const links = await this.prisma.creativeMetaAdLink.findMany({
+        where: { tenantId, adId: { in: unshoppedAdIds } },
+        select: { adId: true, creative: { select: { storeConfig: { select: { storeId: true } } } } },
+      });
+      for (const link of links) {
+        const sid = link.creative?.storeConfig?.storeId;
+        if (sid && !storeByAdId.has(link.adId)) storeByAdId.set(link.adId, sid.toLowerCase());
+      }
+    }
+
+    // Fallback 3b: a coarse mapping label resolves to a store only when every
+    // product carrying it lives in ONE store — ambiguity falls through.
+    const tenantProducts = await this.prisma.posProduct.findMany({
+      where: { store: { is: { tenantId } }, mapping: { not: null } },
+      select: { storeId: true, mapping: true },
+    });
+    const storeByLabel = new Map<string, string | null>();
+    for (const p of tenantProducts) {
+      const label = p.mapping?.trim().toLowerCase();
+      if (!label) continue;
+      const sid = p.storeId.toLowerCase();
+      if (storeByLabel.has(label) && storeByLabel.get(label) !== sid) storeByLabel.set(label, null);
+      else storeByLabel.set(label, sid);
+    }
+
+    const UNATTRIBUTED = '__unattributed__';
+    const resolveStore = (row: Record<string, any>): string => {
+      const shops = Array.isArray(row.shops) ? row.shops : [];
+      const shopId = typeof shops[0] === 'string' ? shops[0] : shops[0] != null ? String(shops[0]) : null;
+      if (shopId && storeByShopId.has(shopId)) return storeByShopId.get(shopId)!.toLowerCase();
+      const linked = storeByAdId.get(row.adId);
+      if (linked) return linked;
+      const mapping = typeof row.mapping === 'string' ? row.mapping : null;
+      const productKey = parseProductMappingKey(mapping);
+      if (productKey) return productKey.storeId;
+      const unassignedKey = parseUnassignedMappingKey(mapping);
+      if (unassignedKey) return unassignedKey.storeId;
+      const label = mapping?.trim().toLowerCase();
+      if (label) {
+        const byLabel = storeByLabel.get(label);
+        if (byLabel) return byLabel;
+      }
+      return UNATTRIBUTED;
+    };
+
+    const buckets = new Map<string, Record<string, number>>();
+    let lastUpdatedAt: Date | null = null;
+    for (const row of rows) {
+      const key = resolveStore(row);
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = {};
+        for (const f of metricFields) bucket[f] = 0;
+        buckets.set(key, bucket);
+      }
+      for (const f of metricFields) bucket[f] += Number(row[f] ?? 0) || 0;
+      if (row.updatedAt instanceof Date && (!lastUpdatedAt || row.updatedAt > lastUpdatedAt)) {
+        lastUpdatedAt = row.updatedAt;
+      }
+    }
+
+    const rtsForecastPct = 20;
+    const stores = [...buckets.entries()]
+      .map(([storeId, sums]) => {
+        const name =
+          storeId === UNATTRIBUTED
+            ? 'Unattributed'
+            : storeNameById.get(storeId) ?? 'Unknown store';
+        const computed = this.computeProductRow(
+          { _sum: sums, mapping: name },
+          { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, excludeRepurchase, includeTax12, includeTax1, rtsForecastPct },
+        );
+        return { ...computed, mapping: name, store_id: storeId === UNATTRIBUTED ? null : storeId };
+      })
+      .sort((a, b) => {
+        // Unattributed pinned last; stores by revenue desc.
+        if (a.store_id === null) return 1;
+        if (b.store_id === null) return -1;
+        return (b.revenue ?? 0) - (a.revenue ?? 0);
+      });
+
+    const response = {
+      stores,
+      selected: { start_date: startStr, end_date: endStr, mappings: normalizedMappings },
+      lastUpdatedAt,
+    };
     await this.analyticsCache.set(cacheKey, response);
     return response;
   }

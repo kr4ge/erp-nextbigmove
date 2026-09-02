@@ -11,6 +11,10 @@ export const analyticsOverviewApi = {
     return apiClient.get<T>(`/analytics/sales/overview?${query.toString()}`, { signal });
   },
 
+  getSalesStoreBreakdown<T>(query: URLSearchParams, signal?: AbortSignal) {
+    return apiClient.get<T>(`/analytics/sales/store-breakdown?${query.toString()}`, { signal });
+  },
+
   getSalesByTeamOverview<T>(query: URLSearchParams, signal?: AbortSignal) {
     return apiClient.get<T>(`/analytics/sales-by-team/overview?${query.toString()}`, { signal });
   },

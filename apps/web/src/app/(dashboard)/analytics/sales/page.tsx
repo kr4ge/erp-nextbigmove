@@ -49,6 +49,7 @@ import { useVisibleAutoRefresh } from '../_hooks/use-visible-auto-refresh';
 import { useWorkflowTenantEvent } from '../_hooks/use-workflow-tenant-event';
 import {
   type SalesOverviewResponse as OverviewResponse,
+  type SalesStoreBreakdownResponse,
   salesMetricDefinitions as metricDefinitions,
   salesSecondaryMetricDefinitions as secondaryMetricDefinitions,
 } from '../_types/sales';
@@ -205,7 +206,9 @@ export default function SalesAnalyticsPage() {
   );
   const [hasLoadedKpiVisibility, setHasLoadedKpiVisibility] = useState(false);
   const pageSize = 10;
-  const [tableSelection, setTableSelection] = useState<'products' | 'delivery'>('products');
+  const [tableSelection, setTableSelection] = useState<'products' | 'delivery' | 'stores'>('products');
+  const [storeData, setStoreData] = useState<SalesStoreBreakdownResponse | null>(null);
+  const [isStoreLoading, setIsStoreLoading] = useState(false);
   const [productPage, setProductPage] = useState(1);
   const [deliveryPage, setDeliveryPage] = useState(1);
   const [isReconciling, setIsReconciling] = useState(false);
@@ -422,6 +425,46 @@ export default function SalesAnalyticsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [cancelRequest, fetchData, mappingSelectionKey]);
 
+  // Store tab data is fetched lazily with the SAME filter params as the
+  // overview call, so both tabs answer the same question over the same rows.
+  useEffect(() => {
+    if (tableSelection !== 'stores') return;
+    let cancelled = false;
+    const run = async () => {
+      setIsStoreLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set('start_date', startDate);
+        params.set('end_date', endDate);
+        const normalizedOptions = mappingOptions.map((m) => m.toLowerCase());
+        const allSelected =
+          selectedMappings.length === 0 ||
+          (selectedMappings.length === normalizedOptions.length &&
+            normalizedOptions.every((m) => selectedMappings.includes(m)));
+        if (!allSelected) selectedMappings.forEach((m) => params.append('mapping', m));
+        params.set('exclude_cancel', String(excludeCanceled));
+        params.set('exclude_restocking', String(excludeRestocking));
+        params.set('exclude_abandoned', String(excludeAbandoned));
+        params.set('exclude_rts', String(excludeRts));
+        params.set('exclude_repurchase', String(excludeRepurchase));
+        params.set('include_tax_12', String(includeTax12));
+        params.set('include_tax_1', String(includeTax1));
+        const res = await analyticsOverviewApi.getSalesStoreBreakdown<SalesStoreBreakdownResponse>(params);
+        if (!cancelled) setStoreData(res.data);
+      } catch {
+        if (!cancelled) setStoreData(null);
+      } finally {
+        if (!cancelled) setIsStoreLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // analyticsQueryKey encodes every filter the request reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableSelection, analyticsQueryKey]);
+
   useVisibleAutoRefresh(() => {
     void fetchData({ silent: true });
   });
@@ -546,7 +589,10 @@ export default function SalesAnalyticsPage() {
     : null;
 
   const products = data?.products || [];
-  const sortableProducts: SalesProductRowItem[] = products.map((row, index) => {
+  // The Store tab reuses the exact product-row pipeline (same shape, same
+  // derived math) — only the source rows change, so the two tabs cannot drift.
+  const breakdownRows = tableSelection === 'stores' ? storeData?.stores ?? [] : products;
+  const sortableProducts: SalesProductRowItem[] = breakdownRows.map((row, index) => {
     const norm = (row.mapping || '__null__').toLowerCase();
     const display = row.mapping ? (mappingDisplayMap[norm] || row.mapping) : 'Unassigned';
     const adjustedGrossCod = Math.max(
@@ -853,8 +899,9 @@ export default function SalesAnalyticsPage() {
     visibleKpiKeys.includes(String(metric.key)),
   );
 
-  const tableOptions: AnalyticsTableSelectorOption<'products' | 'delivery'>[] = [
+  const tableOptions: AnalyticsTableSelectorOption<'products' | 'delivery' | 'stores'>[] = [
     { key: 'products', label: 'Revenue per Product' },
+    { key: 'stores', label: 'Revenue per Store' },
     { key: 'delivery', label: 'Delivery Status' },
   ];
 
@@ -1578,9 +1625,10 @@ export default function SalesAnalyticsPage() {
           )}
         </div>
 
-        {tableSelection === 'products' ? (
+        {tableSelection !== 'delivery' ? (
           <AnalyticsSalesProductsTable
-            isLoading={isResultPending}
+            isLoading={tableSelection === 'stores' ? isStoreLoading : isResultPending}
+            entityLabel={tableSelection === 'stores' ? 'Store' : 'Product'}
             productStart={productStart}
             productEnd={productEnd}
             totalProducts={totalProducts}
