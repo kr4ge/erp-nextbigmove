@@ -1,5 +1,5 @@
 export type OverviewLens = 'CREATIVE' | 'BUSINESS';
-export type OverviewSortKey = 'creativeScore' | 'spend' | 'orders' | 'netMargin' | 'deliveryRate'
+export type OverviewSortKey = 'creativeScore' | 'spend' | 'mar' | 'orders' | 'deliveredOrders' | 'netMargin' | 'deliveryRate'
   | 'costPerOrder' | 'deliveredCostPerOrder' | 'cancellationRate' | 'rtsRate' | 'frequency'
   | 'hookRate' | 'holdRate' | 'ctr' | 'lpRate' | 'conversionRate' | 'code';
 
@@ -56,6 +56,7 @@ export type CreativeOverviewItem = {
     linkClicks: number;
     landingPageViews: number;
     spend?: number;
+    mar?: number | null;
     orders: number;
     deliveredOrders: number;
     costPerOrder?: number | null;

@@ -16,7 +16,9 @@ import {
 export const CREATIVE_OVERVIEW_SORT_KEYS = [
   'creativeScore',
   'spend',
+  'mar',
   'orders',
+  'deliveredOrders',
   'netMargin',
   'deliveryRate',
   'costPerOrder',

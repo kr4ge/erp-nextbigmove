@@ -61,7 +61,8 @@ export const SCORECARD_BAND_WEIGHTS = {
   holdRate: 2,
   completionRate: 1.5,
   ctr: 1.5,
-  approvalRate: 0.5,
+  // approvalRate (0.5 in the reference system) was dropped by request: the
+  // dashboard no longer scores resolution, only craft.
 } as const;
 
 export type ScorecardBandKey = keyof typeof SCORECARD_BAND_WEIGHTS;

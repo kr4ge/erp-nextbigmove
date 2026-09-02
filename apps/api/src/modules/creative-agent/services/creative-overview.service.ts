@@ -22,7 +22,7 @@ import { CreativeAccessService } from './creative-access.service';
 type MetricTotals = {
   spend: number; impressions: number; linkClicks: number; landingPageViews: number;
   orders: number; delivered: number; cancelled: number; rts: number;
-  deliveredRevenue: number; costs: number;
+  revenue: number; deliveredRevenue: number; costs: number;
   hookNumerator: number; hookDenominator: number; holdNumerator: number; holdDenominator: number;
   completionNumerator: number; completionDenominator: number;
   frequencyNumerator: number; frequencyDenominator: number;
@@ -30,7 +30,7 @@ type MetricTotals = {
 type AdDescriptor = { adId: string; adName: string; campaignName: string; adsetId: string; spend: number };
 const emptyMetrics = (): MetricTotals => ({
   spend: 0, impressions: 0, linkClicks: 0, landingPageViews: 0, orders: 0, delivered: 0,
-  cancelled: 0, rts: 0, deliveredRevenue: 0, costs: 0, hookNumerator: 0,
+  cancelled: 0, rts: 0, revenue: 0, deliveredRevenue: 0, costs: 0, hookNumerator: 0,
   hookDenominator: 0, holdNumerator: 0, holdDenominator: 0, completionNumerator: 0,
   completionDenominator: 0, frequencyNumerator: 0, frequencyDenominator: 0,
 });
@@ -135,8 +135,12 @@ export class CreativeOverviewService {
           frequency: safeRatio(metrics.frequencyNumerator, metrics.frequencyDenominator),
           impressions: metrics.impressions, linkClicks: metrics.linkClicks,
           landingPageViews: metrics.landingPageViews, orders: metrics.orders, deliveredOrders: metrics.delivered,
+          // Spend + MAR are the viewer's own linked-ad numbers, shown to every
+          // role; margin/cost economics stay behind canViewMoney.
+          spend: money(metrics.spend),
+          mar: safeRatio(metrics.spend, metrics.revenue),
           ...(canViewMoney ? {
-            spend: money(metrics.spend), costPerOrder: metrics.orders > 0 ? money(metrics.spend / metrics.orders) : null,
+            costPerOrder: metrics.orders > 0 ? money(metrics.spend / metrics.orders) : null,
             deliveredCostPerOrder: metrics.delivered > 0 ? money(metrics.spend / metrics.delivered) : null,
             deliveredRevenue: money(metrics.deliveredRevenue), netMargin: money(metrics.deliveredRevenue - metrics.costs - metrics.spend),
           } : {}),
@@ -179,6 +183,22 @@ export class CreativeOverviewService {
       output: { value: outputCount, numerator: null, denominator: null },
       approvalRate: this.metric(guard, 'approval', decisions.approved, decisions.approved + decisions.cancelled),
       medianTurnaroundHours: { value: decisions.medianTurnaroundHours, numerator: null, denominator: decisions.turnaroundCount },
+      // Volume + funnel tiles for the dashboard grid. These aggregate the SAME
+      // scoped rows as everything above (a maker only ever sees their own
+      // creatives), so no extra access filtering is needed. Rate denominators
+      // follow the creative-performance convention: resolved = delivered +
+      // cancelled + rts.
+      orders: { value: totals.orders, numerator: null, denominator: null },
+      adSpend: { value: money(totals.spend), numerator: null, denominator: null },
+      // MAR% (AR%): ad spend ÷ attributed gross revenue — the SAME formula as
+      // the Business Performance AR% (spend/revenue), so the two screens agree.
+      // safeRatio (not the guard) so a zero-revenue period reads "not measured"
+      // without raising a data warning.
+      mar: { value: safeRatio(totals.spend, totals.revenue), numerator: money(totals.spend), denominator: money(totals.revenue) },
+      delivered: { value: totals.delivered, numerator: null, denominator: null },
+      cancellationRate: this.metric(guard, 'cancellation rate', totals.cancelled, totals.delivered + totals.cancelled + totals.rts),
+      rtsRate: this.metric(guard, 'rts rate', totals.rts, totals.delivered + totals.cancelled + totals.rts),
+      deliveryRate: this.metric(guard, 'delivery rate', totals.delivered, totals.delivered + totals.cancelled + totals.rts),
     };
     const scorecard = this.buildScorecard({
       kpis, decisions, outputCount, days: range.days,
@@ -224,7 +244,7 @@ export class CreativeOverviewService {
     const [reconciled, hookRows, holdRows, completionRows, metaRows] = await Promise.all([
       this.prisma.reconcileMarketing.groupBy({ by: ['adId'], where: { tenantId, adId: { in: adIds }, date }, _sum: {
         spend: true, impressions: true, linkClicks: true, leads: true, purchasesPos: true,
-        deliveredCount: true, canceledCount: true, rtsCount: true, deliveredCodPos: true,
+        codPos: true, deliveredCount: true, canceledCount: true, rtsCount: true, deliveredCodPos: true,
         sfSdrPos: true, ffSdrPos: true, ifSdrPos: true, codFeeDeliveredPos: true, cogsDeliveredPos: true,
       } }),
       this.prisma.metaAdInsight.groupBy({ by: ['adId'], where: { tenantId, adId: { in: adIds }, date, videoPlays3s: { not: null } }, _sum: { videoPlays3s: true, impressions: true } }),
@@ -237,6 +257,7 @@ export class CreativeOverviewService {
       bucket.spend += toNumber(row._sum.spend); bucket.impressions += row._sum.impressions ?? 0;
       bucket.linkClicks += row._sum.linkClicks ?? 0; bucket.landingPageViews += row._sum.leads ?? 0;
       bucket.orders += row._sum.purchasesPos ?? 0; bucket.delivered += row._sum.deliveredCount ?? 0;
+      bucket.revenue += toNumber(row._sum.codPos);
       bucket.cancelled += row._sum.canceledCount ?? 0; bucket.rts += row._sum.rtsCount ?? 0;
       bucket.deliveredRevenue += toNumber(row._sum.deliveredCodPos);
       bucket.costs += toNumber(row._sum.sfSdrPos) + toNumber(row._sum.ffSdrPos) + toNumber(row._sum.ifSdrPos) + toNumber(row._sum.codFeeDeliveredPos) + toNumber(row._sum.cogsDeliveredPos);
@@ -282,8 +303,6 @@ export class CreativeOverviewService {
       { key: 'holdRate' as const, value: holdRate, floor: CREATIVE_CRAFT_FLOORS.holdRate as number | null, score: bandScore(holdRate, CREATIVE_CRAFT_FLOORS.holdRate) },
       { key: 'completionRate' as const, value: completionRate, floor: CREATIVE_CRAFT_FLOORS.completionRate as number | null, score: bandScore(completionRate, CREATIVE_CRAFT_FLOORS.completionRate) },
       { key: 'ctr' as const, value: ctr, floor: CREATIVE_CRAFT_FLOORS.ctr as number | null, score: bandScore(ctr, CREATIVE_CRAFT_FLOORS.ctr) },
-      // Approval has no craft floor; the band maps the finished-decision rate straight onto 0…10.
-      { key: 'approvalRate' as const, value: approvalRate, floor: null, score: approvalRate === null ? null : round(approvalRate * 10, 1) },
     ].map((band) => ({ ...band, weight: SCORECARD_BAND_WEIGHTS[band.key] }));
     const overall = weightedBandScore(bands);
     return {
@@ -360,14 +379,17 @@ export class CreativeOverviewService {
     return result;
   }
   private creativeScore(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, storeMedian: number | null) {
+    // Ceilings follow the reference C-Score spec exactly: each component is
+    // clamped to its ceiling (clamp01 — no overshoot bonus), the order-rate
+    // ceiling is 1.5× the store median, and the result is a whole number 0-100.
     const candidates = [
-      ...(kind === CreativeKind.VIDEO ? [{ value: values.hookRate, target: 0.2, weight: 0.25 }, { value: values.holdRate, target: 0.45, weight: 0.2 }] : []),
-      { value: values.deliveryRate, target: 0.55, weight: 0.25 }, { value: values.ctr, target: 0.015, weight: 0.15 },
-      { value: values.conversionRate, target: storeMedian && storeMedian > 0 ? storeMedian : null, weight: 0.15 },
+      ...(kind === CreativeKind.VIDEO ? [{ value: values.hookRate, target: 0.4, weight: 0.25 }, { value: values.holdRate, target: 0.5, weight: 0.2 }] : []),
+      { value: values.deliveryRate, target: 0.8, weight: 0.25 }, { value: values.ctr, target: 0.03, weight: 0.15 },
+      { value: values.conversionRate, target: storeMedian && storeMedian > 0 ? storeMedian * 1.5 : null, weight: 0.15 },
     ];
     const measured = candidates.filter((item): item is { value: number; target: number; weight: number } => item.value !== null && item.target !== null);
     const weight = measured.reduce((sum, item) => sum + item.weight, 0);
-    return weight === 0 ? null : round(measured.reduce((sum, item) => sum + Math.min(item.value / item.target, 1.5) * item.weight, 0) / weight * 100, 1);
+    return weight === 0 ? null : round(measured.reduce((sum, item) => sum + Math.min(item.value / item.target, 1) * item.weight, 0) / weight * 100, 0);
   }
   private bottleneck(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, storeMedian: number | null) {
     if (kind === CreativeKind.VIDEO && values.hookRate !== null && values.hookRate < 0.2) return 'HOOK';
@@ -393,7 +415,7 @@ export class CreativeOverviewService {
     return { value: guard.rate(stage, numerator, denominator), numerator, denominator };
   }
   private sortRows<T extends { code: string; metrics: Record<string, unknown> }>(rows: T[], requested: CreativeOverviewSortKey, direction: 'asc' | 'desc', canViewMoney: boolean) {
-    const key = !canViewMoney && ['spend', 'netMargin', 'costPerOrder', 'deliveredCostPerOrder'].includes(requested) ? 'creativeScore' : requested;
+    const key = !canViewMoney && ['netMargin', 'costPerOrder', 'deliveredCostPerOrder'].includes(requested) ? 'creativeScore' : requested;
     const multiplier = direction === 'asc' ? 1 : -1;
     return [...rows].sort((left, right) => { const a = key === 'code' ? left.code : left.metrics[key]; const b = key === 'code' ? right.code : right.metrics[key]; if (a == null && b == null) return left.code.localeCompare(right.code); if (a == null) return 1; if (b == null) return -1; const compared = typeof a === 'string' ? a.localeCompare(String(b)) : Number(a) - Number(b); return compared === 0 ? left.code.localeCompare(right.code) : compared * multiplier; });
   }

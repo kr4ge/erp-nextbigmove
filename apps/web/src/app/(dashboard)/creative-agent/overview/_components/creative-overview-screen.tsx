@@ -9,23 +9,14 @@ import { PageHeader } from '@/components/ui/page-header';
 import { VideoRegistryDateRangePicker } from '../../video-registry/_components/video-registry-date-range-picker';
 import { useCreativeOverviewController } from '../_hooks/use-creative-overview-controller';
 import type { CreativeOverviewItem, OverviewMetric, OverviewSortKey } from '../_types/creative-overview';
-import { formatCount, formatHours, formatPercent } from '../_utils/creative-overview-format';
-import { CreativeCraftBoard } from './creative-craft-board';
+import { formatCount, formatCurrency, formatPercent } from '../_utils/creative-overview-format';
 import { CreativeLeaderboard } from './creative-leaderboard';
 import { CreativeScorecard } from './creative-scorecard';
-import { PanelHeader, StatTile } from './overview-ui';
+import { PanelHeader } from './overview-ui';
 import { creativeQueryHref } from '../../video-registry/_utils/creative-navigation';
 
 const selectClass = 'h-9 rounded-lg border border-border/60 bg-surface px-2.5 text-xs font-medium text-foreground outline-none transition hover:border-border focus:border-primary/40 focus:ring-2 focus:ring-primary/10';
 
-type KpiDefinition = {
-  title: string;
-  metric: OverviewMetric | undefined;
-  format: (value: number | null | undefined) => string;
-  info: string;
-  /** Floor for the healthy tone; a scoreboard, not an alarm — nothing renders red here. */
-  floor?: number;
-};
 
 function DetailDialog({ item, showAssets, onClose }: { item: CreativeOverviewItem; showAssets: boolean; onClose: () => void }) {
   const metrics = [
@@ -70,20 +61,34 @@ function DetailDialog({ item, showAssets, onClose }: { item: CreativeOverviewIte
   );
 }
 
+function floorHealthy(value: number | null | undefined, floor: number | null | undefined): boolean {
+  return floor != null && value != null && value >= floor;
+}
+
 export function CreativeOverviewScreen() {
   const controller = useCreativeOverviewController();
   const { data, params } = controller;
   const [selected, setSelected] = useState<CreativeOverviewItem | null>(null);
   const floors = data?.floors;
-  const kpis: KpiDefinition[] = [
-    { title: 'Hook', metric: data?.kpis.hookRate, format: formatPercent, info: '3-second plays ÷ video impressions across every creative in the period.', floor: floors?.values.hookRate },
-    { title: 'Hold', metric: data?.kpis.holdRate, format: formatPercent, info: 'ThruPlays ÷ 3-second plays.', floor: floors?.values.holdRate },
-    { title: 'Completion', metric: data?.kpis.completionRate, format: formatPercent, info: 'ThruPlays ÷ video impressions.', floor: floors?.values.completionRate },
-    { title: 'CTR', metric: data?.kpis.ctr, format: formatPercent, info: 'Link clicks ÷ impressions.', floor: floors?.values.ctr },
-    { title: 'CVR', metric: data?.kpis.cvr, format: formatPercent, info: 'Attributed orders ÷ link clicks — did the click become an order?' },
-    { title: 'Output', metric: data?.kpis.output, format: formatCount, info: 'Creatives registered in the period.' },
-    { title: 'Approval', metric: data?.kpis.approvalRate, format: (value) => formatPercent(value, 0), info: 'Approved ÷ (approved + cancelled) in QC.' },
-    { title: 'Turnaround', metric: data?.kpis.medianTurnaroundHours, format: formatHours, info: 'Median hours from submission to approval.' },
+  // 3 rows x 4 cols. Everything is computed from the viewer's OWN creatives
+  // (the API scopes a maker to createdById), so a creative only ever sees
+  // their own numbers here.
+  const craftSub = (value: number | null | undefined, floor: number | null | undefined) =>
+    value == null ? 'not measured' : floor != null ? `vs ${formatPercent(floor)} floor` : undefined;
+  const rateSub = (value: number | null | undefined) => (value == null ? 'not measured' : undefined);
+  const kpiTiles: Array<{ label: string; info: string; value: string; healthy?: boolean; sub?: string }> = [
+    { label: 'Hook', info: '3-second plays ÷ video impressions across your creatives.', value: formatPercent(data?.kpis.hookRate?.value ?? null), healthy: floorHealthy(data?.kpis.hookRate?.value, floors?.values.hookRate), sub: craftSub(data?.kpis.hookRate?.value, floors?.values.hookRate) },
+    { label: 'Hold', info: 'ThruPlays ÷ 3-second plays.', value: formatPercent(data?.kpis.holdRate?.value ?? null), healthy: floorHealthy(data?.kpis.holdRate?.value, floors?.values.holdRate), sub: craftSub(data?.kpis.holdRate?.value, floors?.values.holdRate) },
+    { label: 'Completion', info: 'ThruPlays ÷ video impressions.', value: formatPercent(data?.kpis.completionRate?.value ?? null), healthy: floorHealthy(data?.kpis.completionRate?.value, floors?.values.completionRate), sub: craftSub(data?.kpis.completionRate?.value, floors?.values.completionRate) },
+    { label: 'CTR', info: 'Link clicks ÷ impressions.', value: formatPercent(data?.kpis.ctr?.value ?? null), healthy: floorHealthy(data?.kpis.ctr?.value, floors?.values.ctr), sub: craftSub(data?.kpis.ctr?.value, floors?.values.ctr) },
+    { label: 'Orders', info: 'Attributed orders across your linked ads in the period.', value: formatCount(data?.kpis.orders?.value ?? null), sub: 'attributed in period' },
+    { label: 'Ad Spent', info: 'Meta spend on your linked ads in the period.', value: formatCurrency(data?.kpis.adSpend?.value ?? null), sub: 'linked ads' },
+    { label: 'MAR% (AR%)', info: 'Ad spend ÷ attributed revenue — same AR % formula as Business Performance.', value: formatPercent(data?.kpis.mar?.value ?? null), sub: rateSub(data?.kpis.mar?.value) ?? 'spend ÷ revenue' },
+    { label: 'Video Output', info: 'Creatives you enrolled in the period.', value: formatCount(data?.kpis.output?.value ?? null), sub: 'enrolled in period' },
+    { label: 'Delivered', info: 'Delivered orders across your linked ads.', value: formatCount(data?.kpis.delivered?.value ?? null), sub: 'orders delivered' },
+    { label: 'Cancellation Rate', info: 'Cancelled ÷ resolved (delivered + cancelled + RTS).', value: formatPercent(data?.kpis.cancellationRate?.value ?? null), sub: rateSub(data?.kpis.cancellationRate?.value) ?? 'of resolved orders' },
+    { label: 'RTS Rate', info: 'RTS ÷ resolved (delivered + cancelled + RTS).', value: formatPercent(data?.kpis.rtsRate?.value ?? null), sub: rateSub(data?.kpis.rtsRate?.value) ?? 'of resolved orders' },
+    { label: 'Delivery Rate', info: 'Delivered ÷ resolved (delivered + cancelled + RTS).', value: formatPercent(data?.kpis.deliveryRate?.value ?? null), sub: rateSub(data?.kpis.deliveryRate?.value) ?? 'of resolved orders' },
   ];
 
   return (
@@ -147,24 +152,7 @@ export function CreativeOverviewScreen() {
 
         {/* Call deck: hidden while the API reports the capability unavailable — no call-tracking data source exists in this ERP yet. */}
 
-        <CreativeScorecard scorecard={data?.scorecard} floors={floors} isLoading={controller.isLoading} />
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
-          {kpis.map((kpi) => {
-            const value = kpi.metric?.value ?? null;
-            const healthy = kpi.floor != null && value != null && value >= kpi.floor;
-            return (
-              <StatTile
-                key={kpi.title}
-                label={kpi.title}
-                info={kpi.info}
-                value={kpi.format(value)}
-                tone={healthy ? 'good' : 'neutral'}
-                compact
-              />
-            );
-          })}
-        </div>
+        <CreativeScorecard scorecard={data?.scorecard} floors={floors} isLoading={controller.isLoading} kpiTiles={kpiTiles} />
 
         <section className="panel panel-content shadow-card transition-colors hover:border-border/40">
           <PanelHeader
@@ -238,7 +226,6 @@ export function CreativeOverviewScreen() {
           ) : null}
         </section>
 
-        <CreativeCraftBoard craftBoard={data?.craftBoard} floors={floors} isLoading={controller.isLoading} />
 
         {/* Landing pages: hidden while the API reports the capability unavailable — landing-page performance is not tracked by this ERP yet. */}
       </div>
