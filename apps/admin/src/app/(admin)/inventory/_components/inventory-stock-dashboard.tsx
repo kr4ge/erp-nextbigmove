@@ -1,21 +1,22 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { CalendarDays, LineChart, ScatterChart, TrendingDown, TrendingUp, Truck } from 'lucide-react';
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
-import type { WmsInventoryOverviewResponse } from '../_types/inventory';
+import type { WmsInventoryDateRange, WmsInventoryOverviewResponse } from '../_types/inventory';
+import {
+  formatInventoryDateInputValue,
+  formatInventoryDateRangeLabel,
+  normalizeInventoryDatePickerValue,
+  parseInventoryDateInputValue,
+} from '../_utils/inventory-date-range';
 import {
   buildInventoryStockDashboard,
   type StaticMilestone,
   type StockHeadlineMetric,
 } from '../_utils/inventory-stock-dashboard';
 import { InventoryLogisticsReportsPanel } from './inventory-logistics-reports-panel';
-
-type LogisticsDateSelection = {
-  startDate: string;
-  endDate: string;
-};
 
 type LogisticsDatePickerValue = {
   startDate: Date | null;
@@ -30,6 +31,8 @@ type LogisticsDatePickerChangeValue = {
 type InventoryStockDashboardProps = {
   overview: WmsInventoryOverviewResponse | null;
   isFetching: boolean;
+  dateRange: WmsInventoryDateRange;
+  onDateRangeChange: (value: WmsInventoryDateRange) => void;
   filters?: ReactNode;
 };
 
@@ -38,46 +41,25 @@ const Datepicker = dynamic(() => import('react-tailwindcss-datepicker'), { ssr: 
 export function InventoryStockDashboard({
   overview,
   isFetching,
+  dateRange,
+  onDateRangeChange,
   filters,
 }: InventoryStockDashboardProps) {
   const dashboard = buildInventoryStockDashboard(overview);
-  const [logisticsDateRange, setLogisticsDateRange] = useState<LogisticsDateSelection>(() => getTodayDateSelection());
-  const today = useMemo(() => formatDateInputValue(new Date()), []);
-  const [datePickerValue, setDatePickerValue] = useState<LogisticsDatePickerValue>(() => ({
-    startDate: parseDateInputValue(logisticsDateRange.startDate),
-    endDate: parseDateInputValue(logisticsDateRange.endDate),
-  }));
-  const isTodayRange = logisticsDateRange.startDate === today && logisticsDateRange.endDate === today;
-  const dateRangeButtonLabel = formatDateRangeButtonLabel(logisticsDateRange);
+  const today = useMemo(() => formatInventoryDateInputValue(new Date()), []);
+  const datePickerValue: LogisticsDatePickerValue = {
+    startDate: parseInventoryDateInputValue(dateRange.startDate),
+    endDate: parseInventoryDateInputValue(dateRange.endDate),
+  };
+  const isTodayRange = dateRange.startDate === today && dateRange.endDate === today;
+  const dateRangeButtonLabel = formatInventoryDateRangeLabel(dateRange);
 
   const handleLogisticsDateRangeChange = (value: LogisticsDatePickerChangeValue) => {
-    const nextStartYmd = normalizeDatepickerValue(value?.startDate, logisticsDateRange.startDate || today);
-    const rawNextEndYmd = normalizeDatepickerValue(value?.endDate, nextStartYmd);
+    const nextStartYmd = normalizeInventoryDatePickerValue(value?.startDate, dateRange.startDate || today);
+    const rawNextEndYmd = normalizeInventoryDatePickerValue(value?.endDate, nextStartYmd);
     const nextEndYmd = rawNextEndYmd < nextStartYmd ? nextStartYmd : rawNextEndYmd;
-
-    setLogisticsDateRange((current) => {
-      if (current.startDate === nextStartYmd && current.endDate === nextEndYmd) {
-        return current;
-      }
-
-      return {
-        startDate: nextStartYmd,
-        endDate: nextEndYmd,
-      };
-    });
-
-    setDatePickerValue((current) => {
-      const currentStartYmd = current.startDate ? formatDateInputValue(current.startDate) : '';
-      const currentEndYmd = current.endDate ? formatDateInputValue(current.endDate) : '';
-      if (currentStartYmd === nextStartYmd && currentEndYmd === nextEndYmd) {
-        return current;
-      }
-
-      return {
-        startDate: parseDateInputValue(nextStartYmd),
-        endDate: parseDateInputValue(nextEndYmd),
-      };
-    });
+    if (dateRange.startDate === nextStartYmd && dateRange.endDate === nextEndYmd) return;
+    onDateRangeChange({ startDate: nextStartYmd, endDate: nextEndYmd });
   };
 
   return (
@@ -160,7 +142,7 @@ export function InventoryStockDashboard({
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
         <InventoryLogisticsReportsPanel
           units={overview?.units ?? []}
-          dateRange={logisticsDateRange}
+          dateRange={dateRange}
         />
 
         <div className="space-y-5">
@@ -182,69 +164,6 @@ export function InventoryStockDashboard({
       </div>
     </div>
   );
-}
-
-function getTodayDateSelection(): LogisticsDateSelection {
-  const today = formatDateInputValue(new Date());
-
-  return { startDate: today, endDate: today };
-}
-
-function parseDateInputValue(value: string) {
-  const [year, month, day] = value.split('-').map(Number);
-
-  if (!year || !month || !day) {
-    return null;
-  }
-
-  const date = new Date(year, month - 1, day);
-  date.setHours(0, 0, 0, 0);
-
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function formatDateInputValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
-function normalizeDatepickerValue(value: unknown, fallbackYmd: string) {
-  if (!value) {
-    return fallbackYmd;
-  }
-
-  if (typeof value === 'string') {
-    return value.slice(0, 10);
-  }
-
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return formatDateInputValue(value);
-  }
-
-  return fallbackYmd;
-}
-
-function formatDateRangeButtonLabel(dateRange: LogisticsDateSelection) {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  const start = parseDateInputValue(dateRange.startDate);
-  const end = parseDateInputValue(dateRange.endDate);
-
-  if (!start || !end) {
-    return 'Select dates';
-  }
-
-  if (dateRange.startDate === dateRange.endDate) {
-    return formatter.format(start);
-  }
-
-  return `${formatter.format(start)} - ${formatter.format(end)}`;
 }
 
 function PlaceholderPanel({

@@ -266,8 +266,15 @@ export type GetWmsInventoryOverviewParams = {
   variationId?: string;
   search?: string;
   status?: WmsInventoryUnitStatus;
+  startDate?: string;
+  endDate?: string;
   page?: number;
   pageSize?: number;
+};
+
+export type WmsInventoryDateRange = {
+  startDate: string;
+  endDate: string;
 };
 
 export type CreateWmsInventoryTransferInput = {

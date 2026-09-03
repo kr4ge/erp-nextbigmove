@@ -306,6 +306,10 @@ export class WmsInventoryService {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(Math.max(1, query.pageSize ?? 10), 100);
     const skip = (page - 1) * pageSize;
+    const activityDateWindow = this.resolveInventoryActivityDateWindow(
+      query.startDate,
+      query.endDate,
+    );
 
     if (!scope.activeTenantId && !isAllTenantScope) {
       return {
@@ -502,20 +506,20 @@ export class WmsInventoryService {
         || left.label.localeCompare(right.label, undefined, { sensitivity: 'base' })
       ));
 
-    if (scope.activeTenantId) {
-      // Repair any shipped/delivered packed units before computing tenant-scoped inventory totals.
-      await this.syncPackedUnitsToDispatchedForPosOrders({
-        tenantId: scope.activeTenantId,
-        storeId: activeStoreId,
-      });
-    }
-
     const where: Prisma.WmsInventoryUnitWhereInput = {
       ...unitTenantWhere,
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
       ...(activeVariationId ? { variationId: activeVariationId } : {}),
       ...(query.status ? { status: query.status } : {}),
+      ...(activityDateWindow
+        ? {
+            updatedAt: {
+              gte: activityDateWindow.from,
+              lt: activityDateWindow.to,
+            },
+          }
+        : {}),
       ...(query.search
         ? {
             OR: [
@@ -680,6 +684,46 @@ export class WmsInventoryService {
       },
       units: units.map((unit) => this.mapUnit(unit)),
     };
+  }
+
+  private resolveInventoryActivityDateWindow(startDate?: string, endDate?: string) {
+    if (!startDate && !endDate) {
+      return null;
+    }
+
+    const normalizedStart = startDate ?? endDate!;
+    const normalizedEnd = endDate ?? startDate!;
+    const from = this.parseInventoryActivityDate(normalizedStart);
+    const inclusiveEnd = this.parseInventoryActivityDate(normalizedEnd);
+
+    if (from > inclusiveEnd) {
+      throw new BadRequestException('Start date must be on or before end date');
+    }
+
+    const rangeDays = Math.floor((inclusiveEnd.getTime() - from.getTime()) / 86_400_000) + 1;
+    if (rangeDays > 366) {
+      throw new BadRequestException('Date range cannot exceed 366 days');
+    }
+
+    const to = new Date(inclusiveEnd);
+    to.setUTCDate(to.getUTCDate() + 1);
+    return { from, to };
+  }
+
+  private parseInventoryActivityDate(value: string) {
+    const [year, month, day] = value.split('-').map(Number);
+    const calendarDate = new Date(Date.UTC(year, month - 1, day));
+
+    if (
+      calendarDate.getUTCFullYear() !== year
+      || calendarDate.getUTCMonth() !== month - 1
+      || calendarDate.getUTCDate() !== day
+    ) {
+      throw new BadRequestException('Dates must be valid calendar dates in YYYY-MM-DD format');
+    }
+
+    // WMS business dates follow Asia/Manila, which has a fixed UTC+08:00 offset.
+    return new Date(calendarDate.getTime() - 8 * 60 * 60 * 1_000);
   }
 
   async getUnitMovements(id: string, requestedTenantId?: string) {
