@@ -132,8 +132,6 @@ export function useInventoryController() {
       selectedWarehouseId ?? 'all-warehouses',
       selectedVariationId ?? 'all-products',
       selectedStatus ?? 'all-statuses',
-      dateRange.startDate,
-      dateRange.endDate,
       debouncedSearchText,
       currentPage,
       pageSize,
@@ -147,8 +145,6 @@ export function useInventoryController() {
         variationId: selectedVariationId,
         search: debouncedSearchText || undefined,
         status: selectedStatus,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
         page: currentPage,
         pageSize,
       }, signal),
@@ -247,8 +243,6 @@ export function useInventoryController() {
     selectedVariationId,
     selectedProductValue,
     selectedStatus,
-    dateRange.startDate,
-    dateRange.endDate,
     debouncedSearchText,
   ]);
 
