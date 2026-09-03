@@ -17,6 +17,8 @@ type FulfillmentItemAdjustmentSectionProps = {
   onApplied?: () => Promise<unknown> | unknown;
 };
 
+const REMOVE_FROM_SHIPMENT_VALUE = '__REMOVE_FROM_SHIPMENT__';
+
 export function FulfillmentItemAdjustmentSection({
   task,
   canAdjust,
@@ -38,9 +40,8 @@ export function FulfillmentItemAdjustmentSection({
   const defaultLine = adjustableLines.find((line) => line.shortage > 0) ?? adjustableLines[0] ?? null;
   const [isEditing, setIsEditing] = useState(false);
   const [sourceLineId, setSourceLineId] = useState(defaultLine?.id ?? '');
-  const [action, setAction] = useState<'BYPASS' | 'SUBSTITUTION'>('SUBSTITUTION');
   const [quantity, setQuantity] = useState(1);
-  const [substituteVariationId, setSubstituteVariationId] = useState('');
+  const [replacementChoice, setReplacementChoice] = useState('');
   const [reason, setReason] = useState('');
   const [options, setOptions] = useState<WmsFulfillmentAdjustmentOption[]>([]);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
@@ -57,7 +58,10 @@ export function FulfillmentItemAdjustmentSection({
     sourceLine?.required ?? 0,
     Math.max((sourceLine?.sourceRequired ?? 0) - sourceAdjustedQuantity, 0),
   );
-  const substitute = options.find((option) => option.variationId === substituteVariationId) ?? null;
+  const action: 'BYPASS' | 'SUBSTITUTION' = replacementChoice === REMOVE_FROM_SHIPMENT_VALUE
+    ? 'BYPASS'
+    : 'SUBSTITUTION';
+  const substitute = options.find((option) => option.variationId === replacementChoice) ?? null;
   const eligibleOptions = options.filter((option) => option.variationId !== sourceLine?.variationId);
   const maxQuantity = Math.max(
     1,
@@ -65,15 +69,18 @@ export function FulfillmentItemAdjustmentSection({
       sourceAdjustableQuantity || 1,
       action === 'SUBSTITUTION'
         ? (substitute?.availableQuantity ?? sourceAdjustableQuantity) || 1
-        : sourceAdjustableQuantity || 1,
+        : Math.min(sourceAdjustableQuantity || 1, Math.max(task.totals.required - 1, 1)),
     ),
   );
+  const updatedShipmentQuantity = action === 'BYPASS'
+    ? Math.max(task.totals.required - quantity, 0)
+    : task.totals.required;
+  const canRemoveFromShipment = task.totals.required > 1;
 
   useEffect(() => {
     setSourceLineId(defaultLine?.id ?? '');
-    setAction('SUBSTITUTION');
     setQuantity(1);
-    setSubstituteVariationId('');
+    setReplacementChoice('');
     setReason('');
     setOptions([]);
     setIsEditing(false);
@@ -97,10 +104,11 @@ export function FulfillmentItemAdjustmentSection({
         tenantId: task.store?.tenantId,
       });
       setOptions(response.options);
-      setSubstituteVariationId((current) => (
-        response.options.some((option) => option.variationId === current)
+      setReplacementChoice((current) => (
+        current === REMOVE_FROM_SHIPMENT_VALUE
+          || response.options.some((option) => option.variationId === current)
           ? current
-          : response.options.find((option) => option.variationId !== sourceLine?.variationId)?.variationId ?? ''
+          : ''
       ));
     } catch (loadError) {
       setError(resolveAdjustmentError(loadError));
@@ -116,15 +124,19 @@ export function FulfillmentItemAdjustmentSection({
   };
 
   const validate = () => {
-    if (!sourceLine) return 'Select an original order item.';
+    if (!sourceLine) return 'Select the order item you want to change.';
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > sourceAdjustableQuantity) {
-      return `Quantity must be between 1 and ${sourceAdjustableQuantity}.`;
+      return `Enter a whole number between 1 and ${sourceAdjustableQuantity}.`;
     }
-    if (action === 'SUBSTITUTION' && !substitute) return 'Select an in-stock substitute.';
+    if (!replacementChoice) return 'Choose what the picker should scan instead.';
+    if (action === 'BYPASS' && updatedShipmentQuantity < 1) {
+      return 'This is the order’s only remaining unit. Cancel the order instead of removing it.';
+    }
+    if (action === 'SUBSTITUTION' && !substitute) return 'Choose an in-stock replacement item.';
     if (action === 'SUBSTITUTION' && substitute && quantity > substitute.availableQuantity) {
-      return `Only ${substitute.availableQuantity} eligible substitute unit(s) are currently available.`;
+      return `Only ${substitute.availableQuantity} replacement unit(s) are available right now.`;
     }
-    if (reason.trim().length < 10) return 'Enter a clear reason using at least 10 characters.';
+    if (reason.trim().length < 10) return 'Explain the reason for this change using at least 10 characters.';
     return null;
   };
 
@@ -158,8 +170,8 @@ export function FulfillmentItemAdjustmentSection({
       });
       setNotice(
         action === 'SUBSTITUTION' && substitute
-          ? `${quantity} ${sourceLine.productName} unit(s) replaced with ${substitute.productName}. Order is now ${response.order.statusLabel}.`
-          : `${quantity} ${sourceLine.productName} unit(s) bypassed. Order is now ${response.order.statusLabel}.`,
+          ? `Pick list updated: ${quantity} ${sourceLine.productName} unit(s) replaced with ${substitute.productName}. Order is now ${response.order.statusLabel}.`
+          : `Pick list updated: ${quantity} ${sourceLine.productName} unit(s) removed from the shipment. Order is now ${response.order.statusLabel}.`,
       );
       setIsEditing(false);
       setIsConfirming(false);
@@ -178,22 +190,22 @@ export function FulfillmentItemAdjustmentSection({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-warning" />
-            <h3 className="text-sm font-semibold text-foreground">Adjust fulfillment items</h3>
+            <h3 className="text-sm font-semibold text-foreground">Change the pick list</h3>
           </div>
           <p className="mt-1 text-sm text-muted">
-            Bypass an unavailable item or replace it with eligible stock before picking starts.
+            Replace an order item with available stock, or remove it from this shipment. The POS order will not be edited.
           </p>
         </div>
         {!isEditing && canAdjust ? (
           <button type="button" onClick={openEditor} className="btn btn-sm btn-outline">
-            Adjust items
+            Change pick list
           </button>
         ) : null}
       </div>
 
       {!canAdjust ? (
         <p className="rounded-xl bg-secondary/30 px-3 py-2 text-sm text-muted">
-          The `wms.fulfillment.bypass` permission is required for this supervisor action.
+          Only a supervisor with permission to change fulfillment items can use this action.
         </p>
       ) : null}
 
@@ -203,11 +215,11 @@ export function FulfillmentItemAdjustmentSection({
             <div key={adjustment.id} className="rounded-xl border border-warning/30 bg-warning-soft/60 px-3 py-2.5">
               <p className="text-sm font-semibold text-foreground">
                 {adjustment.type === 'SUBSTITUTION'
-                  ? `${adjustment.sourceProductName} ×${adjustment.quantity} → ${adjustment.substituteProductName ?? 'Substitute'}`
-                  : `${adjustment.sourceProductName} ×${adjustment.quantity} bypassed`}
+                  ? `Replaced ${adjustment.sourceProductName} ×${adjustment.quantity} with ${adjustment.substituteProductName ?? 'replacement item'} ×${adjustment.quantity}`
+                  : `Removed ${adjustment.sourceProductName} ×${adjustment.quantity} from the shipment`}
               </p>
               <p className="mt-1 text-xs text-muted">
-                {adjustment.reason} · {adjustment.approvedBy?.name ?? 'Supervisor'}
+                Reason: {adjustment.reason} · Approved by {adjustment.approvedBy?.name ?? 'Supervisor'}
               </p>
             </div>
           ))}
@@ -221,72 +233,27 @@ export function FulfillmentItemAdjustmentSection({
         <div className="space-y-4 border-t border-border/20 pt-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 text-sm font-medium text-foreground">
-              Original item
+              Order item to change
               <select
                 value={sourceLineId}
                 onChange={(event) => {
                   setSourceLineId(event.target.value);
                   setQuantity(1);
+                  setReplacementChoice('');
                   setIsConfirming(false);
                 }}
                 className="input w-full"
               >
                 {adjustableLines.map((line) => (
                   <option key={line.id} value={line.id}>
-                    {line.productName} · {Math.min(line.required, line.sourceRequired)} adjustable
+                    {line.productName} · up to {Math.min(line.required, line.sourceRequired)} unit(s)
                   </option>
                 ))}
               </select>
             </label>
 
             <label className="space-y-1.5 text-sm font-medium text-foreground">
-              Action
-              <select
-                value={action}
-                onChange={(event) => {
-                  setAction(event.target.value as 'BYPASS' | 'SUBSTITUTION');
-                  setQuantity(1);
-                  setIsConfirming(false);
-                }}
-                className="input w-full"
-              >
-                <option value="SUBSTITUTION">Replace with in-stock item</option>
-                <option value="BYPASS">Bypass without replacement</option>
-              </select>
-            </label>
-          </div>
-
-          {action === 'SUBSTITUTION' ? (
-            <label className="space-y-1.5 text-sm font-medium text-foreground">
-              In-stock substitute
-              <select
-                value={substituteVariationId}
-                onChange={(event) => {
-                  setSubstituteVariationId(event.target.value);
-                  setQuantity(1);
-                  setIsConfirming(false);
-                }}
-                disabled={isLoadingOptions || eligibleOptions.length === 0}
-                className="input w-full"
-              >
-                <option value="">
-                  {isLoadingOptions ? 'Checking eligible stock…' : 'Select a substitute'}
-                </option>
-                {eligibleOptions.map((option) => (
-                  <option key={option.variationId} value={option.variationId}>
-                    {option.productName}{option.productDisplayId ? ` · ${option.productDisplayId}` : ''} · {option.availableQuantity} available
-                  </option>
-                ))}
-              </select>
-              {!isLoadingOptions && eligibleOptions.length === 0 ? (
-                <span className="block text-xs text-warning">No eligible substitute stock is available in this order’s store and warehouse scope.</span>
-              ) : null}
-            </label>
-          ) : null}
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1.5 text-sm font-medium text-foreground">
-              Quantity
+              Units to change
               <input
                 type="number"
                 min={1}
@@ -298,20 +265,86 @@ export function FulfillmentItemAdjustmentSection({
                 }}
                 className="input w-full"
               />
+              <span className="block text-xs text-muted">
+                You can {action === 'BYPASS' ? 'remove' : 'change'} up to {maxQuantity} unit(s) of this item.
+              </span>
             </label>
+          </div>
 
-            <div className="rounded-xl bg-secondary/30 px-3 py-2.5">
-              <p className="text-xs font-semibold uppercase text-muted">Result</p>
-              <div className="mt-1.5 flex items-center gap-2 text-sm font-semibold text-foreground">
-                <span>{sourceLine?.productName ?? 'Original'} ×{quantity}</span>
-                <ArrowRight className="h-4 w-4 text-muted" />
-                <span>{action === 'SUBSTITUTION' ? substitute?.productName ?? 'Select stock' : 'Not shipped'}</span>
+          <label className="space-y-1.5 text-sm font-medium text-foreground">
+            Picker should scan instead
+            <select
+              value={replacementChoice}
+              onChange={(event) => {
+                setReplacementChoice(event.target.value);
+                setIsConfirming(false);
+              }}
+              disabled={isLoadingOptions}
+              className="input w-full"
+            >
+              <option value="">
+                {isLoadingOptions ? 'Checking available stock…' : 'Choose a replacement or remove the units'}
+              </option>
+              {eligibleOptions.map((option) => (
+                <option key={option.variationId} value={option.variationId}>
+                  {option.productName}{option.productDisplayId ? ` · ${option.productDisplayId}` : ''} · {option.availableQuantity} available
+                </option>
+              ))}
+              <option value={REMOVE_FROM_SHIPMENT_VALUE} disabled={!canRemoveFromShipment}>
+                {canRemoveFromShipment
+                  ? 'No replacement — remove these units from the shipment'
+                  : 'No replacement unavailable — cancel single-unit order instead'}
+              </option>
+            </select>
+            <span className={`block text-xs ${action === 'BYPASS' ? 'text-warning' : 'text-muted'}`}>
+              {!replacementChoice
+                ? 'Choose an available item to replace it, or explicitly remove the units from the shipment.'
+                : action === 'SUBSTITUTION'
+                  ? 'The picker will scan this replacement item. The shipment quantity stays the same.'
+                  : 'No replacement will be picked. The customer will receive fewer units.'}
+            </span>
+            {!isLoadingOptions && eligibleOptions.length === 0 ? (
+              <span className="block text-xs text-warning">
+                {canRemoveFromShipment
+                  ? 'No replacement stock is available. You can only remove the units from the shipment.'
+                  : 'No replacement stock is available. This single-unit order must be canceled instead.'}
+              </span>
+            ) : null}
+          </label>
+
+          <div>
+            <div className="rounded-xl border border-border/20 bg-secondary/30 px-3 py-3">
+              <p className="text-xs font-semibold uppercase text-muted">Updated pick list preview</p>
+              <div className="mt-2 grid gap-2 text-sm sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                <div>
+                  <p className="text-xs text-muted">Remove from pick list</p>
+                  <p className="font-semibold text-foreground">{sourceLine?.productName ?? 'Order item'} ×{quantity}</p>
+                </div>
+                <ArrowRight className="hidden h-4 w-4 text-muted sm:block" />
+                <div>
+                  <p className="text-xs text-muted">
+                    {action === 'SUBSTITUTION' ? 'Add to pick list' : 'Replacement'}
+                  </p>
+                  <p className={`font-semibold ${action === 'BYPASS' ? 'text-warning' : 'text-foreground'}`}>
+                    {action === 'SUBSTITUTION'
+                      ? `${substitute?.productName ?? 'Choose a replacement'} ×${quantity}`
+                      : 'None — ship fewer units'}
+                  </p>
+                </div>
               </div>
+              <p className="mt-3 border-t border-border/20 pt-2 text-sm text-muted">
+                Shipment units: <span className="font-semibold text-foreground">{task.totals.required}</span>
+                {' → '}
+                <span className={`font-semibold ${action === 'BYPASS' ? 'text-warning' : 'text-foreground'}`}>
+                  {updatedShipmentQuantity}
+                </span>
+                {action === 'SUBSTITUTION' ? ' (no change)' : ` (${quantity} fewer)`}
+              </p>
             </div>
           </div>
 
           <label className="space-y-1.5 text-sm font-medium text-foreground">
-            Supervisor reason
+            Reason for this change
             <textarea
               value={reason}
               onChange={(event) => {
@@ -320,9 +353,12 @@ export function FulfillmentItemAdjustmentSection({
               }}
               rows={3}
               maxLength={500}
-              placeholder="Explain why this fulfillment adjustment is required."
+              placeholder={action === 'SUBSTITUTION'
+                ? 'Example: Ordered item is unavailable; customer approved this replacement.'
+                : 'Example: Customer approved shipping the order without this unavailable item.'}
               className="input h-auto w-full resize-none py-3"
             />
+            <span className="block text-xs text-muted">Required for the audit history (at least 10 characters).</span>
           </label>
 
           {isConfirming ? (
@@ -330,11 +366,13 @@ export function FulfillmentItemAdjustmentSection({
               <div className="flex items-start gap-2">
                 <PackageSearch className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                 <div>
-                  <p className="text-sm font-semibold text-foreground">Confirm fulfillment adjustment</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {action === 'SUBSTITUTION' ? 'Apply this replacement to the pick list?' : 'Ship this order with fewer items?'}
+                  </p>
                   <p className="mt-1 text-sm text-muted">
                     {action === 'SUBSTITUTION' && substitute
-                      ? `STOX will pick ${substitute.productName} ×${quantity} instead of ${sourceLine?.productName} ×${quantity}. The original POS order is not changed.`
-                      : `The shipment will contain ${quantity} fewer ${sourceLine?.productName ?? 'item'} unit(s). The original POS order is not changed.`}
+                      ? `STOX will tell the picker to scan ${substitute.productName} ×${quantity} instead of ${sourceLine?.productName} ×${quantity}. The POS order will stay unchanged.`
+                      : `STOX will remove ${sourceLine?.productName ?? 'this item'} ×${quantity} from the pick list. The customer will receive ${quantity} fewer unit(s), and the POS order will stay unchanged.`}
                   </p>
                 </div>
               </div>
@@ -356,11 +394,15 @@ export function FulfillmentItemAdjustmentSection({
             </button>
             {isConfirming ? (
               <button type="button" onClick={() => void submit()} disabled={isSubmitting} className="btn btn-md btn-warning">
-                {isSubmitting ? 'Applying…' : 'Confirm adjustment'}
+                {isSubmitting
+                  ? 'Updating pick list…'
+                  : action === 'SUBSTITUTION'
+                    ? 'Apply replacement'
+                    : 'Remove from shipment'}
               </button>
             ) : (
               <button type="button" onClick={prepareConfirmation} disabled={isLoadingOptions} className="btn btn-md btn-primary">
-                Review change
+                Preview pick-list change
               </button>
             )}
           </div>
