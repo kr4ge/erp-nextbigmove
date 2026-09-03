@@ -5,6 +5,7 @@ import { WmsInventoryController } from './wms-inventory.controller';
 import { WmsInventoryCogsModule } from './wms-inventory-cogs.module';
 import { WmsDispatchReconcilerService } from './wms-dispatch-reconciler.service';
 import { WmsInventoryService } from './wms-inventory.service';
+import { WmsOutboundRecordsService } from './wms-outbound-records.service';
 import { shouldRunApiBackgroundServices } from '../../common/runtime/process-role';
 
 @Module({
@@ -12,8 +13,9 @@ import { shouldRunApiBackgroundServices } from '../../common/runtime/process-rol
   controllers: [WmsInventoryController],
   providers: [
     WmsInventoryService,
+    WmsOutboundRecordsService,
     ...(shouldRunApiBackgroundServices() ? [WmsDispatchReconcilerService] : []),
   ],
-  exports: [WmsInventoryService],
+  exports: [WmsInventoryService, WmsOutboundRecordsService],
 })
 export class WmsInventoryModule {}

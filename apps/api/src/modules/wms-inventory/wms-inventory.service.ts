@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -31,6 +32,7 @@ import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.d
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
 import { VoidWmsInventoryUnitDto } from './dto/void-wms-inventory-unit.dto';
 import { WmsInventoryCogsService } from './wms-inventory-cogs.service';
+import { WmsOutboundRecordsService } from './wms-outbound-records.service';
 
 const UNIT_STATUS_ORDER: WmsInventoryUnitStatus[] = [
   WmsInventoryUnitStatus.RECEIVED,
@@ -287,12 +289,15 @@ const TRANSFER_OPERATIONAL_LOCATION_KINDS = [
 
 @Injectable()
 export class WmsInventoryService {
+  private readonly logger = new Logger(WmsInventoryService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
     private readonly wmsInventoryCogsService: WmsInventoryCogsService,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
+    private readonly wmsOutboundRecordsService: WmsOutboundRecordsService,
   ) {}
 
   async getOverview(query: GetWmsInventoryOverviewDto) {
@@ -3251,6 +3256,18 @@ export class WmsInventoryService {
       mode: syncMode,
       actorId,
     });
+
+    try {
+      await this.wmsOutboundRecordsService.syncForPosOrders({
+        tenantId: params.tenantId,
+        storeId: params.storeId ?? null,
+        posOrderRefs: refs,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Outbound unit projection sync failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     return {
       dispatchedUnits,

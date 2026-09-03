@@ -1,4 +1,4 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { buildProductMappingKey } from '../../workflows/utils/product-mapping-key';
 import { Prisma } from '@prisma/client';
@@ -9,6 +9,7 @@ import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import { WmsFulfillmentSyncService } from '../../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../../wms-inventory/wms-inventory.service';
+import { WmsOutboundRecordsService } from '../../wms-inventory/wms-outbound-records.service';
 import { WorkflowExecutionGateway } from '../../workflows/gateways/workflow-execution.gateway';
 import {
   ORDERS_STATUS_SUMMARY_UPDATED_EVENT,
@@ -107,10 +108,13 @@ export interface PosOrderUpsertOutcome {
 
 @Injectable()
 export class PosOrderService {
+  private readonly logger = new Logger(PosOrderService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
     private readonly wmsInventoryService: WmsInventoryService,
+    private readonly wmsOutboundRecordsService: WmsOutboundRecordsService,
     @Optional()
     private readonly workflowExecutionGateway?: WorkflowExecutionGateway,
   ) {}
@@ -997,6 +1001,7 @@ export class PosOrderService {
     const fulfillmentCandidates: Array<{ shopId: string; posOrderId: string }> = [];
     const canceledFulfillmentCandidates: Array<{ shopId: string; posOrderId: string }> = [];
     const dispatchCandidates: Array<{ shopId: string; posOrderId: string }> = [];
+    const outboundRecordCandidates: Array<{ shopId: string; posOrderId: string }> = [];
 
     const store = await this.prisma.posStore.findFirst({
       where: { id: storeId, tenantId },
@@ -1247,6 +1252,16 @@ export class PosOrderService {
             posOrderId: order.posOrderId,
           });
         }
+        if (
+          [4, 5].includes(order.status ?? -1)
+          && order.shopId
+          && order.posOrderId
+        ) {
+          outboundRecordCandidates.push({
+            shopId: order.shopId,
+            posOrderId: order.posOrderId,
+          });
+        }
         outcomes.push({
           shopId: order.shopId || shopId,
           orderId: order.posOrderId || posOrderId,
@@ -1312,6 +1327,20 @@ export class PosOrderService {
         storeId,
         posOrderRefs: dispatchCandidates,
       });
+    }
+
+    if (outboundRecordCandidates.length > 0) {
+      try {
+        await this.wmsOutboundRecordsService.syncForPosOrders({
+          tenantId,
+          storeId,
+          posOrderRefs: outboundRecordCandidates,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Outbound unit projection sync failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
     const wmsCogsCandidates = Array.from(

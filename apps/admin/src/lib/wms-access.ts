@@ -78,6 +78,11 @@ export const WMS_NAV_ITEMS: WmsNavItem[] = [
         permission: 'wms.inventory.read',
       },
       {
+        href: '/inventory/outbound-records',
+        label: 'Outbound Records',
+        permission: 'wms.inventory.read',
+      },
+      {
         href: '/inventory/stock-receiving',
         label: 'Stock Receiving',
         permission: 'wms.receiving.read',
