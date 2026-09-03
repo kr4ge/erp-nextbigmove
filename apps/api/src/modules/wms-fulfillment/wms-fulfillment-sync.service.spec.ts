@@ -1,4 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import { WmsFulfillmentOrderStatus } from '@prisma/client';
 import { WMS_DEMAND_QUEUE_REFRESH_JOB } from './wms-fulfillment.constants';
 import { WmsFulfillmentSyncService } from './wms-fulfillment-sync.service';
 
@@ -137,5 +138,111 @@ describe('WmsFulfillmentSyncService.reconcileCanceledPickingOrderRefs', () => {
     );
     expect(prisma.$transaction.mock.invocationCallOrder[0])
       .toBeLessThan(queue.add.mock.invocationCallOrder[0]);
+  });
+});
+
+describe('WmsFulfillmentSyncService transient empty-item cancellation recovery', () => {
+  const eligibleOrder = {
+    id: 'fulfillment-1',
+    tenantId: 'tenant-1',
+    storeId: 'store-1',
+    warehouseId: null,
+    shopId: 'shop-1',
+    posOrderId: '161',
+    status: WmsFulfillmentOrderStatus.CANCELED,
+    completedAt: new Date('2026-09-02T03:55:03.656Z'),
+    pickedQuantity: 0,
+  };
+
+  const createTransactionClient = (overrides: {
+    transientWebhook?: { id: string } | null;
+    pickedReservationCount?: number;
+    basketUnitCount?: number;
+    packingProofCount?: number;
+    outboundRecordCount?: number;
+    manualVoidCount?: number;
+  } = {}) => ({
+    pancakeWebhookLogOrder: {
+      findFirst: jest.fn<() => Promise<{ id: string } | null>>().mockResolvedValue(
+        overrides.transientWebhook === undefined
+          ? { id: 'webhook-log-order-1' }
+          : overrides.transientWebhook,
+      ),
+    },
+    wmsPickReservation: {
+      count: jest.fn<() => Promise<number>>().mockResolvedValue(overrides.pickedReservationCount ?? 0),
+    },
+    wmsBasketUnit: {
+      count: jest.fn<() => Promise<number>>().mockResolvedValue(overrides.basketUnitCount ?? 0),
+    },
+    wmsPackingProof: {
+      count: jest.fn<() => Promise<number>>().mockResolvedValue(overrides.packingProofCount ?? 0),
+    },
+    wmsOutboundUnitRecord: {
+      count: jest.fn<() => Promise<number>>().mockResolvedValue(overrides.outboundRecordCount ?? 0),
+    },
+    wmsStaffActivity: {
+      count: jest.fn<() => Promise<number>>().mockResolvedValue(overrides.manualVoidCount ?? 0),
+    },
+  });
+
+  it('reopens only a confirmed order canceled by the transient empty-items webhook', async () => {
+    const service = new WmsFulfillmentSyncService({} as any, {} as any, {} as any);
+    const tx = createTransactionClient();
+
+    const result = await (service as any).canRecoverTransientEmptyItemsCancellationTx(tx, {
+      order: eligibleOrder,
+      posOrder: { status: 1, isVoid: false },
+      nextLines: [{ variationId: 'variation-1', quantityRequired: 1 }],
+    });
+
+    expect(result).toBe(true);
+    expect(tx.pancakeWebhookLogOrder.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        shopId: 'shop-1',
+        orderId: '161',
+        reason: 'VOID_NO_PRODUCT_ITEMS',
+        log: { tenantId: 'tenant-1' },
+      }),
+      select: { id: true },
+    });
+  });
+
+  it.each([
+    ['picked reservation history', { pickedReservationCount: 1 }],
+    ['basket unit history', { basketUnitCount: 1 }],
+    ['packing proof history', { packingProofCount: 1 }],
+    ['outbound record history', { outboundRecordCount: 1 }],
+    ['manual void activity', { manualVoidCount: 1 }],
+    ['missing transient webhook evidence', { transientWebhook: null }],
+  ])('does not reopen when %s exists', async (_label, overrides) => {
+    const service = new WmsFulfillmentSyncService({} as any, {} as any, {} as any);
+    const tx = createTransactionClient(overrides);
+
+    const result = await (service as any).canRecoverTransientEmptyItemsCancellationTx(tx, {
+      order: eligibleOrder,
+      posOrder: { status: 1, isVoid: false },
+      nextLines: [{ variationId: 'variation-1', quantityRequired: 1 }],
+    });
+
+    expect(result).toBe(false);
+  });
+
+  it('rejects canceled orders when POS is still void or no replacement lines exist', async () => {
+    const service = new WmsFulfillmentSyncService({} as any, {} as any, {} as any);
+    const tx = createTransactionClient();
+
+    await expect((service as any).canRecoverTransientEmptyItemsCancellationTx(tx, {
+      order: eligibleOrder,
+      posOrder: { status: 1, isVoid: true },
+      nextLines: [{ variationId: 'variation-1', quantityRequired: 1 }],
+    })).resolves.toBe(false);
+    await expect((service as any).canRecoverTransientEmptyItemsCancellationTx(tx, {
+      order: eligibleOrder,
+      posOrder: { status: 1, isVoid: false },
+      nextLines: [],
+    })).resolves.toBe(false);
+
+    expect(tx.pancakeWebhookLogOrder.findFirst).not.toHaveBeenCalled();
   });
 });

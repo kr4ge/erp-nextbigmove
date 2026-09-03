@@ -108,6 +108,7 @@ model Tenant {
   creativeMetaAdLinks                 CreativeMetaAdLink[]
   creativeReviewComments              CreativeReviewComment[]
   wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
+  wmsFulfillmentAdjustments           WmsFulfillmentAdjustment[]
 
   @@index([slug])
   @@index([status])
@@ -387,6 +388,7 @@ model User {
   wmsFulfillmentOrdersClaimed               WmsFulfillmentOrder[]          @relation("WmsFulfillmentOrderClaimedBy")
   wmsFulfillmentOrdersPacked                WmsFulfillmentOrder[]          @relation("WmsFulfillmentOrderPackedBy")
   wmsFulfillmentOrdersRtsDisposed           WmsFulfillmentOrder[]          @relation("WmsFulfillmentOrderRtsDisposedBy")
+  wmsFulfillmentAdjustmentsCreated          WmsFulfillmentAdjustment[]     @relation("WmsFulfillmentAdjustmentCreatedBy")
   wmsBasketsAssigned                        WmsBasket[]                    @relation("WmsBasketAssignedPicker")
   wmsBasketsAssignedForPacking              WmsBasket[]                    @relation("WmsBasketAssignedPacker")
   wmsPickReservationsReserved               WmsPickReservation[]           @relation("WmsPickReservationReservedBy")
@@ -849,6 +851,17 @@ enum WmsFulfillmentAmendmentStage {
 enum WmsFulfillmentAssignmentMode {
   SERIAL_RESERVED
   BASKET_DEMAND
+}
+
+enum WmsFulfillmentAdjustmentType {
+  BYPASS
+  SUBSTITUTION
+}
+
+enum WmsFulfillmentAdjustmentStatus {
+  ACTIVE
+  SUPERSEDED
+  REVOKED
 }
 
 enum WmsFulfillmentLineStatus {
@@ -2386,6 +2399,7 @@ model WmsFulfillmentOrder {
   priorityOverrideAt         DateTime?
   priorityOverrideReason     String?
   priorityReleasedForOrderId String?                      @db.Uuid
+  sourceTotalQuantity        Int                          @default(0)
   totalQuantity              Int                          @default(0)
   allocatedQuantity          Int                          @default(0)
   pickedQuantity             Int                          @default(0)
@@ -2409,14 +2423,15 @@ model WmsFulfillmentOrder {
   createdAt                  DateTime                     @default(now())
   updatedAt                  DateTime                     @updatedAt
 
-  legacyBasket        WmsBasket?                @relation("WmsBasketLegacyFulfillmentOrder")
-  lines               WmsFulfillmentLine[]
-  reservations        WmsPickReservation[]
-  basketPickDemands   WmsBasketPickDemand[]
-  basketUnits         WmsBasketUnit[]
-  packingProofs       WmsPackingProof[]
-  amendments          WmsFulfillmentAmendment[]
-  outboundUnitRecords WmsOutboundUnitRecord[]
+  legacyBasket           WmsBasket?                 @relation("WmsBasketLegacyFulfillmentOrder")
+  lines                  WmsFulfillmentLine[]
+  reservations           WmsPickReservation[]
+  basketPickDemands      WmsBasketPickDemand[]
+  basketUnits            WmsBasketUnit[]
+  packingProofs          WmsPackingProof[]
+  amendments             WmsFulfillmentAmendment[]
+  fulfillmentAdjustments WmsFulfillmentAdjustment[]
+  outboundUnitRecords    WmsOutboundUnitRecord[]
 
   @@unique([tenantId, shopId, posOrderId])
   @@unique([posOrderDbId])
@@ -2508,23 +2523,24 @@ model WmsBasket {
 }
 
 model WmsFulfillmentLine {
-  id                 String                   @id @default(uuid()) @db.Uuid
-  fulfillmentOrderId String                   @db.Uuid
-  fulfillmentOrder   WmsFulfillmentOrder      @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
-  tenantId           String                   @db.Uuid
-  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  productId          String?
-  variationId        String
-  productName        String
-  productDisplayId   String?
-  quantityRequired   Int
-  quantityAllocated  Int                      @default(0)
-  quantityPicked     Int                      @default(0)
-  status             WmsFulfillmentLineStatus @default(RESTOCKING)
-  issueReason        String?
-  lineSnapshot       Json?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
+  id                     String                   @id @default(uuid()) @db.Uuid
+  fulfillmentOrderId     String                   @db.Uuid
+  fulfillmentOrder       WmsFulfillmentOrder      @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  tenantId               String                   @db.Uuid
+  tenant                 Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId              String?
+  variationId            String
+  productName            String
+  productDisplayId       String?
+  sourceQuantityRequired Int                      @default(0)
+  quantityRequired       Int
+  quantityAllocated      Int                      @default(0)
+  quantityPicked         Int                      @default(0)
+  status                 WmsFulfillmentLineStatus @default(RESTOCKING)
+  issueReason            String?
+  lineSnapshot           Json?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
   reservations        WmsPickReservation[]
   basketPickDemands   WmsBasketPickDemand[]
@@ -2535,6 +2551,40 @@ model WmsFulfillmentLine {
   @@index([tenantId, variationId, status])
   @@index([fulfillmentOrderId, status])
   @@map("wms_fulfillment_lines")
+}
+
+model WmsFulfillmentAdjustment {
+  id                         String                         @id @default(uuid()) @db.Uuid
+  tenantId                   String                         @db.Uuid
+  tenant                     Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fulfillmentOrderId         String                         @db.Uuid
+  fulfillmentOrder           WmsFulfillmentOrder            @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  sourceLineId               String                         @db.Uuid
+  sourceVariationId          String
+  sourceProductId            String?
+  sourceProductName          String
+  sourceProductDisplayId     String?
+  substituteVariationId      String?
+  substituteProductId        String?
+  substituteProductName      String?
+  substituteProductDisplayId String?
+  type                       WmsFulfillmentAdjustmentType
+  status                     WmsFulfillmentAdjustmentStatus @default(ACTIVE)
+  quantity                   Int
+  reason                     String
+  sourceRevision             Int
+  createdById                String                         @db.Uuid
+  createdBy                  User                           @relation("WmsFulfillmentAdjustmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  supersededAt               DateTime?
+  revokedAt                  DateTime?
+  createdAt                  DateTime                       @default(now())
+  updatedAt                  DateTime                       @updatedAt
+
+  @@index([tenantId, status, createdAt])
+  @@index([fulfillmentOrderId, status])
+  @@index([sourceLineId, status])
+  @@index([createdById])
+  @@map("wms_fulfillment_adjustments")
 }
 
 model WmsBasketPickDemand {

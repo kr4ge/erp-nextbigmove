@@ -106,6 +106,17 @@ export interface PosOrderUpsertOutcome {
   warning?: string;
 }
 
+export function shouldTreatNoProductSnapshotAsVoid(
+  isNoProductOrder: boolean,
+  status: number | null | undefined,
+) {
+  if (!isNoProductOrder) {
+    return false;
+  }
+
+  return status !== 1 && status !== 12;
+}
+
 @Injectable()
 export class PosOrderService {
   private readonly logger = new Logger(PosOrderService.name);
@@ -1100,7 +1111,19 @@ export class PosOrderService {
             order.status = previous?.status ?? order.status;
           }
         }
-        if (isNoProductOrder) {
+        // Pancake emits variation replacements as two separate snapshots: the
+        // old item is removed first, then the replacement is added a few
+        // seconds later. A confirmed order with an explicitly empty item list
+        // is therefore an incomplete fulfillment snapshot, not a POS void.
+        // Keep it confirmed so WMS can pause it as ISSUE and converge when the
+        // replacement snapshot arrives. Only non-fulfillable statuses may use
+        // an empty item list as void evidence.
+        const shouldTreatAsVoid = shouldTreatNoProductSnapshotAsVoid(
+          isNoProductOrder,
+          order.status,
+        );
+        const isConfirmedNoProductSnapshot = isNoProductOrder && !shouldTreatAsVoid;
+        if (shouldTreatAsVoid) {
           order.isVoid = true;
         }
 
@@ -1267,7 +1290,13 @@ export class PosOrderService {
           orderId: order.posOrderId || posOrderId,
           status: typeof order.status === 'number' ? order.status : status,
           upsertStatus: 'UPSERTED',
-          ...(isNoProductOrder ? { reason: 'VOID_NO_PRODUCT_ITEMS' } : {}),
+          ...(isNoProductOrder
+            ? {
+                reason: isConfirmedNoProductSnapshot
+                  ? 'CONFIRMED_NO_PRODUCT_ITEMS'
+                  : 'VOID_NO_PRODUCT_ITEMS',
+              }
+            : {}),
         });
       } catch (error: any) {
         const message = error?.message || 'Unknown error';

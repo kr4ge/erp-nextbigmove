@@ -1499,6 +1499,25 @@ function PickExecutionStack({
         />
       ))}
 
+      {tasks.filter((task) => task.fulfillmentAdjustment).map((task) => (
+        <View key={`adjustment-${task.id}`} style={styles.fulfillmentAdjustmentNotice}>
+          <View style={styles.fulfillmentAdjustmentTitleRow}>
+            <Feather name="shield" size={16} color="#9A6700" />
+            <Text style={styles.fulfillmentAdjustmentTitle}>Supervisor item adjustment</Text>
+          </View>
+          {task.fulfillmentAdjustment?.items.map((adjustment) => (
+            <Text key={adjustment.id} style={styles.fulfillmentAdjustmentText}>
+              {adjustment.type === 'SUBSTITUTION'
+                ? `${adjustment.sourceProductName} ×${adjustment.quantity} replaced with ${adjustment.substituteProductName ?? 'substitute stock'} ×${adjustment.quantity}`
+                : `${adjustment.sourceProductName} ×${adjustment.quantity} bypassed`}
+            </Text>
+          ))}
+          <Text style={styles.fulfillmentAdjustmentMeta}>
+            Follow the updated item list below. Original POS requirement: {task.fulfillmentAdjustment?.sourceTotalRequired ?? task.totals.required} · Pick now: {task.totals.required}
+          </Text>
+        </View>
+      ))}
+
       {useBasketPicking && basket ? (
         <BasketPickExecutionCard
           activeBin={activeBin}
@@ -2787,6 +2806,34 @@ function mapPickCardStatus(status: PickingStatus, fallback: string) {
 }
 
 const styles = StyleSheet.create({
+  fulfillmentAdjustmentNotice: {
+    backgroundColor: '#FFF8E1',
+    borderColor: '#F2D38A',
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+    padding: 14,
+  },
+  fulfillmentAdjustmentTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  fulfillmentAdjustmentTitle: {
+    color: '#5F4300',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  fulfillmentAdjustmentText: {
+    color: '#5F4300',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  fulfillmentAdjustmentMeta: {
+    color: '#80651D',
+    fontSize: 12,
+    lineHeight: 17,
+  },
   loadingCard: {
     alignItems: 'center',
     gap: tokens.spacing.sm,

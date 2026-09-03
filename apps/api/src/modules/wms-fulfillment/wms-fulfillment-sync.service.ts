@@ -5,6 +5,7 @@ import {
   Prisma,
   WmsBasketStatus,
   WmsBasketUnitStatus,
+  WmsFulfillmentAdjustmentStatus,
   WmsFulfillmentAmendmentStage,
   WmsFulfillmentAmendmentStatus,
   WmsFulfillmentAssignmentMode,
@@ -62,6 +63,8 @@ type FulfillmentAmendmentPlan = {
 const CONFIRMED_POS_ORDER_STATUS = 1;
 const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
 const CANCELED_POS_ORDER_STATUS = 6;
+const AUTO_POS_CANCELLATION_ISSUE_REASON = 'Order was canceled in POS.';
+const TRANSIENT_EMPTY_ITEMS_WEBHOOK_REASON = 'VOID_NO_PRODUCT_ITEMS';
 const PICKING_SYNC_ORDER_LIMIT = 80;
 const ACTIVE_PICK_RESERVATION_STATUSES = [
   WmsPickReservationStatus.RESERVED,
@@ -307,18 +310,39 @@ export class WmsFulfillmentSyncService {
         ...(refs.length > 0
           ? {}
           : {
-              wmsFulfillmentOrders: {
-                none: {
-                  status: {
-                    in: [...FINALIZED_FULFILLMENT_ORDER_STATUSES],
+              OR: [
+                {
+                  wmsFulfillmentOrders: {
+                    none: {
+                      status: {
+                        in: [...FINALIZED_FULFILLMENT_ORDER_STATUSES],
+                      },
+                    },
                   },
                 },
-              },
+                {
+                  // Include automatically canceled pre-pick orders so the
+                  // broad queue resync can repair records stranded by a
+                  // transient empty-items webhook before this fix deployed.
+                  wmsFulfillmentOrders: {
+                    some: {
+                      status: WmsFulfillmentOrderStatus.CANCELED,
+                      pickedQuantity: 0,
+                      lines: {
+                        some: {
+                          issueReason: AUTO_POS_CANCELLATION_ISSUE_REASON,
+                        },
+                      },
+                    },
+                  },
+                },
+              ],
             }),
       },
       select: {
         id: true,
         status: true,
+        isVoid: true,
         tenantId: true,
         shopId: true,
         posOrderId: true,
@@ -407,6 +431,7 @@ export class WmsFulfillmentSyncService {
                 : WmsFulfillmentOrderStatus.RESTOCKING,
               assignmentMode,
               issueReason: lines.length === 0 ? 'Order has no pickable variation items' : null,
+              sourceTotalQuantity: totalQuantity,
               totalQuantity,
               sourceItemsHash,
               sourceRevision: 1,
@@ -418,6 +443,7 @@ export class WmsFulfillmentSyncService {
                   variationId: line.variationId,
                   productName: line.productName,
                   productDisplayId: line.productDisplayId,
+                  sourceQuantityRequired: line.quantityRequired,
                   quantityRequired: line.quantityRequired,
                   lineSnapshot: line.lineSnapshot,
                   status: WmsFulfillmentLineStatus.RESTOCKING,
@@ -444,28 +470,72 @@ export class WmsFulfillmentSyncService {
         });
 
         const previousDemand = existing.lines
-          .filter((line) => line.status !== WmsFulfillmentLineStatus.CANCELED && line.quantityRequired > 0)
+          .filter((line) => line.sourceQuantityRequired > 0)
           .map((line) => ({
             variationId: line.variationId,
             productId: line.productId,
             productName: line.productName,
             productDisplayId: line.productDisplayId,
-            quantityRequired: line.quantityRequired,
+            quantityRequired: line.sourceQuantityRequired,
           }));
         const demandDiff = diffFulfillmentDemand(previousDemand, lines);
         const hasNewSourceRevision = lockedRevision.sourceItemsHash !== sourceItemsHash;
         const isInitialHashBackfill = !lockedRevision.sourceItemsHash && !demandDiff.hasChanges;
+        const shouldRecoverTransientCancellation = await this.canRecoverTransientEmptyItemsCancellationTx(
+          tx,
+          {
+            order: existing,
+            posOrder,
+            nextLines: lines,
+          },
+        );
 
         if (!hasNewSourceRevision || isInitialHashBackfill) {
+          if (shouldRecoverTransientCancellation) {
+            await tx.wmsFulfillmentLine.updateMany({
+              where: {
+                fulfillmentOrderId: existing.id,
+                quantityRequired: { gt: 0 },
+              },
+              data: {
+                status: WmsFulfillmentLineStatus.RESTOCKING,
+                issueReason: null,
+              },
+            });
+          }
+
           await tx.wmsFulfillmentOrder.update({
             where: { id: existing.id },
             data: {
               sourceItemsHash,
               sourceRevision: Math.max(lockedRevision.sourceRevision, 1),
+              ...(shouldRecoverTransientCancellation
+                ? {
+                    status: WmsFulfillmentOrderStatus.RESTOCKING,
+                    issueReason: null,
+                    allocatedQuantity: 0,
+                    pickedQuantity: 0,
+                    claimedById: null,
+                    claimedAt: null,
+                    packedById: null,
+                    basketId: null,
+                    completedAt: null,
+                  }
+                : {}),
               lastSyncedAt: new Date(),
             },
           });
-          return existing;
+
+          if (shouldRecoverTransientCancellation) {
+            await this.recordTransientCancellationRecoveryTx(tx, {
+              order: existing,
+              sourceRevision: Math.max(lockedRevision.sourceRevision, 1),
+            });
+          }
+
+          return shouldRecoverTransientCancellation
+            ? { ...existing, status: WmsFulfillmentOrderStatus.RESTOCKING }
+            : existing;
         }
 
         const amendment = this.buildFulfillmentAmendmentPlan(existing, demandDiff);
@@ -480,6 +550,7 @@ export class WmsFulfillmentSyncService {
               : {}),
             customerName: posOrder.customerName,
             customerPhone: posOrder.customerPhone,
+            sourceTotalQuantity: totalQuantity,
             totalQuantity,
             sourceItemsHash,
             sourceRevision: nextRevision,
@@ -487,6 +558,18 @@ export class WmsFulfillmentSyncService {
             changeDetectedAt: new Date(),
             changeSummary: amendment.summary as Prisma.InputJsonValue,
             issueReason: lines.length === 0 ? 'Order has no pickable variation items' : null,
+            ...(shouldRecoverTransientCancellation
+              ? {
+                  status: WmsFulfillmentOrderStatus.RESTOCKING,
+                  allocatedQuantity: 0,
+                  pickedQuantity: 0,
+                  claimedById: null,
+                  claimedAt: null,
+                  packedById: null,
+                  basketId: null,
+                  completedAt: null,
+                }
+              : {}),
             lastSyncedAt: new Date(),
           },
         });
@@ -506,6 +589,7 @@ export class WmsFulfillmentSyncService {
               variationId: line.variationId,
               productName: line.productName,
               productDisplayId: line.productDisplayId,
+              sourceQuantityRequired: line.quantityRequired,
               quantityRequired: line.quantityRequired,
               lineSnapshot: line.lineSnapshot,
               status: WmsFulfillmentLineStatus.RESTOCKING,
@@ -514,6 +598,7 @@ export class WmsFulfillmentSyncService {
               productId: line.productId,
               productName: line.productName,
               productDisplayId: line.productDisplayId,
+              sourceQuantityRequired: line.quantityRequired,
               quantityRequired: line.quantityRequired,
               lineSnapshot: line.lineSnapshot,
               status: WmsFulfillmentLineStatus.RESTOCKING,
@@ -536,7 +621,19 @@ export class WmsFulfillmentSyncService {
             : { fulfillmentOrderId: existing.id },
           data: {
             status: WmsFulfillmentLineStatus.CANCELED,
+            sourceQuantityRequired: 0,
             quantityRequired: 0,
+          },
+        });
+
+        await tx.wmsFulfillmentAdjustment.updateMany({
+          where: {
+            fulfillmentOrderId: existing.id,
+            status: WmsFulfillmentAdjustmentStatus.ACTIVE,
+          },
+          data: {
+            status: WmsFulfillmentAdjustmentStatus.SUPERSEDED,
+            supersededAt: new Date(),
           },
         });
 
@@ -596,7 +693,16 @@ export class WmsFulfillmentSyncService {
           },
         });
 
-        return existing;
+        if (shouldRecoverTransientCancellation) {
+          await this.recordTransientCancellationRecoveryTx(tx, {
+            order: existing,
+            sourceRevision: nextRevision,
+          });
+        }
+
+        return shouldRecoverTransientCancellation
+          ? { ...existing, status: WmsFulfillmentOrderStatus.RESTOCKING }
+          : existing;
       });
 
       if (!fulfillmentOrder) {
@@ -627,6 +733,124 @@ export class WmsFulfillmentSyncService {
     }
 
     return { syncedOrders };
+  }
+
+  private async canRecoverTransientEmptyItemsCancellationTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      order: {
+        id: string;
+        tenantId: string;
+        shopId: string;
+        posOrderId: string;
+        status: WmsFulfillmentOrderStatus;
+        completedAt: Date | null;
+        pickedQuantity: number;
+      };
+      posOrder: {
+        status: number | null;
+        isVoid: boolean;
+      };
+      nextLines: FulfillmentLineDraft[];
+    },
+  ) {
+    const { order, posOrder, nextLines } = params;
+    if (
+      order.status !== WmsFulfillmentOrderStatus.CANCELED
+      || (posOrder.status !== CONFIRMED_POS_ORDER_STATUS
+        && posOrder.status !== WAITING_FOR_PRINTING_POS_ORDER_STATUS)
+      || posOrder.isVoid
+      || nextLines.length === 0
+      || order.pickedQuantity > 0
+      || !order.completedAt
+    ) {
+      return false;
+    }
+
+    const cancellationWindowStart = new Date(order.completedAt.getTime() - 90_000);
+    const cancellationWindowEnd = new Date(order.completedAt.getTime() + 90_000);
+    const [transientWebhook, pickedReservationCount, basketUnitCount, packingProofCount, outboundRecordCount, manualVoidCount] = await Promise.all([
+      tx.pancakeWebhookLogOrder.findFirst({
+        where: {
+          shopId: order.shopId,
+          orderId: order.posOrderId,
+          reason: TRANSIENT_EMPTY_ITEMS_WEBHOOK_REASON,
+          createdAt: {
+            gte: cancellationWindowStart,
+            lte: cancellationWindowEnd,
+          },
+          log: {
+            tenantId: order.tenantId,
+          },
+        },
+        select: { id: true },
+      }),
+      tx.wmsPickReservation.count({
+        where: {
+          fulfillmentOrderId: order.id,
+          OR: [
+            { status: WmsPickReservationStatus.PICKED },
+            { pickedAt: { not: null } },
+          ],
+        },
+      }),
+      tx.wmsBasketUnit.count({
+        where: { fulfillmentOrderId: order.id },
+      }),
+      tx.wmsPackingProof.count({
+        where: { fulfillmentOrderId: order.id },
+      }),
+      tx.wmsOutboundUnitRecord.count({
+        where: { fulfillmentOrderId: order.id },
+      }),
+      tx.wmsStaffActivity.count({
+        where: {
+          resourceId: order.id,
+          actionType: { contains: 'VOID' },
+        },
+      }),
+    ]);
+
+    return Boolean(transientWebhook)
+      && pickedReservationCount === 0
+      && basketUnitCount === 0
+      && packingProofCount === 0
+      && outboundRecordCount === 0
+      && manualVoidCount === 0;
+  }
+
+  private async recordTransientCancellationRecoveryTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      order: {
+        id: string;
+        tenantId: string;
+        storeId: string;
+        warehouseId: string | null;
+        posOrderId: string;
+      };
+      sourceRevision: number;
+    },
+  ) {
+    await tx.wmsStaffActivity.create({
+      data: {
+        tenantId: params.order.tenantId,
+        actorId: null,
+        actionType: 'FULFILLMENT_AUTO_REOPEN',
+        resourceType: 'WMS_FULFILLMENT_ORDER',
+        resourceId: params.order.id,
+        storeId: params.order.storeId,
+        warehouseId: params.order.warehouseId,
+        fromStatus: WmsFulfillmentOrderStatus.CANCELED,
+        toStatus: WmsFulfillmentOrderStatus.RESTOCKING,
+        reasonCode: 'TRANSIENT_EMPTY_ITEMS_RECOVERED',
+        metadata: {
+          posOrderId: params.order.posOrderId,
+          sourceRevision: params.sourceRevision,
+          recoverySource: TRANSIENT_EMPTY_ITEMS_WEBHOOK_REASON,
+        },
+      },
+    });
   }
 
   async reconcileCanceledPickingOrderRefs(params: {

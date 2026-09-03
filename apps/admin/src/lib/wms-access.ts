@@ -106,6 +106,7 @@ export const WMS_NAV_ITEMS: WmsNavItem[] = [
           'wms.fulfillment.write',
           'wms.fulfillment.edit',
           'wms.fulfillment.override',
+          'wms.fulfillment.bypass',
         ],
       },
       {

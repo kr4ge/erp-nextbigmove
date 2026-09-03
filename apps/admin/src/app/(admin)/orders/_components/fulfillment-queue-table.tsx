@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { WmsSidePanel } from '../../_components/wms-side-panel';
+import { FulfillmentItemAdjustmentSection } from './fulfillment-item-adjustment-section';
 import {
   fetchWmsFulfillmentPriorityPreview,
   prioritizeWmsFulfillmentOrder,
@@ -30,6 +31,7 @@ type FulfillmentQueueTableProps = {
   pickView?: PickQueueView;
   canVoidPickBaskets?: boolean;
   canAssignPickBasketPacker?: boolean;
+  canAdjustFulfillmentItems?: boolean;
   packerOptions?: WmsFulfillmentPackerOption[];
   isAssigningPickBasketPacker?: boolean;
   onAssignPickBasketPacker?: (basketId: string, packerId: string) => Promise<boolean> | boolean;
@@ -63,6 +65,7 @@ export function FulfillmentQueueTable({
   pickView = 'orders',
   canVoidPickBaskets = false,
   canAssignPickBasketPacker = false,
+  canAdjustFulfillmentItems = false,
   packerOptions = [],
   isAssigningPickBasketPacker = false,
   onAssignPickBasketPacker,
@@ -534,6 +537,14 @@ export function FulfillmentQueueTable({
               <SummaryTile label="Packed" value={selectedTask.totals.packed} />
               <SummaryTile label="Remaining" value={selectedTask.totals.remaining} />
             </div>
+
+            {mode === 'pick' && ['READY', 'PARTIAL', 'RESTOCKING'].includes(selectedTask.status) ? (
+              <FulfillmentItemAdjustmentSection
+                task={selectedTask}
+                canAdjust={canAdjustFulfillmentItems}
+                onApplied={onRefresh}
+              />
+            ) : null}
 
             {canPrioritizeSelectedTask ? (
               <DetailSection

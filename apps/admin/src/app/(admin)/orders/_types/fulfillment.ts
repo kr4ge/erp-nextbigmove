@@ -32,6 +32,7 @@ export type WmsFulfillmentQueueTask = {
   shopId: string;
   status: string;
   assignmentMode: string;
+  sourceRevision: number;
   statusLabel: string;
   issueReason: string | null;
   customer: {
@@ -92,6 +93,7 @@ export type WmsFulfillmentQueueTask = {
     increased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
     decreased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
   } | null;
+  fulfillmentAdjustment: WmsFulfillmentAdjustmentSummary | null;
   priority: {
     isPrioritized: boolean;
     prioritizedAt: string | null;
@@ -158,6 +160,7 @@ export type WmsFulfillmentQueueLine = {
   productId: string | null;
   productName: string;
   productDisplayId: string | null;
+  sourceRequired: number;
   status: string;
   statusLabel: string;
   issueReason: string | null;
@@ -167,6 +170,36 @@ export type WmsFulfillmentQueueLine = {
   packed: number;
   shortage: number;
   reservations: WmsFulfillmentQueueReservation[];
+};
+
+export type WmsFulfillmentAdjustmentSummary = {
+  hasAdjustments: boolean;
+  sourceTotalRequired: number;
+  effectiveTotalRequired: number;
+  bypassedUnits: number;
+  substitutedUnits: number;
+  items: {
+    id: string;
+    type: 'BYPASS' | 'SUBSTITUTION';
+    quantity: number;
+    sourceVariationId: string;
+    sourceProductName: string;
+    sourceProductDisplayId: string | null;
+    substituteVariationId: string | null;
+    substituteProductName: string | null;
+    substituteProductDisplayId: string | null;
+    reason: string;
+    approvedBy: { name: string; email: string } | null;
+    approvedAt: string;
+  }[];
+};
+
+export type WmsFulfillmentAdjustmentOption = {
+  productId: string;
+  variationId: string;
+  productName: string;
+  productDisplayId: string | null;
+  availableQuantity: number;
 };
 
 export type WmsFulfillmentQueueReservation = {

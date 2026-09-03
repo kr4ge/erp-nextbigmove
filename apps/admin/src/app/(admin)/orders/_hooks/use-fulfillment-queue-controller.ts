@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { readStoredAdminUser, readStoredPermissions } from '@/lib/admin-session';
 import type { WmsSearchableOption } from '../../_components/wms-searchable-select';
 import { useWmsScopeFilters } from '../../_hooks/use-wms-scope-filters';
 import {
@@ -40,8 +41,11 @@ const PACK_STATUS_OPTIONS: Array<{ value: WmsFulfillmentPackStatus | ''; label: 
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
+const ITEM_ADJUSTMENT_PERMISSION = 'wms.fulfillment.bypass';
 
 export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
+  const user = useMemo(() => readStoredAdminUser(), []);
+  const permissions = useMemo(() => readStoredPermissions(), []);
   const [data, setData] = useState<WmsFulfillmentQueueResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'success' | 'info'; message: string } | null>(null);
@@ -308,6 +312,8 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
   }, [data?.context, mode, ownedOnly]);
 
   const queueScope: WmsFulfillmentQueueScope = data?.context?.canViewAllQueue === false ? 'own' : 'all';
+  const canAdjustFulfillmentItems = user?.role === 'SUPER_ADMIN'
+    || permissions.includes(ITEM_ADJUSTMENT_PERMISSION);
   const requiresTenantSelectionForResync = mode === 'pick'
     && !data?.context?.activeTenantId
     && (data?.context?.tenantOptions?.length ?? 0) > 0;
@@ -363,6 +369,7 @@ export function useFulfillmentQueueController(mode: WmsFulfillmentQueueMode) {
     mode,
     notice,
     queueScope,
+    canAdjustFulfillmentItems,
     requiresTenantSelectionForResync,
     searchText,
     selectedStatus,
