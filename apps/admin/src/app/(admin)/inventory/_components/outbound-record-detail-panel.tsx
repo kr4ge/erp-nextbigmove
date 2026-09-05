@@ -40,12 +40,16 @@ export function OutboundRecordDetailPanel({ record, onClose }: OutboundRecordDet
         <section className="card">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="card-label">Current outbound status</p>
-              <p className="mt-2 text-lg font-semibold text-foreground">{formatOutboundStatus(record.status)}</p>
+              <p className="card-label">Selected activity</p>
+              <p className="mt-2 text-lg font-semibold text-foreground">{formatOutboundStatus(record.activity)}</p>
+              <p className="mt-1 text-xs text-muted">{formatOutboundDateTime(record.eventAt)}</p>
             </div>
-            <span className={`pill inline-flex ${getOutboundStatusClassName(record.status)}`}>
-              {formatOutboundStatus(record.status)}
-            </span>
+            <div className="text-right">
+              <p className="card-label">Current status</p>
+              <span className={`pill mt-2 inline-flex ${getOutboundStatusClassName(record.status)}`}>
+                {formatOutboundStatus(record.status)}
+              </span>
+            </div>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Detail label="Barcode" value={record.unit.barcode} />

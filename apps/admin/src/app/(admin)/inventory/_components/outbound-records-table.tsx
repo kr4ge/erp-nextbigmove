@@ -22,13 +22,14 @@ export function OutboundRecordsTable({ records, isLoading, tenantReady, onView }
       <table className="min-w-full border-separate border-spacing-0">
         <thead>
           <tr className="bg-secondary/30 text-left">
-            <HeaderCell>Event date</HeaderCell>
+            <HeaderCell>Activity date</HeaderCell>
+            <HeaderCell>Activity</HeaderCell>
             <HeaderCell>Unit</HeaderCell>
             <HeaderCell>Product</HeaderCell>
             <HeaderCell>Partner / Store</HeaderCell>
             <HeaderCell>Order / Tracking</HeaderCell>
             <HeaderCell>Warehouse</HeaderCell>
-            <HeaderCell>Status</HeaderCell>
+            <HeaderCell>Current status</HeaderCell>
             <HeaderCell align="right">Action</HeaderCell>
           </tr>
         </thead>
@@ -40,9 +41,14 @@ export function OutboundRecordsTable({ records, isLoading, tenantReady, onView }
           ) : records.length === 0 ? (
             <EmptyRow>No outbound items match the selected filters and dates.</EmptyRow>
           ) : records.map((record) => (
-            <tr key={record.id} className="border-b border-border/20 text-sm-custom text-foreground transition hover:bg-secondary/10">
+            <tr key={`${record.id}:${record.activity}:${record.eventAt}`} className="border-b border-border/20 text-sm-custom text-foreground transition hover:bg-secondary/10">
               <BodyCell>
                 <span className="whitespace-nowrap font-medium">{formatOutboundDateTime(record.eventAt)}</span>
+              </BodyCell>
+              <BodyCell>
+                <span className={`pill inline-flex ${getOutboundStatusClassName(record.activity)}`}>
+                  {formatOutboundStatus(record.activity)}
+                </span>
               </BodyCell>
               <BodyCell>
                 <div className="min-w-36">
@@ -95,7 +101,7 @@ export function OutboundRecordsTable({ records, isLoading, tenantReady, onView }
 function EmptyRow({ children }: { children: ReactNode }) {
   return (
     <tr>
-      <td colSpan={8} className="px-5 py-14 text-center text-sm text-muted">{children}</td>
+      <td colSpan={9} className="px-5 py-14 text-center text-sm text-muted">{children}</td>
     </tr>
   );
 }

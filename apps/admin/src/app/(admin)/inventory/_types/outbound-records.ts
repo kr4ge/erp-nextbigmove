@@ -2,6 +2,7 @@ export type WmsOutboundUnitStatus = 'SHIPPED' | 'DELIVERED' | 'RETURNING' | 'RET
 
 export type WmsOutboundUnitRecord = {
   id: string;
+  activity: WmsOutboundUnitStatus;
   status: WmsOutboundUnitStatus;
   eventAt: string;
   shippedAt: string | null;

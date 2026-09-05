@@ -88,6 +88,35 @@ type ProjectionUnit = {
   };
 };
 
+type OutboundActivityRow = {
+  recordId: string;
+  activity: WmsOutboundUnitStatus;
+  eventAt: Date;
+  currentStatus: WmsOutboundUnitStatus;
+  shippedAt: Date | null;
+  deliveredAt: Date | null;
+  returningAt: Date | null;
+  returnedAt: Date | null;
+  trackingCode: string | null;
+  unitId: string;
+  unitCode: string;
+  unitBarcode: string;
+  variationId: string;
+  productProfileId: string;
+  productName: string;
+  productCustomId: string | null;
+  tenantId: string;
+  tenantName: string;
+  storeId: string;
+  storeName: string;
+  warehouseId: string;
+  warehouseCode: string;
+  warehouseName: string;
+  fulfillmentOrderId: string;
+  posOrderId: string;
+  shopId: string;
+};
+
 @Injectable()
 export class WmsOutboundRecordsService {
   constructor(
@@ -137,78 +166,62 @@ export class WmsOutboundRecordsService {
       throw new ForbiddenException('Selected store is outside your WMS inventory scope');
     }
 
-    const dateWhere = {
-      latestEventAt: {
-        gte: dateWindow.from,
-        lt: dateWindow.to,
-      },
-    } satisfies Prisma.WmsOutboundUnitRecordWhereInput;
     const searchWhere = this.buildSearchWhere(query.search);
     const scopeWhere: Prisma.WmsOutboundUnitRecordWhereInput = {
       ...tenantWhere,
-      ...dateWhere,
       ...(activeStore ? { storeId: activeStore.id } : {}),
       ...(query.productProfileId ? { productProfileId: query.productProfileId } : {}),
       ...searchWhere,
     };
-    const recordsWhere: Prisma.WmsOutboundUnitRecordWhereInput = {
-      ...scopeWhere,
-      ...(query.status ? { currentStatus: query.status } : {}),
+    const activityDateWhere = this.buildActivityDateWhere(dateWindow.from, dateWindow.to);
+    const productScopeWhere: Prisma.WmsOutboundUnitRecordWhereInput = {
+      ...tenantWhere,
+      ...activityDateWhere,
+      ...(activeStore ? { storeId: activeStore.id } : {}),
     };
 
-    const [total, records, statusCounts, productIds] = await Promise.all([
-      this.prisma.wmsOutboundUnitRecord.count({ where: recordsWhere }),
-      this.prisma.wmsOutboundUnitRecord.findMany({
-        where: recordsWhere,
-        select: {
-          id: true,
-          currentStatus: true,
-          shippedAt: true,
-          deliveredAt: true,
-          returningAt: true,
-          returnedAt: true,
-          latestEventAt: true,
-          trackingCode: true,
-          inventoryUnit: {
-            select: {
-              id: true,
-              code: true,
-              barcode: true,
-              variationId: true,
-              posProduct: {
-                select: { name: true, customId: true },
-              },
-            },
-          },
-          tenant: { select: { id: true, name: true } },
-          store: { select: { id: true, name: true, shopName: true } },
-          warehouse: { select: { id: true, code: true, name: true } },
-          productProfileId: true,
-          fulfillmentOrder: {
-            select: { id: true, posOrderId: true, shopId: true },
-          },
-        },
-        orderBy: [{ latestEventAt: 'desc' }, { id: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+    const [records, shippedCount, deliveredCount, returningCount, returnedCount, productIds] = await Promise.all([
+      this.findActivityRows({
+        tenantId: scope.activeTenantId,
+        storeId: activeStore?.id,
+        productProfileId: query.productProfileId,
+        activity: query.status,
+        search: query.search,
+        from: dateWindow.from,
+        to: dateWindow.to,
+        page,
+        pageSize,
       }),
-      this.prisma.wmsOutboundUnitRecord.groupBy({
-        by: ['currentStatus'],
-        where: scopeWhere,
-        _count: { _all: true },
+      this.prisma.wmsOutboundUnitRecord.count({
+        where: { ...scopeWhere, shippedAt: { gte: dateWindow.from, lt: dateWindow.to } },
+      }),
+      this.prisma.wmsOutboundUnitRecord.count({
+        where: { ...scopeWhere, deliveredAt: { gte: dateWindow.from, lt: dateWindow.to } },
+      }),
+      this.prisma.wmsOutboundUnitRecord.count({
+        where: { ...scopeWhere, returningAt: { gte: dateWindow.from, lt: dateWindow.to } },
+      }),
+      this.prisma.wmsOutboundUnitRecord.count({
+        where: { ...scopeWhere, returnedAt: { gte: dateWindow.from, lt: dateWindow.to } },
       }),
       scope.activeTenantId || activeStore
         ? this.prisma.wmsOutboundUnitRecord.findMany({
-            where: {
-              ...tenantWhere,
-              ...dateWhere,
-              ...(activeStore ? { storeId: activeStore.id } : {}),
-            },
+            where: productScopeWhere,
             distinct: ['productProfileId'],
             select: { productProfileId: true },
           })
         : Promise.resolve([]),
     ]);
+
+    const statusCountMap = new Map<WmsOutboundUnitStatus, number>([
+      [WmsOutboundUnitStatus.SHIPPED, shippedCount],
+      [WmsOutboundUnitStatus.DELIVERED, deliveredCount],
+      [WmsOutboundUnitStatus.RETURNING, returningCount],
+      [WmsOutboundUnitStatus.RETURNED, returnedCount],
+    ]);
+    const total = query.status
+      ? statusCountMap.get(query.status) ?? 0
+      : Array.from(statusCountMap.values()).reduce((sum, count) => sum + count, 0);
 
     const products = productIds.length > 0
       ? await this.prisma.wmsProductProfile.findMany({
@@ -224,7 +237,6 @@ export class WmsOutboundRecordsService {
           orderBy: [{ posProduct: { name: 'asc' } }],
         })
       : [];
-    const statusCountMap = new Map(statusCounts.map((entry) => [entry.currentStatus, entry._count._all]));
     const summary = Object.fromEntries(
       OUTBOUND_STATUS_ORDER.map((status) => [status.toLowerCase(), statusCountMap.get(status) ?? 0]),
     );
@@ -271,33 +283,163 @@ export class WmsOutboundRecordsService {
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
       },
       records: records.map((record) => ({
-        id: record.id,
+        id: record.recordId,
+        activity: record.activity,
         status: record.currentStatus,
-        eventAt: record.latestEventAt,
+        eventAt: record.eventAt,
         shippedAt: record.shippedAt,
         deliveredAt: record.deliveredAt,
         returningAt: record.returningAt,
         returnedAt: record.returnedAt,
         trackingCode: record.trackingCode,
         unit: {
-          id: record.inventoryUnit.id,
-          code: record.inventoryUnit.code,
-          barcode: record.inventoryUnit.barcode,
+          id: record.unitId,
+          code: record.unitCode,
+          barcode: record.unitBarcode,
         },
         product: {
           profileId: record.productProfileId,
-          variationId: record.inventoryUnit.variationId,
-          name: record.inventoryUnit.posProduct.name,
-          customId: record.inventoryUnit.posProduct.customId,
+          variationId: record.variationId,
+          name: record.productName,
+          customId: record.productCustomId,
         },
-        tenant: record.tenant,
+        tenant: {
+          id: record.tenantId,
+          name: record.tenantName,
+        },
         store: {
-          id: record.store.id,
-          name: record.store.shopName || record.store.name,
+          id: record.storeId,
+          name: record.storeName,
         },
-        warehouse: record.warehouse,
-        order: record.fulfillmentOrder,
+        warehouse: {
+          id: record.warehouseId,
+          code: record.warehouseCode,
+          name: record.warehouseName,
+        },
+        order: {
+          id: record.fulfillmentOrderId,
+          posOrderId: record.posOrderId,
+          shopId: record.shopId,
+        },
       })),
+    };
+  }
+
+  private async findActivityRows(params: {
+    tenantId: string | null;
+    storeId?: string;
+    productProfileId?: string;
+    activity?: WmsOutboundUnitStatus;
+    search?: string;
+    from: Date;
+    to: Date;
+    page: number;
+    pageSize: number;
+  }) {
+    const tenantFilter = params.tenantId
+      ? Prisma.sql`AND record."tenantId" = CAST(${params.tenantId} AS UUID)`
+      : Prisma.sql``;
+    const storeFilter = params.storeId
+      ? Prisma.sql`AND record."storeId" = CAST(${params.storeId} AS UUID)`
+      : Prisma.sql``;
+    const productFilter = params.productProfileId
+      ? Prisma.sql`AND record."productProfileId" = CAST(${params.productProfileId} AS UUID)`
+      : Prisma.sql``;
+    const activityFilter = params.activity
+      ? Prisma.sql`AND event."activity" = ${params.activity}`
+      : Prisma.sql``;
+    const normalizedSearch = params.search?.trim();
+    const searchFilter = normalizedSearch
+      ? Prisma.sql`AND (
+          unit."code" ILIKE ${`%${normalizedSearch}%`}
+          OR unit."barcode" ILIKE ${`%${normalizedSearch}%`}
+          OR unit."variationId" ILIKE ${`%${normalizedSearch}%`}
+          OR product."name" ILIKE ${`%${normalizedSearch}%`}
+          OR fulfillment."posOrderId" ILIKE ${`%${normalizedSearch}%`}
+          OR record."trackingCode" ILIKE ${`%${normalizedSearch}%`}
+        )`
+      : Prisma.sql``;
+    const offset = (params.page - 1) * params.pageSize;
+
+    return this.prisma.$queryRaw<OutboundActivityRow[]>(Prisma.sql`
+      WITH "outboundEvents" AS (
+        SELECT "id" AS "recordId", 'SHIPPED'::text AS "activity", "shippedAt" AS "eventAt"
+        FROM "wms_outbound_unit_records"
+        WHERE "shippedAt" >= ${params.from} AND "shippedAt" < ${params.to}
+
+        UNION ALL
+
+        SELECT "id" AS "recordId", 'DELIVERED'::text AS "activity", "deliveredAt" AS "eventAt"
+        FROM "wms_outbound_unit_records"
+        WHERE "deliveredAt" >= ${params.from} AND "deliveredAt" < ${params.to}
+
+        UNION ALL
+
+        SELECT "id" AS "recordId", 'RETURNING'::text AS "activity", "returningAt" AS "eventAt"
+        FROM "wms_outbound_unit_records"
+        WHERE "returningAt" >= ${params.from} AND "returningAt" < ${params.to}
+
+        UNION ALL
+
+        SELECT "id" AS "recordId", 'RETURNED'::text AS "activity", "returnedAt" AS "eventAt"
+        FROM "wms_outbound_unit_records"
+        WHERE "returnedAt" >= ${params.from} AND "returnedAt" < ${params.to}
+      )
+      SELECT
+        record."id" AS "recordId",
+        event."activity" AS "activity",
+        event."eventAt" AS "eventAt",
+        record."currentStatus" AS "currentStatus",
+        record."shippedAt" AS "shippedAt",
+        record."deliveredAt" AS "deliveredAt",
+        record."returningAt" AS "returningAt",
+        record."returnedAt" AS "returnedAt",
+        record."trackingCode" AS "trackingCode",
+        unit."id" AS "unitId",
+        unit."code" AS "unitCode",
+        unit."barcode" AS "unitBarcode",
+        unit."variationId" AS "variationId",
+        record."productProfileId" AS "productProfileId",
+        product."name" AS "productName",
+        product."customId" AS "productCustomId",
+        tenant."id" AS "tenantId",
+        tenant."name" AS "tenantName",
+        store."id" AS "storeId",
+        COALESCE(store."shopName", store."name") AS "storeName",
+        warehouse."id" AS "warehouseId",
+        warehouse."code" AS "warehouseCode",
+        warehouse."name" AS "warehouseName",
+        fulfillment."id" AS "fulfillmentOrderId",
+        fulfillment."posOrderId" AS "posOrderId",
+        fulfillment."shopId" AS "shopId"
+      FROM "outboundEvents" event
+      INNER JOIN "wms_outbound_unit_records" record ON record."id" = event."recordId"
+      INNER JOIN "wms_inventory_units" unit ON unit."id" = record."inventoryUnitId"
+      INNER JOIN "pos_products" product ON product."id" = unit."posProductId"
+      INNER JOIN "tenants" tenant ON tenant."id" = record."tenantId"
+      INNER JOIN "pos_stores" store ON store."id" = record."storeId"
+      INNER JOIN "wms_warehouses" warehouse ON warehouse."id" = record."warehouseId"
+      INNER JOIN "wms_fulfillment_orders" fulfillment ON fulfillment."id" = record."fulfillmentOrderId"
+      WHERE TRUE
+        ${tenantFilter}
+        ${storeFilter}
+        ${productFilter}
+        ${activityFilter}
+        ${searchFilter}
+      ORDER BY event."eventAt" DESC, record."id" DESC, event."activity" ASC
+      LIMIT ${params.pageSize}
+      OFFSET ${offset}
+    `);
+  }
+
+  private buildActivityDateWhere(from: Date, to: Date): Prisma.WmsOutboundUnitRecordWhereInput {
+    return {
+      OR: [
+        { shippedAt: { gte: from, lt: to } },
+        { deliveredAt: { gte: from, lt: to } },
+        { returningAt: { gte: from, lt: to } },
+        { returnedAt: { gte: from, lt: to } },
+      ],
     };
   }
 

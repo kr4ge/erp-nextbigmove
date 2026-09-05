@@ -170,12 +170,12 @@ export function OutboundRecordsFilterBar({
       ) : null}
 
       <WmsSearchableSelect
-        label="Status"
+        label="Activity"
         value={selectedStatus ?? ''}
         onChange={(value) => onStatusChange((value as WmsOutboundUnitStatus) || undefined)}
         options={statusOptions}
-        placeholder="Search statuses…"
-        allLabel="All statuses"
+        placeholder="Search activities…"
+        allLabel="All activities"
         hideInlineLabel
       />
     </div>

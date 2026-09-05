@@ -23,6 +23,7 @@ export function OutboundRecordsSummary({ summary, isFetching }: OutboundRecordsS
             <div>
               <p className="card-label">{metric.label}</p>
               <p className="card-value mt-1">{summary?.[metric.key] ?? 0}</p>
+              <p className="mt-0.5 text-xs text-muted">during selected dates</p>
             </div>
             <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${metric.tone}`}>
               <Icon className="h-4 w-4" />

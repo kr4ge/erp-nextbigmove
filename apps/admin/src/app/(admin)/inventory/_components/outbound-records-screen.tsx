@@ -18,7 +18,7 @@ export function OutboundRecordsScreen() {
     <>
       <WmsPageShell
         title="Outbound Records"
-        description="Track every serialized item from shipment through delivery and returns."
+        description="See when each serialized item was shipped, delivered, returning, or returned."
       >
         {outbound.errorMessage ? (
           <WmsInlineNotice tone="error">{outbound.errorMessage}</WmsInlineNotice>
@@ -63,7 +63,7 @@ export function OutboundRecordsScreen() {
           footer={(
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-muted">
-                {totalItems} item{totalItems === 1 ? '' : 's'} in view
+                {totalItems} activity record{totalItems === 1 ? '' : 's'} in view
               </p>
               <div className="flex items-center gap-2">
                 <button
