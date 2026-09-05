@@ -27,6 +27,12 @@ interface PosOrderLite {
   mapping?: string | null;
 }
 
+export function excludesPosOrderFromSalesTotals(
+  order: Pick<PosOrderLite, 'status' | 'isVoid'>,
+): boolean {
+  return order.status === 7 || order.isVoid === true;
+}
+
 type PosAggregateBucket = {
   purchasesPos: number;
   processedPurchasesPos: number;
@@ -184,11 +190,10 @@ export class ReconcileMarketingService {
     const wasEverAbandoned =
       order.wasAbandonedCart === true || order.isAbandoned === true;
     const isCurrentlyAbandoned = status === 0 && order.isAbandoned === true;
-    const isVoidOrder = order.isVoid === true;
     const isDeleted = status === 7;
     const isPrinted = status === 13;
 
-    if (isDeleted || (isPrinted && isVoidOrder)) {
+    if (excludesPosOrderFromSalesTotals(order)) {
       if (isDeleted) {
         bucket.deletedCount += 1;
         if (isRepurchase) bucket.repurchaseDeletedCount += 1;
@@ -430,18 +435,6 @@ export class ReconcileMarketingService {
         tenantId,
         shopId: { in: activeShopIds },
         dateLocal: date,
-        AND: [
-          {
-            OR: [
-              { status: { not: 7 } },
-              { status: null },
-            ],
-          },
-        ],
-        OR: [
-          { isVoid: false },
-          { status: 13 },
-        ],
       },
       select: {
         pUtmContent: true,
@@ -481,6 +474,7 @@ export class ReconcileMarketingService {
     }
 
     // Upsert reconciled rows for matched insights
+    const expectedAdIds = new Set(metaInsights.map((insight) => insight.adId));
     for (const insight of metaInsights) {
       const norm = normalizeAdId(insight.adId);
       const agg = norm ? posAgg[norm] : undefined;
@@ -741,6 +735,7 @@ export class ReconcileMarketingService {
         continue; // matched already
       }
       const syntheticAdId = `${order.shopId}-${order.posOrderId}`;
+      expectedAdIds.add(syntheticAdId);
       const syntheticAgg = this.createEmptyPosAggregateBucket();
       this.accumulatePosOrder(syntheticAgg, order);
       const nonCanceled = Math.max(syntheticAgg.purchasesPos - syntheticAgg.canceledCount, 0);
@@ -991,6 +986,19 @@ export class ReconcileMarketingService {
         },
       });
     }
+
+    // Incremental reconciliation is authoritative for this one tenant/day.
+    // Remove only derived rows whose Meta insight or POS source disappeared;
+    // source POS orders (including status 7 tombstones) are never deleted here.
+    await this.prisma.reconcileMarketing.deleteMany({
+      where: {
+        tenantId,
+        date: dayStart,
+        ...(expectedAdIds.size > 0
+          ? { adId: { notIn: Array.from(expectedAdIds) } }
+          : {}),
+      },
+    });
 
     await this.bumpAnalyticsCacheVersion(tenantId);
     this.logger.log(`Reconciled marketing for tenant ${tenantId} on ${date}`);

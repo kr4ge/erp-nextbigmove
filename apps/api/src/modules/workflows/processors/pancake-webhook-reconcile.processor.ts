@@ -41,11 +41,11 @@ export class PancakeWebhookReconcileProcessor {
   })
   async handleReconcile(job: Job<PancakeWebhookReconcileJobData>) {
     const startedAt = Date.now();
-    const { tenantId, dateLocal, requestId, logId } = job.data;
+    const { tenantId, dateLocal, requestId, logId, trigger } = job.data;
     const reconcileMode = job.data.reconcileMode === 'incremental' ? 'incremental' : 'full_reset';
 
     this.logger.debug(
-      `Processing webhook reconcile job ${job.id} tenant=${tenantId} date=${dateLocal} mode=${reconcileMode} request=${requestId || 'n/a'} log=${logId || 'n/a'}`,
+      `Processing webhook reconcile job ${job.id} tenant=${tenantId} date=${dateLocal} mode=${reconcileMode} trigger=${trigger || 'standard'} request=${requestId || 'n/a'} log=${logId || 'n/a'}`,
     );
 
     if (reconcileMode === 'full_reset') {

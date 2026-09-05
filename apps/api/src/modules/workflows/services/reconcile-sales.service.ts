@@ -437,6 +437,19 @@ export class ReconcileSalesService {
       });
     }
 
+    const expectedCampaignIds = Object.values(groups).map(
+      (group) => group.campaignId,
+    );
+    await this.prisma.reconcileSales.deleteMany({
+      where: {
+        tenantId,
+        date: dayStart,
+        ...(expectedCampaignIds.length > 0
+          ? { campaignId: { notIn: expectedCampaignIds } }
+          : {}),
+      },
+    });
+
     await this.bumpAnalyticsCacheVersion(tenantId);
     this.logger.log(`Reconciled sales for tenant ${tenantId} on ${date} (rows: ${Object.keys(groups).length})`);
   }
