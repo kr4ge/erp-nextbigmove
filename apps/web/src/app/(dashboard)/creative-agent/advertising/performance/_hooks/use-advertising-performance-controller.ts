@@ -32,11 +32,12 @@ export type PerformanceInitialFilters = {
 function buildDefaultParams(initial: PerformanceInitialFilters): PerformanceParams {
   const group = ['ADS', 'CAMPAIGNS', 'CREATIVES'].includes(initial.group ?? '')
     ? (initial.group as PerformanceGroup)
-    : 'ADS';
+    : 'CREATIVES';
   return {
     startDate: manilaDaysAgo(29),
     endDate: manilaToday(),
     query: '',
+    creatorId: '',
     storeId: '',
     accountId: '',
     adId: initial.adId ?? '',

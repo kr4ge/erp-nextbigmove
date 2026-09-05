@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/components/ui/toast';
 import { VideoRegistryDateRangePicker } from '../../../video-registry/_components/video-registry-date-range-picker';
 import { formatPercent, formatCurrency } from '../../../overview/_utils/creative-overview-format';
+import { AnalyticsMultiSelectPicker } from '../../../../analytics/_components/analytics-multi-select-picker';
 import { useAdvertisingPerformanceController, type PerformanceInitialFilters } from '../_hooks/use-advertising-performance-controller';
 import type { PerformanceGroup, PerformanceRow, VerdictFilter } from '../_types/advertising-performance';
 import { PerformanceCardList, PerformanceTable } from './performance-table';
@@ -16,9 +17,9 @@ import { PerformanceDetailDialog } from './performance-detail-dialog';
 const selectClass = 'h-9 rounded-lg border border-border/60 bg-surface px-2.5 text-xs font-medium text-foreground outline-none transition hover:border-border focus:border-primary/40 focus:ring-2 focus:ring-primary/10';
 
 const GROUPS: Array<{ value: PerformanceGroup; label: string }> = [
-  { value: 'ADS', label: 'Ads' },
-  { value: 'CAMPAIGNS', label: 'Campaigns' },
   { value: 'CREATIVES', label: 'Creatives' },
+  { value: 'CAMPAIGNS', label: 'Campaigns' },
+  { value: 'ADS', label: 'Ads' },
 ];
 
 const VERDICTS: Array<{ value: VerdictFilter; label: string }> = [
@@ -37,6 +38,25 @@ export function AdvertisingPerformanceScreen({ initialFilters = {} }: { initialF
   const [showSecondaryFilters, setShowSecondaryFilters] = useState(false);
   const [selectedRow, setSelectedRow] = useState<PerformanceRow | null>(null);
   const scope = data?.scope ?? null;
+  const creatorOptions = data?.filters.creators ?? [];
+  const storeOptions = data?.filters.stores ?? [];
+  const selectedCreatorLabel = params.creatorId
+    ? creatorOptions.find((option) => option.value === params.creatorId)?.label ?? '1 creator'
+    : 'All creators';
+  const selectedStoreLabel = params.storeId
+    ? storeOptions.find((option) => option.value === params.storeId)?.label ?? '1 store'
+    : 'All stores';
+
+  const selectCreator = (creatorId: string) => {
+    controller.updateParams({
+      creatorId: params.creatorId === creatorId ? '' : creatorId,
+      storeId: '',
+    });
+  };
+
+  const selectStore = (storeId: string) => {
+    controller.updateParams({ storeId: params.storeId === storeId ? '' : storeId });
+  };
 
   const runAction = async (operation: () => Promise<unknown>, success: string) => {
     try {
@@ -101,16 +121,30 @@ export function AdvertisingPerformanceScreen({ initialFilters = {} }: { initialF
               />
             </label>
             <VideoRegistryDateRangePicker compact startDate={params.startDate} endDate={params.endDate} onChange={(range) => controller.updateParams(range)} />
-            {data?.filters.defaultStoreId ? (
-              <span className="flex h-9 items-center rounded-lg border border-border/60 bg-secondary/20 px-2.5 text-xs font-medium text-muted dark:bg-background-secondary">
-                {data.filters.stores[0]?.label ?? 'Store'}
-              </span>
-            ) : (
-              <select value={params.storeId} onChange={(event) => controller.updateParams({ storeId: event.target.value })} className={`${selectClass} w-32`} aria-label="Filter by store">
-                <option value="">All stores</option>
-                {data?.filters.stores.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            )}
+            <AnalyticsMultiSelectPicker
+              className="relative"
+              selectTitle="Select a creator"
+              selectedLabel={selectedCreatorLabel}
+              options={creatorOptions}
+              allChecked={!params.creatorId}
+              isChecked={(value) => params.creatorId === value}
+              onToggleAll={() => controller.updateParams({ creatorId: '', storeId: '' })}
+              onToggle={selectCreator}
+              onOnly={(value) => controller.updateParams({ creatorId: value, storeId: '' })}
+              onClear={() => controller.updateParams({ creatorId: '', storeId: '' })}
+            />
+            <AnalyticsMultiSelectPicker
+              className="relative"
+              selectTitle={params.creatorId ? 'Select a store for this creator' : 'Select a store'}
+              selectedLabel={selectedStoreLabel}
+              options={storeOptions}
+              allChecked={!params.storeId}
+              isChecked={(value) => params.storeId === value}
+              onToggleAll={() => controller.updateParams({ storeId: '' })}
+              onToggle={selectStore}
+              onOnly={(value) => controller.updateParams({ storeId: value })}
+              onClear={() => controller.updateParams({ storeId: '' })}
+            />
             {(data?.filters.accounts.length ?? 0) > 1 ? (
               <select value={params.accountId} onChange={(event) => controller.updateParams({ accountId: event.target.value })} className={`${selectClass} w-36`} aria-label="Filter by Meta account">
                 <option value="">All accounts</option>

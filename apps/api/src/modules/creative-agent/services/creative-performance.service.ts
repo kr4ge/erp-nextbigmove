@@ -168,29 +168,49 @@ export class CreativePerformanceService {
     const context = await this.access.resolve(actor);
     this.access.require(context, CREATIVE_AGENT_PERMISSIONS.READ_ALL);
     const range = this.resolveDateRange(query.startDate, query.endDate);
-    const storeOptions = await loadCreativeStoreOptions(this.prisma, context.tenantId);
-    // One usable store means there is nothing to choose between: pin it.
-    const requestedStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
-    let storeAdIds = await this.resolveScopedAdIds(context.tenantId, requestedStoreId, query.creatorId);
-    // An auto-PINNED store (no explicit query.storeId) that has no linked ads
-    // would otherwise blank the whole page. Fall through to tenant-wide so the
-    // unlinked spend is still visible; an EXPLICIT store choice is respected.
-    let effectiveStoreId = requestedStoreId;
-    if (!query.storeId && storeAdIds !== null && storeAdIds.length === 0) {
-      effectiveStoreId = undefined;
-      storeAdIds = query.creatorId
-        ? await this.resolveScopedAdIds(context.tenantId, undefined, query.creatorId)
-        : null;
-    }
+    // Creator is the parent scope: its selection determines which stores are
+    // valid, and both filters default to All when no explicit choice is made.
+    const storeOptions = await loadCreativeStoreOptions(
+      this.prisma,
+      context.tenantId,
+      query.creatorId ?? null,
+    );
+    const availableStoreIds = new Set(storeOptions.stores.map((store) => store.value));
+    const effectiveStoreId = query.storeId && availableStoreIds.has(query.storeId)
+      ? query.storeId
+      : undefined;
+    const storeAdIds = await this.resolveScopedAdIds(
+      context.tenantId,
+      effectiveStoreId,
+      query.creatorId,
+    );
     const scope = await this.computeScope(context.tenantId, range, {
       accountId: query.accountId, storeAdIds,
     });
 
-    const [accounts, page] = await Promise.all([
+    const [accounts, creators, page] = await Promise.all([
       this.loadAccountOptions(context.tenantId),
+      this.prisma.creative.findMany({
+        where: { tenantId: context.tenantId },
+        distinct: ['createdById'],
+        select: {
+          createdBy: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+      }),
       this.queryRows(context.tenantId, range, scope, query, storeAdIds, effectiveStoreId),
     ]);
-    const filters = { stores: storeOptions.stores, accounts };
+    const filters = {
+      stores: storeOptions.stores,
+      accounts,
+      creators: creators
+        .map(({ createdBy }) => ({
+          value: createdBy.id,
+          label: [createdBy.firstName, createdBy.lastName].filter(Boolean).join(' ') || createdBy.email,
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label)),
+    };
 
     return {
       selected: {
@@ -573,6 +593,7 @@ export class CreativePerformanceService {
       Prisma.sql`mi."date" <= ${range.end}`,
     ];
     if (query.accountId) videoFilters.push(Prisma.sql`mi."accountId" = ${query.accountId}`);
+    if (storeAdIds) videoFilters.push(Prisma.sql`mi."adId" IN (${Prisma.join(storeAdIds)})`);
     const videoWhere = Prisma.join(videoFilters, ' AND ');
 
     // Aggregated raw sums per group key. Casts to float8 keep JS numbers.

@@ -96,7 +96,7 @@ export class ListAdvertisingPerformanceQueryDto {
 
   @IsOptional()
   @IsIn(ADVERTISING_PERFORMANCE_GROUPS)
-  group: AdvertisingPerformanceGroup = 'ADS';
+  group: AdvertisingPerformanceGroup = 'CREATIVES';
 
   @IsOptional()
   @IsIn(ADVERTISING_VERDICT_FILTERS)

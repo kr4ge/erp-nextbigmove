@@ -15,6 +15,7 @@ export type PerformanceParams = {
   startDate: string;
   endDate: string;
   query: string;
+  creatorId: string;
   storeId: string;
   accountId: string;
   adId: string;
@@ -137,10 +138,9 @@ export type PerformanceResponse = {
   };
   permissions: { canManageLinks: boolean; canManagePerformance: boolean; canReview: boolean };
   filters: {
+    creators: Array<{ value: string; label: string }>;
     stores: Array<{ value: string; label: string }>;
     accounts: Array<{ value: string; label: string }>;
-    /** Set when the tenant has exactly one usable store; the picker is then pinned. */
-    defaultStoreId?: string | null;
   };
   scope: ScopeInfo;
   items: PerformanceRow[];
