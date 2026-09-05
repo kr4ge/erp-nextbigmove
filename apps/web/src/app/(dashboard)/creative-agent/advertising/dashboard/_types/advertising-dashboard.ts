@@ -72,7 +72,25 @@ export type AdvertisingDashboardResponse = {
       completionRate: DashboardMetric;
       ctr: DashboardMetric;
       cvr: DashboardMetric;
+      orders: DashboardMetric;
+      adSpend: DashboardMetric;
+      mar: DashboardMetric;
+      output: DashboardMetric;
+      delivered: DashboardMetric;
+      cancellationRate: DashboardMetric;
+      rtsRate: DashboardMetric;
+      deliveryRate: DashboardMetric;
     };
+  };
+  floors: {
+    values: {
+      hookRate: number;
+      holdRate: number;
+      completionRate: number;
+      ctr: number;
+      cancellationRate: number;
+    };
+    provisional: boolean;
   };
   revisionPipeline: {
     needsRevision: number;
