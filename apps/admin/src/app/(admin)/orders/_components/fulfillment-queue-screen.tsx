@@ -223,6 +223,7 @@ export function FulfillmentQueueScreen({ mode }: FulfillmentQueueScreenProps) {
             pickView={pickView}
             canVoidPickBaskets={isPick && queue.queueScope === 'all'}
             canAssignPickBasketPacker={isPick && queue.queueScope === 'all'}
+            canAdjustFulfillmentItems={isPick && queue.canAdjustFulfillmentItems}
             packerOptions={queue.packerOptions}
             isAssigningPickBasketPacker={queue.isAssigningBasketPacker}
             onAssignPickBasketPacker={queue.assignPickBasketPacker}

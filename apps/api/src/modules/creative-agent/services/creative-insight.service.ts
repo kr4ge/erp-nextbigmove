@@ -425,6 +425,9 @@ export class CreativeInsightService {
         id: true, code: true, title: true, kind: true, angle: true, hookType: true, format: true,
         script: true, notes: true, storeConfigId: true,
         storeConfig: { select: { storeId: true } },
+        // The variant sells what its parent sells, so the parent's POS item is
+        // the item the enrollment needs — a remix never advertises a new product.
+        posVariationId: true,
         metaAdId: true, metaAdLinks: { select: { adId: true } },
       },
     });
@@ -488,7 +491,7 @@ export class CreativeInsightService {
     }
 
     return {
-      creative: { id: creative.id, code: creative.code, title: creative.title, storeId: creative.storeConfig.storeId },
+      creative: { id: creative.id, code: creative.code, title: creative.title, storeId: creative.storeConfig.storeId, variationId: creative.posVariationId ?? null },
       model: MODEL,
       variants,
       raw: variants ? null : raw,

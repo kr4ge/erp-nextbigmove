@@ -5,14 +5,13 @@ import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/components/ui/toast';
 import { EditCreativeDialog } from '../../video-registry/_components/edit-creative-dialog';
 import { RegistryPagination } from '../../video-registry/_components/registry-pagination';
-import { REVISION_STATE_LABELS } from '../../video-registry/_constants/video-registry.constants';
 import type { CreativeRevisionState } from '../../video-registry/_types/video-registry';
 import { useCreativeAssetsController } from '../_hooks/use-creative-assets-controller';
 import { CreativeAssetReviewDialog } from './creative-asset-review-dialog';
 import { CreativeAssetsGrid } from './creative-assets-grid';
 import { CreativeAssetsTable } from './creative-assets-table';
+import { UnlinkedAdsPanel } from './unlinked-ads-panel';
 
-const QUEUE_STATES: CreativeRevisionState[] = ['NEEDS_REVISION', 'RESOLVED', 'NONE'];
 const selectClass = 'h-10 rounded-xl border border-border bg-surface px-3 text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10';
 
 export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, initialRevisionState, initialQueue }: {
@@ -61,15 +60,7 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
         : "Track your drafts, submissions, revision requests, and feedback in one focused workspace."}
       breadcrumbs={isReviewerView ? "Advertising Workspace" : "Assets"}
     />
-    {isReviewerView ? <div className="mb-3 flex flex-wrap items-center gap-2">
-      <div className="flex h-9 rounded-lg border border-border/60 bg-background-secondary p-0.5" role="group" aria-label="Queue preset">
-        <button type="button" onClick={() => controller.updateParams({ queue: 'REVIEW', revisionState: '', creativeId: '' })} className={`rounded-md px-2.5 text-xs font-semibold transition ${params.queue === 'REVIEW' ? 'bg-surface text-primary shadow-sm' : 'text-muted'}`}>Review queue</button>
-        <button type="button" onClick={() => controller.updateParams({ queue: '', revisionState: '', creativeId: '' })} className={`rounded-md px-2.5 text-xs font-semibold transition ${params.queue !== 'REVIEW' ? 'bg-surface text-primary shadow-sm' : 'text-muted'}`}>All statuses</button>
-      </div>
-      {params.queue === 'REVIEW' ? <p className="text-xs text-muted">For Approval, Revised, and For Posting — oldest submission first.</p> : null}
-      {params.creativeId ? <button type="button" className="btn btn-sm btn-ghost" onClick={() => controller.updateParams({ creativeId: '' })}>Clear focused creative</button> : null}
-    </div> : null}
-    <div className="mb-4 grid gap-3 sm:grid-cols-3">{QUEUE_STATES.map((status) => <button key={status} type="button" onClick={() => controller.updateParams({ revisionState: params.revisionState === status ? '' : status, queue: '', creativeId: '' })} className={`card text-left transition hover:border-primary/40 ${params.revisionState === status ? 'border-primary bg-primary-soft' : ''}`}><p className="card-label">{REVISION_STATE_LABELS[status]}</p><p className="card-value mt-1">{data?.summary[status] ?? 0}</p></button>)}</div>
+    {isReviewerView ? <UnlinkedAdsPanel /> : null}
     <section className="panel overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface p-3">
         <label className="relative min-w-60 flex-[1_1_20rem]"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" /><input value={controller.searchText} onChange={(event) => controller.setSearchText(event.target.value)} className="input h-10 w-full rounded-xl pl-9 text-sm" placeholder="Search code, title, or creator" /></label>

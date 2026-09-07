@@ -93,6 +93,7 @@ export type WmsMobilePickingTask = {
   shopId: string;
   status: PickingStatus;
   assignmentMode: PickingAssignmentMode;
+  sourceRevision: number;
   statusLabel: string;
   issueReason: string | null;
   customer: {
@@ -137,10 +138,33 @@ export type WmsMobilePickingTask = {
     deliveredAt: string | null;
   } | null;
   itemChange: WmsFulfillmentItemChange | null;
+  fulfillmentAdjustment: WmsFulfillmentAdjustmentSummary | null;
   createdAt: string;
   basket: WmsMobilePickBasket | null;
   lines: WmsMobilePickingLine[];
   nextPick: WmsMobilePickReservation | null;
+};
+
+export type WmsFulfillmentAdjustmentSummary = {
+  hasAdjustments: boolean;
+  sourceTotalRequired: number;
+  effectiveTotalRequired: number;
+  bypassedUnits: number;
+  substitutedUnits: number;
+  items: {
+    id: string;
+    type: 'BYPASS' | 'SUBSTITUTION';
+    quantity: number;
+    sourceVariationId: string;
+    sourceProductName: string;
+    sourceProductDisplayId: string | null;
+    substituteVariationId: string | null;
+    substituteProductName: string | null;
+    substituteProductDisplayId: string | null;
+    reason: string;
+    approvedBy: { name: string; email: string } | null;
+    approvedAt: string;
+  }[];
 };
 
 export type WmsMobilePickBasket = {
@@ -206,6 +230,7 @@ export type WmsMobilePickingLine = {
   productId: string | null;
   productName: string;
   productDisplayId: string | null;
+  sourceRequired: number;
   status: string;
   statusLabel: string;
   issueReason: string | null;

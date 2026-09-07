@@ -1,5 +1,9 @@
 'use client';
 
+import { ImpersonationBanner } from './_components/impersonation-banner';
+import { getCurrentTenantId, getMemberships, type Membership } from '@/lib/session';
+import { switchTenant } from '@/lib/tenant-switch';
+
 import { ReactNode, useEffect, useState, useRef, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -192,6 +196,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<DashboardLayoutUser | null>(null);
+  // Tenants this identity belongs to; the switcher only renders for 2+.
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
+  const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
+  const [isSwitchingTenant, setIsSwitchingTenant] = useState(false);
+  useEffect(() => {
+    setMemberships(getMemberships());
+    setActiveTenantId(getCurrentTenantId());
+  }, []);
   const [tenant, setTenant] = useState<DashboardLayoutTenant | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [roleKeys, setRoleKeys] = useState<string[]>([]);
@@ -524,6 +537,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     localStorage.removeItem('current_tenant_id');
     localStorage.removeItem('tenant');
     localStorage.removeItem('user');
+    localStorage.removeItem('impersonating_user');
     router.push('/login');
   };
 
@@ -1188,6 +1202,47 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               >
                 {isDarkMode ? <Sun className="h-4 w-4 text-primary" /> : <Moon className="h-4 w-4 text-primary" />}
               </button>
+            {memberships.length > 1 ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  disabled={isSwitchingTenant}
+                  onClick={() => setIsTenantMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1 text-sm font-semibold text-foreground shadow-sm hover:border-primary/60 focus:border-primary focus:outline-none disabled:opacity-60"
+                >
+                  <span>Workspace:</span>
+                  <span className="text-primary">
+                    {memberships.find((m) => m.tenantId === activeTenantId)?.name ?? 'Choose'}
+                  </span>
+                  <svg className="h-4 w-4 text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                    <path d="M6 8l4 4 4-4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                {isTenantMenuOpen && (
+                  <div className="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-border bg-surface shadow-lg">
+                    <div className="max-h-64 overflow-auto py-2">
+                      {memberships.map((m) => (
+                        <button
+                          key={m.tenantId}
+                          type="button"
+                          disabled={isSwitchingTenant}
+                          onClick={() => {
+                            setIsTenantMenuOpen(false);
+                            if (m.tenantId === activeTenantId) return;
+                            setIsSwitchingTenant(true);
+                            void switchTenant(m.tenantId).catch(() => setIsSwitchingTenant(false));
+                          }}
+                          className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-foreground/5 ${m.tenantId === activeTenantId ? 'font-semibold text-primary' : 'text-foreground'}`}
+                        >
+                          <span className="truncate">{m.name}</span>
+                          {m.tenantId === activeTenantId ? <span className="text-xs text-muted">Current</span> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
             {canViewAllTeams && teams.length > 0 ? (
               <div className="relative">
                 {isLoadingTeams ? (
@@ -1262,6 +1317,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
         {/* Main content area - rounded top-left corner for App Shell look */}
         <main className="flex-1 overflow-y-auto bg-background lg:rounded-tl-[1.75rem]">
+          <ImpersonationBanner />
           <div className="mx-auto min-h-full w-full max-w-[1560px] px-3 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-4 sm:pb-7 lg:px-5 lg:pb-8">
             {children}
           </div>

@@ -21,7 +21,7 @@ export class CreativeLibraryController {
   }
 
   @Get('unregistered')
-  @Permissions('creative_agent.read_all', 'creative_agent.alias.manage')
+  @Permissions('creative_agent.read_all', 'creative_agent.alias.manage', 'creative_agent.enroll')
   listUnregistered(@Request() req: CreativeRequest, @Query() query: ListCreativeLibraryQueryDto) {
     return this.library.listUnregistered(req.user, query);
   }

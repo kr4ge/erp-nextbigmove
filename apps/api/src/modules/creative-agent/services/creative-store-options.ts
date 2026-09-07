@@ -19,19 +19,21 @@ export type CreativeStoreFilterOptions = {
  * hundreds of POS stores, but a store with no creative in it can never change
  * what either workspace displays.
  *
- * `scopeToCreator` narrows further to the stores one creator has worked in,
- * so a Creative user is not offered stores they have never posted to.
+ * `scopeToCreator` narrows further to the stores one or more creators have
+ * worked in, so a Creative user or an advertiser's creator filter never
+ * offers stores outside the selected creator scope.
  */
 export async function loadCreativeStoreOptions(
   prisma: PrismaService,
   tenantId: string,
-  scopeToCreator?: string | null,
+  scopeToCreator?: string | string[] | null,
 ): Promise<CreativeStoreFilterOptions> {
+  const creatorIds = ([] as string[]).concat(scopeToCreator ?? []).filter(Boolean);
   const grouped = await prisma.creative.groupBy({
     by: ['storeConfigId'],
     where: {
       tenantId,
-      ...(scopeToCreator ? { createdById: scopeToCreator } : {}),
+      ...(creatorIds.length ? { createdById: { in: creatorIds } } : {}),
     },
     _count: { _all: true },
   });

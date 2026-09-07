@@ -89,6 +89,11 @@ type PancakeWebhookSettings = {
   relayUpdatedByUserId?: string;
 };
 
+type PancakeWebhookReconcileTarget = {
+  dateLocal: string;
+  destructive: boolean;
+};
+
 type PancakeWebhookProcessStatus =
   | 'SKIPPED'
   | 'QUEUED'
@@ -1442,7 +1447,7 @@ export class IntegrationService {
 
   private async enqueueWebhookReconcileJobs(
     tenantId: string,
-    targets: Map<string, { dateLocal: string }>,
+    targets: Map<string, PancakeWebhookReconcileTarget>,
     requestId: string,
     delayMs: number,
     reconcileMode: 'incremental' | 'full_reset',
@@ -1458,10 +1463,20 @@ export class IntegrationService {
 
     for (const target of targets.values()) {
       try {
+        // A delete/void must remove its previous contribution quickly. Keep the
+        // normal five-minute coalescing window for ordinary updates, while
+        // destructive corrections share a small, separate window per day.
+        const trigger = target.destructive
+          ? 'destructive_order_change' as const
+          : 'standard' as const;
+        const effectiveDelayMs = target.destructive
+          ? Math.min(delayMs, 15_000)
+          : delayMs;
         const reconcileWindow = buildPancakeReconcileWindow({
           tenantId,
           dateLocal: target.dateLocal,
-          delayMs,
+          delayMs: effectiveDelayMs,
+          trigger,
         });
         const existingJob = await this.pancakeWebhookReconcileQueue.getJob(
           reconcileWindow.jobId,
@@ -1478,6 +1493,7 @@ export class IntegrationService {
             teamId: null,
             dateLocal: target.dateLocal,
             reconcileMode,
+            trigger,
             scheduledFor: reconcileWindow.scheduledFor,
             requestId,
             logId,
@@ -1485,6 +1501,7 @@ export class IntegrationService {
           {
             jobId: reconcileWindow.jobId,
             ...this.getPancakeWebhookReconcileQueueJobOptions(reconcileWindow.delayMs),
+            ...(target.destructive ? { priority: 1 } : {}),
           },
         );
         queued += 1;
@@ -1573,7 +1590,7 @@ export class IntegrationService {
     );
     const reconcileTargetsByTenant = new Map<
       string,
-      Map<string, { dateLocal: string }>
+      Map<string, PancakeWebhookReconcileTarget>
     >();
 
     for (const route of routing.routes) {
@@ -1603,11 +1620,22 @@ export class IntegrationService {
       );
       const reconcileTargets =
         reconcileTargetsByTenant.get(route.tenantId) ||
-        new Map<string, { dateLocal: string }>();
+        new Map<string, PancakeWebhookReconcileTarget>();
+      const dateLocalByOrderId = new Map<string, string>();
       for (const order of route.orders) {
         const dateLocal = this.extractWebhookOrderDateLocal(order);
         if (!dateLocal) continue;
-        reconcileTargets.set(dateLocal, { dateLocal });
+        const orderId =
+          order?.id?.toString?.()?.trim?.() ||
+          order?.order_id?.toString?.()?.trim?.() ||
+          '';
+        if (orderId) dateLocalByOrderId.set(orderId, dateLocal);
+        const existingTarget = reconcileTargets.get(dateLocal);
+        reconcileTargets.set(dateLocal, {
+          dateLocal,
+          destructive:
+            existingTarget?.destructive === true || Number(order?.status) === 7,
+        });
       }
       reconcileTargetsByTenant.set(route.tenantId, reconcileTargets);
 
@@ -1624,6 +1652,18 @@ export class IntegrationService {
         );
         upserted += result.upserted;
         outcomes.push(...result.outcomes);
+
+        for (const outcome of result.outcomes) {
+          const isDestructive =
+            outcome.status === 7 ||
+            outcome.upsertStatus === 'DELETED' ||
+            outcome.reason === 'VOID_NO_PRODUCT_ITEMS';
+          if (!isDestructive || !outcome.orderId) continue;
+
+          const dateLocal = dateLocalByOrderId.get(outcome.orderId);
+          if (!dateLocal) continue;
+          reconcileTargets.set(dateLocal, { dateLocal, destructive: true });
+        }
 
         const reportsWarnings =
           await this.hydrateReportsByPhoneForWebhookOrders(

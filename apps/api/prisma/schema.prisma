@@ -42,6 +42,8 @@ model Tenant {
 
   // Relations
   users                               User[]
+  memberships                         TenantMembership[]
+  creativeFieldOptions                CreativeFieldOption[]
   integrations                        Integration[]
   analyticsEvents                     AnalyticsEvent[]
   pancakeWebhookLogs                  PancakeWebhookLog[]
@@ -83,6 +85,7 @@ model Tenant {
   wmsBasketUnits                      WmsBasketUnit[]
   wmsTransfers                        WmsTransfer[]
   wmsInventoryMovements               WmsInventoryMovement[]
+  wmsOutboundUnitRecords              WmsOutboundUnitRecord[]
   wmsLabelPrintLogs                   WmsLabelPrintLog[]
   wmsStaffActivities                  WmsStaffActivity[]
   wmsInventoryCountSessions           WmsInventoryCountSession[]
@@ -108,14 +111,15 @@ model Tenant {
   creativeMetaAdLinks                 CreativeMetaAdLink[]
   creativeReviewComments              CreativeReviewComment[]
   wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
+  wmsFulfillmentAdjustments           WmsFulfillmentAdjustment[]
+  adBenchmarks                        AdBenchmark[]
+  adStrategyEntries                   AdStrategyEntry[]
+  adLibraryEntries                    AdLibraryEntry[]
+  adCreatives                         AdCreative[]
 
   @@index([slug])
   @@index([status])
   @@map("tenants")
-  adBenchmarks      AdBenchmark[]
-  adStrategyEntries AdStrategyEntry[]
-  adLibraryEntries  AdLibraryEntry[]
-  adCreatives       AdCreative[]
 }
 
 enum TenantStatus {
@@ -161,13 +165,13 @@ model Team {
   sharedWorkflowLinks    WorkflowSharedTeam[]
   analyticsSharesOwned   AnalyticsShare[]        @relation("AnalyticsShareOwner")
   analyticsSharesShared  AnalyticsShare[]        @relation("AnalyticsShareTarget")
+  adBenchmarks           AdBenchmark[]
+  adStrategyEntries      AdStrategyEntry[]
+  adLibraryEntries       AdLibraryEntry[]
 
   @@unique([tenantId, teamCode])
   @@index([tenantId])
   @@map("teams")
-  adBenchmarks      AdBenchmark[]
-  adStrategyEntries AdStrategyEntry[]
-  adLibraryEntries  AdLibraryEntry[]
 }
 
 enum TeamStatus {
@@ -332,8 +336,11 @@ model User {
   wmsBasketCapacity Int     @default(4)
 
   // Tenant (Row-level isolation) - Optional for SUPER_ADMIN
-  tenantId String? @db.Uuid
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId          String?            @db.Uuid
+  tenant            Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Every tenant this identity may work in. tenantId above is the LAST ACTIVE
+  // one — the token decides which is active per session.
+  tenantMemberships TenantMembership[]
 
   // RBAC (legacy enums remain for platform-level roles; dynamic roles use join tables)
   role          UserRole @default(USER)
@@ -391,6 +398,7 @@ model User {
   wmsFulfillmentOrdersClaimed               WmsFulfillmentOrder[]          @relation("WmsFulfillmentOrderClaimedBy")
   wmsFulfillmentOrdersPacked                WmsFulfillmentOrder[]          @relation("WmsFulfillmentOrderPackedBy")
   wmsFulfillmentOrdersRtsDisposed           WmsFulfillmentOrder[]          @relation("WmsFulfillmentOrderRtsDisposedBy")
+  wmsFulfillmentAdjustmentsCreated          WmsFulfillmentAdjustment[]     @relation("WmsFulfillmentAdjustmentCreatedBy")
   wmsBasketsAssigned                        WmsBasket[]                    @relation("WmsBasketAssignedPicker")
   wmsBasketsAssignedForPacking              WmsBasket[]                    @relation("WmsBasketAssignedPacker")
   wmsPickReservationsReserved               WmsPickReservation[]           @relation("WmsPickReservationReservedBy")
@@ -408,14 +416,14 @@ model User {
   creativeStatusEvents                      CreativeStatusEvent[]          @relation("CreativeStatusEventActor")
   creativeMetaLinksCreated                  Creative[]                     @relation("CreativeMetaLinkedBy")
   creativeReviewComments                    CreativeReviewComment[]        @relation("CreativeReviewCommentAuthor")
+  adStrategyEntries                         AdStrategyEntry[]              @relation("AdStrategyEntryCreatedBy")
+  adLibraryEntries                          AdLibraryEntry[]               @relation("AdLibraryEntryCreatedBy")
 
   @@unique([email, tenantId])
   @@index([tenantId])
   @@index([tenantId, employeeId])
   @@index([email])
   @@map("users")
-  adStrategyEntries AdStrategyEntry[] @relation("AdStrategyEntryCreatedBy")
-  adLibraryEntries  AdLibraryEntry[]  @relation("AdLibraryEntryCreatedBy")
 }
 
 enum UserRole {
@@ -543,6 +551,7 @@ model PosStore {
   wmsReceivingLines             WmsReceivingLine[]
   wmsProductProfiles            WmsProductProfile[]
   wmsInventoryUnits             WmsInventoryUnit[]
+  wmsOutboundUnitRecords        WmsOutboundUnitRecord[]
   wmsFulfillmentOrders          WmsFulfillmentOrder[]
   wmsBasketPickDemands          WmsBasketPickDemand[]
   wmsBasketUnits                WmsBasketUnit[]
@@ -797,6 +806,13 @@ enum WmsInventoryMovementType {
   DISPATCH
 }
 
+enum WmsOutboundUnitStatus {
+  SHIPPED
+  DELIVERED
+  RETURNING
+  RETURNED
+}
+
 enum WmsInventoryCountSessionStatus {
   OPEN
   SUBMITTED
@@ -848,6 +864,17 @@ enum WmsFulfillmentAmendmentStage {
 enum WmsFulfillmentAssignmentMode {
   SERIAL_RESERVED
   BASKET_DEMAND
+}
+
+enum WmsFulfillmentAdjustmentType {
+  BYPASS
+  SUBSTITUTION
+}
+
+enum WmsFulfillmentAdjustmentStatus {
+  ACTIVE
+  SUPERSEDED
+  REVOKED
 }
 
 enum WmsFulfillmentLineStatus {
@@ -1336,61 +1363,68 @@ model CreativeStoreConfig {
 }
 
 model Creative {
-  id                 String                    @id @default(uuid()) @db.Uuid
-  tenantId           String                    @db.Uuid
-  tenant             Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  storeConfigId      String                    @db.Uuid
-  storeConfig        CreativeStoreConfig       @relation(fields: [storeConfigId], references: [id], onDelete: Restrict)
-  code               String
-  codeNumber         Int
-  kind               CreativeKind
-  title              String
-  format             String?
-  hookType           String?
+  id                  String                    @id @default(uuid()) @db.Uuid
+  tenantId            String                    @db.Uuid
+  tenant              Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeConfigId       String                    @db.Uuid
+  storeConfig         CreativeStoreConfig       @relation(fields: [storeConfigId], references: [id], onDelete: Restrict)
+  code                String
+  codeNumber          Int
+  kind                CreativeKind
+  title               String
+  format              String?
+  hookType            String?
   /// The big idea in the creative's own words ("nanay ng picky eater, guilt
   /// angle"). hookType is the coarse category; this is the free-text one the
   /// Creative Insights analysis learns from.
-  angle              String?
+  angle               String?
   /// Registry code of the winner this creative was remixed from. Set at
   /// enrolment, never edited — it is how the lineage report answers whether
   /// refreshes beat their parents.
-  remixOfCode        String?
+  remixOfCode         String?
   /// The spoken / on-screen script of the video itself. The ad copy is not
   /// mirrored here — it already lives on the Facebook page post.
-  script             String?
-  notes              String?
-  mediaUrl           String?
-  createdById        String                    @db.Uuid
-  createdBy          User                      @relation("CreativeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  revisionState      CreativeRevisionState     @default(NONE)
+  script              String?
+  notes               String?
+  mediaUrl            String?
+  // The item this creative advertises, chosen at enrollment. customId is the
+  // partner's own Pancake identifier and becomes the ad-name mapping segment;
+  // the name is a display snapshot so the registry stays readable if the POS
+  // product is renamed or removed.
+  posVariationId      String?
+  posCustomId         String?
+  posProductName      String?
+  createdById         String                    @db.Uuid
+  createdBy           User                      @relation("CreativeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  revisionState       CreativeRevisionState     @default(NONE)
   revisionRequestedAt DateTime?
   revisionResolvedAt  DateTime?
-  performanceStatus  CreativePerformanceStatus @default(DRAFT)
-  submittedAt        DateTime?
-  approvedAt         DateTime?
-  metaAccountId      String?
-  metaAdId           String?
-  metaAdNameSnapshot String?
-  metaLinkSource     CreativeMetaLinkSource?
-  metaLinkedAt       DateTime?
-  metaLinkedById     String?                   @db.Uuid
-  metaLinkedBy       User?                     @relation("CreativeMetaLinkedBy", fields: [metaLinkedById], references: [id], onDelete: SetNull)
+  performanceStatus   CreativePerformanceStatus @default(DRAFT)
+  submittedAt         DateTime?
+  approvedAt          DateTime?
+  metaAccountId       String?
+  metaAdId            String?
+  metaAdNameSnapshot  String?
+  metaLinkSource      CreativeMetaLinkSource?
+  metaLinkedAt        DateTime?
+  metaLinkedById      String?                   @db.Uuid
+  metaLinkedBy        User?                     @relation("CreativeMetaLinkedBy", fields: [metaLinkedById], references: [id], onDelete: SetNull)
 
   // Cached cover image resolved from the Facebook post's og:image. The CDN URL
   // Facebook hands out expires in days, so the bytes are copied into object
   // storage once and served from there instead of being hot-linked.
-  thumbnailAssetId     String?     @db.Uuid
-  thumbnailAsset       MediaAsset? @relation("CreativeThumbnailAsset", fields: [thumbnailAssetId], references: [id], onDelete: SetNull)
-  thumbnailSourceUrl   String?
-  thumbnailCapturedAt  DateTime?
-  thumbnailIsVideo     Boolean     @default(false)
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
+  thumbnailAssetId    String?     @db.Uuid
+  thumbnailAsset      MediaAsset? @relation("CreativeThumbnailAsset", fields: [thumbnailAssetId], references: [id], onDelete: SetNull)
+  thumbnailSourceUrl  String?
+  thumbnailCapturedAt DateTime?
+  thumbnailIsVideo    Boolean     @default(false)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
-  aliases        CreativeAlias[]
-  statusEvents   CreativeStatusEvent[]
-  metaAdLinks    CreativeMetaAdLink[]
-  reviewComments CreativeReviewComment[]
+  aliases         CreativeAlias[]
+  statusEvents    CreativeStatusEvent[]
+  metaAdLinks     CreativeMetaAdLink[]
+  reviewComments  CreativeReviewComment[]
   strategyEntries CreativeStrategyEntry[]
 
   @@unique([tenantId, code])
@@ -1463,17 +1497,17 @@ model AiSetting {
 /// period. Persisted so this month's read can be compared with last month's,
 /// and so a ₱-costing model call is never repeated just to re-open a page.
 model CreativeInsightRun {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @db.Uuid
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  periodStart DateTime @db.Date
-  periodEnd   DateTime @db.Date
-  model       String
-  answer      String
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  periodStart  DateTime @db.Date
+  periodEnd    DateTime @db.Date
+  model        String
+  answer       String
   /// What the model was shown, compressed: codes + counts, for audit.
   inputSummary Json?
-  createdById String?  @db.Uuid
-  createdAt   DateTime @default(now())
+  createdById  String?  @db.Uuid
+  createdAt    DateTime @default(now())
 
   @@index([tenantId, createdAt])
   @@map("creative_insight_runs")
@@ -1485,17 +1519,17 @@ model CreativeInsightRun {
 /// memory Creative Insights reads so its analysis knows what was actually
 /// tried instead of inferring it from metrics alone.
 model CreativeStrategyEntry {
-  id              String                @id @default(uuid()) @db.Uuid
-  tenantId        String                @db.Uuid
-  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id              String                 @id @default(uuid()) @db.Uuid
+  tenantId        String                 @db.Uuid
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   /// The day the change TOOK EFFECT, not the day it was typed — a change
   /// logged late still has to line up with the week its numbers moved.
-  date            DateTime              @db.Date
+  date            DateTime               @db.Date
   title           String
   description     String?
   /// Free text, not an enum: the fixed list covers the usual moves, and a
   /// typed-in type is kept as-is so the vocabulary can grow without a migration.
-  tag             String                @default("OTHER")
+  tag             String                 @default("OTHER")
   /// Written after the fact. Half the value of the log lives here — an entry
   /// with no result says what was tried, one with a result says what works.
   result          String?
@@ -1506,12 +1540,12 @@ model CreativeStrategyEntry {
   /// Set on the auto rows, so an entry can be traced back to the creative it
   /// records. Nulled rather than deleted if that creative ever goes away — the
   /// decision still happened.
-  creativeId      String?               @db.Uuid
-  creative        Creative?             @relation(fields: [creativeId], references: [id], onDelete: SetNull)
-  createdById     String                @db.Uuid
-  createdBy       User                  @relation("CreativeStrategyAuthor", fields: [createdById], references: [id], onDelete: Restrict)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  creativeId      String?                @db.Uuid
+  creative        Creative?              @relation(fields: [creativeId], references: [id], onDelete: SetNull)
+  createdById     String                 @db.Uuid
+  createdBy       User                   @relation("CreativeStrategyAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   @@index([tenantId, date])
   @@index([tenantId, createdById, date])
@@ -1842,6 +1876,7 @@ model WmsWarehouse {
   transfers            WmsTransfer[]
   inventoryMovements   WmsInventoryMovement[]
   inventoryCounts      WmsInventoryCountSession[]
+  outboundUnitRecords  WmsOutboundUnitRecord[]
 
   @@index([status])
   @@map("wms_warehouses")
@@ -1923,6 +1958,7 @@ model WmsProductProfile {
   purchasingLines        WmsPurchasingBatchLine[] @relation("WmsPurchasingLineResolvedProfile")
   receivingLines         WmsReceivingLine[]       @relation("WmsReceivingLineResolvedProfile")
   inventoryUnits         WmsInventoryUnit[]
+  outboundUnitRecords    WmsOutboundUnitRecord[]
 
   @@unique([storeId, variationId])
   @@index([tenantId, storeId])
@@ -2372,10 +2408,14 @@ model WmsInventoryUnit {
   pickReservations    WmsPickReservation[]
   basketUnits         WmsBasketUnit[]
   countEntries        WmsInventoryCountEntry[]
+  outboundRecords     WmsOutboundUnitRecord[]
 
   @@index([tenantId, storeId])
   @@index([tenantId, status])
   @@index([tenantId, status, expirationDate])
+  @@index([updatedAt])
+  @@index([tenantId, updatedAt])
+  @@index([tenantId, storeId, updatedAt])
   @@index([storeId, variationId])
   @@index([warehouseId, currentLocationId])
   @@index([receivingBatchId])
@@ -2463,6 +2503,7 @@ model WmsFulfillmentOrder {
   priorityOverrideAt         DateTime?
   priorityOverrideReason     String?
   priorityReleasedForOrderId String?                      @db.Uuid
+  sourceTotalQuantity        Int                          @default(0)
   totalQuantity              Int                          @default(0)
   allocatedQuantity          Int                          @default(0)
   pickedQuantity             Int                          @default(0)
@@ -2486,13 +2527,15 @@ model WmsFulfillmentOrder {
   createdAt                  DateTime                     @default(now())
   updatedAt                  DateTime                     @updatedAt
 
-  legacyBasket      WmsBasket?                @relation("WmsBasketLegacyFulfillmentOrder")
-  lines             WmsFulfillmentLine[]
-  reservations      WmsPickReservation[]
-  basketPickDemands WmsBasketPickDemand[]
-  basketUnits       WmsBasketUnit[]
-  packingProofs     WmsPackingProof[]
-  amendments        WmsFulfillmentAmendment[]
+  legacyBasket           WmsBasket?                 @relation("WmsBasketLegacyFulfillmentOrder")
+  lines                  WmsFulfillmentLine[]
+  reservations           WmsPickReservation[]
+  basketPickDemands      WmsBasketPickDemand[]
+  basketUnits            WmsBasketUnit[]
+  packingProofs          WmsPackingProof[]
+  amendments             WmsFulfillmentAmendment[]
+  fulfillmentAdjustments WmsFulfillmentAdjustment[]
+  outboundUnitRecords    WmsOutboundUnitRecord[]
 
   @@unique([tenantId, shopId, posOrderId])
   @@unique([posOrderDbId])
@@ -2584,32 +2627,68 @@ model WmsBasket {
 }
 
 model WmsFulfillmentLine {
-  id                 String                   @id @default(uuid()) @db.Uuid
-  fulfillmentOrderId String                   @db.Uuid
-  fulfillmentOrder   WmsFulfillmentOrder      @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
-  tenantId           String                   @db.Uuid
-  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  productId          String?
-  variationId        String
-  productName        String
-  productDisplayId   String?
-  quantityRequired   Int
-  quantityAllocated  Int                      @default(0)
-  quantityPicked     Int                      @default(0)
-  status             WmsFulfillmentLineStatus @default(RESTOCKING)
-  issueReason        String?
-  lineSnapshot       Json?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
+  id                     String                   @id @default(uuid()) @db.Uuid
+  fulfillmentOrderId     String                   @db.Uuid
+  fulfillmentOrder       WmsFulfillmentOrder      @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  tenantId               String                   @db.Uuid
+  tenant                 Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId              String?
+  variationId            String
+  productName            String
+  productDisplayId       String?
+  sourceQuantityRequired Int                      @default(0)
+  quantityRequired       Int
+  quantityAllocated      Int                      @default(0)
+  quantityPicked         Int                      @default(0)
+  status                 WmsFulfillmentLineStatus @default(RESTOCKING)
+  issueReason            String?
+  lineSnapshot           Json?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
-  reservations      WmsPickReservation[]
-  basketPickDemands WmsBasketPickDemand[]
-  basketUnits       WmsBasketUnit[]
+  reservations        WmsPickReservation[]
+  basketPickDemands   WmsBasketPickDemand[]
+  basketUnits         WmsBasketUnit[]
+  outboundUnitRecords WmsOutboundUnitRecord[]
 
   @@unique([fulfillmentOrderId, variationId])
   @@index([tenantId, variationId, status])
   @@index([fulfillmentOrderId, status])
   @@map("wms_fulfillment_lines")
+}
+
+model WmsFulfillmentAdjustment {
+  id                         String                         @id @default(uuid()) @db.Uuid
+  tenantId                   String                         @db.Uuid
+  tenant                     Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fulfillmentOrderId         String                         @db.Uuid
+  fulfillmentOrder           WmsFulfillmentOrder            @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  sourceLineId               String                         @db.Uuid
+  sourceVariationId          String
+  sourceProductId            String?
+  sourceProductName          String
+  sourceProductDisplayId     String?
+  substituteVariationId      String?
+  substituteProductId        String?
+  substituteProductName      String?
+  substituteProductDisplayId String?
+  type                       WmsFulfillmentAdjustmentType
+  status                     WmsFulfillmentAdjustmentStatus @default(ACTIVE)
+  quantity                   Int
+  reason                     String
+  sourceRevision             Int
+  createdById                String                         @db.Uuid
+  createdBy                  User                           @relation("WmsFulfillmentAdjustmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  supersededAt               DateTime?
+  revokedAt                  DateTime?
+  createdAt                  DateTime                       @default(now())
+  updatedAt                  DateTime                       @updatedAt
+
+  @@index([tenantId, status, createdAt])
+  @@index([fulfillmentOrderId, status])
+  @@index([sourceLineId, status])
+  @@index([createdById])
+  @@map("wms_fulfillment_adjustments")
 }
 
 model WmsBasketPickDemand {
@@ -2963,6 +3042,40 @@ model WmsInventoryMovement {
   @@index([referenceType, referenceId])
   @@index([actorId])
   @@map("wms_inventory_movements")
+}
+
+model WmsOutboundUnitRecord {
+  id                 String                @id @default(uuid()) @db.Uuid
+  tenantId           String                @db.Uuid
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeId            String                @db.Uuid
+  store              PosStore              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  warehouseId        String                @db.Uuid
+  warehouse          WmsWarehouse          @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  productProfileId   String                @db.Uuid
+  productProfile     WmsProductProfile     @relation(fields: [productProfileId], references: [id], onDelete: Restrict)
+  inventoryUnitId    String                @db.Uuid
+  inventoryUnit      WmsInventoryUnit      @relation(fields: [inventoryUnitId], references: [id], onDelete: Cascade)
+  fulfillmentOrderId String                @db.Uuid
+  fulfillmentOrder   WmsFulfillmentOrder   @relation(fields: [fulfillmentOrderId], references: [id], onDelete: Cascade)
+  fulfillmentLineId  String?               @db.Uuid
+  fulfillmentLine    WmsFulfillmentLine?   @relation(fields: [fulfillmentLineId], references: [id], onDelete: SetNull)
+  currentStatus      WmsOutboundUnitStatus
+  shippedAt          DateTime?
+  deliveredAt        DateTime?
+  returningAt        DateTime?
+  returnedAt         DateTime?
+  latestEventAt      DateTime
+  trackingCode       String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@unique([fulfillmentOrderId, inventoryUnitId])
+  @@index([tenantId, currentStatus, latestEventAt])
+  @@index([tenantId, storeId, currentStatus, latestEventAt])
+  @@index([tenantId, productProfileId, currentStatus, latestEventAt])
+  @@index([inventoryUnitId, latestEventAt])
+  @@map("wms_outbound_unit_records")
 }
 
 model WmsLabelPrintLog {
@@ -3406,7 +3519,6 @@ model ReconcileSalesAttribution {
   @@map("reconcile_sales_attribution")
 }
 
-
 // ===========================================================================
 // Advertising console
 //
@@ -3450,16 +3562,16 @@ model AdBenchmark {
   label String @default("Industry benchmark")
 
   /// Cost per POS purchase — the ceiling, not the aspiration.
-  cpp Decimal @default(300.00) @db.Decimal(12, 2)
-  cpm Decimal @default(150.00) @db.Decimal(12, 2)
+  cpp          Decimal @default(300.00) @db.Decimal(12, 2)
+  cpm          Decimal @default(150.00) @db.Decimal(12, 2)
   /// Link clicks over impressions, as a percentage.
-  ctrPct Float @default(2.0)
+  ctrPct       Float   @default(2.0)
   /// Delivered orders over processed orders.
-  deliveryRate Float @default(0.55)
-  cancelRate   Float @default(0.25)
-  rtsRate      Float @default(0.10)
+  deliveryRate Float   @default(0.55)
+  cancelRate   Float   @default(0.25)
+  rtsRate      Float   @default(0.10)
   /// Delivered COD over spend. The break-even multiple.
-  targetMer Float @default(2.5)
+  targetMer    Float   @default(2.5)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3564,4 +3676,54 @@ model AdCreative {
   @@unique([tenantId, metaCreativeId])
   @@index([tenantId])
   @@map("ad_creatives")
+}
+
+enum TenantMembershipStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+/// One identity, many tenants. RBAC was already tenant-scoped through
+/// UserRoleAssignment.tenantId; this is the missing "may this user enter this
+/// tenant at all" record that lets the session's tenant come from the token
+/// instead of being welded to the User row.
+model TenantMembership {
+  id            String                 @id @default(uuid()) @db.Uuid
+  tenantId      String                 @db.Uuid
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId        String                 @db.Uuid
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        TenantMembershipStatus @default(ACTIVE)
+  defaultTeamId String?                @db.Uuid
+  addedById     String?                @db.Uuid
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@unique([userId, tenantId])
+  @@index([tenantId, status])
+  @@map("tenant_memberships")
+}
+
+enum CreativeOptionField {
+  HOOK_TYPE
+  VIDEO_FORMAT
+  STATIC_FORMAT
+}
+
+/// Tenant-wide vocabulary for the open-ended creative fields. A hook type or
+/// format added from one enrollment appears in every dialog in the tenant,
+/// rather than living only on the creative it was typed into.
+model CreativeFieldOption {
+  id          String              @id @default(uuid()) @db.Uuid
+  tenantId    String              @db.Uuid
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  field       CreativeOptionField
+  value       String
+  label       String
+  createdById String?             @db.Uuid
+  createdAt   DateTime            @default(now())
+
+  @@unique([tenantId, field, value])
+  @@index([tenantId, field])
+  @@map("creative_field_options")
 }

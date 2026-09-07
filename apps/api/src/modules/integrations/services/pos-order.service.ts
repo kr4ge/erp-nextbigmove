@@ -1,5 +1,6 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { buildProductMappingKey } from '../../workflows/utils/product-mapping-key';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { createHash } from 'crypto';
@@ -8,6 +9,7 @@ import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import { WmsFulfillmentSyncService } from '../../wms-fulfillment/wms-fulfillment-sync.service';
 import { WmsInventoryService } from '../../wms-inventory/wms-inventory.service';
+import { WmsOutboundRecordsService } from '../../wms-inventory/wms-outbound-records.service';
 import { WorkflowExecutionGateway } from '../../workflows/gateways/workflow-execution.gateway';
 import {
   ORDERS_STATUS_SUMMARY_UPDATED_EVENT,
@@ -104,12 +106,26 @@ export interface PosOrderUpsertOutcome {
   warning?: string;
 }
 
+export function shouldTreatNoProductSnapshotAsVoid(
+  isNoProductOrder: boolean,
+  status: number | null | undefined,
+) {
+  if (!isNoProductOrder) {
+    return false;
+  }
+
+  return status !== 1 && status !== 12;
+}
+
 @Injectable()
 export class PosOrderService {
+  private readonly logger = new Logger(PosOrderService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
     private readonly wmsInventoryService: WmsInventoryService,
+    private readonly wmsOutboundRecordsService: WmsOutboundRecordsService,
     @Optional()
     private readonly workflowExecutionGateway?: WorkflowExecutionGateway,
   ) {}
@@ -438,9 +454,22 @@ export class PosOrderService {
         storeId,
         productId: { in: productIds },
       },
-      select: { mapping: true },
+      select: { mapping: true, variationId: true },
     });
 
+    // Single, uniquely-identifiable product -> store the precise store+variation
+    // key so the per-product breakdown can name it. (storeId, variationId) is
+    // unique in pos_products, so this can't collide across stores/variations.
+    const distinctVariationIds = Array.from(
+      new Set(products.map((p) => (p.variationId || '').trim()).filter((v) => v.length > 0)),
+    );
+    if (distinctVariationIds.length === 1) {
+      const key = buildProductMappingKey(storeId, distinctVariationIds[0]);
+      if (key) return key;
+    }
+
+    // Multi-product or no variationId -> fall back to the coarse mapping label
+    // (unchanged behaviour), keeping the ad<->sales join intact.
     const mappings = products
       .map((p) => (p.mapping || '').trim())
       .filter((m) => m.length > 0)
@@ -983,6 +1012,7 @@ export class PosOrderService {
     const fulfillmentCandidates: Array<{ shopId: string; posOrderId: string }> = [];
     const canceledFulfillmentCandidates: Array<{ shopId: string; posOrderId: string }> = [];
     const dispatchCandidates: Array<{ shopId: string; posOrderId: string }> = [];
+    const outboundRecordCandidates: Array<{ shopId: string; posOrderId: string }> = [];
 
     const store = await this.prisma.posStore.findFirst({
       where: { id: storeId, tenantId },
@@ -1081,7 +1111,19 @@ export class PosOrderService {
             order.status = previous?.status ?? order.status;
           }
         }
-        if (isNoProductOrder) {
+        // Pancake emits variation replacements as two separate snapshots: the
+        // old item is removed first, then the replacement is added a few
+        // seconds later. A confirmed order with an explicitly empty item list
+        // is therefore an incomplete fulfillment snapshot, not a POS void.
+        // Keep it confirmed so WMS can pause it as ISSUE and converge when the
+        // replacement snapshot arrives. Only non-fulfillable statuses may use
+        // an empty item list as void evidence.
+        const shouldTreatAsVoid = shouldTreatNoProductSnapshotAsVoid(
+          isNoProductOrder,
+          order.status,
+        );
+        const isConfirmedNoProductSnapshot = isNoProductOrder && !shouldTreatAsVoid;
+        if (shouldTreatAsVoid) {
           order.isVoid = true;
         }
 
@@ -1233,12 +1275,28 @@ export class PosOrderService {
             posOrderId: order.posOrderId,
           });
         }
+        if (
+          [4, 5].includes(order.status ?? -1)
+          && order.shopId
+          && order.posOrderId
+        ) {
+          outboundRecordCandidates.push({
+            shopId: order.shopId,
+            posOrderId: order.posOrderId,
+          });
+        }
         outcomes.push({
           shopId: order.shopId || shopId,
           orderId: order.posOrderId || posOrderId,
           status: typeof order.status === 'number' ? order.status : status,
           upsertStatus: 'UPSERTED',
-          ...(isNoProductOrder ? { reason: 'VOID_NO_PRODUCT_ITEMS' } : {}),
+          ...(isNoProductOrder
+            ? {
+                reason: isConfirmedNoProductSnapshot
+                  ? 'CONFIRMED_NO_PRODUCT_ITEMS'
+                  : 'VOID_NO_PRODUCT_ITEMS',
+              }
+            : {}),
         });
       } catch (error: any) {
         const message = error?.message || 'Unknown error';
@@ -1298,6 +1356,20 @@ export class PosOrderService {
         storeId,
         posOrderRefs: dispatchCandidates,
       });
+    }
+
+    if (outboundRecordCandidates.length > 0) {
+      try {
+        await this.wmsOutboundRecordsService.syncForPosOrders({
+          tenantId,
+          storeId,
+          posOrderRefs: outboundRecordCandidates,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Outbound unit projection sync failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
     const wmsCogsCandidates = Array.from(

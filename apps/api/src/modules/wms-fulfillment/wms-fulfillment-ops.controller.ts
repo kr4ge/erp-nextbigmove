@@ -2,6 +2,8 @@ import { Body, Controller, Get, Post, Query, Request, UseGuards } from '@nestjs/
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WmsAccessGuard } from '../../common/guards/wms-access.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { AdjustWmsFulfillmentOrderDto } from './dto/adjust-wms-fulfillment-order.dto';
+import { GetWmsFulfillmentAdjustmentOptionsDto } from './dto/get-wms-fulfillment-adjustment-options.dto';
 import { GetWmsFulfillmentOpsSnapshotDto } from './dto/get-wms-fulfillment-ops-snapshot.dto';
 import { GetWmsFulfillmentPriorityPreviewDto } from './dto/get-wms-fulfillment-priority-preview.dto';
 import { PrioritizeWmsFulfillmentOrderDto } from './dto/prioritize-wms-fulfillment-order.dto';
@@ -25,6 +27,18 @@ export class WmsFulfillmentOpsController {
   @Permissions('wms.fulfillment.override')
   async getPriorityPreview(@Query() query: GetWmsFulfillmentPriorityPreviewDto) {
     return this.wmsFulfillmentOpsService.getPriorityPreview(query);
+  }
+
+  @Get('ops/item-adjustment-options')
+  @Permissions('wms.fulfillment.bypass')
+  async getItemAdjustmentOptions(@Query() query: GetWmsFulfillmentAdjustmentOptionsDto) {
+    return this.wmsFulfillmentOpsService.getItemAdjustmentOptions(query);
+  }
+
+  @Post('ops/adjust-items')
+  @Permissions('wms.fulfillment.bypass')
+  async adjustItems(@Request() req, @Body() body: AdjustWmsFulfillmentOrderDto) {
+    return this.wmsFulfillmentOpsService.adjustItems(req.user, body, req);
   }
 
   @Post('ops/prioritize-order')

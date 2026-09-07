@@ -8,6 +8,11 @@ import * as timezone from 'dayjs/plugin/timezone';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { AnalyticsCacheService } from './analytics-cache.service';
 import { ReconcileMarketingService } from '../workflows/services/reconcile-marketing.service';
+import {
+  parseProductMappingKey,
+  parseUnassignedMappingKey,
+  resolveMappingDisplayNames,
+} from '../workflows/utils/product-mapping-key';
 import { ReconcileSalesService } from '../workflows/services/reconcile-sales.service';
 import { ReconcileSalesAttributionService } from '../workflows/services/reconcile-sales-attribution.service';
 import { AnalyticsRequestCoordinatorService } from './analytics-request-coordinator.service';
@@ -670,7 +675,11 @@ export class SalesAnalyticsService {
       net_margin: net,
       rts_count: this.toNumber(sum?._sum?.rtsCount) - repurchaseAdj.rtsCount,
       delivered_count: this.toNumber(sum?._sum?.deliveredCount) - repurchaseAdj.deliveredCount,
-      cod_raw: cod,
+      // Repurchase-adjusted like its siblings below, so the per-product
+      // CM (RTS %) revenue base matches the KPI/Total (which use gross_cod =
+      // cod - repurchaseAdj.codRaw). Leaving this raw inflated the product
+      // row's forecast by the repurchase COD.
+      cod_raw: cod - repurchaseAdj.codRaw,
       purchases_raw: purchasesRaw,
       sf_raw: sf - repurchaseAdj.sf,
       ff_raw: ff - repurchaseAdj.ff,
@@ -1249,6 +1258,11 @@ export class SalesAnalyticsService {
         mappingOptions.push(norm);
       }
     });
+
+    // pv:: keys -> product names, ua:: keys -> "Unassigned — {store}"; coarse
+    // labels pass through untouched.
+    await resolveMappingDisplayNames(this.prisma, mappingDisplayMap);
+
     if (nullCount > 0) {
       const key = this.normalize('__null__');
       mappingDisplayMap[key] = `Unassigned (${nullCount})`;
@@ -1370,6 +1384,314 @@ export class SalesAnalyticsService {
     };
 
     this.logger.log(`CACHE SET ${cacheKey}`);
+    await this.analyticsCache.set(cacheKey, response);
+    return response;
+  }
+
+  /**
+   * Full overview for the sales page's STORE tab: identical response shape to
+   * calculateOverview (kpis, counts, prev-period deltas, breakdown rows,
+   * delivery statuses), computed with the same math — only the dimension
+   * changes. Sourced from reconcile_marketing, the one reconcile table that
+   * still knows which store a row touched; its totals are identical to
+   * reconcile_sales, so the two tabs tie out by construction.
+   *
+   * `mappings` carries selected STORE ids here (with '__unattributed__' as the
+   * sentinel bucket). Every row is assigned to EXACTLY ONE store via
+   *   shops[0] -> creative link -> mapping-embedded store -> Unattributed
+   * so buckets partition the data: nothing is dropped or counted twice.
+   */
+  async getStoreOverview(params: SalesOverviewParams) {
+    const { startDate, endDate, mappings = [], excludeCancel = true, excludeRestocking = true, excludeAbandoned = true, excludeRts = true, excludeRepurchase = true, includeTax12 = false, includeTax1 = false } = params;
+
+    const startStr = (startDate && startDate.trim()) || dayjs().tz(TIMEZONE).format('YYYY-MM-DD');
+    const endStr = (endDate && endDate.trim()) || startStr;
+    if (!dayjs(startStr, 'YYYY-MM-DD', true).isValid() || !dayjs(endStr, 'YYYY-MM-DD', true).isValid()) {
+      throw new BadRequestException('Invalid date format. Expected YYYY-MM-DD');
+    }
+    if (endStr < startStr) {
+      throw new BadRequestException('start_date must be before or equal to end_date');
+    }
+    const rangeDays = this.diffDays(startStr, endStr) + 1;
+    const prevEndStr = this.shiftDate(startStr, -1);
+    const prevStartStr = this.shiftDate(startStr, -rangeDays);
+    const startDate_dt = new Date(`${startStr}T00:00:00.000Z`);
+    const endDate_dt = new Date(`${endStr}T00:00:00.000Z`);
+    const prevStartDate_dt = new Date(`${prevStartStr}T00:00:00.000Z`);
+
+    const UNATTRIBUTED = '__unattributed__';
+    const selectedStoreIds = mappings.map((m) => this.normalize(m)).filter((v) => v.length > 0);
+    const tenantId = this.teamContext.getTenantId();
+
+    const cacheVersion = await this.analyticsCache.getVersion(tenantId);
+    const cacheKeyPayload = {
+      responseShapeVersion: 1,
+      start: startStr,
+      end: endStr,
+      stores: [...selectedStoreIds].sort(),
+      excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, excludeRepurchase,
+      includeTax12, includeTax1,
+    };
+    const cacheKey = `analytics:${tenantId}:${cacheVersion}:sales-stores:${this.analyticsCache.hashObject(cacheKeyPayload)}`;
+    const cached = await this.analyticsCache.get<any>(cacheKey);
+    if (cached) return cached;
+
+    // The exact field set the product overview aggregates — same inputs, same
+    // computeKpis/computeCounts/computeProductRow math.
+    const metricFields = [
+      'spend', 'codPos', 'purchasesPos', 'processedPurchasesPos', 'repurchaseCount', 'repurchaseProcessedPurchasesPos',
+      'leads', 'deliveredCodPos', 'shippedCodPos', 'waitingPickupCodPos', 'rtsCodPos', 'canceledCodPos',
+      'restockingCodPos', 'currentAbandonedCodPos', 'deliveredCount', 'shippedCount', 'waitingPickupCount',
+      'rtsCount', 'canceledCount', 'restockingCount', 'currentAbandonedCount', 'repurchaseDeliveredCount',
+      'repurchaseShippedCount', 'repurchaseWaitingPickupCount', 'repurchaseRtsCount', 'repurchaseCanceledCount',
+      'repurchaseRestockingCount', 'repurchaseCurrentAbandonedCount', 'repurchaseConfirmedCount',
+      'repurchaseUnconfirmedCount', 'confirmedCount', 'unconfirmedCount', 'printedCount', 'deletedCount',
+      'repurchasePrintedCount', 'repurchaseDeletedCount', 'confirmedCodPos', 'unconfirmedCodPos',
+      'repurchaseCodPos', 'repurchaseDeliveredCodPos', 'repurchaseShippedCodPos', 'repurchaseWaitingPickupCodPos',
+      'repurchaseRtsCodPos', 'repurchaseCanceledCodPos', 'repurchaseRestockingCodPos',
+      'repurchaseCurrentAbandonedCodPos', 'repurchaseConfirmedCodPos', 'repurchaseUnconfirmedCodPos',
+      'cogsPos', 'cogsCanceledPos', 'cogsRestockingPos', 'cogsRtsPos', 'cogsDeliveredPos', 'repurchaseCogsPos',
+      'repurchaseCogsCanceledPos', 'repurchaseCogsRestockingPos', 'repurchaseCogsRtsPos', 'repurchaseCogsDeliveredPos',
+      'codFeePos', 'codFeeDeliveredPos', 'sfPos', 'ffPos', 'ifPos', 'sfSdrPos', 'ffSdrPos', 'ifSdrPos',
+      'repurchaseCodFeePos', 'repurchaseCodFeeDeliveredPos', 'repurchaseSfPos', 'repurchaseFfPos', 'repurchaseIfPos',
+      'repurchaseSfSdrPos', 'repurchaseFfSdrPos', 'repurchaseIfSdrPos',
+    ] as const;
+
+    const select: Record<string, boolean> = { adId: true, mapping: true, shops: true, date: true, updatedAt: true };
+    for (const f of metricFields) select[f] = true;
+
+    // Current + previous period in one fetch; rows are split by date below.
+    const [rows, tenantStores] = await Promise.all([
+      this.prisma.reconcileMarketing.findMany({
+        where: { tenantId, date: { gte: prevStartDate_dt, lte: endDate_dt } },
+        select: select as any,
+      }) as Promise<Array<Record<string, any>>>,
+      this.prisma.posStore.findMany({
+        where: { tenantId },
+        select: { id: true, shopId: true, name: true },
+      }),
+    ]);
+
+    const storeByShopId = new Map(tenantStores.map((st) => [st.shopId, st.id.toLowerCase()]));
+    const storeNameById = new Map(tenantStores.map((st) => [st.id.toLowerCase(), st.name]));
+
+    // Fallback 2: creative link -> store, for ads with no matched orders.
+    const unshoppedAdIds = [
+      ...new Set(
+        rows
+          .filter((r) => !(Array.isArray(r.shops) && r.shops.length > 0))
+          .map((r) => r.adId as string)
+          .filter(Boolean),
+      ),
+    ];
+    const storeByAdId = new Map<string, string>();
+    if (unshoppedAdIds.length > 0) {
+      const links = await this.prisma.creativeMetaAdLink.findMany({
+        where: { tenantId, adId: { in: unshoppedAdIds } },
+        select: { adId: true, creative: { select: { storeConfig: { select: { storeId: true } } } } },
+      });
+      for (const link of links) {
+        const sid = link.creative?.storeConfig?.storeId;
+        if (sid && !storeByAdId.has(link.adId)) storeByAdId.set(link.adId, sid.toLowerCase());
+      }
+    }
+
+    // Fallback 3b: coarse mapping label -> store, only when unambiguous.
+    const tenantProducts = await this.prisma.posProduct.findMany({
+      where: { store: { is: { tenantId } }, mapping: { not: null } },
+      select: { storeId: true, mapping: true },
+    });
+    const storeByLabel = new Map<string, string | null>();
+    for (const p of tenantProducts) {
+      const label = p.mapping?.trim().toLowerCase();
+      if (!label) continue;
+      const sid = p.storeId.toLowerCase();
+      if (storeByLabel.has(label) && storeByLabel.get(label) !== sid) storeByLabel.set(label, null);
+      else storeByLabel.set(label, sid);
+    }
+
+    const resolveStore = (row: Record<string, any>): string => {
+      const shops = Array.isArray(row.shops) ? row.shops : [];
+      const shopId = typeof shops[0] === 'string' ? shops[0] : shops[0] != null ? String(shops[0]) : null;
+      if (shopId && storeByShopId.has(shopId)) return storeByShopId.get(shopId)!;
+      const linked = storeByAdId.get(row.adId);
+      if (linked) return linked;
+      const mapping = typeof row.mapping === 'string' ? row.mapping : null;
+      const productKey = parseProductMappingKey(mapping);
+      if (productKey) return productKey.storeId;
+      const unassignedKey = parseUnassignedMappingKey(mapping);
+      if (unassignedKey) return unassignedKey.storeId;
+      const label = mapping?.trim().toLowerCase();
+      if (label) {
+        const byLabel = storeByLabel.get(label);
+        if (byLabel) return byLabel;
+      }
+      return UNATTRIBUTED;
+    };
+
+    const allSelected = selectedStoreIds.length === 0;
+    const isSelected = (storeKey: string) => allSelected || selectedStoreIds.includes(storeKey);
+
+    const newBucket = () => {
+      const b: Record<string, number> = {};
+      for (const f of metricFields) b[f] = 0;
+      return b;
+    };
+    const addRow = (bucket: Record<string, number>, row: Record<string, any>) => {
+      for (const f of metricFields) bucket[f] += Number(row[f] ?? 0) || 0;
+    };
+
+    const currentAggSums = newBucket();
+    const prevAggSums = newBucket();
+    const storeBuckets = new Map<string, Record<string, number>>();
+    const presentStoreKeys = new Set<string>();
+    let lastUpdatedAt: Date | null = null;
+
+    for (const row of rows) {
+      const storeKey = resolveStore(row);
+      const isCurrent = row.date >= startDate_dt;
+      if (isCurrent) presentStoreKeys.add(storeKey);
+      if (!isSelected(storeKey)) continue;
+      if (isCurrent) {
+        addRow(currentAggSums, row);
+        let bucket = storeBuckets.get(storeKey);
+        if (!bucket) {
+          bucket = newBucket();
+          storeBuckets.set(storeKey, bucket);
+        }
+        addRow(bucket, row);
+        if (row.updatedAt instanceof Date && (!lastUpdatedAt || row.updatedAt > lastUpdatedAt)) {
+          lastUpdatedAt = row.updatedAt;
+        }
+      } else {
+        addRow(prevAggSums, row);
+      }
+    }
+
+    // POS-order-backed metrics (processed sales, cancellation, undelivered)
+    // scope by the selected stores' shopIds — the store analog of the product
+    // overview's activeShopIds scope. Unattributed rows have no POS orders by
+    // definition, so this is exact.
+    const selectedShopIds = tenantStores
+      .filter((st) => allSelected || selectedStoreIds.includes(st.id.toLowerCase()))
+      .map((st) => st.shopId);
+    const posScope = { shopId: { in: selectedShopIds } };
+    const processedSalesWhere = this.teamContext.buildTenantWhereClause({
+      dateLocal: { gte: startStr, lte: endStr },
+      ...posScope,
+      status: { in: [...PROCESSED_SALES_STATUSES] },
+      ...(excludeRepurchase ? { isRepurchase: false } : {}),
+    });
+    const prevProcessedSalesWhere = this.teamContext.buildTenantWhereClause({
+      dateLocal: { gte: prevStartStr, lte: prevEndStr },
+      ...posScope,
+      status: { in: [...PROCESSED_SALES_STATUSES] },
+      ...(excludeRepurchase ? { isRepurchase: false } : {}),
+    });
+    const cancellationRateWhere = this.teamContext.buildTenantWhereClause({
+      dateLocal: { gte: startStr, lte: endStr },
+      ...posScope,
+      ...(excludeRepurchase ? { isRepurchase: false } : {}),
+    });
+    const prevCancellationRateWhere = this.teamContext.buildTenantWhereClause({
+      dateLocal: { gte: prevStartStr, lte: prevEndStr },
+      ...posScope,
+      ...(excludeRepurchase ? { isRepurchase: false } : {}),
+    });
+
+    const [
+      processedSalesAgg,
+      prevProcessedSalesAgg,
+      totalOrdersCount,
+      cancelledOrdersCount,
+      prevTotalOrdersCount,
+      prevCancelledOrdersCount,
+      undeliveredOrdersCount,
+      returnedOrdersCount,
+      prevUndeliveredOrdersCount,
+      prevReturnedOrdersCount,
+    ] = await Promise.all([
+      this.prisma.posOrder.aggregate({ where: processedSalesWhere, _sum: { cod: true } }),
+      this.prisma.posOrder.aggregate({ where: prevProcessedSalesWhere, _sum: { cod: true } }),
+      this.prisma.posOrder.count({ where: { ...cancellationRateWhere, OR: [{ status: { not: 7 } }, { status: null }] } }),
+      this.prisma.posOrder.count({ where: { ...cancellationRateWhere, status: 6 } }),
+      this.prisma.posOrder.count({ where: { ...prevCancellationRateWhere, OR: [{ status: { not: 7 } }, { status: null }] } }),
+      this.prisma.posOrder.count({ where: { ...prevCancellationRateWhere, status: 6 } }),
+      this.prisma.posOrder.count({ where: { ...cancellationRateWhere, status: 4 } }),
+      this.prisma.posOrder.count({ where: { ...cancellationRateWhere, status: 5 } }),
+      this.prisma.posOrder.count({ where: { ...prevCancellationRateWhere, status: 4 } }),
+      this.prisma.posOrder.count({ where: { ...prevCancellationRateWhere, status: 5 } }),
+    ]);
+
+    const rtsForecastPct = 20;
+    const agg = { _sum: currentAggSums };
+    const prevAgg = { _sum: prevAggSums };
+    const kpiOpts = { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, excludeRepurchase, includeTax12, includeTax1, rtsForecastPct };
+
+    const kpis = {
+      ...this.computeKpis(agg, { ...kpiOpts, processedSalesValue: this.toNumber(processedSalesAgg?._sum?.cod) }),
+      cancellation_rate_pct: totalOrdersCount > 0 ? (cancelledOrdersCount / totalOrdersCount) * 100 : 0,
+    };
+    const prevKpis = {
+      ...this.computeKpis(prevAgg, { ...kpiOpts, processedSalesValue: this.toNumber(prevProcessedSalesAgg?._sum?.cod) }),
+      cancellation_rate_pct: prevTotalOrdersCount > 0 ? (prevCancelledOrdersCount / prevTotalOrdersCount) * 100 : 0,
+    };
+    const toggleOpts = { excludeCancel, excludeRestocking, excludeAbandoned, excludeRts, excludeRepurchase };
+    const counts = this.computeCounts(agg, toggleOpts, { undelivered: undeliveredOrdersCount, returned: returnedOrdersCount });
+    const prevCounts = this.computeCounts(prevAgg, toggleOpts, { undelivered: prevUndeliveredOrdersCount, returned: prevReturnedOrdersCount });
+    const statusDistribution = this.computeStatusDistribution(agg);
+
+    const storeName = (key: string) =>
+      key === UNATTRIBUTED ? 'Unattributed' : storeNameById.get(key) ?? 'Unknown store';
+
+    const products = [...storeBuckets.entries()]
+      .map(([storeKey, sums]) => {
+        const name = storeName(storeKey);
+        const computed = this.computeProductRow({ _sum: sums, mapping: name }, { ...kpiOpts });
+        return { ...computed, mapping: name, store_id: storeKey === UNATTRIBUTED ? null : storeKey };
+      })
+      .sort((a, b) => {
+        if (a.store_id === null) return 1;
+        if (b.store_id === null) return -1;
+        return (b.revenue ?? 0) - (a.revenue ?? 0);
+      });
+
+    const deliveryStatuses = [...storeBuckets.entries()].map(([storeKey, sums]) => ({
+      mapping: storeName(storeKey),
+      total_orders: sums.purchasesPos,
+      new_orders: sums.unconfirmedCount,
+      restocking: sums.restockingCount,
+      confirmed: sums.confirmedCount,
+      printed: sums.printedCount,
+      waiting_pickup: sums.waitingPickupCount,
+      shipped: sums.shippedCount,
+      delivered: sums.deliveredCount,
+      rts: sums.rtsCount,
+      canceled: sums.canceledCount,
+      deleted: sums.deletedCount,
+    }));
+
+    // Filter options mirror the product overview's mappings contract so the
+    // web picker works unchanged: values are store ids, labels are store names.
+    const optionKeys = [...presentStoreKeys];
+    optionKeys.sort((a, b) => storeName(a).localeCompare(storeName(b)));
+    const mappingsDisplayMap: Record<string, string> = {};
+    for (const key of optionKeys) mappingsDisplayMap[key] = storeName(key);
+
+    const response = {
+      kpis,
+      counts,
+      statusDistribution,
+      prevCounts,
+      prevKpis,
+      filters: { mappings: optionKeys, mappingsDisplayMap },
+      selected: { start_date: startStr, end_date: endStr, mappings: selectedStoreIds },
+      rangeDays,
+      lastUpdatedAt,
+      products,
+      deliveryStatuses,
+      volumeGrowthTrend: [],
+    };
     await this.analyticsCache.set(cacheKey, response);
     return response;
   }

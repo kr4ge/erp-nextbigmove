@@ -17,6 +17,7 @@ import {
   clickThroughRate,
   codCeiling,
   completionRate,
+  contributionMargin,
   conversionRate,
   costPerClick,
   costPerOrder,
@@ -32,6 +33,7 @@ import { advertisingVerdict, type AdvertisingVerdict } from '../utils/advertisin
 import { guardedRatio, round, safeRatio } from '../utils/creative-metrics';
 import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
+import { CreativeLegacyAttributionService } from './creative-legacy-attribution.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -90,6 +92,13 @@ type RawRow = {
   gross_sales: number | null;
   delivered_sales: number | null;
   delivered_costs: number | null;
+  cm_revenue: number | null;
+  cm_cogs: number | null;
+  cm_shipping_fees: number | null;
+  cm_fulfillment_fees: number | null;
+  cm_inventory_fees: number | null;
+  cm_cod_fees: number | null;
+  cm_rts_cogs: number | null;
   delivered: number | null;
   cancelled: number | null;
   rts: number | null;
@@ -141,6 +150,7 @@ const SORT_FRAGMENTS: Record<AdvertisingPerformanceSortKey, string> = {
   deliveredCpp: `CASE WHEN b.delivered > 0 THEN b.spend / b.delivered END`,
   grossSales: `b.gross_sales`,
   deliveredSales: `b.delivered_sales`,
+  contributionMargin: `(b.cm_revenue - b.cm_cogs - b.cm_shipping_fees - b.cm_fulfillment_fees - b.cm_inventory_fees - b.spend - b.cm_cod_fees + b.cm_rts_cogs)`,
   netContribution: `(b.delivered_sales - b.delivered_costs - b.spend)`,
   adSpendRatio: `CASE WHEN b.gross_sales > 0 THEN b.spend / b.gross_sales END`,
   trueRoas: `CASE WHEN b.spend > 0 THEN b.delivered_sales / b.spend END`,
@@ -164,25 +174,52 @@ const SORT_FRAGMENTS: Record<AdvertisingPerformanceSortKey, string> = {
 
 @Injectable()
 export class CreativePerformanceService {
-  constructor(private readonly prisma: PrismaService, private readonly access: CreativeAccessService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly access: CreativeAccessService,
+    private readonly legacyAttribution: CreativeLegacyAttributionService,
+  ) {}
 
   async list(actor: CreativeActor, query: ListAdvertisingPerformanceQueryDto) {
     const context = await this.access.resolve(actor);
     this.access.require(context, CREATIVE_AGENT_PERMISSIONS.READ_ALL);
     const range = this.resolveDateRange(query.startDate, query.endDate);
-    const storeOptions = await loadCreativeStoreOptions(this.prisma, context.tenantId);
-    // One usable store means there is nothing to choose between: pin it.
-    const effectiveStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
-    const storeAdIds = await this.resolveScopedAdIds(context.tenantId, effectiveStoreId, query.creatorId);
+    // Creator is the parent scope: its selection determines which stores are
+    // valid, and both filters default to All when no explicit choice is made.
+    const storeOptions = await loadCreativeStoreOptions(
+      this.prisma,
+      context.tenantId,
+      query.creatorId ?? null,
+    );
+    const availableStoreIds = new Set(storeOptions.stores.map((store) => store.value));
+    const effectiveStoreId = query.storeId && availableStoreIds.has(query.storeId)
+      ? query.storeId
+      : undefined;
+    const storeAdIds = await this.resolveScopedAdIds(
+      context.tenantId,
+      effectiveStoreId,
+      query.creatorId,
+      range,
+    );
     const scope = await this.computeScope(context.tenantId, range, {
       accountId: query.accountId, storeAdIds,
     });
 
-    const [accounts, page] = await Promise.all([
+    const [accounts, creators, page] = await Promise.all([
       this.loadAccountOptions(context.tenantId),
+      this.legacyAttribution.listCreatorIdentities(context.tenantId),
       this.queryRows(context.tenantId, range, scope, query, storeAdIds, effectiveStoreId),
     ]);
-    const filters = { stores: storeOptions.stores, accounts };
+    const filters = {
+      stores: storeOptions.stores,
+      accounts,
+      creators: creators
+        .map((creator) => ({
+          value: creator.id,
+          label: [creator.firstName, creator.lastName].filter(Boolean).join(' ') || creator.email,
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label)),
+    };
 
     return {
       selected: {
@@ -376,20 +413,51 @@ export class CreativePerformanceService {
     };
   }
 
-  /** Ad ids linked to creatives of one store and/or creator; null = unscoped. */
-  async resolveScopedAdIds(tenantId: string, storeId?: string, creatorId?: string): Promise<string[] | null> {
-    if (!storeId && !creatorId) return null;
-    const links = await this.prisma.creativeMetaAdLink.findMany({
-      where: {
-        tenantId,
-        creative: {
-          ...(storeId ? { storeConfig: { storeId } } : {}),
-          ...(creatorId ? { createdById: creatorId } : {}),
-        },
-      },
-      select: { adId: true },
-    });
-    return [...new Set(links.map((link) => link.adId))];
+  /**
+   * Ad IDs owned by one store and/or creator. Registry links remain the
+   * primary source; unlinked pre-registry ads are added through the creator's
+   * exact employee-ID attribution. null still means an unscoped "All" view.
+   */
+  async resolveScopedAdIds(
+    tenantId: string,
+    store?: string | string[],
+    creator?: string | string[],
+    range?: AdvertisingDateRange,
+  ): Promise<string[] | null> {
+    const storeIds = ([] as string[]).concat(store ?? []).filter(Boolean);
+    const creatorIds = ([] as string[]).concat(creator ?? []).filter(Boolean);
+    if (storeIds.length === 0 && creatorIds.length === 0) return null;
+    const creativeWhere = {
+      ...(storeIds.length ? { storeConfig: { storeId: { in: storeIds } } } : {}),
+      ...(creatorIds.length ? { createdById: { in: creatorIds } } : {}),
+    };
+    const [links, legacySingleLinks] = await Promise.all([
+      this.prisma.creativeMetaAdLink.findMany({
+        where: { tenantId, creative: creativeWhere },
+        select: { adId: true },
+      }),
+      this.prisma.creative.findMany({
+        where: { tenantId, ...creativeWhere, metaAdId: { not: null } },
+        select: { metaAdId: true },
+      }),
+    ]);
+    const creatorScope = creatorIds.length
+      ? creatorIds
+      : (await this.legacyAttribution.listCreatorIdentities(tenantId)).map((item) => item.id);
+    const legacyAds = range
+      ? await this.legacyAttribution.resolveLegacyAds({
+          tenantId,
+          creatorIds: creatorScope,
+          start: range.start,
+          end: range.end,
+          storeIds,
+        })
+      : [];
+    return [...new Set([
+      ...links.map((link) => link.adId),
+      ...legacySingleLinks.flatMap((creative) => creative.metaAdId ? [creative.metaAdId] : []),
+      ...legacyAds.map((item) => item.adId),
+    ])];
   }
 
   private async queryRows(
@@ -437,6 +505,16 @@ export class CreativePerformanceService {
     const deliveredSales = num(row.delivered_sales);
     const deliveredCosts = num(row.delivered_costs);
     const cpp = costPerOrder(spend, orders);
+    const contribution = contributionMargin({
+      revenue: num(row.cm_revenue),
+      cogs: num(row.cm_cogs),
+      shippingFees: num(row.cm_shipping_fees),
+      fulfillmentFees: num(row.cm_fulfillment_fees),
+      inventoryFees: num(row.cm_inventory_fees),
+      spend,
+      codFees: num(row.cm_cod_fees),
+      rtsCogs: num(row.cm_rts_cogs),
+    });
     const net = netContribution({
       deliveredRevenue: deliveredSales, deliveredCogs: 0,
       fulfillmentCosts: deliveredCosts, spend,
@@ -502,6 +580,7 @@ export class CreativePerformanceService {
         spend: round(spend, 2),
         grossSales: round(num(row.gross_sales), 2),
         deliveredSales: round(deliveredSales, 2),
+        contributionMargin: contribution,
         netContribution: net,
         cpc: costPerClick(spend, num(row.link_clicks)),
         cpp,
@@ -559,6 +638,7 @@ export class CreativePerformanceService {
       Prisma.sql`mi."date" <= ${range.end}`,
     ];
     if (query.accountId) videoFilters.push(Prisma.sql`mi."accountId" = ${query.accountId}`);
+    if (storeAdIds) videoFilters.push(Prisma.sql`mi."adId" IN (${Prisma.join(storeAdIds)})`);
     const videoWhere = Prisma.join(videoFilters, ' AND ');
 
     // Aggregated raw sums per group key. Casts to float8 keep JS numbers.
@@ -582,6 +662,19 @@ export class CreativePerformanceService {
             SUM(rm."codPos")::float8 AS gross_sales,
             SUM(rm."deliveredCodPos")::float8 AS delivered_sales,
             SUM(rm."cogsDeliveredPos" + rm."sfSdrPos" + rm."ffSdrPos" + rm."ifSdrPos" + rm."codFeeDeliveredPos")::float8 AS delivered_costs,
+            SUM(
+              rm."codPos" - rm."canceledCodPos" - rm."restockingCodPos" - rm."currentAbandonedCodPos" - rm."rtsCodPos"
+              - (rm."repurchaseCodPos" - rm."repurchaseCanceledCodPos" - rm."repurchaseRestockingCodPos" - rm."repurchaseCurrentAbandonedCodPos" - rm."repurchaseRtsCodPos")
+            )::float8 AS cm_revenue,
+            SUM(
+              rm."cogsPos" - rm."cogsCanceledPos" - rm."cogsRestockingPos"
+              - (rm."repurchaseCogsPos" - rm."repurchaseCogsCanceledPos" - rm."repurchaseCogsRestockingPos")
+            )::float8 AS cm_cogs,
+            SUM(rm."sfPos" - rm."repurchaseSfPos")::float8 AS cm_shipping_fees,
+            SUM(rm."ffPos" - rm."repurchaseFfPos")::float8 AS cm_fulfillment_fees,
+            SUM(rm."ifPos" - rm."repurchaseIfPos")::float8 AS cm_inventory_fees,
+            SUM(rm."codFeePos" - rm."repurchaseCodFeePos")::float8 AS cm_cod_fees,
+            SUM(rm."cogsRtsPos" - rm."repurchaseCogsRtsPos")::float8 AS cm_rts_cogs,
             SUM(rm."deliveredCount")::float8 AS delivered,
             SUM(rm."canceledCount")::float8 AS cancelled,
             SUM(rm."rtsCount")::float8 AS rts,
@@ -613,6 +706,19 @@ export class CreativePerformanceService {
             SUM(rm."codPos")::float8 AS gross_sales,
             SUM(rm."deliveredCodPos")::float8 AS delivered_sales,
             SUM(rm."cogsDeliveredPos" + rm."sfSdrPos" + rm."ffSdrPos" + rm."ifSdrPos" + rm."codFeeDeliveredPos")::float8 AS delivered_costs,
+            SUM(
+              rm."codPos" - rm."canceledCodPos" - rm."restockingCodPos" - rm."currentAbandonedCodPos" - rm."rtsCodPos"
+              - (rm."repurchaseCodPos" - rm."repurchaseCanceledCodPos" - rm."repurchaseRestockingCodPos" - rm."repurchaseCurrentAbandonedCodPos" - rm."repurchaseRtsCodPos")
+            )::float8 AS cm_revenue,
+            SUM(
+              rm."cogsPos" - rm."cogsCanceledPos" - rm."cogsRestockingPos"
+              - (rm."repurchaseCogsPos" - rm."repurchaseCogsCanceledPos" - rm."repurchaseCogsRestockingPos")
+            )::float8 AS cm_cogs,
+            SUM(rm."sfPos" - rm."repurchaseSfPos")::float8 AS cm_shipping_fees,
+            SUM(rm."ffPos" - rm."repurchaseFfPos")::float8 AS cm_fulfillment_fees,
+            SUM(rm."ifPos" - rm."repurchaseIfPos")::float8 AS cm_inventory_fees,
+            SUM(rm."codFeePos" - rm."repurchaseCodFeePos")::float8 AS cm_cod_fees,
+            SUM(rm."cogsRtsPos" - rm."repurchaseCogsRtsPos")::float8 AS cm_rts_cogs,
             SUM(rm."deliveredCount")::float8 AS delivered,
             SUM(rm."canceledCount")::float8 AS cancelled,
             SUM(rm."rtsCount")::float8 AS rts,

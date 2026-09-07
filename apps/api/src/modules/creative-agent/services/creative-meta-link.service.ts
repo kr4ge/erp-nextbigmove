@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { isCodeSegment } from '../utils/ad-name-convention';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 export type MetaInsightLinkIdentity = {
@@ -10,19 +11,24 @@ export type MetaInsightLinkIdentity = {
 /**
  * The code forms an ad name may legitimately carry.
  *
- * Matching stays deliberately narrow: the whole trimmed name, or the final
- * underscore-delimited segment. Nothing scans for a code "anywhere" in the
- * name and nothing parses a creator out of it, so an ad called
- * `Test 1_Frage Perez_NRO-0041` links via its last segment while an ad that
- * merely mentions a code in prose does not.
+ * Three shapes link: the whole trimmed name (bare code), the final segment
+ * (legacy copy format `title_creator_CODE`), and any underscore-delimited
+ * segment that IS a code — which is how the new
+ * `customId_title_CODE_creator` convention carries it mid-name. Matching
+ * stays segment-exact: a code mentioned in prose has no underscore boundary
+ * around it, so `promo NRO-V0041 retest` still never links.
  */
 export function codeCandidatesFor(adName: string): string[] {
   const trimmed = adName.trim();
   if (!trimmed) return [];
-  const candidates = [trimmed];
-  const lastSegment = trimmed.split('_').pop()?.trim();
-  if (lastSegment && lastSegment !== trimmed) candidates.push(lastSegment);
-  return candidates;
+  const candidates = new Set<string>([trimmed]);
+  const segments = trimmed.split('_').map((segment) => segment.trim());
+  const last = segments[segments.length - 1];
+  if (last && last !== trimmed) candidates.add(last);
+  for (const segment of segments) {
+    if (segment && isCodeSegment(segment)) candidates.add(segment);
+  }
+  return Array.from(candidates);
 }
 
 @Injectable()

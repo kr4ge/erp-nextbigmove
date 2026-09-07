@@ -8610,6 +8610,7 @@ export class WmsMobileService {
                 ? WmsFulfillmentOrderStatus.ISSUE
                 : WmsFulfillmentOrderStatus.RESTOCKING,
               issueReason: lines.length === 0 ? 'Order has no pickable variation items' : null,
+              sourceTotalQuantity: totalQuantity,
               totalQuantity,
               lastSyncedAt: new Date(),
               lines: {
@@ -8619,6 +8620,7 @@ export class WmsMobileService {
                   variationId: line.variationId,
                   productName: line.productName,
                   productDisplayId: line.productDisplayId,
+                  sourceQuantityRequired: line.quantityRequired,
                   quantityRequired: line.quantityRequired,
                   lineSnapshot: line.lineSnapshot,
                   status: WmsFulfillmentLineStatus.RESTOCKING,
@@ -8650,6 +8652,7 @@ export class WmsMobileService {
             warehouseId,
             customerName: posOrder.customerName,
             customerPhone: posOrder.customerPhone,
+            sourceTotalQuantity: totalQuantity,
             totalQuantity,
             issueReason: lines.length === 0 ? 'Order has no pickable variation items' : null,
             lastSyncedAt: new Date(),
@@ -8679,6 +8682,7 @@ export class WmsMobileService {
               variationId: line.variationId,
               productName: line.productName,
               productDisplayId: line.productDisplayId,
+              sourceQuantityRequired: line.quantityRequired,
               quantityRequired: line.quantityRequired,
               lineSnapshot: line.lineSnapshot,
               status: WmsFulfillmentLineStatus.RESTOCKING,
@@ -8687,6 +8691,7 @@ export class WmsMobileService {
               productId: line.productId,
               productName: line.productName,
               productDisplayId: line.productDisplayId,
+              sourceQuantityRequired: line.quantityRequired,
               quantityRequired: line.quantityRequired,
               lineSnapshot: line.lineSnapshot,
               status: WmsFulfillmentLineStatus.RESTOCKING,
@@ -8709,6 +8714,7 @@ export class WmsMobileService {
           },
           data: {
             status: WmsFulfillmentLineStatus.CANCELED,
+            sourceQuantityRequired: 0,
             quantityRequired: 0,
           },
         });
@@ -10695,6 +10701,44 @@ export class WmsMobileService {
     );
   }
 
+  private resolveFulfillmentAdjustment(order: any) {
+    const adjustments = Array.isArray(order?.fulfillmentAdjustments)
+      ? order.fulfillmentAdjustments
+      : [];
+    if (adjustments.length === 0) {
+      return null;
+    }
+
+    const bypassedUnits = adjustments
+      .filter((adjustment: any) => adjustment.type === 'BYPASS')
+      .reduce((sum: number, adjustment: any) => sum + Math.max(adjustment.quantity ?? 0, 0), 0);
+    const substitutedUnits = adjustments
+      .filter((adjustment: any) => adjustment.type === 'SUBSTITUTION')
+      .reduce((sum: number, adjustment: any) => sum + Math.max(adjustment.quantity ?? 0, 0), 0);
+
+    return {
+      hasAdjustments: true,
+      sourceTotalRequired: order.sourceTotalQuantity ?? order.totalQuantity ?? 0,
+      effectiveTotalRequired: order.totalQuantity ?? 0,
+      bypassedUnits,
+      substitutedUnits,
+      items: adjustments.map((adjustment: any) => ({
+        id: adjustment.id,
+        type: adjustment.type,
+        quantity: adjustment.quantity,
+        sourceVariationId: adjustment.sourceVariationId,
+        sourceProductName: adjustment.sourceProductName,
+        sourceProductDisplayId: adjustment.sourceProductDisplayId ?? null,
+        substituteVariationId: adjustment.substituteVariationId ?? null,
+        substituteProductName: adjustment.substituteProductName ?? null,
+        substituteProductDisplayId: adjustment.substituteProductDisplayId ?? null,
+        reason: adjustment.reason,
+        approvedBy: this.mapActor(adjustment.createdBy),
+        approvedAt: adjustment.createdAt,
+      })),
+    };
+  }
+
   private resolveFulfillmentOrderItemChange(order: any) {
     const summary = this.asJsonRecord(order?.changeSummary);
     if (order?.changeDetectedAt || summary) {
@@ -10727,17 +10771,16 @@ export class WmsMobileService {
       return null;
     }
 
-    const activeLines = order.lines.filter((line: any) => (
-      line.status !== WmsFulfillmentLineStatus.CANCELED
-      && Math.max(line.quantityRequired ?? 0, 0) > 0
+    const sourceLines = order.lines.filter((line: any) => (
+      Math.max(line.sourceQuantityRequired ?? line.quantityRequired ?? 0, 0) > 0
     ));
 
-    if (activeLines.length === 0) {
+    if (sourceLines.length === 0) {
       return null;
     }
 
     const currentSignature = this.buildOrderSnapshotDemandSignature(order.posOrder.orderSnapshot);
-    const fulfillmentSignature = this.buildFulfillmentLineDemandSignature(activeLines);
+    const fulfillmentSignature = this.buildFulfillmentLineDemandSignature(sourceLines);
 
     if (this.areDemandSignaturesEqual(currentSignature, fulfillmentSignature)) {
       return null;
@@ -10824,7 +10867,7 @@ export class WmsMobileService {
       const lineSnapshot = this.asJsonRecord(line.lineSnapshot);
       const sourceItem = this.asJsonRecord(lineSnapshot?.sourceItem);
       const variationInfo = this.asJsonRecord(sourceItem?.variation_info);
-      const quantity = Math.max(line.quantityRequired ?? 0, 0);
+      const quantity = Math.max(line.sourceQuantityRequired ?? line.quantityRequired ?? 0, 0);
       if (quantity <= 0) {
         continue;
       }
@@ -11405,6 +11448,19 @@ export class WmsMobileService {
           isVoid: true,
         },
       },
+      fulfillmentAdjustments: {
+        where: { status: 'ACTIVE' },
+        include: {
+          createdBy: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'asc' }],
+      },
       basket: {
         select: {
           id: true,
@@ -11661,6 +11717,19 @@ export class WmsMobileService {
           tracking: true,
         },
       },
+      fulfillmentAdjustments: {
+        where: { status: 'ACTIVE' },
+        include: {
+          createdBy: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'asc' }],
+      },
       basket: {
         select: {
           id: true,
@@ -11757,6 +11826,7 @@ export class WmsMobileService {
           productId: true,
           productName: true,
           productDisplayId: true,
+          sourceQuantityRequired: true,
           status: true,
           issueReason: true,
           quantityRequired: true,
@@ -11898,6 +11968,7 @@ export class WmsMobileService {
       shopId: task.shopId,
       status: task.status,
       assignmentMode: task.assignmentMode ?? WmsFulfillmentAssignmentMode.SERIAL_RESERVED,
+      sourceRevision: task.sourceRevision ?? 0,
       statusLabel: this.formatEnumLabel(task.status),
       issueReason: task.issueReason,
       customer: {
@@ -11929,6 +12000,7 @@ export class WmsMobileService {
       tracking: task.posOrder?.tracking ?? null,
       delivery: this.mapTaskDelivery(task),
       itemChange,
+      fulfillmentAdjustment: this.resolveFulfillmentAdjustment(task),
       priority: {
         isPrioritized: Boolean(task.priorityOverrideAt),
         prioritizedAt: task.priorityOverrideAt ?? null,
@@ -11943,6 +12015,7 @@ export class WmsMobileService {
         productId: line.productId,
         productName: line.productName,
         productDisplayId: line.productDisplayId,
+        sourceRequired: line.sourceQuantityRequired ?? line.quantityRequired,
         status: line.status,
         statusLabel: this.formatEnumLabel(line.status),
         issueReason: line.issueReason ?? null,
@@ -11986,6 +12059,7 @@ export class WmsMobileService {
       shopId: task.shopId,
       status: task.status,
       assignmentMode: task.assignmentMode ?? WmsFulfillmentAssignmentMode.SERIAL_RESERVED,
+      sourceRevision: task.sourceRevision ?? 0,
       statusLabel: this.formatEnumLabel(task.status),
       issueReason: task.issueReason,
       customer: {
@@ -12017,6 +12091,7 @@ export class WmsMobileService {
       tracking: task.posOrder?.tracking ?? null,
       delivery: this.mapTaskDelivery(task),
       itemChange: this.resolveFulfillmentOrderItemChange(task),
+      fulfillmentAdjustment: this.resolveFulfillmentAdjustment(task),
       priority: {
         isPrioritized: Boolean(task.priorityOverrideAt),
         prioritizedAt: task.priorityOverrideAt ?? null,
@@ -12031,6 +12106,7 @@ export class WmsMobileService {
         productId: line.productId,
         productName: line.productName,
         productDisplayId: line.productDisplayId,
+        sourceRequired: line.sourceQuantityRequired ?? line.quantityRequired,
         status: line.status,
         statusLabel: this.formatEnumLabel(line.status),
         issueReason: line.issueReason ?? null,

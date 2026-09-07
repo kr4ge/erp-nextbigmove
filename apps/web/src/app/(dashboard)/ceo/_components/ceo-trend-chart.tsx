@@ -25,13 +25,15 @@ import {
 import type { CeoTrendPoint } from '../_types/ceo-dashboard';
 
 /**
- * Legend order is alphabetical rather than stacking order, matching the
- * reference: the reader scans it as an index, not as a z-order.
+ * Legend order follows render order in recharts, so the money series are drawn
+ * alphabetically and Orders is drawn last — it is a count, not pesos, so it
+ * reads after the money story rather than inside it.
  */
 const SERIES = {
   spend: 'Ad spend',
   cancelled: 'Cancelled ₱',
   delivered: 'Delivered ₱',
+  inTransit: 'In transit ₱',
   orderValue: 'Order value ₱',
   orders: 'Orders',
   rts: 'RTS ₱',
@@ -39,6 +41,9 @@ const SERIES = {
 
 /** Order value is the top line, so it carries the warm accent. */
 const ORDER_VALUE_COLOR = '#B7791F';
+
+/** Orders is the only non-money series, so it reads on a colour of its own. */
+const ORDERS_COLOR = '#8B5CF6';
 
 /**
  * Delivered cash vs orders placed, ad spend, and money lost to cancels/RTS.
@@ -54,8 +59,9 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
     [SERIES.delivered]: point.deliveredValue,
     [SERIES.cancelled]: point.cancelledValue,
     [SERIES.rts]: point.rtsValue,
-    [SERIES.spend]: point.spend,
+    [SERIES.inTransit]: point.inTransitValue,
     [SERIES.orders]: point.orders,
+    [SERIES.spend]: point.spend,
     __deliveredOrders: point.deliveredOrders,
   }));
   const hasValues = rows.some((row) =>
@@ -91,10 +97,14 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             axisLine={false}
             tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
           />
+
+          {/* Orders is a COUNT, so it cannot share the peso scale — it gets
+              its own axis on the right. */}
           <YAxis
             yAxisId="orders"
             orientation="right"
             width={34}
+            allowDecimals={false}
             tickLine={false}
             axisLine={false}
             tick={{ fill: CHART_COLORS.axisText, fontSize: 12 }}
@@ -123,24 +133,10 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             )}
           />
 
-          {/* Bars first so every line paints over them. */}
-          <Bar
-            yAxisId="orders"
-            dataKey={SERIES.orders}
-            fill={CHART_COLORS.grid}
-            fillOpacity={0.45}
-            barSize={12}
-            isAnimationActive={false}
-          />
           {/* Dashed = a cost or a loss; solid = money moving toward you. */}
           <Line
             yAxisId="money" type="monotone" dataKey={SERIES.spend}
             stroke={CHART_COLORS.spend} strokeWidth={2} strokeDasharray="5 4"
-            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
-          />
-          <Line
-            yAxisId="money" type="monotone" dataKey={SERIES.rts}
-            stroke={CHART_COLORS.primary} strokeWidth={2} strokeDasharray="5 4"
             dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
           />
           <Line
@@ -154,8 +150,23 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
             dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
           />
           <Line
+            yAxisId="money" type="monotone" dataKey={SERIES.inTransit}
+            stroke={CHART_COLORS.warning} strokeWidth={2} strokeDasharray="2 3"
+            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
+          />
+          <Line
+            yAxisId="money" type="monotone" dataKey={SERIES.rts}
+            stroke={CHART_COLORS.primary} strokeWidth={2} strokeDasharray="5 4"
+            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
+          />
+          <Line
             yAxisId="money" type="monotone" dataKey={SERIES.orderValue}
             stroke={ORDER_VALUE_COLOR} strokeWidth={2.5}
+            dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
+          />
+          <Line
+            yAxisId="orders" type="monotone" dataKey={SERIES.orders}
+            stroke={ORDERS_COLOR} strokeWidth={2}
             dot={false} activeDot={{ r: 3 }} animationDuration={CHART_ANIMATION_MS}
           />
         </ComposedChart>
@@ -163,3 +174,4 @@ export function CeoTrendChart({ trend }: { trend: CeoTrendPoint[] }) {
     </ChartFrame>
   );
 }
+

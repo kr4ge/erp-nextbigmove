@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { VideoRegistryDateRangePicker } from '../../creative-agent/video-registry/_components/video-registry-date-range-picker';
@@ -140,7 +141,7 @@ export function CeoDashboardScreen() {
         ) : null}
 
         {/* Headline KPI row */}
-        <HeadlineKpiRow data={data} />
+        <HeadlineKpiRow data={data} loading={controller.isLoading && !data} />
 
         {/* 1 · Sales trend (left) beside 3 · health + 4 · safety margin (right).
             The chart is the wide element, so the narrow column carries the
@@ -158,12 +159,12 @@ export function CeoDashboardScreen() {
                 <div>
                   <dt className="whitespace-nowrap text-xs-tight font-semibold uppercase tracking-wide text-faint">Order amount</dt>
                   <dd className="whitespace-nowrap text-base font-semibold text-foreground tabular-nums">{peso(data?.headline.orderAmount.value)}</dd>
-                  <dd className="whitespace-nowrap text-xs-tight text-muted tabular-nums">{count(data?.headline.orderAmount.count)} placed</dd>
+                  <dd className="whitespace-nowrap text-xs-tight text-muted tabular-nums">{controller.isLoading && !data ? <Spinner className='h-3 w-3' /> : <>{count(data?.headline.orderAmount.count)} placed</>}</dd>
                 </div>
                 <div>
                   <dt className="whitespace-nowrap text-xs-tight font-semibold uppercase tracking-wide text-faint">In transit amount</dt>
                   <dd className="whitespace-nowrap text-base font-semibold text-foreground tabular-nums">{peso(data?.headline.inTransitAmount.value)}</dd>
-                  <dd className="whitespace-nowrap text-xs-tight text-muted tabular-nums">{count(data?.headline.inTransitAmount.count)} riding</dd>
+                  <dd className="whitespace-nowrap text-xs-tight text-muted tabular-nums">{controller.isLoading && !data ? <Spinner className='h-3 w-3' /> : <>{count(data?.headline.inTransitAmount.count)} riding</>}</dd>
                 </div>
                 <div>
                   <dt className="whitespace-nowrap text-xs-tight font-semibold uppercase tracking-wide text-faint">Delivered amount</dt>
@@ -173,7 +174,7 @@ export function CeoDashboardScreen() {
                 <div>
                   <dt className="whitespace-nowrap text-xs-tight font-semibold uppercase tracking-wide text-faint">Ad spent</dt>
                   <dd className="whitespace-nowrap text-base font-semibold text-foreground tabular-nums">{peso(data?.headline.adSpend.value)}</dd>
-                  <dd className="whitespace-nowrap text-xs-tight text-muted tabular-nums">{peso(data?.headline.adSpend.perDay)}/day</dd>
+                  <dd className="whitespace-nowrap text-xs-tight text-muted tabular-nums">{controller.isLoading && !data ? <Spinner className='h-3 w-3' /> : <>{peso(data?.headline.adSpend.perDay)}/day</>}</dd>
                 </div>
                 <div>
                   <dt className="whitespace-nowrap text-xs-tight font-semibold uppercase tracking-wide text-faint">RTS rate</dt>
@@ -189,7 +190,7 @@ export function CeoDashboardScreen() {
                   reference — it separates the axes from the card padding, and
                   stretches to whatever height the sidebar column sets. */}
               <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border/50 p-4">
-                {data ? <CeoTrendChart trend={data.trend} /> : <p className="py-16 text-center text-sm text-muted">Loading…</p>}
+                {data ? <CeoTrendChart trend={data.trend} /> : <div className="flex h-72 items-center justify-center"><Spinner /></div>}
               </div>
             </div>
           </section>
@@ -210,7 +211,7 @@ export function CeoDashboardScreen() {
               </p>
             </section>
 
-            <SafetyMarginPanel safety={data?.safetyMargin} />
+            <SafetyMarginPanel safety={data?.safetyMargin} loading={controller.isLoading && !data} />
           </div>
         </div>
 

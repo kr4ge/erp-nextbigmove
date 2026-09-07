@@ -29,14 +29,18 @@ export type PerformanceInitialFilters = {
   campaignId?: string;
 };
 
+const PERFORMANCE_COLUMN_SCHEMA_VERSION_KEY = 'advertising-performance-column-schema-version';
+const PERFORMANCE_COLUMN_SCHEMA_VERSION = 2;
+
 function buildDefaultParams(initial: PerformanceInitialFilters): PerformanceParams {
   const group = ['ADS', 'CAMPAIGNS', 'CREATIVES'].includes(initial.group ?? '')
     ? (initial.group as PerformanceGroup)
-    : 'ADS';
+    : 'CREATIVES';
   return {
     startDate: manilaDaysAgo(29),
     endDate: manilaToday(),
     query: '',
+    creatorId: '',
     storeId: '',
     accountId: '',
     adId: initial.adId ?? '',
@@ -123,10 +127,15 @@ export function useAdvertisingPerformanceController(initial: PerformanceInitialF
           const known = new Set(PERFORMANCE_COLUMNS.map((column) => column.key));
           const valid = parsed.filter((key): key is string => typeof key === 'string' && known.has(key));
           const locked = PERFORMANCE_COLUMNS.filter((column) => column.locked).map((column) => column.key);
-          const merged = [...new Set([...locked, ...valid])];
+          const storedVersion = Number(window.localStorage.getItem(PERFORMANCE_COLUMN_SCHEMA_VERSION_KEY) ?? 1);
+          const introducedDefaults = storedVersion < PERFORMANCE_COLUMN_SCHEMA_VERSION
+            ? ['contributionMargin']
+            : [];
+          const merged = [...new Set([...locked, ...valid, ...introducedDefaults])];
           if (merged.length > 0) setVisibleColumns(merged);
         }
       }
+      window.localStorage.setItem(PERFORMANCE_COLUMN_SCHEMA_VERSION_KEY, String(PERFORMANCE_COLUMN_SCHEMA_VERSION));
     } catch { /* keep defaults */ } finally {
       setColumnsLoaded(true);
     }

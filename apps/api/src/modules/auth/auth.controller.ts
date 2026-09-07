@@ -1,7 +1,9 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request, Patch, BadRequestException, UnauthorizedException, Query } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request, Patch, BadRequestException, UnauthorizedException, Query, Param, ParseUUIDPipe } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, RefreshTokenDto, UpdateProfileDto } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { PermissionWorkspaceQueryDto } from '../../common/dto/permission-workspace-query.dto';
@@ -70,6 +72,7 @@ export class AuthController {
   async getProfile(@Request() req) {
     return {
       user: req.user,
+      memberships: await this.authService.listMemberships(req.user.userId || req.user.id),
     };
   }
 
@@ -188,4 +191,40 @@ export class AuthController {
 
     return { roles };
   }
+
+  /** Move this session to another tenant the user belongs to. */
+  @Post('switch-tenant/:tenantId')
+  @UseGuards(JwtAuthGuard)
+  async switchTenant(@Param('tenantId', ParseUUIDPipe) tenantId: string, @Request() req) {
+    return this.authService.switchTenant(req.user, tenantId, req);
+  }
+
+  /**
+   * Return to the admin session that started the impersonation.
+   *
+   * Declared BEFORE the :userId route: nest matches in declaration order, so
+   * with the parameterised route first this path binds to it as
+   * userId === 'stop' and the caller — who holds no user.impersonate — is
+   * rejected, stranding them in the impersonated session.
+   */
+  @Post('impersonate/stop')
+  @UseGuards(JwtAuthGuard)
+  async stopImpersonation(@Request() req) {
+    return this.authService.stopImpersonation(req.user, req);
+  }
+
+  /**
+   * View the app as another user in this tenant.
+   *
+   * Gated on user.impersonate rather than on a role name so it can be revoked
+   * without editing code. The tenant boundary, SUPER_ADMIN block, and the
+   * admin-to-admin block are enforced in the service.
+   */
+  @Post('impersonate/:userId')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('user.impersonate')
+  async impersonate(@Param('userId') userId: string, @Request() req) {
+    return this.authService.impersonate(req.user, userId, req);
+  }
+
 }

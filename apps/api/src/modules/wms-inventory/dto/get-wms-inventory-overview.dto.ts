@@ -1,6 +1,17 @@
 import { WmsInventoryUnitStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class GetWmsInventoryOverviewDto {
   @IsOptional()
@@ -31,6 +42,14 @@ export class GetWmsInventoryOverviewDto {
   @IsOptional()
   @IsEnum(WmsInventoryUnitStatus)
   status?: WmsInventoryUnitStatus;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  startDate?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  endDate?: string;
 
   @IsOptional()
   @Type(() => Number)

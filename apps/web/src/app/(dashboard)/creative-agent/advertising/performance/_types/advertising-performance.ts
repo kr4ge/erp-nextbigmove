@@ -5,7 +5,7 @@ export type SortDirection = 'asc' | 'desc';
 
 export type PerformanceSortKey =
   | 'name' | 'spend' | 'ordersToday' | 'spendToday' | 'spendYesterday' | 'orders'
-  | 'cpp' | 'cpc' | 'deliveredCpp' | 'grossSales' | 'deliveredSales' | 'netContribution'
+  | 'cpp' | 'cpc' | 'deliveredCpp' | 'grossSales' | 'deliveredSales' | 'contributionMargin' | 'netContribution'
   | 'adSpendRatio' | 'trueRoas' | 'impressions' | 'linkClicks' | 'landingPageViews'
   | 'hookRate' | 'holdRate' | 'completionRate' | 'ctr' | 'cvr'
   | 'delivered' | 'cancelled' | 'rts' | 'deliveryRate' | 'cancellationRate' | 'rtsRate'
@@ -15,6 +15,7 @@ export type PerformanceParams = {
   startDate: string;
   endDate: string;
   query: string;
+  creatorId: string;
   storeId: string;
   accountId: string;
   adId: string;
@@ -86,6 +87,7 @@ export type PerformanceRow = {
     spend: number;
     grossSales: number;
     deliveredSales: number;
+    contributionMargin: number;
     netContribution: number;
     cpc: number | null;
     cpp: number | null;
@@ -137,10 +139,9 @@ export type PerformanceResponse = {
   };
   permissions: { canManageLinks: boolean; canManagePerformance: boolean; canReview: boolean };
   filters: {
+    creators: Array<{ value: string; label: string }>;
     stores: Array<{ value: string; label: string }>;
     accounts: Array<{ value: string; label: string }>;
-    /** Set when the tenant has exactly one usable store; the picker is then pinned. */
-    defaultStoreId?: string | null;
   };
   scope: ScopeInfo;
   items: PerformanceRow[];

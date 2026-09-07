@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsDateString, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class GetAdvertisingDashboardQueryDto {
   @IsOptional()
@@ -25,4 +25,26 @@ export class GetAdvertisingDashboardQueryDto {
   @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUUID()
   creatorId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value !== 'string' || !value.trim()) return undefined;
+    const ids = value.split(',').map((id) => id.trim()).filter(Boolean);
+    return ids.length ? ids : undefined;
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(200)
+  storeIds?: string[];
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value !== 'string' || !value.trim()) return undefined;
+    const ids = value.split(',').map((id) => id.trim()).filter(Boolean);
+    return ids.length ? ids : undefined;
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(200)
+  creatorIds?: string[];
 }

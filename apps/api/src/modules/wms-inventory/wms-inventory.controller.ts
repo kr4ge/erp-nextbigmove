@@ -6,22 +6,33 @@ import { CreateWmsInventoryStoreTransferDto } from './dto/create-wms-inventory-s
 import { CreateWmsInventoryAdjustmentDto } from './dto/create-wms-inventory-adjustment.dto';
 import { CreateWmsInventoryTransferDto } from './dto/create-wms-inventory-transfer.dto';
 import { GetWmsInventoryOverviewDto } from './dto/get-wms-inventory-overview.dto';
+import { GetWmsOutboundRecordsDto } from './dto/get-wms-outbound-records.dto';
 import { GetWmsInventoryStoreTransferOptionsDto } from './dto/get-wms-inventory-store-transfer-options.dto';
 import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.dto';
 import { GetWmsInventoryUnitMovementsDto } from './dto/get-wms-inventory-unit-movements.dto';
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
 import { VoidWmsInventoryUnitDto } from './dto/void-wms-inventory-unit.dto';
 import { WmsInventoryService } from './wms-inventory.service';
+import { WmsOutboundRecordsService } from './wms-outbound-records.service';
 
 @Controller('wms/inventory')
 @UseGuards(JwtAuthGuard, WmsAccessGuard)
 export class WmsInventoryController {
-  constructor(private readonly wmsInventoryService: WmsInventoryService) {}
+  constructor(
+    private readonly wmsInventoryService: WmsInventoryService,
+    private readonly wmsOutboundRecordsService: WmsOutboundRecordsService,
+  ) {}
 
   @Get('overview')
   @Permissions('wms.inventory.read')
   async getOverview(@Query() query: GetWmsInventoryOverviewDto) {
     return this.wmsInventoryService.getOverview(query);
+  }
+
+  @Get('outbound-records')
+  @Permissions('wms.inventory.read')
+  async getOutboundRecords(@Query() query: GetWmsOutboundRecordsDto) {
+    return this.wmsOutboundRecordsService.getRecords(query);
   }
 
   @Get('transfers')

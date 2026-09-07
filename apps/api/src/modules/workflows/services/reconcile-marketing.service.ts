@@ -1,7 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
+import {
+  deriveAssociateFromAdName,
+  deriveMappingFromAdName,
+} from '../../creative-agent/utils/ad-name-convention';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { normalizeAdId } from '../utils/normalize-ad-id';
+import {
+  buildProductMappingKey,
+  buildUnassignedMappingKey,
+} from '../utils/product-mapping-key';
 
 interface PosOrderLite {
   pUtmContent?: string | null;
@@ -17,6 +25,12 @@ interface PosOrderLite {
   cogs?: any;
   tracking?: string | null;
   mapping?: string | null;
+}
+
+export function excludesPosOrderFromSalesTotals(
+  order: Pick<PosOrderLite, 'status' | 'isVoid'>,
+): boolean {
+  return order.status === 7 || order.isVoid === true;
 }
 
 type PosAggregateBucket = {
@@ -176,11 +190,10 @@ export class ReconcileMarketingService {
     const wasEverAbandoned =
       order.wasAbandonedCart === true || order.isAbandoned === true;
     const isCurrentlyAbandoned = status === 0 && order.isAbandoned === true;
-    const isVoidOrder = order.isVoid === true;
     const isDeleted = status === 7;
     const isPrinted = status === 13;
 
-    if (isDeleted || (isPrinted && isVoidOrder)) {
+    if (excludesPosOrderFromSalesTotals(order)) {
       if (isDeleted) {
         bucket.deletedCount += 1;
         if (isRepurchase) bucket.repurchaseDeletedCount += 1;
@@ -324,9 +337,12 @@ export class ReconcileMarketingService {
         status: 'ACTIVE',
         OR: [{ enabled: true }, { enabled: null }],
       },
-      select: { shopId: true },
+      select: { id: true, shopId: true },
     });
     const activeShopIds = Array.from(new Set(activeStores.map((store) => store.shopId)));
+    // shopId (external) -> PosStore.id (internal UUID), so an unmatched order can
+    // fall back to a store-scoped "Unassigned" mapping keyed like the pv:: keys.
+    const storeIdByShopId = new Map(activeStores.map((store) => [store.shopId, store.id]));
 
     // Load Meta insights for the day
     const metaInsights = await this.prisma.metaAdInsight.findMany({
@@ -339,24 +355,86 @@ export class ReconcileMarketingService {
       },
     });
 
+    // A creative link is a structured bridge from ad -> creative -> posCustomId,
+    // so an ad whose NAME carries no code (legacy names, or a customId that was
+    // dropped) still gets a mapping once it is linked. Read straight from the
+    // link + creative columns — no ad-name round-trip.
+    const linkedAdIds = Array.from(new Set(metaInsights.map((row) => row.adId).filter(Boolean)));
+    const linkMappingByAdId = new Map<string, string>();
+    if (linkedAdIds.length > 0) {
+      const links = await this.prisma.creativeMetaAdLink.findMany({
+        where: { tenantId, adId: { in: linkedAdIds } },
+        select: {
+          adId: true,
+          creative: {
+            select: {
+              posCustomId: true,
+              posVariationId: true,
+              storeConfig: { select: { storeId: true } },
+            },
+          },
+        },
+      });
+      for (const link of links) {
+        // Prefer the precise store+variation key (matches the sales side, so ad
+        // spend and orders land in the same product bucket); fall back to the
+        // creative's customId as before when no variation is set.
+        const variationKey = buildProductMappingKey(
+          link.creative?.storeConfig?.storeId,
+          link.creative?.posVariationId,
+        );
+        const mappingValue = variationKey || link.creative?.posCustomId?.trim().toLowerCase();
+        // A link uniquely owns (tenantId, adId); if two accounts reused an adId,
+        // first non-empty mapping wins — deterministic and harmless.
+        if (mappingValue && !linkMappingByAdId.has(link.adId)) linkMappingByAdId.set(link.adId, mappingValue);
+      }
+    }
+
+    // Old-convention ads carry a campaign label and new-convention ads carry an
+    // item customId, so the same product's spend splits across two buckets. When
+    // a code matches EXACTLY ONE product in the tenant's active stores, resolve
+    // it to the canonical pv:: store+variation key (the same key the sales side
+    // stores), collapsing the eras into one bucket. Ambiguous or unknown codes
+    // pass through unchanged — nothing is ever wrongly merged.
+    const tenantProducts = await this.prisma.posProduct.findMany({
+      where: {
+        storeId: { in: activeStores.map((store) => store.id) },
+        customId: { not: null },
+      },
+      select: { storeId: true, variationId: true, customId: true },
+    });
+    const productKeyByCode = new Map<string, string | null>();
+    for (const product of tenantProducts) {
+      const code = product.customId?.trim().toLowerCase();
+      if (!code) continue;
+      const key = buildProductMappingKey(product.storeId, product.variationId);
+      if (!key) continue;
+      // Second distinct product on the same code -> ambiguous, disable the code.
+      if (productKeyByCode.has(code) && productKeyByCode.get(code) !== key) {
+        productKeyByCode.set(code, null);
+      } else {
+        productKeyByCode.set(code, key);
+      }
+    }
+    const canonicalizeMapping = (raw: string | null | undefined): string | null => {
+      const norm = raw?.trim().toLowerCase();
+      if (!norm) return null;
+      return productKeyByCode.get(norm) ?? norm;
+    };
+    // Creative link first: it is the structured, human-confirmed bridge and the
+    // only source guaranteed to share the sales side's key.
+    const resolveInsightMapping = (insight: { adId: string; adName: string | null; mapping: string | null }): string | null =>
+      linkMappingByAdId.get(insight.adId)
+      || canonicalizeMapping(insight.mapping)
+      || canonicalizeMapping(deriveMappingFromAdName(insight.adName))
+      || null;
+
     // Load POS orders for the day
     const posOrders: PosOrderLite[] = await this.prisma.posOrder.findMany({
       where: {
         tenantId,
         shopId: { in: activeShopIds },
         dateLocal: date,
-        AND: [
-          {
-            OR: [
-              { status: { not: 7 } },
-              { status: null },
-            ],
-          },
-        ],
-        OR: [
-          { isVoid: false },
-          { status: 13 },
-        ],
       },
       select: {
         pUtmContent: true,
@@ -396,6 +474,7 @@ export class ReconcileMarketingService {
     }
 
     // Upsert reconciled rows for matched insights
+    const expectedAdIds = new Set(metaInsights.map((insight) => insight.adId));
     for (const insight of metaInsights) {
       const norm = normalizeAdId(insight.adId);
       const agg = norm ? posAgg[norm] : undefined;
@@ -461,8 +540,9 @@ export class ReconcileMarketingService {
           campaignName: insight.campaignName,
           adsetId: insight.adsetId,
           adName: insight.adName,
-          marketingAssociate: insight.marketingAssociate,
-          mapping: insight.mapping || null,
+          marketingAssociate: insight.marketingAssociate
+            || deriveAssociateFromAdName(insight.adName),
+          mapping: resolveInsightMapping(insight),
           teamCode: insight.teamCode || null,
           dateCreated: metaDateCreated,
           spend: insight.spend,
@@ -554,8 +634,9 @@ export class ReconcileMarketingService {
           normalizedAdId: norm || null,
           campaignName: insight.campaignName,
           adName: insight.adName,
-          marketingAssociate: insight.marketingAssociate,
-          mapping: insight.mapping || null,
+          marketingAssociate: insight.marketingAssociate
+            || deriveAssociateFromAdName(insight.adName),
+          mapping: resolveInsightMapping(insight),
           teamCode: insight.teamCode || null,
           dateCreated: metaDateCreated,
           spend: insight.spend,
@@ -654,6 +735,7 @@ export class ReconcileMarketingService {
         continue; // matched already
       }
       const syntheticAdId = `${order.shopId}-${order.posOrderId}`;
+      expectedAdIds.add(syntheticAdId);
       const syntheticAgg = this.createEmptyPosAggregateBucket();
       this.accumulatePosOrder(syntheticAgg, order);
       const nonCanceled = Math.max(syntheticAgg.purchasesPos - syntheticAgg.canceledCount, 0);
@@ -714,7 +796,10 @@ export class ReconcileMarketingService {
           adsetId: '',
           adName: 'POS Unmatched Order',
           marketingAssociate: null,
-          mapping: order.mapping ?? null,
+          mapping:
+            order.mapping ??
+            buildUnassignedMappingKey(storeIdByShopId.get(order.shopId)) ??
+            null,
           dateCreated: null,
           spend: 0,
           clicks: 0,
@@ -825,7 +910,10 @@ export class ReconcileMarketingService {
           cogsDeliveredPos: syntheticAgg.cogsDeliveredPos,
           repurchaseCogsDeliveredPos: syntheticAgg.repurchaseCogsDeliveredPos,
           dateCreated: null,
-          mapping: order.mapping ?? null,
+          mapping:
+            order.mapping ??
+            buildUnassignedMappingKey(storeIdByShopId.get(order.shopId)) ??
+            null,
           sfPos: sf,
           repurchaseSfPos: repurchaseSf,
           ffPos: ff,
@@ -898,6 +986,19 @@ export class ReconcileMarketingService {
         },
       });
     }
+
+    // Incremental reconciliation is authoritative for this one tenant/day.
+    // Remove only derived rows whose Meta insight or POS source disappeared;
+    // source POS orders (including status 7 tombstones) are never deleted here.
+    await this.prisma.reconcileMarketing.deleteMany({
+      where: {
+        tenantId,
+        date: dayStart,
+        ...(expectedAdIds.size > 0
+          ? { adId: { notIn: Array.from(expectedAdIds) } }
+          : {}),
+      },
+    });
 
     await this.bumpAnalyticsCacheVersion(tenantId);
     this.logger.log(`Reconciled marketing for tenant ${tenantId} on ${date}`);

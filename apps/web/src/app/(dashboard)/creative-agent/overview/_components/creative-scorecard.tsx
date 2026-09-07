@@ -1,6 +1,6 @@
 'use client';
 
-import type { CreativeScorecard as CreativeScorecardData, OverviewFloors, ScorecardBandKey, ScorecardKpiBand, ScorecardKpiKey } from '../_types/creative-overview';
+import type { CreativeScorecard as CreativeScorecardData, OverviewFloors, ScorecardKpiBand, ScorecardKpiKey } from '../_types/creative-overview';
 import {
   formatCount,
   formatCurrency,
@@ -9,15 +9,11 @@ import {
   RATE_TONE_TEXT,
   type RateTone,
 } from '../_utils/creative-overview-format';
+import {
+  DashboardLoadingBar,
+  DashboardMetricGridSkeleton,
+} from '../../_components/dashboard-loading-state';
 import { PanelHeader, StatTile } from './overview-ui';
-
-/** Craft bands — reported here, but no longer what the 1–10 is graded on. */
-const BAND_LABELS: Record<ScorecardBandKey, { label: string; info: string }> = {
-  hookRate: { label: 'Hook', info: '3-second plays ÷ video impressions across every creative in the period.' },
-  holdRate: { label: 'Hold', info: 'ThruPlays ÷ 3-second plays.' },
-  completionRate: { label: 'Completion', info: 'ThruPlays ÷ video impressions.' },
-  ctr: { label: 'CTR', info: 'Link clicks ÷ impressions.' },
-};
 
 /**
  * The three weighted KPIs that produce the score. `format` differs because
@@ -49,7 +45,6 @@ const KPI_LABELS: Record<ScorecardKpiKey, {
     goal: 'min',
   },
 };
-
 
 /**
  * Band tone: at or above the floor scores 7 and reads healthy; anything under
@@ -129,10 +124,11 @@ const TONE_FILL: Record<RateTone, string> = {
   neutral: 'bg-primary',
 };
 
-export function CreativeScorecard({ scorecard, floors, isLoading }: {
+export function CreativeScorecard({ scorecard, floors, isLoading, kpiTiles }: {
   scorecard: CreativeScorecardData | undefined;
   floors: OverviewFloors | undefined;
   isLoading: boolean;
+  kpiTiles?: Array<{ label: string; info: string; value: string; healthy?: boolean; sub?: string }>;
 }) {
   const overall = scorecard?.overall ?? null;
   const tone = overallTone(overall);
@@ -140,10 +136,25 @@ export function CreativeScorecard({ scorecard, floors, isLoading }: {
   const isTeam = scorecard?.scope === 'TEAM';
   const production = scorecard?.production;
 
-  if (isLoading && !scorecard) {
+  if (isLoading) {
     return (
-      <section className="panel shadow-card">
-        <div className="p-6 text-center text-sm text-muted">Loading scorecard…</div>
+      <section className="panel panel-content shadow-card" aria-busy="true">
+        <PanelHeader
+          title="Creative score"
+          description="Loading craft performance and output for the selected scope."
+        />
+        <div className="animate-pulse p-5" role="status" aria-label="Loading creative score">
+          <div className="flex items-end gap-4" aria-hidden="true">
+            <DashboardLoadingBar className="h-12 w-24" />
+            <div className="space-y-2 pb-1">
+              <DashboardLoadingBar className="h-3 w-16" />
+              <DashboardLoadingBar className="h-3 w-72 max-w-full" />
+            </div>
+          </div>
+          <DashboardLoadingBar className="mt-5 h-2.5 w-full rounded-full" />
+          <span className="sr-only">Loading creative score…</span>
+        </div>
+        <DashboardMetricGridSkeleton className="grid grid-cols-2 gap-3 px-5 pb-5 sm:grid-cols-4" />
       </section>
     );
   }
@@ -181,30 +192,17 @@ export function CreativeScorecard({ scorecard, floors, isLoading }: {
             {Array.from({ length: 10 }, (_, index) => <span key={index}>{index + 1}</span>)}
           </div>
 
-          <div className="mt-5 border-t border-border/40 pt-5">
-            <p className="mb-3 text-xs-tight font-semibold uppercase tracking-wide text-faint">
-              Craft signals
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {scorecard?.bands.map((band) => (
-                <StatTile
-                  key={band.key}
-                  label={BAND_LABELS[band.key].label}
-                  info={BAND_LABELS[band.key].info}
-                  value={formatPercent(band.value)}
-                  tone={bandTone(band.score)}
-                  sub={band.value == null
-                    ? 'not measured'
-                    : band.floor == null
-                      ? `scores ${formatScore(band.score)}/10`
-                      : `${formatScore(band.score)}/10 · ${formatPercent(band.floor)} floor`}
-                />
-              ))}
-            </div>
-            <p className="mt-3 text-xs-tight leading-snug text-faint">
-              Reported, not scored — these say how the work is landing. Anything unmeasurable (a static has no hook rate) reads as not measured.
-              {floors?.provisional ? ' Craft floors are provisional defaults.' : ''}
-            </p>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(kpiTiles ?? []).map((tile) => (
+              <StatTile
+                key={tile.label}
+                label={tile.label}
+                info={tile.info}
+                value={tile.value}
+                tone={tile.healthy ? 'good' : 'neutral'}
+                sub={tile.sub}
+              />
+            ))}
           </div>
         </div>
       </section>

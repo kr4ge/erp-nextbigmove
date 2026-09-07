@@ -29,10 +29,12 @@ import type {
   CreateWmsInventoryStoreTransferInput,
   CreateWmsInventoryTransferInput,
   VoidWmsInventoryUnitInput,
+  WmsInventoryDateRange,
   WmsInventoryOverviewResponse,
   WmsInventoryUnitRecord,
   WmsInventoryUnitStatus,
 } from '../_types/inventory';
+import { getDefaultInventoryDateRange } from '../_utils/inventory-date-range';
 
 type UnitModalState = {
   open: boolean;
@@ -92,6 +94,7 @@ export function useInventoryController() {
   const [selectedVariationId, setSelectedVariationId] = useState<string | undefined>();
   const [selectedProductValue, setSelectedProductValue] = useState<string | undefined>();
   const [selectedStatus, setSelectedStatus] = useState<WmsInventoryUnitStatus | undefined>();
+  const [dateRange, setDateRange] = useState<WmsInventoryDateRange>(getDefaultInventoryDateRange);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchText, setSearchText] = useState('');
   const [debouncedSearchText, setDebouncedSearchText] = useState('');
@@ -133,7 +136,7 @@ export function useInventoryController() {
       currentPage,
       pageSize,
     ],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       fetchWmsInventoryOverview({
         allTenants: !selectedTenantId,
         tenantId: selectedTenantId,
@@ -144,7 +147,8 @@ export function useInventoryController() {
         status: selectedStatus,
         page: currentPage,
         pageSize,
-      }),
+      }, signal),
+    placeholderData: (previous) => previous,
   });
 
   const scopeFilters = useWmsScopeFilters({
@@ -622,6 +626,7 @@ export function useInventoryController() {
     selectedVariationId,
     selectedProductValue,
     selectedStatus,
+    dateRange,
     currentPage,
     totalPages,
     searchText,
@@ -675,6 +680,7 @@ export function useInventoryController() {
     setSelectedWarehouseId: handleWarehouseChange,
     setSelectedVariationId: handleProductChange,
     setSelectedStatus,
+    setDateRange,
     setCurrentPage,
     setSearchText,
     recordUnitLabelPrint,

@@ -9,6 +9,7 @@ import {
   formatPercent as percent,
   PILL_TONE_CLASS,
 } from '../_utils/creative-overview-format';
+import { DashboardLoadingBar } from '../../_components/dashboard-loading-state';
 
 
 /** Scale is the good outcome, kill the bad one, refresh the work-to-do middle. */
@@ -46,9 +47,14 @@ const COLUMNS: Column[] = [
   // AR% is a cost ratio: lower is better, so the healthy colour is the low end.
   { key: 'arPct', label: 'AR%', lens: 'SHARED', sortKey: 'arPct', width: 'w-24', align: 'right', render: (item) => item.metrics.arPct == null ? '—' : <span className={item.isWinner ? 'font-semibold text-success' : ''}>{percent(item.metrics.arPct)}</span> },
   { key: 'adSpent', label: 'Ad Spent', lens: 'SHARED', sortKey: 'spend', width: 'w-28', align: 'right', render: (item) => currency(item.metrics.spend) },
-  // Delivery is a fulfilment outcome, not something the editor's cut controls —
-  // it belongs to the business lens, and the creative table stays the funnel.
-  { key: 'delivery', label: 'Delivery', lens: 'BUSINESS', sortKey: 'deliveryRate', width: 'w-28', align: 'right', render: (item) => percent(item.metrics.deliveryRate) },
+  // MAR% is spend ÷ gross attributed revenue (the Business Performance
+  // convention); AR% above is net of cancelled/RTS money. Both are shown so the
+  // two screens can be read together.
+  { key: 'mar', label: 'MAR%', lens: 'SHARED', sortKey: 'mar', width: 'w-24', align: 'right', render: (item) => percent(item.metrics.mar) },
+  { key: 'delivered', label: 'Delivered', lens: 'SHARED', sortKey: 'deliveredOrders', width: 'w-24', align: 'right', render: (item) => count(item.metrics.deliveredOrders) },
+  { key: 'cancelRate', label: 'Cancel rate', lens: 'SHARED', sortKey: 'cancellationRate', width: 'w-28', align: 'right', render: (item) => percent(item.metrics.cancellationRate) },
+  { key: 'rtsRate', label: 'RTS rate', lens: 'SHARED', sortKey: 'rtsRate', width: 'w-24', align: 'right', render: (item) => percent(item.metrics.rtsRate) },
+  { key: 'delivery', label: 'Delivery rate', lens: 'SHARED', sortKey: 'deliveryRate', width: 'w-28', align: 'right', render: (item) => percent(item.metrics.deliveryRate) },
   { key: 'hook', label: 'Hook', lens: 'SHARED', sortKey: 'hookRate', width: 'w-24', align: 'right', render: (item) => item.kind === 'STATIC' ? <span className="text-xs text-muted">Static</span> : percent(item.metrics.hookRate) },
   { key: 'hold', label: 'Hold', lens: 'SHARED', sortKey: 'holdRate', width: 'w-24', align: 'right', render: (item) => item.kind === 'STATIC' ? '—' : percent(item.metrics.holdRate) },
   { key: 'ctr', label: 'CTR', lens: 'SHARED', sortKey: 'ctr', width: 'w-24', align: 'right', render: (item) => percent(item.metrics.ctr) },
@@ -89,9 +95,21 @@ export function CreativeLeaderboard({ items, lens, isLoading, sortKey, sortDirec
           <tr>{columns.map((column) => <th key={column.key} className={`${column.width} whitespace-nowrap px-3 py-3 ${column.align === 'right' ? 'text-right' : ''} ${column.key === 'rank' ? 'sticky left-0 z-20 bg-surface' : ''} ${column.key === 'ad' ? 'sticky left-20 z-20 bg-surface' : ''}`} aria-sort={column.sortKey === sortKey ? (sortDirection === 'asc' ? 'ascending' : 'descending') : undefined}>{column.sortKey ? <button type="button" className={`inline-flex items-center gap-1 ${column.align === 'right' ? 'w-full justify-end' : ''}`} onClick={() => onSort(column.sortKey as OverviewSortKey)}>{column.label}{column.sortKey === sortKey ? sortDirection === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" /> : null}</button> : column.label}</th>)}</tr>
         </thead>
         <tbody className="divide-y divide-border/40">
-          {isLoading && !items ? <tr><td colSpan={columns.length} className="px-4 py-16 text-center text-muted">Loading creative intelligence…</td></tr> : items?.length ? items.map((item) => <tr key={item.id} onClick={() => onSelect(item)} className="cursor-pointer bg-surface transition hover:bg-background dark:hover:bg-background-secondary">{columns.map((column) => <td key={column.key} className={`px-3 py-2.5 text-sm-custom text-foreground ${column.align === 'right' ? 'text-right tabular-nums' : ''} ${column.key === 'rank' ? 'sticky left-0 z-10 bg-inherit' : ''} ${column.key === 'ad' ? 'sticky left-20 z-10 bg-inherit' : ''}`}>{column.render(item)}</td>)}</tr>) : <tr><td colSpan={columns.length} className="px-4 py-16 text-center"><BarChart3 className="mx-auto h-7 w-7 text-muted" /><p className="mt-2 font-semibold text-foreground">No creatives in this scope</p><p className="mt-1 text-sm text-muted">Adjust the date or filters to expand the overview.</p></td></tr>}
+          {isLoading ? Array.from({ length: 5 }, (_, rowIndex) => (
+            <tr key={rowIndex} className="animate-pulse" aria-hidden="true">
+              {columns.map((column, columnIndex) => (
+                <td
+                  key={column.key}
+                  className={`px-3 py-4 ${column.key === 'rank' ? 'sticky left-0 z-10 bg-surface' : ''} ${column.key === 'ad' ? 'sticky left-20 z-10 bg-surface' : ''}`}
+                >
+                  <DashboardLoadingBar className={`h-3 ${columnIndex === 1 ? 'w-48' : 'ml-auto w-12'}`} />
+                </td>
+              ))}
+            </tr>
+          )) : items?.length ? items.map((item) => <tr key={item.id} onClick={() => onSelect(item)} className="cursor-pointer bg-surface transition hover:bg-background dark:hover:bg-background-secondary">{columns.map((column) => <td key={column.key} className={`px-3 py-2.5 text-sm-custom text-foreground ${column.align === 'right' ? 'text-right tabular-nums' : ''} ${column.key === 'rank' ? 'sticky left-0 z-10 bg-inherit' : ''} ${column.key === 'ad' ? 'sticky left-20 z-10 bg-inherit' : ''}`}>{column.render(item)}</td>)}</tr>) : <tr><td colSpan={columns.length} className="px-4 py-16 text-center"><BarChart3 className="mx-auto h-7 w-7 text-muted" /><p className="mt-2 font-semibold text-foreground">No creatives in this scope</p><p className="mt-1 text-sm text-muted">Adjust the date or filters to expand the overview.</p></td></tr>}
         </tbody>
       </table>
+      {isLoading ? <span className="sr-only" role="status">Loading creative performance…</span> : null}
     </div>
   );
 }

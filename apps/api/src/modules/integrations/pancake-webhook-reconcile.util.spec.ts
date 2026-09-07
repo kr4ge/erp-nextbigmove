@@ -46,4 +46,24 @@ describe('Pancake webhook reconciliation', () => {
 
     expect(afterBoundary.jobId).not.toBe(beforeBoundary.jobId);
   });
+
+  it('keeps destructive corrections separate from the normal debounce window', () => {
+    const standard = buildPancakeReconcileWindow({
+      tenantId: 'tenant-1',
+      dateLocal: '2026-08-17',
+      delayMs: 300_000,
+      nowMs: 1_000_000,
+    });
+    const destructive = buildPancakeReconcileWindow({
+      tenantId: 'tenant-1',
+      dateLocal: '2026-08-17',
+      delayMs: 15_000,
+      trigger: 'destructive_order_change',
+      nowMs: 1_000_000,
+    });
+
+    expect(destructive.jobId).toContain('pancake-reconcile:destructive:');
+    expect(destructive.jobId).not.toBe(standard.jobId);
+    expect(destructive.delayMs).toBeLessThan(standard.delayMs);
+  });
 });

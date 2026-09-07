@@ -6,10 +6,73 @@ import type {
   WmsFulfillmentBasketPackWaybillResponse,
   WmsFulfillmentPackStatus,
   WmsFulfillmentPickStatus,
+  WmsFulfillmentAdjustmentOption,
   WmsFulfillmentPriorityPreviewResponse,
   WmsFulfillmentQueueTask,
   WmsFulfillmentQueueResponse,
 } from '../_types/fulfillment';
+
+export async function fetchWmsFulfillmentAdjustmentOptions(params: {
+  orderId: string;
+  tenantId?: string | null;
+  search?: string;
+}) {
+  const response = await apiClient.get('/wms/fulfillment/ops/item-adjustment-options', {
+    params: {
+      orderId: params.orderId,
+      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      ...(params.search ? { search: params.search } : {}),
+    },
+  });
+
+  return response.data as {
+    success: boolean;
+    order: {
+      id: string;
+      posOrderId: string;
+      sourceRevision: number;
+      status: string;
+    };
+    options: WmsFulfillmentAdjustmentOption[];
+  };
+}
+
+export async function adjustWmsFulfillmentItems(params: {
+  orderId: string;
+  tenantId?: string | null;
+  sourceLineId: string;
+  action: 'BYPASS' | 'SUBSTITUTION';
+  quantity: number;
+  substituteVariationId?: string;
+  expectedSourceRevision: number;
+  reason: string;
+}) {
+  const response = await apiClient.post('/wms/fulfillment/ops/adjust-items', params);
+
+  return response.data as {
+    success: boolean;
+    order: {
+      id: string;
+      posOrderId: string;
+      status: string;
+      statusLabel: string;
+      sourceRevision: number;
+      sourceTotalQuantity: number;
+      effectiveTotalQuantity: number;
+      allocatedQuantity: number;
+      pickedQuantity: number;
+    };
+    adjustment: {
+      id: string;
+      type: 'BYPASS' | 'SUBSTITUTION';
+      quantity: number;
+      sourceProductName: string;
+      substituteProductName: string | null;
+      reason: string;
+      createdAt: string;
+    };
+  };
+}
 
 export async function fetchWmsPickQueue(params: {
   tenantId?: string;

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreativePerformanceStatus, CreativeRevisionState, Prisma } from '@prisma/client';
+import { buildAdNameCreatorLabels } from '../../../common/utils/ad-name-creator';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CREATIVE_AGENT_PERMISSIONS } from '../creative-agent.constants';
 import { ListCreativeLibraryQueryDto } from '../dto/list-creative-library-query.dto';
@@ -84,6 +85,10 @@ export class CreativeLibraryService {
 
   async list(actor: CreativeActor, query: ListCreativeLibraryQueryDto) {
     const context = await this.access.resolve(actor);
+    const creatorLabels = buildAdNameCreatorLabels(await this.prisma.user.findMany({
+      where: { tenantId: context.tenantId, status: 'ACTIVE' },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    }));
     this.access.require(
       context,
       CREATIVE_AGENT_PERMISSIONS.READ,
@@ -243,7 +248,7 @@ export class CreativeLibraryService {
     const normalizedQuery = query.query?.toLowerCase() ?? '';
     let items = visibleCreatives.map((creative) => {
       const bucket = metrics.get(creative.id) ?? this.emptyMetrics();
-      return this.serializeCreative(creative, bucket);
+      return this.serializeCreative(creative, bucket, creatorLabels.get(creative.createdBy.id));
     }).filter((item) => {
       if (query.accountId && !item.accountIds.includes(query.accountId)) return false;
       if (!normalizedQuery) return true;
@@ -279,7 +284,11 @@ export class CreativeLibraryService {
       delete item.thumbnailObjectKey;
     }));
     const accountNames = new Map(accounts.map((account) => [account.accountId, account.name]));
-    const canManageUnregistered = canReadAll || this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE);
+    // enroll may also see it, to link an ad to their own creative or register
+    // a new one from it.
+    const canManageUnregistered = canReadAll
+      || this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE)
+      || this.access.has(context, CREATIVE_AGENT_PERMISSIONS.ENROLL);
 
     const allUnregisteredItems = canManageUnregistered
       ? Array.from(unregistered.values())
@@ -351,6 +360,9 @@ export class CreativeLibraryService {
         performanceStatuses: Object.values(CreativePerformanceStatus).map((value) => ({ value, label: this.humanize(value) })),
       },
       items: pageItems,
+      // What the signed-in user's own creator segment will be — the enroll
+      // dialog previews ad names with it.
+      viewer: { adNameCreator: creatorLabels.get(context.userId) ?? null },
       unregistered: unregisteredItems,
       summary: { untaggedSpend: this.roundMoney(untaggedSpend) },
       metricsAvailability: {
@@ -439,7 +451,7 @@ export class CreativeLibraryService {
     return Math.round((value + Number.EPSILON) * 10_000) / 10_000;
   }
 
-  private serializeCreative(creative: CreativeLibraryRow, metrics: MetricBucket): SerializedLibraryItem & Record<string, unknown> {
+  private serializeCreative(creative: CreativeLibraryRow, metrics: MetricBucket, adNameCreator?: string): SerializedLibraryItem & Record<string, unknown> {
     const creatorName = [creative.createdBy.firstName, creative.createdBy.lastName].filter(Boolean).join(' ') || creative.createdBy.email;
     const videoPlays3s = metrics.video.videoPlays3s ?? null;
     const thruPlays = metrics.video.thruPlays ?? null;
@@ -463,6 +475,8 @@ export class CreativeLibraryService {
       id: creative.id,
       code: creative.code,
       title: creative.title,
+      customId: creative.posCustomId ?? null,
+      productName: creative.posProductName ?? null,
       store: {
         id: creative.storeConfig.storeId,
         configId: creative.storeConfig.id,
@@ -479,7 +493,7 @@ export class CreativeLibraryService {
       metaAdNameSnapshot: creative.metaAdNameSnapshot,
       metaLinkSource: creative.metaLinkSource,
       metaLinkedAt: creative.metaLinkedAt,
-      creator: { id: creative.createdBy.id, name: creatorName, avatar: creative.createdBy.avatar },
+      creator: { id: creative.createdBy.id, name: creatorName, adName: adNameCreator ?? creatorName, avatar: creative.createdBy.avatar },
       format: creative.format,
       hookType: creative.hookType,
       angle: creative.angle,

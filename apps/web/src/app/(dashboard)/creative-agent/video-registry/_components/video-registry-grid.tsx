@@ -1,6 +1,7 @@
 'use client';
 
 import { Eye } from 'lucide-react';
+import { CopyCodeButton } from "../../assets/_components/copy-code-button";
 import { Button } from '@/components/ui/button';
 import type { VideoRegistryItem } from '../_types/video-registry';
 import { formatCompactCurrency, formatRate } from '../_utils/video-registry-formatters';
@@ -20,7 +21,7 @@ export function VideoRegistryGrid({ items, actionLabel, onReview }: { items: Vid
               <div className="min-w-0">
                 <h3 className="truncate font-semibold text-foreground">{item.title}</h3>
                 <div className="mt-1 flex items-center gap-2">
-                  <code className="text-xs font-semibold text-primary">{item.code}</code>
+                  <span className="inline-flex items-center gap-1"><code className="text-xs font-semibold text-primary">{item.code}</code><CopyCodeButton code={item.code} title={item.title} creator={item.creator.adName ?? item.creator.name} customId={item.customId} /></span>
                   <span className="pill border border-border bg-background-secondary text-muted">{item.kind === 'VIDEO' ? 'Video' : 'Static'}</span>
                 </div>
               </div>

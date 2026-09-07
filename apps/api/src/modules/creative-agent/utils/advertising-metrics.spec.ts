@@ -4,6 +4,7 @@ import {
   clickThroughRate,
   codCeiling,
   completionRate,
+  contributionMargin,
   conversionRate,
   costPerClick,
   costPerOrder,
@@ -73,6 +74,19 @@ describe('advertising metric helpers', () => {
   it('computes reconciled net contribution with the ERP P&L shape', () => {
     expect(netContribution({ deliveredRevenue: 10000, deliveredCogs: 3000, fulfillmentCosts: 2000, spend: 4000 })).toBe(1000);
     expect(netContribution({ deliveredRevenue: 1000, deliveredCogs: 600, fulfillmentCosts: 300, spend: 500 })).toBe(-400);
+  });
+
+  it('computes contribution margin with the Analytics Sales P&L shape', () => {
+    expect(contributionMargin({
+      revenue: 10000,
+      cogs: 3000,
+      shippingFees: 500,
+      fulfillmentFees: 300,
+      inventoryFees: 200,
+      spend: 4000,
+      codFees: 250,
+      rtsCogs: 150,
+    })).toBe(1900);
   });
 
   it('prefers a configured target CPP over the computed break-even', () => {

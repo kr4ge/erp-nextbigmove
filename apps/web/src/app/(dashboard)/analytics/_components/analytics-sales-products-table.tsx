@@ -58,6 +58,8 @@ export type SalesProductsTotalRow = {
 
 type AnalyticsSalesProductsTableProps = {
   isLoading: boolean;
+  /** First-column header: 'Product' on the product tab, 'Store' on the store tab. */
+  entityLabel?: string;
   productStart: number;
   productEnd: number;
   totalProducts: number;
@@ -109,6 +111,7 @@ function AnalyticsSalesProductsTableEmptyRow({ colSpan, message }: { colSpan: nu
 
 export function AnalyticsSalesProductsTable({
   isLoading,
+  entityLabel = 'Product',
   productStart,
   productEnd,
   totalProducts,
@@ -143,7 +146,7 @@ export function AnalyticsSalesProductsTable({
                 {renderSortLabel('#', 'index')}
               </th>
               <th className="bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:bg-background-secondary dark:text-slate-300 md:sticky md:left-16 md:z-10 sm:px-4 lg:px-6">
-                {renderSortLabel('Product', 'product')}
+                {renderSortLabel(entityLabel, 'product')}
               </th>
               <th className="px-3 py-3 text-center text-xs font-semibold uppercase whitespace-nowrap text-slate-500 dark:text-slate-300 sm:px-4 lg:px-6">
                 {renderSortLabel('Gross Revenue', 'revenue')}

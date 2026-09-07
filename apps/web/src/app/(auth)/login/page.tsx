@@ -59,15 +59,21 @@ export default function LoginPage() {
         password: data.password,
       });
 
+      // A fresh login is never an impersonation, whatever a previous session
+      // left behind — including one under a different partner.
+      localStorage.removeItem('impersonating_user');
+
       // Store tokens and user info
       localStorage.setItem('access_token', response.data.accessToken);
       localStorage.setItem('refresh_token', response.data.refreshToken);
       localStorage.setItem('current_tenant_id', response.data.tenant.id);
       localStorage.setItem('tenant', JSON.stringify(response.data.tenant));
       localStorage.setItem('user', JSON.stringify(response.data.user));
+      const memberships = Array.isArray(response.data.memberships) ? response.data.memberships : [];
+      localStorage.setItem('memberships', JSON.stringify(memberships));
 
-      // Redirect to dashboard
-      router.push('/dashboard');
+      // One tenant: straight in, exactly as before. Several: let them choose.
+      router.push(memberships.length > 1 ? '/select-workspace' : '/dashboard');
     } catch (error: unknown) {
       setError(parseLoginError(error));
     } finally {

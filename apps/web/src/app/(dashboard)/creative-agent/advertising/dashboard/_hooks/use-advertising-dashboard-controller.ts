@@ -6,7 +6,7 @@ import { fetchAdvertisingDashboard } from '../_services/advertising-dashboard.se
 import type { AdvertisingDashboardResponse, DashboardParams } from '../_types/advertising-dashboard';
 
 function buildDefaultParams(): DashboardParams {
-  return { startDate: manilaDaysAgo(29), endDate: manilaToday(), storeId: '', accountId: '', creatorId: '' };
+  return { startDate: manilaDaysAgo(29), endDate: manilaToday(), storeId: '', storeIds: [], accountId: '', creatorId: '', creatorIds: [] };
 }
 
 export function useAdvertisingDashboardController() {

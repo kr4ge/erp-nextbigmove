@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -31,6 +32,7 @@ import { GetWmsInventoryTransfersDto } from './dto/get-wms-inventory-transfers.d
 import { RecordWmsInventoryUnitLabelPrintDto } from './dto/record-wms-inventory-unit-label-print.dto';
 import { VoidWmsInventoryUnitDto } from './dto/void-wms-inventory-unit.dto';
 import { WmsInventoryCogsService } from './wms-inventory-cogs.service';
+import { WmsOutboundRecordsService } from './wms-outbound-records.service';
 
 const UNIT_STATUS_ORDER: WmsInventoryUnitStatus[] = [
   WmsInventoryUnitStatus.RECEIVED,
@@ -287,12 +289,15 @@ const TRANSFER_OPERATIONAL_LOCATION_KINDS = [
 
 @Injectable()
 export class WmsInventoryService {
+  private readonly logger = new Logger(WmsInventoryService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cls: ClsService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
     private readonly wmsInventoryCogsService: WmsInventoryCogsService,
     private readonly wmsFulfillmentSyncService: WmsFulfillmentSyncService,
+    private readonly wmsOutboundRecordsService: WmsOutboundRecordsService,
   ) {}
 
   async getOverview(query: GetWmsInventoryOverviewDto) {
@@ -301,6 +306,10 @@ export class WmsInventoryService {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(Math.max(1, query.pageSize ?? 10), 100);
     const skip = (page - 1) * pageSize;
+    const activityDateWindow = this.resolveInventoryActivityDateWindow(
+      query.startDate,
+      query.endDate,
+    );
 
     if (!scope.activeTenantId && !isAllTenantScope) {
       return {
@@ -497,20 +506,20 @@ export class WmsInventoryService {
         || left.label.localeCompare(right.label, undefined, { sensitivity: 'base' })
       ));
 
-    if (scope.activeTenantId) {
-      // Repair any shipped/delivered packed units before computing tenant-scoped inventory totals.
-      await this.syncPackedUnitsToDispatchedForPosOrders({
-        tenantId: scope.activeTenantId,
-        storeId: activeStoreId,
-      });
-    }
-
     const where: Prisma.WmsInventoryUnitWhereInput = {
       ...unitTenantWhere,
       ...(activeStoreId ? { storeId: activeStoreId } : {}),
       ...(activeWarehouseId ? { warehouseId: activeWarehouseId } : {}),
       ...(activeVariationId ? { variationId: activeVariationId } : {}),
       ...(query.status ? { status: query.status } : {}),
+      ...(activityDateWindow
+        ? {
+            updatedAt: {
+              gte: activityDateWindow.from,
+              lt: activityDateWindow.to,
+            },
+          }
+        : {}),
       ...(query.search
         ? {
             OR: [
@@ -675,6 +684,46 @@ export class WmsInventoryService {
       },
       units: units.map((unit) => this.mapUnit(unit)),
     };
+  }
+
+  private resolveInventoryActivityDateWindow(startDate?: string, endDate?: string) {
+    if (!startDate && !endDate) {
+      return null;
+    }
+
+    const normalizedStart = startDate ?? endDate!;
+    const normalizedEnd = endDate ?? startDate!;
+    const from = this.parseInventoryActivityDate(normalizedStart);
+    const inclusiveEnd = this.parseInventoryActivityDate(normalizedEnd);
+
+    if (from > inclusiveEnd) {
+      throw new BadRequestException('Start date must be on or before end date');
+    }
+
+    const rangeDays = Math.floor((inclusiveEnd.getTime() - from.getTime()) / 86_400_000) + 1;
+    if (rangeDays > 366) {
+      throw new BadRequestException('Date range cannot exceed 366 days');
+    }
+
+    const to = new Date(inclusiveEnd);
+    to.setUTCDate(to.getUTCDate() + 1);
+    return { from, to };
+  }
+
+  private parseInventoryActivityDate(value: string) {
+    const [year, month, day] = value.split('-').map(Number);
+    const calendarDate = new Date(Date.UTC(year, month - 1, day));
+
+    if (
+      calendarDate.getUTCFullYear() !== year
+      || calendarDate.getUTCMonth() !== month - 1
+      || calendarDate.getUTCDate() !== day
+    ) {
+      throw new BadRequestException('Dates must be valid calendar dates in YYYY-MM-DD format');
+    }
+
+    // WMS business dates follow Asia/Manila, which has a fixed UTC+08:00 offset.
+    return new Date(calendarDate.getTime() - 8 * 60 * 60 * 1_000);
   }
 
   async getUnitMovements(id: string, requestedTenantId?: string) {
@@ -3251,6 +3300,18 @@ export class WmsInventoryService {
       mode: syncMode,
       actorId,
     });
+
+    try {
+      await this.wmsOutboundRecordsService.syncForPosOrders({
+        tenantId: params.tenantId,
+        storeId: params.storeId ?? null,
+        posOrderRefs: refs,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Outbound unit projection sync failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     return {
       dispatchedUnits,

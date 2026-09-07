@@ -144,9 +144,6 @@ export class CeoDashboardService {
       filters: {
         accounts: accounts.map((a) => ({ value: a.accountId, label: a.name })),
         stores: stores.options,
-        // A tenant with exactly one store has nothing to choose between, so the
-        // dashboard pins it instead of offering a meaningless "All stores".
-        defaultShopId: stores.defaultShopId,
       },
       freshness,
       integrity: {
@@ -628,7 +625,7 @@ export class CeoDashboardService {
       select: { shopId: true, shopName: true, name: true },
       orderBy: { shopName: 'asc' },
     });
-    if (stores.length === 0) return { options: [], defaultShopId: null };
+    if (stores.length === 0) return { options: [] };
 
     // Scoped to the selected range: a store with nothing reconciled in this
     // window has no numbers to show, so offering it would only produce an
@@ -647,10 +644,10 @@ export class CeoDashboardService {
       value: store.shopId,
       label: store.shopName || store.name,
     }));
-    return {
-      options,
-      defaultShopId: options.length === 1 ? options[0].value : null,
-    };
+    // No default is returned: the dashboard opens on every store, including a
+    // tenant that only has one. Pinning the single store made its figures look
+    // scoped when they were simply the tenant's, and hid the "All stores" reset.
+    return { options };
   }
 
   /**

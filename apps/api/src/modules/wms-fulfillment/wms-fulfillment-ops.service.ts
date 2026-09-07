@@ -10,6 +10,8 @@ import {
   TenantStatus,
   WmsBasketStatus,
   WmsBasketUnitStatus,
+  WmsFulfillmentAdjustmentStatus,
+  WmsFulfillmentAdjustmentType,
   WmsFulfillmentAssignmentMode,
   WmsFulfillmentLineStatus,
   WmsFulfillmentOrderStatus,
@@ -23,6 +25,11 @@ import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
 import { buildUnexpiredInventoryWhere } from '../wms-inventory/wms-inventory-expiration.utils';
+import {
+  AdjustWmsFulfillmentOrderDto,
+  WmsFulfillmentAdjustmentActionDto,
+} from './dto/adjust-wms-fulfillment-order.dto';
+import { GetWmsFulfillmentAdjustmentOptionsDto } from './dto/get-wms-fulfillment-adjustment-options.dto';
 import { GetWmsFulfillmentOpsSnapshotDto } from './dto/get-wms-fulfillment-ops-snapshot.dto';
 import { GetWmsFulfillmentPriorityPreviewDto } from './dto/get-wms-fulfillment-priority-preview.dto';
 import { PrioritizeWmsFulfillmentOrderDto } from './dto/prioritize-wms-fulfillment-order.dto';
@@ -63,6 +70,11 @@ const CONFIRMED_POS_ORDER_STATUS = 1;
 const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
 const CANCELED_POS_ORDER_STATUS = 6;
 const ACTIVE_WMS_TENANT_STATUSES = [TenantStatus.ACTIVE, TenantStatus.TRIAL] as const;
+const ITEM_ADJUSTMENT_ORDER_STATUSES = [
+  WmsFulfillmentOrderStatus.READY,
+  WmsFulfillmentOrderStatus.PARTIAL,
+  WmsFulfillmentOrderStatus.RESTOCKING,
+] as const;
 
 type BasketUnitRestoreState = {
   fromLocationId: string | null;
@@ -518,6 +530,359 @@ export class WmsFulfillmentOpsService {
     return {
       success: true,
       ...preview,
+    };
+  }
+
+  async getItemAdjustmentOptions(query: GetWmsFulfillmentAdjustmentOptionsDto) {
+    const scope = await this.resolveTenantScope(query.tenantId);
+    const tenantId = this.requireScopedTenantId(scope.activeTenantId);
+    const order = await this.loadAdjustableOrder(this.prisma, query.orderId, tenantId);
+    const options = await this.listItemAdjustmentStockOptions(this.prisma, {
+      order,
+      search: query.search?.trim() || null,
+      limit: query.limit ?? 50,
+    });
+
+    return {
+      success: true,
+      order: {
+        id: order.id,
+        posOrderId: order.posOrderId,
+        sourceRevision: order.sourceRevision,
+        status: order.status,
+      },
+      options,
+    };
+  }
+
+  async adjustItems(
+    user: { userId?: string; id?: string; sessionId?: string | null },
+    body: AdjustWmsFulfillmentOrderDto,
+    request?: Request,
+  ) {
+    const scope = await this.resolveTenantScope(body.tenantId);
+    const tenantId = this.requireScopedTenantId(scope.activeTenantId);
+    const actorId = this.resolveActorId(user);
+    const sessionId = this.resolveSessionId(user);
+    if (!actorId) {
+      throw new ForbiddenException('A signed-in supervisor is required to adjust fulfillment items.');
+    }
+
+    const reason = body.reason.trim();
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockFulfillmentOrdersForUpdate(tx, [body.orderId]);
+      const order = await this.loadAdjustableOrder(tx, body.orderId, tenantId);
+
+      if (order.sourceRevision !== body.expectedSourceRevision) {
+        throw new ConflictException(
+          'The POS order changed after this panel was opened. Refresh the order before adjusting its items.',
+        );
+      }
+
+      if (order.changeState !== 'NONE') {
+        throw new ConflictException(
+          'This order has an unresolved POS item change. Let the automatic rebuild finish before applying an adjustment.',
+        );
+      }
+
+      const sourceLine = order.lines.find((line) => line.id === body.sourceLineId);
+      if (
+        !sourceLine
+        || sourceLine.status === WmsFulfillmentLineStatus.CANCELED
+        || sourceLine.sourceQuantityRequired <= 0
+      ) {
+        throw new BadRequestException('Select an active item from the original POS order.');
+      }
+
+      const previouslyAdjustedSourceQuantity = order.fulfillmentAdjustments
+        .filter((adjustment) => adjustment.sourceLineId === sourceLine.id)
+        .reduce((sum, adjustment) => sum + adjustment.quantity, 0);
+      const remainingOriginalQuantity = Math.max(
+        sourceLine.sourceQuantityRequired - previouslyAdjustedSourceQuantity,
+        0,
+      );
+      if (body.quantity > sourceLine.quantityRequired || body.quantity > remainingOriginalQuantity) {
+        throw new BadRequestException(
+          `Only ${Math.min(sourceLine.quantityRequired, remainingOriginalQuantity)} original unit(s) remain adjustable for ${sourceLine.productName}.`,
+        );
+      }
+
+      const activeBasketUnits = await tx.wmsBasketUnit.count({
+        where: {
+          fulfillmentOrderId: order.id,
+          status: { in: [...ACTIVE_BASKET_UNIT_STATUSES] },
+        },
+      });
+      const pickedReservations = order.lines.reduce((count, line) => (
+        count + line.reservations.filter(
+          (reservation) => reservation.status === WmsPickReservationStatus.PICKED,
+        ).length
+      ), 0);
+      if (activeBasketUnits > 0 || pickedReservations > 0 || order.pickedQuantity > 0) {
+        throw new ConflictException(
+          'This order already has scanned units. Use the item-change rework flow instead of a pre-pick adjustment.',
+        );
+      }
+
+      let substitute: {
+        productId: string;
+        variationId: string;
+        productName: string;
+        productDisplayId: string | null;
+      } | null = null;
+
+      if (body.action === WmsFulfillmentAdjustmentActionDto.SUBSTITUTION) {
+        const substituteVariationId = body.substituteVariationId?.trim();
+        if (!substituteVariationId || substituteVariationId === sourceLine.variationId) {
+          throw new BadRequestException('Select a different in-stock variation as the substitute.');
+        }
+
+        const stockOptions = await this.listItemAdjustmentStockOptions(tx, {
+          order,
+          variationId: substituteVariationId,
+          limit: 1,
+        });
+        const selectedOption = stockOptions[0];
+        if (!selectedOption || selectedOption.availableQuantity < body.quantity) {
+          throw new ConflictException(
+            `The selected substitute no longer has ${body.quantity} eligible unit(s). Refresh available stock and try again.`,
+          );
+        }
+
+        substitute = {
+          productId: selectedOption.productId,
+          variationId: selectedOption.variationId,
+          productName: selectedOption.productName,
+          productDisplayId: selectedOption.productDisplayId,
+        };
+      }
+
+      const nextSourceQuantity = sourceLine.quantityRequired - body.quantity;
+      const sourceReservations = sourceLine.reservations.filter(
+        (reservation) => reservation.status === WmsPickReservationStatus.RESERVED,
+      );
+      const reservationsToRelease = sourceReservations.slice(nextSourceQuantity);
+
+      for (const reservation of reservationsToRelease) {
+        const released = await tx.wmsPickReservation.updateMany({
+          where: {
+            id: reservation.id,
+            status: WmsPickReservationStatus.RESERVED,
+          },
+          data: { status: WmsPickReservationStatus.RELEASED },
+        });
+        if (released.count !== 1) {
+          throw new ConflictException('The reserved stock changed while applying the adjustment. Refresh and try again.');
+        }
+
+        const restored = await tx.wmsInventoryUnit.updateMany({
+          where: {
+            id: reservation.inventoryUnitId,
+            status: WmsInventoryUnitStatus.RESERVED,
+          },
+          data: {
+            status: WmsInventoryUnitStatus.PUTAWAY,
+            updatedById: actorId,
+          },
+        });
+        if (restored.count !== 1) {
+          throw new ConflictException('A reserved inventory unit changed while applying the adjustment.');
+        }
+
+        await tx.wmsInventoryMovement.create({
+          data: {
+            tenantId: order.tenantId,
+            inventoryUnitId: reservation.inventoryUnitId,
+            warehouseId: reservation.inventoryUnit.warehouseId,
+            fromLocationId: reservation.inventoryUnit.currentLocationId,
+            toLocationId: reservation.inventoryUnit.currentLocationId,
+            fromStatus: WmsInventoryUnitStatus.RESERVED,
+            toStatus: WmsInventoryUnitStatus.PUTAWAY,
+            movementType: WmsInventoryMovementType.RESERVATION,
+            referenceType: 'WMS_FULFILLMENT_ADJUSTMENT',
+            referenceId: order.id,
+            referenceCode: order.posOrderId,
+            notes: `${body.action === WmsFulfillmentAdjustmentActionDto.SUBSTITUTION ? 'Substituted' : 'Bypassed'} ${body.quantity} unit(s) of ${sourceLine.productName}: ${reason}`,
+            actorId,
+            createdAt: now,
+          },
+        });
+      }
+
+      const keptSourceReservations = sourceReservations.length - reservationsToRelease.length;
+      await tx.wmsFulfillmentLine.update({
+        where: { id: sourceLine.id },
+        data: {
+          quantityRequired: nextSourceQuantity,
+          quantityAllocated: Math.min(keptSourceReservations, nextSourceQuantity),
+          quantityPicked: 0,
+          status: nextSourceQuantity === 0
+            ? WmsFulfillmentLineStatus.CANCELED
+            : keptSourceReservations >= nextSourceQuantity
+              ? WmsFulfillmentLineStatus.READY
+              : keptSourceReservations > 0
+                ? WmsFulfillmentLineStatus.PARTIAL
+                : WmsFulfillmentLineStatus.RESTOCKING,
+          issueReason: null,
+        },
+      });
+
+      let substituteLineId: string | null = null;
+      if (substitute) {
+        const existingSubstituteLine = order.lines.find(
+          (line) => line.variationId === substitute?.variationId,
+        );
+        const nextSubstituteQuantity = (existingSubstituteLine?.quantityRequired ?? 0) + body.quantity;
+        const substituteLine = await tx.wmsFulfillmentLine.upsert({
+          where: {
+            fulfillmentOrderId_variationId: {
+              fulfillmentOrderId: order.id,
+              variationId: substitute.variationId,
+            },
+          },
+          create: {
+            fulfillmentOrderId: order.id,
+            tenantId: order.tenantId,
+            productId: substitute.productId,
+            variationId: substitute.variationId,
+            productName: substitute.productName,
+            productDisplayId: substitute.productDisplayId,
+            sourceQuantityRequired: 0,
+            quantityRequired: body.quantity,
+            status: WmsFulfillmentLineStatus.RESTOCKING,
+            lineSnapshot: {
+              fulfillmentAdjustment: true,
+              sourceLineId: sourceLine.id,
+              sourceVariationId: sourceLine.variationId,
+            },
+          },
+          update: {
+            productId: substitute.productId,
+            productName: substitute.productName,
+            productDisplayId: substitute.productDisplayId,
+            quantityRequired: nextSubstituteQuantity,
+            status: WmsFulfillmentLineStatus.RESTOCKING,
+            issueReason: null,
+          },
+          select: { id: true },
+        });
+        substituteLineId = substituteLine.id;
+      }
+
+      const adjustment = await tx.wmsFulfillmentAdjustment.create({
+        data: {
+          tenantId: order.tenantId,
+          fulfillmentOrderId: order.id,
+          sourceLineId: sourceLine.id,
+          sourceVariationId: sourceLine.variationId,
+          sourceProductId: sourceLine.productId,
+          sourceProductName: sourceLine.productName,
+          sourceProductDisplayId: sourceLine.productDisplayId,
+          substituteVariationId: substitute?.variationId ?? null,
+          substituteProductId: substitute?.productId ?? null,
+          substituteProductName: substitute?.productName ?? null,
+          substituteProductDisplayId: substitute?.productDisplayId ?? null,
+          type: body.action === WmsFulfillmentAdjustmentActionDto.SUBSTITUTION
+            ? WmsFulfillmentAdjustmentType.SUBSTITUTION
+            : WmsFulfillmentAdjustmentType.BYPASS,
+          status: WmsFulfillmentAdjustmentStatus.ACTIVE,
+          quantity: body.quantity,
+          reason,
+          sourceRevision: order.sourceRevision,
+          createdById: actorId,
+        },
+      });
+
+      if (substitute && order.assignmentMode === WmsFulfillmentAssignmentMode.SERIAL_RESERVED) {
+        await this.reserveSubstituteUnitsTx(tx, {
+          order,
+          fulfillmentLineId: substituteLineId!,
+          substitute,
+          quantity: body.quantity,
+          actorId,
+          now,
+        });
+      }
+
+      if (order.assignmentMode === WmsFulfillmentAssignmentMode.BASKET_DEMAND) {
+        await this.wmsFulfillmentSyncService.refreshDemandQueueForScopeTx(tx, {
+          tenantId: order.tenantId,
+          storeId: order.storeId,
+          variationIds: [sourceLine.variationId, ...(substitute ? [substitute.variationId] : [])],
+        }, now);
+      } else {
+        await this.refreshFulfillmentOrderProgressState(tx, order.id, now);
+      }
+
+      const refreshedOrder = await tx.wmsFulfillmentOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        select: {
+          status: true,
+          sourceTotalQuantity: true,
+          totalQuantity: true,
+          allocatedQuantity: true,
+          pickedQuantity: true,
+        },
+      });
+      if (refreshedOrder.totalQuantity <= 0) {
+        throw new BadRequestException('At least one unit must remain in the fulfillment order. Cancel the order instead.');
+      }
+
+      return {
+        order,
+        adjustment,
+        sourceLine,
+        substitute,
+        refreshedOrder,
+      };
+    }, this.getPriorityTransactionOptions());
+
+    await this.wmsStaffActivityService.recordFromRequest({
+      request,
+      tenantId: result.order.tenantId,
+      actorId,
+      sessionId,
+      actionType: 'FULFILLMENT_ITEM_ADJUSTMENT',
+      resourceType: 'WMS_FULFILLMENT_ORDER',
+      resourceId: result.order.id,
+      metadata: {
+        adjustmentId: result.adjustment.id,
+        action: body.action,
+        sourceRevision: result.order.sourceRevision,
+        sourceLineId: result.sourceLine.id,
+        sourceVariationId: result.sourceLine.variationId,
+        sourceProductName: result.sourceLine.productName,
+        substituteVariationId: result.substitute?.variationId ?? null,
+        substituteProductName: result.substitute?.productName ?? null,
+        quantity: body.quantity,
+        reason,
+        resultingStatus: result.refreshedOrder.status,
+      } as Prisma.InputJsonValue,
+    });
+
+    return {
+      success: true,
+      order: {
+        id: result.order.id,
+        posOrderId: result.order.posOrderId,
+        status: result.refreshedOrder.status,
+        statusLabel: this.formatEnumLabel(result.refreshedOrder.status),
+        sourceRevision: result.order.sourceRevision,
+        sourceTotalQuantity: result.refreshedOrder.sourceTotalQuantity,
+        effectiveTotalQuantity: result.refreshedOrder.totalQuantity,
+        allocatedQuantity: result.refreshedOrder.allocatedQuantity,
+        pickedQuantity: result.refreshedOrder.pickedQuantity,
+      },
+      adjustment: {
+        id: result.adjustment.id,
+        type: result.adjustment.type,
+        quantity: result.adjustment.quantity,
+        sourceProductName: result.adjustment.sourceProductName,
+        substituteProductName: result.substitute?.productName ?? null,
+        reason: result.adjustment.reason,
+        createdAt: result.adjustment.createdAt,
+      },
     };
   }
 
@@ -3874,6 +4239,355 @@ export class WmsFulfillmentOpsService {
     }
 
     return WmsFulfillmentOrderStatus.RESTOCKING;
+  }
+
+  private async loadAdjustableOrder(
+    client: Prisma.TransactionClient | PrismaService,
+    orderId: string,
+    tenantId: string,
+  ) {
+    const order = await client.wmsFulfillmentOrder.findFirst({
+      where: { id: orderId, tenantId },
+      include: {
+        posOrder: {
+          select: {
+            status: true,
+            isVoid: true,
+          },
+        },
+        lines: {
+          include: {
+            reservations: {
+              where: {
+                status: { in: [...ACTIVE_PICK_RESERVATION_STATUSES] },
+              },
+              include: {
+                inventoryUnit: {
+                  select: {
+                    id: true,
+                    warehouseId: true,
+                    currentLocationId: true,
+                    status: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        },
+        fulfillmentAdjustments: {
+          where: { status: WmsFulfillmentAdjustmentStatus.ACTIVE },
+          select: {
+            sourceLineId: true,
+            quantity: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new BadRequestException('Fulfillment order was not found in the selected tenant.');
+    }
+
+    if (!(ITEM_ADJUSTMENT_ORDER_STATUSES as readonly WmsFulfillmentOrderStatus[]).includes(order.status)) {
+      throw new BadRequestException(
+        `Order ${order.posOrderId} is ${this.formatEnumLabel(order.status)} and can no longer be adjusted before picking.`,
+      );
+    }
+
+    if (order.claimedById || order.basketId) {
+      throw new ConflictException(
+        `Order ${order.posOrderId} is already assigned for picking and cannot be adjusted here.`,
+      );
+    }
+
+    if (order.posOrder.status !== CONFIRMED_POS_ORDER_STATUS || order.posOrder.isVoid) {
+      throw new ConflictException(`Order ${order.posOrderId} is no longer confirmed in POS.`);
+    }
+
+    return order;
+  }
+
+  private async listItemAdjustmentStockOptions(
+    client: Prisma.TransactionClient | PrismaService,
+    params: {
+      order: Awaited<ReturnType<WmsFulfillmentOpsService['loadAdjustableOrder']>>;
+      search?: string | null;
+      variationId?: string | null;
+      limit: number;
+    },
+  ) {
+    const search = params.search?.trim() || null;
+    const inventoryWhere: Prisma.WmsInventoryUnitWhereInput = {
+      tenantId: params.order.tenantId,
+      storeId: params.order.storeId,
+      ...(params.order.warehouseId ? { warehouseId: params.order.warehouseId } : {}),
+      ...(params.variationId ? { variationId: params.variationId } : {}),
+      ...(params.order.posWarehouseRef
+        ? {
+            OR: [
+              { posWarehouseRef: params.order.posWarehouseRef },
+              { posWarehouseRef: null },
+            ],
+          }
+        : {}),
+      status: WmsInventoryUnitStatus.PUTAWAY,
+      AND: [buildUnexpiredInventoryWhere()],
+      currentLocation: {
+        is: {
+          kind: WmsLocationKind.BIN,
+          isActive: true,
+        },
+      },
+      pickReservations: {
+        none: {
+          status: { in: [...ACTIVE_PICK_RESERVATION_STATUSES] },
+        },
+      },
+      basketUnits: {
+        none: {
+          status: { in: [...ACTIVE_BASKET_UNIT_STATUSES] },
+        },
+      },
+      ...(search
+        ? {
+            posProduct: {
+              is: {
+                OR: [
+                  { name: { contains: search, mode: 'insensitive' } },
+                  { customId: { contains: search, mode: 'insensitive' } },
+                  { variationId: { contains: search, mode: 'insensitive' } },
+                ],
+              },
+            },
+          }
+        : {}),
+    };
+
+    const freeGroups = await client.wmsInventoryUnit.groupBy({
+      by: ['variationId'],
+      where: inventoryWhere,
+      _count: { _all: true },
+      orderBy: { variationId: 'asc' },
+    });
+    if (freeGroups.length === 0) {
+      return [];
+    }
+
+    const variationIds = freeGroups.map((group) => group.variationId);
+    const [products, activeDemandBins] = await Promise.all([
+      client.posProduct.findMany({
+        where: {
+          storeId: params.order.storeId,
+          variationId: { in: variationIds },
+        },
+        select: {
+          productId: true,
+          variationId: true,
+          customId: true,
+          name: true,
+        },
+      }),
+      params.order.assignmentMode === WmsFulfillmentAssignmentMode.BASKET_DEMAND
+        ? client.wmsBasketPickDemandBin.findMany({
+            where: {
+              tenantId: params.order.tenantId,
+              variationId: { in: variationIds },
+              ...(params.order.warehouseId ? { warehouseId: params.order.warehouseId } : {}),
+              basket: {
+                status: { in: [...ACTIVE_DEMAND_HOLD_BASKET_STATUSES] },
+              },
+              demand: {
+                storeId: params.order.storeId,
+                fulfillmentOrderId: { not: params.order.id },
+              },
+            },
+            select: {
+              variationId: true,
+              quantityTarget: true,
+              quantityPicked: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const heldByVariation = new Map<string, number>();
+    for (const bin of activeDemandBins) {
+      heldByVariation.set(
+        bin.variationId,
+        (heldByVariation.get(bin.variationId) ?? 0)
+          + Math.max(bin.quantityTarget - bin.quantityPicked, 0),
+      );
+    }
+    const productByVariation = new Map(
+      products
+        .filter((product) => Boolean(product.variationId))
+        .map((product) => [product.variationId!, product]),
+    );
+
+    return freeGroups
+      .map((group) => {
+        const product = productByVariation.get(group.variationId);
+        const availableQuantity = Math.max(
+          group._count._all - (heldByVariation.get(group.variationId) ?? 0),
+          0,
+        );
+        if (!product || availableQuantity <= 0) {
+          return null;
+        }
+        return {
+          productId: product.productId,
+          variationId: group.variationId,
+          productName: product.name,
+          productDisplayId: product.customId,
+          availableQuantity,
+        };
+      })
+      .filter((option): option is NonNullable<typeof option> => option !== null)
+      .sort((left, right) => (
+        left.productName.localeCompare(right.productName)
+        || left.variationId.localeCompare(right.variationId)
+      ))
+      .slice(0, params.limit);
+  }
+
+  private async reserveSubstituteUnitsTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      order: Awaited<ReturnType<WmsFulfillmentOpsService['loadAdjustableOrder']>>;
+      fulfillmentLineId: string;
+      substitute: {
+        productId: string;
+        variationId: string;
+        productName: string;
+        productDisplayId: string | null;
+      };
+      quantity: number;
+      actorId: string;
+      now: Date;
+    },
+  ) {
+    const candidates = await tx.wmsInventoryUnit.findMany({
+      where: {
+        tenantId: params.order.tenantId,
+        storeId: params.order.storeId,
+        ...(params.order.warehouseId ? { warehouseId: params.order.warehouseId } : {}),
+        variationId: params.substitute.variationId,
+        ...(params.order.posWarehouseRef
+          ? {
+              OR: [
+                { posWarehouseRef: params.order.posWarehouseRef },
+                { posWarehouseRef: null },
+              ],
+            }
+          : {}),
+        status: WmsInventoryUnitStatus.PUTAWAY,
+        AND: [buildUnexpiredInventoryWhere()],
+        currentLocation: {
+          is: {
+            kind: WmsLocationKind.BIN,
+            isActive: true,
+          },
+        },
+        pickReservations: {
+          none: {
+            status: { in: [...ACTIVE_PICK_RESERVATION_STATUSES] },
+          },
+        },
+        basketUnits: {
+          none: {
+            status: { in: [...ACTIVE_BASKET_UNIT_STATUSES] },
+          },
+        },
+      },
+      select: {
+        id: true,
+        warehouseId: true,
+        currentLocationId: true,
+        status: true,
+      },
+      orderBy: [
+        { expirationDate: 'asc' },
+        { updatedAt: 'asc' },
+        { code: 'asc' },
+      ],
+      take: params.quantity,
+    });
+
+    if (candidates.length < params.quantity) {
+      throw new ConflictException(
+        `The selected substitute no longer has ${params.quantity} eligible unit(s). Refresh available stock and try again.`,
+      );
+    }
+
+    const sequenceStart = await tx.wmsPickReservation.count({
+      where: {
+        fulfillmentLineId: params.fulfillmentLineId,
+        status: { in: [...ACTIVE_PICK_RESERVATION_STATUSES] },
+      },
+    });
+
+    for (const [index, unit] of candidates.entries()) {
+      const reserved = await tx.wmsInventoryUnit.updateMany({
+        where: {
+          id: unit.id,
+          status: WmsInventoryUnitStatus.PUTAWAY,
+        },
+        data: {
+          status: WmsInventoryUnitStatus.RESERVED,
+          updatedById: params.actorId,
+        },
+      });
+      if (reserved.count !== 1) {
+        throw new ConflictException('Substitute stock was reserved by another order. Refresh and try again.');
+      }
+
+      await tx.wmsPickReservation.upsert({
+        where: {
+          fulfillmentLineId_inventoryUnitId: {
+            fulfillmentLineId: params.fulfillmentLineId,
+            inventoryUnitId: unit.id,
+          },
+        },
+        create: {
+          fulfillmentOrderId: params.order.id,
+          fulfillmentLineId: params.fulfillmentLineId,
+          tenantId: params.order.tenantId,
+          inventoryUnitId: unit.id,
+          status: WmsPickReservationStatus.RESERVED,
+          sequence: sequenceStart + index + 1,
+          reservedById: params.actorId,
+          reservedAt: params.now,
+        },
+        update: {
+          status: WmsPickReservationStatus.RESERVED,
+          sequence: sequenceStart + index + 1,
+          reservedById: params.actorId,
+          reservedAt: params.now,
+          pickedById: null,
+          pickedAt: null,
+        },
+      });
+
+      await tx.wmsInventoryMovement.create({
+        data: {
+          tenantId: params.order.tenantId,
+          inventoryUnitId: unit.id,
+          warehouseId: unit.warehouseId,
+          fromLocationId: unit.currentLocationId,
+          toLocationId: unit.currentLocationId,
+          fromStatus: unit.status,
+          toStatus: WmsInventoryUnitStatus.RESERVED,
+          movementType: WmsInventoryMovementType.RESERVATION,
+          referenceType: 'WMS_FULFILLMENT_ADJUSTMENT',
+          referenceId: params.order.id,
+          referenceCode: params.order.posOrderId,
+          notes: `Reserved substitute ${params.substitute.productName} for order ${params.order.posOrderId}`,
+          actorId: params.actorId,
+          createdAt: params.now,
+        },
+      });
+    }
   }
 
   private requireScopedTenantId(tenantId: string | null) {

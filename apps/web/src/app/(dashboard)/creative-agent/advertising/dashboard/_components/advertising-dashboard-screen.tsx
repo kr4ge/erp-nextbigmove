@@ -8,18 +8,29 @@ import { PanelHeader, StatTile } from '../../../overview/_components/overview-ui
 import {
   formatCount,
   formatCurrency,
-  formatHours,
   formatPercent,
   type RateTone,
 } from '../../../overview/_utils/creative-overview-format';
 import { VideoRegistryDateRangePicker } from '../../../video-registry/_components/video-registry-date-range-picker';
 import { VerdictPill } from '../../performance/_constants/performance-columns';
+import { AnalyticsMultiSelectPicker } from '../../../../analytics/_components/analytics-multi-select-picker';
 import { useAdvertisingDashboardController } from '../_hooks/use-advertising-dashboard-controller';
 import type { DashboardMetric } from '../_types/advertising-dashboard';
 import { AdvertisingCalendar } from './advertising-calendar';
 import { AdvertisingTrendChart } from './advertising-trend-chart';
+import {
+  DashboardCalendarSkeleton,
+  DashboardChartSkeleton,
+  DashboardListSkeleton,
+  DashboardLoadingBar,
+  DashboardMetricGridSkeleton,
+} from '../../../_components/dashboard-loading-state';
 
 const selectClass = 'h-9 rounded-lg border border-border/60 bg-surface px-2.5 text-xs font-medium text-foreground outline-none transition hover:border-border focus:border-primary/40 focus:ring-2 focus:ring-primary/10';
+
+function floorHealthy(metric: DashboardMetric | undefined, floor: number | undefined): boolean {
+  return metric?.value != null && floor != null && metric.value >= floor;
+}
 
 const metricSub = (metric: DashboardMetric | undefined, sub: string) => {
   if (!metric || metric.availability === 'OK') return sub;
@@ -38,11 +49,64 @@ function arTone(value: number | null | undefined): RateTone {
 export function AdvertisingDashboardScreen() {
   const controller = useAdvertisingDashboardController();
   const { data, params } = controller;
+
+  // Store/creator filters use the standard multi-select picker: an empty
+  // array means "All", and toggling out of All expands to the full set first
+  // so unchecking one option keeps the rest selected.
+  const storeOptions = data?.filters.stores ?? [];
+  const creatorOptions = data?.filters.creators ?? [];
+  const allStoresSelected = params.storeIds.length === 0;
+  const allCreatorsSelected = params.creatorIds.length === 0;
+  const selectedStoreLabel = allStoresSelected
+    ? 'All stores'
+    : params.storeIds.length === 1
+      ? storeOptions.find((option) => option.value === params.storeIds[0])?.label ?? '1 selected'
+      : `${params.storeIds.length} selected`;
+  const selectedCreatorLabel = allCreatorsSelected
+    ? 'All creators'
+    : params.creatorIds.length === 1
+      ? creatorOptions.find((option) => option.value === params.creatorIds[0])?.label ?? '1 selected'
+      : `${params.creatorIds.length} selected`;
+  const toggleStore = (value: string) => {
+    const current = allStoresSelected ? storeOptions.map((option) => option.value) : params.storeIds;
+    const next = current.includes(value) ? current.filter((id) => id !== value) : [...current, value];
+    controller.updateParams({ storeIds: next });
+  };
+  const toggleCreator = (value: string) => {
+    const current = allCreatorsSelected ? creatorOptions.map((option) => option.value) : params.creatorIds;
+    const next = current.includes(value) ? current.filter((id) => id !== value) : [...current, value];
+    // Creator owns the store scope. Reset the child selection immediately so
+    // an old store cannot leak into the next creator's request.
+    controller.updateParams({ creatorIds: next, storeIds: [] });
+  };
   const advertising = data?.kpis.advertising;
   const creative = data?.kpis.creative;
-  const pipeline = data?.revisionPipeline;
   const ceiling = data?.scope.ceiling;
   const spark = data?.sparklines;
+  const cppTone: RateTone = advertising?.costPerOrder.value != null && ceiling?.workingCeiling != null
+    ? (advertising.costPerOrder.value <= ceiling.workingCeiling ? 'good' : 'bad')
+    : 'neutral';
+  const floors = data?.floors;
+  const craftSub = (metric: DashboardMetric | undefined, floor: number | undefined) => {
+    if (!metric || metric.value == null) return 'not measured';
+    return floor != null ? `vs ${formatPercent(floor)} floor` : undefined;
+  };
+  const rateSub = (metric: DashboardMetric | undefined, measured: string) =>
+    !metric || metric.value == null ? 'not measured' : measured;
+  const kpiTiles = [
+    { label: 'Hook', info: '3-second plays ÷ video impressions across the selected creators’ linked ads.', value: formatPercent(creative?.hookRate.value), healthy: floorHealthy(creative?.hookRate, floors?.values.hookRate), sub: craftSub(creative?.hookRate, floors?.values.hookRate) },
+    { label: 'Hold', info: 'ThruPlays ÷ 3-second plays.', value: formatPercent(creative?.holdRate.value), healthy: floorHealthy(creative?.holdRate, floors?.values.holdRate), sub: craftSub(creative?.holdRate, floors?.values.holdRate) },
+    { label: 'Completion', info: 'ThruPlays ÷ video impressions.', value: formatPercent(creative?.completionRate.value), healthy: floorHealthy(creative?.completionRate, floors?.values.completionRate), sub: craftSub(creative?.completionRate, floors?.values.completionRate) },
+    { label: 'CTR', info: 'Link clicks ÷ impressions.', value: formatPercent(creative?.ctr.value), healthy: floorHealthy(creative?.ctr, floors?.values.ctr), sub: craftSub(creative?.ctr, floors?.values.ctr) },
+    { label: 'Orders', info: 'Attributed POS orders across the selected creators’ linked ads in the period.', value: formatCount(creative?.orders.value), sub: 'attributed in period' },
+    { label: 'Ad Spend', info: 'Meta spend on the selected creators’ linked ads in the period.', value: formatCurrency(creative?.adSpend.value), sub: 'linked ads' },
+    { label: 'MAR% (AR%)', info: 'Ad spend ÷ attributed gross revenue — the same formula as the Creative Dashboard.', value: formatPercent(creative?.mar.value), sub: rateSub(creative?.mar, 'spend ÷ revenue') },
+    { label: 'Video Output', info: 'Creatives enrolled by the selected creators in the period.', value: formatCount(creative?.output.value), sub: 'enrolled in period' },
+    { label: 'Delivered', info: 'Delivered orders across the selected creators’ linked ads.', value: formatCount(creative?.delivered.value), sub: 'orders delivered' },
+    { label: 'Cancellation Rate', info: 'Cancelled ÷ all attributed orders — the same convention as the Creative Dashboard.', value: formatPercent(creative?.cancellationRate.value), sub: rateSub(creative?.cancellationRate, 'of all orders') },
+    { label: 'RTS Rate', info: 'RTS ÷ (delivered + RTS) — the same convention as the Creative Dashboard.', value: formatPercent(creative?.rtsRate.value), sub: rateSub(creative?.rtsRate, 'of delivered + RTS') },
+    { label: 'Delivery Rate', info: 'Delivered ÷ all attributed orders — the same convention as the Creative Dashboard.', value: formatPercent(creative?.deliveryRate.value), sub: rateSub(creative?.deliveryRate, 'of all orders') },
+  ];
   const criticalAlertCount = data?.alerts.filter((alert) => alert.severity === 'critical').length ?? 0;
   // Summed from the very rows the chart plots, so the header figures and the
   // curve can never disagree about the same period.
@@ -57,43 +121,47 @@ export function AdvertisingDashboardScreen() {
     { grossValue: 0, deliveredValue: 0, spend: 0, orders: 0, deliveredOrders: 0 },
   );
 
-  const cppTone: RateTone = advertising?.costPerOrder.value != null && ceiling?.workingCeiling != null
-    ? (advertising.costPerOrder.value <= ceiling.workingCeiling ? 'good' : 'bad')
-    : 'neutral';
-
   return (
     <div className="mx-auto max-w-screen-xl">
       <PageHeader
         title="Advertising Dashboard"
-        description="Is each peso of ad spend buying an order that will actually be paid for? Cost efficiency, craft signals, review flow, and data trust in one read."
+        description="Is each peso of ad spend buying an order that will actually be paid for? Cost efficiency, daily trends, decisions, and data trust in one read."
         breadcrumbs="Advertising Workspace"
       />
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <VideoRegistryDateRangePicker compact startDate={params.startDate} endDate={params.endDate} onChange={(range) => controller.updateParams(range)} />
-          {/* A picker with one outcome is a control with no purpose: when the
-              tenant has a single store it is shown pinned, not as a choice. */}
-          {data?.filters.defaultStoreId ? (
-            <span className="flex h-9 items-center rounded-lg border border-border/60 bg-secondary/20 px-2.5 text-xs font-medium text-muted dark:bg-background-secondary">
-              {data.filters.stores[0]?.label ?? 'Store'}
-            </span>
-          ) : (
-            <select value={params.storeId} onChange={(event) => controller.updateParams({ storeId: event.target.value })} className={`${selectClass} w-36`} aria-label="Filter by store">
-              <option value="">All stores</option>
-              {data?.filters.stores.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          )}
+          <AnalyticsMultiSelectPicker
+            className="relative"
+            selectTitle="Select creators"
+            selectedLabel={selectedCreatorLabel}
+            options={creatorOptions}
+            allChecked={allCreatorsSelected}
+            isChecked={(value) => allCreatorsSelected || params.creatorIds.includes(value)}
+            onToggleAll={() => controller.updateParams({ creatorIds: [], storeIds: [] })}
+            onToggle={toggleCreator}
+            onOnly={(value) => controller.updateParams({ creatorIds: [value], storeIds: [] })}
+            onClear={() => controller.updateParams({ creatorIds: [], storeIds: [] })}
+          />
+          <AnalyticsMultiSelectPicker
+            className="relative"
+            selectTitle={allCreatorsSelected ? 'Select stores' : 'Select stores for chosen creators'}
+            selectedLabel={selectedStoreLabel}
+            options={storeOptions}
+            allChecked={allStoresSelected}
+            isChecked={(value) => allStoresSelected || params.storeIds.includes(value)}
+            onToggleAll={() => controller.updateParams({ storeIds: [] })}
+            onToggle={toggleStore}
+            onOnly={(value) => controller.updateParams({ storeIds: [value] })}
+            onClear={() => controller.updateParams({ storeIds: [] })}
+          />
           {(data?.filters.accounts.length ?? 0) > 1 ? (
             <select value={params.accountId} onChange={(event) => controller.updateParams({ accountId: event.target.value })} className={`${selectClass} w-40`} aria-label="Filter by Meta account">
               <option value="">All accounts</option>
               {data?.filters.accounts.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           ) : null}
-          <select value={params.creatorId} onChange={(event) => controller.updateParams({ creatorId: event.target.value })} className={`${selectClass} w-36`} aria-label="Filter by creator">
-            <option value="">All creators</option>
-            {data?.filters.creators.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
         </div>
 
         {controller.error ? (
@@ -108,7 +176,7 @@ export function AdvertisingDashboardScreen() {
         {/* 1 · Attention banner — sits above the numbers because each item changes
             how much to trust them. Collapsed to one line to keep the dashboard
             short, but opened by default when anything critical is waiting. */}
-        {data?.alerts.length ? (
+        {!controller.isLoading && data?.alerts.length ? (
           <details className="panel panel-content group shadow-card" open={criticalAlertCount > 0}>
             <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3 [&::-webkit-details-marker]:hidden">
               <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
@@ -157,61 +225,65 @@ export function AdvertisingDashboardScreen() {
               ? `Measured against a working ceiling of ${formatCurrency(ceiling.workingCeiling)}${ceiling.provisional ? ' — provisional, derived from the reconciled break-even' : ''}.`
               : 'No cost ceiling can be derived yet — deliver reconciled orders to earn one.'}
           />
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
-            <StatTile compact label="Cost per click" info="Spend ÷ link clicks." value={formatCurrency(advertising?.costPerClick.value)} sub={metricSub(advertising?.costPerClick, 'spend ÷ link clicks')} spark={spark?.costPerClick} />
-            <StatTile compact label="Cost per order" info="Spend ÷ POS orders placed — never pixel purchases." value={formatCurrency(advertising?.costPerOrder.value)} tone={cppTone} sub={ceiling?.workingCeiling != null ? `vs ${formatCurrency(ceiling.workingCeiling)} ceiling` : 'no ceiling yet'} spark={spark?.costPerOrder} />
-            <StatTile compact label="POS orders" info="Orders placed, from the POS — the only order source that counts." value={formatCount(advertising?.posOrders.value)} sub="orders placed · from POS" spark={spark?.posOrders} />
-            <StatTile compact label="Ad spend ratio" info="Spend ÷ net-of-cancel/RTS sales, per the Marketing KPI exclusion policy. Lower is better. AR% for short." value={formatPercent(advertising?.adSpendRatio.value)} tone={arTone(advertising?.adSpendRatio.value)} sub="AR% · lower is better" spark={spark?.adSpendRatio} />
-            <StatTile compact label="Total ad spend" info="All spend in the selected period." value={formatCurrency(advertising?.totalSpend.value)} sub="this period" spark={spark?.totalSpend} />
-            <StatTile compact label="Linked-spend coverage" info="Spend on Meta ads linked to a registered creative ÷ all spend. Untraceable money earns nobody credit." value={formatPercent(advertising?.linkedSpendCoverage.value, 0)} sub={metricSub(advertising?.linkedSpendCoverage, 'of spend is linked')} spark={spark?.linkedSpendCoverage} />
-          </div>
+          {controller.isLoading ? (
+            <DashboardMetricGridSkeleton count={6} compact className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6" />
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
+              <StatTile compact label="Cost per click" info="Spend ÷ link clicks." value={formatCurrency(advertising?.costPerClick.value)} sub={metricSub(advertising?.costPerClick, 'spend ÷ link clicks')} spark={spark?.costPerClick} />
+              <StatTile compact label="Cost per order" info="Spend ÷ POS orders placed — never pixel purchases." value={formatCurrency(advertising?.costPerOrder.value)} tone={cppTone} sub={ceiling?.workingCeiling != null ? `vs ${formatCurrency(ceiling.workingCeiling)} ceiling` : 'no ceiling yet'} spark={spark?.costPerOrder} />
+              <StatTile compact label="POS orders" info="Orders placed, from the POS — the only order source that counts." value={formatCount(advertising?.posOrders.value)} sub="orders placed · from POS" spark={spark?.posOrders} />
+              <StatTile compact label="Ad spend ratio" info="Spend ÷ net-of-cancel/RTS sales, per the Marketing KPI exclusion policy. Lower is better. AR% for short." value={formatPercent(advertising?.adSpendRatio.value)} tone={arTone(advertising?.adSpendRatio.value)} sub="AR% · lower is better" spark={spark?.adSpendRatio} />
+              <StatTile compact label="Total ad spend" info="All spend in the selected period." value={formatCurrency(advertising?.totalSpend.value)} sub="this period" spark={spark?.totalSpend} />
+              <StatTile compact label="Linked-spend coverage" info="Spend on Meta ads linked to a registered creative ÷ all spend. Untraceable money earns nobody credit." value={formatPercent(advertising?.linkedSpendCoverage.value, 0)} sub={metricSub(advertising?.linkedSpendCoverage, 'of spend is linked')} spark={spark?.linkedSpendCoverage} />
+            </div>
+          )}
         </section>
 
-        {/* 3 · Creative-signal KPI group */}
-        <section className="panel panel-content shadow-card">
-          <PanelHeader title="Creative signals" description="How the creatives behind the spend are performing — routed to the creative team when a floor breaks." />
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-5">
-            <StatTile compact label="Hook rate" info="3-second plays ÷ measured video impressions." value={formatPercent(creative?.hookRate.value)} sub={metricSub(creative?.hookRate, '3s plays ÷ video impr.')} />
-            <StatTile compact label="Hold rate" info="ThruPlays ÷ 3-second plays." value={formatPercent(creative?.holdRate.value)} sub={metricSub(creative?.holdRate, 'thruplays ÷ 3s plays')} />
-            <StatTile compact label="Completion" info="ThruPlays ÷ measured video impressions." value={formatPercent(creative?.completionRate.value)} sub={metricSub(creative?.completionRate, 'thruplays ÷ video impr.')} />
-            <StatTile compact label="CTR" info="Link clicks ÷ impressions." value={formatPercent(creative?.ctr.value)} sub={metricSub(creative?.ctr, 'link clicks ÷ impressions')} />
-            <StatTile compact label="CVR" info="POS orders ÷ landing-page views. Withheld when LP views are unmeasured — never switched to clicks." value={formatPercent(creative?.cvr.value)} sub={metricSub(creative?.cvr, 'orders ÷ LP views')} />
-          </div>
-        </section>
-
-        {/* 4 · Feedback pipeline. Approval is gone — a linked creative is
-            already running — so this tracks open change requests instead. */}
+        {/* 2b · Creative KPI group — the scorecard the Creative Dashboard shows,
+            scoped to the selected creators and stores. */}
         <section className="panel panel-content shadow-card">
           <PanelHeader
-            title="Feedback pipeline"
-            description="Change requests you have open with the creative team. Counts deep-link into Assets."
-            right={<Link href="/assets?queue=REVIEW" className="btn btn-sm btn-outline">Open queue</Link>}
+            title="Creative metrics"
+            description="The same creative and attributed-order scorecard used by the Creative Dashboard, scoped by creator and store."
           />
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-5">
-            <Link href="/assets?revisionState=NEEDS_REVISION"><StatTile compact label="Needs revision" info="Creatives with an open request for changes." value={formatCount(pipeline?.needsRevision)} tone={(pipeline?.needsRevision ?? 0) > 0 ? 'warn' : 'neutral'} sub="awaiting the creator" /></Link>
-            <Link href="/assets?revisionState=RESOLVED"><StatTile compact label="Resolved" value={formatCount(pipeline?.resolved)} sub="changes addressed" /></Link>
-            <StatTile compact label="Requested" info="Revision requests opened during the selected period." value={formatCount(pipeline?.requestedInPeriod)} sub="in selected period" />
-            <StatTile compact label="Resolution time" info="Median hours from request to resolution." value={formatHours(pipeline?.medianResolutionHours)} sub="requested → resolved" />
-            <StatTile compact label="With feedback" info="Creatives that have at least one message in their thread." value={formatCount(pipeline?.withFeedback)} sub="have a thread" />
-          </div>
+          {controller.isLoading ? (
+            <DashboardMetricGridSkeleton />
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+              {kpiTiles.map((tile) => (
+                <StatTile
+                  key={tile.label}
+                  label={tile.label}
+                  info={tile.info}
+                  value={tile.value}
+                  tone={tile.healthy ? 'good' : 'neutral'}
+                  sub={tile.sub}
+                />
+              ))}
+            </div>
+          )}
+          <p className="border-t border-border/40 px-4 py-3 text-xs-tight leading-snug text-faint">
+            Hitting a floor exactly scores 7. Anything unmeasurable (a static has no hook rate) is left out rather than counted as zero.
+            {floors?.provisional ? ' Floors are provisional defaults.' : ''}
+          </p>
         </section>
 
-        {/* 5 · Monthly summary — full width so all seven weekday columns fit
+        {/* 3 · Monthly summary — full width so all seven weekday columns fit
             without clipping Saturday or squeezing the day cells. */}
         <section className="panel panel-content shadow-card">
-          <PanelHeader title={`Monthly summary — ${data?.calendar.monthLabel ?? '…'}`} description="Spend, orders, CPP, and AR%, day by day for this specific month." />
+          <PanelHeader title={controller.isLoading ? 'Monthly summary' : `Monthly summary — ${data?.calendar.monthLabel ?? '—'}`} description="Spend, orders, CPP, and AR%, day by day for this specific month." />
           <div className="p-4">
-            {data ? <AdvertisingCalendar month={data.calendar.month} days={data.calendar.days} /> : <p className="py-6 text-center text-sm text-muted">Loading…</p>}
+            {controller.isLoading ? <DashboardCalendarSkeleton /> : data ? <AdvertisingCalendar month={data.calendar.month} days={data.calendar.days} /> : null}
           </div>
         </section>
 
-        {/* 5b · Short trend. The header's right slot carries the period totals
+        {/* 4 · Short trend. The header's right slot carries the period totals
             so the chart itself never needs a second axis to state them. */}
         <section className="panel panel-content shadow-card">
           <PanelHeader
             title="Daily spend & orders"
             description="Ad spend vs the peso value of orders placed (by order date) and delivered (by delivery date) — all in ₱ so the lines are directly comparable."
-            right={data ? (
+            right={!controller.isLoading && data ? (
               <dl className="flex flex-wrap items-start gap-x-6 gap-y-2 text-right">
                 <div>
                   <dt className="text-xs-tight font-semibold uppercase tracking-wide text-faint">Order amount</dt>
@@ -235,11 +307,11 @@ export function AdvertisingDashboardScreen() {
             ) : undefined}
           />
           <div className="p-4">
-            {data ? <AdvertisingTrendChart trend={data.trend} /> : <p className="py-6 text-center text-sm text-muted">Loading…</p>}
+            {controller.isLoading ? <DashboardChartSkeleton /> : data ? <AdvertisingTrendChart trend={data.trend} /> : null}
           </div>
         </section>
 
-        {/* 6 · Needs-action preview */}
+        {/* 5 · Needs-action preview */}
         <section className="panel panel-content shadow-card">
           <PanelHeader
             title="Needs action today"
@@ -248,7 +320,9 @@ export function AdvertisingDashboardScreen() {
               : `Top ${Math.min(5, data?.needsAction.total ?? 0)} of ${data?.needsAction.total ?? 0} rows needing a decision, by spend.`}
             right={<Link href="/performance?verdict=NEEDS_ACTION" className="btn btn-sm btn-outline">Open Performance</Link>}
           />
-          {data?.needsAction.suppressed ? (
+          {controller.isLoading ? (
+            <DashboardListSkeleton rows={3} />
+          ) : data?.needsAction.suppressed ? (
             <p className="px-4 py-6 text-center text-sm text-muted">
               Improve order attribution coverage to re-enable per-ad verdicts — a verdict drawn from a fraction of the orders is a guess wearing a badge.
             </p>
@@ -278,22 +352,32 @@ export function AdvertisingDashboardScreen() {
           )}
         </section>
 
-        {/* 7 · Data confidence */}
+        {/* 6 · Data confidence */}
         <section className="panel panel-content shadow-card">
           <PanelHeader title="Data confidence" description="Is this data whole and trustworthy? Coverage figures have different denominators on purpose." />
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
-            <StatTile compact label="Latest Meta data" value={data?.dataConfidence.latestInsightDate ?? '—'} sub="most recent insight day" />
-            <StatTile compact label="Latest reconciliation" value={data?.dataConfidence.latestReconcileDate ?? '—'} sub="most recent reconciled day" />
-            <StatTile compact label="Order attribution" info="POS orders matched to a specific ad ÷ all reconciled POS orders. Below the minimum, per-ad verdicts are suppressed." value={formatPercent(data?.dataConfidence.orderAttributionCoverage.value, 0)} tone={data?.dataConfidence.verdictsSuppressed ? 'warn' : 'neutral'} sub="of orders id-matched to ads" />
-            <StatTile compact label="Linked spend" info="Spend on ads linked to registered creatives ÷ all spend — a different denominator from order attribution." value={formatPercent(data?.dataConfidence.linkedSpendCoverage.value, 0)} sub="of spend is creative-linked" />
-            <StatTile compact label="Missing video data" value={formatCount(data?.dataConfidence.missingVideoMetricsCount)} sub="ads without 3s-play data" />
-            <StatTile compact label="Withheld rates" info="Rates withheld because a source reported an impossible value above 100%." value={formatCount(data?.dataConfidence.withheldRateCount)} sub="impossible values withheld" />
-          </div>
+          {controller.isLoading ? (
+            <DashboardMetricGridSkeleton count={6} compact className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6" />
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
+              <StatTile compact label="Latest Meta data" value={data?.dataConfidence.latestInsightDate ?? '—'} sub="most recent insight day" />
+              <StatTile compact label="Latest reconciliation" value={data?.dataConfidence.latestReconcileDate ?? '—'} sub="most recent reconciled day" />
+              <StatTile compact label="Order attribution" info="POS orders matched to a specific ad ÷ all reconciled POS orders. Below the minimum, per-ad verdicts are suppressed." value={formatPercent(data?.dataConfidence.orderAttributionCoverage.value, 0)} tone={data?.dataConfidence.verdictsSuppressed ? 'warn' : 'neutral'} sub="of orders id-matched to ads" />
+              <StatTile compact label="Linked spend" info="Spend on ads linked to registered creatives ÷ all spend — a different denominator from order attribution." value={formatPercent(data?.dataConfidence.linkedSpendCoverage.value, 0)} sub="of spend is creative-linked" />
+              <StatTile compact label="Missing video data" value={formatCount(data?.dataConfidence.missingVideoMetricsCount)} sub="ads without 3s-play data" />
+              <StatTile compact label="Withheld rates" info="Rates withheld because a source reported an impossible value above 100%." value={formatCount(data?.dataConfidence.withheldRateCount)} sub="impossible values withheld" />
+            </div>
+          )}
           <div className="flex items-start gap-2 border-t border-border/40 px-4 py-3 text-xs-tight text-faint">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>
-              {data?.dataConfidence.posMetaPurchaseGap.reason} Dashboard reads persisted, worker-synchronized data — nothing here triggers a Meta sync.
-            </span>
+            {controller.isLoading ? (
+              <div className="w-full animate-pulse" role="status" aria-label="Loading data confidence details">
+                <DashboardLoadingBar className="h-2.5 w-3/4" />
+              </div>
+            ) : (
+              <span>
+                {data?.dataConfidence.posMetaPurchaseGap.reason} Dashboard reads persisted, worker-synchronized data — nothing here triggers a Meta sync.
+              </span>
+            )}
           </div>
         </section>
       </div>

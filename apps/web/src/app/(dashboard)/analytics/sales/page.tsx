@@ -21,7 +21,6 @@ import { DashboardSection } from '../../dashboard/_components/dashboard-section'
 import { AnalyticsKpiVisibilityDialog } from '../_components/analytics-kpi-visibility-dialog';
 import { AnalyticsMultiSelectPicker } from '../_components/analytics-multi-select-picker';
 import { AnalyticsMetricCard } from '../_components/analytics-metric-card';
-import { AnalyticsMetricCardSkeleton } from '../_components/analytics-metric-card-skeleton';
 import {
   AnalyticsSalesDeliveryTable,
   type SalesDeliveryRowItem,
@@ -207,6 +206,10 @@ export default function SalesAnalyticsPage() {
   const [hasLoadedKpiVisibility, setHasLoadedKpiVisibility] = useState(false);
   const pageSize = 10;
   const [tableSelection, setTableSelection] = useState<'products' | 'delivery'>('products');
+  // Page-level dimension tab: the Store tab mirrors the whole page (same KPI
+  // boxes, same math) with everything grouped and filtered by store instead of
+  // product mapping — the API returns the identical response shape.
+  const [dimension, setDimension] = useState<'product' | 'store'>('product');
   const [productPage, setProductPage] = useState(1);
   const [deliveryPage, setDeliveryPage] = useState(1);
   const [isReconciling, setIsReconciling] = useState(false);
@@ -248,7 +251,7 @@ export default function SalesAnalyticsPage() {
       mappingOptions.every((mapping) => selectedMappings.includes(mapping)))
       ? '__all__'
       : [...selectedMappings].sort().join('|');
-  const analyticsQueryKey = buildAnalyticsQueryKey(
+  const analyticsQueryKey = `${dimension}:` + buildAnalyticsQueryKey(
     startDate,
     endDate,
     mappingSelectionKey,
@@ -341,10 +344,9 @@ export default function SalesAnalyticsPage() {
       params.set('exclude_repurchase', String(excludeRepurchase));
       params.set('include_tax_12', String(includeTax12));
       params.set('include_tax_1', String(includeTax1));
-      const res = await analyticsOverviewApi.getSalesOverview<OverviewResponse>(
-        params,
-        request.signal,
-      );
+      const res = dimension === 'store'
+        ? await analyticsOverviewApi.getSalesStoreOverview<OverviewResponse>(params, request.signal)
+        : await analyticsOverviewApi.getSalesOverview<OverviewResponse>(params, request.signal);
       if (!request.isLatest()) return;
       setData(res.data);
       setResolvedQueryKey(analyticsQueryKey);
@@ -372,6 +374,7 @@ export default function SalesAnalyticsPage() {
   }, [
     analyticsQueryKey,
     beginRequest,
+    dimension,
     endDate,
     excludeAbandoned,
     excludeCanceled,
@@ -423,6 +426,22 @@ export default function SalesAnalyticsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [cancelRequest, fetchData, mappingSelectionKey]);
 
+  // Switching dimension swaps what the picker's options mean (mappings vs
+  // stores), so selection state is cleared and the new overview refetched.
+  const isFirstDimensionRender = useRef(true);
+  useEffect(() => {
+    if (isFirstDimensionRender.current) {
+      isFirstDimensionRender.current = false;
+      return;
+    }
+    setMappingOptions([]);
+    setSelectedMappings([]);
+    setTableSelection('products');
+    setProductPage(1);
+    setDeliveryPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dimension]);
+
   useVisibleAutoRefresh(() => {
     void fetchData({ silent: true });
   });
@@ -452,7 +471,7 @@ export default function SalesAnalyticsPage() {
   }));
   const selectedMappingLabel =
     selectedMappings.length === mappingOptions.length
-      ? 'All mappings'
+      ? (dimension === 'store' ? 'All stores' : 'All mappings')
       : `${selectedMappings.length} selected`;
   const isChecked = (norm: string) => selectedMappings.includes(norm);
   const setSort = (key: NonNullable<typeof sortKey>, dir: 'asc' | 'desc') => {
@@ -839,13 +858,23 @@ export default function SalesAnalyticsPage() {
           statusShare,
         };
       })
-    : [];
+    : metricDefinitions.map((def) => ({
+        ...def,
+        current: 0,
+        previous: 0,
+        delta: null as number | null,
+        countCurrent: def.countKey ? 0 : null,
+        countPrev: def.countKey ? 0 : null,
+        countDelta: null as number | null,
+        isStatusMetric: false,
+        statusShare: null as number | null,
+      }));
   const visibleMetricValues = metricValues.filter((metric) =>
     visibleKpiKeys.includes(String(metric.key)),
   );
 
   const tableOptions: AnalyticsTableSelectorOption<'products' | 'delivery'>[] = [
-    { key: 'products', label: 'Revenue per Product' },
+    { key: 'products', label: dimension === 'store' ? 'Revenue per Store' : 'Revenue per Product' },
     { key: 'delivery', label: 'Delivery Status' },
   ];
 
@@ -1206,6 +1235,7 @@ export default function SalesAnalyticsPage() {
   };
 
   const renderCard = (m: (typeof metricValues)[number]) => {
+    const cardLoading = isResultPending;
     const tooltip =
       m.key === 'cm_rts_forecast'
         ? buildCmRtsTooltip(data?.kpis)
@@ -1220,6 +1250,7 @@ export default function SalesAnalyticsPage() {
     return (
       <AnalyticsMetricCard
         key={m.key}
+        loading={cardLoading}
         label={m.label}
         value={m.current}
         format={m.format}
@@ -1246,6 +1277,24 @@ export default function SalesAnalyticsPage() {
 
   return (
     <div className="space-y-5">
+      <div className="overflow-x-auto">
+        <div className="flex min-w-max gap-6 border-b border-slate-200 sm:min-w-0 dark:border-border">
+          {([['product', 'Product'], ['store', 'Store']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setDimension(key)}
+              className={`whitespace-nowrap pb-3 text-sm font-semibold transition-colors ${
+                dimension === key
+                  ? 'border-b-2 border-primary text-orange-600'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between dark:border-border">
         <div className="space-y-1.5">
           <p className="text-xs-tight font-semibold uppercase tracking-[0.2em] text-primary">
@@ -1256,7 +1305,7 @@ export default function SalesAnalyticsPage() {
               Business Performance
             </h1>
             <p className="text-sm-custom text-slate-500 dark:text-slate-300">
-              Monitor sales performance by mapping.
+              {dimension === 'store' ? 'Monitor sales performance by store.' : 'Monitor sales performance by mapping.'}
             </p>
           </div>
         </div>
@@ -1274,7 +1323,7 @@ export default function SalesAnalyticsPage() {
               <AnalyticsMultiSelectPicker
                 className="relative z-30 [&>button]:h-10 [&>button]:rounded-r-none [&>button]:rounded-l-xl [&>button]:border-r-0 [&>button]:border-slate-200"
                 selectedLabel={selectedMappingLabel}
-                selectTitle="Select mappings"
+                selectTitle={dimension === 'store' ? 'Select stores' : 'Select mappings'}
                 options={mappingPickerOptions}
                 allChecked={
                   mappingOptions.length > 0 &&
@@ -1473,13 +1522,7 @@ export default function SalesAnalyticsPage() {
         )}
 
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isResultPending ? (
-            <div className="flex w-full flex-col gap-3 xl:flex-row">
-              {Array.from({ length: 8 }).map((_, idx) => (
-                <AnalyticsMetricCardSkeleton key={idx} className="w-full xl:min-w-[180px]" />
-              ))}
-            </div>
-          ) : (
+          {(
             <>
               {visibleMetricValues.length === 0 ? (
                 <div className="flex w-full items-center justify-center rounded-lg border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
@@ -1503,13 +1546,7 @@ export default function SalesAnalyticsPage() {
           )}
         </div>
         <div className="flex flex-col gap-3 xl:flex-row">
-          {isResultPending ? (
-            <div className="flex w-full flex-col gap-3 xl:flex-row">
-              {Array.from({ length: 3 }).map((_, idx) => (
-                <AnalyticsMetricCardSkeleton key={`sec-skel-${idx}`} className="w-full xl:min-w-[190px]" />
-              ))}
-            </div>
-          ) : (
+          {(
             <>
               {visibleSecondaryCards.length === 0 ? null : (
                 <>
@@ -1582,6 +1619,7 @@ export default function SalesAnalyticsPage() {
         {tableSelection === 'products' ? (
           <AnalyticsSalesProductsTable
             isLoading={isResultPending}
+            entityLabel={dimension === 'store' ? 'Store' : 'Product'}
             productStart={productStart}
             productEnd={productEnd}
             totalProducts={totalProducts}

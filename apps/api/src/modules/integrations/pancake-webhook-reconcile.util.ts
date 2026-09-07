@@ -1,4 +1,5 @@
 export type PancakeWebhookReconcileMode = 'incremental' | 'full_reset';
+export type PancakeWebhookReconcileTrigger = 'standard' | 'destructive_order_change';
 
 export function resolveAutomaticPancakeReconcileMode(
   configuredMode: PancakeWebhookReconcileMode | undefined,
@@ -15,14 +16,17 @@ export function buildPancakeReconcileWindow(params: {
   tenantId: string;
   dateLocal: string;
   delayMs: number;
+  trigger?: PancakeWebhookReconcileTrigger;
   nowMs?: number;
 }) {
   const nowMs = params.nowMs ?? Date.now();
   const windowMs = Math.max(10_000, Math.floor(params.delayMs));
   const scheduledForMs = (Math.floor(nowMs / windowMs) + 1) * windowMs;
+  const triggerSegment =
+    params.trigger === 'destructive_order_change' ? ':destructive' : '';
 
   return {
-    jobId: `pancake-reconcile:${params.tenantId}:${params.dateLocal}:${scheduledForMs}`,
+    jobId: `pancake-reconcile${triggerSegment}:${params.tenantId}:${params.dateLocal}:${scheduledForMs}`,
     delayMs: Math.max(0, scheduledForMs - nowMs),
     scheduledFor: new Date(scheduledForMs).toISOString(),
   };

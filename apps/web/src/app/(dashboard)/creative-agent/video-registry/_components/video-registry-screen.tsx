@@ -106,7 +106,7 @@ export function VideoRegistryScreen({ initialQuery = '' }: { initialQuery?: stri
           onRegister={controller.openRegistration}
           onLink={controller.setLinkingItem}
           canRegister={controller.permissions.canEnroll}
-          canLink={controller.permissions.canManageAliases}
+          canLink={controller.permissions.canManageAliases || controller.permissions.canEnroll}
           pagination={data.unregisteredPagination}
           onPageChange={controller.updateUnregisteredPage}
         />
@@ -247,6 +247,10 @@ export function VideoRegistryScreen({ initialQuery = '' }: { initialQuery?: stri
         isSaving={controller.isMutating}
         onClose={controller.closeRegistration}
         onSubmit={controller.registerVideo}
+        creatorLabel={controller.data?.viewer?.adNameCreator ?? null}
+        onRegistered={(count) =>
+          addToast("success", count === 1 ? "Creative registered." : `${count} creatives registered.`)
+        }
       />
       <LinkVideoDialog
         item={controller.linkingItem}

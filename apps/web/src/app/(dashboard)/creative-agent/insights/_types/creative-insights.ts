@@ -74,7 +74,7 @@ export type VariantBrief = {
 };
 
 export type VariantsResponse = {
-  creative: { id: string; code: string; title: string; storeId: string | null };
+  creative: { id: string; code: string; title: string; storeId: string | null; variationId: string | null };
   model: string;
   variants: VariantBrief[] | null;
   raw: string | null;

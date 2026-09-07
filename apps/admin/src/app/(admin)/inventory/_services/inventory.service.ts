@@ -15,8 +15,12 @@ import type {
   WmsInventoryTransferOptionsResponse,
 } from '../_types/inventory';
 
-export async function fetchWmsInventoryOverview(params: GetWmsInventoryOverviewParams = {}) {
+export async function fetchWmsInventoryOverview(
+  params: GetWmsInventoryOverviewParams = {},
+  signal?: AbortSignal,
+) {
   const response = await apiClient.get('/wms/inventory/overview', {
+    signal,
     params: {
       ...(params.allTenants ? { allTenants: true } : {}),
       ...(params.tenantId ? { tenantId: params.tenantId } : {}),
@@ -25,6 +29,8 @@ export async function fetchWmsInventoryOverview(params: GetWmsInventoryOverviewP
       ...(params.variationId ? { variationId: params.variationId } : {}),
       ...(params.search ? { search: params.search } : {}),
       ...(params.status ? { status: params.status } : {}),
+      ...(params.startDate ? { startDate: params.startDate } : {}),
+      ...(params.endDate ? { endDate: params.endDate } : {}),
       ...(params.page ? { page: params.page } : {}),
       ...(params.pageSize ? { pageSize: params.pageSize } : {}),
     },

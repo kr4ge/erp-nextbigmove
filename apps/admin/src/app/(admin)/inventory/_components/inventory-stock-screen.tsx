@@ -99,6 +99,8 @@ export function InventoryStockScreen() {
         <InventoryStockDashboard
           overview={inventory.overview}
           isFetching={inventory.isFetching}
+          dateRange={inventory.dateRange}
+          onDateRangeChange={inventory.setDateRange}
           filters={(
             <InventoryFilterBar
               filters={inventory.overview?.filters}

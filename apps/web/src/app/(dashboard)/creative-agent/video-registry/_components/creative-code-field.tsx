@@ -8,6 +8,7 @@ import { validateCreativeTitle } from "../_utils/creative-title";
 
 type Props = {
   code: string | null;
+  customId?: string | null;
   title?: string | null;
   creator?: string | null;
   helper?: string;
@@ -21,13 +22,15 @@ type Props = {
  * produces a name that auto-matching cannot read back, and the failure would
  * only surface much later as an ad that never links to its creative.
  */
-export function CreativeCodeField({ code, title, creator, helper }: Props) {
+export function CreativeCodeField({ code, customId, title, creator, helper }: Props) {
   const [copied, setCopied] = useState(false);
 
   const trimmedTitle = title?.trim() ?? "";
   const titleError = validateCreativeTitle(trimmedTitle);
-  const blocked = !code || !trimmedTitle || Boolean(titleError);
-  const adName = code ? buildAdName({ title: trimmedTitle, creator, code }) : null;
+  // The item is required at enrollment, so a missing customId means the name
+  // is not final yet — copying a half-name that maps to nothing helps nobody.
+  const blocked = !code || !trimmedTitle || Boolean(titleError) || !customId?.trim();
+  const adName = code ? buildAdName({ title: trimmedTitle, creator, code, customId }) : null;
 
   useEffect(() => {
     setCopied(false);
@@ -41,16 +44,22 @@ export function CreativeCodeField({ code, title, creator, helper }: Props) {
 
   const blockedReason = !code
     ? "Select a store"
-    : titleError
-      ? "Remove the underscore from the title to copy the ad name."
-      : !trimmedTitle
-        ? "Add a library title to copy the full ad name."
-        : null;
+    : !customId?.trim()
+      ? "Choose the item this creative sells to complete the ad name."
+      : titleError
+        ? "Remove the underscore from the title to copy the ad name."
+        : !trimmedTitle
+          ? "Add a library title to copy the full ad name."
+          : null;
 
   return (
     <div className="space-y-1.5">
       <span className="form-label">Ad name</span>
-      <div className="input flex min-h-11 items-center justify-between gap-3 py-1.5">
+      {/* !py-0.5: the dialog's density layer sets .input padding with a
+          higher-specificity selector; the inner button already sets the
+          height, so extra padding only made this box taller than its
+          neighbours. */}
+      <div className="input flex items-center justify-between gap-3 !py-0.5">
         <code
           className={`min-w-0 truncate font-bold ${adName && !blocked ? "text-foreground" : "text-muted"}`}
         >
@@ -60,7 +69,7 @@ export function CreativeCodeField({ code, title, creator, helper }: Props) {
           type="button"
           variant="ghost"
           size="sm"
-          className="shrink-0 border-0 text-primary"
+          className="h-8 shrink-0 border-0 px-2 text-primary"
           iconLeft={
             copied ? (
               <Check className="h-4 w-4" />

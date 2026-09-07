@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { AiSettingsModule } from '../ai-settings/ai-settings.module';
 import { CommonServicesModule } from '../../common/services/services.module';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { CreativeOptionsController } from './creative-options.controller';
+import { CreativeOptionsService } from './services/creative-options.service';
 import { CreativeAdvertisingDashboardController } from './creative-advertising-dashboard.controller';
 import { CreativeInsightController } from './creative-insight.controller';
 import { CreativeAliasController } from './creative-alias.controller';
@@ -20,6 +22,7 @@ import { CreativeAssetsService } from './services/creative-assets.service';
 import { CreativeAliasService } from './services/creative-alias.service';
 import { CreativeEnrollmentService } from './services/creative-enrollment.service';
 import { CreativeLibraryService } from './services/creative-library.service';
+import { CreativeLegacyAttributionService } from './services/creative-legacy-attribution.service';
 import { CreativeMatchingService } from './services/creative-matching.service';
 import { CreativeMetaLinkService } from './services/creative-meta-link.service';
 import { CreativeOverviewService } from './services/creative-overview.service';
@@ -43,6 +46,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeAdvertisingDashboardController,
     CreativeInsightController,
     CreativeStrategyController,
+    CreativeOptionsController,
   ],
   providers: [
     PermissionsGuard,
@@ -50,6 +54,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeStoreService,
     CreativeEnrollmentService,
     CreativeLibraryService,
+    CreativeLegacyAttributionService,
     CreativeMatchingService,
     CreativeMetaLinkService,
     CreativeAliasService,
@@ -61,6 +66,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeInsightService,
     CreativeStrategyService,
     CreativeThumbnailService,
+    CreativeOptionsService,
   ],
   exports: [CreativeMetaLinkService],
 })

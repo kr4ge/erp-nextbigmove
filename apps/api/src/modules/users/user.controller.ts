@@ -5,6 +5,7 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
+import { AddExistingUserDto } from './dto/add-existing-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
 @Controller('users')
@@ -16,6 +17,12 @@ export class UserController {
   @Get()
   async list() {
     return this.userService.findAll();
+  }
+
+  /** Grant an existing account access to this tenant — no new password. */
+  @Post('add-existing')
+  addExisting(@Body() dto: AddExistingUserDto) {
+    return this.userService.addExisting(dto);
   }
 
   @Post()

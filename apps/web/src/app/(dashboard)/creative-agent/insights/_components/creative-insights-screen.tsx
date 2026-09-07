@@ -80,8 +80,15 @@ export function CreativeInsightsScreen() {
     if (!variants?.creative.storeId || !variantsFor) {
       throw new Error('The parent creative has no store — enroll from the Video Registry instead.');
     }
+    // Enrollment needs the POS item so the ad name can carry its custom ID. A
+    // variant inherits its parent's; a parent registered before items were
+    // recorded has none, and only the registry dialog can pick one.
+    if (!variants.creative.variationId) {
+      throw new Error('The parent creative has no POS item on record — enroll from the Video Registry and choose the item there.');
+    }
     const created = await createVideoRegistryItem({
       storeId: variants.creative.storeId,
+      variationId: variants.creative.variationId,
       kind: 'VIDEO',
       title: brief.title,
       mediaUrl: '',

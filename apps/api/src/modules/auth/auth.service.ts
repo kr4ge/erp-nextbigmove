@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -9,6 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { RegisterDto, LoginDto, RefreshTokenDto } from './dto';
 import { toStoredPermissionWorkspace } from '../../common/rbac/permission-workspace';
 import { WmsStaffActivityService } from '../../common/services/wms-staff-activity.service';
+import { EffectiveAccessService } from '../../common/services/effective-access.service';
 
 @Injectable()
 export class AuthService {
@@ -17,6 +18,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly wmsStaffActivityService: WmsStaffActivityService,
+    private readonly effectiveAccessService: EffectiveAccessService,
   ) {}
 
   /**
@@ -240,6 +242,7 @@ export class AuthService {
       user: this.sanitizeUser(user),
       tenant: user.tenant ? this.sanitizeTenant(user.tenant) : null,
       ...tokens,
+      memberships: await this.listMemberships(user.id),
     };
   }
 
@@ -275,10 +278,12 @@ export class AuthService {
         }
       }
 
-      // Generate new tokens
+      // Keep the tenant this session was actually working in; the row only
+      // records the last-active one and may have moved in another session.
+      const active = await this.resolveActiveTenant(user.id, user.role, user.tenantId, payload.tenantId, user.defaultTeamId);
       const tokens = await this.generateTokens(
         user.id,
-        user.tenantId,
+        active.tenantId,
         user.role,
         typeof payload.sessionId === 'string' && payload.sessionId.trim().length > 0
           ? payload.sessionId
@@ -358,12 +363,17 @@ export class AuthService {
     tenantId: string | null,
     role: string,
     sessionId: string,
+    impersonation?: { impersonatedBy: string; originalSessionId: string | null },
   ) {
     const payload = {
       userId,
       tenantId,
       role,
       sessionId,
+      // Present only while viewing as someone else. The real actor travels
+      // inside the token so returning does not depend on the client holding on
+      // to the admin's own token.
+      ...(impersonation ?? {}),
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -381,6 +391,256 @@ export class AuthService {
       accessToken,
       refreshToken,
       sessionId,
+    };
+  }
+
+  /**
+   * Issue a token that acts as another user in the same tenant.
+   *
+   * Permissions are resolved server-side from the token's userId on every
+   * request, so a token minted for the target grants exactly their access —
+   * no module needs to know impersonation exists. What the token adds is the
+   * real actor, so writes can be attributed and the session can be handed back.
+   */
+  async impersonate(actor: { userId: string; tenantId: string | null; sessionId: string | null; impersonatedBy?: string }, targetUserId: string, request?: any) {
+    if (actor.impersonatedBy) {
+      throw new ForbiddenException('Already viewing as another user');
+    }
+    if (actor.userId === targetUserId) {
+      throw new BadRequestException('You are already signed in as this user');
+    }
+    if (!actor.tenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+
+    // Membership, not the row's tenantId, decides who is "in" this tenant now
+    // that an identity can belong to several.
+    const target = await this.prisma.user.findFirst({
+      where: {
+        id: targetUserId,
+        OR: [
+          { tenantId: actor.tenantId },
+          { tenantMemberships: { some: { tenantId: actor.tenantId, status: 'ACTIVE' } } },
+        ],
+      },
+    });
+    if (!target) {
+      throw new NotFoundException('User not found in this tenant');
+    }
+    const activeTenant = await this.prisma.tenant.findUnique({ where: { id: actor.tenantId } });
+    if (target.status !== 'ACTIVE') {
+      throw new BadRequestException('Cannot view as a deactivated user');
+    }
+    // SUPER_ADMIN bypasses every permission check, so impersonating one would
+    // escalate a tenant admin to platform-wide access.
+    if (target.role === 'SUPER_ADMIN') {
+      throw new ForbiddenException('This user cannot be impersonated');
+    }
+
+    const targetAccess = await this.effectiveAccessService.resolveUserAccess({
+      userId: target.id,
+      tenantId: actor.tenantId,
+      basePermissions: [],
+    });
+    // Blocked both ways round: chaining through another admin would put every
+    // account in the tenant one hop away from a single compromised session.
+    if (targetAccess.permissions.includes('user.impersonate')) {
+      throw new ForbiddenException('Cannot view as a user who can impersonate others');
+    }
+
+    const sessionId = crypto.randomUUID();
+    const tokens = await this.generateTokens(
+      target.id,
+      actor.tenantId,
+      target.role,
+      sessionId,
+      { impersonatedBy: actor.userId, originalSessionId: actor.sessionId },
+    );
+
+    await this.recordImpersonationAudit(request, {
+      tenantId: actor.tenantId,
+      actorId: actor.userId,
+      action: 'IMPERSONATION_STARTED',
+      targetUserId: target.id,
+      sessionId,
+    });
+
+    return {
+      user: this.sanitizeUser(target),
+      tenant: activeTenant ? this.sanitizeTenant(activeTenant) : null,
+      impersonatedBy: actor.userId,
+      ...tokens,
+    };
+  }
+
+  /** Hand the session back to the admin who started it. */
+  async stopImpersonation(actor: { userId: string; tenantId: string | null; impersonatedBy?: string }, request?: any) {
+    if (!actor.impersonatedBy) {
+      throw new BadRequestException('This session is not viewing as another user');
+    }
+
+    const admin = await this.prisma.user.findFirst({
+      where: { id: actor.impersonatedBy },
+      include: { tenant: true },
+    });
+    if (!admin || admin.status !== 'ACTIVE') {
+      throw new UnauthorizedException('The original session is no longer valid');
+    }
+
+    const sessionId = crypto.randomUUID();
+    // The impersonated session was minted inside the admin's active tenant, so
+    // that is where they return — not wherever the row's last-active pointer is.
+    const returnTenantId = actor.tenantId ?? admin.tenantId;
+    const tokens = await this.generateTokens(admin.id, returnTenantId, admin.role, sessionId);
+    const returnTenant = returnTenantId ? await this.prisma.tenant.findUnique({ where: { id: returnTenantId } }) : null;
+
+    await this.recordImpersonationAudit(request, {
+      tenantId: returnTenantId,
+      actorId: admin.id,
+      action: 'IMPERSONATION_ENDED',
+      targetUserId: actor.userId,
+      sessionId,
+    });
+
+    return {
+      user: this.sanitizeUser(admin),
+      tenant: returnTenant ? this.sanitizeTenant(returnTenant) : null,
+      ...tokens,
+      memberships: await this.listMemberships(admin.id),
+    };
+  }
+
+  private async recordImpersonationAudit(request: any, params: {
+    tenantId: string | null;
+    actorId: string;
+    action: string;
+    targetUserId: string;
+    sessionId: string;
+  }) {
+    if (!params.tenantId) return;
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: params.tenantId,
+        userId: params.actorId,
+        action: params.action,
+        resource: 'user',
+        resourceId: params.targetUserId,
+        changes: { targetUserId: params.targetUserId, sessionId: params.sessionId },
+        ipAddress: request?.ip ?? null,
+        userAgent: request?.headers?.['user-agent'] ?? null,
+      },
+    });
+  }
+
+  /** Tenants this identity may enter, for the chooser and the header switcher. */
+  async listMemberships(userId: string) {
+    const rows = await this.prisma.tenantMembership.findMany({
+      where: { userId, status: 'ACTIVE', tenant: { status: { in: ['ACTIVE', 'TRIAL'] } } },
+      select: { tenantId: true, status: true, tenant: { select: { name: true, slug: true } } },
+      orderBy: { tenant: { name: 'asc' } },
+    });
+    return rows.map((row) => ({
+      tenantId: row.tenantId,
+      name: row.tenant.name,
+      slug: row.tenant.slug ?? null,
+      status: row.status,
+    }));
+  }
+
+  /**
+   * Which tenant a request is in. The token names the tenant the session chose;
+   * it is honoured only when the identity holds an ACTIVE membership there —
+   * otherwise the row's last-active tenant applies. SUPER_ADMIN is untouched:
+   * it has no memberships and picks tenants through the WMS header instead.
+   */
+  async resolveActiveTenant(
+    userId: string,
+    role: string,
+    rowTenantId: string | null,
+    requestedTenantId: unknown,
+    rowDefaultTeamId: string | null,
+  ): Promise<{ tenantId: string | null; defaultTeamId: string | null }> {
+    const requested = typeof requestedTenantId === 'string' ? requestedTenantId : null;
+    if (role === 'SUPER_ADMIN' || !requested || requested === rowTenantId) {
+      return { tenantId: rowTenantId, defaultTeamId: rowDefaultTeamId };
+    }
+    const membership = await this.prisma.tenantMembership.findUnique({
+      where: { userId_tenantId: { userId, tenantId: requested } },
+      select: { status: true, defaultTeamId: true },
+    });
+    if (!membership || membership.status !== 'ACTIVE') {
+      return { tenantId: rowTenantId, defaultTeamId: rowDefaultTeamId };
+    }
+    return { tenantId: requested, defaultTeamId: membership.defaultTeamId };
+  }
+
+  /**
+   * Move a session to another tenant the identity belongs to.
+   *
+   * Reissues the token the same way impersonation does, with tenantId swapped
+   * instead of userId. The row's tenantId is updated as "last active" so the
+   * next plain login lands there, and the per-tenant default team is parked on
+   * the membership so switching back restores it.
+   */
+  async switchTenant(
+    actor: { userId: string; role: string; tenantId: string | null; impersonatedBy?: string | null; defaultTeamId?: string | null },
+    tenantId: string,
+    request?: any,
+  ) {
+    if (actor.impersonatedBy) {
+      // Switching while impersonating would reach the target's OTHER tenants,
+      // which the admin was never granted.
+      throw new ForbiddenException('Exit the impersonated session before switching workspace');
+    }
+    if (actor.role === 'SUPER_ADMIN') {
+      throw new ForbiddenException('Platform administrators select tenants through the WMS console');
+    }
+    const membership = await this.prisma.tenantMembership.findUnique({
+      where: { userId_tenantId: { userId: actor.userId, tenantId } },
+      include: { tenant: true },
+    });
+    if (!membership || membership.status !== 'ACTIVE') {
+      throw new ForbiddenException('You do not belong to that workspace');
+    }
+    if (membership.tenant.status !== 'ACTIVE' && membership.tenant.status !== 'TRIAL') {
+      throw new ForbiddenException('That workspace is not active');
+    }
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      // Park the outgoing tenant's default team on its membership.
+      if (actor.tenantId && actor.tenantId !== tenantId) {
+        await tx.tenantMembership.updateMany({
+          where: { userId: actor.userId, tenantId: actor.tenantId },
+          data: { defaultTeamId: actor.defaultTeamId ?? null },
+        });
+      }
+      return tx.user.update({
+        where: { id: actor.userId },
+        data: { tenantId, defaultTeamId: membership.defaultTeamId ?? null },
+      });
+    });
+
+    const sessionId = crypto.randomUUID();
+    const tokens = await this.generateTokens(user.id, tenantId, user.role, sessionId);
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId,
+        userId: user.id,
+        action: 'TENANT_SWITCHED',
+        resource: 'tenant',
+        resourceId: tenantId,
+        changes: { fromTenantId: actor.tenantId, toTenantId: tenantId, sessionId },
+        ipAddress: request?.ip ?? null,
+        userAgent: request?.headers?.['user-agent'] ?? null,
+      },
+    });
+
+    return {
+      user: this.sanitizeUser(user),
+      tenant: this.sanitizeTenant(membership.tenant),
+      ...tokens,
+      memberships: await this.listMemberships(user.id),
     };
   }
 

@@ -27,6 +27,12 @@ export class CreativeEnrollmentController {
     return this.enrollment.enrollUnregistered(req.user, body);
   }
 
+  @Get('stores/:storeId/items')
+  @Permissions('creative_agent.enroll')
+  listStoreItems(@Request() req: CreativeRequest, @Param('storeId', ParseUUIDPipe) storeId: string) {
+    return this.enrollment.listStoreItems(req.user, storeId);
+  }
+
   @Get('creatives/:id')
   @Permissions('creative_agent.read', 'creative_agent.read_all')
   get(@Request() req: CreativeRequest, @Param('id', ParseUUIDPipe) id: string) {

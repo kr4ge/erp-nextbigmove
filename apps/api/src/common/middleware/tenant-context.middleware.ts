@@ -15,6 +15,8 @@ export class TenantContextMiddleware implements NestMiddleware {
       this.cls.set('userId', user.userId);
       this.cls.set('userRole', user.role);
       this.cls.set('userPermissions', user.permissions || []);
+      // Carried so audit rows can name the admin behind an impersonated write.
+      this.cls.set('impersonatedBy', user.impersonatedBy || null);
     }
 
     next();

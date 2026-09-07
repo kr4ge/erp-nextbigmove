@@ -1,6 +1,7 @@
 'use client';
 
 import { type ReactNode } from 'react';
+import { Spinner } from '@/components/ui/spinner';
 import { ArrowDown, ArrowUp, Info } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { formatMetricValue } from '../_utils/metrics';
@@ -26,6 +27,8 @@ type AnalyticsMetricCardProps = {
   tooltip?: ReactNode;
   tooltipMode?: 'hover' | 'popover';
   className?: string;
+  /** Keep the label; spin the value while the fetch is in flight. */
+  loading?: boolean;
 };
 
 const formatCountValue = (value: number) =>
@@ -113,6 +116,7 @@ export function AnalyticsMetricCard({
   tooltip,
   tooltipMode = 'hover',
   className,
+  loading,
 }: AnalyticsMetricCardProps) {
   const valuePrecision =
     precision === undefined ? (format === 'percent' ? 1 : 2) : precision;
@@ -128,9 +132,9 @@ export function AnalyticsMetricCard({
 
       <div className="mt-1 flex items-center justify-between">
         <p className="text-lg font-semibold text-foreground">
-          {formatMetricValue(value, format, valuePrecision)}
+          {loading ? <Spinner className="h-4 w-4 text-foreground/50" /> : formatMetricValue(value, format, valuePrecision)}
         </p>
-        {showDelta ? (
+        {showDelta && !loading ? (
           <DeltaLabel value={delta} display={deltaDisplay} />
         ) : null}
       </div>
@@ -139,7 +143,7 @@ export function AnalyticsMetricCard({
         <div className="mt-1 flex items-center justify-between">
           <span className="text-sm text-slate-700">
             <span className="font-normal text-foreground/80">{count.label ?? 'ord'}:</span>{' '}
-            <span className="font-semibold text-foreground">{formatCountValue(count.value)}</span>
+            {loading ? <Spinner className="h-3 w-3 text-foreground/40" /> : <span className="font-semibold text-foreground">{formatCountValue(count.value)}</span>}
           </span>
           {count.percentage !== undefined ? (
             <span className="text-xs font-medium text-muted">

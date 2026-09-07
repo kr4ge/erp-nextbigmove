@@ -28,7 +28,7 @@ export type AdvertisingLinkFilter = (typeof ADVERTISING_LINK_FILTERS)[number];
  */
 export const ADVERTISING_PERFORMANCE_SORT_KEYS = [
   'name', 'spend', 'ordersToday', 'spendToday', 'spendYesterday', 'orders',
-  'cpp', 'cpc', 'deliveredCpp', 'grossSales', 'deliveredSales', 'netContribution',
+  'cpp', 'cpc', 'deliveredCpp', 'grossSales', 'deliveredSales', 'contributionMargin', 'netContribution',
   'adSpendRatio', 'trueRoas', 'impressions', 'linkClicks', 'landingPageViews',
   'hookRate', 'holdRate', 'completionRate', 'ctr', 'cvr',
   'delivered', 'cancelled', 'rts', 'deliveryRate', 'cancellationRate', 'rtsRate',
@@ -96,7 +96,7 @@ export class ListAdvertisingPerformanceQueryDto {
 
   @IsOptional()
   @IsIn(ADVERTISING_PERFORMANCE_GROUPS)
-  group: AdvertisingPerformanceGroup = 'ADS';
+  group: AdvertisingPerformanceGroup = 'CREATIVES';
 
   @IsOptional()
   @IsIn(ADVERTISING_VERDICT_FILTERS)

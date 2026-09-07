@@ -4,7 +4,12 @@ import type { AdvertisingDashboardResponse, DashboardParams } from '../_types/ad
 
 export async function fetchAdvertisingDashboard(params: DashboardParams): Promise<AdvertisingDashboardResponse> {
   try {
-    const query = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== ''));
+    const { storeIds, creatorIds, ...rest } = params;
+    const query: Record<string, string> = Object.fromEntries(
+      Object.entries(rest).filter(([, value]) => value !== ''),
+    ) as Record<string, string>;
+    if (storeIds.length) query.storeIds = storeIds.join(',');
+    if (creatorIds.length) query.creatorIds = creatorIds.join(',');
     const { data } = await apiClient.get<AdvertisingDashboardResponse>('/creative-agent/advertising/dashboard', { params: query });
     return data;
   } catch (error) {

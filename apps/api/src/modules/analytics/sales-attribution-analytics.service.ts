@@ -10,6 +10,7 @@ import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { AnalyticsCacheService } from './analytics-cache.service';
+import { resolveMappingDisplayNames } from '../workflows/utils/product-mapping-key';
 import type { SalesAttributionOverviewContract } from './contracts/sales-attribution-overview.contract';
 import { GetSalesAttributionOverviewQueryDto } from './dto/get-sales-attribution-overview-query.dto';
 import { AnalyticsRequestCoordinatorService } from './analytics-request-coordinator.service';
@@ -677,6 +678,10 @@ export class SalesAttributionAnalyticsService {
         mappingOptions.push(normalized);
       }
     });
+    // pv:: keys -> product names, ua:: keys -> "Unassigned — {store}"; coarse
+    // labels pass through untouched. Same resolver as the sales page, so both
+    // screens name the same buckets identically.
+    await resolveMappingDisplayNames(this.prisma, mappingDisplayMap);
     if (nullMappingCount > 0) {
       mappingDisplayMap[NULL_MAPPING_FILTER_KEY] = `Unassigned (${nullMappingCount})`;
       mappingOptions.push(NULL_MAPPING_FILTER_KEY);

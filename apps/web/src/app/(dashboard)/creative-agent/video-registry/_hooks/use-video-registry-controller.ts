@@ -119,11 +119,8 @@ export function useVideoRegistryController(initialQuery = '') {
     setIsMutating(true);
     try {
       const created = await createVideoRegistryItem(input);
-      // The enrollment form already exposes the copyable ad name, so there is
-      // nothing left to confirm — close out and let the row in the registry be
-      // the receipt.
-      setIsRegisterOpen(false);
-      setRegistrationSeed(null);
+      // One call per creative in a batch; the dialog closes itself once every
+      // entry has registered, so the list refreshes here but stays open.
       await loadRegistry({ silent: true });
       return created;
     } finally {

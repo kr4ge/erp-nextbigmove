@@ -4,6 +4,8 @@ export type CreativeAsset = {
   id: string;
   code: string;
   title: string;
+  /** Pancake custom ID of the advertised item; null on pre-item creatives. */
+  customId: string | null;
   kind: CreativeKind;
   mediaUrl: string | null;
   format: string | null;
@@ -15,7 +17,7 @@ export type CreativeAsset = {
   revisionRequestedAt: string | null;
   revisionResolvedAt: string | null;
   performanceStatus: CreativePerformanceStatus;
-  creator: { id: string; name: string; avatar: string | null };
+  creator: { id: string; name: string; adName?: string; avatar: string | null };
   store: { id: string | null; name: string };
   isOwnSubmission: boolean;
   commentCount: number;

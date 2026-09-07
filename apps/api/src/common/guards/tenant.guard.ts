@@ -24,6 +24,8 @@ export class TenantGuard implements CanActivate {
       this.cls.set('userRole', user.role);
       this.cls.set('userPermissions', user.permissions || []);
       this.cls.set('sessionId', user.sessionId || null);
+    // Carried so audit rows can name the admin behind an impersonated write.
+    this.cls.set('impersonatedBy', user.impersonatedBy || null);
       return true;
     }
 
@@ -38,6 +40,8 @@ export class TenantGuard implements CanActivate {
     this.cls.set('userRole', user.role);
     this.cls.set('userPermissions', user.permissions || []);
     this.cls.set('sessionId', user.sessionId || null);
+    // Carried so audit rows can name the admin behind an impersonated write.
+    this.cls.set('impersonatedBy', user.impersonatedBy || null);
 
     // Verify tenant is active
     const tenant = await this.prisma.tenant.findUnique({

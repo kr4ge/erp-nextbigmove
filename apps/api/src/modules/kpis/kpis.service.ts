@@ -9,6 +9,7 @@ import {
   MarketingKpiMetricKey,
   MarketingKpiScopeType,
 } from "@prisma/client";
+import { buildAdNameCreatorLabels } from '../../common/utils/ad-name-creator';
 import { PrismaService } from "../../common/prisma/prisma.service";
 import { TeamContextService } from "../../common/services/team-context.service";
 import { CreateMarketingCategoryTargetDto } from "./dto/create-marketing-category-target.dto";
@@ -298,6 +299,23 @@ export class KpisService {
     if (achievementPct >= 100) return "ON_TRACK";
     if (achievementPct >= 80) return "AT_RISK";
     return "MISSED";
+  }
+
+  private async resolveAdNameCreatorLabel(
+    tenantId: string,
+    user: { id?: string; email?: string | null; firstName: string | null; lastName: string | null },
+  ): Promise<string | null> {
+    const peers = await this.prisma.user.findMany({
+      where: { tenantId, status: 'ACTIVE' },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    });
+    const labels = buildAdNameCreatorLabels(peers);
+    if (user.id && labels.has(user.id)) return labels.get(user.id)!;
+    // Older callers pass names only: find the peer with the same name.
+    const same = peers.find((peer) =>
+      (peer.firstName ?? '').trim().toLowerCase() === (user.firstName ?? '').trim().toLowerCase()
+      && (peer.lastName ?? '').trim().toLowerCase() === (user.lastName ?? '').trim().toLowerCase());
+    return same ? (labels.get(same.id) ?? null) : null;
   }
 
   private buildAssociateKeysForUser(user: {
@@ -870,6 +888,8 @@ export class KpisService {
     tenantId: string,
     _teamScope: { teamId: string | null; teamCode: string },
     user: {
+      id?: string;
+      email?: string | null;
       employeeId: string | null;
       firstName: string | null;
       lastName: string | null;
@@ -879,6 +899,14 @@ export class KpisService {
     options: KpiExclusionOptions,
   ) {
     const associateKeys = this.buildAssociateKeysForUser(user);
+    // New-convention ad names carry the tenant-unique short label ("Josiah",
+    // "Josiah R."), so that label must match this user too — computed with
+    // the same rule that produced it.
+    const shortLabel = await this.resolveAdNameCreatorLabel(tenantId, user);
+    if (shortLabel) {
+      const key = this.normalize(shortLabel);
+      if (key && !associateKeys.includes(key)) associateKeys.push(key);
+    }
     const dateKeys = this.buildDateKeys(start, end);
     if (associateKeys.length === 0) {
       return {
