@@ -17,6 +17,13 @@ import { useAdvertisingDashboardController } from '../_hooks/use-advertising-das
 import type { DashboardMetric } from '../_types/advertising-dashboard';
 import { AdvertisingCalendar } from './advertising-calendar';
 import { AdvertisingTrendChart } from './advertising-trend-chart';
+import {
+  DashboardCalendarSkeleton,
+  DashboardChartSkeleton,
+  DashboardListSkeleton,
+  DashboardLoadingBar,
+  DashboardMetricGridSkeleton,
+} from '../../../_components/dashboard-loading-state';
 
 const selectClass = 'h-9 rounded-lg border border-border/60 bg-surface px-2.5 text-xs font-medium text-foreground outline-none transition hover:border-border focus:border-primary/40 focus:ring-2 focus:ring-primary/10';
 
@@ -149,7 +156,7 @@ export function AdvertisingDashboardScreen() {
         {/* 1 · Attention banner — sits above the numbers because each item changes
             how much to trust them. Collapsed to one line to keep the dashboard
             short, but opened by default when anything critical is waiting. */}
-        {data?.alerts.length ? (
+        {!controller.isLoading && data?.alerts.length ? (
           <details className="panel panel-content group shadow-card" open={criticalAlertCount > 0}>
             <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3 [&::-webkit-details-marker]:hidden">
               <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
@@ -196,18 +203,22 @@ export function AdvertisingDashboardScreen() {
             title="Advertising metrics"
             description="The same creative and attributed-order scorecard used by the Creative Dashboard, scoped by creator and store."
           />
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
-            {kpiTiles.map((tile) => (
-              <StatTile
-                key={tile.label}
-                label={tile.label}
-                info={tile.info}
-                value={tile.value}
-                tone={tile.healthy ? 'good' : 'neutral'}
-                sub={tile.sub}
-              />
-            ))}
-          </div>
+          {controller.isLoading ? (
+            <DashboardMetricGridSkeleton />
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+              {kpiTiles.map((tile) => (
+                <StatTile
+                  key={tile.label}
+                  label={tile.label}
+                  info={tile.info}
+                  value={tile.value}
+                  tone={tile.healthy ? 'good' : 'neutral'}
+                  sub={tile.sub}
+                />
+              ))}
+            </div>
+          )}
           <p className="border-t border-border/40 px-4 py-3 text-xs-tight leading-snug text-faint">
             Hitting a floor exactly scores 7. Anything unmeasurable (a static has no hook rate) is left out rather than counted as zero.
             {floors?.provisional ? ' Floors are provisional defaults.' : ''}
@@ -217,9 +228,9 @@ export function AdvertisingDashboardScreen() {
         {/* 3 · Monthly summary — full width so all seven weekday columns fit
             without clipping Saturday or squeezing the day cells. */}
         <section className="panel panel-content shadow-card">
-          <PanelHeader title={`Monthly summary — ${data?.calendar.monthLabel ?? '…'}`} description="Spend, orders, CPP, and AR%, day by day for this specific month." />
+          <PanelHeader title={controller.isLoading ? 'Monthly summary' : `Monthly summary — ${data?.calendar.monthLabel ?? '—'}`} description="Spend, orders, CPP, and AR%, day by day for this specific month." />
           <div className="p-4">
-            {data ? <AdvertisingCalendar month={data.calendar.month} days={data.calendar.days} /> : <p className="py-6 text-center text-sm text-muted">Loading…</p>}
+            {controller.isLoading ? <DashboardCalendarSkeleton /> : data ? <AdvertisingCalendar month={data.calendar.month} days={data.calendar.days} /> : null}
           </div>
         </section>
 
@@ -229,7 +240,7 @@ export function AdvertisingDashboardScreen() {
           <PanelHeader
             title="Daily spend & orders"
             description="Ad spend vs the peso value of orders placed (by order date) and delivered (by delivery date) — all in ₱ so the lines are directly comparable."
-            right={data ? (
+            right={!controller.isLoading && data ? (
               <dl className="flex flex-wrap items-start gap-x-6 gap-y-2 text-right">
                 <div>
                   <dt className="text-xs-tight font-semibold uppercase tracking-wide text-faint">Order amount</dt>
@@ -253,7 +264,7 @@ export function AdvertisingDashboardScreen() {
             ) : undefined}
           />
           <div className="p-4">
-            {data ? <AdvertisingTrendChart trend={data.trend} /> : <p className="py-6 text-center text-sm text-muted">Loading…</p>}
+            {controller.isLoading ? <DashboardChartSkeleton /> : data ? <AdvertisingTrendChart trend={data.trend} /> : null}
           </div>
         </section>
 
@@ -266,7 +277,9 @@ export function AdvertisingDashboardScreen() {
               : `Top ${Math.min(5, data?.needsAction.total ?? 0)} of ${data?.needsAction.total ?? 0} rows needing a decision, by spend.`}
             right={<Link href="/performance?verdict=NEEDS_ACTION" className="btn btn-sm btn-outline">Open Performance</Link>}
           />
-          {data?.needsAction.suppressed ? (
+          {controller.isLoading ? (
+            <DashboardListSkeleton rows={3} />
+          ) : data?.needsAction.suppressed ? (
             <p className="px-4 py-6 text-center text-sm text-muted">
               Improve order attribution coverage to re-enable per-ad verdicts — a verdict drawn from a fraction of the orders is a guess wearing a badge.
             </p>
@@ -299,19 +312,29 @@ export function AdvertisingDashboardScreen() {
         {/* 6 · Data confidence */}
         <section className="panel panel-content shadow-card">
           <PanelHeader title="Data confidence" description="Is this data whole and trustworthy? Coverage figures have different denominators on purpose." />
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
-            <StatTile compact label="Latest Meta data" value={data?.dataConfidence.latestInsightDate ?? '—'} sub="most recent insight day" />
-            <StatTile compact label="Latest reconciliation" value={data?.dataConfidence.latestReconcileDate ?? '—'} sub="most recent reconciled day" />
-            <StatTile compact label="Order attribution" info="POS orders matched to a specific ad ÷ all reconciled POS orders. Below the minimum, per-ad verdicts are suppressed." value={formatPercent(data?.dataConfidence.orderAttributionCoverage.value, 0)} tone={data?.dataConfidence.verdictsSuppressed ? 'warn' : 'neutral'} sub="of orders id-matched to ads" />
-            <StatTile compact label="Linked spend" info="Spend on ads linked to registered creatives ÷ all spend — a different denominator from order attribution." value={formatPercent(data?.dataConfidence.linkedSpendCoverage.value, 0)} sub="of spend is creative-linked" />
-            <StatTile compact label="Missing video data" value={formatCount(data?.dataConfidence.missingVideoMetricsCount)} sub="ads without 3s-play data" />
-            <StatTile compact label="Withheld rates" info="Rates withheld because a source reported an impossible value above 100%." value={formatCount(data?.dataConfidence.withheldRateCount)} sub="impossible values withheld" />
-          </div>
+          {controller.isLoading ? (
+            <DashboardMetricGridSkeleton count={6} compact className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6" />
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
+              <StatTile compact label="Latest Meta data" value={data?.dataConfidence.latestInsightDate ?? '—'} sub="most recent insight day" />
+              <StatTile compact label="Latest reconciliation" value={data?.dataConfidence.latestReconcileDate ?? '—'} sub="most recent reconciled day" />
+              <StatTile compact label="Order attribution" info="POS orders matched to a specific ad ÷ all reconciled POS orders. Below the minimum, per-ad verdicts are suppressed." value={formatPercent(data?.dataConfidence.orderAttributionCoverage.value, 0)} tone={data?.dataConfidence.verdictsSuppressed ? 'warn' : 'neutral'} sub="of orders id-matched to ads" />
+              <StatTile compact label="Linked spend" info="Spend on ads linked to registered creatives ÷ all spend — a different denominator from order attribution." value={formatPercent(data?.dataConfidence.linkedSpendCoverage.value, 0)} sub="of spend is creative-linked" />
+              <StatTile compact label="Missing video data" value={formatCount(data?.dataConfidence.missingVideoMetricsCount)} sub="ads without 3s-play data" />
+              <StatTile compact label="Withheld rates" info="Rates withheld because a source reported an impossible value above 100%." value={formatCount(data?.dataConfidence.withheldRateCount)} sub="impossible values withheld" />
+            </div>
+          )}
           <div className="flex items-start gap-2 border-t border-border/40 px-4 py-3 text-xs-tight text-faint">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>
-              {data?.dataConfidence.posMetaPurchaseGap.reason} Dashboard reads persisted, worker-synchronized data — nothing here triggers a Meta sync.
-            </span>
+            {controller.isLoading ? (
+              <div className="w-full animate-pulse" role="status" aria-label="Loading data confidence details">
+                <DashboardLoadingBar className="h-2.5 w-3/4" />
+              </div>
+            ) : (
+              <span>
+                {data?.dataConfidence.posMetaPurchaseGap.reason} Dashboard reads persisted, worker-synchronized data — nothing here triggers a Meta sync.
+              </span>
+            )}
           </div>
         </section>
       </div>

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { PageHeader } from '@/components/ui/page-header';
 import { VideoRegistryDateRangePicker } from '../../video-registry/_components/video-registry-date-range-picker';
 import { useCreativeOverviewController } from '../_hooks/use-creative-overview-controller';
-import type { CreativeOverviewItem, OverviewMetric, OverviewSortKey } from '../_types/creative-overview';
+import type { CreativeOverviewItem, OverviewSortKey } from '../_types/creative-overview';
 import { formatCount, formatCurrency, formatPercent } from '../_utils/creative-overview-format';
 import { CreativeLeaderboard } from './creative-leaderboard';
 import { CreativeScorecard } from './creative-scorecard';
@@ -139,7 +139,7 @@ export function CreativeOverviewScreen() {
           </div>
         ) : null}
 
-        {data?.warnings.length ? (
+        {!controller.isLoading && data?.warnings.length ? (
           <div className="grid gap-2 rounded-xl border border-warning/30 bg-warning-soft/40 px-4 py-3 dark:bg-warning/10">
             {data.warnings.map((warning) => (
               <div key={warning.code} className="flex items-start gap-2 text-sm-custom text-foreground">
@@ -208,7 +208,7 @@ export function CreativeOverviewScreen() {
             onSelect={setSelected}
           />
 
-          {data ? (
+          {!controller.isLoading && data ? (
             <div className="flex items-center justify-between border-t border-border/40 px-5 py-3">
               <p className="text-sm-custom text-muted">
                 Showing {data.pagination.total === 0 ? 0 : (data.pagination.page - 1) * data.pagination.pageSize + 1}–{Math.min(data.pagination.page * data.pagination.pageSize, data.pagination.total)} of {data.pagination.total}

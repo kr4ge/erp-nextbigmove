@@ -6,6 +6,10 @@ import {
   RATE_TONE_TEXT,
   type RateTone,
 } from '../_utils/creative-overview-format';
+import {
+  DashboardLoadingBar,
+  DashboardMetricGridSkeleton,
+} from '../../_components/dashboard-loading-state';
 import { PanelHeader, StatTile } from './overview-ui';
 
 
@@ -36,10 +40,25 @@ export function CreativeScorecard({ scorecard, floors, isLoading, kpiTiles }: {
   const fillPct = overall == null ? 0 : ((overall - 1) / 9) * 100;
   const isTeam = scorecard?.scope === 'TEAM';
 
-  if (isLoading && !scorecard) {
+  if (isLoading) {
     return (
-      <section className="panel shadow-card">
-        <div className="p-6 text-center text-sm text-muted">Loading scorecard…</div>
+      <section className="panel panel-content shadow-card" aria-busy="true">
+        <PanelHeader
+          title="Creative score"
+          description="Loading craft performance and output for the selected scope."
+        />
+        <div className="animate-pulse p-5" role="status" aria-label="Loading creative score">
+          <div className="flex items-end gap-4" aria-hidden="true">
+            <DashboardLoadingBar className="h-12 w-24" />
+            <div className="space-y-2 pb-1">
+              <DashboardLoadingBar className="h-3 w-16" />
+              <DashboardLoadingBar className="h-3 w-72 max-w-full" />
+            </div>
+          </div>
+          <DashboardLoadingBar className="mt-5 h-2.5 w-full rounded-full" />
+          <span className="sr-only">Loading creative score…</span>
+        </div>
+        <DashboardMetricGridSkeleton className="grid grid-cols-2 gap-3 px-5 pb-5 sm:grid-cols-4" />
       </section>
     );
   }

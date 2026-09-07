@@ -10,6 +10,7 @@ import {
   PILL_TONE_CLASS,
   titleCase,
 } from '../_utils/creative-overview-format';
+import { DashboardLoadingBar } from '../../_components/dashboard-loading-state';
 
 
 type Column = {
@@ -67,9 +68,21 @@ export function CreativeLeaderboard({ items, lens, isLoading, sortKey, sortDirec
           <tr>{columns.map((column) => <th key={column.key} className={`${column.width} whitespace-nowrap px-3 py-3 ${column.align === 'right' ? 'text-right' : ''} ${column.key === 'rank' ? 'sticky left-0 z-20 bg-surface' : ''} ${column.key === 'ad' ? 'sticky left-20 z-20 bg-surface' : ''}`} aria-sort={column.sortKey === sortKey ? (sortDirection === 'asc' ? 'ascending' : 'descending') : undefined}>{column.sortKey ? <button type="button" className={`inline-flex items-center gap-1 ${column.align === 'right' ? 'w-full justify-end' : ''}`} onClick={() => onSort(column.sortKey as OverviewSortKey)}>{column.label}{column.sortKey === sortKey ? sortDirection === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" /> : null}</button> : column.label}</th>)}</tr>
         </thead>
         <tbody className="divide-y divide-border/40">
-          {isLoading && !items ? <tr><td colSpan={columns.length} className="px-4 py-16 text-center text-muted">Loading creative intelligence…</td></tr> : items?.length ? items.map((item) => <tr key={item.id} onClick={() => onSelect(item)} className="cursor-pointer bg-surface transition hover:bg-background dark:hover:bg-background-secondary">{columns.map((column) => <td key={column.key} className={`px-3 py-2.5 text-sm-custom text-foreground ${column.align === 'right' ? 'text-right tabular-nums' : ''} ${column.key === 'rank' ? 'sticky left-0 z-10 bg-inherit' : ''} ${column.key === 'ad' ? 'sticky left-20 z-10 bg-inherit' : ''}`}>{column.render(item)}</td>)}</tr>) : <tr><td colSpan={columns.length} className="px-4 py-16 text-center"><BarChart3 className="mx-auto h-7 w-7 text-muted" /><p className="mt-2 font-semibold text-foreground">No creatives in this scope</p><p className="mt-1 text-sm text-muted">Adjust the date or filters to expand the overview.</p></td></tr>}
+          {isLoading ? Array.from({ length: 5 }, (_, rowIndex) => (
+            <tr key={rowIndex} className="animate-pulse" aria-hidden="true">
+              {columns.map((column, columnIndex) => (
+                <td
+                  key={column.key}
+                  className={`px-3 py-4 ${column.key === 'rank' ? 'sticky left-0 z-10 bg-surface' : ''} ${column.key === 'ad' ? 'sticky left-20 z-10 bg-surface' : ''}`}
+                >
+                  <DashboardLoadingBar className={`h-3 ${columnIndex === 1 ? 'w-48' : 'ml-auto w-12'}`} />
+                </td>
+              ))}
+            </tr>
+          )) : items?.length ? items.map((item) => <tr key={item.id} onClick={() => onSelect(item)} className="cursor-pointer bg-surface transition hover:bg-background dark:hover:bg-background-secondary">{columns.map((column) => <td key={column.key} className={`px-3 py-2.5 text-sm-custom text-foreground ${column.align === 'right' ? 'text-right tabular-nums' : ''} ${column.key === 'rank' ? 'sticky left-0 z-10 bg-inherit' : ''} ${column.key === 'ad' ? 'sticky left-20 z-10 bg-inherit' : ''}`}>{column.render(item)}</td>)}</tr>) : <tr><td colSpan={columns.length} className="px-4 py-16 text-center"><BarChart3 className="mx-auto h-7 w-7 text-muted" /><p className="mt-2 font-semibold text-foreground">No creatives in this scope</p><p className="mt-1 text-sm text-muted">Adjust the date or filters to expand the overview.</p></td></tr>}
         </tbody>
       </table>
+      {isLoading ? <span className="sr-only" role="status">Loading creative performance…</span> : null}
     </div>
   );
 }
