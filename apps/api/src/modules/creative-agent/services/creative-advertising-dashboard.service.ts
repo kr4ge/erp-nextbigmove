@@ -32,6 +32,7 @@ import {
 } from '../utils/creative-metrics';
 import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
+import { CreativeLegacyAttributionService } from './creative-legacy-attribution.service';
 import { CreativePerformanceService, type AdvertisingDateRange } from './creative-performance.service';
 
 dayjs.extend(utc);
@@ -60,6 +61,7 @@ export class CreativeAdvertisingDashboardService {
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
     private readonly performance: CreativePerformanceService,
+    private readonly legacyAttribution: CreativeLegacyAttributionService,
   ) {}
 
   async getDashboard(actor: CreativeActor, query: GetAdvertisingDashboardQueryDto) {
@@ -92,10 +94,28 @@ export class CreativeAdvertisingDashboardService {
       ...(storeIds.length ? { storeConfig: { storeId: { in: storeIds } } } : {}),
       ...(creatorIds.length ? { createdById: { in: creatorIds } } : {}),
     };
-    const [scopedAdIds, creativeKpiAdIds] = await Promise.all([
-      this.performance.resolveScopedAdIds(tenantId, storeIds, creatorIds),
+    const creatorIdentities = await this.legacyAttribution.listCreatorIdentities(tenantId);
+    const legacyCreatorIds = creatorIds.length
+      ? creatorIds
+      : creatorIdentities.map((creator) => creator.id);
+    const [scopedAdIds, registeredCreativeKpiAdIds] = await Promise.all([
+      this.performance.resolveScopedAdIds(tenantId, storeIds, creatorIds, range),
       this.resolveCreativeAdIds(creativeScopeWhere),
     ]);
+    // A filtered scopedAdIds result already contains both registry and legacy
+    // ownership. Only the unfiltered "All" view needs a separate legacy lookup
+    // for the Creative KPI subset, keeping the request light.
+    const legacyKpiAdIds = scopedAdIds ?? (await this.legacyAttribution.resolveLegacyAds({
+      tenantId,
+      creatorIds: legacyCreatorIds,
+      start: range.start,
+      end: range.end,
+      storeIds,
+    })).map((ad) => ad.adId);
+    const creativeKpiAdIds = [...new Set([
+      ...registeredCreativeKpiAdIds,
+      ...legacyKpiAdIds,
+    ])];
 
     const [
       scope,
@@ -122,11 +142,7 @@ export class CreativeAdvertisingDashboardService {
         storeAdIds: creativeKpiAdIds,
       }),
       this.performance.loadAccountOptions(tenantId),
-      this.prisma.creative.findMany({
-        where: { tenantId },
-        distinct: ['createdById'],
-        select: { createdBy: { select: { id: true, firstName: true, lastName: true, email: true } } },
-      }),
+      Promise.resolve(creatorIdentities),
       this.loadVideoTotals(tenantId, range, query.accountId, creativeKpiAdIds),
       this.prisma.creative.count({
         where: {
@@ -253,9 +269,9 @@ export class CreativeAdvertisingDashboardService {
         stores: storeOptions.stores,
         accounts: accountOptions,
         creators: creators
-          .map(({ createdBy }) => ({
-            value: createdBy.id,
-            label: [createdBy.firstName, createdBy.lastName].filter(Boolean).join(' ') || createdBy.email,
+          .map((creator) => ({
+            value: creator.id,
+            label: [creator.firstName, creator.lastName].filter(Boolean).join(' ') || creator.email,
           }))
           .sort((a, b) => a.label.localeCompare(b.label)),
       },

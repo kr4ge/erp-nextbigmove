@@ -137,6 +137,23 @@ export type OverviewCapabilities = {
   landingPages: OverviewCapability;
 };
 
+export type HistoricalCreativeAd = {
+  adId: string;
+  adName: string;
+  campaignName: string | null;
+  creator: { id: string; name: string; employeeId: string | null };
+  metrics: {
+    spend: number;
+    orders: number;
+    delivered: number;
+    hookRate: number | null;
+    holdRate: number | null;
+    completionRate: number | null;
+    ctr: number | null;
+    mar: number | null;
+  };
+};
+
 export type CreativeOverviewResponse = {
   selected: Omit<CreativeOverviewParams, 'page' | 'pageSize'>;
   permissions: { canReadAll: boolean; canViewMoney: boolean };
@@ -150,6 +167,7 @@ export type CreativeOverviewResponse = {
   kpis: Record<string, OverviewMetric>;
   scorecard: CreativeScorecard;
   craftBoard: CraftBoard;
+  historicalAttribution: { total: number; items: HistoricalCreativeAd[] };
   warnings: Array<{ code: string; severity: 'info' | 'warning'; message: string }>;
   items: CreativeOverviewItem[];
   pagination: { page: number; pageSize: number; total: number; totalPages: number };

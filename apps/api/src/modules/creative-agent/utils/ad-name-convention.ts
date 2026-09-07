@@ -73,3 +73,17 @@ export function deriveAssociateFromAdName(adName: string | null | undefined): st
   if (parsed.convention !== 'new') return null;
   return parsed.creator.trim() || null;
 }
+
+/**
+ * Creator token used by the pre-registry convention:
+ * `title_targeting_team_employeeId_reference`. This intentionally stays
+ * separate from deriveAssociateFromAdName so the registry's code-anchored
+ * convention remains authoritative and unchanged.
+ */
+export function deriveLegacyEmployeeIdFromAdName(adName: string | null | undefined): string | null {
+  if (!adName || deriveAssociateFromAdName(adName)) return null;
+  const parts = adName.split('_');
+  if (parts.length < 4) return null;
+  const employeeId = parts[3]?.trim();
+  return employeeId || null;
+}

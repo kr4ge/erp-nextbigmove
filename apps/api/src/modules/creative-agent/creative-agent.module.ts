@@ -18,6 +18,7 @@ import { CreativeAssetsService } from './services/creative-assets.service';
 import { CreativeAliasService } from './services/creative-alias.service';
 import { CreativeEnrollmentService } from './services/creative-enrollment.service';
 import { CreativeLibraryService } from './services/creative-library.service';
+import { CreativeLegacyAttributionService } from './services/creative-legacy-attribution.service';
 import { CreativeMatchingService } from './services/creative-matching.service';
 import { CreativeMetaLinkService } from './services/creative-meta-link.service';
 import { CreativeOverviewService } from './services/creative-overview.service';
@@ -46,6 +47,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeStoreService,
     CreativeEnrollmentService,
     CreativeLibraryService,
+    CreativeLegacyAttributionService,
     CreativeMatchingService,
     CreativeMetaLinkService,
     CreativeAliasService,

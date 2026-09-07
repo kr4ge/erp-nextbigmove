@@ -1,5 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
-import { deriveAssociateFromAdName, deriveMappingFromAdName, parseAdName } from './ad-name-convention';
+import {
+  deriveAssociateFromAdName,
+  deriveLegacyEmployeeIdFromAdName,
+  deriveMappingFromAdName,
+  parseAdName,
+} from './ad-name-convention';
 
 describe('parseAdName', () => {
   it('reads the new convention: customId_title_CODE_creator', () => {
@@ -66,5 +71,19 @@ describe('deriveAssociateFromAdName', () => {
 
   it('stays null on legacy shapes so the positional parser keeps ownership', () => {
     expect(deriveAssociateFromAdName('EVIL EYE_UGC_1001_ALY_001')).toBeNull();
+  });
+});
+
+describe('deriveLegacyEmployeeIdFromAdName', () => {
+  it('extracts the employee ID from the pre-registry convention', () => {
+    expect(deriveLegacyEmployeeIdFromAdName(
+      'TaiSui_ThisCNY|Broad|BOF_Team2_1177_0124',
+    )).toBe('1177');
+  });
+
+  it('does not reinterpret the current code-anchored convention', () => {
+    expect(deriveLegacyEmployeeIdFromAdName(
+      'OGM-100_Hook_NRO-V0069_Josiah Cruz',
+    )).toBeNull();
   });
 });

@@ -18,6 +18,7 @@ import {
 } from '../utils/creative-metrics';
 import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
+import { CreativeLegacyAttributionService } from './creative-legacy-attribution.service';
 
 type MetricTotals = {
   spend: number; impressions: number; linkClicks: number; landingPageViews: number;
@@ -53,7 +54,11 @@ class RateGuard {
 
 @Injectable()
 export class CreativeOverviewService {
-  constructor(private readonly prisma: PrismaService, private readonly access: CreativeAccessService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly access: CreativeAccessService,
+    private readonly legacyAttribution: CreativeLegacyAttributionService,
+  ) {}
 
   async getOverview(actor: CreativeActor, query: GetCreativeOverviewQueryDto) {
     const context = await this.access.resolve(actor);
@@ -65,7 +70,17 @@ export class CreativeOverviewService {
     const defaultSortKey: CreativeOverviewSortKey = selectedLens === 'BUSINESS' ? 'netMargin' : 'creativeScore';
     const requestedSortKey = query.sortKey === 'creativeScore' && selectedLens === 'BUSINESS' ? defaultSortKey : query.sortKey;
     const guard = new RateGuard();
-    const storeOptions = await loadCreativeStoreOptions(this.prisma, context.tenantId, canReadAll ? null : context.userId);
+    const creatorRows = canReadAll
+      ? await this.legacyAttribution.listCreatorIdentities(context.tenantId)
+      : [];
+    const creatorScopeIds = canReadAll
+      ? (query.creatorId ? [query.creatorId] : creatorRows.map((creator) => creator.id))
+      : [context.userId];
+    const storeOptions = await loadCreativeStoreOptions(
+      this.prisma,
+      context.tenantId,
+      canReadAll ? (query.creatorId ?? null) : context.userId,
+    );
     const effectiveStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
     const where: Prisma.CreativeWhereInput = {
       tenantId: context.tenantId,
@@ -82,7 +97,7 @@ export class CreativeOverviewService {
         ] } },
       ] } : {}),
     };
-    const [creatives, stores, creatorRows] = await Promise.all([
+    const [creatives, stores, resolvedLegacyAds] = await Promise.all([
       this.prisma.creative.findMany({ where, select: {
         id: true, code: true, title: true, kind: true, mediaUrl: true, revisionState: true,
         performanceStatus: true, createdAt: true, submittedAt: true, approvedAt: true,
@@ -91,11 +106,31 @@ export class CreativeOverviewService {
         createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
       } }),
       Promise.resolve(storeOptions),
-      this.prisma.creative.findMany({
-        where: { tenantId: context.tenantId, ...(!canReadAll ? { createdById: context.userId } : {}) },
-        distinct: ['createdById'], select: { createdBy: { select: { id: true, firstName: true, lastName: true, email: true } } },
+      this.legacyAttribution.resolveLegacyAds({
+        tenantId: context.tenantId,
+        creatorIds: creatorScopeIds,
+        start: range.start,
+        end: range.end,
+        storeIds: effectiveStoreId ? [effectiveStoreId] : [],
       }),
     ]);
+    const legacySearch = query.query?.trim().toLowerCase() ?? '';
+    // The pre-registry convention does not encode VIDEO versus STATIC, so a
+    // type filter must not guess. Search can still narrow these rows by their
+    // real Meta names, campaigns, creator names, or employee IDs.
+    const legacyAds = query.kind
+      ? []
+      : resolvedLegacyAds.filter((ad) => {
+          if (!legacySearch) return true;
+          return [
+            ad.adName,
+            ad.campaignName,
+            ad.creator.employeeId,
+            ad.creator.firstName,
+            ad.creator.lastName,
+            ad.creator.email,
+          ].some((value) => value?.toLowerCase().includes(legacySearch));
+        });
 
     const creativeAdIds = new Map<string, string[]>();
     for (const creative of creatives) {
@@ -103,7 +138,8 @@ export class CreativeOverviewService {
       if (ids.length === 0 && creative.metaAdId) ids.push(creative.metaAdId);
       creativeAdIds.set(creative.id, [...new Set(ids)]);
     }
-    const adIds = [...new Set([...creativeAdIds.values()].flat())];
+    const legacyAdIds = legacyAds.map((ad) => ad.adId);
+    const adIds = [...new Set([...creativeAdIds.values()].flat().concat(legacyAdIds))];
     const { metricsByAd, descriptorByAd } = await this.loadAdMetrics(context.tenantId, adIds, range.start, range.end);
     const baseRows = creatives.map((creative) => {
       const metrics = this.sumMetrics(creativeAdIds.get(creative.id) ?? [], metricsByAd);
@@ -175,7 +211,9 @@ export class CreativeOverviewService {
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
     const page = Math.min(query.page, totalPages);
     const items = ranked.slice((page - 1) * query.pageSize, page * query.pageSize);
-    const totals = baseRows.reduce((acc, row) => this.addMetrics(acc, row._totals), emptyMetrics());
+    const registeredTotals = baseRows.reduce((acc, row) => this.addMetrics(acc, row._totals), emptyMetrics());
+    const legacyTotals = this.sumMetrics(legacyAdIds, metricsByAd);
+    const totals = this.addMetrics(registeredTotals, legacyTotals);
     const decisions = await this.decisionMetrics(context.tenantId, creatives.map((creative) => creative.id), range.start, range.end);
     const outputCount = creatives.filter((creative) => creative.createdAt >= range.start && creative.createdAt <= range.end).length;
     const linkedCreatives = baseRows.filter((row) => row.linked).length;
@@ -189,11 +227,11 @@ export class CreativeOverviewService {
       output: { value: outputCount, numerator: null, denominator: null },
       approvalRate: this.metric(guard, 'approval', decisions.approved, decisions.approved + decisions.cancelled),
       medianTurnaroundHours: { value: decisions.medianTurnaroundHours, numerator: null, denominator: decisions.turnaroundCount },
-      // Volume + funnel tiles for the dashboard grid. These aggregate the SAME
-      // scoped rows as everything above (a maker only ever sees their own
-      // creatives), so no extra access filtering is needed. Rate denominators
-      // follow the creative-performance convention: resolved = delivered +
-      // cancelled + rts.
+      // Volume + funnel tiles combine explicitly linked registry ads with the
+      // scoped creator's otherwise-unlinked employee-ID history. Workflow
+      // counts below remain registry-only. Rate denominators follow the
+      // creative-performance convention: resolved = delivered + cancelled +
+      // rts.
       orders: { value: totals.orders, numerator: null, denominator: null },
       adSpend: { value: money(totals.spend), numerator: null, denominator: null },
       // MAR% (AR%): ad spend ÷ attributed gross revenue — the SAME formula as
@@ -217,6 +255,36 @@ export class CreativeOverviewService {
       revisionCensus: this.revisionCensus(creatives),
     });
     const craftBoard = this.buildCraftBoard(baseRows);
+    const historicalAttribution = {
+      total: legacyAds.length,
+      items: legacyAds
+        .map((ad) => {
+          const metrics = metricsByAd.get(ad.adId) ?? emptyMetrics();
+          const descriptor = descriptorByAd.get(ad.adId);
+          return {
+            adId: ad.adId,
+            adName: descriptor?.adName ?? ad.adName ?? ad.adId,
+            campaignName: descriptor?.campaignName ?? ad.campaignName,
+            creator: {
+              id: ad.creator.id,
+              name: this.personName(ad.creator),
+              employeeId: ad.creator.employeeId,
+            },
+            metrics: {
+              spend: money(metrics.spend),
+              orders: metrics.orders,
+              delivered: metrics.delivered,
+              hookRate: safeRatio(metrics.hookNumerator, metrics.hookDenominator),
+              holdRate: safeRatio(metrics.holdNumerator, metrics.holdDenominator),
+              completionRate: safeRatio(metrics.completionNumerator, metrics.completionDenominator),
+              ctr: safeRatio(metrics.linkClicks, metrics.impressions),
+              mar: safeRatio(metrics.spend, metrics.revenue),
+            },
+          };
+        })
+        .sort((left, right) => right.metrics.spend - left.metrics.spend)
+        .slice(0, 20),
+    };
     const withheldStages = [...guard.stages.keys()];
     return {
       selected: { startDate: range.startKey, endDate: range.endKey, query: query.query ?? '', storeId: effectiveStoreId ?? '', kind: query.kind ?? '', creatorId: query.creatorId ?? '', lens: selectedLens, sortKey: requestedSortKey, sortDirection: query.sortDirection },
@@ -224,7 +292,7 @@ export class CreativeOverviewService {
       filters: {
         stores: stores.stores,
         defaultStoreId: stores.defaultStoreId,
-        creators: creatorRows.map(({ createdBy }) => ({ value: createdBy.id, label: this.personName(createdBy) })).sort((a, b) => a.label.localeCompare(b.label)),
+        creators: creatorRows.map((creator) => ({ value: creator.id, label: this.personName(creator) })).sort((a, b) => a.label.localeCompare(b.label)),
       },
       floors: {
         values: { ...CREATIVE_CRAFT_FLOORS },
@@ -237,10 +305,12 @@ export class CreativeOverviewService {
       kpis,
       scorecard,
       craftBoard,
+      historicalAttribution,
       warnings: [
+        ...(legacyAds.length > 0 ? [{ code: 'LEGACY_EMPLOYEE_ATTRIBUTION', severity: 'info', message: `${legacyAds.length} historical Meta ad${legacyAds.length === 1 ? '' : 's'} matched by employee ID and included in performance totals.` }] : []),
         ...(baseRows.length > 0 && linkedCreatives < baseRows.length ? [{ code: 'UNLINKED_CREATIVES', severity: 'warning', message: `${baseRows.length - linkedCreatives} registered creative${baseRows.length - linkedCreatives === 1 ? ' is' : 's are'} not linked to a Meta ad.` }] : []),
         ...(missingVideoMetrics > 0 ? [{ code: 'MISSING_VIDEO_METRICS', severity: 'info', message: `${missingVideoMetrics} video creative${missingVideoMetrics === 1 ? '' : 's'} have impressions but no measured 3-second play data in this range.` }] : []),
-        ...(totals.impressions === 0 ? [{ code: 'NO_DELIVERY_DATA', severity: 'info', message: 'No linked reconciled delivery data was found for the selected range.' }] : []),
+        ...(totals.impressions === 0 ? [{ code: 'NO_DELIVERY_DATA', severity: 'info', message: 'No attributed reconciled delivery data was found for the selected range.' }] : []),
         ...(guard.count > 0 ? [{ code: 'IMPOSSIBLE_RATES', severity: 'warning', message: `${guard.count} rate${guard.count === 1 ? ' was' : 's were'} withheld because a source reported an impossible value above 100% (${withheldStages.join(', ')}).` }] : []),
       ],
       items, pagination: { page, pageSize: query.pageSize, total, totalPages }, generatedAt: new Date().toISOString(),

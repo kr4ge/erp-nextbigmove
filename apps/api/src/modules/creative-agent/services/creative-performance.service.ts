@@ -33,6 +33,7 @@ import { advertisingVerdict, type AdvertisingVerdict } from '../utils/advertisin
 import { guardedRatio, round, safeRatio } from '../utils/creative-metrics';
 import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
+import { CreativeLegacyAttributionService } from './creative-legacy-attribution.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -171,7 +172,11 @@ const SORT_FRAGMENTS: Record<AdvertisingPerformanceSortKey, string> = {
 
 @Injectable()
 export class CreativePerformanceService {
-  constructor(private readonly prisma: PrismaService, private readonly access: CreativeAccessService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly access: CreativeAccessService,
+    private readonly legacyAttribution: CreativeLegacyAttributionService,
+  ) {}
 
   async list(actor: CreativeActor, query: ListAdvertisingPerformanceQueryDto) {
     const context = await this.access.resolve(actor);
@@ -192,6 +197,7 @@ export class CreativePerformanceService {
       context.tenantId,
       effectiveStoreId,
       query.creatorId,
+      range,
     );
     const scope = await this.computeScope(context.tenantId, range, {
       accountId: query.accountId, storeAdIds,
@@ -199,24 +205,16 @@ export class CreativePerformanceService {
 
     const [accounts, creators, page] = await Promise.all([
       this.loadAccountOptions(context.tenantId),
-      this.prisma.creative.findMany({
-        where: { tenantId: context.tenantId },
-        distinct: ['createdById'],
-        select: {
-          createdBy: {
-            select: { id: true, firstName: true, lastName: true, email: true },
-          },
-        },
-      }),
+      this.legacyAttribution.listCreatorIdentities(context.tenantId),
       this.queryRows(context.tenantId, range, scope, query, storeAdIds, effectiveStoreId),
     ]);
     const filters = {
       stores: storeOptions.stores,
       accounts,
       creators: creators
-        .map(({ createdBy }) => ({
-          value: createdBy.id,
-          label: [createdBy.firstName, createdBy.lastName].filter(Boolean).join(' ') || createdBy.email,
+        .map((creator) => ({
+          value: creator.id,
+          label: [creator.firstName, creator.lastName].filter(Boolean).join(' ') || creator.email,
         }))
         .sort((left, right) => left.label.localeCompare(right.label)),
     };
@@ -413,26 +411,51 @@ export class CreativePerformanceService {
     };
   }
 
-  /** Ad ids linked to creatives of one store and/or creator; null = unscoped. */
+  /**
+   * Ad IDs owned by one store and/or creator. Registry links remain the
+   * primary source; unlinked pre-registry ads are added through the creator's
+   * exact employee-ID attribution. null still means an unscoped "All" view.
+   */
   async resolveScopedAdIds(
     tenantId: string,
     store?: string | string[],
     creator?: string | string[],
+    range?: AdvertisingDateRange,
   ): Promise<string[] | null> {
     const storeIds = ([] as string[]).concat(store ?? []).filter(Boolean);
     const creatorIds = ([] as string[]).concat(creator ?? []).filter(Boolean);
     if (storeIds.length === 0 && creatorIds.length === 0) return null;
-    const links = await this.prisma.creativeMetaAdLink.findMany({
-      where: {
-        tenantId,
-        creative: {
-          ...(storeIds.length ? { storeConfig: { storeId: { in: storeIds } } } : {}),
-          ...(creatorIds.length ? { createdById: { in: creatorIds } } : {}),
-        },
-      },
-      select: { adId: true },
-    });
-    return [...new Set(links.map((link) => link.adId))];
+    const creativeWhere = {
+      ...(storeIds.length ? { storeConfig: { storeId: { in: storeIds } } } : {}),
+      ...(creatorIds.length ? { createdById: { in: creatorIds } } : {}),
+    };
+    const [links, legacySingleLinks] = await Promise.all([
+      this.prisma.creativeMetaAdLink.findMany({
+        where: { tenantId, creative: creativeWhere },
+        select: { adId: true },
+      }),
+      this.prisma.creative.findMany({
+        where: { tenantId, ...creativeWhere, metaAdId: { not: null } },
+        select: { metaAdId: true },
+      }),
+    ]);
+    const creatorScope = creatorIds.length
+      ? creatorIds
+      : (await this.legacyAttribution.listCreatorIdentities(tenantId)).map((item) => item.id);
+    const legacyAds = range
+      ? await this.legacyAttribution.resolveLegacyAds({
+          tenantId,
+          creatorIds: creatorScope,
+          start: range.start,
+          end: range.end,
+          storeIds,
+        })
+      : [];
+    return [...new Set([
+      ...links.map((link) => link.adId),
+      ...legacySingleLinks.flatMap((creative) => creative.metaAdId ? [creative.metaAdId] : []),
+      ...legacyAds.map((item) => item.adId),
+    ])];
   }
 
   private async queryRows(

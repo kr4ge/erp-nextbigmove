@@ -12,6 +12,7 @@ import type { CreativeOverviewItem, OverviewSortKey } from '../_types/creative-o
 import { formatCount, formatCurrency, formatPercent } from '../_utils/creative-overview-format';
 import { CreativeLeaderboard } from './creative-leaderboard';
 import { CreativeScorecard } from './creative-scorecard';
+import { HistoricalAdAttribution } from './historical-ad-attribution';
 import { PanelHeader } from './overview-ui';
 import { creativeQueryHref } from '../../video-registry/_utils/creative-navigation';
 
@@ -81,11 +82,11 @@ export function CreativeOverviewScreen() {
     { label: 'Hold', info: 'ThruPlays ÷ 3-second plays.', value: formatPercent(data?.kpis.holdRate?.value ?? null), healthy: floorHealthy(data?.kpis.holdRate?.value, floors?.values.holdRate), sub: craftSub(data?.kpis.holdRate?.value, floors?.values.holdRate) },
     { label: 'Completion', info: 'ThruPlays ÷ video impressions.', value: formatPercent(data?.kpis.completionRate?.value ?? null), healthy: floorHealthy(data?.kpis.completionRate?.value, floors?.values.completionRate), sub: craftSub(data?.kpis.completionRate?.value, floors?.values.completionRate) },
     { label: 'CTR', info: 'Link clicks ÷ impressions.', value: formatPercent(data?.kpis.ctr?.value ?? null), healthy: floorHealthy(data?.kpis.ctr?.value, floors?.values.ctr), sub: craftSub(data?.kpis.ctr?.value, floors?.values.ctr) },
-    { label: 'Orders', info: 'Attributed orders across your linked ads in the period.', value: formatCount(data?.kpis.orders?.value ?? null), sub: 'attributed in period' },
-    { label: 'Ad Spent', info: 'Meta spend on your linked ads in the period.', value: formatCurrency(data?.kpis.adSpend?.value ?? null), sub: 'linked ads' },
+    { label: 'Orders', info: 'Attributed orders across registry-linked and employee-ID matched historical ads.', value: formatCount(data?.kpis.orders?.value ?? null), sub: 'attributed in period' },
+    { label: 'Ad Spent', info: 'Meta spend across registry-linked and employee-ID matched historical ads.', value: formatCurrency(data?.kpis.adSpend?.value ?? null), sub: 'attributed ads' },
     { label: 'MAR% (AR%)', info: 'Ad spend ÷ attributed revenue — same AR % formula as Business Performance.', value: formatPercent(data?.kpis.mar?.value ?? null), sub: rateSub(data?.kpis.mar?.value) ?? 'spend ÷ revenue' },
     { label: 'Video Output', info: 'Creatives you enrolled in the period.', value: formatCount(data?.kpis.output?.value ?? null), sub: 'enrolled in period' },
-    { label: 'Delivered', info: 'Delivered orders across your linked ads.', value: formatCount(data?.kpis.delivered?.value ?? null), sub: 'orders delivered' },
+    { label: 'Delivered', info: 'Delivered orders across your registry-linked and historical attributed ads.', value: formatCount(data?.kpis.delivered?.value ?? null), sub: 'orders delivered' },
     { label: 'Cancellation Rate', info: 'Cancelled ÷ all attributed orders — same convention as Business Performance.', value: formatPercent(data?.kpis.cancellationRate?.value ?? null), sub: rateSub(data?.kpis.cancellationRate?.value) ?? 'of all orders' },
     { label: 'RTS Rate', info: 'RTS ÷ (delivered + RTS) — same convention as Business Performance.', value: formatPercent(data?.kpis.rtsRate?.value ?? null), sub: rateSub(data?.kpis.rtsRate?.value) ?? 'of delivered + RTS' },
     { label: 'Delivery Rate', info: 'Delivered ÷ all attributed orders — same convention as Business Performance.', value: formatPercent(data?.kpis.deliveryRate?.value ?? null), sub: rateSub(data?.kpis.deliveryRate?.value) ?? 'of all orders' },
@@ -96,8 +97,8 @@ export function CreativeOverviewScreen() {
       <PageHeader
         title={data?.permissions.canReadAll ? 'Creative Dashboard' : 'My Creative Dashboard'}
         description={data?.permissions.canReadAll
-          ? 'Output, approval flow, craft signals, and linked performance across the team.'
-          : 'Your output, approval progress, craft signals, and linked performance in one focused view.'}
+          ? 'Output, approval flow, craft signals, and attributed performance across the team.'
+          : 'Your output, approval progress, craft signals, and attributed performance in one focused view.'}
         breadcrumbs="Creative Workspace"
       />
 
@@ -153,6 +154,13 @@ export function CreativeOverviewScreen() {
         {/* Call deck: hidden while the API reports the capability unavailable — no call-tracking data source exists in this ERP yet. */}
 
         <CreativeScorecard scorecard={data?.scorecard} floors={floors} isLoading={controller.isLoading} kpiTiles={kpiTiles} />
+
+        {!controller.isLoading ? (
+          <HistoricalAdAttribution
+            data={data?.historicalAttribution}
+            showCreator={Boolean(data?.permissions.canReadAll)}
+          />
+        ) : null}
 
         <section className="panel panel-content shadow-card transition-colors hover:border-border/40">
           <PanelHeader

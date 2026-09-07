@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   deriveAssociateFromAdName,
+  deriveLegacyEmployeeIdFromAdName,
   deriveMappingFromAdName,
 } from '../../creative-agent/utils/ad-name-convention';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -54,14 +55,7 @@ export class MetaInsightService {
     const declared = deriveAssociateFromAdName(adName);
     if (declared) return declared;
 
-    const parts = adName.split('_');
-    // Match example: EVIL EYE_UGC_1001_ALY_001 => ALY (4th token, index 3)
-    if (parts.length >= 4) {
-      const candidate = parts[3].trim();
-      return candidate !== '' ? candidate : null;
-    }
-
-    return null;
+    return deriveLegacyEmployeeIdFromAdName(adName);
   }
 
   /**
