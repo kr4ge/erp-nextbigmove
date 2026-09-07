@@ -5,7 +5,7 @@ export type SortDirection = 'asc' | 'desc';
 
 export type PerformanceSortKey =
   | 'name' | 'spend' | 'ordersToday' | 'spendToday' | 'spendYesterday' | 'orders'
-  | 'cpp' | 'cpc' | 'deliveredCpp' | 'grossSales' | 'deliveredSales' | 'netContribution'
+  | 'cpp' | 'cpc' | 'deliveredCpp' | 'grossSales' | 'deliveredSales' | 'contributionMargin' | 'netContribution'
   | 'adSpendRatio' | 'trueRoas' | 'impressions' | 'linkClicks' | 'landingPageViews'
   | 'hookRate' | 'holdRate' | 'completionRate' | 'ctr' | 'cvr'
   | 'delivered' | 'cancelled' | 'rts' | 'deliveryRate' | 'cancellationRate' | 'rtsRate'
@@ -87,6 +87,7 @@ export type PerformanceRow = {
     spend: number;
     grossSales: number;
     deliveredSales: number;
+    contributionMargin: number;
     netContribution: number;
     cpc: number | null;
     cpp: number | null;

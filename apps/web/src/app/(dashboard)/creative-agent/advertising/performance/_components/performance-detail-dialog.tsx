@@ -133,6 +133,7 @@ export function PerformanceDetailDialog({ row, permissions, creativePerformanceS
     ['CPP', formatCurrency(metrics.cpp)],
     ['Delivered CPP', formatCurrency(metrics.deliveredCpp)],
     ['Delivered sales', formatCurrency(metrics.deliveredSales)],
+    ['Contribution margin', formatCurrency(metrics.contributionMargin ?? null)],
     ['Net contribution', formatCurrency(metrics.netContribution)],
     ['Ad spend ratio', formatPercent(metrics.adSpendRatio)],
   ];

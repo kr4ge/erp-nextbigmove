@@ -17,6 +17,7 @@ import {
   clickThroughRate,
   codCeiling,
   completionRate,
+  contributionMargin,
   conversionRate,
   costPerClick,
   costPerOrder,
@@ -88,6 +89,13 @@ type RawRow = {
   gross_sales: number | null;
   delivered_sales: number | null;
   delivered_costs: number | null;
+  cm_revenue: number | null;
+  cm_cogs: number | null;
+  cm_shipping_fees: number | null;
+  cm_fulfillment_fees: number | null;
+  cm_inventory_fees: number | null;
+  cm_cod_fees: number | null;
+  cm_rts_cogs: number | null;
   delivered: number | null;
   cancelled: number | null;
   rts: number | null;
@@ -139,6 +147,7 @@ const SORT_FRAGMENTS: Record<AdvertisingPerformanceSortKey, string> = {
   deliveredCpp: `CASE WHEN b.delivered > 0 THEN b.spend / b.delivered END`,
   grossSales: `b.gross_sales`,
   deliveredSales: `b.delivered_sales`,
+  contributionMargin: `(b.cm_revenue - b.cm_cogs - b.cm_shipping_fees - b.cm_fulfillment_fees - b.cm_inventory_fees - b.spend - b.cm_cod_fees + b.cm_rts_cogs)`,
   netContribution: `(b.delivered_sales - b.delivered_costs - b.spend)`,
   adSpendRatio: `CASE WHEN b.gross_sales > 0 THEN b.spend / b.gross_sales END`,
   trueRoas: `CASE WHEN b.spend > 0 THEN b.delivered_sales / b.spend END`,
@@ -471,6 +480,16 @@ export class CreativePerformanceService {
     const deliveredSales = num(row.delivered_sales);
     const deliveredCosts = num(row.delivered_costs);
     const cpp = costPerOrder(spend, orders);
+    const contribution = contributionMargin({
+      revenue: num(row.cm_revenue),
+      cogs: num(row.cm_cogs),
+      shippingFees: num(row.cm_shipping_fees),
+      fulfillmentFees: num(row.cm_fulfillment_fees),
+      inventoryFees: num(row.cm_inventory_fees),
+      spend,
+      codFees: num(row.cm_cod_fees),
+      rtsCogs: num(row.cm_rts_cogs),
+    });
     const net = netContribution({
       deliveredRevenue: deliveredSales, deliveredCogs: 0,
       fulfillmentCosts: deliveredCosts, spend,
@@ -536,6 +555,7 @@ export class CreativePerformanceService {
         spend: round(spend, 2),
         grossSales: round(num(row.gross_sales), 2),
         deliveredSales: round(deliveredSales, 2),
+        contributionMargin: contribution,
         netContribution: net,
         cpc: costPerClick(spend, num(row.link_clicks)),
         cpp,
@@ -617,6 +637,19 @@ export class CreativePerformanceService {
             SUM(rm."codPos")::float8 AS gross_sales,
             SUM(rm."deliveredCodPos")::float8 AS delivered_sales,
             SUM(rm."cogsDeliveredPos" + rm."sfSdrPos" + rm."ffSdrPos" + rm."ifSdrPos" + rm."codFeeDeliveredPos")::float8 AS delivered_costs,
+            SUM(
+              rm."codPos" - rm."canceledCodPos" - rm."restockingCodPos" - rm."currentAbandonedCodPos" - rm."rtsCodPos"
+              - (rm."repurchaseCodPos" - rm."repurchaseCanceledCodPos" - rm."repurchaseRestockingCodPos" - rm."repurchaseCurrentAbandonedCodPos" - rm."repurchaseRtsCodPos")
+            )::float8 AS cm_revenue,
+            SUM(
+              rm."cogsPos" - rm."cogsCanceledPos" - rm."cogsRestockingPos"
+              - (rm."repurchaseCogsPos" - rm."repurchaseCogsCanceledPos" - rm."repurchaseCogsRestockingPos")
+            )::float8 AS cm_cogs,
+            SUM(rm."sfPos" - rm."repurchaseSfPos")::float8 AS cm_shipping_fees,
+            SUM(rm."ffPos" - rm."repurchaseFfPos")::float8 AS cm_fulfillment_fees,
+            SUM(rm."ifPos" - rm."repurchaseIfPos")::float8 AS cm_inventory_fees,
+            SUM(rm."codFeePos" - rm."repurchaseCodFeePos")::float8 AS cm_cod_fees,
+            SUM(rm."cogsRtsPos" - rm."repurchaseCogsRtsPos")::float8 AS cm_rts_cogs,
             SUM(rm."deliveredCount")::float8 AS delivered,
             SUM(rm."canceledCount")::float8 AS cancelled,
             SUM(rm."rtsCount")::float8 AS rts,
@@ -648,6 +681,19 @@ export class CreativePerformanceService {
             SUM(rm."codPos")::float8 AS gross_sales,
             SUM(rm."deliveredCodPos")::float8 AS delivered_sales,
             SUM(rm."cogsDeliveredPos" + rm."sfSdrPos" + rm."ffSdrPos" + rm."ifSdrPos" + rm."codFeeDeliveredPos")::float8 AS delivered_costs,
+            SUM(
+              rm."codPos" - rm."canceledCodPos" - rm."restockingCodPos" - rm."currentAbandonedCodPos" - rm."rtsCodPos"
+              - (rm."repurchaseCodPos" - rm."repurchaseCanceledCodPos" - rm."repurchaseRestockingCodPos" - rm."repurchaseCurrentAbandonedCodPos" - rm."repurchaseRtsCodPos")
+            )::float8 AS cm_revenue,
+            SUM(
+              rm."cogsPos" - rm."cogsCanceledPos" - rm."cogsRestockingPos"
+              - (rm."repurchaseCogsPos" - rm."repurchaseCogsCanceledPos" - rm."repurchaseCogsRestockingPos")
+            )::float8 AS cm_cogs,
+            SUM(rm."sfPos" - rm."repurchaseSfPos")::float8 AS cm_shipping_fees,
+            SUM(rm."ffPos" - rm."repurchaseFfPos")::float8 AS cm_fulfillment_fees,
+            SUM(rm."ifPos" - rm."repurchaseIfPos")::float8 AS cm_inventory_fees,
+            SUM(rm."codFeePos" - rm."repurchaseCodFeePos")::float8 AS cm_cod_fees,
+            SUM(rm."cogsRtsPos" - rm."repurchaseCogsRtsPos")::float8 AS cm_rts_cogs,
             SUM(rm."deliveredCount")::float8 AS delivered,
             SUM(rm."canceledCount")::float8 AS cancelled,
             SUM(rm."rtsCount")::float8 AS rts,

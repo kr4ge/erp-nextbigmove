@@ -101,6 +101,38 @@ export const landingPageRate = (lpViews: number, linkClicks: number) => guardedR
  */
 export const conversionRate = (orders: number, lpViews: number) => guardedRatio(orders, lpViews);
 
+export type ContributionMarginInput = {
+  revenue: number;
+  cogs: number;
+  shippingFees: number;
+  fulfillmentFees: number;
+  inventoryFees: number;
+  spend: number;
+  codFees: number;
+  rtsCogs: number;
+};
+
+/**
+ * Contribution margin uses the same P&L shape as Analytics / Sales. Callers
+ * provide values after applying that report's default exclusions for canceled,
+ * restocking, abandoned, RTS, and repurchase orders.
+ */
+export function contributionMargin({
+  revenue,
+  cogs,
+  shippingFees,
+  fulfillmentFees,
+  inventoryFees,
+  spend,
+  codFees,
+  rtsCogs,
+}: ContributionMarginInput): number {
+  return round(
+    revenue - cogs - shippingFees - fulfillmentFees - inventoryFees - spend - codFees + rtsCogs,
+    2,
+  );
+}
+
 export type NetContributionInput = {
   deliveredRevenue: number;
   deliveredCogs: number;

@@ -57,7 +57,8 @@ function CppCell({ value, scope }: { value: number | null; scope: ScopeInfo | nu
   return <span className={tone}>{formatCurrency(value)}</span>;
 }
 
-function NetCell({ value }: { value: number }) {
+function SignedCurrencyCell({ value }: { value: number | null | undefined }) {
+  if (value == null) return dash;
   return (
     <span className={value < 0 ? 'font-semibold text-destructive' : 'font-semibold text-success'}>
       {value < 0 ? '−' : '+'}{formatCurrency(Math.abs(value))}
@@ -198,9 +199,14 @@ export const PERFORMANCE_COLUMNS: PerfColumn[] = [
     render: (row) => formatCurrency(row.metrics.deliveredCpp),
   },
   {
+    key: 'contributionMargin', label: 'Contribution margin', group: 'Money', numeric: true, defaultOn: true, width: 145, sortKey: 'contributionMargin',
+    help: 'Adjusted COD revenue − adjusted COGS − shipping, fulfillment, inventory, and COD fees − ad spend + RTS COGS. Uses the Analytics Sales default exclusions.',
+    render: (row) => <SignedCurrencyCell value={row.metrics.contributionMargin} />,
+  },
+  {
     key: 'netContribution', label: 'Net contribution', group: 'Money', numeric: true, defaultOn: true, width: 130, sortKey: 'netContribution',
     help: 'Delivered COD revenue − delivered COGS − reconciled fulfillment fees − ad spend.',
-    render: (row) => <NetCell value={row.metrics.netContribution} />,
+    render: (row) => <SignedCurrencyCell value={row.metrics.netContribution} />,
   },
   {
     key: 'hookRate', label: 'Hook', group: 'Engagement', numeric: true, defaultOn: true, width: 85, sortKey: 'hookRate',
