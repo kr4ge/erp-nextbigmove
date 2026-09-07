@@ -82,12 +82,28 @@ export function DashboardListSkeleton({ rows = 4 }: { rows?: number }) {
 export function DashboardCalendarSkeleton() {
   return (
     <div className="animate-pulse" role="status" aria-label="Loading monthly summary">
-      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/40 p-px" aria-hidden="true">
-        {Array.from({ length: 35 }, (_, index) => (
-          <div key={index} className="min-h-[4.5rem] bg-surface p-2">
-            <DashboardLoadingBar className="h-2.5 w-5" />
-            {index % 3 === 0 ? <DashboardLoadingBar className="mt-3 h-2.5 w-3/4" /> : null}
-            {index % 3 === 0 ? <DashboardLoadingBar className="mt-1.5 h-2.5 w-1/2" /> : null}
+      <div className="mb-3 flex items-center justify-between" aria-hidden="true">
+        <DashboardLoadingBar className="h-3 w-32" />
+        <DashboardLoadingBar className="h-3 w-44" />
+      </div>
+      <div className="hidden grid-cols-7 gap-px overflow-hidden rounded-xl border border-border/40 bg-border/30 lg:grid" aria-hidden="true">
+        {Array.from({ length: 42 }, (_, index) => (
+          <div key={index} className="min-h-28 bg-surface p-3">
+            <DashboardLoadingBar className="h-6 w-6 rounded-full" />
+            {index % 3 === 0 ? <DashboardLoadingBar className="mt-3 h-3 w-3/4" /> : null}
+            {index % 3 === 0 ? <DashboardLoadingBar className="mt-2 h-2.5 w-1/2" /> : null}
+          </div>
+        ))}
+      </div>
+      <div className="divide-y divide-border/30 overflow-hidden rounded-xl border border-border/40 lg:hidden" aria-hidden="true">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index} className="flex items-center gap-3 bg-surface px-3 py-3">
+            <DashboardLoadingBar className="h-3 w-20" />
+            <div className="flex-1 space-y-2">
+              <DashboardLoadingBar className="h-3.5 w-24" />
+              <DashboardLoadingBar className="h-2.5 w-40 max-w-full" />
+            </div>
+            <DashboardLoadingBar className="h-6 w-16 rounded-full" />
           </div>
         ))}
       </div>
