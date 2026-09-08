@@ -37,7 +37,7 @@ export async function fetchStoreEnrollmentItems(storeId: string): Promise<StoreE
 export async function createVideoRegistryItem(input: CreateVideoRegistryInput): Promise<VideoRegistryItem> {
   // Explicit whitelist: every field the enroll DTO accepts must be listed here
   // or it never leaves the browser, however correct the form state is.
-  const payload = { storeId: input.storeId, variationId: input.variationId, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, angle: input.angle || undefined, remixOfCode: input.remixOfCode || undefined, script: input.script || undefined, notes: input.notes || undefined };
+  const payload = { storeId: input.storeId, variationId: input.variationId || undefined, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, angle: input.angle || undefined, remixOfCode: input.remixOfCode || undefined, script: input.script || undefined, notes: input.notes || undefined };
   const enrollsMetaAd = Boolean(input.accountId && input.adId && input.adName);
   try {
     return (enrollsMetaAd

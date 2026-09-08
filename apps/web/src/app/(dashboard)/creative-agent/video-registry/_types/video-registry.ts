@@ -181,8 +181,11 @@ export type CreateVideoRegistryInput = {
   submitForApproval?: boolean;
   kind: CreativeKind;
   storeId: string;
-  /** The POS variation this creative advertises; its customId leads the ad name. */
-  variationId: string;
+  /**
+   * The POS variation this creative advertises, when there is one. Its customId
+   * leads the ad name; without it the name falls back to title_creator_CODE.
+   */
+  variationId?: string;
   title: string;
   mediaUrl: string;
   format: string;

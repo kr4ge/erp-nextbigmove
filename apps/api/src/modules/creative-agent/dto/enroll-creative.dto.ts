@@ -43,14 +43,22 @@ export class EnrollCreativeDto {
   title!: string;
 
   /**
-   * The POS variation this creative advertises. Required: its customId is the
-   * first segment of the generated ad name and becomes the reconciliation
-   * mapping, so a creative without one cannot produce a new-convention name.
+   * The POS variation this creative advertises, when there is one to name.
+   *
+   * Its customId leads the new-convention ad name and becomes the
+   * reconciliation mapping, so supplying it is worth doing. It is not
+   * required, though: a store whose Pancake products carry no custom IDs would
+   * otherwise be unable to enroll anything at all, and the point of enrolment
+   * is to mint a code and capture the Meta ad id. Without an item the ad name
+   * falls back to the legacy `title_creator_CODE`, which the matcher still
+   * links on its last segment.
    */
+  @IsOptional()
+  @Transform(({ value }) => value === '' ? undefined : value)
   @IsString()
   @MinLength(1)
   @MaxLength(120)
-  variationId!: string;
+  variationId?: string;
 
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)

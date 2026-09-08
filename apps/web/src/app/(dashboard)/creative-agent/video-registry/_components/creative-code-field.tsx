@@ -27,9 +27,11 @@ export function CreativeCodeField({ code, customId, title, creator, helper }: Pr
 
   const trimmedTitle = title?.trim() ?? "";
   const titleError = validateCreativeTitle(trimmedTitle);
-  // The item is required at enrollment, so a missing customId means the name
-  // is not final yet — copying a half-name that maps to nothing helps nobody.
-  const blocked = !code || !trimmedTitle || Boolean(titleError) || !customId?.trim();
+  // A missing customId is not a blocker: the item is optional, and without one
+  // buildAdName returns the legacy title_creator_CODE, which auto-matching
+  // still reads back from its last segment. Only a name that cannot be matched
+  // at all — no code, no title, or an underscore inside the title — is blocked.
+  const blocked = !code || !trimmedTitle || Boolean(titleError);
   const adName = code ? buildAdName({ title: trimmedTitle, creator, code, customId }) : null;
 
   useEffect(() => {
@@ -44,13 +46,11 @@ export function CreativeCodeField({ code, customId, title, creator, helper }: Pr
 
   const blockedReason = !code
     ? "Select a store"
-    : !customId?.trim()
-      ? "Choose the item this creative sells to complete the ad name."
-      : titleError
-        ? "Remove the underscore from the title to copy the ad name."
-        : !trimmedTitle
-          ? "Add a library title to copy the full ad name."
-          : null;
+    : titleError
+      ? "Remove the underscore from the title to copy the ad name."
+      : !trimmedTitle
+        ? "Add a library title to copy the full ad name."
+        : null;
 
   return (
     <div className="space-y-1.5">

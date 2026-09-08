@@ -178,10 +178,16 @@ export function RegisterVideoDialog({
     if (!code) return null;
     return buildAdName({ customId: itemOf(entry)?.customId ?? null, title: entry.form.title, code, creator: creatorName });
   };
-  /** The required set for a paste-ready ad name — the gate for adding another. */
+  /**
+   * The minimum for a paste-ready ad name — the gate for adding another.
+   *
+   * The item is deliberately not in here. Enrolment exists to mint a code and
+   * capture the Meta ad id; a store whose Pancake products carry no custom IDs
+   * would otherwise be unable to enroll at all. Without an item the ad name
+   * simply falls back to its legacy shape, which still matches on the code.
+   */
   const problemOf = (entry: Entry, index: number): string | null => {
     if (!entry.form.storeId) return "Choose the store that owns this creative.";
-    if (!entry.form.variationId) return "Choose the item this creative advertises.";
     if (!entry.form.title.trim()) return "Enter the library title.";
     const titleError = validateCreativeTitle(entry.form.title);
     if (titleError) return titleError;
@@ -277,7 +283,7 @@ export function RegisterVideoDialog({
           <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-border px-4 py-2.5">
             <DialogTitle className="mb-0 text-base font-semibold">Enroll creatives</DialogTitle>
             <DialogDescription className="text-xs text-muted">
-              Fill one, add another — each needs a store, an item and a title first.
+              Fill one, add another — each needs a store and a title first.
             </DialogDescription>
           </div>
 
@@ -387,10 +393,9 @@ export function RegisterVideoDialog({
                       value={entry.form.variationId}
                       onChange={(next) => setField(entry.id, "variationId", next)}
                       options={items.map((item) => ({ value: item.variationId, label: item.name }))}
-                      placeholder={!entry.form.storeId ? "Choose the store first" : loading ? "Loading items…" : items.length === 0 ? "No items with a custom ID" : "Choose the item"}
+                      placeholder={!entry.form.storeId ? "Choose the store first" : loading ? "Loading items…" : items.length === 0 ? "No items with a custom ID" : "Choose the item (optional)"}
                       disabled={!entry.form.storeId || loading || items.length === 0}
-                      helper="Its Pancake custom ID leads the ad name and becomes the mapping."
-                      required
+                      helper="Optional. Its Pancake custom ID leads the ad name and becomes the mapping; without it the name falls back to title_creator_CODE."
                     />
                     <FormInput
                       name={`title-${entry.id}`}
@@ -434,7 +439,7 @@ export function RegisterVideoDialog({
                 type="button"
                 onClick={addAnother}
                 disabled={!canAddAnother || busy}
-                title={canAddAnother ? undefined : "Finish the store, item and title of the current creative first"}
+                title={canAddAnother ? undefined : "Finish the store and title of the current creative first"}
                 className="flex w-full items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2 text-sm font-semibold text-primary transition hover:border-primary hover:bg-primary-soft/30 active:bg-primary-soft/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus className="h-4 w-4" />

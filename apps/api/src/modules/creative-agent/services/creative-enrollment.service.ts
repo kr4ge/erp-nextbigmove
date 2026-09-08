@@ -308,7 +308,14 @@ export class CreativeEnrollmentService {
     };
   }
 
-  private async resolveStoreItem(tenantId: string, storeId: string, variationId: string) {
+  /**
+   * Undefined when no item was chosen — that is allowed, and leaves the ad name
+   * on its legacy shape. A chosen item is still held to the same bar: it must
+   * belong to the store and carry a custom ID, or the name it produces would be
+   * broken rather than merely older.
+   */
+  private async resolveStoreItem(tenantId: string, storeId: string, variationId?: string) {
+    if (!variationId) return undefined;
     const product = await this.prisma.posProduct.findFirst({
       where: { store: { is: { tenantId } }, storeId, variationId },
       select: { variationId: true, customId: true, name: true },
