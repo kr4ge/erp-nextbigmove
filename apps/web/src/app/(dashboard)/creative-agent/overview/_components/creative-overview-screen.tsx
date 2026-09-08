@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FolderCheck, Info, Library, Search } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FolderCheck, Info, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
@@ -46,14 +46,13 @@ function DetailDialog({ item, showAssets, onClose }: { item: CreativeOverviewIte
           {item.metaAdIds.length ? <p className="mt-1 break-all font-mono text-xs text-faint">{item.metaAdIds.join(', ')}</p> : null}
         </div>
         <DialogFooter className="border-t border-border/40 px-5 py-4">
+          {/* Assets holds the creative's record now — the registry is the
+              enrolment queue and no longer lists what is already enrolled. */}
           {showAssets ? (
-            <Link href={creativeQueryHref('/assets', item.code)} className="btn btn-md btn-outline btn-icon">
-              <FolderCheck className="h-4 w-4" /><span>Open feedback</span>
+            <Link href={creativeQueryHref('/assets', item.code)} className="btn btn-md btn-primary-soft btn-icon">
+              <FolderCheck className="h-4 w-4" /><span>Open in Assets</span>
             </Link>
           ) : null}
-          <Link href={creativeQueryHref('/video-registry', item.code)} className="btn btn-md btn-primary-soft btn-icon">
-            <Library className="h-4 w-4" /><span>Open registry</span>
-          </Link>
           {item.mediaUrl ? <a href={item.mediaUrl} target="_blank" rel="noreferrer" className="btn btn-md btn-ghost btn-icon"><ExternalLink className="h-4 w-4" /><span>Drive file</span></a> : null}
         </DialogFooter>
       </DialogContent>

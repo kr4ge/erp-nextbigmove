@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MediaAssetKind } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { MediaAssetsService } from '../../../common/services/media-assets.service';
+import { MediaAssetsService, type UploadedImageFile } from '../../../common/services/media-assets.service';
 
 /**
  * Resolves a Facebook post link into a cached cover image.
@@ -83,6 +83,45 @@ export class CreativeThumbnailService {
         `Thumbnail capture failed for creative ${creativeId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  /**
+   * A creative with no Facebook link — or one where the auto-capture is
+   * wrong or expired — can still get a cover: this stores the uploaded bytes
+   * directly, through the same pipeline every other media asset uses.
+   * `thumbnailSourceUrl` is cleared so a later save with the SAME post link
+   * does not look like a change and silently re-scrape over it; only an
+   * actual edit to the link, or another manual upload, replaces this cover.
+   */
+  async uploadManualThumbnail(
+    creativeId: string,
+    tenantId: string,
+    file: UploadedImageFile | undefined,
+  ): Promise<{ thumbnailUrl: string; thumbnailIsVideo: boolean }> {
+    const asset = await this.mediaAssets.uploadCreativeThumbnailImage(file, tenantId);
+
+    const previous = await this.prisma.creative.findFirst({
+      where: { id: creativeId, tenantId },
+      select: { thumbnailAssetId: true },
+    });
+
+    await this.prisma.creative.updateMany({
+      where: { id: creativeId, tenantId },
+      data: {
+        thumbnailAssetId: asset.assetId,
+        thumbnailSourceUrl: null,
+        thumbnailCapturedAt: new Date(),
+        thumbnailIsVideo: false,
+      },
+    });
+
+    if (previous?.thumbnailAssetId && previous.thumbnailAssetId !== asset.assetId) {
+      await this.mediaAssets
+        .deleteUnattachedImageAsset(previous.thumbnailAssetId, tenantId, MediaAssetKind.CREATIVE_THUMBNAIL_IMAGE)
+        .catch(() => undefined);
+    }
+
+    return { thumbnailUrl: asset.imageUrl, thumbnailIsVideo: false };
   }
 
   /** Clears a cached thumbnail when the post link is removed. */

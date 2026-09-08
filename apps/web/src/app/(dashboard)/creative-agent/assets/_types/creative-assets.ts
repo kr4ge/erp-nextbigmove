@@ -1,5 +1,16 @@
 import type { CreativeKind, CreativePerformanceStatus, CreativeRevisionState } from '../../video-registry/_types/video-registry';
 
+export type CreativeAssetMetrics = {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  /** Null where the source never measured it — never render that as 0%. */
+  hookRate: number | null;
+  holdRate: number | null;
+  ctr: number | null;
+};
+
 export type CreativeAsset = {
   id: string;
   code: string;
@@ -27,6 +38,8 @@ export type CreativeAsset = {
   /** Signed URL for the cached Facebook post cover, when one was captured. */
   thumbnailUrl: string | null;
   thumbnailIsVideo: boolean;
+  /** Summed over the selected date range across this creative's linked ads. */
+  metrics: CreativeAssetMetrics;
   submittedAt: string | null;
   approvedAt: string | null;
   createdAt: string;
@@ -42,6 +55,9 @@ export type CreativeAssetComment = {
 };
 
 export type CreativeAssetsParams = {
+  /** The window the performance figures are summed over. */
+  startDate: string;
+  endDate: string;
   query: string;
   storeId: string;
   creatorId: string;

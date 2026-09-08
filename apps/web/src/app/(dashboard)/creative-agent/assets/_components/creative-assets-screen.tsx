@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/components/ui/toast';
 import { EditCreativeDialog } from '../../video-registry/_components/edit-creative-dialog';
 import { RegistryPagination } from '../../video-registry/_components/registry-pagination';
-import type { CreativeRevisionState } from '../../video-registry/_types/video-registry';
+import { VideoRegistryDateRangePicker } from '../../video-registry/_components/video-registry-date-range-picker';
 import { useCreativeAssetsController } from '../_hooks/use-creative-assets-controller';
 import { CreativeAssetReviewDialog } from './creative-asset-review-dialog';
 import { CreativeAssetsGrid } from './creative-assets-grid';
@@ -64,6 +64,8 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
     <section className="panel overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface p-3">
         <label className="relative min-w-60 flex-[1_1_20rem]"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" /><input value={controller.searchText} onChange={(event) => controller.setSearchText(event.target.value)} className="input h-10 w-full rounded-xl pl-9 text-sm" placeholder="Search code, title, or creator" /></label>
+        {/* Spend and the craft rates are period figures, so the window is a filter, not decoration. */}
+        <VideoRegistryDateRangePicker startDate={params.startDate} endDate={params.endDate} onChange={(range) => controller.updateParams(range)} />
         {data?.filters.defaultStoreId
           ? <span className="flex h-10 items-center rounded-xl border border-border bg-background-secondary px-3 text-sm font-semibold text-muted">{data.filters.stores[0]?.label ?? 'Store'}</span>
           : <select value={params.storeId} onChange={(event) => controller.updateParams({ storeId: event.target.value })} className={`${selectClass} w-44`}><option value="">All stores</option>{data?.filters.stores.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>}
@@ -75,6 +77,6 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
       {data ? <RegistryPagination {...data.pagination} onPageChange={(page) => controller.updateParams({ page })} /> : null}
     </section>
     <CreativeAssetReviewDialog asset={controller.selected} comments={controller.comments} isLoadingComments={controller.isLoadingComments} isSaving={controller.isMutating} showPerformanceLink={isReviewerView} canReview={controller.canReview} onClose={() => controller.setSelected(null)} onComment={addComment} onTransition={transition} onEdit={controller.openEdit} />
-    <EditCreativeDialog item={controller.editing} isSaving={controller.isMutating} onClose={() => controller.setEditing(null)} onSave={updateCreative} />
+    <EditCreativeDialog item={controller.editing} isSaving={controller.isMutating} onClose={() => controller.setEditing(null)} onSave={updateCreative} onUploadThumbnail={controller.uploadThumbnail} onRemoveThumbnail={controller.removeThumbnail} />
   </div>;
 }

@@ -31,7 +31,9 @@ function withCurrent(options: Array<{ value: string; label: string }>, current: 
   return [...options, { value: current, label: humanize(current) }];
 }
 
-export type CreativeDetailsValue = UpdateVideoRegistryInput;
+// kind is excluded: both callers render it as their own toggle above these
+// fields and never route it through this component's onChange.
+export type CreativeDetailsValue = Omit<UpdateVideoRegistryInput, "kind">;
 
 /**
  * Long free-text fields collapse by default so the dialog stays short; the

@@ -1,8 +1,17 @@
 import { Transform, Type } from 'class-transformer';
 import { CreativeRevisionState } from '@prisma/client';
-import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 export class ListCreativeAssetsQueryDto {
+  /** The window the per-creative performance figures are summed over. */
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
   /**
    * REVIEW narrows the list to creatives with an open request for changes,
    * oldest request first. An explicit revisionState wins over the preset.

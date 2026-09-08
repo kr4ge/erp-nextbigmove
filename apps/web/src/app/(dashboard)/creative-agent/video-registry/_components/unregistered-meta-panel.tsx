@@ -32,8 +32,6 @@ export function UnregisteredMetaPanel({
   pagination,
   onPageChange,
 }: Props) {
-  if (pagination.total === 0) return null;
-
   const sortedItems = [...items].sort(
     (left, right) => right.spend - left.spend,
   );
@@ -53,11 +51,11 @@ export function UnregisteredMetaPanel({
               id="unregistered-creatives-title"
               className="font-semibold text-foreground"
             >
-              Meta ads not linked to the registry
+              Detected Meta ads, not yet enrolled
             </h2>
             <p className="mt-1 text-sm text-muted">
-              Match these exact Meta ad names to an existing creative, or enroll
-              a new one using the same code.
+              These carry Meta spend but no registry code yet. Enroll one to mint
+              its code, or link it to a creative that already exists.
             </p>
           </div>
         </div>

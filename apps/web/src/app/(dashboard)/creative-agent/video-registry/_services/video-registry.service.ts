@@ -45,13 +45,35 @@ export async function createVideoRegistryItem(input: CreateVideoRegistryInput): 
       : await apiClient.post<VideoRegistryItem>('/creative-agent/creatives', payload)).data;
   } catch (error) { throw apiError(error, 'Unable to enroll this creative.'); }
 }
-export async function fetchVideoRegistryItem(id: string): Promise<VideoRegistryItem> {
-  try { return (await apiClient.get<VideoRegistryItem>(`/creative-agent/creatives/${id}`)).data; }
+/**
+ * The single-creative endpoint returns the DETAIL shape: no `metrics`, because
+ * those are computed per date range by the library listing. Typing it as a full
+ * VideoRegistryItem once let a caller hand it to a metrics-rendering dialog,
+ * which then crashed on `metrics.spend`.
+ */
+export type VideoRegistryItemDetail = Omit<VideoRegistryItem, 'metrics'>;
+export async function fetchVideoRegistryItem(id: string): Promise<VideoRegistryItemDetail> {
+  try { return (await apiClient.get<VideoRegistryItemDetail>(`/creative-agent/creatives/${id}`)).data; }
   catch (error) { throw apiError(error, 'Unable to load this creative.'); }
 }
 export async function updateVideoRegistryItem(id: string, input: UpdateVideoRegistryInput): Promise<VideoRegistryItem> {
   try { return (await apiClient.patch<VideoRegistryItem>(`/creative-agent/creatives/${id}`, input)).data; }
   catch (error) { throw apiError(error, 'Unable to update this creative.'); }
+}
+export type ThumbnailUploadResult = { thumbnailUrl: string; thumbnailIsVideo: boolean };
+/** For a creative with no usable auto-captured cover — pastes an image in directly. */
+export async function uploadCreativeThumbnail(id: string, file: File): Promise<ThumbnailUploadResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    return (await apiClient.post<ThumbnailUploadResult>(`/creative-agent/creatives/${id}/thumbnail`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })).data;
+  } catch (error) { throw apiError(error, 'Unable to upload this thumbnail.'); }
+}
+export async function removeCreativeThumbnail(id: string): Promise<{ thumbnailUrl: null; thumbnailIsVideo: false }> {
+  try { return (await apiClient.delete(`/creative-agent/creatives/${id}/thumbnail`)).data; }
+  catch (error) { throw apiError(error, 'Unable to remove this thumbnail.'); }
 }
 export async function createCreativeAlias(creativeId: string, alias: string) {
   try { return (await apiClient.post(`/creative-agent/creatives/${creativeId}/aliases`, { alias })).data; }
@@ -64,6 +86,11 @@ export async function linkCreativeAlias(input: LinkCreativeAliasInput) {
 export async function removeCreativeAlias(creativeId: string, aliasId: string) {
   try { return (await apiClient.delete(`/creative-agent/creatives/${creativeId}/aliases/${aliasId}`)).data; }
   catch (error) { throw apiError(error, 'Unable to remove this alias.'); }
+}
+/** For a wrong link: detaches one Meta ad from whichever creative it is linked to. */
+export async function unlinkCreativeMetaAd(accountId: string, adId: string) {
+  try { return (await apiClient.post('/creative-agent/meta-links/unlink', { accountId, adId })).data; }
+  catch (error) { throw apiError(error, 'Unable to unlink this Meta ad.'); }
 }
 export async function transitionCreativeStatus(id: string, dimension: CreativeStatusDimension, toStatus: string, reason?: string) {
   try { return (await apiClient.post(`/creative-agent/creatives/${id}/status-transitions`, { dimension, toStatus, reason })).data; }

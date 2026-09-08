@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { CreativeMetaLinkSource, CreativeStrategySource, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import type { UploadedImageFile } from '../../../common/services/media-assets.service';
 import {
   CREATIVE_AGENT_PERMISSIONS,
   CREATIVE_CODE_MINT_RETRIES,
@@ -195,6 +196,7 @@ export class CreativeEnrollmentService {
 
 
     const data = {
+      ...(dto.kind !== undefined ? { kind: dto.kind } : {}),
       ...(dto.title !== undefined ? { title: dto.title } : {}),
       ...(dto.mediaUrl !== undefined ? { mediaUrl: dto.mediaUrl || null } : {}),
       ...(dto.format !== undefined ? { format: dto.format || null } : {}),
@@ -223,11 +225,15 @@ export class CreativeEnrollmentService {
       return creative;
     });
 
-    // Refresh the cached cover after the write commits. Capture is best-effort
-    // and never blocks the save: a creative without a thumbnail still works.
-    if (dto.mediaUrl !== undefined) {
-      if (dto.mediaUrl) {
-        await this.thumbnails.captureForCreative(updated.id, context.tenantId, dto.mediaUrl);
+    // Refresh the cached cover after the write commits, but only when the link
+    // itself actually changed — the edit form always resends mediaUrl, so
+    // comparing against the stored value (not just "was it in the payload")
+    // is what keeps re-saving unrelated fields from re-scraping Facebook and
+    // silently overwriting a manually uploaded thumbnail.
+    const normalizedNewMediaUrl = dto.mediaUrl !== undefined ? (dto.mediaUrl || null) : undefined;
+    if (normalizedNewMediaUrl !== undefined && normalizedNewMediaUrl !== existing.mediaUrl) {
+      if (normalizedNewMediaUrl) {
+        await this.thumbnails.captureForCreative(updated.id, context.tenantId, normalizedNewMediaUrl);
       } else {
         await this.thumbnails.clearForCreative(updated.id, context.tenantId);
       }
@@ -237,6 +243,35 @@ export class CreativeEnrollmentService {
       }));
     }
     return this.serializeCreative(updated);
+  }
+
+  /** A creative without a usable auto-captured cover can still get one, pasted in directly. */
+  async uploadThumbnail(actor: CreativeActor, creativeId: string, file: UploadedImageFile | undefined) {
+    const context = await this.access.resolve(actor);
+    const existing = await this.prisma.creative.findFirst({
+      where: { id: creativeId, tenantId: context.tenantId },
+      select: { id: true, createdById: true },
+    });
+    if (!existing) throw new NotFoundException('Creative not found');
+    if (!this.access.canEdit(context, existing.createdById)) {
+      throw new ForbiddenException('You cannot edit this creative');
+    }
+    return this.thumbnails.uploadManualThumbnail(existing.id, context.tenantId, file);
+  }
+
+  /** Drops whatever cover is set (manual or auto-captured) so the tile falls back to its placeholder. */
+  async removeThumbnail(actor: CreativeActor, creativeId: string) {
+    const context = await this.access.resolve(actor);
+    const existing = await this.prisma.creative.findFirst({
+      where: { id: creativeId, tenantId: context.tenantId },
+      select: { id: true, createdById: true },
+    });
+    if (!existing) throw new NotFoundException('Creative not found');
+    if (!this.access.canEdit(context, existing.createdById)) {
+      throw new ForbiddenException('You cannot edit this creative');
+    }
+    await this.thumbnails.clearForCreative(existing.id, context.tenantId);
+    return { thumbnailUrl: null, thumbnailIsVideo: false };
   }
 
   private async getActiveStoreConfig(tenantId: string, storeId: string) {

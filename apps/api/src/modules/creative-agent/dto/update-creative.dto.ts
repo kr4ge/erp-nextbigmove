@@ -1,8 +1,19 @@
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { CreativeKind } from '@prisma/client';
+import { IsEnum, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import { NO_UNDERSCORE } from './enroll-creative.dto';
 
 export class UpdateCreativeDto {
+  /**
+   * A registration mistake (enrolled as Static when it was actually Video, or
+   * the reverse). The code's V/I letter is minted once and never reissued —
+   * changing kind here relabels the creative without touching its code, so an
+   * already-pasted ad name keeps matching.
+   */
+  @IsOptional()
+  @IsEnum(CreativeKind)
+  kind?: CreativeKind;
+
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString()

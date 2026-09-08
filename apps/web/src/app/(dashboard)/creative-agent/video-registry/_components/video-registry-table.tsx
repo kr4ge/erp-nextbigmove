@@ -4,7 +4,6 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Eye } from 'lucide-react';
 import { CopyCodeButton } from "../../assets/_components/copy-code-button";
 import { Button } from '@/components/ui/button';
 import type { GetVideoRegistryParams, VideoRegistryItem, VideoRegistrySortKey } from '../_types/video-registry';
-import { DriveThumbnail } from './drive-thumbnail';
 import { RegistryStatusPill } from './registry-status-pill';
 import { formatCompactCurrency, formatRate } from '../_utils/video-registry-formatters';
 
@@ -38,7 +37,6 @@ export function VideoRegistryTable({ items, params, actionLabel, onSort, onRevie
         <table className="w-full min-w-max border-separate border-spacing-0 text-left text-sm">
           <thead>
             <tr className="bg-background-secondary/70">
-              <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Preview</th>
               <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted"><SortButton label="Creative" sortKey="title" params={params} onSort={onSort} /></th>
               <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Creator / Store</th>
               <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Approval</th>
@@ -57,7 +55,6 @@ export function VideoRegistryTable({ items, params, actionLabel, onSort, onRevie
           <tbody className="bg-surface">
             {items.map((item) => (
               <tr key={item.id} className="transition hover:bg-background-secondary/50 [&>td]:border-t [&>td]:border-border">
-                <td className="px-5 py-3.5"><DriveThumbnail compact mediaUrl={item.mediaUrl} title={item.title} cachedThumbnailUrl={item.thumbnailUrl} isVideo={item.thumbnailIsVideo} onClick={() => onReview(item)} /></td>
                 <td className="max-w-xs px-5 py-3.5">
                   <button type="button" onClick={() => onReview(item)} className="block max-w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                     <span className="block truncate font-semibold text-foreground">{item.title}</span>

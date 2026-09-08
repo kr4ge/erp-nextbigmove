@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ExternalLink, FileText, FolderCheck, Link2, MessageSquare, Pencil, StickyNote, Video } from 'lucide-react';
+import { ExternalLink, FileText, FolderCheck, Link2, Link2Off, MessageSquare, Pencil, StickyNote, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { CreativePermissions, CreativeReviewComment, CreativeStatusDimension, VideoRegistryItem } from '../_types/video-registry';
@@ -12,12 +12,25 @@ import { formatCurrency, formatDate, formatNumber, formatRate } from '../_utils/
 import { creativeQueryHref } from '../_utils/creative-navigation';
 import { RegistryStatusPill } from './registry-status-pill';
 
-type Props = { item: VideoRegistryItem | null; comments: CreativeReviewComment[]; isLoadingComments: boolean; permissions: CreativePermissions; isSaving: boolean; onClose: () => void; onEdit: (item: VideoRegistryItem) => void; onTransition: (id: string, dimension: CreativeStatusDimension, status: string, reason?: string) => Promise<void> };
+type Props = {
+  item: VideoRegistryItem | null;
+  comments: CreativeReviewComment[];
+  isLoadingComments: boolean;
+  permissions: CreativePermissions;
+  isSaving: boolean;
+  onClose: () => void;
+  onEdit: (item: VideoRegistryItem) => void;
+  onTransition: (id: string, dimension: CreativeStatusDimension, status: string, reason?: string) => Promise<void>;
+  /** For a wrong link: detaches this Meta ad from the creative. */
+  onUnlinkMetaAd: (creativeId: string, accountId: string, adId: string) => Promise<void>;
+};
 
-export function VideoReviewDialog({ item, comments, isLoadingComments, permissions, isSaving, onClose, onEdit, onTransition }: Props) {
+export function VideoReviewDialog({ item, comments, isLoadingComments, permissions, isSaving, onClose, onEdit, onTransition, onUnlinkMetaAd }: Props) {
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setReason(''); setError(null); }, [item?.id]);
+  const [unlinkingAdId, setUnlinkingAdId] = useState<string | null>(null);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  useEffect(() => { setReason(''); setError(null); setUnlinkingAdId(null); setUnlinkError(null); }, [item?.id]);
   const previewUrl = getGoogleDrivePreviewUrl(item?.mediaUrl);
   // Facebook blocks embedding, so a post link gets an explicit open-out card
   // rather than an iframe that silently renders blank.
@@ -28,6 +41,14 @@ export function VideoReviewDialog({ item, comments, isLoadingComments, permissio
     setError(null);
     try { if (item) await onTransition(item.id, dimension, status, reason.trim() || undefined); }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to update status.'); }
+  };
+  const unlink = async (accountId: string, adId: string) => {
+    if (!item) return;
+    setUnlinkError(null);
+    setUnlinkingAdId(adId);
+    try { await onUnlinkMetaAd(item.id, accountId, adId); }
+    catch (caught) { setUnlinkError(caught instanceof Error ? caught.message : 'Unable to unlink this Meta ad.'); }
+    finally { setUnlinkingAdId(null); }
   };
   return (
     <Dialog open={Boolean(item)} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -104,6 +125,37 @@ export function VideoReviewDialog({ item, comments, isLoadingComments, permissio
                 {item.script ? <div><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><FileText className="h-3.5 w-3.5" /> Video script</p><p className="mt-1 whitespace-pre-wrap text-foreground">{item.script}</p></div> : null}
                 {item.notes ? <div><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><StickyNote className="h-3.5 w-3.5" /> Notes</p><p className="mt-1 whitespace-pre-wrap text-foreground">{item.notes}</p></div> : null}
                 {item.aliases.length ? <div><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><Link2 className="h-3.5 w-3.5" /> Meta aliases</p><p className="mt-1 font-mono text-foreground">{item.aliases.join(', ')}</p></div> : null}
+                {item.metaAdLinks.length ? (
+                  <div>
+                    <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted"><Link2 className="h-3.5 w-3.5" /> Linked Meta ads</p>
+                    <div className="mt-1.5 space-y-1.5">
+                      {item.metaAdLinks.map((link) => (
+                        <div key={link.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background-secondary px-2.5 py-1.5">
+                          <div className="min-w-0">
+                            <p className="truncate font-mono text-xs font-semibold text-foreground">{link.adNameSnapshot}</p>
+                            <p className="text-xs text-muted">Ad {link.adId} · {link.source === 'AUTO_CODE' ? 'auto-matched' : 'manually linked'}</p>
+                          </div>
+                          {permissions.canManageAliases ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              iconLeft={<Link2Off className="h-3.5 w-3.5" />}
+                              loading={unlinkingAdId === link.adId}
+                              disabled={isSaving && unlinkingAdId !== link.adId}
+                              onClick={() => void unlink(link.accountId, link.adId)}
+                            >
+                              Unlink
+                            </Button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                    {/* Fixes a wrong match without touching the creative's own fields. */}
+                    <p className="mt-1 text-xs text-muted">Unlink a Meta ad that was matched or linked here by mistake.</p>
+                    {unlinkError ? <p className="mt-1 text-xs text-destructive" role="alert">{unlinkError}</p> : null}
+                  </div>
+                ) : null}
                 <p className="text-xs text-muted">Updated {formatDate(item.updatedAt)}</p>
               </div>
               <div className="mt-5 border-t border-border pt-5">

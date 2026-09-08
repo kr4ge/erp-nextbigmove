@@ -77,6 +77,15 @@ export type VideoRegistryItem = {
   metaAdNameSnapshot: string | null;
   metaLinkSource: "AUTO_CODE" | "MANUAL" | null;
   metaLinkedAt: string | null;
+  /** Every Meta ad currently linked to this creative — the primary (metaAdId) included. */
+  metaAdLinks: Array<{
+    id: string;
+    accountId: string;
+    adId: string;
+    adNameSnapshot: string;
+    source: "AUTO_CODE" | "MANUAL";
+    linkedAt: string;
+  }>;
   customId: string | null;
   productName: string | null;
   creator: RegistryPerson;
@@ -190,7 +199,7 @@ export type CreateVideoRegistryInput = {
 };
 export type UpdateVideoRegistryInput = Pick<
   CreateVideoRegistryInput,
-  "title" | "mediaUrl" | "format" | "hookType" | "angle" | "script" | "notes"
+  "kind" | "title" | "mediaUrl" | "format" | "hookType" | "angle" | "script" | "notes"
 >;
 export type LinkCreativeAliasInput = {
   unregisteredKey: string;
