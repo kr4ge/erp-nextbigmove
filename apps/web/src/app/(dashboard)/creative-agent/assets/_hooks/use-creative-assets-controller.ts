@@ -2,12 +2,29 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePermissions } from '@/hooks/use-permissions';
-import { transitionCreativeStatus, updateVideoRegistryItem } from '../../video-registry/_services/video-registry.service';
+import {
+  removeCreativeThumbnail,
+  transitionCreativeStatus,
+  updateVideoRegistryItem,
+  uploadCreativeThumbnail,
+} from '../../video-registry/_services/video-registry.service';
 import type { UpdateVideoRegistryInput } from '../../video-registry/_types/video-registry';
 import { addCreativeAssetComment, fetchCreativeAssetComments, fetchCreativeAssets } from '../_services/creative-assets.service';
 import type { CreativeAsset, CreativeAssetComment, CreativeAssetsParams, CreativeAssetsResponse, CreativeAssetsView } from '../_types/creative-assets';
 
-const DEFAULT_PARAMS: CreativeAssetsParams = { query: '', storeId: '', creatorId: '', creativeId: '', revisionState: '', queue: '', page: 1, pageSize: 12 };
+function toDateInputValue(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+const today = new Date();
+const thirtyDaysAgo = new Date(today);
+thirtyDaysAgo.setDate(today.getDate() - 29);
+
+const DEFAULT_PARAMS: CreativeAssetsParams = {
+  startDate: toDateInputValue(thirtyDaysAgo),
+  endDate: toDateInputValue(today),
+  query: '', storeId: '', creatorId: '', creativeId: '', revisionState: '', queue: '', page: 1, pageSize: 12,
+};
 
 const REVISION_STATE_VALUES = ['NONE', 'NEEDS_REVISION', 'RESOLVED'];
 
@@ -139,6 +156,30 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
     }
   }, [load]);
 
+  /** Keeps the open Edit dialog showing the new cover without closing it. */
+  const uploadThumbnail = useCallback(async (id: string, file: File) => {
+    setIsMutating(true);
+    try {
+      const result = await uploadCreativeThumbnail(id, file);
+      setEditing((current) => (current && current.id === id ? { ...current, ...result } : current));
+      await load(true);
+      return result;
+    } finally {
+      setIsMutating(false);
+    }
+  }, [load]);
+
+  const removeThumbnail = useCallback(async (id: string) => {
+    setIsMutating(true);
+    try {
+      const result = await removeCreativeThumbnail(id);
+      setEditing((current) => (current && current.id === id ? { ...current, ...result } : current));
+      await load(true);
+    } finally {
+      setIsMutating(false);
+    }
+  }, [load]);
+
   const updateParams = useCallback((patch: Partial<CreativeAssetsParams>) => setParams((current) => ({ ...current, ...patch, page: patch.page ?? 1 })), []);
-  return { params, searchText, data, view, selected, editing, comments, isLoading, isLoadingComments, isMutating, error, canReview, setSearchText, setView, setSelected, setEditing, updateParams, openAsset, openEdit, addComment, transition, updateCreative, retry: load };
+  return { params, searchText, data, view, selected, editing, comments, isLoading, isLoadingComments, isMutating, error, canReview, setSearchText, setView, setSelected, setEditing, updateParams, openAsset, openEdit, addComment, transition, updateCreative, uploadThumbnail, removeThumbnail, retry: load };
 }

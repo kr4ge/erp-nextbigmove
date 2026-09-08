@@ -9,8 +9,11 @@ import {
   fetchCreativeReviewComments,
   fetchVideoRegistry,
   linkCreativeAlias,
+  removeCreativeThumbnail,
   transitionCreativeStatus,
+  unlinkCreativeMetaAd,
   updateVideoRegistryItem,
+  uploadCreativeThumbnail,
 } from '../_services/video-registry.service';
 import type {
   CreativeStatusDimension,
@@ -60,13 +63,17 @@ export function useVideoRegistryController(initialQuery = '') {
     };
   }, [permissionsQuery.data]);
 
+  /** Returns the response too, so a mutation can re-read an open dialog's row from it. */
   const loadRegistry = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setIsLoading(true);
     setError(null);
     try {
-      setData(await fetchVideoRegistry(params));
+      const response = await fetchVideoRegistry(params);
+      setData(response);
+      return response;
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load the video registry.');
+      return null;
     } finally {
       if (!options?.silent) setIsLoading(false);
     }
@@ -174,6 +181,48 @@ export function useVideoRegistryController(initialQuery = '') {
     }
   }, [loadRegistry]);
 
+  /** For a wrong link: detaches one Meta ad, then re-syncs the open review item. */
+  const unlinkMetaAd = useCallback(async (creativeId: string, accountId: string, adId: string) => {
+    setIsMutating(true);
+    try {
+      await unlinkCreativeMetaAd(accountId, adId);
+      // Re-read the row from the refreshed LIST, not from the single-creative
+      // endpoint: that one returns the detail shape, which carries no metrics,
+      // and the review dialog behind this renders them.
+      const refreshed = await loadRegistry({ silent: true });
+      setReviewingItem((current) => {
+        if (!current || current.id !== creativeId) return current;
+        return refreshed?.items.find((entry) => entry.id === creativeId) ?? current;
+      });
+    } finally {
+      setIsMutating(false);
+    }
+  }, [loadRegistry]);
+
+  /** Keeps the open Edit dialog showing the new cover without closing it. */
+  const uploadThumbnail = useCallback(async (creativeId: string, file: File) => {
+    setIsMutating(true);
+    try {
+      const result = await uploadCreativeThumbnail(creativeId, file);
+      setEditingItem((current) => (current && current.id === creativeId ? { ...current, ...result } : current));
+      await loadRegistry({ silent: true });
+      return result;
+    } finally {
+      setIsMutating(false);
+    }
+  }, [loadRegistry]);
+
+  const removeThumbnail = useCallback(async (creativeId: string) => {
+    setIsMutating(true);
+    try {
+      const result = await removeCreativeThumbnail(creativeId);
+      setEditingItem((current) => (current && current.id === creativeId ? { ...current, ...result } : current));
+      await loadRegistry({ silent: true });
+    } finally {
+      setIsMutating(false);
+    }
+  }, [loadRegistry]);
+
   const transitionStatus = useCallback(async (creativeId: string, dimension: CreativeStatusDimension, toStatus: string, reason?: string) => {
     setIsMutating(true);
     try {
@@ -225,6 +274,9 @@ export function useVideoRegistryController(initialQuery = '') {
     linkAlias,
     transitionStatus,
     updateCreative,
+    unlinkMetaAd,
+    uploadThumbnail,
+    removeThumbnail,
     retry: loadRegistry,
   };
 }

@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../../common/prisma/prisma.service";
-import { CREATIVE_AGENT_PERMISSIONS } from "../creative-agent.constants";
+import { CREATIVE_AGENT_PERMISSIONS, formatCreativeCode } from "../creative-agent.constants";
 import type { CreativeActor } from "../types/creative-actor.type";
 import { deriveCreativeStorePrefixCandidate } from "../utils/creative-store-prefix";
 import { CreativeAccessService } from "./creative-access.service";
@@ -122,7 +122,14 @@ export class CreativeStoreService {
         status: store.status,
         enabled: store.enabled !== false,
         registry: config,
-        nextCode: `${codePrefix}-V${String(nextCodeNumber).padStart(4, "0")}`,
+        // Both letters are previewed because the kind is chosen in the dialog,
+        // not here — one number, two possible codes, whichever is enrolled first
+        // takes it.
+        nextCode: formatCreativeCode(codePrefix, "VIDEO", nextCodeNumber),
+        nextCodes: {
+          VIDEO: formatCreativeCode(codePrefix, "VIDEO", nextCodeNumber),
+          STATIC: formatCreativeCode(codePrefix, "STATIC", nextCodeNumber),
+        },
       };
     });
   }

@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ExternalLink, Library, MessageSquare, Pencil, Send } from 'lucide-react';
+import { ExternalLink, MessageSquare, Pencil, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { RegistryStatusPill } from '../../video-registry/_components/registry-status-pill';
 import { isValidFacebookPostUrl } from '../../video-registry/_utils/facebook-post-url';
 import { getGoogleDrivePreviewUrl } from '../../video-registry/_utils/google-drive-url';
 import { CopyCodeButton } from './copy-code-button';
-import { creativeQueryHref } from '../../video-registry/_utils/creative-navigation';
 import type { CreativeAsset, CreativeAssetComment } from '../_types/creative-assets';
 
 export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, isSaving, showPerformanceLink = false, canReview = false, onClose, onComment, onTransition, onEdit }: {
@@ -91,10 +90,8 @@ export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, 
               {canRequestRevision ? <Button size="sm" variant="outline" loading={isSaving} onClick={() => void transition('NEEDS_REVISION', true)}>Request revision</Button> : null}
               {canResolveRevision ? <Button size="sm" loading={isSaving} onClick={() => void transition('RESOLVED')}>Mark resolved</Button> : null}
             </div>
+            {/* No "open the registry record" link: this dialog IS the record. */}
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <Link href={creativeQueryHref('/video-registry', asset.code)} className="btn btn-sm btn-ghost btn-icon w-full">
-                <Library className="h-4 w-4" /><span>Open registry record</span>
-              </Link>
               {showPerformanceLink && asset.linked ? (
                 <Link href={`/performance?group=CREATIVES&creativeId=${asset.id}`} className="btn btn-sm btn-ghost btn-icon w-full">
                   <ExternalLink className="h-4 w-4" /><span>View in Performance</span>

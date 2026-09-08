@@ -2,29 +2,39 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { fetchCreativeOverview } from '../_services/creative-overview.service';
+import { manilaToday } from '../../advertising/_utils/manila-date';
 import type { CreativeOverviewParams, CreativeOverviewResponse } from '../_types/creative-overview';
 
-function ymd(date: Date) { return date.toISOString().slice(0, 10); }
-const end = new Date();
-const start = new Date();
-start.setDate(start.getDate() - 29);
-
-const DEFAULT_PARAMS: CreativeOverviewParams = {
-  startDate: ymd(start),
-  endDate: ymd(end),
-  query: '',
-  storeId: '',
-  kind: '',
-  creatorId: '',
-  lens: 'CREATIVE',
-  page: 1,
-  pageSize: 10,
-  sortKey: 'creativeScore',
-  sortDirection: 'desc',
-};
+/**
+ * Today, in Manila, on both ends — the dashboard opens on the day you are
+ * having, which is the only window where "Daily Ads Spend" reads as itself
+ * rather than as a period average.
+ *
+ * Built per mount rather than at module scope: a module-level "today" is
+ * captured when the bundle loads and then never moves, so a tab left open
+ * overnight would keep reporting yesterday. Manila rather than UTC because the
+ * API keys its days to Manila, and a UTC date would blank the dashboard every
+ * Manila morning before 08:00.
+ */
+function defaultParams(): CreativeOverviewParams {
+  const today = manilaToday();
+  return {
+    startDate: today,
+    endDate: today,
+    query: '',
+    storeId: '',
+    kind: '',
+    creatorId: '',
+    lens: 'CREATIVE',
+    page: 1,
+    pageSize: 10,
+    sortKey: 'creativeScore',
+    sortDirection: 'desc',
+  };
+}
 
 export function useCreativeOverviewController() {
-  const [params, setParams] = useState(DEFAULT_PARAMS);
+  const [params, setParams] = useState<CreativeOverviewParams>(defaultParams);
   const [searchText, setSearchText] = useState('');
   const [data, setData] = useState<CreativeOverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);

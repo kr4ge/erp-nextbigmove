@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FolderCheck, Info, Library, Search } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FolderCheck, Info, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
@@ -17,7 +17,6 @@ import { PanelHeader } from './overview-ui';
 import { creativeQueryHref } from '../../video-registry/_utils/creative-navigation';
 
 const selectClass = 'h-9 rounded-lg border border-border/60 bg-surface px-2.5 text-xs font-medium text-foreground outline-none transition hover:border-border focus:border-primary/40 focus:ring-2 focus:ring-primary/10';
-
 
 function DetailDialog({ item, showAssets, onClose }: { item: CreativeOverviewItem; showAssets: boolean; onClose: () => void }) {
   const metrics = [
@@ -47,14 +46,13 @@ function DetailDialog({ item, showAssets, onClose }: { item: CreativeOverviewIte
           {item.metaAdIds.length ? <p className="mt-1 break-all font-mono text-xs text-faint">{item.metaAdIds.join(', ')}</p> : null}
         </div>
         <DialogFooter className="border-t border-border/40 px-5 py-4">
+          {/* Assets holds the creative's record now — the registry is the
+              enrolment queue and no longer lists what is already enrolled. */}
           {showAssets ? (
-            <Link href={creativeQueryHref('/assets', item.code)} className="btn btn-md btn-outline btn-icon">
-              <FolderCheck className="h-4 w-4" /><span>Open feedback</span>
+            <Link href={creativeQueryHref('/assets', item.code)} className="btn btn-md btn-primary-soft btn-icon">
+              <FolderCheck className="h-4 w-4" /><span>Open in Assets</span>
             </Link>
           ) : null}
-          <Link href={creativeQueryHref('/video-registry', item.code)} className="btn btn-md btn-primary-soft btn-icon">
-            <Library className="h-4 w-4" /><span>Open registry</span>
-          </Link>
           {item.mediaUrl ? <a href={item.mediaUrl} target="_blank" rel="noreferrer" className="btn btn-md btn-ghost btn-icon"><ExternalLink className="h-4 w-4" /><span>Drive file</span></a> : null}
         </DialogFooter>
       </DialogContent>
@@ -165,7 +163,7 @@ export function CreativeOverviewScreen() {
         <section className="panel panel-content shadow-card transition-colors hover:border-border/40">
           <PanelHeader
             title={data?.permissions.canReadAll ? 'Leaderboard' : 'My creative performance'}
-            description="Ranked by Creative Score — the funnel the editor controls. Bottleneck names the first step that broke."
+            description="Ranked by C-Score (1–10): money first — AR%, orders, and spend that held — with hook, hold, CTR, and CVR explaining why. Click any column name to sort; click again to flip the direction."
             right={(
               <>
                 {data?.permissions.canViewMoney ? (
@@ -186,15 +184,21 @@ export function CreativeOverviewScreen() {
                   {params.lens === 'CREATIVE' ? (
                     <>
                       <option value="creativeScore:desc">Creative score</option>
+                      <option value="orders:desc">Orders</option>
+                      {/* Ascending: AR% is a cost ratio, so the best sit at the top. */}
+                      <option value="arPct:asc">AR% — lowest first</option>
+                      <option value="spend:desc">Ad Spent</option>
                       <option value="hookRate:desc">Hook rate</option>
                       <option value="holdRate:desc">Hold rate</option>
                       <option value="ctr:desc">CTR</option>
+                      <option value="conversionRate:desc">CVR</option>
                     </>
                   ) : (
                     <>
                       <option value="netMargin:desc">Net margin</option>
                       <option value="orders:desc">Orders</option>
-                      <option value="spend:desc">Spend</option>
+                      <option value="arPct:asc">AR% — lowest first</option>
+                      <option value="spend:desc">Ad Spent</option>
                     </>
                   )}
                   <option value="code:asc">Code A–Z</option>

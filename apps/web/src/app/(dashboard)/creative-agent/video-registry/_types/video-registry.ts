@@ -29,6 +29,8 @@ export type RegistryOption = {
   label: string;
   active?: boolean;
   nextCode?: string;
+  /** Per-kind preview: the letter differs (V video, I image), the number does not. */
+  nextCodes?: Partial<Record<CreativeKind, string>>;
 };
 export type RegistryStore = {
   id: string | null;
@@ -45,6 +47,12 @@ export type VideoRegistryMetrics = {
   linkClicks: number;
   videoPlays3s: number | null;
   thruPlays: number | null;
+  /** Reconciled POS orders attributed to this creative's linked ads. */
+  orders: number;
+  /** Spend ÷ sales net of cancelled/RTS/restocked/abandoned. A cost ratio, so it may exceed 1. */
+  arPct: number | null;
+  /** Orders ÷ link clicks. */
+  cvr: number | null;
   hookRate: number | null;
   holdRate: number | null;
   completionRate: number | null;
@@ -69,11 +77,22 @@ export type VideoRegistryItem = {
   metaAdNameSnapshot: string | null;
   metaLinkSource: "AUTO_CODE" | "MANUAL" | null;
   metaLinkedAt: string | null;
+  /** Every Meta ad currently linked to this creative — the primary (metaAdId) included. */
+  metaAdLinks: Array<{
+    id: string;
+    accountId: string;
+    adId: string;
+    adNameSnapshot: string;
+    source: "AUTO_CODE" | "MANUAL";
+    linkedAt: string;
+  }>;
   customId: string | null;
   productName: string | null;
   creator: RegistryPerson;
   format: string | null;
   hookType: string | null;
+  angle: string | null;
+  remixOfCode: string | null;
   script: string | null;
   notes: string | null;
   mediaUrl: string | null;
@@ -168,6 +187,8 @@ export type CreateVideoRegistryInput = {
   mediaUrl: string;
   format: string;
   hookType: string;
+  angle?: string;
+  remixOfCode?: string;
   script?: string;
   notes?: string;
   requestedCode?: string;
@@ -178,7 +199,7 @@ export type CreateVideoRegistryInput = {
 };
 export type UpdateVideoRegistryInput = Pick<
   CreateVideoRegistryInput,
-  "title" | "mediaUrl" | "format" | "hookType" | "script" | "notes"
+  "kind" | "title" | "mediaUrl" | "format" | "hookType" | "angle" | "script" | "notes"
 >;
 export type LinkCreativeAliasInput = {
   unregisteredKey: string;
@@ -194,6 +215,7 @@ export type CreativeStoreOption = {
   avatarUrl: string | null;
   enabled: boolean;
   nextCode: string;
+  nextCodes?: Partial<Record<CreativeKind, string>>;
   registry: {
     id: string;
     codePrefix: string;

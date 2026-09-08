@@ -105,10 +105,17 @@ model Tenant {
   creatives                           Creative[]
   creativeAliases                     CreativeAlias[]
   creativeStatusEvents                CreativeStatusEvent[]
+  creativeInsightRuns                 CreativeInsightRun[]
+  creativeStrategyEntries             CreativeStrategyEntry[]
+  aiSetting                           AiSetting?
   creativeMetaAdLinks                 CreativeMetaAdLink[]
   creativeReviewComments              CreativeReviewComment[]
   wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
   wmsFulfillmentAdjustments           WmsFulfillmentAdjustment[]
+  adBenchmarks                        AdBenchmark[]
+  adStrategyEntries                   AdStrategyEntry[]
+  adLibraryEntries                    AdLibraryEntry[]
+  adCreatives                         AdCreative[]
 
   @@index([slug])
   @@index([status])
@@ -158,6 +165,9 @@ model Team {
   sharedWorkflowLinks    WorkflowSharedTeam[]
   analyticsSharesOwned   AnalyticsShare[]        @relation("AnalyticsShareOwner")
   analyticsSharesShared  AnalyticsShare[]        @relation("AnalyticsShareTarget")
+  adBenchmarks           AdBenchmark[]
+  adStrategyEntries      AdStrategyEntry[]
+  adLibraryEntries       AdLibraryEntry[]
 
   @@unique([tenantId, teamCode])
   @@index([tenantId])
@@ -401,10 +411,13 @@ model User {
   readNotificationStates                    NotificationState[]            @relation("NotificationStateReadBy")
   undeliverableStoreAssignments             UndeliverableStoreAssignment[]
   creativesCreated                          Creative[]                     @relation("CreativeCreatedBy")
+  creativeStrategyEntries                   CreativeStrategyEntry[]        @relation("CreativeStrategyAuthor")
   creativeAliasesCreated                    CreativeAlias[]                @relation("CreativeAliasCreatedBy")
   creativeStatusEvents                      CreativeStatusEvent[]          @relation("CreativeStatusEventActor")
   creativeMetaLinksCreated                  Creative[]                     @relation("CreativeMetaLinkedBy")
   creativeReviewComments                    CreativeReviewComment[]        @relation("CreativeReviewCommentAuthor")
+  adStrategyEntries                         AdStrategyEntry[]              @relation("AdStrategyEntryCreatedBy")
+  adLibraryEntries                          AdLibraryEntry[]               @relation("AdLibraryEntryCreatedBy")
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -1361,6 +1374,16 @@ model Creative {
   title               String
   format              String?
   hookType            String?
+  /// The big idea in the creative's own words ("nanay ng picky eater, guilt
+  /// angle"). hookType is the coarse category; this is the free-text one the
+  /// Creative Insights analysis learns from.
+  angle               String?
+  /// Registry code of the winner this creative was remixed from. Set at
+  /// enrolment, never edited — it is how the lineage report answers whether
+  /// refreshes beat their parents.
+  remixOfCode         String?
+  /// The spoken / on-screen script of the video itself. The ad copy is not
+  /// mirrored here — it already lives on the Facebook page post.
   script              String?
   notes               String?
   mediaUrl            String?
@@ -1398,10 +1421,11 @@ model Creative {
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
-  aliases        CreativeAlias[]
-  statusEvents   CreativeStatusEvent[]
-  metaAdLinks    CreativeMetaAdLink[]
-  reviewComments CreativeReviewComment[]
+  aliases         CreativeAlias[]
+  statusEvents    CreativeStatusEvent[]
+  metaAdLinks     CreativeMetaAdLink[]
+  reviewComments  CreativeReviewComment[]
+  strategyEntries CreativeStrategyEntry[]
 
   @@unique([tenantId, code])
   @@unique([storeConfigId, codeNumber])
@@ -1452,6 +1476,86 @@ model CreativeAlias {
   @@index([creativeId])
   @@index([tenantId, createdAt])
   @@map("creative_aliases")
+}
+
+/// The tenant's Anthropic key, set by the main admin in Settings → AI and
+/// encrypted with the tenant's own key — same scheme as integration
+/// credentials. Only the last four characters ever leave the server again.
+model AiSetting {
+  tenantId        String   @id @db.Uuid
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encryptedApiKey String
+  keyLast4        String
+  updatedById     String?  @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("ai_settings")
+}
+
+/// One saved Ads Insight analysis — the LLM's winners-vs-losers read for a
+/// period. Persisted so this month's read can be compared with last month's,
+/// and so a ₱-costing model call is never repeated just to re-open a page.
+model CreativeInsightRun {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  periodStart  DateTime @db.Date
+  periodEnd    DateTime @db.Date
+  model        String
+  answer       String
+  /// What the model was shown, compressed: codes + counts, for audit.
+  inputSummary Json?
+  createdById  String?  @db.Uuid
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("creative_insight_runs")
+}
+
+/// Strategy Log — one dated line per decision the creative made, and the
+/// outcome written back once it has played out. This is what turns "the
+/// numbers moved" into "the numbers moved when we changed this", and it is the
+/// memory Creative Insights reads so its analysis knows what was actually
+/// tried instead of inferring it from metrics alone.
+model CreativeStrategyEntry {
+  id              String                 @id @default(uuid()) @db.Uuid
+  tenantId        String                 @db.Uuid
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// The day the change TOOK EFFECT, not the day it was typed — a change
+  /// logged late still has to line up with the week its numbers moved.
+  date            DateTime               @db.Date
+  title           String
+  description     String?
+  /// Free text, not an enum: the fixed list covers the usual moves, and a
+  /// typed-in type is kept as-is so the vocabulary can grow without a migration.
+  tag             String                 @default("OTHER")
+  /// Written after the fact. Half the value of the log lives here — an entry
+  /// with no result says what was tried, one with a result says what works.
+  result          String?
+  resultUpdatedAt DateTime?
+  /// AUTO_ENROLMENT rows are receipts the registry wrote when a creative was
+  /// enrolled, so a new video never depends on someone remembering to log it.
+  source          CreativeStrategySource @default(MANUAL)
+  /// Set on the auto rows, so an entry can be traced back to the creative it
+  /// records. Nulled rather than deleted if that creative ever goes away — the
+  /// decision still happened.
+  creativeId      String?                @db.Uuid
+  creative        Creative?              @relation(fields: [creativeId], references: [id], onDelete: SetNull)
+  createdById     String                 @db.Uuid
+  createdBy       User                   @relation("CreativeStrategyAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([tenantId, date])
+  @@index([tenantId, createdById, date])
+  @@index([creativeId])
+  @@map("creative_strategy_entries")
+}
+
+enum CreativeStrategySource {
+  MANUAL
+  AUTO_ENROLMENT
 }
 
 model CreativeStatusEvent {
@@ -3413,6 +3517,165 @@ model ReconcileSalesAttribution {
   @@index([tenantId, date, campaignKey])
   @@index([tenantId, date, teamCodeKey, mappingKey])
   @@map("reconcile_sales_attribution")
+}
+
+// ===========================================================================
+// Advertising console
+//
+// Everything below is additive: new tables, new enums, and nothing else. The
+// only marks left on existing models are back-relation fields, which Prisma
+// requires to declare a relation and which produce no column, no index and no
+// migration against the ERP or WMS tables.
+// ===========================================================================
+
+enum AdStrategyTag {
+  OFFER
+  AD_COPY
+  TARGETING
+  FB_STRATEGY
+  CREATIVE
+  PRICING
+  OPS
+  OTHER
+}
+
+enum AdLibraryFormat {
+  VIDEO
+  IMAGE
+  CAROUSEL
+  OTHER
+}
+
+/// The floor every ad is measured against. Without one, "good CPP" means
+/// nothing, because there is nothing it is good compared to.
+model AdBenchmark {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId   String? @db.Uuid
+  team     Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  /// Null means the tenant-wide default. Set, and it applies to one Meta ad
+  /// account only — a new brand is not held to a mature one's numbers.
+  accountId String?
+
+  label String @default("Industry benchmark")
+
+  /// Cost per POS purchase — the ceiling, not the aspiration.
+  cpp          Decimal @default(300.00) @db.Decimal(12, 2)
+  cpm          Decimal @default(150.00) @db.Decimal(12, 2)
+  /// Link clicks over impressions, as a percentage.
+  ctrPct       Float   @default(2.0)
+  /// Delivered orders over processed orders.
+  deliveryRate Float   @default(0.55)
+  cancelRate   Float   @default(0.25)
+  rtsRate      Float   @default(0.10)
+  /// Delivered COD over spend. The break-even multiple.
+  targetMer    Float   @default(2.5)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, accountId])
+  @@index([tenantId])
+  @@map("ad_benchmarks")
+}
+
+/// A change someone made, and what happened after.
+///
+/// This is the memory the numbers do not have. A jump in CPP on the 14th means
+/// nothing on its own; next to "raised the price on the 13th" it means
+/// something. `result` is written later, on purpose — the point of the log is
+/// the gap between deciding something and finding out whether it worked.
+model AdStrategyEntry {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId   String? @db.Uuid
+  team     Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  /// The day the change took effect — not the day it was typed up.
+  date        DateTime      @db.Date
+  title       String
+  description String?
+  tag         AdStrategyTag @default(OTHER)
+
+  result          String?
+  resultUpdatedAt DateTime?
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("AdStrategyEntryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, date])
+  @@index([tenantId, teamId, date])
+  @@map("ad_strategy_entries")
+}
+
+/// A swipe file: someone else's ad, kept because it is worth learning from.
+///
+/// The note is the point. A saved ad with no reason attached is a bookmark, and
+/// nobody has ever gone back through a folder of bookmarks.
+model AdLibraryEntry {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teamId   String? @db.Uuid
+  team     Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  pageName  String
+  sourceUrl String?
+  format    AdLibraryFormat @default(OTHER)
+
+  headline String?
+  bodyCopy String?
+  ctaText  String?
+
+  notes String?
+  tags  String[] @default([])
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("AdLibraryEntryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, teamId])
+  @@map("ad_library_entries")
+}
+
+/// The creative behind the ads — read from Meta, not uploaded by anyone.
+///
+/// The mapping is the point. An ad carries its creative in Meta, so the link is
+/// an exact id-to-id join rather than a guess at a code someone typed into an
+/// ad name. `thumbnailUrl` is Meta-hosted and expires; it is a pointer
+/// refreshed on each sync, never a stored file.
+model AdCreative {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  metaCreativeId String
+  name           String?
+  thumbnailUrl   String?
+  imageUrl       String?
+  videoId        String?
+  title          String?
+  body           String?
+
+  /// Every ad running this creative, by Meta ad id.
+  adIds String[] @default([])
+
+  lastSyncedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, metaCreativeId])
+  @@index([tenantId])
+  @@map("ad_creatives")
 }
 
 enum TenantMembershipStatus {

@@ -31,7 +31,9 @@ function withCurrent(options: Array<{ value: string; label: string }>, current: 
   return [...options, { value: current, label: humanize(current) }];
 }
 
-export type CreativeDetailsValue = UpdateVideoRegistryInput;
+// kind is excluded: both callers render it as their own toggle above these
+// fields and never route it through this component's onChange.
+export type CreativeDetailsValue = Omit<UpdateVideoRegistryInput, "kind">;
 
 /**
  * Long free-text fields collapse by default so the dialog stays short; the
@@ -47,7 +49,7 @@ function CollapsibleField({ label, filled, children }: {
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
         <ChevronDown className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
         <span className="form-label">{label}</span>
-        <span className="ml-auto text-xs text-muted">{filled ? "Added" : "Optional"}</span>
+        {filled ? <span className="ml-auto text-xs text-muted">Added</span> : null}
       </summary>
       <div className="border-t border-border/60 p-3 pt-2">{children}</div>
     </details>
@@ -133,42 +135,46 @@ export function CreativeDetailsFields({
       </div>
 
       <FormInput
+        name="angle"
+        label="Angle / big idea"
+        value={value.angle ?? ""}
+        onChange={(event) => onChange("angle", event.target.value)}
+        placeholder='e.g. "guilt ng nanay ng picky eater" or "budget-conscious na first-time mom"'
+        helper="The idea in your own words — Creative Insights learns from this, so the more specific, the better the analysis."
+      />
+
+      {kind === "VIDEO" ? (
+        <FormTextarea
+          name="script"
+          label="Video script"
+          value={value.script ?? ""}
+          onChange={(event) => onChange("script", event.target.value)}
+          placeholder="What the talent says and what appears on screen, hook first..."
+          helper="The spoken and on-screen lines of the video itself. The ad copy stays on the Facebook post."
+          className="min-h-32"
+        />
+      ) : null}
+
+      <FormInput
         name="mediaUrl"
         type="url"
         label="Facebook post link"
         value={value.mediaUrl}
         onChange={(event) => onChange("mediaUrl", event.target.value)}
         placeholder="https://www.facebook.com/.../posts/..."
-        helper="Optional. Public Facebook post link; clear it to remove the current source."
+        helper="Paste the public Facebook post link for this creative. Clear this field to remove the current source."
       />
 
-      {/* Both optional and collapsed by default; side by side so two closed
-          rows cost one row of height. Static has only notes. */}
-      <div className={kind === "VIDEO" ? "grid gap-2.5 lg:grid-cols-2" : ""}>
-        {kind === "VIDEO" ? (
-          <CollapsibleField label="Ad copy" filled={Boolean(value.script?.trim())}>
-            <FormTextarea
-              name="script"
-              label=""
-              value={value.script ?? ""}
-              onChange={(event) => onChange("script", event.target.value)}
-              placeholder="Paste the ad copy that runs with this creative..."
-              className="min-h-32"
-            />
-          </CollapsibleField>
-        ) : null}
-
-        <CollapsibleField label="Internal notes" filled={Boolean(value.notes?.trim())}>
-          <FormTextarea
-            name="notes"
-            label=""
-            value={value.notes ?? ""}
-            onChange={(event) => onChange("notes", event.target.value)}
-            placeholder="Add revision notes, variants, or context..."
-            className="min-h-24"
-          />
-        </CollapsibleField>
-      </div>
+      <CollapsibleField label="Internal notes" filled={Boolean(value.notes?.trim())}>
+        <FormTextarea
+          name="notes"
+          label=""
+          value={value.notes ?? ""}
+          onChange={(event) => onChange("notes", event.target.value)}
+          placeholder="Add revision notes, variants, or context..."
+          className="min-h-24"
+        />
+      </CollapsibleField>
 
       {value.mediaUrl && isValidFacebookPostUrl(value.mediaUrl) ? (
         <a href={value.mediaUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">

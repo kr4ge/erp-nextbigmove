@@ -1,0 +1,341 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@layer base {
+  :root {
+    --radius: 0.5rem;
+    --background: 241 245 249;
+    --background-secondary: 226 232 240;
+    --foreground: 15 23 42;
+
+    --surface: 255 255 255;
+    --surface-warm: 255 237 213 / 0.35;
+    --surface-warm-soft: 255 247 237 / 0.25;
+
+    --primary: 249 115 22;
+    --primary-soft: 255 247 237;
+    --primary-foreground: 255 255 255;
+    --primary-soft-foreground: 194 65 12;
+
+    --secondary: 226 232 240;
+    --muted: 100 116 139;
+
+    --info: 29 78 216;
+    --info-soft: 239 246 255;
+    --success: 22 163 74;
+    --success-soft: 167 243 208;
+    --destructive: 245 32 32;
+    --destructive-soft: 254 202 202;
+    --warning: 217 119 6;
+    --warning-soft: 254 243 199;
+
+    --border: 191 196 201;
+  }
+
+  .dark {
+    --background: 27 25 25;
+    --background-secondary: 34 32 32;
+    --foreground: 255 255 255;
+    --surface: 41 39 39;
+
+    --primary: 249 115 22;
+    --primary-soft: 255 247 237;
+    --primary-foreground: 255 255 255;
+    --primary-soft-foreground: 194 65 12;
+
+    --secondary: 226 232 240;
+    --muted: 100 116 139;
+
+    --success: 22 163 74;
+    --success-soft: 167 243 208;
+    --destructive: 245 32 32;
+    --destructive-soft: 254 202 202;
+    --warning: 217 119 6;
+    --warning-soft: 254 243 199;
+
+    --border: 70 68 68;
+  }
+
+  /* Pill */
+  .pill {
+    @apply border
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      sans-serif;
+  }
+}
+
+@layer components {
+  /* Fix react-tailwindcss-datepicker z-index to appear above modals */
+  .react-datepicker-popper {
+    z-index: 9999 !important;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply
+      inline-flex items-center justify-center
+      font-semibold
+      rounded-2xl
+      border
+      transition
+      duration-300;
+
+    &:focus {
+      @apply outline-none ring-2 ring-offset-2
+    }
+
+    &:disabled {
+      @apply disabled:opacity-60 disabled:cursor-not-allowed
+    }
+  }
+
+  .btn-sm {
+    @apply
+      h-9
+      px-3
+      text-xs
+  }
+
+  .btn-md {
+    @apply
+      h-10
+      px-4
+      text-sm
+    }
+
+  .btn-lg {
+    @apply
+      h-11
+      px-5
+      text-base
+  }
+
+  .btn-icon {
+    @apply
+      flex gap-1.5
+  }
+
+  .btn-primary {
+    @apply
+      bg-primary
+      text-primary-foreground;
+
+    &:hover {
+      @apply bg-primary/80
+    }
+
+    &:active {
+      @apply bg-primary/80
+    }
+
+    &:focus {
+      @apply ring-primary
+    }
+  }
+  .btn-primary-soft {
+    @apply
+      bg-primary-soft
+      text-primary-soft-foreground
+      border-primary/40;
+
+    &:hover {
+      @apply bg-primary-soft/80
+    }
+
+    &:active {
+      @apply bg-primary-soft/75
+    }
+
+    &:focus {
+      @apply ring-primary/50
+    }
+
+  }
+  .btn-secondary {
+    @apply
+      bg-secondary
+      text-foreground
+  }
+
+  .btn-outline {
+    @apply
+      bg-surface
+      text-foreground
+  }
+
+  .btn-ghost {
+    @apply
+      bg-transparent
+      text-foreground
+  }
+  .btn-destructive {
+    @apply
+      bg-destructive
+      text-primary-foreground
+  }
+
+  /* Panels and Cards */
+  .panel {
+    @apply
+      overflow-visible
+      rounded-xl
+      border border-border/20
+      bg-surface
+      shadow-sm
+  }
+  .panel-header {
+    @apply
+      flex items-center gap-2
+      border-b border-border/10
+      bg-secondary/20 dark:bg-background-secondary
+      px-3 py-2.5
+  }
+  .panel-title {
+    @apply
+      text-xs font-semibold uppercase tracking-[0.18em]
+      text-muted dark:text-foreground
+  }
+  .panel-content {
+    @apply
+      bg-surface
+  }
+
+  .panel-icon {
+    @apply
+      h-3.5 w-3.5 text-primary
+  }
+
+  /* KPI Cards */
+  .card {
+    @apply
+      rounded-xl
+      border border-border/50
+      bg-surface
+      p-3
+      shadow-sm
+  }
+  .card-label {
+    @apply
+      text-xs-tight font-semibold uppercase tracking-[0.18em]
+      text-slate-500 dark:text-slate-200
+  }
+  .card-value {
+    @apply
+      text-lg-loose
+      font-normal
+      tracking-tight
+      text-foreground tabular-nums
+  }
+
+  /* Inputs and Labels */
+  .form-label {
+    @apply
+      text-xs font-semibold uppercase
+      tracking-[0.16rem]
+      text-muted dark:text-slate-300
+  }
+
+  .input {
+    @apply
+      w-full
+      rounded-2xl
+      border border-border
+      bg-surface
+      px-4 py-3
+      text-sm text-foreground
+      outline-none
+      transition;
+
+    &:placeholder {
+      @apply text-muted
+    }
+
+    &:focus {
+      @apply border-primary/70 ring-4 ring-primary/30
+    }
+  }
+
+  .read-only-input {
+    @apply
+      w-full
+      rounded-2xl
+      border border-border
+      bg-secondary/40
+      px-4 py-3
+      text-sm text-foreground
+      outline-none
+  }
+
+  /* Pill */
+
+  .pill {
+    @apply
+      rounded-full border 
+      px-2.5 py-1
+      text-center text-xs font-medium
+      2xl:w-auto 2xl:text-left;
+    }
+
+    .pill-primary {
+      @apply
+        text-primary-soft-foreground
+        border-primary/10
+        bg-primary-soft/50 dark:bg-primary-soft
+    }
+
+    .pill-destructive {
+      @apply
+        text-destructive
+        border-destructive/30
+        bg-primary-soft/50
+    }
+
+    .pill-neutral {
+      @apply
+        border-none
+        bg-secondary/40 text-foreground/80
+    }
+
+    .pill-info {
+      @apply
+        border-none
+        bg-info/20 text-foreground/80
+    }
+}
+
+.kpi-datepicker-light {
+  background-color: rgb(var(--surface)) !important;
+}
+
+.dark .kpi-datepicker-light .dark\:bg-slate-800,
+.dark .kpi-datepicker-light .dark\:bg-white\/5 {
+  background-color: rgb(var(--surface)) !important;
+}
+
+.dark .kpi-datepicker-light .dark\:bg-white\/10,
+.dark .kpi-datepicker-light .dark\:hover\:bg-white\/10:hover,
+.dark .kpi-datepicker-light .dark\:focus\:bg-white\/10:focus {
+  background-color: rgb(var(--background-secondary)) !important;
+}
+
+.dark .kpi-datepicker-light .dark\:text-white,
+.dark .kpi-datepicker-light .dark\:text-white\/80,
+.dark .kpi-datepicker-light .dark\:text-white\/70,
+.dark .kpi-datepicker-light .dark\:text-gray-700 {
+  color: rgb(var(--foreground)) !important;
+}
+
+.dark .kpi-datepicker-light .dark\:border-slate-600,
+.dark .kpi-datepicker-light .dark\:border-gray-700 {
+  border-color: rgb(var(--border)) !important;
+}

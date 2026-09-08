@@ -46,6 +46,22 @@ export type TrendPoint = {
   deliveredOrders: number;
 };
 
+/**
+ * One value per calendar day in the selected period, same order as the range.
+ * `null` is a day the metric has no value for — a ratio over an empty
+ * denominator — so the sparkline breaks rather than plotting a false zero.
+ */
+export type Spark = Array<number | null>;
+
+export type AdvertisingSparklines = {
+  costPerClick: Spark;
+  costPerOrder: Spark;
+  posOrders: Spark;
+  adSpendRatio: Spark;
+  totalSpend: Spark;
+  linkedSpendCoverage: Spark;
+};
+
 export type AdvertisingDashboardResponse = {
   selected: DashboardParams;
   permissions: { canManageLinks: boolean; canReview: boolean };
@@ -103,6 +119,7 @@ export type AdvertisingDashboardResponse = {
   };
   calendar: { month: string; monthLabel: string; days: CalendarDay[] };
   trend: TrendPoint[];
+  sparklines: AdvertisingSparklines;
   needsAction: { suppressed: boolean; total: number; items: PerformanceRow[] };
   dataConfidence: {
     latestInsightDate: string | null;

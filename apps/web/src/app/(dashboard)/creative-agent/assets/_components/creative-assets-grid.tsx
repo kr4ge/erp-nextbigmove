@@ -4,6 +4,7 @@ import { MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DriveThumbnail } from '../../video-registry/_components/drive-thumbnail';
 import { RegistryStatusPill } from '../../video-registry/_components/registry-status-pill';
+import { formatCompactCurrency, formatRate } from '../../video-registry/_utils/video-registry-formatters';
 import { CopyCodeButton } from './copy-code-button';
 import type { CreativeAsset } from '../_types/creative-assets';
 
@@ -18,6 +19,25 @@ export function CreativeAssetsGrid({ items, onReview }: { items: CreativeAsset[]
         </div>
         <p className="mt-2 truncate text-xs text-muted">{item.creator.name} · {item.store.name}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2"><RegistryStatusPill type="performance" status={item.performanceStatus} />{item.revisionState !== 'NONE' ? <RegistryStatusPill type="revision" status={item.revisionState} /> : null}<span className="pill border border-border bg-background-secondary text-muted">{item.kind === 'VIDEO' ? 'Video' : 'Static'}</span>{item.linked ? <span className="pill border-none bg-success-soft/40 text-success dark:bg-success/15">Meta linked</span> : <span className="pill pill-neutral">Not linked</span>}</div>
+        {/* A static has no hook or hold to measure, so it reports reach instead. */}
+        <dl className="mt-4 grid grid-cols-4 gap-2 border-t border-border pt-4">
+          {(item.kind === 'VIDEO' ? [
+            ['Spend', formatCompactCurrency(item.metrics.spend)],
+            ['Hook', formatRate(item.metrics.hookRate)],
+            ['Hold', formatRate(item.metrics.holdRate)],
+            ['CTR', formatRate(item.metrics.ctr)],
+          ] : [
+            ['Spend', formatCompactCurrency(item.metrics.spend)],
+            ['CTR', formatRate(item.metrics.ctr)],
+            ['Impressions', item.metrics.impressions.toLocaleString('en-PH')],
+            ['Clicks', item.metrics.clicks.toLocaleString('en-PH')],
+          ]).map(([label, value]) => (
+            <div key={label} className="min-w-0">
+              <dt className="text-xs text-muted">{label}</dt>
+              <dd className="mt-1 truncate text-sm font-semibold tabular-nums text-foreground">{value}</dd>
+            </div>
+          ))}
+        </dl>
         <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted"><span>{item.commentCount} feedback {item.commentCount === 1 ? 'message' : 'messages'}</span><span>{item.submittedAt ? `Submitted ${new Date(item.submittedAt).toLocaleDateString('en-PH')}` : 'Not submitted'}</span></div>
       </div>
     </article>

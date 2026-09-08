@@ -57,7 +57,7 @@ type ColumnKey =
   | 'linkClicks'
   | 'clicks'
   | 'impressions'
-  | 'websitePurchases'
+  | 'landingPageViews'
   | 'reportingStarts'
   | 'reportingEnds'
   | 'videoPlays3s'
@@ -98,7 +98,7 @@ const HEADER_ALIASES: Record<ColumnKey, string[]> = {
   linkClicks: ['linkclicks'],
   clicks: ['clicksall', 'clicks'],
   impressions: ['impressions'],
-  websitePurchases: ['websitepurchases'],
+  landingPageViews: ['landingpageviews'],
   reportingStarts: ['reportingstarts'],
   reportingEnds: ['reportingends'],
   videoPlays3s: ['3secondvideoplays'],
@@ -288,7 +288,13 @@ export class WorkflowService {
   }
 
   private toUploadedRawInsight(row: ManualMetaUploadRowDto) {
-    const websitePurchases = Number(row.websitePurchases || 0);
+    // `leads` is the CVR denominator, so only a real landing-page-view count
+    // may fill it. Meta's website purchases used to be written here, which
+    // quietly turned CVR into orders divided by pixel purchases — two purchase
+    // counts, not a conversion rate. Purchases, their value, and returns all
+    // come from the Pancake POS instead, so the Meta column is not read at all;
+    // an export without landing page views leaves CVR unmeasured, not wrong.
+    const landingPageViews = row.landingPageViews;
 
     return {
       campaign_id: row.campaignId.trim(),
@@ -311,12 +317,12 @@ export class WorkflowService {
       video_plays_95: row.videoPlays95 ?? null,
       video_plays_100: row.videoPlays100 ?? null,
       created_time: row.dateCreated?.trim() || null,
-      actions: [
-        {
-          action_type: 'landing_page_view',
-          value: String(websitePurchases),
-        },
-      ],
+      // No column, no action — an absent Landing page views must leave the
+      // stored value alone rather than resetting it to zero, so a big export
+      // can be split across two uploads in either order.
+      actions: landingPageViews === undefined
+        ? []
+        : [{ action_type: 'landing_page_view', value: String(landingPageViews) }],
     };
   }
 
@@ -551,11 +557,13 @@ export class WorkflowService {
         ? this.parseWholeNumber(this.getCell(row, indexes.clicks), 'Clicks (all)', rowNumber)
         : linkClicks,
       impressions: this.parseWholeNumber(this.getCell(row, indexes.impressions), 'Impressions', rowNumber),
-      websitePurchases: this.parseWholeNumber(
-        this.getCell(row, indexes.websitePurchases),
-        'Website purchases',
-        rowNumber,
-      ),
+      landingPageViews: indexes.landingPageViews >= 0
+        ? this.parseWholeNumber(
+            this.getCell(row, indexes.landingPageViews),
+            'Landing page views',
+            rowNumber,
+          )
+        : undefined,
       videoPlays3s: this.parseOptionalWholeNumber(
         this.getCell(row, indexes.videoPlays3s),
         '3-second video plays',
@@ -1355,7 +1363,6 @@ export class WorkflowService {
       this.assertWholeNumber(row.linkClicks, 'Link clicks', rowNumber);
       this.assertWholeNumber(row.clicks, 'Clicks (all)', rowNumber);
       this.assertWholeNumber(row.impressions, 'Impressions', rowNumber);
-      this.assertWholeNumber(row.websitePurchases, 'Website purchases', rowNumber);
 
       const account = accountMap.get(accountId);
       const teamId = account?.teamId ?? selectedIntegration?.teamId ?? null;

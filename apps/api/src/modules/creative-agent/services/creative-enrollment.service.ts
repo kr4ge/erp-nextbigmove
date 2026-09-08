@@ -4,11 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreativeMetaLinkSource, Prisma } from '@prisma/client';
+import { CreativeMetaLinkSource, CreativeStrategySource, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import type { UploadedImageFile } from '../../../common/services/media-assets.service';
 import {
   CREATIVE_AGENT_PERMISSIONS,
   CREATIVE_CODE_MINT_RETRIES,
+  formatCreativeCode,
+  parseCreativeCode,
 } from '../creative-agent.constants';
 import { EnrollCreativeDto, EnrollUnregisteredCreativeDto } from '../dto/enroll-creative.dto';
 import { UpdateCreativeDto } from '../dto/update-creative.dto';
@@ -96,12 +99,23 @@ export class CreativeEnrollmentService {
       if (metaInsight.adName !== dto.requestedCode) {
         throw new ConflictException('The requested creative code must exactly match the Meta ad name');
       }
-      const prefix = dto.requestedCode.split('-V')[0];
-      if (prefix !== config.codePrefix) {
-        throw new ConflictException(`Code ${dto.requestedCode} belongs to the ${prefix} store prefix`);
+      const parsed = parseCreativeCode(dto.requestedCode);
+      if (!parsed) {
+        throw new ConflictException(`${dto.requestedCode} is not a registry code`);
+      }
+      if (parsed.codePrefix !== config.codePrefix) {
+        throw new ConflictException(`Code ${dto.requestedCode} belongs to the ${parsed.codePrefix} store prefix`);
+      }
+      // The kind letter has to agree with what is being enrolled, or the code
+      // would say "image" on a video and the ad name would lie about itself.
+      const expectedLetter = dto.kind === 'VIDEO' ? 'V' : 'I';
+      if (parsed.letter !== expectedLetter) {
+        throw new ConflictException(
+          `Code ${dto.requestedCode} is tagged ${parsed.letter === 'V' ? 'video' : 'image'}, but this is being enrolled as a ${dto.kind === 'VIDEO' ? 'video' : 'static'}`,
+        );
       }
       await this.assertCodeAvailable(context.tenantId, dto.requestedCode);
-      const codeNumber = Number(dto.requestedCode.split('-V')[1]);
+      const codeNumber = parsed.codeNumber;
 
       try {
         return await this.createCreative(
@@ -182,10 +196,12 @@ export class CreativeEnrollmentService {
 
 
     const data = {
+      ...(dto.kind !== undefined ? { kind: dto.kind } : {}),
       ...(dto.title !== undefined ? { title: dto.title } : {}),
       ...(dto.mediaUrl !== undefined ? { mediaUrl: dto.mediaUrl || null } : {}),
       ...(dto.format !== undefined ? { format: dto.format || null } : {}),
       ...(dto.hookType !== undefined ? { hookType: dto.hookType || null } : {}),
+      ...(dto.angle !== undefined ? { angle: dto.angle || null } : {}),
       ...(dto.script !== undefined ? { script: dto.script.trim() || null } : {}),
       ...(dto.notes !== undefined ? { notes: dto.notes.trim() || null } : {}),
     };
@@ -209,11 +225,15 @@ export class CreativeEnrollmentService {
       return creative;
     });
 
-    // Refresh the cached cover after the write commits. Capture is best-effort
-    // and never blocks the save: a creative without a thumbnail still works.
-    if (dto.mediaUrl !== undefined) {
-      if (dto.mediaUrl) {
-        await this.thumbnails.captureForCreative(updated.id, context.tenantId, dto.mediaUrl);
+    // Refresh the cached cover after the write commits, but only when the link
+    // itself actually changed — the edit form always resends mediaUrl, so
+    // comparing against the stored value (not just "was it in the payload")
+    // is what keeps re-saving unrelated fields from re-scraping Facebook and
+    // silently overwriting a manually uploaded thumbnail.
+    const normalizedNewMediaUrl = dto.mediaUrl !== undefined ? (dto.mediaUrl || null) : undefined;
+    if (normalizedNewMediaUrl !== undefined && normalizedNewMediaUrl !== existing.mediaUrl) {
+      if (normalizedNewMediaUrl) {
+        await this.thumbnails.captureForCreative(updated.id, context.tenantId, normalizedNewMediaUrl);
       } else {
         await this.thumbnails.clearForCreative(updated.id, context.tenantId);
       }
@@ -223,6 +243,35 @@ export class CreativeEnrollmentService {
       }));
     }
     return this.serializeCreative(updated);
+  }
+
+  /** A creative without a usable auto-captured cover can still get one, pasted in directly. */
+  async uploadThumbnail(actor: CreativeActor, creativeId: string, file: UploadedImageFile | undefined) {
+    const context = await this.access.resolve(actor);
+    const existing = await this.prisma.creative.findFirst({
+      where: { id: creativeId, tenantId: context.tenantId },
+      select: { id: true, createdById: true },
+    });
+    if (!existing) throw new NotFoundException('Creative not found');
+    if (!this.access.canEdit(context, existing.createdById)) {
+      throw new ForbiddenException('You cannot edit this creative');
+    }
+    return this.thumbnails.uploadManualThumbnail(existing.id, context.tenantId, file);
+  }
+
+  /** Drops whatever cover is set (manual or auto-captured) so the tile falls back to its placeholder. */
+  async removeThumbnail(actor: CreativeActor, creativeId: string) {
+    const context = await this.access.resolve(actor);
+    const existing = await this.prisma.creative.findFirst({
+      where: { id: creativeId, tenantId: context.tenantId },
+      select: { id: true, createdById: true },
+    });
+    if (!existing) throw new NotFoundException('Creative not found');
+    if (!this.access.canEdit(context, existing.createdById)) {
+      throw new ForbiddenException('You cannot edit this creative');
+    }
+    await this.thumbnails.clearForCreative(existing.id, context.tenantId);
+    return { thumbnailUrl: null, thumbnailIsVideo: false };
   }
 
   private async getActiveStoreConfig(tenantId: string, storeId: string) {
@@ -285,7 +334,7 @@ export class CreativeEnrollmentService {
     metaLink?: CreativeMetaLinkInput,
     item?: { variationId: string; customId: string; name: string },
   ) {
-    const code = requestedCode ?? `${config.codePrefix}-V${String(codeNumber).padStart(4, '0')}`;
+    const code = requestedCode ?? formatCreativeCode(config.codePrefix, dto.kind, codeNumber);
     const now = new Date();
     const creative = await this.prisma.$transaction(async (tx) => {
       const created = await tx.creative.create({
@@ -299,6 +348,8 @@ export class CreativeEnrollmentService {
           mediaUrl: dto.mediaUrl || null,
           format: dto.format || null,
           hookType: dto.hookType || null,
+          angle: dto.angle || null,
+          remixOfCode: dto.remixOfCode || null,
           script: dto.script?.trim() || null,
           notes: dto.notes?.trim() || null,
           posVariationId: item?.variationId ?? null,
@@ -329,6 +380,26 @@ export class CreativeEnrollmentService {
             : {}),
         },
         include: this.detailInclude(),
+      });
+      // The Strategy Log entry rides the same transaction as the enrolment.
+      // Making it a separate chore is how it silently stops happening — and a
+      // log missing every new creative cannot explain why the numbers moved.
+      await tx.creativeStrategyEntry.create({
+        data: {
+          tenantId,
+          date: new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(now)),
+          title: `New ${dto.kind === 'VIDEO' ? 'video' : 'static'}: ${code} — ${dto.title}`,
+          description: [
+            dto.angle ? `Angle: ${dto.angle}.` : null,
+            dto.hookType ? `Hook: ${dto.hookType}.` : null,
+            dto.format ? `Format: ${dto.format}.` : null,
+            dto.remixOfCode ? `Remix of ${dto.remixOfCode}.` : null,
+          ].filter(Boolean).join(' ') || null,
+          tag: 'NEW_CREATIVE',
+          creativeId: created.id,
+          createdById: userId,
+          source: CreativeStrategySource.AUTO_ENROLMENT,
+        },
       });
       await tx.auditLog.create({
         data: {

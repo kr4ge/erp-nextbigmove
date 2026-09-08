@@ -5,7 +5,6 @@ import { CopyCodeButton } from "../../assets/_components/copy-code-button";
 import { Button } from '@/components/ui/button';
 import type { VideoRegistryItem } from '../_types/video-registry';
 import { formatCompactCurrency, formatRate } from '../_utils/video-registry-formatters';
-import { DriveThumbnail } from './drive-thumbnail';
 import { RegistryStatusPill } from './registry-status-pill';
 
 export function VideoRegistryGrid({ items, actionLabel, onReview }: { items: VideoRegistryItem[]; actionLabel: string; onReview: (item: VideoRegistryItem) => void }) {
@@ -13,9 +12,8 @@ export function VideoRegistryGrid({ items, actionLabel, onReview }: { items: Vid
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
         <article key={item.id} className="panel overflow-hidden">
-          <div className="p-3 pb-0">
-            <DriveThumbnail mediaUrl={item.mediaUrl} title={item.title} cachedThumbnailUrl={item.thumbnailUrl} isVideo={item.thumbnailIsVideo} onClick={() => onReview(item)} />
-          </div>
+          {/* No cover art here on purpose: the registry is the code-and-numbers
+              ledger, and the visual review of a creative lives in Assets. */}
           <div className="p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">

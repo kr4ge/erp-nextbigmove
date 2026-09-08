@@ -13,6 +13,10 @@ type MetricBucket = {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  /** Reconciled POS side — orders drive CVR, and the sales pair drives AR%. */
+  orders: number;
+  grossSales: number;
+  excludedSales: number;
   video: Partial<Record<VideoMetricKey, number>>;
   accountIds: Set<string>;
 };
@@ -112,7 +116,7 @@ export class CreativeLibraryService {
       ...(query.accountId ? { accountId: query.accountId } : {}),
     };
 
-    const [linkedCreatives, visibleCreatives, groupedInsights, storeConfigs, accounts, creators] = await Promise.all([
+    const [linkedCreatives, visibleCreatives, groupedInsights, groupedReconciled, storeConfigs, accounts, creators] = await Promise.all([
       this.prisma.creativeMetaAdLink.findMany({
         where: { tenantId: context.tenantId },
         select: { creativeId: true, accountId: true, adId: true },
@@ -139,6 +143,22 @@ export class CreativeLibraryService {
         },
         _min: { date: true },
         _max: { date: true },
+      }),
+      // Orders and sales live in the reconciled table, not in Meta's insights —
+      // AR% and CVR cannot be derived from ad delivery alone.
+      // Keyed on adId alone, matching the overview service: ReconcileMarketing
+      // carries a nullable accountId, so pairing on it would silently drop rows.
+      this.prisma.reconcileMarketing.groupBy({
+        by: ['adId'],
+        where: {
+          tenantId: context.tenantId,
+          date: { gte: range.start, lte: range.end },
+          ...(query.accountId ? { accountId: query.accountId } : {}),
+        },
+        _sum: {
+          purchasesPos: true, codPos: true, canceledCodPos: true,
+          rtsCodPos: true, restockingCodPos: true, abandonedCodPos: true,
+        },
       }),
       this.prisma.creativeStoreConfig.findMany({
         where: { tenantId: context.tenantId },
@@ -208,6 +228,21 @@ export class CreativeLibraryService {
         if (row._max.date && row._max.date > bucket.lastSeenAt) bucket.lastSeenAt = row._max.date;
         unregistered.set(key, bucket);
       }
+    }
+
+    // Reconciled orders and sales, folded onto whichever creative owns the ad.
+    // Unlinked ads are skipped: with no creative to attribute them to, their
+    // revenue would inflate somebody else's AR%.
+    const linkedByAdId = new Map(linkedCreatives.map((link) => [link.adId, link.creativeId]));
+    for (const row of groupedReconciled) {
+      const linkedCreativeId = linkedByAdId.get(row.adId);
+      if (!linkedCreativeId) continue;
+      const bucket = metrics.get(linkedCreativeId) ?? this.emptyMetrics();
+      bucket.orders += row._sum.purchasesPos ?? 0;
+      bucket.grossSales += Number(row._sum.codPos ?? 0);
+      bucket.excludedSales += Number(row._sum.canceledCodPos ?? 0) + Number(row._sum.rtsCodPos ?? 0)
+        + Number(row._sum.restockingCodPos ?? 0) + Number(row._sum.abandonedCodPos ?? 0);
+      metrics.set(linkedCreativeId, bucket);
     }
 
     const normalizedQuery = query.query?.toLowerCase() ?? '';
@@ -382,6 +417,9 @@ export class CreativeLibraryService {
       impressions: 0,
       clicks: 0,
       linkClicks: 0,
+      orders: 0,
+      grossSales: 0,
+      excludedSales: 0,
       video: {},
       accountIds: new Set<string>(),
     };
@@ -404,6 +442,15 @@ export class CreativeLibraryService {
     return rate >= 0 && rate <= 1 ? rate : null;
   }
 
+  /**
+   * For cost ratios, which are NOT probabilities. safeRate withholds anything
+   * above 1 as a broken stage, but an AR% over 100% is a real and important
+   * result — an ad that spent more than it sold — and must not be hidden.
+   */
+  private roundRate(value: number): number {
+    return Math.round((value + Number.EPSILON) * 10_000) / 10_000;
+  }
+
   private serializeCreative(creative: CreativeLibraryRow, metrics: MetricBucket, adNameCreator?: string): SerializedLibraryItem & Record<string, unknown> {
     const creatorName = [creative.createdBy.firstName, creative.createdBy.lastName].filter(Boolean).join(' ') || creative.createdBy.email;
     const videoPlays3s = metrics.video.videoPlays3s ?? null;
@@ -417,6 +464,13 @@ export class CreativeLibraryService {
       ? null
       : this.safeRate(thruPlays, metrics.impressions);
     const ctr = this.safeRate(metrics.linkClicks, metrics.impressions);
+    // AR% follows the Marketing KPI exclusion policy: cancelled, RTS, restocked
+    // and abandoned money is not revenue. It is a cost ratio, so unlike the
+    // rates above it is not withheld for exceeding 1 — spending more than you
+    // sold is a real, and important, result.
+    const adjustedSales = Math.max(0, metrics.grossSales - metrics.excludedSales);
+    const arPct = adjustedSales > 0 ? this.roundRate(metrics.spend / adjustedSales) : null;
+    const cvr = this.safeRate(metrics.orders, metrics.linkClicks);
     return {
       id: creative.id,
       code: creative.code,
@@ -442,6 +496,8 @@ export class CreativeLibraryService {
       creator: { id: creative.createdBy.id, name: creatorName, adName: adNameCreator ?? creatorName, avatar: creative.createdBy.avatar },
       format: creative.format,
       hookType: creative.hookType,
+      angle: creative.angle,
+      remixOfCode: creative.remixOfCode,
       script: creative.script,
       notes: creative.notes,
       mediaUrl: creative.mediaUrl,
@@ -458,6 +514,9 @@ export class CreativeLibraryService {
         linkClicks: metrics.linkClicks,
         videoPlays3s,
         thruPlays,
+        orders: metrics.orders,
+        arPct,
+        cvr,
         hookRate,
         holdRate,
         completionRate,

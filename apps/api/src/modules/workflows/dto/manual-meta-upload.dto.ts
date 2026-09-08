@@ -55,8 +55,25 @@ export class ManualMetaUploadRowDto {
   @IsNumber()
   impressions: number;
 
+  /**
+   * Meta's own purchase count, no longer read. Purchases, their value, and
+   * returns come from the Pancake POS, which is the only source that knows
+   * what was actually delivered and paid for. Kept optional so a job queued
+   * before the column was dropped still validates.
+   */
   @IsNumber()
-  websitePurchases: number;
+  @IsOptional()
+  websitePurchases?: number;
+
+  /**
+   * Meta's "Landing page views" — the CVR denominator. Optional because
+   * exports predating this column exist; absent leaves CVR unmeasured, which
+   * is the honest outcome. It must never fall back to website purchases:
+   * orders ÷ purchases is not a conversion rate.
+   */
+  @IsNumber()
+  @IsOptional()
+  landingPageViews?: number;
 
   @IsNumber()
   @IsOptional()

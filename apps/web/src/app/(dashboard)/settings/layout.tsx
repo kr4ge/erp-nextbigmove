@@ -49,6 +49,8 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     if (perms.includes('kpi.marketing.read') || perms.includes('kpi.marketing.manage')) {
       base.push({ href: '/settings/kpis', label: 'KPIs' });
     }
+    // Main-admin only: this is where the Anthropic key lives.
+    if (perms.includes('tenant.manage')) base.push({ href: '/settings/ai', label: 'AI' });
     return base;
   }, [perms]);
 

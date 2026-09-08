@@ -11,6 +11,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { CREATIVE_CODE_EXACT_REGEX } from '../creative-agent.constants';
 
 /**
  * The paste-ready Meta ad name is `title_creator_CODE`, and auto-matching reads
@@ -71,6 +72,17 @@ export class EnrollCreativeDto {
   hookType?: string;
 
   @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(500)
+  angle?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @Matches(CREATIVE_CODE_EXACT_REGEX, { message: 'remixOfCode must be a registry code like TB-V0001 or TB-I0002' })
+  remixOfCode?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(20000)
   script?: string;
@@ -84,7 +96,7 @@ export class EnrollCreativeDto {
 export class EnrollUnregisteredCreativeDto extends EnrollCreativeDto {
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
-  @Matches(/^[A-Z]{2,6}-V\d{3,6}$/)
+  @Matches(CREATIVE_CODE_EXACT_REGEX)
   requestedCode?: string;
 
   @IsString()

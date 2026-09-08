@@ -22,6 +22,7 @@ import {
   Sun,
   Video,
   FolderCheck,
+  Sparkles,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { ToastProvider } from '@/components/ui/toast';
@@ -95,12 +96,6 @@ const baseNavigation: NavLink[] = [
     icon: <BarChart3 className={iconClasses} />,
   },
   {
-    href: '/assets',
-    label: 'Assets',
-    description: 'Your creative work and feedback',
-    icon: <FolderCheck className={iconClasses} />,
-  },
-  {
     href: '/reports',
     label: 'Reports',
     description: 'Tenant-wide POS exports',
@@ -126,10 +121,28 @@ const baseNavigation: NavLink[] = [
     ],
   },
   {
+    href: '/creative-insights',
+    label: 'Creative Insights',
+    description: 'What to scale, refresh, or let go — and your next batch',
+    icon: <Sparkles className={iconClasses} />,
+  },
+  {
+    href: '/assets',
+    label: 'Assets',
+    description: 'Your creative library, performance, and feedback',
+    icon: <FolderCheck className={iconClasses} />,
+  },
+  {
     href: '/video-registry',
     label: 'Video Registry',
-    description: 'Creative library and performance',
+    description: 'Meta ads waiting to be enrolled',
     icon: <Video className={iconClasses} />,
+  },
+  {
+    href: '/strategy-log',
+    label: 'Strategy Log',
+    description: 'What you changed, and what it did',
+    icon: <ClipboardList className={iconClasses} />,
   },
   {
     href: '/workflows',
@@ -294,6 +307,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     // through Performance and Assets instead.
     const canShowVideoRegistry = canReadCreative;
     const canShowPerformance = canReadCreativeAll && canReviewCreative;
+    // Assets is the creative library for everyone who can read one. It used to
+    // hang off read_all alone, on the reasoning that a maker already saw the
+    // same shelf in Video Registry — but the registry is the enrolment queue
+    // now and lists nothing that is already enrolled. Gating Assets on read_all
+    // would leave a maker with no way to reach their own work at all. The API
+    // still scopes a maker to creatives they created.
+    const canShowAssets = canReadCreative || canReadCreativeAll;
 
     return baseNavigation.flatMap((link) => {
       if (link.href !== '/analytics') {
@@ -317,8 +337,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           return hasReports ? [link] : [];
         }
         if (link.href === '/performance') return canShowCreativeWorkspace && canShowPerformance ? [link] : [];
-        if (link.href === '/assets') return canShowCreativeWorkspace && (canReadCreative || canReadCreativeAll) ? [link] : [];
+        // The creative's own steering view — same audience as Video Registry,
+        // by the owner's explicit call: "para sa creatives, hindi sa advertiser".
+        if (link.href === '/creative-insights') return canShowCreativeWorkspace && canReadCreative ? [link] : [];
+        if (link.href === '/assets') return canShowCreativeWorkspace && canShowAssets ? [link] : [];
         if (link.href === '/video-registry') return canShowCreativeWorkspace && canShowVideoRegistry ? [link] : [];
+        // Unlike Creative Insights, the log is deliberately open to read_all too:
+        // a manager reading what the team changed is the point of keeping it.
+        if (link.href === '/strategy-log') {
+          return canShowCreativeWorkspace && (canReadCreative || canReadCreativeAll) ? [link] : [];
+        }
         if (link.href !== '/integrations') return [link];
 
         const children = (link.children || []).filter((child) => {

@@ -1,7 +1,12 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { CREATIVE_AGENT_PERMISSIONS, CREATIVE_CODE_REGEX } from '../creative-agent.constants';
+import {
+  CREATIVE_AGENT_PERMISSIONS,
+  CREATIVE_CODE_EXACT_REGEX,
+  CREATIVE_CODE_REGEX,
+  parseCreativeCode,
+} from '../creative-agent.constants';
 import { CreateCreativeAliasDto, LinkUnregisteredCreativeDto } from '../dto/creative-alias.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
 import { CreativeAccessService } from './creative-access.service';
@@ -64,7 +69,7 @@ export class CreativeAliasService {
     }
 
     const normalizedAlias = dto.alias.trim().toUpperCase();
-    const isCode = /^[A-Z]{2,6}-V\d{3,6}$/.test(normalizedAlias);
+    const isCode = CREATIVE_CODE_EXACT_REGEX.test(normalizedAlias);
     const metaMatchesAlias = isCode
       ? Array.from(metaInsight.adName.toUpperCase().matchAll(new RegExp(CREATIVE_CODE_REGEX.source, 'gi')))
         .some((match) => match[1]?.toUpperCase() === normalizedAlias)
@@ -376,7 +381,7 @@ export class CreativeAliasService {
     const detectedCodes = Array.from(normalizedAlias.matchAll(new RegExp(CREATIVE_CODE_REGEX.source, 'gi')))
       .map((match) => match[1]?.toUpperCase())
       .filter((value): value is string => Boolean(value));
-    if (detectedCodes.some((code) => !code.startsWith(`${creative.storeConfig.codePrefix}-V`))) {
+    if (detectedCodes.some((code) => parseCreativeCode(code)?.codePrefix !== creative.storeConfig.codePrefix)) {
       throw new ConflictException('A code-shaped alias must use the creative store prefix');
     }
 

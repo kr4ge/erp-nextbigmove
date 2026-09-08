@@ -1,5 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { CreativeRevisionState, Prisma } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { CreativeKind, CreativeRevisionState, Prisma } from '@prisma/client';
 import { buildAdNameCreatorLabels } from '../../../common/utils/ad-name-creator';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CREATIVE_AGENT_PERMISSIONS } from '../creative-agent.constants';
@@ -19,6 +19,16 @@ const REVISION_STATES: CreativeRevisionState[] = [
   CreativeRevisionState.RESOLVED,
 ];
 
+/** Play counts stay nullable: "not measured" is not the same as zero. */
+type AssetMetricBucket = {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+  videoPlays3s: number | null;
+  thruPlays: number | null;
+};
+
 @Injectable()
 export class CreativeAssetsService {
   constructor(
@@ -32,6 +42,7 @@ export class CreativeAssetsService {
     // READ_ALL admits the Advertising reviewer persona (read_all + review),
     // which owns the tenant-wide approval queue but holds neither read nor edit.
     this.access.require(context, CREATIVE_AGENT_PERMISSIONS.READ, CREATIVE_AGENT_PERMISSIONS.READ_ALL, CREATIVE_AGENT_PERMISSIONS.EDIT);
+    const range = this.resolveDateRange(query.startDate, query.endDate);
     const creatorLabels = buildAdNameCreatorLabels(await this.prisma.user.findMany({
       where: { tenantId: context.tenantId, status: 'ACTIVE' },
       select: { id: true, firstName: true, lastName: true, email: true },
@@ -82,7 +93,7 @@ export class CreativeAssetsService {
         take: query.pageSize,
         orderBy,
         select: {
-          id: true, code: true, title: true, kind: true, mediaUrl: true, format: true, hookType: true,
+          id: true, code: true, title: true, kind: true, mediaUrl: true, format: true, hookType: true, angle: true,
           posCustomId: true,
           script: true, notes: true, revisionState: true, performanceStatus: true, createdById: true,
           revisionRequestedAt: true, revisionResolvedAt: true,
@@ -113,10 +124,15 @@ export class CreativeAssetsService {
       thumbnailUrls.set(item.id, await this.mediaAssets.createSignedAssetUrl(item.thumbnailAsset));
     }));
 
+    const metricsByCreative = await this.loadMetrics(context.tenantId, items, range);
+
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
     return {
       permissions: { canReadAll },
-      selected: { query: query.query ?? '', storeId: effectiveStoreId ?? '', creatorId: query.creatorId ?? '', revisionState: query.revisionState ?? '', queue: query.queue ?? '', page: query.page, pageSize: query.pageSize },
+      selected: {
+        startDate: range.startKey, endDate: range.endKey,
+        query: query.query ?? '', storeId: effectiveStoreId ?? '', creatorId: query.creatorId ?? '', revisionState: query.revisionState ?? '', queue: query.queue ?? '', page: query.page, pageSize: query.pageSize,
+      },
       filters: {
         stores: stores.stores,
         defaultStoreId: stores.defaultStoreId,
@@ -130,7 +146,7 @@ export class CreativeAssetsService {
         return {
           id: item.id, code: item.code, title: item.title, kind: item.kind, mediaUrl: item.mediaUrl,
           customId: item.posCustomId ?? null,
-          format: item.format, hookType: item.hookType, script: item.script, notes: item.notes,
+          format: item.format, hookType: item.hookType, angle: item.angle, script: item.script, notes: item.notes,
           revisionState: item.revisionState, performanceStatus: item.performanceStatus,
           revisionRequestedAt: item.revisionRequestedAt, revisionResolvedAt: item.revisionResolvedAt,
           creator: { id: item.createdBy.id, name: this.personName(item.createdBy), adName: creatorLabels.get(item.createdBy.id) ?? this.personName(item.createdBy), avatar: item.createdBy.avatar },
@@ -142,6 +158,7 @@ export class CreativeAssetsService {
           metaAdIds: [...new Set(linkedAdIds)],
           thumbnailUrl: thumbnailUrls.get(item.id) ?? null,
           thumbnailIsVideo: item.thumbnailIsVideo,
+          metrics: this.serializeMetrics(item.kind, metricsByCreative.get(item.id)),
           submittedAt: item.submittedAt, approvedAt: item.approvedAt, createdAt: item.createdAt, updatedAt: item.updatedAt,
         };
       }),
@@ -201,4 +218,89 @@ export class CreativeAssetsService {
   }
 
   private humanize(value: string) { return value.toLowerCase().replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase()); }
+
+  /** Defaults to the trailing 30 days, matching the creative library. */
+  private resolveDateRange(startDate?: string, endDate?: string) {
+    const end = endDate ? new Date(endDate) : new Date();
+    const start = startDate
+      ? new Date(startDate)
+      : new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() - 29));
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+      throw new BadRequestException('Invalid creative assets date range');
+    }
+    const days = Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+    if (days > 366) throw new BadRequestException('Creative assets date range cannot exceed 366 days');
+    return { start, end, startKey: this.dateKey(start), endKey: this.dateKey(end) };
+  }
+
+  private dateKey(value: Date) { return value.toISOString().slice(0, 10); }
+
+  /**
+   * Per-creative spend and delivery for the page being shown, summed over the
+   * ads each creative is linked to. Only the rows on screen are queried — this
+   * is a page of at most 48, not the whole library.
+   */
+  private async loadMetrics(
+    tenantId: string,
+    items: Array<{ id: string; metaAdId: string | null; metaAdLinks: Array<{ adId: string }> }>,
+    range: { start: Date; end: Date },
+  ) {
+    const adIdsByCreative = new Map<string, string[]>();
+    for (const item of items) {
+      const ids = item.metaAdLinks.map((link) => link.adId);
+      if (ids.length === 0 && item.metaAdId) ids.push(item.metaAdId);
+      adIdsByCreative.set(item.id, [...new Set(ids)]);
+    }
+    const allAdIds = [...new Set([...adIdsByCreative.values()].flat())];
+    const totals = new Map<string, AssetMetricBucket>();
+    if (allAdIds.length === 0) return totals;
+
+    const rows = await this.prisma.metaAdInsight.groupBy({
+      by: ['adId'],
+      where: { tenantId, adId: { in: allAdIds }, date: { gte: range.start, lte: range.end } },
+      _sum: { spend: true, impressions: true, clicks: true, linkClicks: true, videoPlays3s: true, thruPlays: true },
+    });
+    const byAd = new Map(rows.map((row) => [row.adId, row]));
+
+    for (const [creativeId, adIds] of adIdsByCreative) {
+      const bucket: AssetMetricBucket = {
+        spend: 0, impressions: 0, clicks: 0, linkClicks: 0, videoPlays3s: null, thruPlays: null,
+      };
+      for (const adId of adIds) {
+        const row = byAd.get(adId);
+        if (!row) continue;
+        bucket.spend += Number(row._sum.spend ?? 0);
+        bucket.impressions += row._sum.impressions ?? 0;
+        bucket.clicks += row._sum.clicks ?? 0;
+        bucket.linkClicks += row._sum.linkClicks ?? 0;
+        // Null stays null: a source that never measured plays must not read as a zero rate.
+        if (row._sum.videoPlays3s !== null) bucket.videoPlays3s = (bucket.videoPlays3s ?? 0) + row._sum.videoPlays3s;
+        if (row._sum.thruPlays !== null) bucket.thruPlays = (bucket.thruPlays ?? 0) + row._sum.thruPlays;
+      }
+      totals.set(creativeId, bucket);
+    }
+    return totals;
+  }
+
+  /** Same rate conventions as the creative library, so the two screens agree. */
+  private serializeMetrics(kind: CreativeKind, bucket: AssetMetricBucket | undefined) {
+    const totals = bucket ?? { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, videoPlays3s: null, thruPlays: null };
+    const isStatic = kind === CreativeKind.STATIC;
+    return {
+      spend: Math.round((totals.spend + Number.EPSILON) * 100) / 100,
+      impressions: totals.impressions,
+      clicks: totals.clicks,
+      linkClicks: totals.linkClicks,
+      hookRate: isStatic ? null : this.safeRate(totals.videoPlays3s, totals.impressions),
+      holdRate: isStatic || totals.videoPlays3s === null ? null : this.safeRate(totals.thruPlays, totals.videoPlays3s),
+      ctr: this.safeRate(totals.linkClicks, totals.impressions),
+    };
+  }
+
+  /** Withholds an impossible rate rather than printing one above 100%. */
+  private safeRate(numerator: number | null, denominator: number): number | null {
+    if (numerator === null || denominator <= 0) return null;
+    const rate = numerator / denominator;
+    return rate >= 0 && rate <= 1 ? rate : null;
+  }
 }

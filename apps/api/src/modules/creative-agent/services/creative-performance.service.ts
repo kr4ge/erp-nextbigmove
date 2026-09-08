@@ -40,7 +40,9 @@ dayjs.extend(timezone);
 
 const MANILA_TZ = 'Asia/Manila';
 /** Synthetic reconcile rows created for POS orders no ad claimed. */
-const UNMATCHED_AD_NAME = 'POS Unmatched Order';
+/** Synthetic row the reconciler writes for POS orders no ad claims. Exported
+ *  so the dashboard's per-day series excludes exactly what the totals do. */
+export const UNMATCHED_AD_NAME = 'POS Unmatched Order';
 
 export type AdvertisingScope = {
   totals: {

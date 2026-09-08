@@ -9,6 +9,7 @@ import {
   formatCount,
   formatCurrency,
   formatPercent,
+  type RateTone,
 } from '../../../overview/_utils/creative-overview-format';
 import { VideoRegistryDateRangePicker } from '../../../video-registry/_components/video-registry-date-range-picker';
 import { VerdictPill } from '../../performance/_constants/performance-columns';
@@ -29,6 +30,20 @@ const selectClass = 'h-9 rounded-lg border border-border/60 bg-surface px-2.5 te
 
 function floorHealthy(metric: DashboardMetric | undefined, floor: number | undefined): boolean {
   return metric?.value != null && floor != null && metric.value >= floor;
+}
+
+const metricSub = (metric: DashboardMetric | undefined, sub: string) => {
+  if (!metric || metric.availability === 'OK') return sub;
+  if (metric.availability === 'UNAVAILABLE') return 'not measured';
+  return 'no data in range';
+};
+
+/** Ad spend ratio inverts the usual tone logic — lower is better. */
+function arTone(value: number | null | undefined): RateTone {
+  if (value == null) return 'neutral';
+  if (value <= 0.3) return 'good';
+  if (value <= 0.5) return 'warn';
+  return 'bad';
 }
 
 export function AdvertisingDashboardScreen() {
@@ -66,6 +81,11 @@ export function AdvertisingDashboardScreen() {
   };
   const advertising = data?.kpis.advertising;
   const creative = data?.kpis.creative;
+  const ceiling = data?.scope.ceiling;
+  const spark = data?.sparklines;
+  const cppTone: RateTone = advertising?.costPerOrder.value != null && ceiling?.workingCeiling != null
+    ? (advertising.costPerOrder.value <= ceiling.workingCeiling ? 'good' : 'bad')
+    : 'neutral';
   const floors = data?.floors;
   const craftSub = (metric: DashboardMetric | undefined, floor: number | undefined) => {
     if (!metric || metric.value == null) return 'not measured';
@@ -201,6 +221,29 @@ export function AdvertisingDashboardScreen() {
         <section className="panel panel-content shadow-card">
           <PanelHeader
             title="Advertising metrics"
+            description={ceiling?.workingCeiling != null
+              ? `Measured against a working ceiling of ${formatCurrency(ceiling.workingCeiling)}${ceiling.provisional ? ' — provisional, derived from the reconciled break-even' : ''}.`
+              : 'No cost ceiling can be derived yet — deliver reconciled orders to earn one.'}
+          />
+          {controller.isLoading ? (
+            <DashboardMetricGridSkeleton count={6} compact className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6" />
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
+              <StatTile compact label="Cost per click" info="Spend ÷ link clicks." value={formatCurrency(advertising?.costPerClick.value)} sub={metricSub(advertising?.costPerClick, 'spend ÷ link clicks')} spark={spark?.costPerClick} />
+              <StatTile compact label="Cost per order" info="Spend ÷ POS orders placed — never pixel purchases." value={formatCurrency(advertising?.costPerOrder.value)} tone={cppTone} sub={ceiling?.workingCeiling != null ? `vs ${formatCurrency(ceiling.workingCeiling)} ceiling` : 'no ceiling yet'} spark={spark?.costPerOrder} />
+              <StatTile compact label="POS orders" info="Orders placed, from the POS — the only order source that counts." value={formatCount(advertising?.posOrders.value)} sub="orders placed · from POS" spark={spark?.posOrders} />
+              <StatTile compact label="Ad spend ratio" info="Spend ÷ net-of-cancel/RTS sales, per the Marketing KPI exclusion policy. Lower is better. AR% for short." value={formatPercent(advertising?.adSpendRatio.value)} tone={arTone(advertising?.adSpendRatio.value)} sub="AR% · lower is better" spark={spark?.adSpendRatio} />
+              <StatTile compact label="Total ad spend" info="All spend in the selected period." value={formatCurrency(advertising?.totalSpend.value)} sub="this period" spark={spark?.totalSpend} />
+              <StatTile compact label="Linked-spend coverage" info="Spend on Meta ads linked to a registered creative ÷ all spend. Untraceable money earns nobody credit." value={formatPercent(advertising?.linkedSpendCoverage.value, 0)} sub={metricSub(advertising?.linkedSpendCoverage, 'of spend is linked')} spark={spark?.linkedSpendCoverage} />
+            </div>
+          )}
+        </section>
+
+        {/* 2b · Creative KPI group — the scorecard the Creative Dashboard shows,
+            scoped to the selected creators and stores. */}
+        <section className="panel panel-content shadow-card">
+          <PanelHeader
+            title="Creative metrics"
             description="The same creative and attributed-order scorecard used by the Creative Dashboard, scoped by creator and store."
           />
           {controller.isLoading ? (

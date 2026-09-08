@@ -20,6 +20,7 @@ import { RolesModule } from './modules/roles/roles.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { KpisModule } from './modules/kpis/kpis.module';
+import { AdvertisingModule } from './modules/advertising/advertising.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { WmsCoreModule } from './modules/wms-core/wms-core.module';
 import { WmsPurchasingModule } from './modules/wms-purchasing/wms-purchasing.module';
@@ -33,6 +34,7 @@ import { WmsMobileModule } from './modules/wms-mobile/wms-mobile.module';
 import { WmsSettingsModule } from './modules/wms-settings/wms-settings.module';
 import { WmsIntegrationsModule } from './modules/wms-integrations/wms-integrations.module';
 import { CreativeAgentModule } from './modules/creative-agent/creative-agent.module';
+import { AiSettingsModule } from './modules/ai-settings/ai-settings.module';
 
 @Module({
   imports: [
@@ -107,6 +109,7 @@ import { CreativeAgentModule } from './modules/creative-agent/creative-agent.mod
     AnalyticsModule,
     OrdersModule,
     KpisModule,
+    AdvertisingModule,
     ReportsModule,
     WmsCoreModule,
     WmsPurchasingModule,
@@ -120,6 +123,7 @@ import { CreativeAgentModule } from './modules/creative-agent/creative-agent.mod
     WmsSettingsModule,
     WmsIntegrationsModule,
     CreativeAgentModule,
+    AiSettingsModule,
   ],
   controllers: [],
   providers: [],

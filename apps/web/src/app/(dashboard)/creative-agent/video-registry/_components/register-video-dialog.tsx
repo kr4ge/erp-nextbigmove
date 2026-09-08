@@ -51,6 +51,7 @@ const EMPTY_FORM = {
   mediaUrl: "",
   format: "",
   hookType: "",
+  angle: "",
   script: "",
   notes: "",
 };
@@ -82,7 +83,7 @@ const newEntry = (kind: CreativeKind, storeId: string): Entry => ({
  */
 function offsetCode(code: string, by: number): string {
   if (by === 0) return code;
-  const match = code.match(/^(.*-V)(\d+)$/);
+  const match = code.match(/^(.*-[A-Z])(\d+)$/);
   if (!match) return code;
   return `${match[1]}${String(Number(match[2]) + by).padStart(match[2].length, "0")}`;
 }
@@ -155,7 +156,7 @@ export function RegisterVideoDialog({
 
   const setKind = (id: string, kind: CreativeKind) =>
     updateEntry(id, (entry) => entry.kind === kind ? entry : ({
-      ...entry, kind, form: { ...entry.form, format: "", hookType: "", script: "" },
+      ...entry, kind, form: { ...entry.form, format: "", hookType: "", angle: "", script: "" },
     }));
 
   // ---- derived, per entry ----
@@ -164,7 +165,10 @@ export function RegisterVideoDialog({
   const itemOf = (entry: Entry) => itemsOf(entry).find((item) => item.variationId === entry.form.variationId) ?? null;
   const codeOf = (entry: Entry, index: number) => {
     if (seed?.code) return seed.code;
-    const next = storeOf(entry)?.nextCode;
+    // The kind decides the code's letter (V for video, I for image); the store
+    // hands out one number for both, so only the letter follows the entry.
+    const store = storeOf(entry);
+    const next = store?.nextCodes?.[entry.kind] ?? store?.nextCode;
     if (!next) return null;
     const priorSameStore = entries.slice(0, index).filter((other) => other.form.storeId === entry.form.storeId).length;
     return offsetCode(next, priorSameStore);

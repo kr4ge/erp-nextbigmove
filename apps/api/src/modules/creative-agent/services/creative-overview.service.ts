@@ -8,7 +8,15 @@ import {
   craftVerdict,
   CREATIVE_CRAFT_FLOORS,
   CREATIVE_FLOORS_PROVISIONAL,
+  invertedBandScore,
   isImpossibleRate,
+  SCORECARD_KPI_TARGETS,
+  SCORECARD_KPI_WEIGHTS,
+  SCORECARD_OUTPUT_TARGETS_PROVISIONAL,
+  C_SCORE_TARGETS,
+  creativeCScore,
+  creativeVerdict,
+  creativeOutputScore,
   median,
   round,
   safeRatio,
@@ -16,6 +24,7 @@ import {
   scorecardVerdict,
   weightedBandScore,
 } from '../utils/creative-metrics';
+import { ADVERTISING_PROVISIONAL_DEFAULTS } from '../utils/advertising-metrics';
 import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
 import { CreativeLegacyAttributionService } from './creative-legacy-attribution.service';
@@ -24,6 +33,8 @@ type MetricTotals = {
   spend: number; impressions: number; linkClicks: number; landingPageViews: number;
   orders: number; delivered: number; cancelled: number; rts: number;
   revenue: number; deliveredRevenue: number; costs: number;
+  /** AR% denominator, kept as two additive terms so sums stay associative. */
+  grossSales: number; excludedSales: number;
   hookNumerator: number; hookDenominator: number; holdNumerator: number; holdDenominator: number;
   completionNumerator: number; completionDenominator: number;
   frequencyNumerator: number; frequencyDenominator: number;
@@ -31,10 +42,24 @@ type MetricTotals = {
 type AdDescriptor = { adId: string; adName: string; campaignName: string; adsetId: string; spend: number };
 const emptyMetrics = (): MetricTotals => ({
   spend: 0, impressions: 0, linkClicks: 0, landingPageViews: 0, orders: 0, delivered: 0,
-  cancelled: 0, rts: 0, revenue: 0, deliveredRevenue: 0, costs: 0, hookNumerator: 0,
-  hookDenominator: 0, holdNumerator: 0, holdDenominator: 0, completionNumerator: 0,
-  completionDenominator: 0, frequencyNumerator: 0, frequencyDenominator: 0,
+  cancelled: 0, rts: 0, revenue: 0, deliveredRevenue: 0, costs: 0, grossSales: 0, excludedSales: 0,
+  hookNumerator: 0, hookDenominator: 0, holdNumerator: 0, holdDenominator: 0,
+  completionNumerator: 0, completionDenominator: 0, frequencyNumerator: 0, frequencyDenominator: 0,
 });
+
+/**
+ * A creative "wins" on the owner's rule: at least this many orders, at an ad
+ * spend ratio at or under the ceiling. Deliberately no minimum spend — the
+ * owner chose order count as the only evidence gate, so a small-budget creative
+ * that sells efficiently still counts.
+ */
+const WINNER_MIN_ORDERS = 10;
+
+/** spend ÷ adjusted sales, or null when nothing was sold to divide by. */
+const arPercent = (spend: number, grossSales: number, excludedSales: number) => {
+  const adjusted = Math.max(0, grossSales - excludedSales);
+  return adjusted > 0 ? spend / adjusted : null;
+};
 const METRIC_KEYS = Object.keys(emptyMetrics()) as Array<keyof MetricTotals>;
 const money = (value: number) => round(value, 2);
 const toNumber = (value: Prisma.Decimal | number | null | undefined) => Number(value ?? 0);
@@ -141,6 +166,9 @@ export class CreativeOverviewService {
     const legacyAdIds = legacyAds.map((ad) => ad.adId);
     const adIds = [...new Set([...creativeAdIds.values()].flat().concat(legacyAdIds))];
     const { metricsByAd, descriptorByAd } = await this.loadAdMetrics(context.tenantId, adIds, range.start, range.end);
+    // Resolved before the rows are built so each one can be told whether it won.
+    const scopedUserId = !canReadAll ? context.userId : (query.creatorId ?? null);
+    const winnerRule = await this.resolveWinnerArCeiling(context.tenantId, scopedUserId, range.start, range.end);
     const baseRows = creatives.map((creative) => {
       const metrics = this.sumMetrics(creativeAdIds.get(creative.id) ?? [], metricsByAd);
       const hookRate = creative.kind === CreativeKind.VIDEO ? guard.rate('hook', metrics.hookNumerator, metrics.hookDenominator) : null;
@@ -152,6 +180,8 @@ export class CreativeOverviewService {
       const resolved = metrics.delivered + metrics.cancelled + metrics.rts;
       const linkedAdIds = creativeAdIds.get(creative.id) ?? [];
       const topAd = linkedAdIds.map((adId) => descriptorByAd.get(adId)).filter((value): value is AdDescriptor => Boolean(value)).sort((a, b) => b.spend - a.spend)[0] ?? null;
+      const arPct = arPercent(metrics.spend, metrics.grossSales, metrics.excludedSales);
+      const isWinner = metrics.orders >= WINNER_MIN_ORDERS && arPct !== null && arPct <= winnerRule.ceiling;
       return {
         id: creative.id, code: creative.code, title: creative.title, kind: creative.kind,
         mediaUrl: creative.mediaUrl,
@@ -160,9 +190,11 @@ export class CreativeOverviewService {
         revisionState: creative.revisionState, performanceStatus: creative.performanceStatus,
         linked: linkedAdIds.length > 0, metaAdId: linkedAdIds[0] ?? null, metaAdIds: linkedAdIds,
         adCount: linkedAdIds.length, topAd, testing: metrics.spend < 3_000 && metrics.orders < 10,
+        isWinner,
         metrics: {
           creativeScore: null as number | null, winnerScore: null as number | null,
           decision: 'NOT_CONFIGURED' as const, bottleneck: null as string | null,
+          verdict: null as string | null, verdictReason: null as string | null,
           hookRate, holdRate, completionRate, ctr, lpRate, conversionRate,
           // Displayed rates follow the analytics/sales conventions (cancellation
           // and delivery over ALL attributed orders, RTS over delivered+RTS) so
@@ -177,9 +209,13 @@ export class CreativeOverviewService {
           frequency: safeRatio(metrics.frequencyNumerator, metrics.frequencyDenominator),
           impressions: metrics.impressions, linkClicks: metrics.linkClicks,
           landingPageViews: metrics.landingPageViews, orders: metrics.orders, deliveredOrders: metrics.delivered,
-          // Spend + MAR are the viewer's own linked-ad numbers, shown to every
-          // role; margin/cost economics stay behind canViewMoney.
+          // Spend and AR% are the two figures the creative is judged on, so they
+          // travel with every row. MAR% (spend ÷ gross attributed revenue) rides
+          // along as the Business Performance convention. The deeper P&L below
+          // stays behind analytics.sales — knowing what your video cost is not
+          // the same as reading the company's margins.
           spend: money(metrics.spend),
+          arPct: arPct === null ? null : round(arPct, 4),
           mar: safeRatio(metrics.spend, metrics.revenue),
           ...(canViewMoney ? {
             costPerOrder: metrics.orders > 0 ? money(metrics.spend / metrics.orders) : null,
@@ -193,8 +229,35 @@ export class CreativeOverviewService {
     const storeMedians = this.storeMedians(baseRows);
     const scoredRows = baseRows.map((row) => {
       const storeMedian = storeMedians.get(row.store.id ?? '') ?? null;
-      row.metrics.creativeScore = this.creativeScore(row.kind, { ...row.metrics, deliveryRate: row.metrics.deliveryRateResolved }, storeMedian);
-      row.metrics.bottleneck = this.bottleneck(row.kind, { ...row.metrics, deliveryRate: row.metrics.deliveryRateResolved }, storeMedian);
+      // Graded against the same AR% ceiling the winner rule uses, so a 10 on
+      // C-Score and a Winner pill can never point in opposite directions.
+      row.metrics.creativeScore = creativeCScore({
+        kind: row.kind,
+        arPct: row.metrics.arPct,
+        arCeiling: winnerRule.ceiling,
+        orders: row.metrics.orders,
+        spend: row.metrics.spend,
+        hookRate: row.metrics.hookRate,
+        holdRate: row.metrics.holdRate,
+        ctr: row.metrics.ctr,
+        cvr: row.metrics.conversionRate,
+        storeMedianCvr: storeMedian,
+      });
+      row.metrics.bottleneck = this.bottleneck(row.kind, row.metrics, storeMedian);
+      // Money decides, craft explains. Runs after the bottleneck so the reason
+      // can name the step that broke.
+      const { verdict, reason } = creativeVerdict({
+        testing: row.testing,
+        orders: row.metrics.orders,
+        spend: row.metrics.spend,
+        arPct: row.metrics.arPct,
+        arCeiling: winnerRule.ceiling,
+        killLine: ADVERTISING_PROVISIONAL_DEFAULTS.adSpendRatioWarning,
+        fatiguing: row.performanceStatus === CreativePerformanceStatus.FATIGUED,
+        bottleneck: row.metrics.bottleneck,
+      });
+      row.metrics.verdict = verdict;
+      row.metrics.verdictReason = reason;
       return row;
     });
     const sorted = this.sortRows(scoredRows, requestedSortKey, query.sortDirection, canViewMoney);
@@ -225,7 +288,6 @@ export class CreativeOverviewService {
       ctr: this.metric(guard, 'ctr', totals.linkClicks, totals.impressions),
       cvr: this.metric(guard, 'cvr', totals.orders, totals.linkClicks),
       output: { value: outputCount, numerator: null, denominator: null },
-      approvalRate: this.metric(guard, 'approval', decisions.approved, decisions.approved + decisions.cancelled),
       medianTurnaroundHours: { value: decisions.medianTurnaroundHours, numerator: null, denominator: decisions.turnaroundCount },
       // Volume + funnel tiles combine explicitly linked registry ads with the
       // scoped creator's otherwise-unlinked employee-ID history. Workflow
@@ -249,11 +311,42 @@ export class CreativeOverviewService {
       rtsRate: this.metric(guard, 'rts rate', totals.rts, totals.delivered + totals.rts),
       deliveryRate: this.metric(guard, 'delivery rate', totals.delivered, totals.orders),
     };
-    const scorecard = this.buildScorecard({
-      kpis, decisions, outputCount, days: range.days,
-      scope: canReadAll && !query.creatorId ? 'TEAM' : 'PERSONAL',
-      revisionCensus: this.revisionCensus(creatives),
-    });
+    // Winners are drawn from the published set rather than from every scoped
+    // creative, so the rate can never exceed 100% by counting an older
+    // creative that only started earning inside this window.
+    const publishedRows = baseRows.filter((row) => decisions.publishedIds.has(row.id));
+    const winners = publishedRows.filter((row) => row.isWinner).length;
+    const blendedAr = arPercent(totals.spend, totals.grossSales, totals.excludedSales);
+    // Deliberately not behind analytics.sales. The sibling advertising
+    // dashboard already shows spend to everyone who can reach this workspace,
+    // and gating it here would blank the tile for the advertiser, who is the
+    // one person whose whole job is the spend.
+    const production = {
+      published: publishedRows.length,
+      publishedVideos: publishedRows.filter((row) => row.kind === CreativeKind.VIDEO).length,
+      publishedStatics: publishedRows.filter((row) => row.kind === CreativeKind.STATIC).length,
+      winners,
+      winRate: publishedRows.length > 0 ? round(winners / publishedRows.length, 4) : null,
+      adSpend: money(totals.spend),
+      arPct: blendedAr === null ? null : round(blendedAr, 4),
+      linkedCount: linkedCreatives,
+      scopedCount: baseRows.length,
+      rule: {
+        minOrders: WINNER_MIN_ORDERS,
+        arCeiling: round(winnerRule.ceiling, 4),
+        provisional: winnerRule.provisional,
+      },
+    };
+    const scorecard = {
+      ...this.buildScorecard({
+        kpis, decisions, outputCount, days: range.days,
+        scope: canReadAll && !query.creatorId ? 'TEAM' : 'PERSONAL',
+        revisionCensus: this.revisionCensus(creatives),
+        spend: totals.spend, arPct: production.arPct, winRate: production.winRate,
+        published: production.published,
+      }),
+      production,
+    };
     const craftBoard = this.buildCraftBoard(baseRows);
     const historicalAttribution = {
       total: legacyAds.length,
@@ -297,6 +390,9 @@ export class CreativeOverviewService {
       floors: {
         values: { ...CREATIVE_CRAFT_FLOORS },
         provisional: CREATIVE_FLOORS_PROVISIONAL,
+        // The scorecard's own targets, so the UI can name the bar each band is
+        // measured against. Only the win-rate floor is a guess.
+        scorecard: { ...SCORECARD_KPI_TARGETS, outputProvisional: SCORECARD_OUTPUT_TARGETS_PROVISIONAL },
       },
       capabilities: {
         callDeck: { available: false, reason: 'Call tracking is not connected to this workspace yet.' },
@@ -327,6 +423,7 @@ export class CreativeOverviewService {
         spend: true, impressions: true, linkClicks: true, leads: true, purchasesPos: true,
         codPos: true, deliveredCount: true, canceledCount: true, rtsCount: true, deliveredCodPos: true,
         sfSdrPos: true, ffSdrPos: true, ifSdrPos: true, codFeeDeliveredPos: true, cogsDeliveredPos: true,
+        canceledCodPos: true, rtsCodPos: true, restockingCodPos: true, abandonedCodPos: true,
       } }),
       this.prisma.metaAdInsight.groupBy({ by: ['adId'], where: { tenantId, adId: { in: adIds }, date, videoPlays3s: { not: null } }, _sum: { videoPlays3s: true, impressions: true } }),
       this.prisma.metaAdInsight.groupBy({ by: ['adId'], where: { tenantId, adId: { in: adIds }, date, videoPlays3s: { not: null }, thruPlays: { not: null } }, _sum: { videoPlays3s: true, thruPlays: true } }),
@@ -342,6 +439,12 @@ export class CreativeOverviewService {
       bucket.cancelled += row._sum.canceledCount ?? 0; bucket.rts += row._sum.rtsCount ?? 0;
       bucket.deliveredRevenue += toNumber(row._sum.deliveredCodPos);
       bucket.costs += toNumber(row._sum.sfSdrPos) + toNumber(row._sum.ffSdrPos) + toNumber(row._sum.ifSdrPos) + toNumber(row._sum.codFeeDeliveredPos) + toNumber(row._sum.cogsDeliveredPos);
+      // AR% follows the Marketing KPI exclusion policy used by every other
+      // advertising surface: cancelled, RTS, restocked and abandoned money is
+      // not revenue. Diverging here would make two dashboards disagree.
+      bucket.grossSales += toNumber(row._sum.codPos);
+      bucket.excludedSales += toNumber(row._sum.canceledCodPos) + toNumber(row._sum.rtsCodPos)
+        + toNumber(row._sum.restockingCodPos) + toNumber(row._sum.abandonedCodPos);
       metricsByAd.set(row.adId, bucket);
     }
     for (const row of hookRows) { const bucket = metricsByAd.get(row.adId) ?? emptyMetrics(); bucket.hookNumerator += row._sum.videoPlays3s ?? 0; bucket.hookDenominator += row._sum.impressions ?? 0; metricsByAd.set(row.adId, bucket); }
@@ -360,37 +463,65 @@ export class CreativeOverviewService {
   }
 
   /**
-   * The personal (or team-aggregate) craft scorecard. Band values are weighted
-   * aggregates over the scoped rows — never averages of per-creative rates.
-   * The quota band is intentionally unavailable: no daily-quota model exists,
-   * and an unmeasurable band is reweighted out rather than counted as zero.
+   * The scorecard, graded on the owner's three weighted KPIs rather than on
+   * craft rates: daily ad spend (40%), ads-to-revenue ratio (40%) and creative
+   * output (20%).
+   *
+   * Ad-spend ratio is a ceiling — lower is better — so it rides the inverted
+   * curve. An unmeasurable band is reweighted out rather than counted as zero,
+   * so a period with no spend does not read as a zero score.
    */
   private buildScorecard(input: {
-    kpis: Record<'hookRate' | 'holdRate' | 'completionRate' | 'ctr' | 'approvalRate', { value: number | null }>;
+    kpis: Record<'hookRate' | 'holdRate' | 'completionRate' | 'ctr', { value: number | null }>;
     decisions: { approved: number; cancelled: number; medianTurnaroundHours: number | null; turnaroundCount: number };
     outputCount: number;
     days: number;
     scope: 'PERSONAL' | 'TEAM';
     revisionCensus: Array<{ status: string; count: number }>;
+    spend: number;
+    arPct: number | null;
+    winRate: number | null;
+    published: number;
   }) {
-    const { kpis, decisions, outputCount, days, scope, revisionCensus } = input;
-    const hookRate = kpis.hookRate.value;
-    const holdRate = kpis.holdRate.value;
-    const completionRate = kpis.completionRate.value;
-    const ctr = kpis.ctr.value;
-    const approvalRate = kpis.approvalRate.value;
+    const { kpis, decisions, outputCount, days, scope, revisionCensus, spend, arPct, winRate, published } = input;
+    // Craft bands are reported, not scored — they say how the work is landing.
     const bands = [
-      { key: 'hookRate' as const, value: hookRate, floor: CREATIVE_CRAFT_FLOORS.hookRate as number | null, score: bandScore(hookRate, CREATIVE_CRAFT_FLOORS.hookRate) },
-      { key: 'holdRate' as const, value: holdRate, floor: CREATIVE_CRAFT_FLOORS.holdRate as number | null, score: bandScore(holdRate, CREATIVE_CRAFT_FLOORS.holdRate) },
-      { key: 'completionRate' as const, value: completionRate, floor: CREATIVE_CRAFT_FLOORS.completionRate as number | null, score: bandScore(completionRate, CREATIVE_CRAFT_FLOORS.completionRate) },
-      { key: 'ctr' as const, value: ctr, floor: CREATIVE_CRAFT_FLOORS.ctr as number | null, score: bandScore(ctr, CREATIVE_CRAFT_FLOORS.ctr) },
+      { key: 'hookRate' as const, value: kpis.hookRate.value, floor: CREATIVE_CRAFT_FLOORS.hookRate as number | null, score: bandScore(kpis.hookRate.value, CREATIVE_CRAFT_FLOORS.hookRate) },
+      { key: 'holdRate' as const, value: kpis.holdRate.value, floor: CREATIVE_CRAFT_FLOORS.holdRate as number | null, score: bandScore(kpis.holdRate.value, CREATIVE_CRAFT_FLOORS.holdRate) },
+      { key: 'completionRate' as const, value: kpis.completionRate.value, floor: CREATIVE_CRAFT_FLOORS.completionRate as number | null, score: bandScore(kpis.completionRate.value, CREATIVE_CRAFT_FLOORS.completionRate) },
+      { key: 'ctr' as const, value: kpis.ctr.value, floor: CREATIVE_CRAFT_FLOORS.ctr as number | null, score: bandScore(kpis.ctr.value, CREATIVE_CRAFT_FLOORS.ctr) },
     ].map((band) => ({ ...band, weight: SCORECARD_BAND_WEIGHTS[band.key] }));
-    const overall = weightedBandScore(bands);
+
+    // The 1–10 comes from the owner's KPIs alone. Daily spend is the period's
+    // total over its length, so a 7-day and a 30-day window compare fairly.
+    const dailySpend = days > 0 ? spend / days : null;
+    const kpiBands = [
+      {
+        key: 'dailySpend' as const, value: dailySpend,
+        target: SCORECARD_KPI_TARGETS.dailySpend as number,
+        score: bandScore(dailySpend, SCORECARD_KPI_TARGETS.dailySpend),
+      },
+      {
+        key: 'adSpendRatio' as const, value: arPct,
+        target: SCORECARD_KPI_TARGETS.adSpendRatio as number,
+        score: invertedBandScore(arPct, SCORECARD_KPI_TARGETS.adSpendRatio),
+      },
+      {
+        key: 'creativeOutput' as const, value: winRate,
+        target: SCORECARD_KPI_TARGETS.winRate as number,
+        score: creativeOutputScore(
+          published, SCORECARD_KPI_TARGETS.publishedPerPeriod,
+          winRate, SCORECARD_KPI_TARGETS.winRate,
+        ),
+      },
+    ].map((band) => ({ ...band, weight: SCORECARD_KPI_WEIGHTS[band.key] }));
+    const overall = weightedBandScore(kpiBands);
     return {
       scope,
       overall,
       verdict: scorecardVerdict(overall),
       bands,
+      kpiBands,
       efficiency: {
         approvedCount: decisions.approved,
         cancelledCount: decisions.cancelled,
@@ -459,43 +590,67 @@ export class CreativeOverviewService {
     for (const [key, rates] of grouped) { const value = median(rates); if (value !== null) result.set(key, value); }
     return result;
   }
-  private creativeScore(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, storeMedian: number | null) {
-    // Ceilings follow the reference C-Score spec exactly: each component is
-    // clamped to its ceiling (clamp01 — no overshoot bonus), the order-rate
-    // ceiling is 1.5× the store median, and the result is a whole number 0-100.
-    const candidates = [
-      ...(kind === CreativeKind.VIDEO ? [{ value: values.hookRate, target: 0.4, weight: 0.25 }, { value: values.holdRate, target: 0.5, weight: 0.2 }] : []),
-      { value: values.deliveryRate, target: 0.8, weight: 0.25 }, { value: values.ctr, target: 0.03, weight: 0.15 },
-      { value: values.conversionRate, target: storeMedian && storeMedian > 0 ? storeMedian * 1.5 : null, weight: 0.15 },
-    ];
-    const measured = candidates.filter((item): item is { value: number; target: number; weight: number } => item.value !== null && item.target !== null);
-    const weight = measured.reduce((sum, item) => sum + item.weight, 0);
-    return weight === 0 ? null : round(measured.reduce((sum, item) => sum + Math.min(item.value / item.target, 1) * item.weight, 0) / weight * 100, 0);
-  }
-  private bottleneck(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; deliveryRate: number | null; conversionRate: number | null }, storeMedian: number | null) {
-    if (kind === CreativeKind.VIDEO && values.hookRate !== null && values.hookRate < 0.2) return 'HOOK';
-    if (kind === CreativeKind.VIDEO && values.holdRate !== null && values.holdRate < 0.45) return 'HOLD';
-    if (values.ctr !== null && values.ctr < 0.015) return 'CTR';
+  /**
+   * The funnel step that broke first, using the same bars C-Score grades
+   * against so the two never disagree. Delivery is gone from the ladder — it
+   * is a fulfilment outcome, not a step the editor's cut controls.
+   */
+  private bottleneck(kind: CreativeKind, values: { hookRate: number | null; holdRate: number | null; ctr: number | null; conversionRate: number | null }, storeMedian: number | null) {
+    if (kind === CreativeKind.VIDEO && values.hookRate !== null && values.hookRate < C_SCORE_TARGETS.hookRate) return 'HOOK';
+    if (kind === CreativeKind.VIDEO && values.holdRate !== null && values.holdRate < C_SCORE_TARGETS.holdRate) return 'HOLD';
+    if (values.ctr !== null && values.ctr < C_SCORE_TARGETS.ctr) return 'CTR';
     if (values.conversionRate !== null && storeMedian && values.conversionRate < storeMedian * 0.6) return 'ORDER_RATE';
-    if (values.deliveryRate !== null && values.deliveryRate < 0.55) return 'DELIVERY';
     return null;
   }
   private async decisionMetrics(tenantId: string, creativeIds: string[], start: Date, end: Date) {
-    if (!creativeIds.length) return { approved: 0, cancelled: 0, medianTurnaroundHours: null, turnaroundCount: 0 };
-    const [events, approvedCreatives] = await Promise.all([
+    if (!creativeIds.length) return { approved: 0, cancelled: 0, medianTurnaroundHours: null, turnaroundCount: 0, publishedIds: new Set<string>() };
+    const [events, approvedCreatives, liveEvents] = await Promise.all([
       this.prisma.creativeStatusEvent.findMany({ where: { tenantId, creativeId: { in: creativeIds }, dimension: CreativeStatusDimension.REVISION, toStatus: { in: ['NEEDS_REVISION', 'RESOLVED'] }, createdAt: { gte: start, lte: end } }, select: { creativeId: true, toStatus: true } }),
       this.prisma.creative.findMany({ where: { tenantId, id: { in: creativeIds }, approvedAt: { gte: start, lte: end }, submittedAt: { not: null } }, select: { submittedAt: true, approvedAt: true } }),
+      // "Published" now means the creative actually went out. The old QC ladder
+      // (FOR_POSTING/POSTED) no longer exists, and approvedAt is only ever read
+      // — nothing writes it since the approval step was removed — so going LIVE
+      // on the performance ladder is the only honest publish signal left.
+      this.prisma.creativeStatusEvent.findMany({ where: { tenantId, creativeId: { in: creativeIds }, dimension: CreativeStatusDimension.PERFORMANCE, toStatus: 'LIVE', createdAt: { gte: start, lte: end } }, select: { creativeId: true } }),
     ]);
     const approved = new Set(events.filter((event) => event.toStatus === 'RESOLVED').map((event) => event.creativeId)).size;
     const cancelled = new Set(events.filter((event) => event.toStatus === 'NEEDS_REVISION').map((event) => event.creativeId)).size;
+    // A relaunch (FATIGUED -> LIVE) can fire twice in one window; count the creative once.
+    const publishedIds = new Set(liveEvents.map((event) => event.creativeId));
     const hours = approvedCreatives.map((creative) => ((creative.approvedAt as Date).getTime() - (creative.submittedAt as Date).getTime()) / 3_600_000);
     const medianHours = median(hours);
-    return { approved, cancelled, medianTurnaroundHours: medianHours === null ? null : round(medianHours, 1), turnaroundCount: hours.length };
+    return { approved, cancelled, medianTurnaroundHours: medianHours === null ? null : round(medianHours, 1), turnaroundCount: hours.length, publishedIds };
+  }
+
+  /**
+   * The AR% a creative must beat to count as a win. Prefers the person's
+   * configured Marketing KPI target over the provisional house default.
+   *
+   * Marketing targets are stored in PERCENT units (30 means 30%) while every
+   * ratio in this module is a fraction, hence the divide.
+   */
+  private async resolveWinnerArCeiling(tenantId: string, userId: string | null, start: Date, end: Date) {
+    const fallback = ADVERTISING_PROVISIONAL_DEFAULTS.adSpendRatioHealthy;
+    if (!userId) return { ceiling: fallback, provisional: true };
+    const target = await this.prisma.marketingKpiTarget.findFirst({
+      where: {
+        tenantId, userId, metricKey: 'USER_AR_PCT',
+        startDate: { lte: end },
+        OR: [{ endDate: null }, { endDate: { gte: start } }],
+      },
+      orderBy: { startDate: 'desc' }, select: { targetValue: true },
+    });
+    const configured = target ? toNumber(target.targetValue) / 100 : null;
+    return configured !== null && configured > 0
+      ? { ceiling: configured, provisional: false }
+      : { ceiling: fallback, provisional: true };
   }
   private metric(guard: RateGuard, stage: string, numerator: number, denominator: number) {
     return { value: guard.rate(stage, numerator, denominator), numerator, denominator };
   }
   private sortRows<T extends { code: string; metrics: Record<string, unknown> }>(rows: T[], requested: CreativeOverviewSortKey, direction: 'asc' | 'desc', canViewMoney: boolean) {
+    // spend and arPct are readable by everyone in this workspace, so only the
+    // deeper P&L keys fall back when money is hidden.
     const key = !canViewMoney && ['netMargin', 'costPerOrder', 'deliveredCostPerOrder'].includes(requested) ? 'creativeScore' : requested;
     const multiplier = direction === 'asc' ? 1 : -1;
     return [...rows].sort((left, right) => { const a = key === 'code' ? left.code : left.metrics[key]; const b = key === 'code' ? right.code : right.metrics[key]; if (a == null && b == null) return left.code.localeCompare(right.code); if (a == null) return 1; if (b == null) return -1; const compared = typeof a === 'string' ? a.localeCompare(String(b)) : Number(a) - Number(b); return compared === 0 ? left.code.localeCompare(right.code) : compared * multiplier; });

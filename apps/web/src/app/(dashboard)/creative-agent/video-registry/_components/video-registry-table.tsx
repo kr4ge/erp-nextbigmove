@@ -4,7 +4,6 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Eye } from 'lucide-react';
 import { CopyCodeButton } from "../../assets/_components/copy-code-button";
 import { Button } from '@/components/ui/button';
 import type { GetVideoRegistryParams, VideoRegistryItem, VideoRegistrySortKey } from '../_types/video-registry';
-import { DriveThumbnail } from './drive-thumbnail';
 import { RegistryStatusPill } from './registry-status-pill';
 import { formatCompactCurrency, formatRate } from '../_utils/video-registry-formatters';
 
@@ -38,22 +37,24 @@ export function VideoRegistryTable({ items, params, actionLabel, onSort, onRevie
         <table className="w-full min-w-max border-separate border-spacing-0 text-left text-sm">
           <thead>
             <tr className="bg-background-secondary/70">
-              <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Preview</th>
               <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted"><SortButton label="Creative" sortKey="title" params={params} onSort={onSort} /></th>
               <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Creator / Store</th>
               <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Approval</th>
               <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Performance</th>
-              <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted"><SortButton label="Spend" sortKey="spend" params={params} onSort={onSort} /></th>
+              <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted">Orders</th>
+              <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted">AR%</th>
+              <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted"><SortButton label="Ad Spent" sortKey="spend" params={params} onSort={onSort} /></th>
               <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted"><SortButton label="Hook" sortKey="hookRate" params={params} onSort={onSort} /></th>
               <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted"><SortButton label="Hold" sortKey="holdRate" params={params} onSort={onSort} /></th>
+              <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted">Completion</th>
               <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted"><SortButton label="CTR" sortKey="ctr" params={params} onSort={onSort} /></th>
+              <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted">CVR</th>
               <th className="px-5 py-3 text-right"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody className="bg-surface">
             {items.map((item) => (
               <tr key={item.id} className="transition hover:bg-background-secondary/50 [&>td]:border-t [&>td]:border-border">
-                <td className="px-5 py-3.5"><DriveThumbnail compact mediaUrl={item.mediaUrl} title={item.title} cachedThumbnailUrl={item.thumbnailUrl} isVideo={item.thumbnailIsVideo} onClick={() => onReview(item)} /></td>
                 <td className="max-w-xs px-5 py-3.5">
                   <button type="button" onClick={() => onReview(item)} className="block max-w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                     <span className="block truncate font-semibold text-foreground">{item.title}</span>
@@ -70,10 +71,14 @@ export function VideoRegistryTable({ items, params, actionLabel, onSort, onRevie
                 </td>
                 <td className="px-5 py-3.5">{item.revisionState !== 'NONE' ? <RegistryStatusPill type="revision" status={item.revisionState} /> : <span className="text-xs text-muted">—</span>}</td>
                 <td className="px-5 py-3.5"><RegistryStatusPill type="performance" status={item.performanceStatus} /></td>
+                <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{item.metrics.orders > 0 ? item.metrics.orders : '—'}</td>
+                <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{formatRate(item.metrics.arPct)}</td>
                 <td className="whitespace-nowrap px-5 py-3.5 text-right font-semibold text-foreground">{formatCompactCurrency(item.metrics.spend)}</td>
                 <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{formatRate(item.metrics.hookRate)}</td>
                 <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{formatRate(item.metrics.holdRate)}</td>
+                <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{formatRate(item.metrics.completionRate)}</td>
                 <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{formatRate(item.metrics.ctr)}</td>
+                <td className="whitespace-nowrap px-5 py-3.5 text-right tabular-nums text-foreground">{formatRate(item.metrics.cvr)}</td>
                 <td className="px-5 py-3.5 text-right">
                   <Button type="button" size="sm" variant="ghost" iconLeft={<Eye className="h-4 w-4" />} onClick={() => onReview(item)}>{actionLabel}</Button>
                 </td>
