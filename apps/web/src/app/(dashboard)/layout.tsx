@@ -307,10 +307,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     // through Performance and Assets instead.
     const canShowVideoRegistry = canReadCreative;
     const canShowPerformance = canReadCreativeAll && canReviewCreative;
-    // Assets is the review-everyone's-work view, so it hangs off read_all. A
-    // creative with only `read` already has Video Registry, which lists the
-    // same library — showing both put the same shelf on the nav twice.
-    const canShowAssets = canReadCreativeAll;
+    // Assets is the creative library for everyone who can read one. It used to
+    // hang off read_all alone, on the reasoning that a maker already saw the
+    // same shelf in Video Registry — but the registry is the enrolment queue
+    // now and lists nothing that is already enrolled. Gating Assets on read_all
+    // would leave a maker with no way to reach their own work at all. The API
+    // still scopes a maker to creatives they created.
+    const canShowAssets = canReadCreative || canReadCreativeAll;
 
     return baseNavigation.flatMap((link) => {
       if (link.href !== '/analytics') {
