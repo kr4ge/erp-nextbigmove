@@ -100,7 +100,7 @@ function ScoredTile({ kpiKey, label, scorecard, floors }: {
   scorecard: CreativeScorecardData | undefined;
   floors: OverviewFloors | undefined;
 }) {
-  const kpi = scorecard?.kpiBands.find((band) => band.key === kpiKey);
+  const kpi = scorecard?.kpiBands?.find((band) => band.key === kpiKey);
   const meta = KPI_LABELS[kpiKey];
   const show = (value: number | null | undefined) =>
     meta.format === 'currency' ? formatCurrency(value) : formatPercent(value);
