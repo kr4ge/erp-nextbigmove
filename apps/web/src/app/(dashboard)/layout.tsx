@@ -96,12 +96,6 @@ const baseNavigation: NavLink[] = [
     icon: <BarChart3 className={iconClasses} />,
   },
   {
-    href: '/assets',
-    label: 'Assets',
-    description: 'Your creative work and feedback',
-    icon: <FolderCheck className={iconClasses} />,
-  },
-  {
     href: '/reports',
     label: 'Reports',
     description: 'Tenant-wide POS exports',
@@ -133,9 +127,15 @@ const baseNavigation: NavLink[] = [
     icon: <Sparkles className={iconClasses} />,
   },
   {
+    href: '/assets',
+    label: 'Assets',
+    description: 'Your creative library, performance, and feedback',
+    icon: <FolderCheck className={iconClasses} />,
+  },
+  {
     href: '/video-registry',
     label: 'Video Registry',
-    description: 'Creative library and performance',
+    description: 'Meta ads waiting to be enrolled',
     icon: <Video className={iconClasses} />,
   },
   {
