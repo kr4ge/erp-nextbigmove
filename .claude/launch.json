@@ -5,19 +5,22 @@
       "name": "api",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--workspace=@erp/api"],
-      "port": 3001
+      "port": 3001,
+      "autoPort": false
     },
     {
       "name": "erp",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--workspace=@erp/web"],
-      "port": 3000
+      "port": 3000,
+      "autoPort": false
     },
     {
       "name": "wms",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--workspace=@erp/admin"],
-      "port": 3002
+      "port": 3002,
+      "autoPort": false
     }
   ]
 }
