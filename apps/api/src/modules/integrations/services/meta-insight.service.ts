@@ -105,8 +105,13 @@ export class MetaInsightService {
   }
 
   private parseMetaInsight(rawInsight: any, accountId: string, multiplier = 1): MetaInsightData {
-    // Extract leads from actions array (landing_page_view)
-    let leads = 0;
+    // Extract leads from actions array (landing_page_view).
+    //
+    // Undefined when the source carried no landing_page_view action at all —
+    // NOT zero. A large export is often split across two uploads, and only one
+    // of them needs to carry Landing page views; a missing action must leave
+    // whatever the other file wrote intact, the same way the video metrics do.
+    let leads: number | undefined;
     if (rawInsight.actions && Array.isArray(rawInsight.actions)) {
       const landingPageView = rawInsight.actions.find(
         (action: any) => action.action_type === 'landing_page_view',
@@ -224,7 +229,7 @@ export class MetaInsightService {
           clicks: insight.clicks || 0,
           linkClicks: insight.linkClicks || 0,
           impressions: insight.impressions || 0,
-          leads: insight.leads || 0,
+          ...(insight.leads !== undefined ? { leads: insight.leads } : {}),
           ...(insight.videoPlays3s !== undefined ? { videoPlays3s: insight.videoPlays3s } : {}),
           ...(insight.thruPlays !== undefined ? { thruPlays: insight.thruPlays } : {}),
           ...(insight.frequency !== undefined

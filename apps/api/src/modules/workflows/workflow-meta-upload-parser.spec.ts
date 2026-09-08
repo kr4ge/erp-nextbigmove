@@ -64,7 +64,6 @@ describe('WorkflowService manual Meta upload parsing', () => {
       linkClicks: 7,
       clicks: 9,
       impressions: 100,
-      websitePurchases: 2,
       spendCurrency: 'PHP',
       videoPlays3s: null,
       thruPlays: null,
@@ -145,7 +144,6 @@ describe('WorkflowService manual Meta upload parsing', () => {
       linkClicks: 17,
       clicks: 17,
       impressions: 268,
-      websitePurchases: 0,
       spendCurrency: 'USD',
       videoPlays3s: 85,
       thruPlays: 30,
@@ -242,5 +240,67 @@ describe('WorkflowService manual Meta upload parsing', () => {
       { opts: { attempts: 2 }, attemptsMade: 0 },
       true,
     )).toBe(true);
+  });
+
+  it('fills the CVR denominator only from landing page views', () => {
+    const header = [
+      'Account ID', 'Campaign ID', 'Campaign name', 'Ad set ID', 'Ad ID', 'Ad name',
+      'Amount spent (PHP)', 'Link clicks', 'Clicks (all)', 'Impressions',
+      'Website purchases', 'Landing page views', 'Reporting starts', 'Reporting ends',
+    ];
+    const row = [
+      'act_123', 'campaign-1', 'Campaign', 'adset-1', 'ad-1', 'AP-V0001',
+      '1000', '50', '60', '5000', '7', '240', '2026-08-20', '2026-08-20',
+    ];
+    expect(parser.parseUploadRow(row, 2, parser.resolveColumnIndexes(header), new Map())).toMatchObject({
+      landingPageViews: 240,
+    });
+  });
+
+  it('leaves landing page views unset when the column is absent', () => {
+    const header = [
+      'Account ID', 'Campaign ID', 'Campaign name', 'Ad set ID', 'Ad ID', 'Ad name',
+      'Amount spent (PHP)', 'Link clicks', 'Clicks (all)', 'Impressions',
+      'Website purchases', 'Reporting starts', 'Reporting ends',
+    ];
+    const row = [
+      'act_123', 'campaign-1', 'Campaign', 'adset-1', 'ad-1', 'AP-V0001',
+      '1000', '50', '60', '5000', '7', '2026-08-20', '2026-08-20',
+    ];
+    const parsed = parser.parseUploadRow(row, 2, parser.resolveColumnIndexes(header), new Map());
+    // Undefined, not 7 — CVR must read as unmeasured rather than as orders
+    // divided by pixel purchases. The Website purchases column is still in the
+    // fixture header: an export that carries it must import cleanly, ignored.
+    expect(parsed?.landingPageViews).toBeUndefined();
+  });
+
+  it('emits no landing-page-view action when the column is absent', () => {
+    const base = [
+      'Account ID', 'Campaign ID', 'Campaign name', 'Ad set ID', 'Ad ID', 'Ad name',
+      'Amount spent (PHP)', 'Link clicks', 'Clicks (all)', 'Impressions',
+      'Reporting starts', 'Reporting ends',
+    ];
+    const row = [
+      'act_123', 'campaign-1', 'Campaign', 'adset-1', 'ad-1', 'AP-V0001',
+      '1000', '50', '60', '5000', '2026-08-20', '2026-08-20',
+    ];
+    const parsed = parser.parseUploadRow(row, 2, parser.resolveColumnIndexes(base), new Map());
+    const raw = (parser as unknown as {
+      toUploadedRawInsight(r: unknown): { actions: unknown[] };
+    }).toUploadedRawInsight(parsed);
+    // Empty, not a zero-valued action. A split export uploads one part without
+    // this column, and a zero would wipe what the other part wrote.
+    expect(raw.actions).toEqual([]);
+
+    const withColumn = parser.parseUploadRow(
+      [...row.slice(0, 10), '240', ...row.slice(10)],
+      2,
+      parser.resolveColumnIndexes([...base.slice(0, 10), 'Landing page views', ...base.slice(10)]),
+      new Map(),
+    );
+    const rawWith = (parser as unknown as {
+      toUploadedRawInsight(r: unknown): { actions: Array<{ value: string }> };
+    }).toUploadedRawInsight(withColumn);
+    expect(rawWith.actions[0].value).toBe('240');
   });
 });
