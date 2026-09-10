@@ -110,6 +110,9 @@ model Tenant {
   aiSetting                           AiSetting?
   creativeMetaAdLinks                 CreativeMetaAdLink[]
   creativeReviewComments              CreativeReviewComment[]
+  creativeAiRuns                      CreativeAiRun[]
+  creativeAiPolicy                    CreativeAiPolicy?
+  metaAdInsightDuplicateArchives      MetaAdInsightDuplicateArchive[]
   wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
   wmsFulfillmentAdjustments           WmsFulfillmentAdjustment[]
   adBenchmarks                        AdBenchmark[]
@@ -418,6 +421,8 @@ model User {
   creativeReviewComments                    CreativeReviewComment[]        @relation("CreativeReviewCommentAuthor")
   adStrategyEntries                         AdStrategyEntry[]              @relation("AdStrategyEntryCreatedBy")
   adLibraryEntries                          AdLibraryEntry[]               @relation("AdLibraryEntryCreatedBy")
+  creativeAiRunsRequested                   CreativeAiRun[]                @relation("CreativeAiRunRequestedBy")
+  creativeAiPoliciesUpdated                 CreativeAiPolicy[]             @relation("CreativeAiPolicyUpdatedBy")
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -1300,11 +1305,36 @@ model MetaAdInsight {
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, accountId, adId, date])
+  // A Meta ad belongs to one business identity inside a tenant. accountId is
+  // retained as source metadata, but a later numeric account must replace the
+  // temporary `manual:` identity rather than creating a second daily row.
+  @@unique([tenantId, adId, date])
   @@index([tenantId, accountId, date])
   @@index([tenantId, date])
   @@index([tenantId, teamId, date])
   @@index([date])
   @@map("meta_ad_insights")
+}
+
+/// Audit copy of a superseded Meta insight identity. Active analytics read
+/// only MetaAdInsight; this table preserves the discarded source row when a
+/// `manual:` account and a numeric account represented the same ad-day.
+model MetaAdInsightDuplicateArchive {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @db.Uuid
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  originalInsightId  String   @db.Uuid
+  canonicalInsightId String   @db.Uuid
+  accountId          String
+  adId               String
+  date               DateTime @db.Date
+  reason             String
+  payload            Json
+  archivedAt         DateTime @default(now())
+
+  @@unique([originalInsightId])
+  @@index([tenantId, adId, date])
+  @@map("meta_ad_insight_duplicate_archives")
 }
 
 // ============================================================================
@@ -1426,10 +1456,12 @@ model Creative {
   metaAdLinks     CreativeMetaAdLink[]
   reviewComments  CreativeReviewComment[]
   strategyEntries CreativeStrategyEntry[]
+  aiRuns          CreativeAiRun[]
 
   @@unique([tenantId, code])
   @@unique([storeConfigId, codeNumber])
   @@unique([tenantId, metaAccountId, metaAdId])
+  @@unique([tenantId, metaAdId])
   @@index([tenantId, createdAt])
   @@index([tenantId, createdById])
   @@index([tenantId, storeConfigId])
@@ -1455,6 +1487,7 @@ model CreativeMetaAdLink {
   updatedAt      DateTime               @updatedAt
 
   @@unique([tenantId, accountId, adId])
+  @@unique([tenantId, adId])
   @@index([tenantId, creativeId])
   @@index([creativeId, linkedAt])
   @@map("creative_meta_ad_links")
@@ -1592,6 +1625,101 @@ model CreativeReviewComment {
   @@index([tenantId, creativeId, createdAt])
   @@index([authorId])
   @@map("creative_review_comments")
+}
+
+enum CreativeAiRunStatus {
+  QUEUED
+  PREPROCESSING
+  CONTEXT_BUILDING
+  ANALYZING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum CreativeAiSourceType {
+  LOCAL_UPLOAD
+  GOOGLE_DRIVE
+}
+
+enum CreativeAiProvider {
+  CLAUDE
+  CODEX
+}
+
+enum CreativeAiEffort {
+  LOW
+  MEDIUM
+  HIGH
+  XHIGH
+  MAX
+}
+
+/// Tenant defaults for Creative AI. Provider credentials remain in the
+/// isolated AI gateway; this table contains policy only, never secrets.
+model CreativeAiPolicy {
+  tenantId          String             @id @db.Uuid
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  defaultProvider   CreativeAiProvider @default(CLAUDE)
+  claudeModel       String             @default("sonnet")
+  codexModel        String             @default("gpt-5.6-terra")
+  defaultEffort     CreativeAiEffort   @default(MEDIUM)
+  maxTurns          Int                @default(12)
+  maxBudgetUsd      Decimal            @default(1) @db.Decimal(10, 2)
+  allowRunOverrides Boolean            @default(true)
+  updatedById       String?            @db.Uuid
+  updatedBy         User?              @relation("CreativeAiPolicyUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@map("creative_ai_policies")
+}
+
+/// A tenant-scoped, immutable request to analyze one registered creative.
+/// Local uploads are persisted only as a workspace-relative path; the API
+/// never returns that path to clients. GOOGLE_DRIVE is reserved for the next
+/// ingestion adapter and keeps the analysis pipeline storage-agnostic.
+model CreativeAiRun {
+  id                String               @id @default(uuid()) @db.Uuid
+  tenantId          String               @db.Uuid
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creativeId        String               @db.Uuid
+  creative          Creative             @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  requestedById     String               @db.Uuid
+  requestedBy       User                 @relation("CreativeAiRunRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  status            CreativeAiRunStatus  @default(QUEUED)
+  sourceType        CreativeAiSourceType @default(LOCAL_UPLOAD)
+  provider          CreativeAiProvider   @default(CLAUDE)
+  model             String               @default("sonnet")
+  effort            CreativeAiEffort     @default(MEDIUM)
+  settingsSnapshot  Json?
+  sourceFileName    String?
+  sourceContentType String?
+  sourceByteSize    Int?
+  sourcePath        String?
+  question          String?
+  dateStart         DateTime             @db.Date
+  dateEnd           DateTime             @db.Date
+  progress          Int                  @default(0)
+  stage             String               @default("Queued")
+  queueJobId        String?
+  mediaHash         String?              @db.VarChar(64)
+  mediaManifest     Json?
+  metricsSnapshot   Json?
+  analysisResult    Json?
+  responseText      String?
+  claudeSessionId   String?
+  warnings          String[]             @default([])
+  errorMessage      String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([tenantId, requestedById, createdAt])
+  @@index([tenantId, creativeId, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@map("creative_ai_runs")
 }
 
 // ============================================================================

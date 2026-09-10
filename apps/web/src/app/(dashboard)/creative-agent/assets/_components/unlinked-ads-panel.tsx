@@ -16,6 +16,7 @@ import type {
   UnregisteredMetaCreative,
   VideoRegistryResponse,
 } from '../../video-registry/_types/video-registry';
+import { useCreativeStores } from '../../video-registry/_hooks/use-creative-stores';
 
 /**
  * The "spending but not registered" list, surfaced inside the Advertising
@@ -35,6 +36,7 @@ export function UnlinkedAdsPanel() {
   const [registerSeed, setRegisterSeed] = useState<UnregisteredMetaCreative | null>(null);
   const [isRegisterOpen, setRegisterOpen] = useState(false);
   const [isSaving, setSaving] = useState(false);
+  const { stores: enrollmentStores, reload: reloadEnrollmentStores } = useCreativeStores();
 
   const load = useCallback(async () => {
     try {
@@ -52,9 +54,9 @@ export function UnlinkedAdsPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const stores = (data?.filters.stores ?? []).map((store) => ({
-    value: store.value,
-    label: store.label,
+  const stores = enrollmentStores.map((store) => ({
+    value: store.id,
+    label: store.name,
     nextCode: store.nextCode,
   }));
 
@@ -78,7 +80,11 @@ export function UnlinkedAdsPanel() {
     <div className="mb-4">
       <UnregisteredMetaPanel
         items={data.unregistered}
-        onRegister={(item) => { setRegisterSeed(item); setRegisterOpen(true); }}
+        onRegister={(item) => {
+          setRegisterSeed(item);
+          setRegisterOpen(true);
+          void reloadEnrollmentStores();
+        }}
         onLink={setLinkingItem}
         canRegister
         canLink

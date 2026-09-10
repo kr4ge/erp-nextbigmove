@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AiSettingsModule } from '../ai-settings/ai-settings.module';
+import { BullModule } from '@nestjs/bull';
 import { CommonServicesModule } from '../../common/services/services.module';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { resolveProcessRole } from '../../common/runtime/process-role';
+import { CreativeAiController } from './creative-ai.controller';
 import { CreativeOptionsController } from './creative-options.controller';
 import { CreativeOptionsService } from './services/creative-options.service';
 import { CreativeAdvertisingDashboardController } from './creative-advertising-dashboard.controller';
@@ -31,10 +34,26 @@ import { CreativeStoreService } from './services/creative-store.service';
 import { CreativeStrategyService } from './services/creative-strategy.service';
 import { CreativeThumbnailService } from './services/creative-thumbnail.service';
 import { CreativeWorkflowService } from './services/creative-workflow.service';
+import { CreativeAiRunService } from './services/creative-ai-run.service';
+import { CreativeAiMediaService } from './services/creative-ai-media.service';
+import { CreativeAiContextService } from './services/creative-ai-context.service';
+import { CreativeAiAnalyzerService } from './services/creative-ai-analyzer.service';
+import { ClaudeboxClientService } from './services/claudebox-client.service';
+import { AiGatewayAdminClientService } from './services/ai-gateway-admin-client.service';
+import { CreativeAiPolicyService } from './services/creative-ai-policy.service';
+import { CreativeAiProcessor } from './processors/creative-ai.processor';
+import { CREATIVE_AI_QUEUE } from './creative-agent.constants';
+import { CreativeAiEnabledGuard } from './guards/creative-ai-enabled.guard';
+import { isCreativeAiEnabled } from './utils/creative-ai-enabled';
 
 @Module({
-  imports: [CommonServicesModule, AiSettingsModule],
+  imports: [
+    CommonServicesModule,
+    AiSettingsModule,
+    BullModule.registerQueue({ name: CREATIVE_AI_QUEUE }),
+  ],
   controllers: [
+    CreativeAiController,
     CreativeStoreController,
     CreativeLibraryController,
     CreativeEnrollmentController,
@@ -50,6 +69,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
   ],
   providers: [
     PermissionsGuard,
+    CreativeAiEnabledGuard,
     CreativeAccessService,
     CreativeStoreService,
     CreativeEnrollmentService,
@@ -67,6 +87,14 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
     CreativeStrategyService,
     CreativeThumbnailService,
     CreativeOptionsService,
+    CreativeAiRunService,
+    CreativeAiMediaService,
+    CreativeAiContextService,
+    CreativeAiAnalyzerService,
+    ClaudeboxClientService,
+    AiGatewayAdminClientService,
+    CreativeAiPolicyService,
+    ...(isCreativeAiEnabled() && resolveProcessRole() !== 'api' ? [CreativeAiProcessor] : []),
   ],
   exports: [CreativeMetaLinkService],
 })

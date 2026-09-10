@@ -33,6 +33,17 @@ export function excludesPosOrderFromSalesTotals(
   return order.status === 7 || order.isVoid === true;
 }
 
+export function resolveInsightMappingForReconcile(
+  insight: { adName: string | null; mapping: string | null },
+  linkedMapping: string | null | undefined,
+  canonicalize: (mapping: string | null | undefined) => string | null,
+): string | null {
+  return linkedMapping
+    || canonicalize(deriveMappingFromAdName(insight.adName))
+    || canonicalize(insight.mapping)
+    || null;
+}
+
 type PosAggregateBucket = {
   purchasesPos: number;
   processedPurchasesPos: number;
@@ -422,12 +433,17 @@ export class ReconcileMarketingService {
       return productKeyByCode.get(norm) ?? norm;
     };
     // Creative link first: it is the structured, human-confirmed bridge and the
-    // only source guaranteed to share the sales side's key.
+    // only source guaranteed to share the sales side's key. A valid current
+    // naming convention comes next and must beat source `mapping` values such
+    // as campaign date suffixes (0909/0910) that do not identify a product.
+    // Truly legacy names have no code anchor, so they still fall through to the
+    // imported mapping exactly as before.
     const resolveInsightMapping = (insight: { adId: string; adName: string | null; mapping: string | null }): string | null =>
-      linkMappingByAdId.get(insight.adId)
-      || canonicalizeMapping(insight.mapping)
-      || canonicalizeMapping(deriveMappingFromAdName(insight.adName))
-      || null;
+      resolveInsightMappingForReconcile(
+        insight,
+        linkMappingByAdId.get(insight.adId),
+        canonicalizeMapping,
+      );
 
     // Load POS orders for the day
     const posOrders: PosOrderLite[] = await this.prisma.posOrder.findMany({
@@ -632,7 +648,10 @@ export class ReconcileMarketingService {
         update: {
           teamId: insight.teamId ?? null,
           normalizedAdId: norm || null,
+          accountId: insight.accountId,
+          campaignId: insight.campaignId,
           campaignName: insight.campaignName,
+          adsetId: insight.adsetId,
           adName: insight.adName,
           marketingAssociate: insight.marketingAssociate
             || deriveAssociateFromAdName(insight.adName),

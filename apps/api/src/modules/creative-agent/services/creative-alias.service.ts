@@ -9,6 +9,7 @@ import {
 } from '../creative-agent.constants';
 import { CreateCreativeAliasDto, LinkUnregisteredCreativeDto } from '../dto/creative-alias.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
+import { preferCanonicalMetaAdIdentity } from '../utils/meta-ad-identity';
 import { CreativeAccessService } from './creative-access.service';
 
 @Injectable()
@@ -44,25 +45,29 @@ export class CreativeAliasService {
         canLinkAny ? 'Creative not found in this tenant' : 'You can only link ads to creatives you created',
       );
     }
-    const metaInsight = await this.prisma.metaAdInsight.findFirst({
+    const metaInsightCandidates = await this.prisma.metaAdInsight.findMany({
       where: {
         tenantId: context.tenantId,
-        accountId: dto.accountId,
         adId: dto.adId,
       },
       select: { accountId: true, adId: true, adName: true },
-      orderBy: { date: 'desc' },
+      orderBy: [{ date: 'desc' }, { updatedAt: 'desc' }],
     });
+    let metaInsight: (typeof metaInsightCandidates)[number] | undefined;
+    for (const candidate of metaInsightCandidates) {
+      metaInsight = preferCanonicalMetaAdIdentity(metaInsight, candidate);
+    }
     if (!metaInsight) throw new NotFoundException('The selected Meta ad is not present in this tenant');
 
     const existingLink = await this.prisma.creativeMetaAdLink.findFirst({
-      where: { tenantId: context.tenantId, accountId: dto.accountId, adId: dto.adId },
+      where: { tenantId: context.tenantId, adId: dto.adId },
       select: { id: true },
     });
     if (existingLink) throw new ConflictException('This Meta ad is already linked to a creative');
 
     if (dto.alias === undefined) {
-      // Explicit identity link: tenant + accountId + adId -> creativeId.
+      // Explicit identity link: tenant + adId -> creativeId. accountId remains
+      // source metadata and does not create a second link identity.
       // The ad name is preserved only as an audit snapshot — it may use any
       // wording or another store's prefix without blocking the connection.
       return this.createIdentityMetaLink(context.tenantId, context.userId, dto.creativeId, metaInsight);
@@ -87,11 +92,11 @@ export class CreativeAliasService {
     );
   }
 
-  async unlinkMetaAd(actor: CreativeActor, accountId: string, adId: string) {
+  async unlinkMetaAd(actor: CreativeActor, _accountId: string, adId: string) {
     const context = await this.access.resolve(actor);
     this.access.require(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE);
     const link = await this.prisma.creativeMetaAdLink.findFirst({
-      where: { tenantId: context.tenantId, accountId, adId },
+      where: { tenantId: context.tenantId, adId },
       select: {
         id: true, creativeId: true, accountId: true, adId: true, adNameSnapshot: true, source: true,
         creative: { select: { metaAccountId: true, metaAdId: true } },
@@ -99,8 +104,7 @@ export class CreativeAliasService {
     });
     if (!link) throw new NotFoundException('This Meta ad is not linked to a creative');
 
-    const removesPrimary = link.creative.metaAccountId === link.accountId
-      && link.creative.metaAdId === link.adId;
+    const removesPrimary = link.creative.metaAdId === link.adId;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.creativeMetaAdLink.delete({ where: { id: link.id } });
@@ -179,9 +183,9 @@ export class CreativeAliasService {
         .filter((value): value is string => Boolean(value));
       return aliasCodes.some((code) => nameCodes.includes(code));
     });
-    const removesPrimary = matchingManualLinks.some((link) => (
-      link.accountId === alias.creative.metaAccountId && link.adId === alias.creative.metaAdId
-    ));
+    const removesPrimary = matchingManualLinks.some(
+      (link) => link.adId === alias.creative.metaAdId,
+    );
     const clearsLegacyManualLink = alias.creative.metaLinkSource === 'MANUAL'
       && (aliasMatchesSnapshot || aliasCodes.some((code) => linkedNameCodes.includes(code)));
 
@@ -226,7 +230,7 @@ export class CreativeAliasService {
   /**
    * Links a Meta ad to a creative by identity only — no alias row is created
    * and the ad name is stored purely as an audit snapshot. Duplicate links are
-   * prevented by the unique (tenantId, accountId, adId) constraint.
+   * prevented by the unique (tenantId, adId) constraint.
    */
   private async createIdentityMetaLink(
     tenantId: string,

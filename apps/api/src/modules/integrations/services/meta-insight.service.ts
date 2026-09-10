@@ -8,6 +8,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Decimal } from '@prisma/client/runtime/library';
 import { CreativeMetaLinkService } from '../../creative-agent/services/creative-meta-link.service';
 import type { MetaInsightLinkIdentity } from '../../creative-agent/services/creative-meta-link.service';
+import { isManualMetaAccountId } from '../../creative-agent/utils/meta-ad-identity';
 
 interface MetaInsightData {
   accountId: string;
@@ -176,88 +177,121 @@ export class MetaInsightService {
         continue;
       }
 
-      await this.prisma.metaAdInsight.upsert({
-        where: {
-          tenantId_accountId_adId_date: {
-            tenantId,
-            accountId: insight.accountId,
-            adId: insight.adId,
-            date: new Date(insight.date),
+      const insightDate = new Date(insight.date);
+      const persisted = await this.prisma.$transaction(async (tx) => {
+        // Serialize writes for the same tenant/ad/day. CSV and provider syncs
+        // can overlap, and the canonical unique key must never turn that race
+        // into two active rows.
+        const lockKey = `${tenantId}:${insight.adId}:${insight.date}`;
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+
+        const existing = await tx.metaAdInsight.findUnique({
+          where: {
+            tenantId_adId_date: {
+              tenantId,
+              adId: insight.adId,
+              date: insightDate,
+            },
           },
-        },
-        create: {
-          tenantId,
-          teamId,
-          accountId: insight.accountId,
-          campaignId: insight.campaignId,
-          campaignName: insight.campaignName,
-          adsetId: insight.adsetId,
-          adId: insight.adId,
-          adName: insight.adName,
-          teamCode: this.extractTeamCode(insight.adName),
-          date: new Date(insight.date),
-          dateCreated: insight.dateCreated,
-          marketingAssociate: this.extractMarketingAssociate(insight.adName),
-          mapping: insight.mapping || null,
-          spend: new Decimal(insight.spend),
-          clicks: insight.clicks || 0,
-          linkClicks: insight.linkClicks || 0,
-          impressions: insight.impressions || 0,
-          leads: insight.leads || 0,
-          videoPlays3s: insight.videoPlays3s ?? null,
-          thruPlays: insight.thruPlays ?? null,
-          frequency: insight.frequency === undefined || insight.frequency === null
-            ? null
-            : new Decimal(insight.frequency),
-          videoAveragePlayTime: insight.videoAveragePlayTime === undefined || insight.videoAveragePlayTime === null
-            ? null
-            : new Decimal(insight.videoAveragePlayTime),
-          videoPlays25: insight.videoPlays25 ?? null,
-          videoPlays50: insight.videoPlays50 ?? null,
-          videoPlays75: insight.videoPlays75 ?? null,
-          videoPlays95: insight.videoPlays95 ?? null,
-          videoPlays100: insight.videoPlays100 ?? null,
-          status: insight.status,
-        },
-        update: {
-          campaignName: insight.campaignName,
-          adName: insight.adName,
-          teamCode: this.extractTeamCode(insight.adName),
-          marketingAssociate: this.extractMarketingAssociate(insight.adName),
-          mapping: insight.mapping || null,
-          spend: new Decimal(insight.spend),
-          clicks: insight.clicks || 0,
-          linkClicks: insight.linkClicks || 0,
-          impressions: insight.impressions || 0,
-          ...(insight.leads !== undefined ? { leads: insight.leads } : {}),
-          ...(insight.videoPlays3s !== undefined ? { videoPlays3s: insight.videoPlays3s } : {}),
-          ...(insight.thruPlays !== undefined ? { thruPlays: insight.thruPlays } : {}),
-          ...(insight.frequency !== undefined
-            ? { frequency: insight.frequency === null ? null : new Decimal(insight.frequency) }
-            : {}),
-          ...(insight.videoAveragePlayTime !== undefined
-            ? {
-                videoAveragePlayTime: insight.videoAveragePlayTime === null
-                  ? null
-                  : new Decimal(insight.videoAveragePlayTime),
-              }
-            : {}),
-          ...(insight.videoPlays25 !== undefined ? { videoPlays25: insight.videoPlays25 } : {}),
-          ...(insight.videoPlays50 !== undefined ? { videoPlays50: insight.videoPlays50 } : {}),
-          ...(insight.videoPlays75 !== undefined ? { videoPlays75: insight.videoPlays75 } : {}),
-          ...(insight.videoPlays95 !== undefined ? { videoPlays95: insight.videoPlays95 } : {}),
-          ...(insight.videoPlays100 !== undefined ? { videoPlays100: insight.videoPlays100 } : {}),
-          status: insight.status,
-          teamId,
-        },
+          select: { accountId: true, adId: true, adName: true },
+        });
+
+        // A provider/numeric account is authoritative. A later upload that has
+        // only a temporary `manual:` account must not replace its source data.
+        if (
+          existing
+          && !isManualMetaAccountId(existing.accountId)
+          && isManualMetaAccountId(insight.accountId)
+        ) {
+          return { identity: existing, written: false };
+        }
+
+        const saved = await tx.metaAdInsight.upsert({
+          where: {
+            tenantId_adId_date: {
+              tenantId,
+              adId: insight.adId,
+              date: insightDate,
+            },
+          },
+          create: {
+            tenantId,
+            teamId,
+            accountId: insight.accountId,
+            campaignId: insight.campaignId,
+            campaignName: insight.campaignName,
+            adsetId: insight.adsetId,
+            adId: insight.adId,
+            adName: insight.adName,
+            teamCode: this.extractTeamCode(insight.adName),
+            date: insightDate,
+            dateCreated: insight.dateCreated,
+            marketingAssociate: this.extractMarketingAssociate(insight.adName),
+            mapping: insight.mapping || null,
+            spend: new Decimal(insight.spend),
+            clicks: insight.clicks || 0,
+            linkClicks: insight.linkClicks || 0,
+            impressions: insight.impressions || 0,
+            ...(insight.leads !== undefined ? { leads: insight.leads } : {}),
+            videoPlays3s: insight.videoPlays3s ?? null,
+            thruPlays: insight.thruPlays ?? null,
+            frequency: insight.frequency === undefined || insight.frequency === null
+              ? null
+              : new Decimal(insight.frequency),
+            videoAveragePlayTime: insight.videoAveragePlayTime === undefined || insight.videoAveragePlayTime === null
+              ? null
+              : new Decimal(insight.videoAveragePlayTime),
+            videoPlays25: insight.videoPlays25 ?? null,
+            videoPlays50: insight.videoPlays50 ?? null,
+            videoPlays75: insight.videoPlays75 ?? null,
+            videoPlays95: insight.videoPlays95 ?? null,
+            videoPlays100: insight.videoPlays100 ?? null,
+            status: insight.status,
+          },
+          update: {
+            teamId,
+            accountId: insight.accountId,
+            campaignId: insight.campaignId,
+            campaignName: insight.campaignName,
+            adsetId: insight.adsetId,
+            adName: insight.adName,
+            dateCreated: insight.dateCreated,
+            teamCode: this.extractTeamCode(insight.adName),
+            marketingAssociate: this.extractMarketingAssociate(insight.adName),
+            mapping: insight.mapping || null,
+            spend: new Decimal(insight.spend),
+            clicks: insight.clicks || 0,
+            linkClicks: insight.linkClicks || 0,
+            impressions: insight.impressions || 0,
+            ...(insight.leads !== undefined ? { leads: insight.leads } : {}),
+            ...(insight.videoPlays3s !== undefined ? { videoPlays3s: insight.videoPlays3s } : {}),
+            ...(insight.thruPlays !== undefined ? { thruPlays: insight.thruPlays } : {}),
+            ...(insight.frequency !== undefined
+              ? { frequency: insight.frequency === null ? null : new Decimal(insight.frequency) }
+              : {}),
+            ...(insight.videoAveragePlayTime !== undefined
+              ? {
+                  videoAveragePlayTime: insight.videoAveragePlayTime === null
+                    ? null
+                    : new Decimal(insight.videoAveragePlayTime),
+                }
+              : {}),
+            ...(insight.videoPlays25 !== undefined ? { videoPlays25: insight.videoPlays25 } : {}),
+            ...(insight.videoPlays50 !== undefined ? { videoPlays50: insight.videoPlays50 } : {}),
+            ...(insight.videoPlays75 !== undefined ? { videoPlays75: insight.videoPlays75 } : {}),
+            ...(insight.videoPlays95 !== undefined ? { videoPlays95: insight.videoPlays95 } : {}),
+            ...(insight.videoPlays100 !== undefined ? { videoPlays100: insight.videoPlays100 } : {}),
+            status: insight.status,
+          },
+          select: { accountId: true, adId: true, adName: true },
+        });
+        return { identity: saved, written: true };
       });
 
-      persistedInsights.set(`${insight.accountId}:${insight.adId}`, {
-        accountId: insight.accountId,
-        adId: insight.adId,
-        adName: insight.adName,
-      });
-      upserted++;
+      // Creative ownership is per tenant + Ad ID. The date and account are
+      // insight source metadata, not a second link identity.
+      persistedInsights.set(persisted.identity.adId, persisted.identity);
+      if (persisted.written) upserted++;
     }
 
     await this.creativeMetaLinks.reconcileInsights(

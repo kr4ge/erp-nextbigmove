@@ -82,4 +82,42 @@ export default Joi.object({
   // WMS feature rollout
   WMS_BASKET_DEMAND_PICKING_ENABLED: Joi.string().valid('true', 'false').default('true'),
   WMS_STOX_LEGACY_RESERVED_ENABLED: Joi.string().valid('true', 'false').default('false'),
+
+  // Local-first Creative AI / Claudebox integration
+  AI_AGENT_ENABLED: Joi.string().valid('true', 'false').default('false'),
+  CLAUDEBOX_WS_URL: Joi.when('AI_AGENT_ENABLED', {
+    is: 'true',
+    then: Joi.string().uri({ scheme: ['ws', 'wss'] }).required(),
+    otherwise: Joi.string().uri({ scheme: ['ws', 'wss'] }).allow('', null),
+  }),
+  CLAUDEBOX_HTTP_URL: Joi.string().uri({ scheme: ['http', 'https'] }).allow('', null),
+  CLAUDEBOX_API_KEY: Joi.when('AI_AGENT_ENABLED', {
+    is: 'true',
+    then: Joi.string().min(24).required(),
+    otherwise: Joi.string().min(24).allow('', null),
+  }),
+  AI_AGENT_SIGNING_SECRET: Joi.when('AI_AGENT_ENABLED', {
+    is: 'true',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().min(32).allow('', null),
+  }),
+  CREATIVE_AI_WORKSPACE_ROOT: Joi.string().allow('', null),
+  CREATIVE_AI_UPLOAD_TMP_DIR: Joi.string().allow('', null),
+  CREATIVE_AI_MAX_VIDEO_MB: Joi.number().positive().default(250),
+  CREATIVE_AI_MAX_VIDEO_SECONDS: Joi.number().positive().default(600),
+  CREATIVE_AI_HOOK_FRAME_LIMIT: Joi.number().integer().min(1).max(12).default(6),
+  CREATIVE_AI_TIMELINE_FRAME_LIMIT: Joi.number().integer().min(1).max(24).default(12),
+  CREATIVE_AI_FFMPEG_BIN: Joi.string().default('ffmpeg'),
+  CREATIVE_AI_FFPROBE_BIN: Joi.string().default('ffprobe'),
+  CREATIVE_AI_WHISPER_BIN: Joi.string().allow('', null),
+  CREATIVE_AI_WHISPER_MODEL: Joi.string().default('base'),
+  CREATIVE_AI_WHISPER_LANGUAGE: Joi.string().allow('', null),
+  CREATIVE_AI_TRANSCRIPTION_TIMEOUT_MS: Joi.number().integer().min(1000).default(1200000),
+  CREATIVE_AI_MODEL: Joi.string().default('sonnet'),
+  CREATIVE_AI_MAX_TURNS: Joi.number().integer().min(1).max(100).default(12),
+  CREATIVE_AI_MAX_BUDGET_USD: Joi.number().positive().max(100).default(1),
+  CREATIVE_AI_RUN_TIMEOUT_MS: Joi.number().integer().min(30000).default(600000),
+  CREATIVE_AI_QUEUE_CONCURRENCY: Joi.number().integer().min(1).default(1),
+  CREATIVE_AI_QUEUE_ATTEMPTS: Joi.number().integer().min(1).default(2),
+  CREATIVE_AI_QUEUE_BACKOFF_MS: Joi.number().integer().min(100).default(3000),
 });

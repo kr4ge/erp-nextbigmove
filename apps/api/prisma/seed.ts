@@ -168,6 +168,8 @@ const PERMISSIONS: { key: string; description: string }[] = [
   { key: 'creative_agent.review', description: 'Review Creative Agent QC workflow' },
   { key: 'creative_agent.performance.manage', description: 'Manage Creative Agent performance states' },
   { key: 'creative_agent.stores.manage', description: 'Configure POS stores for Creative Agent' },
+  { key: 'creative_agent.ai.use', description: 'Run AI analysis for permitted Creative Agent records' },
+  { key: 'creative_agent.ai.manage', description: 'Manage this tenant Creative AI provider connections, defaults, and tenant-wide analysis runs' },
   { key: 'stock_request.read', description: 'Read ERP stock requests and WMS response queue' },
   { key: 'stock_request.write', description: 'Create ERP stock requests and respond to WMS revisions' },
   { key: 'orders.summary.read', description: 'Read orders summary page' },
@@ -292,11 +294,10 @@ const ROLES: RoleDef[] = [
       'analytics.sales',
       'analytics.sales_performance',
       'analytics.share',
-      // Tenant Admin deliberately holds NO creative_agent.* permissions.
-      // The Creative/Advertising workspace is authorized by explicit role
-      // assignment (CREATIVE_MAKER / CREATIVE_REVIEWER / CREATIVE_MANAGER);
-      // an admin who needs it must be assigned CREATIVE_MANAGER. Re-seeding
-      // prunes the previously granted creative permissions from this role.
+      // The tenant owner administers AI defaults without receiving access to
+      // Creative Assets or Video Registry records. Those modules still require
+      // an explicit Creative/Advertising role assignment.
+      'creative_agent.ai.manage',
       'stock_request.read',
       'stock_request.write',
       'orders.summary.read',
@@ -418,6 +419,7 @@ const ROLES: RoleDef[] = [
       'creative_agent.review',
       'creative_agent.performance.manage',
       'creative_agent.stores.manage',
+      'creative_agent.ai.use',
     ],
     isSystem: true,
   },
@@ -426,7 +428,12 @@ const ROLES: RoleDef[] = [
     name: 'Creative',
     description: 'Create, submit, and revise their own creative records',
     scope: RoleScope.TENANT,
-    permissions: ['creative_agent.read', 'creative_agent.enroll', 'creative_agent.edit'],
+    permissions: [
+      'creative_agent.read',
+      'creative_agent.enroll',
+      'creative_agent.edit',
+      'creative_agent.ai.use',
+    ],
     isSystem: true,
   },
   {
@@ -436,9 +443,13 @@ const ROLES: RoleDef[] = [
     scope: RoleScope.TENANT,
     permissions: [
       'creative_agent.read_all',
+      // Advertising can enroll an unmatched Meta ad as a new creative. This
+      // also authorizes the store-item lookup used by that enrollment form.
+      'creative_agent.enroll',
       'creative_agent.review',
       'creative_agent.alias.manage',
       'creative_agent.performance.manage',
+      'creative_agent.ai.use',
       // Advertisers own the Meta spend import end to end: they manage the
       // integrations it reads from, build and run the workflows that pull it,
       // and read the POS reports it reconciles against.

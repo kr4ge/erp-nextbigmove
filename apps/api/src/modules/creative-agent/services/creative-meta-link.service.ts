@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { isCodeSegment } from '../utils/ad-name-convention';
+import { preferCanonicalMetaAdIdentity } from '../utils/meta-ad-identity';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 export type MetaInsightLinkIdentity = {
@@ -40,7 +41,11 @@ export class CreativeMetaLinkService {
     for (const insight of insights) {
       const adName = insight.adName.trim();
       if (!adName) continue;
-      identities.set(`${insight.accountId}:${insight.adId}`, { ...insight, adName });
+      const candidate = { ...insight, adName };
+      identities.set(
+        insight.adId,
+        preferCanonicalMetaAdIdentity(identities.get(insight.adId), candidate),
+      );
     }
     if (identities.size === 0) return 0;
 
@@ -61,7 +66,7 @@ export class CreativeMetaLinkService {
     for (const creative of creatives) {
       const matches = [...identities.values()]
         .filter((identity) => codeCandidatesFor(identity.adName).includes(creative.code))
-        .sort((left, right) => `${left.accountId}:${left.adId}`.localeCompare(`${right.accountId}:${right.adId}`));
+        .sort((left, right) => left.adId.localeCompare(right.adId));
       if (matches.length === 0) continue;
 
       const created = await this.prisma.$transaction(async (tx) => {
@@ -76,14 +81,23 @@ export class CreativeMetaLinkService {
           })),
           skipDuplicates: true,
         });
-        if (!creative.metaAdId) {
-          const primary = matches[0];
+        const ownedLinks = await tx.creativeMetaAdLink.findMany({
+          where: {
+            tenantId,
+            creativeId: creative.id,
+            adId: { in: matches.map((match) => match.adId) },
+          },
+          select: { accountId: true, adId: true, adNameSnapshot: true },
+          orderBy: { adId: 'asc' },
+        });
+        if (!creative.metaAdId && ownedLinks.length > 0) {
+          const primary = ownedLinks[0];
           await tx.creative.updateMany({
             where: { id: creative.id, tenantId, metaAdId: null },
             data: {
               metaAccountId: primary.accountId,
               metaAdId: primary.adId,
-              metaAdNameSnapshot: primary.adName,
+              metaAdNameSnapshot: primary.adNameSnapshot,
               metaLinkSource: 'AUTO_CODE',
               metaLinkedAt: new Date(),
             },

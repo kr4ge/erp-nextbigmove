@@ -16,6 +16,16 @@ describe('CreativeMatchingService', () => {
     });
   });
 
+  it('matches a static creative code', () => {
+    expect(service.match('ITEM_Static hook_NRO-I0003_Lyca', [
+      { creativeId: 'creative-static', code: 'NRO-I0003', aliases: [] },
+    ])).toEqual({
+      source: 'CODE',
+      creativeId: 'creative-static',
+      detectedCode: 'NRO-I0003',
+    });
+  });
+
   it('chooses the earliest canonical code in an ad name', () => {
     expect(service.match('launch NRO-V0002 then NRO-V0001', references)).toMatchObject({
       source: 'CODE',

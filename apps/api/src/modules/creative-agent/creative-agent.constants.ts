@@ -41,7 +41,17 @@ export const CREATIVE_AGENT_PERMISSIONS = {
   REVIEW: 'creative_agent.review',
   PERFORMANCE_MANAGE: 'creative_agent.performance.manage',
   STORES_MANAGE: 'creative_agent.stores.manage',
+  AI_USE: 'creative_agent.ai.use',
+  AI_MANAGE: 'creative_agent.ai.manage',
 } as const;
+
+export const CREATIVE_AI_QUEUE = 'creative-ai-analysis';
+export const CREATIVE_AI_ANALYZE_JOB = 'creative-ai.analyze';
+
+export type CreativeAiAnalyzeJobData = {
+  tenantId: string;
+  runId: string;
+};
 
 /**
  * Strategy Log types. The list is a starting vocabulary, not a closed enum —

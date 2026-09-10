@@ -40,10 +40,12 @@ function createHarness(overrides: {
   };
   const prisma = {
     metaAdInsight: {
-      findFirst: jest.fn<() => Promise<unknown>>().mockResolvedValue(
+      findMany: jest.fn<() => Promise<unknown[]>>().mockResolvedValue(
         overrides.insight === undefined
-          ? { accountId: 'acct-1', adId: 'ad-1', adName: 'Totally free-form ad name' }
-          : overrides.insight,
+          ? [{ accountId: 'acct-1', adId: 'ad-1', adName: 'Totally free-form ad name' }]
+          : overrides.insight
+            ? [overrides.insight]
+            : [],
       ),
     },
     creativeMetaAdLink: {
@@ -78,7 +80,7 @@ describe('CreativeAliasService identity linking', () => {
       data: expect.objectContaining({ action: 'creative.metaLink.manual' }),
     }));
     // tenant isolation: the insight lookup is tenant-scoped
-    expect((prisma.metaAdInsight.findFirst as AnyFn).mock.calls[0]?.[0]).toMatchObject({
+    expect((prisma.metaAdInsight.findMany as AnyFn).mock.calls[0]?.[0]).toMatchObject({
       where: expect.objectContaining({ tenantId: 'tenant-1' }),
     });
   });
@@ -88,6 +90,26 @@ describe('CreativeAliasService identity linking', () => {
     await expect(service.linkUnregistered({ userId: 'user-1', tenantId: 'tenant-1' }, {
       creativeId: 'creative-2', accountId: 'acct-1', adId: 'ad-1',
     })).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('uses the provider account when the same Ad ID also has a manual identity', async () => {
+    const { service, prisma, tx } = createHarness();
+    (prisma.metaAdInsight.findMany as AnyFn).mockResolvedValue([
+      { accountId: 'manual:legacy-upload', adId: 'ad-1', adName: 'Legacy name' },
+      { accountId: '1889518721645704', adId: 'ad-1', adName: 'Provider name' },
+    ]);
+
+    await service.linkUnregistered({ userId: 'user-1', tenantId: 'tenant-1' }, {
+      creativeId: 'creative-1', accountId: 'manual:legacy-upload', adId: 'ad-1',
+    });
+
+    expect(tx.creativeMetaAdLink.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        accountId: '1889518721645704',
+        adId: 'ad-1',
+        adNameSnapshot: 'Provider name',
+      }),
+    }));
   });
 
   it('rejects linking a Meta ad from another tenant (no insight visible)', async () => {

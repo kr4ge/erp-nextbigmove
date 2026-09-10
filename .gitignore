@@ -59,6 +59,8 @@ docker-compose.override.yml
 .cache
 .temp
 .tmp
+apps/api/tmp/creative-ai/
+apps/api/tmp/creative-ai-uploads/
 
 # Docs (track only top-level README and team-isolation docs; keep archive optional)
 docs/**

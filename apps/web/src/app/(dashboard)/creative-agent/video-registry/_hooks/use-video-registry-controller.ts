@@ -5,7 +5,6 @@ import { DEFAULT_VIDEO_REGISTRY_PARAMS } from '../_constants/video-registry.cons
 import { usePermissions } from '@/hooks/use-permissions';
 import {
   createVideoRegistryItem,
-  fetchCreativeStores,
   fetchCreativeReviewComments,
   fetchVideoRegistry,
   linkCreativeAlias,
@@ -18,7 +17,6 @@ import {
 import type {
   CreativeStatusDimension,
   CreativeReviewComment,
-  CreativeStoreOption,
   CreateVideoRegistryInput,
   GetVideoRegistryParams,
   LinkCreativeAliasInput,
@@ -28,6 +26,7 @@ import type {
   VideoRegistryResponse,
   VideoRegistryView,
 } from '../_types/video-registry';
+import { useCreativeStores } from './use-creative-stores';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -48,7 +47,6 @@ export function useVideoRegistryController(initialQuery = '') {
   const [reviewComments, setReviewComments] = useState<CreativeReviewComment[]>([]);
   const [isLoadingReviewComments, setIsLoadingReviewComments] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
-  const [stores, setStores] = useState<CreativeStoreOption[]>([]);
 
   const permissions = useMemo(() => {
     const values = permissionsQuery.data ?? [];
@@ -62,6 +60,7 @@ export function useVideoRegistryController(initialQuery = '') {
       canManagePerformance: values.includes('creative_agent.performance.manage'),
     };
   }, [permissionsQuery.data]);
+  const { stores } = useCreativeStores(permissions.canEnroll);
 
   /** Returns the response too, so a mutation can re-read an open dialog's row from it. */
   const loadRegistry = useCallback(async (options?: { silent?: boolean }) => {
@@ -90,14 +89,6 @@ export function useVideoRegistryController(initialQuery = '') {
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
   }, [searchText]);
-
-  const loadStores = useCallback(async () => {
-    setStores(await fetchCreativeStores());
-  }, []);
-
-  useEffect(() => {
-    if (permissions.canEnroll) void loadStores().catch(() => undefined);
-  }, [loadStores, permissions.canEnroll]);
 
   const updateParams = useCallback((patch: Partial<GetVideoRegistryParams>) => {
     setParams((current) => ({ ...current, ...patch, page: patch.page ?? 1 }));

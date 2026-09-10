@@ -2,7 +2,8 @@
  * The two ad-name conventions an ad may carry, told apart by SHAPE, never by
  * underscore count. Position-counting is what broke mapping in July 2026: the
  * campaign convention changed and every downstream field silently went null.
- * A creative code is unmistakable (`NRO-V0100`), so it is the anchor.
+ * A creative code is unmistakable (`NRO-V0100` for video or `NRO-I0100`
+ * for a static image), so it is the anchor.
  *
  *   new:    customId_title_CODE_creator      (code mid-name, creator last)
  *   legacy: title_creator_CODE               (copy button, code last)
@@ -15,7 +16,7 @@
  */
 
 /** Whole-segment version of CREATIVE_CODE_REGEX — no prose, no substrings. */
-const CODE_SEGMENT_REGEX = /^[A-Z]{2,6}-V\d{3,6}$/i;
+const CODE_SEGMENT_REGEX = /^[A-Z]{2,6}-[VI]\d{3,6}$/i;
 
 export type ParsedAdName =
   | { convention: 'new'; customId: string; title: string; code: string; creator: string }
@@ -50,6 +51,13 @@ export function parseAdName(adName: string): ParsedAdName {
   }
 
   return { convention: 'legacy-or-bare', code };
+}
+
+/** Return the normalized registry code carried by any supported ad-name shape. */
+export function deriveCreativeCodeFromAdName(adName: string | null | undefined): string | null {
+  if (!adName) return null;
+  const parsed = parseAdName(adName);
+  return parsed.convention === 'unknown' ? null : parsed.code.toUpperCase();
 }
 
 /**

@@ -1,18 +1,28 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { AlertTriangle, Inbox, LayoutGrid, List, Search } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/components/ui/toast';
 import { EditCreativeDialog } from '../../video-registry/_components/edit-creative-dialog';
+import { CreativeAiAnalysisDialog } from '../../video-registry/_components/creative-ai-analysis-dialog';
 import { RegistryPagination } from '../../video-registry/_components/registry-pagination';
 import { VideoRegistryDateRangePicker } from '../../video-registry/_components/video-registry-date-range-picker';
 import { useCreativeAssetsController } from '../_hooks/use-creative-assets-controller';
+import type { CreativeAsset } from '../_types/creative-assets';
 import { CreativeAssetReviewDialog } from './creative-asset-review-dialog';
 import { CreativeAssetsGrid } from './creative-assets-grid';
 import { CreativeAssetsTable } from './creative-assets-table';
 import { UnlinkedAdsPanel } from './unlinked-ads-panel';
 
 const selectClass = 'h-10 rounded-xl border border-border bg-surface px-3 text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10';
+
+function localIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, initialRevisionState, initialQueue }: {
   initialQuery?: string;
@@ -29,6 +39,13 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
   const { addToast } = useToast();
   const { data, params } = controller;
   const isReviewerView = Boolean(data?.permissions.canReadAll && controller.canReview);
+  const [analysisTarget, setAnalysisTarget] = useState<CreativeAsset | null>(null);
+  const analysisDateRange = useMemo(() => {
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(start.getDate() - 29);
+    return { startDate: localIsoDate(start), endDate: localIsoDate(end) };
+  }, []);
 
   const addComment = async (message: string) => {
     await controller.addComment(message);
@@ -76,7 +93,36 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
       {controller.error ? <div className="m-4 rounded-xl border border-destructive/30 bg-destructive-soft p-5 text-center"><AlertTriangle className="mx-auto h-6 w-6 text-destructive" /><p className="mt-2 font-semibold text-foreground">Assets could not load</p><p className="mt-1 text-sm text-muted">{controller.error}</p><button type="button" className="btn btn-sm btn-outline mt-3" onClick={() => void controller.retry()}>Try again</button></div> : controller.isLoading && !data ? <div className="p-16 text-center text-sm text-muted">Loading your assets…</div> : data?.items.length ? controller.view === 'tiles' ? <CreativeAssetsGrid items={data.items} onReview={(item) => void controller.openAsset(item)} /> : <CreativeAssetsTable items={data.items} onReview={(item) => void controller.openAsset(item)} /> : <div className="p-16 text-center"><Inbox className="mx-auto h-8 w-8 text-muted" /><p className="mt-3 font-semibold text-foreground">No assets in this stage</p><p className="mt-1 text-sm text-muted">Your enrolled creatives will appear here automatically.</p></div>}
       {data ? <RegistryPagination {...data.pagination} onPageChange={(page) => controller.updateParams({ page })} /> : null}
     </section>
-    <CreativeAssetReviewDialog asset={controller.selected} comments={controller.comments} isLoadingComments={controller.isLoadingComments} isSaving={controller.isMutating} showPerformanceLink={isReviewerView} canReview={controller.canReview} onClose={() => controller.setSelected(null)} onComment={addComment} onTransition={transition} onEdit={controller.openEdit} />
-    <EditCreativeDialog item={controller.editing} isSaving={controller.isMutating} onClose={() => controller.setEditing(null)} onSave={updateCreative} onUploadThumbnail={controller.uploadThumbnail} onRemoveThumbnail={controller.removeThumbnail} />
+    <CreativeAssetReviewDialog
+      asset={controller.selected}
+      comments={controller.comments}
+      isLoadingComments={controller.isLoadingComments}
+      isSaving={controller.isMutating}
+      showPerformanceLink={isReviewerView}
+      canReview={controller.canReview}
+      canAnalyze={controller.canUseAi}
+      onClose={() => controller.setSelected(null)}
+      onComment={addComment}
+      onTransition={transition}
+      onEdit={controller.openEdit}
+      onAnalyze={(asset) => {
+        controller.setSelected(null);
+        setAnalysisTarget(asset);
+      }}
+    />
+    <CreativeAiAnalysisDialog
+      item={analysisTarget}
+      startDate={analysisDateRange.startDate}
+      endDate={analysisDateRange.endDate}
+      onClose={() => setAnalysisTarget(null)}
+    />
+    <EditCreativeDialog
+      item={controller.editing}
+      isSaving={controller.isMutating}
+      onClose={() => controller.setEditing(null)}
+      onSave={updateCreative}
+      onUploadThumbnail={controller.uploadThumbnail}
+      onRemoveThumbnail={controller.removeThumbnail}
+    />
   </div>;
 }

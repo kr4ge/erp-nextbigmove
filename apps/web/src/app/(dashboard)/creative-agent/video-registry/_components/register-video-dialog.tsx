@@ -88,6 +88,10 @@ function offsetCode(code: string, by: number): string {
   return `${match[1]}${String(Number(match[2]) + by).padStart(match[2].length, "0")}`;
 }
 
+function codeForKind(code: string, kind: CreativeKind): string {
+  return code.replace(/-[VI](?=\d+$)/, kind === "STATIC" ? "-I" : "-V");
+}
+
 export function RegisterVideoDialog({
   open,
   stores,
@@ -171,7 +175,7 @@ export function RegisterVideoDialog({
     const next = store?.nextCodes?.[entry.kind] ?? store?.nextCode;
     if (!next) return null;
     const priorSameStore = entries.slice(0, index).filter((other) => other.form.storeId === entry.form.storeId).length;
-    return offsetCode(next, priorSameStore);
+    return offsetCode(codeForKind(next, entry.kind), priorSameStore);
   };
   const adNameOf = (entry: Entry, index: number) => {
     const code = codeOf(entry, index);

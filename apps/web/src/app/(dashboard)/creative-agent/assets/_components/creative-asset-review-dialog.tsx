@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ExternalLink, MessageSquare, Pencil, Send } from 'lucide-react';
+import { ExternalLink, MessageSquare, Pencil, Send, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { RegistryStatusPill } from '../../video-registry/_components/registry-status-pill';
@@ -11,7 +11,7 @@ import { getGoogleDrivePreviewUrl } from '../../video-registry/_utils/google-dri
 import { CopyCodeButton } from './copy-code-button';
 import type { CreativeAsset, CreativeAssetComment } from '../_types/creative-assets';
 
-export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, isSaving, showPerformanceLink = false, canReview = false, onClose, onComment, onTransition, onEdit }: {
+export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, isSaving, showPerformanceLink = false, canReview = false, canAnalyze = false, onClose, onComment, onTransition, onEdit, onAnalyze }: {
   asset: CreativeAsset | null;
   comments: CreativeAssetComment[];
   isLoadingComments: boolean;
@@ -19,10 +19,12 @@ export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, 
   showPerformanceLink?: boolean;
   /** Backend requires creative_agent.review for every non-maker QC transition. */
   canReview?: boolean;
+  canAnalyze?: boolean;
   onClose: () => void;
   onComment: (message: string) => Promise<void>;
   onTransition: (status: string, reason?: string) => Promise<void>;
   onEdit: (asset: CreativeAsset) => void;
+  onAnalyze: (asset: CreativeAsset) => void;
 }) {
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +70,15 @@ export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, 
                 : <div className="flex h-full items-center justify-center text-sm text-muted">No post link supplied</div>}
           </div>
           {asset.mediaUrl ? <a href={asset.mediaUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">Open the live post <ExternalLink className="h-4 w-4" /></a> : null}
+          {canAnalyze && asset.kind === 'VIDEO' ? (
+            <div className="mt-5 flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-soft p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="flex items-center gap-2 font-semibold text-foreground"><Sparkles className="h-4 w-4 text-primary" /> AI video analysis</p>
+                <p className="mt-1 text-sm text-muted">Compare the video&apos;s visual execution with linked Meta spend and reconciled order results.</p>
+              </div>
+              <Button type="button" size="sm" className="shrink-0" iconLeft={<Sparkles className="h-4 w-4" />} onClick={() => onAnalyze(asset)}>Analyze video</Button>
+            </div>
+          ) : null}
           <dl className="mt-5 grid gap-3 rounded-xl bg-background-secondary p-4 sm:grid-cols-2">
             <div><dt className="text-xs text-muted">Format</dt><dd className="mt-1 font-semibold text-foreground">{asset.format ?? 'Not provided'}</dd></div>
             <div><dt className="text-xs text-muted">Hook type</dt><dd className="mt-1 font-semibold text-foreground">{asset.hookType ?? 'Not provided'}</dd></div>

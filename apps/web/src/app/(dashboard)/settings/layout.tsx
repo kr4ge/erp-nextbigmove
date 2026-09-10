@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import apiClient from '@/lib/api-client';
+import { CREATIVE_AI_UI_ENABLED } from '@/lib/creative-ai-feature';
 import { filterErpPermissions } from '@/lib/permission-workspace';
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
@@ -49,8 +50,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     if (perms.includes('kpi.marketing.read') || perms.includes('kpi.marketing.manage')) {
       base.push({ href: '/settings/kpis', label: 'KPIs' });
     }
-    // Main-admin only: this is where the Anthropic key lives.
-    if (perms.includes('tenant.manage')) base.push({ href: '/settings/ai', label: 'AI' });
+    if (CREATIVE_AI_UI_ENABLED && perms.includes('creative_agent.ai.manage')) {
+      base.push({ href: '/settings/ai', label: 'AI' });
+    }
     return base;
   }, [perms]);
 

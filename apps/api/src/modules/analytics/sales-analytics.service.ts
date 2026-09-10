@@ -9,13 +9,16 @@ import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { AnalyticsCacheService } from './analytics-cache.service';
 import { ReconcileMarketingService } from '../workflows/services/reconcile-marketing.service';
 import {
-  parseProductMappingKey,
-  parseUnassignedMappingKey,
   resolveMappingDisplayNames,
 } from '../workflows/utils/product-mapping-key';
 import { ReconcileSalesService } from '../workflows/services/reconcile-sales.service';
 import { ReconcileSalesAttributionService } from '../workflows/services/reconcile-sales-attribution.service';
 import { AnalyticsRequestCoordinatorService } from './analytics-request-coordinator.service';
+import {
+  creativeCodeParts,
+  resolveStoreAttribution,
+  UNATTRIBUTED_STORE_KEY,
+} from './utils/store-attribution';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -1419,7 +1422,7 @@ export class SalesAnalyticsService {
     const endDate_dt = new Date(`${endStr}T00:00:00.000Z`);
     const prevStartDate_dt = new Date(`${prevStartStr}T00:00:00.000Z`);
 
-    const UNATTRIBUTED = '__unattributed__';
+    const UNATTRIBUTED = UNATTRIBUTED_STORE_KEY;
     const selectedStoreIds = mappings.map((m) => this.normalize(m)).filter((v) => v.length > 0);
     const tenantId = this.teamContext.getTenantId();
 
@@ -1457,7 +1460,14 @@ export class SalesAnalyticsService {
       'repurchaseSfSdrPos', 'repurchaseFfSdrPos', 'repurchaseIfSdrPos',
     ] as const;
 
-    const select: Record<string, boolean> = { adId: true, mapping: true, shops: true, date: true, updatedAt: true };
+    const select: Record<string, boolean> = {
+      adId: true,
+      adName: true,
+      mapping: true,
+      shops: true,
+      date: true,
+      updatedAt: true,
+    };
     for (const f of metricFields) select[f] = true;
 
     // Current + previous period in one fetch; rows are split by date below.
@@ -1475,32 +1485,68 @@ export class SalesAnalyticsService {
     const storeByShopId = new Map(tenantStores.map((st) => [st.shopId, st.id.toLowerCase()]));
     const storeNameById = new Map(tenantStores.map((st) => [st.id.toLowerCase(), st.name]));
 
-    // Fallback 2: creative link -> store, for ads with no matched orders.
-    const unshoppedAdIds = [
-      ...new Set(
-        rows
-          .filter((r) => !(Array.isArray(r.shops) && r.shops.length > 0))
-          .map((r) => r.adId as string)
-          .filter(Boolean),
-      ),
-    ];
-    const storeByAdId = new Map<string, string>();
-    if (unshoppedAdIds.length > 0) {
-      const links = await this.prisma.creativeMetaAdLink.findMany({
-        where: { tenantId, adId: { in: unshoppedAdIds } },
-        select: { adId: true, creative: { select: { storeConfig: { select: { storeId: true } } } } },
-      });
-      for (const link of links) {
-        const sid = link.creative?.storeConfig?.storeId;
-        if (sid && !storeByAdId.has(link.adId)) storeByAdId.set(link.adId, sid.toLowerCase());
-      }
+    const unshoppedRows = rows.filter((r) => !(Array.isArray(r.shops) && r.shops.length > 0));
+    const unshoppedAdIds = [...new Set(unshoppedRows.map((r) => r.adId as string).filter(Boolean))];
+    const detectedCodes = new Set<string>();
+    const detectedPrefixes = new Set<string>();
+    for (const row of unshoppedRows) {
+      const parts = creativeCodeParts(typeof row.adName === 'string' ? row.adName : null);
+      if (!parts) continue;
+      detectedCodes.add(parts.code);
+      detectedPrefixes.add(parts.prefix);
     }
 
-    // Fallback 3b: coarse mapping label -> store, only when unambiguous.
-    const tenantProducts = await this.prisma.posProduct.findMany({
-      where: { store: { is: { tenantId } }, mapping: { not: null } },
-      select: { storeId: true, mapping: true },
-    });
+    // All fallbacks are tenant-scoped and loaded in parallel. Explicit links
+    // remain authoritative; exact codes and unique active prefixes cover
+    // unlinked static creatives and newly arrived ads with no POS orders yet.
+    const [links, tenantProducts, codedCreatives, prefixConfigs] = await Promise.all([
+      unshoppedAdIds.length > 0
+        ? this.prisma.creativeMetaAdLink.findMany({
+            where: { tenantId, adId: { in: unshoppedAdIds } },
+            select: { adId: true, creative: { select: { storeConfig: { select: { storeId: true } } } } },
+          })
+        : Promise.resolve([]),
+      this.prisma.posProduct.findMany({
+        where: { store: { is: { tenantId } }, mapping: { not: null } },
+        select: { storeId: true, mapping: true },
+      }),
+      detectedCodes.size > 0
+        ? this.prisma.creative.findMany({
+            where: { tenantId, code: { in: [...detectedCodes] } },
+            select: { code: true, storeConfig: { select: { storeId: true } } },
+          })
+        : Promise.resolve([]),
+      detectedPrefixes.size > 0
+        ? this.prisma.creativeStoreConfig.findMany({
+            where: {
+              tenantId,
+              active: true,
+              storeId: { not: null },
+              codePrefix: { in: [...detectedPrefixes] },
+            },
+            select: { codePrefix: true, storeId: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const storeByAdId = new Map<string, string>();
+    for (const link of links) {
+      const sid = link.creative?.storeConfig?.storeId;
+      if (sid && !storeByAdId.has(link.adId)) storeByAdId.set(link.adId, sid.toLowerCase());
+    }
+
+    const storeByCreativeCode = new Map<string, string>();
+    for (const creative of codedCreatives) {
+      const sid = creative.storeConfig?.storeId;
+      if (sid) storeByCreativeCode.set(creative.code.toUpperCase(), sid.toLowerCase());
+    }
+
+    const storeByCodePrefix = new Map<string, string>();
+    for (const config of prefixConfigs) {
+      if (config.storeId) storeByCodePrefix.set(config.codePrefix.toUpperCase(), config.storeId.toLowerCase());
+    }
+
+    // Coarse legacy mapping -> store only when the label is unambiguous.
     const storeByLabel = new Map<string, string | null>();
     for (const p of tenantProducts) {
       const label = p.mapping?.trim().toLowerCase();
@@ -1510,24 +1556,13 @@ export class SalesAnalyticsService {
       else storeByLabel.set(label, sid);
     }
 
-    const resolveStore = (row: Record<string, any>): string => {
-      const shops = Array.isArray(row.shops) ? row.shops : [];
-      const shopId = typeof shops[0] === 'string' ? shops[0] : shops[0] != null ? String(shops[0]) : null;
-      if (shopId && storeByShopId.has(shopId)) return storeByShopId.get(shopId)!;
-      const linked = storeByAdId.get(row.adId);
-      if (linked) return linked;
-      const mapping = typeof row.mapping === 'string' ? row.mapping : null;
-      const productKey = parseProductMappingKey(mapping);
-      if (productKey) return productKey.storeId;
-      const unassignedKey = parseUnassignedMappingKey(mapping);
-      if (unassignedKey) return unassignedKey.storeId;
-      const label = mapping?.trim().toLowerCase();
-      if (label) {
-        const byLabel = storeByLabel.get(label);
-        if (byLabel) return byLabel;
-      }
-      return UNATTRIBUTED;
-    };
+    const resolveStore = (row: Record<string, any>): string => resolveStoreAttribution(row, {
+      storeByShopId,
+      storeByAdId,
+      storeByCreativeCode,
+      storeByCodePrefix,
+      storeByLabel,
+    });
 
     const allSelected = selectedStoreIds.length === 0;
     const isSelected = (storeKey: string) => allSelected || selectedStoreIds.includes(storeKey);

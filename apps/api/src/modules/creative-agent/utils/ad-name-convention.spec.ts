@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import {
   deriveAssociateFromAdName,
+  deriveCreativeCodeFromAdName,
   deriveLegacyEmployeeIdFromAdName,
   deriveMappingFromAdName,
   parseAdName,
@@ -28,6 +29,17 @@ describe('parseAdName', () => {
     });
   });
 
+  it('reads a static creative code in the new convention', () => {
+    expect(parseAdName('OGM-100_Static Hook_NRO-I0069_Josiah')).toEqual({
+      convention: 'new',
+      customId: 'OGM-100',
+      title: 'Static Hook',
+      code: 'NRO-I0069',
+      creator: 'Josiah',
+    });
+    expect(deriveCreativeCodeFromAdName('OGM-100_Static Hook_NRO-I0069_Josiah')).toBe('NRO-I0069');
+  });
+
   it('classifies the legacy copy format as legacy: title_creator_CODE', () => {
     expect(parseAdName('Test 1_Frage Perez_NRO-V0041')).toEqual({
       convention: 'legacy-or-bare',
@@ -52,6 +64,10 @@ describe('parseAdName', () => {
 describe('deriveMappingFromAdName', () => {
   it('uses the declared customId, lowercased', () => {
     expect(deriveMappingFromAdName('OGM-100_Hook_NRO-V0069_Josiah')).toBe('ogm-100');
+  });
+
+  it('uses the declared customId for static creatives', () => {
+    expect(deriveMappingFromAdName('OGM-100_Static Hook_NRO-I0069_Josiah')).toBe('ogm-100');
   });
 
   it('returns null for the legacy copy format', () => {

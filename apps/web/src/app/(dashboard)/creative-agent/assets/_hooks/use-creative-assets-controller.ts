@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePermissions } from '@/hooks/use-permissions';
+import { CREATIVE_AI_UI_ENABLED } from '@/lib/creative-ai-feature';
 import {
   removeCreativeThumbnail,
   transitionCreativeStatus,
@@ -40,6 +41,7 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
   const permissionsQuery = usePermissions();
   const permissions = useMemo(() => permissionsQuery.data ?? [], [permissionsQuery.data]);
   const canReview = permissions.includes('creative_agent.review');
+  const canUseAi = CREATIVE_AI_UI_ENABLED && permissions.includes('creative_agent.ai.use');
   const canReadAllPermission = permissions.includes('creative_agent.read_all');
   const [params, setParams] = useState<CreativeAssetsParams>(() => ({
     ...DEFAULT_PARAMS,
@@ -181,5 +183,5 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
   }, [load]);
 
   const updateParams = useCallback((patch: Partial<CreativeAssetsParams>) => setParams((current) => ({ ...current, ...patch, page: patch.page ?? 1 })), []);
-  return { params, searchText, data, view, selected, editing, comments, isLoading, isLoadingComments, isMutating, error, canReview, setSearchText, setView, setSelected, setEditing, updateParams, openAsset, openEdit, addComment, transition, updateCreative, uploadThumbnail, removeThumbnail, retry: load };
+  return { params, searchText, data, view, selected, editing, comments, isLoading, isLoadingComments, isMutating, error, canReview, canUseAi, setSearchText, setView, setSelected, setEditing, updateParams, openAsset, openEdit, addComment, transition, updateCreative, uploadThumbnail, removeThumbnail, retry: load };
 }

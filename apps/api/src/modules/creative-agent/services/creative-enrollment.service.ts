@@ -16,6 +16,7 @@ import {
 import { EnrollCreativeDto, EnrollUnregisteredCreativeDto } from '../dto/enroll-creative.dto';
 import { UpdateCreativeDto } from '../dto/update-creative.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
+import { preferCanonicalMetaAdIdentity } from '../utils/meta-ad-identity';
 import { CreativeAccessService } from './creative-access.service';
 import { CreativeStoreService } from './creative-store.service';
 import { CreativeThumbnailService } from './creative-thumbnail.service';
@@ -446,21 +447,24 @@ export class CreativeEnrollmentService {
 
   private async findMetaInsight(
     tenantId: string,
-    accountId: string,
+    _accountId: string,
     adId: string,
   ): Promise<Pick<CreativeMetaLinkInput, 'accountId' | 'adId' | 'adName'>> {
-    const insight = await this.prisma.metaAdInsight.findFirst({
+    const candidates = await this.prisma.metaAdInsight.findMany({
       where: {
         tenantId,
-        accountId,
         adId,
       },
       select: { accountId: true, adId: true, adName: true },
-      orderBy: { date: 'desc' },
+      orderBy: [{ date: 'desc' }, { updatedAt: 'desc' }],
     });
+    let insight: (typeof candidates)[number] | undefined;
+    for (const candidate of candidates) {
+      insight = preferCanonicalMetaAdIdentity(insight, candidate);
+    }
     if (!insight) throw new NotFoundException('The selected Meta ad was not found in this tenant');
     const linked = await this.prisma.creativeMetaAdLink.findFirst({
-      where: { tenantId, accountId, adId },
+      where: { tenantId, adId },
       select: { id: true },
     });
     if (linked) throw new ConflictException('This Meta ad is already linked to a creative');

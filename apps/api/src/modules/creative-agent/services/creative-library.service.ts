@@ -5,6 +5,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CREATIVE_AGENT_PERMISSIONS } from '../creative-agent.constants';
 import { ListCreativeLibraryQueryDto } from '../dto/list-creative-library-query.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
+import { isManualMetaAccountId } from '../utils/meta-ad-identity';
 import { MediaAssetsService } from '../../../common/services/media-assets.service';
 import { CreativeAccessService } from './creative-access.service';
 
@@ -180,7 +181,7 @@ export class CreativeLibraryService {
     const linkedByMetaAd = new Map(
       linkedCreatives
         .map((link) => [
-          `${link.accountId}:${link.adId}`,
+          link.adId,
           link.creativeId,
         ]),
     );
@@ -196,7 +197,7 @@ export class CreativeLibraryService {
         clicks: row._sum.clicks ?? 0,
         linkClicks: row._sum.linkClicks ?? 0,
       };
-      const linkedCreativeId = linkedByMetaAd.get(`${row.accountId}:${row.adId}`);
+      const linkedCreativeId = linkedByMetaAd.get(row.adId);
       if (linkedCreativeId) {
         const bucket = metrics.get(linkedCreativeId) ?? this.emptyMetrics();
         bucket.spend += rowMetrics.spend;
@@ -208,7 +209,7 @@ export class CreativeLibraryService {
         metrics.set(linkedCreativeId, bucket);
       } else {
         untaggedSpend += rowSpend;
-        const key = `${row.accountId}:${row.adId}`;
+        const key = row.adId;
         const bucket = unregistered.get(key) ?? {
           ...this.emptyMetrics(),
           code: null,
@@ -224,6 +225,16 @@ export class CreativeLibraryService {
         bucket.linkClicks += rowMetrics.linkClicks;
         this.addVideoMetrics(bucket, row._sum);
         bucket.accountIds.add(row.accountId);
+        const rowLastSeenAt = row._max.date ?? range.end;
+        const sameAccountClass = isManualMetaAccountId(bucket.accountId)
+          === isManualMetaAccountId(row.accountId);
+        if (
+          (isManualMetaAccountId(bucket.accountId) && !isManualMetaAccountId(row.accountId))
+          || (sameAccountClass && rowLastSeenAt > bucket.lastSeenAt)
+        ) {
+          bucket.accountId = row.accountId;
+          bucket.adName = row.adName;
+        }
         if (row._min.date && row._min.date < bucket.firstSeenAt) bucket.firstSeenAt = row._min.date;
         if (row._max.date && row._max.date > bucket.lastSeenAt) bucket.lastSeenAt = row._max.date;
         unregistered.set(key, bucket);
@@ -294,7 +305,7 @@ export class CreativeLibraryService {
       ? Array.from(unregistered.values())
         .map((item) => {
           return {
-            key: `${item.accountId}:${item.adId}`,
+            key: item.adId,
             code: item.code,
             adName: item.adName,
             accountId: item.accountId,

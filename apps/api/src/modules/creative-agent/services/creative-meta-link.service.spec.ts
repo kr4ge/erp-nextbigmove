@@ -4,10 +4,20 @@ import { codeCandidatesFor, CreativeMetaLinkService } from './creative-meta-link
 describe('CreativeMetaLinkService', () => {
   function createService(options: {
     insights: Array<{ accountId: string; adId: string; adName: string }>;
+    creativeCode?: string;
   }) {
+    let insertedLinks: Array<{
+      accountId: string;
+      adId: string;
+      adNameSnapshot: string;
+    }> = [];
     const transactionClient = {
       creativeMetaAdLink: {
-        createMany: jest.fn<() => Promise<{ count: number }>>().mockImplementation(async () => ({ count: options.insights.length })),
+        createMany: jest.fn(async (args: { data: typeof insertedLinks }) => {
+          insertedLinks = args.data;
+          return { count: args.data.length };
+        }),
+        findMany: jest.fn(async () => insertedLinks),
       },
       creative: {
         updateMany: jest.fn<() => Promise<{ count: number }>>().mockResolvedValue({ count: 1 }),
@@ -16,12 +26,8 @@ describe('CreativeMetaLinkService', () => {
     };
     const prisma = {
       creative: {
-        findMany: jest.fn<() => Promise<Array<{ id: string; code: string }>>>()
-          .mockResolvedValue([{ id: 'creative-1', code: 'AP-V0001' }]),
-      },
-      metaAdInsight: {
-        findMany: jest.fn<() => Promise<typeof options.insights>>()
-          .mockResolvedValue(options.insights),
+        findMany: jest.fn<() => Promise<Array<{ id: string; code: string; metaAdId: string | null }>>>()
+          .mockResolvedValue([{ id: 'creative-1', code: options.creativeCode ?? 'AP-V0001', metaAdId: null }]),
       },
       $transaction: jest.fn(async (callback: (tx: typeof transactionClient) => Promise<unknown>) => (
         callback(transactionClient)
@@ -61,6 +67,7 @@ describe('CreativeMetaLinkService', () => {
     });
 
     await expect(service.reconcileInsights('tenant-1', [
+      { accountId: 'account-1', adId: 'ad-1', adName: 'AP-V0001' },
       { accountId: 'account-1', adId: 'ad-2', adName: 'AP-V0001' },
     ])).resolves.toBe(2);
 
@@ -70,6 +77,40 @@ describe('CreativeMetaLinkService', () => {
         expect.objectContaining({ adId: 'ad-1', creativeId: 'creative-1' }),
         expect.objectContaining({ adId: 'ad-2', creativeId: 'creative-1' }),
       ]),
+    }));
+  });
+
+  it('treats manual and provider account rows for one Ad ID as one automatic link', async () => {
+    const insights = [
+      { accountId: 'manual:legacy-upload', adId: 'ad-1', adName: 'AP-V0001' },
+      { accountId: '1889518721645704', adId: 'ad-1', adName: 'AP-V0001' },
+    ];
+    const { service, transactionClient } = createService({ insights });
+
+    await expect(service.reconcileInsights('tenant-1', insights)).resolves.toBe(1);
+
+    expect(transactionClient.creativeMetaAdLink.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({
+        accountId: '1889518721645704',
+        adId: 'ad-1',
+        creativeId: 'creative-1',
+      })],
+      skipDuplicates: true,
+    });
+  });
+
+  it('automatically links the static code segment in a current ad name', async () => {
+    const insights = [{
+      accountId: 'account-1',
+      adId: 'ad-static',
+      adName: 'ITEM_Travel Safety_AP-I0001_Lyca',
+    }];
+    const { service, transactionClient } = createService({ insights, creativeCode: 'AP-I0001' });
+
+    await expect(service.reconcileInsights('tenant-1', insights)).resolves.toBe(1);
+
+    expect(transactionClient.creativeMetaAdLink.createMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: [expect.objectContaining({ adId: 'ad-static', creativeId: 'creative-1' })],
     }));
   });
 
@@ -117,6 +158,10 @@ describe('codeCandidatesFor', () => {
 describe('codeCandidatesFor — new convention', () => {
   it('links the new format via its mid-name code segment', () => {
     expect(codeCandidatesFor('OGM-100_Kidney Hook_NRO-V0069_Josiah')).toContain('NRO-V0069');
+  });
+
+  it('links a static creative via its mid-name code segment', () => {
+    expect(codeCandidatesFor('OGM-100_Static Hook_NRO-I0069_Josiah')).toContain('NRO-I0069');
   });
 
   it('still links the legacy copy format via its last segment', () => {

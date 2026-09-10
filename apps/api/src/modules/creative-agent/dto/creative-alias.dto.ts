@@ -12,7 +12,8 @@ export class CreateCreativeAliasDto {
 export class LinkUnregisteredCreativeDto {
   /**
    * Optional. Manual linking is an explicit identity connection
-   * (tenant + accountId + adId -> creativeId). When an alias is supplied it is
+   * (tenant + adId -> creativeId). accountId is retained as source metadata
+   * for backward-compatible clients. When an alias is supplied it is
    * additionally validated and recorded as a named alias, but the ad name is
    * never required to contain a code-shaped value for the link itself.
    */
