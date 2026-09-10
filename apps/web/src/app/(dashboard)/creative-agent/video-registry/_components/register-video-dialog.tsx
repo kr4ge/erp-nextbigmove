@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ImageIcon, Plus, Video, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ImageIcon, Plus, RotateCcw, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,6 +22,14 @@ import type {
 import { isValidFacebookPostUrl } from "../_utils/facebook-post-url";
 import { validateCreativeTitle } from "../_utils/creative-title";
 import { readCurrentUserName } from "../_utils/current-user-name";
+import {
+  clearRegistrationDraft,
+  readRegistrationDraft,
+  registrationDraftMatchesSeed,
+  saveRegistrationDraft,
+  type RegistrationDraftEntry,
+  type RegistrationDraftForm,
+} from "../_utils/registration-draft";
 import { useCreativeOptions } from "../_hooks/use-creative-options";
 import {
   fetchStoreEnrollmentItems,
@@ -44,7 +52,7 @@ type Props = {
   creatorLabel?: string | null;
 };
 
-const EMPTY_FORM = {
+const EMPTY_FORM: RegistrationDraftForm = {
   storeId: "",
   variationId: "",
   title: "",
@@ -55,7 +63,7 @@ const EMPTY_FORM = {
   script: "",
   notes: "",
 };
-type FormState = typeof EMPTY_FORM;
+type FormState = RegistrationDraftForm;
 
 /**
  * One creative in the batch. Only one entry is expanded at a time; the rest
@@ -75,6 +83,17 @@ const newEntry = (kind: CreativeKind, storeId: string): Entry => ({
   form: { ...EMPTY_FORM, storeId },
   error: null,
 });
+
+const draftEntriesOf = (entries: Entry[]): RegistrationDraftEntry[] =>
+  entries.map(({ kind, form }) => ({ kind, form }));
+
+const restoreDraftEntries = (entries: RegistrationDraftEntry[]): Entry[] =>
+  entries.map(({ kind, form }) => ({
+    id: `entry-${++entrySeq}`,
+    kind,
+    form: { ...form },
+    error: null,
+  }));
 
 /**
  * Preview codes for later entries in the same store. The server mints the
@@ -113,42 +132,103 @@ export function RegisterVideoDialog({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftRecovered, setDraftRecovered] = useState(false);
+  const draftSaveTimer = useRef<number | null>(null);
+  const draftPersistenceEnabled = useRef(true);
 
   const seedStoreId = useMemo(() => {
     if (!seed) return "";
     if (seed.store?.id) return seed.store.id;
     return stores.find((store) => store.label === seed.store?.name)?.value ?? "";
   }, [stores, seed]);
+  const defaultStoreId = stores.length === 1 ? stores[0].value : "";
 
-  // Items per store, cached: a batch usually reuses one store many times.
+  // One current item snapshot per store. It is refreshed whenever the dialog
+  // opens and before submit so a long-lived tab cannot send an old variation.
   const [itemsByStore, setItemsByStore] = useState<Record<string, StoreEnrollmentItem[]>>({});
   const [loadingStores, setLoadingStores] = useState<Record<string, boolean>>({});
-  const ensureItems = (storeId: string) => {
-    if (!storeId || itemsByStore[storeId] || loadingStores[storeId]) return;
+  const [itemErrors, setItemErrors] = useState<Record<string, boolean>>({});
+  const dialogGeneration = useRef(0);
+  const itemRequestSequence = useRef<Record<string, number>>({});
+
+  const loadStoreItems = useCallback(async (
+    storeId: string,
+    generation = dialogGeneration.current,
+  ): Promise<StoreEnrollmentItem[] | null> => {
+    if (!storeId) return [];
+    const sequence = (itemRequestSequence.current[storeId] ?? 0) + 1;
+    itemRequestSequence.current[storeId] = sequence;
     setLoadingStores((current) => ({ ...current, [storeId]: true }));
-    fetchStoreEnrollmentItems(storeId)
-      .then((list) => setItemsByStore((current) => ({ ...current, [storeId]: list })))
-      .catch(() => setItemsByStore((current) => ({ ...current, [storeId]: [] })))
-      .finally(() => setLoadingStores((current) => ({ ...current, [storeId]: false })));
-  };
+    setItemErrors((current) => ({ ...current, [storeId]: false }));
+    try {
+      const list = await fetchStoreEnrollmentItems(storeId);
+      if (generation !== dialogGeneration.current || itemRequestSequence.current[storeId] !== sequence) {
+        return null;
+      }
+      setItemsByStore((current) => ({ ...current, [storeId]: list }));
+      setEntries((current) => current.map((entry) => {
+        if (entry.form.storeId !== storeId || !entry.form.variationId) return entry;
+        if (list.some((item) => item.variationId === entry.form.variationId)) return entry;
+        return {
+          ...entry,
+          error: "This store's items changed. Choose the item again.",
+          form: { ...entry.form, variationId: "" },
+        };
+      }));
+      return list;
+    } catch {
+      if (generation === dialogGeneration.current && itemRequestSequence.current[storeId] === sequence) {
+        setItemsByStore((current) => ({ ...current, [storeId]: [] }));
+        setItemErrors((current) => ({ ...current, [storeId]: true }));
+      }
+      return null;
+    } finally {
+      if (generation === dialogGeneration.current && itemRequestSequence.current[storeId] === sequence) {
+        setLoadingStores((current) => ({ ...current, [storeId]: false }));
+      }
+    }
+  }, []);
 
   useEffect(() => {
+    const generation = ++dialogGeneration.current;
+    setDraftReady(false);
     if (!open) return;
-    const storeId = seedStoreId || (stores.length === 1 ? stores[0].value : "");
+
+    setItemsByStore({});
+    setLoadingStores({});
+    setItemErrors({});
+    draftPersistenceEnabled.current = true;
+    setError(null);
+    setSubmitting(false);
+    const saved = readRegistrationDraft();
+    if (saved && registrationDraftMatchesSeed(saved.seed, seed)) {
+      const restored = restoreDraftEntries(saved.entries);
+      const activeIndex = Math.min(saved.activeIndex, restored.length - 1);
+      setEntries(restored);
+      setActiveId(restored[activeIndex]?.id ?? restored[0]?.id ?? null);
+      setDraftRecovered(true);
+      setDraftReady(true);
+      for (const storeId of Array.from(new Set(restored.map((entry) => entry.form.storeId).filter(Boolean)))) {
+        void loadStoreItems(storeId, generation);
+      }
+      return;
+    }
+
+    const storeId = seedStoreId || defaultStoreId;
     const first = newEntry("VIDEO", storeId);
     setEntries([first]);
     setActiveId(first.id);
-    setError(null);
-    setSubmitting(false);
-    if (storeId) ensureItems(storeId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, seedStoreId, seed?.key]);
+    setDraftRecovered(false);
+    setDraftReady(true);
+    if (storeId) void loadStoreItems(storeId, generation);
+  }, [defaultStoreId, loadStoreItems, open, seed, seedStoreId]);
 
   const updateEntry = (id: string, patch: (entry: Entry) => Entry) =>
     setEntries((current) => current.map((entry) => (entry.id === id ? patch(entry) : entry)));
 
   const setField = (id: string, field: keyof FormState, value: string) => {
-    if (field === "storeId") ensureItems(value);
+    if (field === "storeId") void loadStoreItems(value);
     updateEntry(id, (entry) => ({
       ...entry,
       error: null,
@@ -210,6 +290,51 @@ export function RegisterVideoDialog({
   const activeEntry = activeIndex >= 0 ? entries[activeIndex] : null;
   const canAddAnother = Boolean(activeEntry) && !seed && problemOf(activeEntry!, activeIndex) === null;
 
+  const persistCurrentDraft = useCallback(() => {
+    if (!draftPersistenceEnabled.current) return;
+    saveRegistrationDraft(draftEntriesOf(entries), seed, Math.max(0, activeIndex));
+  }, [activeIndex, entries, seed]);
+
+  // Keep typing responsive: one small session write after the user pauses,
+  // with a synchronous pagehide flush for refresh/deployment interruptions.
+  useEffect(() => {
+    if (!open || !draftReady || submitting) return;
+    if (draftSaveTimer.current !== null) window.clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = window.setTimeout(() => {
+      persistCurrentDraft();
+      draftSaveTimer.current = null;
+    }, 250);
+    return () => {
+      if (draftSaveTimer.current !== null) {
+        window.clearTimeout(draftSaveTimer.current);
+        draftSaveTimer.current = null;
+      }
+    };
+  }, [draftReady, open, persistCurrentDraft, submitting]);
+
+  useEffect(() => {
+    if (!open || !draftReady) return;
+    const flush = () => persistCurrentDraft();
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, [draftReady, open, persistCurrentDraft]);
+
+  const closeAndKeepDraft = () => {
+    if (draftReady) persistCurrentDraft();
+    onClose();
+  };
+
+  const discardDraft = () => {
+    if (draftSaveTimer.current !== null) {
+      window.clearTimeout(draftSaveTimer.current);
+      draftSaveTimer.current = null;
+    }
+    draftPersistenceEnabled.current = false;
+    clearRegistrationDraft();
+    setDraftRecovered(false);
+    onClose();
+  };
+
   const addAnother = () => {
     if (!activeEntry || !canAddAnother) return;
     const next = newEntry(activeEntry.kind, activeEntry.form.storeId);
@@ -238,7 +363,49 @@ export function RegisterVideoDialog({
     }
 
     setSubmitting(true);
+    if (draftSaveTimer.current !== null) {
+      window.clearTimeout(draftSaveTimer.current);
+      draftSaveTimer.current = null;
+    }
+
+    // Revalidate once per distinct store. This is deliberately not once per
+    // row, keeping a multi-entry batch light while closing the stale-ID gap.
+    const storeIds = Array.from(new Set(entries.map((entry) => entry.form.storeId)));
+    const latestItemLists = await Promise.all(storeIds.map(async (storeId) => ({
+      storeId,
+      items: await loadStoreItems(storeId),
+    })));
+    if (latestItemLists.some(({ items }) => items === null)) {
+      setError("We couldn't verify the latest store items. Check your connection and try again.");
+      setSubmitting(false);
+      persistCurrentDraft();
+      return;
+    }
+    const latestItemsByStore = new Map(
+      latestItemLists.map(({ storeId, items }) => [storeId, items ?? []]),
+    );
+    const staleEntry = entries.find((entry) => !latestItemsByStore
+      .get(entry.form.storeId)
+      ?.some((item) => item.variationId === entry.form.variationId));
+    if (staleEntry) {
+      const remaining = entries.map((entry) => entry.id === staleEntry.id ? {
+        ...entry,
+        error: "This store's items changed. Choose the item again.",
+        form: { ...entry.form, variationId: "" },
+      } : entry);
+      setEntries(remaining);
+      setActiveId(staleEntry.id);
+      saveRegistrationDraft(
+        draftEntriesOf(remaining),
+        seed,
+        Math.max(0, remaining.findIndex((entry) => entry.id === staleEntry.id)),
+      );
+      setSubmitting(false);
+      return;
+    }
+
     let done = 0;
+    let remaining = [...entries];
     // Sequential on purpose: codes are minted per store in order, and a
     // failure must stop at a known point rather than half-register a batch.
     for (const entry of [...entries]) {
@@ -256,17 +423,43 @@ export function RegisterVideoDialog({
           adId: seed?.adId,
         });
         done += 1;
-        // Registered entries leave the list so a retry cannot duplicate them.
-        setEntries((current) => current.filter((other) => other.id !== entry.id));
+        // Persist immediately after the API confirms the row. A refresh can
+        // now recover only unfinished work and cannot retry confirmed rows.
+        remaining = remaining.filter((other) => other.id !== entry.id);
+        setEntries(remaining);
+        if (remaining.length > 0) {
+          saveRegistrationDraft(draftEntriesOf(remaining), seed, 0);
+        } else {
+          clearRegistrationDraft();
+        }
       } catch (submitError) {
-        const message = submitError instanceof Error ? submitError.message : "Unable to register this creative.";
+        const rawMessage = submitError instanceof Error ? submitError.message : "Unable to register this creative.";
+        const itemChanged = rawMessage === "The selected item does not belong to this store";
+        if (itemChanged) await loadStoreItems(entry.form.storeId);
+        const message = itemChanged
+          ? "This store's items changed while registering. Choose the item again."
+          : rawMessage;
         setActiveId(entry.id);
-        updateEntry(entry.id, (other) => ({ ...other, error: message }));
+        const failedEntries = remaining.map((other) => other.id === entry.id ? {
+          ...other,
+          error: message,
+          form: itemChanged ? { ...other.form, variationId: "" } : other.form,
+        } : other);
+        setEntries(failedEntries);
+        saveRegistrationDraft(
+          draftEntriesOf(failedEntries),
+          seed,
+          Math.max(0, failedEntries.findIndex((other) => other.id === entry.id)),
+        );
         setSubmitting(false);
         if (done > 0) onRegistered?.(done);
         return;
       }
     }
+    // Disable every delayed/pagehide writer before clearing, otherwise an
+    // unusually fast refresh after success could resurrect a completed batch.
+    draftPersistenceEnabled.current = false;
+    clearRegistrationDraft();
     setSubmitting(false);
     onRegistered?.(done);
     onClose();
@@ -275,7 +468,7 @@ export function RegisterVideoDialog({
   const busy = isSaving || submitting;
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) closeAndKeepDraft(); }}>
       <DialogContent className="flex max-h-[92vh] w-11/12 max-w-5xl flex-col overflow-hidden p-0 sm:max-w-5xl">
         <form onSubmit={submitAll} className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-border px-4 py-2.5">
@@ -289,6 +482,25 @@ export function RegisterVideoDialog({
               single forms; a batch dialog needs the same fields at a tighter
               rhythm without changing them everywhere. Standard scale only. */}
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3 [&_.input]:min-h-10 [&_.input]:rounded-xl [&_.input]:px-3 [&_.input]:py-2 [&_.input]:text-sm [&_.read-only-input]:min-h-10 [&_.read-only-input]:rounded-xl [&_.read-only-input]:px-3 [&_.read-only-input]:py-2 [&_.read-only-input]:text-sm [&_.form-label]:tracking-wide">
+            {draftRecovered ? (
+              <div className="flex items-start gap-2 rounded-xl border border-info/30 bg-info-soft px-3 py-2 text-sm" role="status">
+                <RotateCcw className="mt-0.5 h-4 w-4 shrink-0 text-info" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-foreground">Unsaved work recovered</p>
+                  <p className="text-xs text-muted">
+                    Your unfinished creative entries were restored and their store items are being checked.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={discardDraft}
+                  className="shrink-0 text-xs font-semibold text-info hover:underline"
+                >
+                  Discard
+                </button>
+              </div>
+            ) : null}
+
             {seed ? (
               <div className="rounded-xl border border-info/30 bg-info-soft px-3 py-2 text-sm">
                 <span className="font-semibold text-info">Meta ad selected · </span>
@@ -303,6 +515,7 @@ export function RegisterVideoDialog({
               const store = storeOf(entry);
               const items = itemsOf(entry);
               const loading = Boolean(loadingStores[entry.form.storeId]);
+              const itemLoadFailed = Boolean(itemErrors[entry.form.storeId]);
 
               if (!isActive) {
                 return (
@@ -391,9 +604,9 @@ export function RegisterVideoDialog({
                       value={entry.form.variationId}
                       onChange={(next) => setField(entry.id, "variationId", next)}
                       options={items.map((item) => ({ value: item.variationId, label: item.name }))}
-                      placeholder={!entry.form.storeId ? "Choose the store first" : loading ? "Loading items…" : items.length === 0 ? "No items with a custom ID" : "Choose the item"}
+                      placeholder={!entry.form.storeId ? "Choose the store first" : loading ? "Loading items…" : itemLoadFailed ? "Unable to load items" : items.length === 0 ? "No items with a custom ID" : "Choose the item"}
                       disabled={!entry.form.storeId || loading || items.length === 0}
-                      helper="Its Pancake custom ID leads the ad name and becomes the mapping."
+                      helper={itemLoadFailed ? "Choose the store again to retry loading its current items." : "Its Pancake custom ID leads the ad name and becomes the mapping."}
                       required
                     />
                     <FormInput
@@ -452,7 +665,7 @@ export function RegisterVideoDialog({
           </div>
 
           <DialogFooter className="shrink-0 border-t border-border bg-surface px-4 py-2.5">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={closeAndKeepDraft} disabled={busy}>Close</Button>
             <Button type="submit" loading={busy}>
               {entries.length > 1 ? `Register ${entries.length} creatives` : "Register creative"}
             </Button>

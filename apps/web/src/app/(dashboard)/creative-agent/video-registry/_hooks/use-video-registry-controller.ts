@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_VIDEO_REGISTRY_PARAMS } from '../_constants/video-registry.constants';
 import { usePermissions } from '@/hooks/use-permissions';
 import {
@@ -27,6 +27,7 @@ import type {
   VideoRegistryView,
 } from '../_types/video-registry';
 import { useCreativeStores } from './use-creative-stores';
+import { readRegistrationDraft } from '../_utils/registration-draft';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -47,6 +48,7 @@ export function useVideoRegistryController(initialQuery = '') {
   const [reviewComments, setReviewComments] = useState<CreativeReviewComment[]>([]);
   const [isLoadingReviewComments, setIsLoadingReviewComments] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
+  const registrationDraftChecked = useRef(false);
 
   const permissions = useMemo(() => {
     const values = permissionsQuery.data ?? [];
@@ -61,6 +63,18 @@ export function useVideoRegistryController(initialQuery = '') {
     };
   }, [permissionsQuery.data]);
   const { stores } = useCreativeStores(permissions.canEnroll);
+
+  // A refresh after a deployment remounts the page. Reopen only after the
+  // permission query has resolved, and only for the tenant/user-scoped draft.
+  useEffect(() => {
+    if (registrationDraftChecked.current || !permissionsQuery.isFetched) return;
+    registrationDraftChecked.current = true;
+    if (!permissions.canEnroll) return;
+    const draft = readRegistrationDraft();
+    if (!draft) return;
+    setRegistrationSeed(draft.seed);
+    setIsRegisterOpen(true);
+  }, [permissions.canEnroll, permissionsQuery.isFetched]);
 
   /** Returns the response too, so a mutation can re-read an open dialog's row from it. */
   const loadRegistry = useCallback(async (options?: { silent?: boolean }) => {
@@ -116,15 +130,14 @@ export function useVideoRegistryController(initialQuery = '') {
   const registerVideo = useCallback(async (input: CreateVideoRegistryInput) => {
     setIsMutating(true);
     try {
-      const created = await createVideoRegistryItem(input);
-      // One call per creative in a batch; the dialog closes itself once every
-      // entry has registered, so the list refreshes here but stays open.
-      await loadRegistry({ silent: true });
-      return created;
+      // The dialog owns a batch and removes each confirmed entry from its
+      // recovery draft immediately. Refresh the registry once through
+      // onRegistered instead of reloading it after every entry in the batch.
+      return await createVideoRegistryItem(input);
     } finally {
       setIsMutating(false);
     }
-  }, [loadRegistry]);
+  }, []);
 
   const linkAlias = useCallback(async (input: LinkCreativeAliasInput) => {
     setIsMutating(true);

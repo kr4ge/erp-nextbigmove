@@ -148,9 +148,10 @@ export function VideoRegistryScreen() {
         onClose={controller.closeRegistration}
         onSubmit={controller.registerVideo}
         creatorLabel={controller.data?.viewer?.adNameCreator ?? null}
-        onRegistered={(count) =>
-          addToast("success", count === 1 ? "Creative registered." : `${count} creatives registered.`)
-        }
+        onRegistered={(count) => {
+          addToast("success", count === 1 ? "Creative registered." : `${count} creatives registered.`);
+          void controller.retry({ silent: true });
+        }}
       />
       <LinkVideoDialog
         item={controller.linkingItem}
