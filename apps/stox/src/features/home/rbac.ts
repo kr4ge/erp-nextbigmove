@@ -32,6 +32,10 @@ export const STOX_PICK_EXECUTE_PERMISSIONS = [
   'wms.fulfillment.override',
 ] as const;
 
+export const STOX_PARTNER_FILTER_PERMISSIONS = [
+  'wms.partners.read',
+] as const;
+
 export const STOX_PACK_EXECUTE_PERMISSIONS = [
   'wms.dispatch.write',
   'wms.dispatch.edit',
@@ -71,6 +75,15 @@ const STOX_SCAN_READ_PERMISSIONS = [
 
 export function isPlatformAdmin(bootstrap: BootstrapResponse) {
   return bootstrap.user.role === 'SUPER_ADMIN';
+}
+
+export function canFilterStoxPartners(bootstrap: BootstrapResponse) {
+  return isPlatformAdmin(bootstrap)
+    || (
+      bootstrap.tenant === null
+      && (bootstrap.context.tenantOptions?.length ?? 0) > 0
+      && hasAnyWmsPermission(bootstrap, STOX_PARTNER_FILTER_PERMISSIONS)
+    );
 }
 
 export function canEnterStoxWorkspace(bootstrap: BootstrapResponse) {

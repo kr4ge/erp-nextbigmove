@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
-import { canUsePickWorkspace } from '@/src/features/home/rbac';
+import { canFilterStoxPartners, canUsePickWorkspace } from '@/src/features/home/rbac';
 import { usePickingWorkspace } from '@/src/features/picking/hooks/use-picking-workspace';
 import type {
   PickingFilters,
@@ -116,14 +116,15 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     statusFilter,
   } = usePickingWorkspace({ bootstrap, device, session });
   const normalizedSearch = searchInput.trim();
+  const canFilterPartners = canFilterStoxPartners(bootstrap);
 
   useEffect(() => {
     setSearchInput(filters.search);
   }, [filters.search]);
 
   const filterOptions = useMemo(
-    () => buildPickingFilterOptions(activeFilter, picking, bootstrap, bootstrap.user.role === 'SUPER_ADMIN'),
-    [activeFilter, bootstrap, picking],
+    () => buildPickingFilterOptions(activeFilter, picking, bootstrap, canFilterPartners),
+    [activeFilter, bootstrap, canFilterPartners, picking],
   );
   const activePartnerName = resolveActivePartnerName(picking, bootstrap, filters.tenantId);
   const activeStoreName = resolveActiveStoreName(picking, bootstrap, filters.storeId);
@@ -453,7 +454,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
           ) : null}
 
           <View style={styles.queueFilterStack}>
-            {bootstrap.user.role === 'SUPER_ADMIN' ? (
+            {canFilterPartners ? (
               <ScopeDropdownCard
                 icon="briefcase"
                 label="Partner"
