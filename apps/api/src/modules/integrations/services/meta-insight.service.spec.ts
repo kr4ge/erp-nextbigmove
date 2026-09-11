@@ -14,7 +14,10 @@ const RAW_INSIGHT = {
 
 function createHarness(existing: { accountId: string; adId: string; adName: string } | null) {
   const tx = {
-    $queryRaw: jest.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
+    $queryRaw: jest.fn<(
+      queryParts: TemplateStringsArray,
+      lockKey: string,
+    ) => Promise<unknown[]>>().mockResolvedValue([]),
     metaAdInsight: {
       findUnique: jest.fn<() => Promise<typeof existing>>().mockResolvedValue(existing),
       upsert: jest.fn<() => Promise<{ accountId: string; adId: string; adName: string }>>()
@@ -35,6 +38,23 @@ function createHarness(existing: { accountId: string; adId: string; adName: stri
 }
 
 describe('MetaInsightService canonical ad identity', () => {
+  it('casts the advisory lock result to a Prisma-supported type', async () => {
+    const { service, tx } = createHarness(null);
+
+    await service.upsertMetaInsights(
+      'tenant-1',
+      '1889518721645704',
+      [RAW_INSIGHT],
+      null,
+    );
+
+    const [queryParts, lockKey] = tx.$queryRaw.mock.calls[0];
+    expect(Array.from(queryParts as TemplateStringsArray).join('?')).toContain(
+      'pg_advisory_xact_lock(hashtextextended(?, 0))::text AS "locked"',
+    );
+    expect(lockKey).toBe('tenant-1:ad-1:2026-09-09');
+  });
+
   it('does not let a manual CSV identity overwrite an existing provider row', async () => {
     const provider = {
       accountId: '1889518721645704',

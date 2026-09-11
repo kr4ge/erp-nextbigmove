@@ -183,7 +183,12 @@ export class MetaInsightService {
         // can overlap, and the canonical unique key must never turn that race
         // into two active rows.
         const lockKey = `${tenantId}:${insight.adId}:${insight.date}`;
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+        // PostgreSQL reports pg_advisory_xact_lock as `void`. Cast the result
+        // so Prisma can deserialize it while the transaction-scoped lock stays
+        // active until this transaction completes.
+        await tx.$queryRaw<Array<{ locked: string }>>`
+          SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS "locked"
+        `;
 
         const existing = await tx.metaAdInsight.findUnique({
           where: {
