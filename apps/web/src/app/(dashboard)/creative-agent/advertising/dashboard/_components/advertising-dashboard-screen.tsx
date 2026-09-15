@@ -18,6 +18,7 @@ import { useAdvertisingDashboardController } from '../_hooks/use-advertising-das
 import type { DashboardMetric } from '../_types/advertising-dashboard';
 import { AdvertisingCalendar } from './advertising-calendar';
 import { AdvertisingTrendChart } from './advertising-trend-chart';
+import { CreatorKpiBreakdown } from './creator-kpi-breakdown';
 import {
   DashboardCalendarSkeleton,
   DashboardChartSkeleton,
@@ -87,6 +88,13 @@ export function AdvertisingDashboardScreen() {
     ? (advertising.costPerOrder.value <= ceiling.workingCeiling ? 'good' : 'bad')
     : 'neutral';
   const floors = data?.floors;
+  const creatorBreakdownScopeKey = [
+    params.startDate,
+    params.endDate,
+    params.accountId,
+    params.creatorIds.join(','),
+    params.storeIds.join(','),
+  ].join('|');
   const craftSub = (metric: DashboardMetric | undefined, floor: number | undefined) => {
     if (!metric || metric.value == null) return 'not measured';
     return floor != null ? `vs ${formatPercent(floor)} floor` : undefined;
@@ -267,6 +275,13 @@ export function AdvertisingDashboardScreen() {
             {floors?.provisional ? ' Floors are provisional defaults.' : ''}
           </p>
         </section>
+
+        <CreatorKpiBreakdown
+          rows={data?.creatorBreakdown ?? []}
+          floors={floors}
+          isLoading={controller.isLoading}
+          scopeKey={creatorBreakdownScopeKey}
+        />
 
         {/* 3 · Monthly summary — full width so all seven weekday columns fit
             without clipping Saturday or squeezing the day cells. */}

@@ -33,7 +33,11 @@ import {
 import { loadCreativeStoreOptions } from './creative-store-options';
 import { CreativeAccessService } from './creative-access.service';
 import { CreativeLegacyAttributionService } from './creative-legacy-attribution.service';
-import { CreativePerformanceService, UNMATCHED_AD_NAME, type AdvertisingDateRange } from './creative-performance.service';
+import {
+  CreativePerformanceService,
+  UNMATCHED_AD_NAME,
+  type AdvertisingDateRange,
+} from './creative-performance.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -52,6 +56,48 @@ type Metric = {
   provisional?: boolean;
   benchmark?: number | null;
 };
+
+type CreativeMetricTotals = {
+  spend: number;
+  linkClicks: number;
+  impressions: number;
+  leads: number;
+  orders: number;
+  grossSales: number;
+  delivered: number;
+  cancelled: number;
+  rts: number;
+};
+
+type VideoMetricTotals = {
+  plays3s: number;
+  videoImpressions: number;
+  thruPlaysH: number;
+  plays3sH: number;
+  thruPlays: number;
+  thruImpressions: number;
+};
+
+type CreatorAdOwnership = {
+  allAdIds: string[];
+  adOwnerById: Map<string, string>;
+  outputByCreator: Map<string, number>;
+  outputTotal: number;
+  scopedCreatorIds: Set<string>;
+};
+
+const metric = (
+  value: number | null,
+  numerator: number | null,
+  denominator: number | null,
+  extra: Partial<Metric> = {},
+): Metric => ({
+  value,
+  numerator,
+  denominator,
+  availability: denominator === null || denominator === 0 ? 'NO_DATA' : 'OK',
+  ...extra,
+});
 
 type Alert = { code: string; severity: 'critical' | 'warning'; message: string; href?: string };
 
@@ -93,11 +139,14 @@ export class CreativeAdvertisingDashboardService {
     // Creator is the parent filter. The store picker only offers stores that
     // contain creatives owned by the selected creators. With no creator
     // selection, both filters intentionally remain at "All".
-    const storeOptions = await loadCreativeStoreOptions(
-      this.prisma,
-      tenantId,
-      creatorIds.length ? creatorIds : null,
-    );
+    const [storeOptions, creatorIdentities] = await Promise.all([
+      loadCreativeStoreOptions(
+        this.prisma,
+        tenantId,
+        creatorIds.length ? creatorIds : null,
+      ),
+      this.legacyAttribution.listCreatorIdentities(tenantId),
+    ]);
     const requestedStoreIds = query.storeIds?.length
       ? query.storeIds
       : query.storeId
@@ -110,36 +159,27 @@ export class CreativeAdvertisingDashboardService {
       ...(storeIds.length ? { storeConfig: { storeId: { in: storeIds } } } : {}),
       ...(creatorIds.length ? { createdById: { in: creatorIds } } : {}),
     };
-    const creatorIdentities = await this.legacyAttribution.listCreatorIdentities(tenantId);
     const legacyCreatorIds = creatorIds.length
       ? creatorIds
       : creatorIdentities.map((creator) => creator.id);
-    const [scopedAdIds, registeredCreativeKpiAdIds] = await Promise.all([
-      this.performance.resolveScopedAdIds(tenantId, storeIds, creatorIds, range),
-      this.resolveCreativeAdIds(creativeScopeWhere),
-    ]);
-    // A filtered scopedAdIds result already contains both registry and legacy
-    // ownership. Only the unfiltered "All" view needs a separate legacy lookup
-    // for the Creative KPI subset, keeping the request light.
-    const legacyKpiAdIds = scopedAdIds ?? (await this.legacyAttribution.resolveLegacyAds({
+    const creatorOwnership = await this.loadCreatorAdOwnership({
       tenantId,
       creatorIds: legacyCreatorIds,
-      start: range.start,
-      end: range.end,
+      range,
       storeIds,
-    })).map((ad) => ad.adId);
-    const creativeKpiAdIds = [...new Set([
-      ...registeredCreativeKpiAdIds,
-      ...legacyKpiAdIds,
-    ])];
+      creativeWhere: creativeScopeWhere,
+    });
+    const creativeKpiAdIds = creatorOwnership.allAdIds;
+    // An unfiltered Advertising view includes all Meta/POS rows. Once either
+    // parent creator or child store is selected, the same ownership map scopes
+    // the advertising cards to those creators' registered and historical ads.
+    const scopedAdIds = creatorIds.length || storeIds.length
+      ? creativeKpiAdIds
+      : null;
 
     const [
       scope,
-      creativeKpiScope,
       accountOptions,
-      creators,
-      videoTotals,
-      outputCount,
       revisionPipeline,
       calendar,
       trend,
@@ -147,26 +187,13 @@ export class CreativeAdvertisingDashboardService {
       freshness,
       missingVideoCount,
       needsAction,
+      creatorKpiData,
     ] = await Promise.all([
       this.performance.computeScope(tenantId, range, {
         accountId: query.accountId,
         storeAdIds: scopedAdIds,
       }),
-      this.performance.computeScope(tenantId, range, {
-        accountId: query.accountId,
-        // [] is an intentionally empty creative scope. Passing null would
-        // incorrectly include every unlinked Meta ad in the shared KPI cards.
-        storeAdIds: creativeKpiAdIds,
-      }),
       this.performance.loadAccountOptions(tenantId),
-      Promise.resolve(creatorIdentities),
-      this.loadVideoTotals(tenantId, range, query.accountId, creativeKpiAdIds),
-      this.prisma.creative.count({
-        where: {
-          ...creativeScopeWhere,
-          createdAt: { gte: range.start, lte: range.end },
-        },
-      }),
       this.loadRevisionPipeline(tenantId, range, creativeScopeWhere),
       this.loadCalendar(tenantId, range, query.accountId, scopedAdIds, creativeScopeWhere),
       this.loadTrend(tenantId, range, query.accountId, scopedAdIds),
@@ -174,7 +201,20 @@ export class CreativeAdvertisingDashboardService {
       this.loadFreshness(tenantId),
       this.countMissingVideoMetrics(tenantId, range, query.accountId, scopedAdIds),
       this.loadNeedsAction(actor, range, query, storeIds, creatorIds),
+      this.loadCreatorKpiData({
+        tenantId,
+        range,
+        accountId: query.accountId,
+        creators: creatorIdentities,
+        selectedCreatorIds: creatorIds,
+        storeIds,
+        ownership: creatorOwnership,
+      }),
     ]);
+
+    const creatorBreakdown = creatorKpiData.rows;
+    const videoTotals = creatorKpiData.videoTotals;
+    const creativeTotals = creatorKpiData.totals;
 
     let withheldRates = 0;
     const guardCount = (numerator: number, denominator: number) => {
@@ -183,28 +223,16 @@ export class CreativeAdvertisingDashboardService {
     guardCount(videoTotals.plays3s, videoTotals.videoImpressions);
     guardCount(videoTotals.thruPlaysH, videoTotals.plays3sH);
     guardCount(videoTotals.thruPlays, videoTotals.thruImpressions);
-    guardCount(creativeKpiScope.totals.linkClicks, creativeKpiScope.totals.impressions);
-    guardCount(creativeKpiScope.totals.orders, creativeKpiScope.totals.leads);
-    guardCount(creativeKpiScope.totals.cancelled, creativeKpiScope.totals.orders);
+    guardCount(creativeTotals.linkClicks, creativeTotals.impressions);
+    guardCount(creativeTotals.orders, creativeTotals.leads);
+    guardCount(creativeTotals.cancelled, creativeTotals.orders);
     guardCount(
-      creativeKpiScope.totals.rts,
-      creativeKpiScope.totals.delivered + creativeKpiScope.totals.rts,
+      creativeTotals.rts,
+      creativeTotals.delivered + creativeTotals.rts,
     );
-    guardCount(creativeKpiScope.totals.delivered, creativeKpiScope.totals.orders);
-
-    const metric = (
-      value: number | null, numerator: number | null, denominator: number | null,
-      extra: Partial<Metric> = {},
-    ): Metric => ({
-      value,
-      numerator,
-      denominator,
-      availability: denominator === null || denominator === 0 ? 'NO_DATA' : 'OK',
-      ...extra,
-    });
+    guardCount(creativeTotals.delivered, creativeTotals.orders);
 
     const totals = scope.totals;
-    const creativeTotals = creativeKpiScope.totals;
     const cpp = costPerOrder(totals.spend, totals.orders);
     const periodNet = netContribution({
       deliveredRevenue: totals.deliveredSales,
@@ -230,36 +258,7 @@ export class CreativeAdvertisingDashboardService {
         totalSpend: { value: round(totals.spend, 2), numerator: null, denominator: null, availability: 'OK' as const },
         linkedSpendCoverage: metric(scope.linkedSpendCoverage, scope.linkedSpend, totals.spend),
       },
-      creative: {
-        hookRate: metric(hookRate(videoTotals.plays3s, videoTotals.videoImpressions), videoTotals.plays3s, videoTotals.videoImpressions),
-        holdRate: metric(holdRate(videoTotals.thruPlaysH, videoTotals.plays3sH), videoTotals.thruPlaysH, videoTotals.plays3sH),
-        completionRate: metric(completionRate(videoTotals.thruPlays, videoTotals.thruImpressions), videoTotals.thruPlays, videoTotals.thruImpressions),
-        ctr: metric(clickThroughRate(creativeTotals.linkClicks, creativeTotals.impressions), creativeTotals.linkClicks, creativeTotals.impressions, {
-          benchmark: ADVERTISING_PROVISIONAL_DEFAULTS.benchmarkCtr,
-          provisional: true,
-        }),
-        cvr: metric(conversionRate(creativeTotals.orders, creativeTotals.leads), creativeTotals.orders, creativeTotals.leads),
-        orders: { value: creativeTotals.orders, numerator: null, denominator: null, availability: 'OK' as const },
-        adSpend: { value: round(creativeTotals.spend, 2), numerator: null, denominator: null, availability: 'OK' as const },
-        mar: metric(safeRatio(creativeTotals.spend, creativeTotals.grossSales), creativeTotals.spend, creativeTotals.grossSales),
-        output: { value: outputCount, numerator: null, denominator: null, availability: 'OK' as const },
-        delivered: { value: creativeTotals.delivered, numerator: null, denominator: null, availability: 'OK' as const },
-        cancellationRate: metric(
-          guardedRatio(creativeTotals.cancelled, creativeTotals.orders),
-          creativeTotals.cancelled,
-          creativeTotals.orders,
-        ),
-        rtsRate: metric(
-          guardedRatio(creativeTotals.rts, creativeTotals.delivered + creativeTotals.rts),
-          creativeTotals.rts,
-          creativeTotals.delivered + creativeTotals.rts,
-        ),
-        deliveryRate: metric(
-          guardedRatio(creativeTotals.delivered, creativeTotals.orders),
-          creativeTotals.delivered,
-          creativeTotals.orders,
-        ),
-      },
+      creative: this.buildCreativeKpis(creativeTotals, videoTotals, creatorOwnership.outputTotal),
     };
 
     const alerts = this.buildAlerts({
@@ -286,7 +285,7 @@ export class CreativeAdvertisingDashboardService {
       filters: {
         stores: storeOptions.stores,
         accounts: accountOptions,
-        creators: creators
+        creators: creatorIdentities
           .map((creator) => ({
             value: creator.id,
             label: [creator.firstName, creator.lastName].filter(Boolean).join(' ') || creator.email,
@@ -295,6 +294,7 @@ export class CreativeAdvertisingDashboardService {
       },
       alerts,
       kpis,
+      creatorBreakdown,
       floors: {
         values: { ...CREATIVE_CRAFT_FLOORS },
         provisional: CREATIVE_FLOORS_PROVISIONAL,
@@ -334,59 +334,301 @@ export class CreativeAdvertisingDashboardService {
     };
   }
 
-  /**
-   * Shared Creative KPIs are attributed only through ads linked to the scoped
-   * creatives. Include the legacy single-ad field while older records are
-   * still being migrated to the link table.
-   */
-  private async resolveCreativeAdIds(where: Prisma.CreativeWhereInput): Promise<string[]> {
-    const creatives = await this.prisma.creative.findMany({
-      where,
-      select: {
-        metaAdId: true,
-        metaAdLinks: { select: { adId: true } },
-      },
-    });
-    return [...new Set(creatives.flatMap((creative) => [
-      ...creative.metaAdLinks.map((link) => link.adId),
-      ...(creative.metaAdId ? [creative.metaAdId] : []),
-    ]))];
+  private buildCreativeKpis(
+    totals: CreativeMetricTotals,
+    videoTotals: VideoMetricTotals,
+    outputCount: number,
+  ) {
+    return {
+      hookRate: metric(hookRate(videoTotals.plays3s, videoTotals.videoImpressions), videoTotals.plays3s, videoTotals.videoImpressions),
+      holdRate: metric(holdRate(videoTotals.thruPlaysH, videoTotals.plays3sH), videoTotals.thruPlaysH, videoTotals.plays3sH),
+      completionRate: metric(completionRate(videoTotals.thruPlays, videoTotals.thruImpressions), videoTotals.thruPlays, videoTotals.thruImpressions),
+      ctr: metric(clickThroughRate(totals.linkClicks, totals.impressions), totals.linkClicks, totals.impressions, {
+        benchmark: ADVERTISING_PROVISIONAL_DEFAULTS.benchmarkCtr,
+        provisional: true,
+      }),
+      cvr: metric(conversionRate(totals.orders, totals.leads), totals.orders, totals.leads),
+      orders: { value: totals.orders, numerator: null, denominator: null, availability: 'OK' as const },
+      adSpend: { value: round(totals.spend, 2), numerator: null, denominator: null, availability: 'OK' as const },
+      mar: metric(safeRatio(totals.spend, totals.grossSales), totals.spend, totals.grossSales),
+      output: { value: outputCount, numerator: null, denominator: null, availability: 'OK' as const },
+      delivered: { value: totals.delivered, numerator: null, denominator: null, availability: 'OK' as const },
+      cancellationRate: metric(
+        guardedRatio(totals.cancelled, totals.orders),
+        totals.cancelled,
+        totals.orders,
+      ),
+      rtsRate: metric(
+        guardedRatio(totals.rts, totals.delivered + totals.rts),
+        totals.rts,
+        totals.delivered + totals.rts,
+      ),
+      deliveryRate: metric(
+        guardedRatio(totals.delivered, totals.orders),
+        totals.delivered,
+        totals.orders,
+      ),
+    };
   }
 
-  private async loadVideoTotals(
-    tenantId: string,
-    range: AdvertisingDateRange,
-    accountId: string | undefined,
-    scopedAdIds: string[] | null,
-  ) {
-    const where = {
-      tenantId,
-      date: { gte: range.start, lte: range.end },
-      ...(accountId ? { accountId } : {}),
-      ...(scopedAdIds ? { adId: { in: scopedAdIds } } : {}),
+  /**
+   * Resolve every scoped ad to exactly one creator. Registry ownership wins;
+   * the old employee-ID naming convention is only used for otherwise-unlinked
+   * ads, matching the rest of Creative Agent attribution.
+   */
+  private async loadCreatorAdOwnership(input: {
+    tenantId: string;
+    creatorIds: string[];
+    range: AdvertisingDateRange;
+    storeIds: string[];
+    creativeWhere: Prisma.CreativeWhereInput;
+  }): Promise<CreatorAdOwnership> {
+    const [creatives, legacyAds] = await Promise.all([
+      this.prisma.creative.findMany({
+        where: input.creativeWhere,
+        select: {
+          createdById: true,
+          createdAt: true,
+          metaAdId: true,
+          metaAdLinks: { select: { adId: true } },
+        },
+      }),
+      this.legacyAttribution.resolveLegacyAds({
+        tenantId: input.tenantId,
+        creatorIds: input.creatorIds,
+        start: input.range.start,
+        end: input.range.end,
+        storeIds: input.storeIds,
+      }),
+    ]);
+
+    const adOwnerById = new Map<string, string>();
+    const outputByCreator = new Map<string, number>();
+    const scopedCreatorIds = new Set<string>();
+    let outputTotal = 0;
+
+    for (const creative of creatives) {
+      scopedCreatorIds.add(creative.createdById);
+      if (creative.createdAt >= input.range.start && creative.createdAt <= input.range.end) {
+        outputTotal += 1;
+        outputByCreator.set(
+          creative.createdById,
+          (outputByCreator.get(creative.createdById) ?? 0) + 1,
+        );
+      }
+      for (const adId of [
+        ...creative.metaAdLinks.map((link) => link.adId),
+        ...(creative.metaAdId ? [creative.metaAdId] : []),
+      ]) {
+        if (!adOwnerById.has(adId)) adOwnerById.set(adId, creative.createdById);
+      }
+    }
+
+    for (const legacyAd of legacyAds) {
+      scopedCreatorIds.add(legacyAd.creator.id);
+      if (!adOwnerById.has(legacyAd.adId)) {
+        adOwnerById.set(legacyAd.adId, legacyAd.creator.id);
+      }
+    }
+
+    return {
+      allAdIds: [...adOwnerById.keys()],
+      adOwnerById,
+      outputByCreator,
+      outputTotal,
+      scopedCreatorIds,
     };
-    const [hookRows, holdRows, completionRows] = await Promise.all([
-      this.prisma.metaAdInsight.aggregate({
-        where: { ...where, videoPlays3s: { not: null } },
+  }
+
+  /**
+   * Creator rows are computed in a fixed number of grouped queries, regardless
+   * of how many creators the tenant has. This keeps the dashboard light while
+   * applying the exact same formulas as the aggregate Creative KPI cards.
+   */
+  private async loadCreatorKpiData(input: {
+    tenantId: string;
+    range: AdvertisingDateRange;
+    accountId?: string;
+    creators: Array<{
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+    }>;
+    selectedCreatorIds: string[];
+    storeIds: string[];
+    ownership: CreatorAdOwnership;
+  }) {
+    const selectedIds = new Set(input.selectedCreatorIds);
+    const creators = input.creators.filter((creator) => {
+      if (selectedIds.size > 0 && !selectedIds.has(creator.id)) return false;
+      return input.storeIds.length === 0 || input.ownership.scopedCreatorIds.has(creator.id);
+    });
+    const adIds = input.ownership.allAdIds;
+    const insightWhere: Prisma.MetaAdInsightWhereInput = {
+      tenantId: input.tenantId,
+      date: { gte: input.range.start, lte: input.range.end },
+      adId: { in: adIds },
+      ...(input.accountId ? { accountId: input.accountId } : {}),
+    };
+    const reconcileWhere: Prisma.ReconcileMarketingWhereInput = {
+      tenantId: input.tenantId,
+      date: { gte: input.range.start, lte: input.range.end },
+      adId: { in: adIds },
+      ...(input.accountId ? { accountId: input.accountId } : {}),
+      OR: [{ adName: null }, { adName: { not: UNMATCHED_AD_NAME } }],
+    };
+
+    const [reconcileRows, hookRows, holdRows, completionRows] = await Promise.all([
+      this.prisma.reconcileMarketing.groupBy({
+        by: ['adId'],
+        where: reconcileWhere,
+        _sum: {
+          spend: true,
+          linkClicks: true,
+          impressions: true,
+          leads: true,
+          purchasesPos: true,
+          codPos: true,
+          deliveredCount: true,
+          canceledCount: true,
+          rtsCount: true,
+        },
+      }),
+      this.prisma.metaAdInsight.groupBy({
+        by: ['adId'],
+        where: { ...insightWhere, videoPlays3s: { not: null } },
         _sum: { videoPlays3s: true, impressions: true },
       }),
-      this.prisma.metaAdInsight.aggregate({
-        where: { ...where, videoPlays3s: { not: null }, thruPlays: { not: null } },
+      this.prisma.metaAdInsight.groupBy({
+        by: ['adId'],
+        where: { ...insightWhere, videoPlays3s: { not: null }, thruPlays: { not: null } },
         _sum: { thruPlays: true, videoPlays3s: true },
       }),
-      this.prisma.metaAdInsight.aggregate({
-        where: { ...where, thruPlays: { not: null } },
+      this.prisma.metaAdInsight.groupBy({
+        by: ['adId'],
+        where: { ...insightWhere, thruPlays: { not: null } },
         _sum: { thruPlays: true, impressions: true },
       }),
     ]);
-    return {
-      plays3s: hookRows._sum.videoPlays3s ?? 0,
-      videoImpressions: hookRows._sum.impressions ?? 0,
-      thruPlaysH: holdRows._sum.thruPlays ?? 0,
-      plays3sH: holdRows._sum.videoPlays3s ?? 0,
-      thruPlays: completionRows._sum.thruPlays ?? 0,
-      thruImpressions: completionRows._sum.impressions ?? 0,
+
+    const totalsByCreator = new Map<string, CreativeMetricTotals>();
+    const videosByCreator = new Map<string, VideoMetricTotals>();
+    const totals: CreativeMetricTotals = {
+      spend: 0, linkClicks: 0, impressions: 0, leads: 0,
+      orders: 0, grossSales: 0, delivered: 0, cancelled: 0, rts: 0,
     };
+    const videoTotals: VideoMetricTotals = {
+      plays3s: 0, videoImpressions: 0, thruPlaysH: 0,
+      plays3sH: 0, thruPlays: 0, thruImpressions: 0,
+    };
+    const getTotals = (creatorId: string) => {
+      let totals = totalsByCreator.get(creatorId);
+      if (!totals) {
+        totals = {
+          spend: 0, linkClicks: 0, impressions: 0, leads: 0,
+          orders: 0, grossSales: 0, delivered: 0, cancelled: 0, rts: 0,
+        };
+        totalsByCreator.set(creatorId, totals);
+      }
+      return totals;
+    };
+    const getVideos = (creatorId: string) => {
+      let totals = videosByCreator.get(creatorId);
+      if (!totals) {
+        totals = {
+          plays3s: 0, videoImpressions: 0, thruPlaysH: 0,
+          plays3sH: 0, thruPlays: 0, thruImpressions: 0,
+        };
+        videosByCreator.set(creatorId, totals);
+      }
+      return totals;
+    };
+    const toNum = (value: Prisma.Decimal | number | null) => Number(value ?? 0);
+
+    for (const row of reconcileRows) {
+      const creatorId = input.ownership.adOwnerById.get(row.adId);
+      if (!creatorId) continue;
+      const totals = getTotals(creatorId);
+      totals.spend += toNum(row._sum.spend);
+      totals.linkClicks += row._sum.linkClicks ?? 0;
+      totals.impressions += row._sum.impressions ?? 0;
+      totals.leads += row._sum.leads ?? 0;
+      totals.orders += row._sum.purchasesPos ?? 0;
+      totals.grossSales += toNum(row._sum.codPos);
+      totals.delivered += row._sum.deliveredCount ?? 0;
+      totals.cancelled += row._sum.canceledCount ?? 0;
+      totals.rts += row._sum.rtsCount ?? 0;
+    }
+    for (const row of hookRows) {
+      const creatorId = input.ownership.adOwnerById.get(row.adId);
+      if (!creatorId) continue;
+      const totals = getVideos(creatorId);
+      totals.plays3s += row._sum.videoPlays3s ?? 0;
+      totals.videoImpressions += row._sum.impressions ?? 0;
+    }
+    for (const row of holdRows) {
+      const creatorId = input.ownership.adOwnerById.get(row.adId);
+      if (!creatorId) continue;
+      const totals = getVideos(creatorId);
+      totals.thruPlaysH += row._sum.thruPlays ?? 0;
+      totals.plays3sH += row._sum.videoPlays3s ?? 0;
+    }
+    for (const row of completionRows) {
+      const creatorId = input.ownership.adOwnerById.get(row.adId);
+      if (!creatorId) continue;
+      const totals = getVideos(creatorId);
+      totals.thruPlays += row._sum.thruPlays ?? 0;
+      totals.thruImpressions += row._sum.impressions ?? 0;
+    }
+
+    const emptyTotals: CreativeMetricTotals = {
+      spend: 0, linkClicks: 0, impressions: 0, leads: 0,
+      orders: 0, grossSales: 0, delivered: 0, cancelled: 0, rts: 0,
+    };
+    const emptyVideos: VideoMetricTotals = {
+      plays3s: 0, videoImpressions: 0, thruPlaysH: 0,
+      plays3sH: 0, thruPlays: 0, thruImpressions: 0,
+    };
+
+    for (const creatorTotals of totalsByCreator.values()) {
+      totals.spend += creatorTotals.spend;
+      totals.linkClicks += creatorTotals.linkClicks;
+      totals.impressions += creatorTotals.impressions;
+      totals.leads += creatorTotals.leads;
+      totals.orders += creatorTotals.orders;
+      totals.grossSales += creatorTotals.grossSales;
+      totals.delivered += creatorTotals.delivered;
+      totals.cancelled += creatorTotals.cancelled;
+      totals.rts += creatorTotals.rts;
+    }
+    for (const creatorVideos of videosByCreator.values()) {
+      videoTotals.plays3s += creatorVideos.plays3s;
+      videoTotals.videoImpressions += creatorVideos.videoImpressions;
+      videoTotals.thruPlaysH += creatorVideos.thruPlaysH;
+      videoTotals.plays3sH += creatorVideos.plays3sH;
+      videoTotals.thruPlays += creatorVideos.thruPlays;
+      videoTotals.thruImpressions += creatorVideos.thruImpressions;
+    }
+
+    const rows = creators
+      .map((creator) => ({
+        creatorId: creator.id,
+        creatorName: [creator.firstName, creator.lastName].filter(Boolean).join(' ') || creator.email,
+        kpis: this.buildCreativeKpis(
+          totalsByCreator.get(creator.id) ?? emptyTotals,
+          videosByCreator.get(creator.id) ?? emptyVideos,
+          input.ownership.outputByCreator.get(creator.id) ?? 0,
+        ),
+      }))
+      .sort((left, right) => {
+        const orderDifference = (right.kpis.orders.value ?? 0) - (left.kpis.orders.value ?? 0);
+        if (orderDifference !== 0) return orderDifference;
+        const spendDifference = (right.kpis.adSpend.value ?? 0) - (left.kpis.adSpend.value ?? 0);
+        return spendDifference || left.creatorName.localeCompare(right.creatorName);
+      });
+
+    return { rows, totals, videoTotals };
   }
 
   /**

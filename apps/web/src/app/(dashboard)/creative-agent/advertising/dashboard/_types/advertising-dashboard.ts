@@ -62,6 +62,28 @@ export type AdvertisingSparklines = {
   linkedSpendCoverage: Spark;
 };
 
+export type CreativeDashboardKpis = {
+  hookRate: DashboardMetric;
+  holdRate: DashboardMetric;
+  completionRate: DashboardMetric;
+  ctr: DashboardMetric;
+  cvr: DashboardMetric;
+  orders: DashboardMetric;
+  adSpend: DashboardMetric;
+  mar: DashboardMetric;
+  output: DashboardMetric;
+  delivered: DashboardMetric;
+  cancellationRate: DashboardMetric;
+  rtsRate: DashboardMetric;
+  deliveryRate: DashboardMetric;
+};
+
+export type CreatorKpiBreakdownRow = {
+  creatorId: string;
+  creatorName: string;
+  kpis: CreativeDashboardKpis;
+};
+
 export type AdvertisingDashboardResponse = {
   selected: DashboardParams;
   permissions: { canManageLinks: boolean; canReview: boolean };
@@ -82,22 +104,9 @@ export type AdvertisingDashboardResponse = {
       totalSpend: DashboardMetric;
       linkedSpendCoverage: DashboardMetric;
     };
-    creative: {
-      hookRate: DashboardMetric;
-      holdRate: DashboardMetric;
-      completionRate: DashboardMetric;
-      ctr: DashboardMetric;
-      cvr: DashboardMetric;
-      orders: DashboardMetric;
-      adSpend: DashboardMetric;
-      mar: DashboardMetric;
-      output: DashboardMetric;
-      delivered: DashboardMetric;
-      cancellationRate: DashboardMetric;
-      rtsRate: DashboardMetric;
-      deliveryRate: DashboardMetric;
-    };
+    creative: CreativeDashboardKpis;
   };
+  creatorBreakdown: CreatorKpiBreakdownRow[];
   floors: {
     values: {
       hookRate: number;
