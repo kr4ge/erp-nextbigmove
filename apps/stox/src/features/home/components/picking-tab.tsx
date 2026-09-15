@@ -55,7 +55,7 @@ const PICK_STATUS_FILTERS: Array<{ label: string; value: PickingStatus | null }>
   { label: 'Restocking', value: 'RESTOCKING' },
   { label: 'Issues', value: 'ISSUE' },
 ];
-const PICK_LIST_PAGE_SIZE = 10;
+const DEFAULT_PICK_LIST_PAGE_SIZE = 10;
 
 function isMonitoredPickBasket(basket: WmsMobilePickBasket) {
   return basket.status === 'ASSIGNED'
@@ -400,6 +400,10 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
   }, [activeTab, dateOptions, selectedDateKey]);
 
   const updateFilter = (value: string | null) => {
+    if (activeFilter === 'tenant') {
+      setSelectedDateKey(null);
+    }
+
     setFilters((current) => {
       if (activeFilter === 'tenant') {
         return {
@@ -537,6 +541,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
                     isLoadingMore={isLoadingMore}
                     loadedCount={taskPool.length}
                     onClearDateFilter={() => setSelectedDateKey(null)}
+                    pageSize={picking?.pagination.pageSize ?? DEFAULT_PICK_LIST_PAGE_SIZE}
                     searchQuery={normalizedSearch}
                     tasks={filteredTaskPool}
                     total={totalPickTasks}
@@ -604,6 +609,7 @@ function PickTaskList({
   isLoadingMore,
   loadedCount,
   onClearDateFilter,
+  pageSize,
   searchQuery,
   tasks,
   total,
@@ -619,6 +625,7 @@ function PickTaskList({
   isLoadingMore: boolean;
   loadedCount: number;
   onClearDateFilter: () => void;
+  pageSize: number;
   searchQuery: string;
   tasks: WmsMobilePickingTask[];
   total: number;
@@ -680,7 +687,7 @@ function PickTaskList({
 
           {hasMore ? (
             <PrimaryButton
-              label={`Load ${Math.min(PICK_LIST_PAGE_SIZE, remaining)} more order${Math.min(PICK_LIST_PAGE_SIZE, remaining) === 1 ? '' : 's'}`}
+              label={`Load ${Math.min(pageSize, remaining)} more order${Math.min(pageSize, remaining) === 1 ? '' : 's'}`}
               loading={isLoadingMore}
               onPress={onLoadMore}
               style={styles.paginationButton}

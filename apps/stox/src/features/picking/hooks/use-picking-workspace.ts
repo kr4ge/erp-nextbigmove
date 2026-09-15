@@ -30,7 +30,8 @@ import {
   applyBasketScanDeltaToTask,
 } from '../utils/apply-basket-scan-delta';
 
-const PICKING_PAGE_SIZE = 10;
+const DEFAULT_PICKING_PAGE_SIZE = 10;
+const PARTNER_PICKING_PAGE_SIZE = 50;
 
 type UsePickingWorkspaceParams = {
   bootstrap: BootstrapResponse;
@@ -59,7 +60,7 @@ export function usePickingWorkspace({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const requestInFlightRef = useRef(false);
+  const latestRequestIdRef = useRef(0);
   const basketAssignmentInFlightRef = useRef(false);
 
   const requestPickingPage = useCallback(async (nextPage: number) => {
@@ -73,7 +74,7 @@ export function usePickingWorkspace({
       filters,
       status: statusFilter,
       page: nextPage,
-      pageSize: PICKING_PAGE_SIZE,
+      pageSize: filters.tenantId ? PARTNER_PICKING_PAGE_SIZE : DEFAULT_PICKING_PAGE_SIZE,
     });
   }, [device, filters, session.accessToken, statusFilter]);
 
@@ -94,11 +95,8 @@ export function usePickingWorkspace({
       return;
     }
 
-    if (requestInFlightRef.current) {
-      return;
-    }
-
-    requestInFlightRef.current = true;
+    const requestId = latestRequestIdRef.current + 1;
+    latestRequestIdRef.current = requestId;
 
     if (loadingKind === 'initial') {
       setIsLoading(true);
@@ -119,18 +117,27 @@ export function usePickingWorkspace({
             ))
           : await requestPickingPage(nextPage);
 
+      if (requestId !== latestRequestIdRef.current) {
+        return;
+      }
+
       setPicking((current) => (
         append && current ? mergePickingPage(current, nextPicking) : nextPicking
       ));
       setPage(append ? nextPage : nextPicking.pagination.page);
       setError(null);
     } catch (requestError) {
+      if (requestId !== latestRequestIdRef.current) {
+        return;
+      }
+
       setError(resolvePickingError(requestError));
     } finally {
-      requestInFlightRef.current = false;
-      setIsLoading(false);
-      setIsRefreshing(false);
-      setIsLoadingMore(false);
+      if (requestId === latestRequestIdRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+        setIsLoadingMore(false);
+      }
     }
   }, [device, requestPickingPage]);
 
@@ -652,7 +659,7 @@ function mergePickingPages(pages: WmsMobilePickingResponse[]) {
   }
 
   const loadedTasks = mergePickingTaskRecords(pages.map((page) => page.tasks));
-  const pageSize = base.pagination.pageSize || PICKING_PAGE_SIZE;
+  const pageSize = base.pagination.pageSize || DEFAULT_PICKING_PAGE_SIZE;
   const maxPage = Math.max(1, Math.ceil(base.pagination.total / pageSize));
   const loadedPage = Math.min(pages.length, maxPage);
 
