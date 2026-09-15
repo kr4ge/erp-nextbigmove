@@ -5,6 +5,7 @@ import {
   Building2,
   Boxes,
   FileSpreadsheet,
+  ClipboardList,
   LayoutGrid,
   PackageCheck,
   Truck,
@@ -132,5 +133,16 @@ export const WMS_NAV_ITEMS: WmsNavItem[] = [
     label: 'Forecast',
     icon: FileSpreadsheet,
     permission: 'wms.forecast.read',
+  },
+  {
+    label: 'Reports',
+    icon: ClipboardList,
+    children: [
+      {
+        href: '/reports',
+        label: 'Month-End Stock',
+        permission: 'wms.reports.month_end_stock.read',
+      },
+    ],
   },
 ];

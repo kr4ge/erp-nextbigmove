@@ -121,6 +121,7 @@ const WMS_PERMISSION_KEYS = [
   'wms.forecast.write',
   'wms.forecast.edit',
   'wms.forecast.delete',
+  'wms.reports.month_end_stock.read',
 ] as const;
 
 const PERMISSIONS: { key: string; description: string }[] = [
@@ -254,6 +255,7 @@ const PERMISSIONS: { key: string; description: string }[] = [
   { key: 'wms.forecast.write', description: 'Create WMS forecast adapter records' },
   { key: 'wms.forecast.edit', description: 'Edit WMS forecast adapter records' },
   { key: 'wms.forecast.delete', description: 'Delete WMS forecast adapter records' },
+  { key: 'wms.reports.month_end_stock.read', description: 'Generate and export WMS month-end stock reports' },
 ];
 
 const ROLES: RoleDef[] = [
@@ -534,6 +536,7 @@ const ROLES: RoleDef[] = [
       'wms.rts.edit',
       'wms.rts.disposition',
       'wms.forecast.read',
+      'wms.reports.month_end_stock.read',
     ],
     isSystem: true,
   },
@@ -556,6 +559,7 @@ const ROLES: RoleDef[] = [
       'wms.stox.read',
       'wms.rts.read',
       'wms.forecast.read',
+      'wms.reports.month_end_stock.read',
     ],
     isSystem: true,
   },

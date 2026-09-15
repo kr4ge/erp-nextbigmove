@@ -112,6 +112,10 @@ export const WMS_STOX_READ_PERMISSIONS = [
   'wms.stox.read',
 ] as const;
 
+export const WMS_MONTH_END_STOCK_REPORT_READ_PERMISSIONS = [
+  'wms.reports.month_end_stock.read',
+] as const;
+
 export const WMS_STOX_WRITE_PERMISSIONS = [
   'wms.stox.write',
 ] as const;

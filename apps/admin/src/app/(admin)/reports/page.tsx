@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { MonthEndStockReportScreen } from './_components/month-end-stock-report-screen';
 
 export default function ReportsPage() {
-  redirect('/forecast');
+  return <MonthEndStockReportScreen />;
 }

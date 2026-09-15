@@ -33,6 +33,7 @@ import { WmsReceivingModule } from './modules/wms-receiving/wms-receiving.module
 import { WmsMobileModule } from './modules/wms-mobile/wms-mobile.module';
 import { WmsSettingsModule } from './modules/wms-settings/wms-settings.module';
 import { WmsIntegrationsModule } from './modules/wms-integrations/wms-integrations.module';
+import { WmsReportsModule } from './modules/wms-reports/wms-reports.module';
 import { CreativeAgentModule } from './modules/creative-agent/creative-agent.module';
 import { AiSettingsModule } from './modules/ai-settings/ai-settings.module';
 
@@ -122,6 +123,7 @@ import { AiSettingsModule } from './modules/ai-settings/ai-settings.module';
     WmsMobileModule,
     WmsSettingsModule,
     WmsIntegrationsModule,
+    WmsReportsModule,
     CreativeAgentModule,
     AiSettingsModule,
   ],
