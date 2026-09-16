@@ -20,7 +20,8 @@ RUN npm run build --workspace=@erp/api
 RUN npx tsc apps/api/prisma/seed.ts apps/api/prisma/rbac-bootstrap.ts --outDir apps/api/dist/prisma --esModuleInterop --skipLibCheck
 
 FROM node:18-alpine AS runner
-RUN apk add --no-cache openssl
+# ffmpeg/ffprobe: Creative AI frame extraction runs in the worker container.
+RUN apk add --no-cache openssl ffmpeg
 WORKDIR /app
 ENV NODE_ENV=production
 # Tell Prisma where to find the query engine (needed when using bundlers like esbuild/webpack)

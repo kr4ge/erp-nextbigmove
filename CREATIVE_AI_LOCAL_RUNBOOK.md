@@ -9,6 +9,33 @@ The browser never receives the Claudebox API key or signing secret. Google
 Drive ingestion is not enabled in this first slice; download the Drive video
 and upload it through the ERP endpoint while testing locally.
 
+## Quick start (everyday use)
+
+Once the one-time setup in sections 1 to 4 is done, three terminals are all it
+takes. The helper script starts Docker, Postgres, Redis, MinIO, and the gateway,
+reading both secrets from `apps/api/.env` so they cannot drift apart:
+
+```bash
+# Terminal 1 — infrastructure and the AI gateway
+cd /Users/frage.ai/dev/ERP-System
+./scripts/creative-ai-dev.sh start
+
+# Terminal 2 — ERP API and Creative AI worker
+cd /Users/frage.ai/dev/ERP-System
+npm run dev --workspace=@erp/api
+
+# Terminal 3 — ERP web app
+cd /Users/frage.ai/dev/ERP-System
+npm run dev --workspace=@erp/web
+```
+
+Then open `http://localhost:3000`, sign in, and go to Video Registry.
+
+Other commands: `./scripts/creative-ai-dev.sh status` shows what is running and
+the gateway's run counters, `logs` follows the gateway log, and `stop` stops the
+gateway while leaving the databases up. The sections below explain the one-time
+setup and what each step does.
+
 ## 1. Prerequisites
 
 - Local Postgres and Redis used by ERP are running.
@@ -20,11 +47,14 @@ and upload it through the ERP endpoint while testing locally.
   connected later from ERP Settings; a host login is not required for that flow.
 - The customized Claudebox image exists as `claudebox-local:test`.
 
-If the image needs to be rebuilt:
+Rebuild the image after any change under `.codex-repos/claudebox` (the
+launcher script is the only file that is not baked in):
 
 ```bash
 cd /Users/frage.ai/dev/ERP-System/.codex-repos/claudebox
+npm test
 docker build -t claudebox-local:test .
+./claudebox stop && ./claudebox server   # with the exports from step 5
 ```
 
 ## 2. Apply the additive schema changes
@@ -98,22 +128,32 @@ In a dedicated terminal, export the same two values used in `.env`:
 cd /Users/frage.ai/dev/ERP-System/.codex-repos/claudebox
 mkdir -p /Users/frage.ai/dev/ERP-System/apps/api/tmp/creative-ai
 export CLAUDEBOX_IMAGE=claudebox-local:test
-export CLAUDEBOX_NAME=claudebox-erp
 export CLAUDEBOX_PORT=3100
 export CLAUDEBOX_API_KEY='<private-gateway-key>'
 export CLAUDEBOX_RUN_SIGNING_SECRET='<shared-run-signing-secret>'
 export CLAUDEBOX_WORKSPACE_HOST='/Users/frage.ai/dev/ERP-System/apps/api/tmp/creative-ai'
 export CLAUDEBOX_MAX_OUTPUT_BYTES=67108864
-# Keep provider credentials in named Docker volumes and manage them from ERP.
+# Keep provider credentials in the named Docker volume and manage them from ERP.
 export CLAUDEBOX_AUTH_FROM_UI=1
 ./claudebox server
 ```
+
+The launcher refuses to start without the signing secret, applies a restart
+policy (`unless-stopped`), a 3 GB memory limit, a process limit, log rotation,
+and the image's own health check. Tenant credentials always live in the Docker
+volume `claudebox-tenant-auth`, whatever the container is called, so a restart
+under a different name can no longer make tenants look disconnected.
 
 Confirm it is local and healthy:
 
 ```bash
 curl http://127.0.0.1:3100/health
+docker ps --filter name=claudebox --format '{{.Names}} {{.Status}}'
 ```
+
+The health response includes run counters (`started`, `completed`, `failed`,
+`cancelled`, `rejected`, `lastError`). After a while `docker ps` shows the
+container as `healthy`.
 
 The workspace is mounted into the container as `/workspace:ro`. Claudebox can
 read generated frames and JSON context, but cannot change ERP files.
@@ -159,14 +199,37 @@ normal full-stack test.
 
 ## 8. Run the full-stack test in Video Registry
 
-1. Open an enrolled video from the tile or table view.
-2. Click **Analyze video** under **Creative AI analysis**.
-3. Choose the original local MP4, MOV, M4V, or WebM file.
-4. Confirm the performance period and edit the analysis question if needed.
-5. Click **Start video analysis**.
+1. Open an enrolled creative from the tile or table view.
+2. Click **Analyze creative** under **AI creative analysis**.
+3. Choose the original local file: MP4, MOV, M4V, or WebM for a video
+   creative, or JPG, PNG, or WebP for a static one. The upload must match the
+   creative's kind; the API rejects a mismatch with a plain message.
+4. Confirm the performance period. There is no free-text question: every
+   run follows the same fixed method, with a lens chosen from the creative's
+   performance status (Draft, Live, Winner, Fatigued, Retired). The advertising
+   team can add house rules under **Settings → AI → Analysis prompt**; they are
+   appended to every run and audited.
+5. Click **Start analysis**.
 6. Keep the dialog open to watch `Queued`, `Preparing video`, `Loading
    performance`, `Analyzing`, and `Complete`.
-7. Review the verdict, evidence timeline, risks, and recommended tests.
+7. Review the result. Static creatives are scored on the same six categories
+   as video, but the method differs: "hook" is what the eye lands on first and
+   "story & pacing" is reading order and layout, so findings name a region of
+   the image instead of a timestamp, and video engagement rates are reported
+   as not applicable rather than missing. The Overview tab shows the verdict, a score per
+   category, compliance flags, and the three highest-impact actions; each
+   category tab (Hook, Story & pacing, Message & offer, Product & proof, Call
+   to action, Performance) shows its score, verdict, timestamped evidence, and
+   recommendations; the Tests tab lists every recommendation by priority.
+   Runs made before this format keep their older flat layout.
+8. To stop a run early, press **Cancel analysis** under the start button. A
+   queued run is dropped from the queue; a running one is stopped at its next
+   stage, or the model call is aborted through the gateway.
+
+The uploaded video is deleted from the workspace as soon as frames are
+extracted (its SHA-256 stays on the run). Frames and context files are purged
+14 days after a run finishes (`CREATIVE_AI_WORKSPACE_RETENTION_DAYS`), and a
+run that stops reporting progress is closed as failed by the worker's sweeper.
 
 The button is shown only to users with `creative_agent.ai.use`. Creative Maker,
 Creative Reviewer, and Creative Manager receive AI usage from the migration.
@@ -233,7 +296,11 @@ Restart ERP after changing `.env`.
 
 ```bash
 cd /Users/frage.ai/dev/ERP-System/.codex-repos/claudebox
-CLAUDEBOX_NAME=claudebox-erp ./claudebox stop
+./claudebox stop
 ```
+
+Because the container has a restart policy, `docker stop` alone would let
+Docker Desktop bring it back on the next daemon restart; `./claudebox stop`
+removes it. Tenant credentials remain in the `claudebox-tenant-auth` volume.
 
 Keep `AI_AGENT_ENABLED=false` whenever the local gateway is intentionally off.

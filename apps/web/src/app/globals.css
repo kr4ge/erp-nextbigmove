@@ -399,9 +399,20 @@
     35%  { opacity: 1; transform: translateY(0) scale(1); box-shadow: 0 0 0 6px rgb(var(--primary) / 0.28); }
     100% { box-shadow: 0 0 0 0 rgb(var(--primary) / 0); }
   }
+  /* Creative AI activity console. The model reports no progress percentage,
+     so the bar is an indeterminate sweep and the dots signal "working". */
+  @keyframes creativeAiSweep {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+  @keyframes creativeAiDot {
+    0%, 80%, 100% { opacity: 0.25; }
+    40%           { opacity: 1; }
+  }
   .animate-enter { animation: enter-rise 200ms ease-out both; }
   .animate-enter-emphasis { animation: enter-emphasis 700ms ease-out both; }
   @media (prefers-reduced-motion: reduce) {
     .animate-enter, .animate-enter-emphasis { animation: none; }
+    [class*="creativeAiSweep"], [class*="creativeAiDot"] { animation: none; opacity: 1; }
   }
 }

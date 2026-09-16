@@ -13,8 +13,11 @@ COPY apps/web ./apps/web
 COPY packages ./packages
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_TIMEZONE=Asia/Manila
+# Build-time switch for the Creative AI entry points (Settings → AI, Analyze video).
+ARG NEXT_PUBLIC_AI_AGENT_ENABLED=false
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_TIMEZONE=$NEXT_PUBLIC_TIMEZONE
+ENV NEXT_PUBLIC_AI_AGENT_ENABLED=$NEXT_PUBLIC_AI_AGENT_ENABLED
 RUN npm run build --workspace=@erp/web
 
 FROM node:18-alpine AS runner

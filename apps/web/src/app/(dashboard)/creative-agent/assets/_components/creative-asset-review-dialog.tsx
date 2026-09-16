@@ -70,13 +70,13 @@ export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, 
                 : <div className="flex h-full items-center justify-center text-sm text-muted">No post link supplied</div>}
           </div>
           {asset.mediaUrl ? <a href={asset.mediaUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">Open the live post <ExternalLink className="h-4 w-4" /></a> : null}
-          {canAnalyze && asset.kind === 'VIDEO' ? (
+          {canAnalyze ? (
             <div className="mt-5 flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-soft p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="flex items-center gap-2 font-semibold text-foreground"><Sparkles className="h-4 w-4 text-primary" /> AI video analysis</p>
-                <p className="mt-1 text-sm text-muted">Compare the video&apos;s visual execution with linked Meta spend and reconciled order results.</p>
+                <p className="flex items-center gap-2 font-semibold text-foreground"><Sparkles className="h-4 w-4 text-primary" /> AI creative analysis</p>
+                <p className="mt-1 text-sm text-muted">Compare the {asset.kind === 'VIDEO' ? 'video' : 'image'}&apos;s visual execution with linked Meta spend and reconciled order results.</p>
               </div>
-              <Button type="button" size="sm" className="shrink-0" iconLeft={<Sparkles className="h-4 w-4" />} onClick={() => onAnalyze(asset)}>Analyze video</Button>
+              <Button type="button" size="sm" className="shrink-0" iconLeft={<Sparkles className="h-4 w-4" />} onClick={() => onAnalyze(asset)}>Analyze creative</Button>
             </div>
           ) : null}
           <dl className="mt-5 grid gap-3 rounded-xl bg-background-secondary p-4 sm:grid-cols-2">

@@ -116,8 +116,12 @@ export default Joi.object({
   CREATIVE_AI_MODEL: Joi.string().default('sonnet'),
   CREATIVE_AI_MAX_TURNS: Joi.number().integer().min(1).max(100).default(12),
   CREATIVE_AI_MAX_BUDGET_USD: Joi.number().positive().max(100).default(1),
-  CREATIVE_AI_RUN_TIMEOUT_MS: Joi.number().integer().min(30000).default(600000),
+  CREATIVE_AI_RUN_TIMEOUT_MS: Joi.number().integer().min(30000).default(3900000),
+  CREATIVE_AI_SHARED_WORKSPACE: Joi.string().valid('true', 'false').default('false'),
   CREATIVE_AI_QUEUE_CONCURRENCY: Joi.number().integer().min(1).default(1),
   CREATIVE_AI_QUEUE_ATTEMPTS: Joi.number().integer().min(1).default(2),
   CREATIVE_AI_QUEUE_BACKOFF_MS: Joi.number().integer().min(100).default(3000),
+  CREATIVE_AI_RETAIN_SOURCE_VIDEO: Joi.string().valid('true', 'false').default('false'),
+  CREATIVE_AI_WORKSPACE_RETENTION_DAYS: Joi.number().integer().min(1).default(14),
+  CREATIVE_AI_STALE_RUN_GRACE_MS: Joi.number().integer().min(10000).default(120000),
 });

@@ -27,7 +27,9 @@ import {
   ListCreativeAiRunsQueryDto,
   StartCreativeAiRunDto,
   SubmitCreativeAiProviderCodeDto,
+  UpdateCreativeAiHouseRulesDto,
   UpdateCreativeAiPolicyDto,
+  UpdateCreativeAiStoreContextDto,
 } from './dto/creative-ai-run.dto';
 import { CreativeAiRunService } from './services/creative-ai-run.service';
 import { CreativeAiPolicyService } from './services/creative-ai-policy.service';
@@ -75,16 +77,21 @@ export class CreativeAiController {
     limits: { files: 1, fileSize: CreativeAiController.maxUploadBytes() },
     fileFilter: (_req, file, callback) => {
       const extension = extname(file.originalname || '').toLowerCase();
-      const allowedExtensions = new Set(['.mp4', '.mov', '.m4v', '.webm']);
+      // Videos and static images are both analysable. The run service checks
+      // the file against the creative's kind once the record is loaded.
+      const allowedExtensions = new Set(['.mp4', '.mov', '.m4v', '.webm', '.jpg', '.jpeg', '.png', '.webp']);
       const allowedMimeTypes = new Set([
         'video/mp4',
         'video/quicktime',
         'video/x-m4v',
         'video/webm',
+        'image/jpeg',
+        'image/png',
+        'image/webp',
         'application/octet-stream',
       ]);
       if (!allowedExtensions.has(extension) || !allowedMimeTypes.has(file.mimetype)) {
-        callback(new BadRequestException('Unsupported video. Use MP4, MOV, M4V, or WebM.'), false);
+        callback(new BadRequestException('Unsupported file. Use MP4, MOV, M4V, or WebM for video, or JPG, PNG, or WebP for a static creative.'), false);
         return;
       }
       callback(null, true);
@@ -110,6 +117,12 @@ export class CreativeAiController {
     return this.runs.get(req.user, id);
   }
 
+  @Post('runs/:id/cancel')
+  @Permissions('creative_agent.ai.use', 'creative_agent.ai.manage')
+  cancel(@Request() req: CreativeRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.runs.cancel(req.user, id);
+  }
+
   @Get('config')
   @Permissions('creative_agent.ai.use', 'creative_agent.ai.manage')
   config(@Request() req: CreativeRequest) {
@@ -120,6 +133,24 @@ export class CreativeAiController {
   @Permissions('creative_agent.ai.manage')
   updateConfig(@Request() req: CreativeRequest, @Body() body: UpdateCreativeAiPolicyDto) {
     return this.policy.update(req.user, body);
+  }
+
+  /** The analysis prompt's house rules: advertiser-owned, not tenant-admin-owned. */
+  @Patch('config/house-rules')
+  @Permissions('creative_agent.performance.manage')
+  updateHouseRules(@Request() req: CreativeRequest, @Body() body: UpdateCreativeAiHouseRulesDto) {
+    return this.policy.updateHouseRules(req.user, body);
+  }
+
+  /** Which niche pack and store-only rules apply to one store's creatives. */
+  @Patch('config/stores/:storeConfigId')
+  @Permissions('creative_agent.performance.manage')
+  updateStoreContext(
+    @Request() req: CreativeRequest,
+    @Param('storeConfigId', ParseUUIDPipe) storeConfigId: string,
+    @Body() body: UpdateCreativeAiStoreContextDto,
+  ) {
+    return this.policy.updateStoreContext(req.user, storeConfigId, body);
   }
 
   @Post('providers/:provider/test')

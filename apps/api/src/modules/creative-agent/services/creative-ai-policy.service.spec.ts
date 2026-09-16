@@ -65,7 +65,7 @@ describe('CreativeAiPolicyService', () => {
       codexModel: 'gpt-5.6-terra',
       defaultEffort: CreativeAiEffort.HIGH,
       maxTurns: 8,
-      maxBudgetUsd: 2,
+      maxRunMinutes: 20,
       allowRunOverrides: false,
       updatedAt: new Date(),
     });
@@ -80,7 +80,7 @@ describe('CreativeAiPolicyService', () => {
       model: 'gpt-5.6-terra',
       effort: CreativeAiEffort.HIGH,
       maxTurns: 8,
-      maxBudgetUsd: 2,
+      maxRunMinutes: 20,
     });
   });
 

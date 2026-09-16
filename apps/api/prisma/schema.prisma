@@ -1382,6 +1382,13 @@ model CreativeStoreConfig {
   shopIdSnapshot    String
   codePrefix        String
   active            Boolean   @default(true)
+  /// Which niche pack the AI analysis applies to this store's creatives. A
+  /// perfume store and a supplement store need different domain knowledge even
+  /// though the analysis method itself is identical.
+  aiNiche           String    @default("GENERAL_MERCHANDISE")
+  /// Rules that apply only to this store's creatives, appended to the
+  /// workspace-wide house rules. Advertiser-maintained.
+  aiStoreRules      String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -1665,8 +1672,16 @@ model CreativeAiPolicy {
   codexModel        String             @default("gpt-5.6-terra")
   defaultEffort     CreativeAiEffort   @default(MEDIUM)
   maxTurns          Int                @default(12)
+  /// Retained for historical runs. Runs are limited by turns and wall-clock
+  /// time, not by cost: tenants pay a flat subscription, so a dollar cap only
+  /// ever cut analyses short without saving anything.
   maxBudgetUsd      Decimal            @default(1) @db.Decimal(10, 2)
+  /// Wall-clock ceiling for one analysis, in minutes.
+  maxRunMinutes     Int                @default(15)
   allowRunOverrides Boolean            @default(true)
+  /// Advertiser-managed rules appended to every analysis prompt (brand
+  /// claims, market facts, banned wording). Null means the built-in default.
+  analysisHouseRules String?
   updatedById       String?            @db.Uuid
   updatedBy         User?              @relation("CreativeAiPolicyUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   createdAt         DateTime           @default(now())

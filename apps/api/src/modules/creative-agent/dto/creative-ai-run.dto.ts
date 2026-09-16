@@ -70,14 +70,36 @@ export class UpdateCreativeAiPolicyDto {
   @Max(100)
   maxTurns!: number;
 
+  /** Wall-clock ceiling for one analysis. Runs are limited by time, not cost:
+   *  the provider account is a flat-fee subscription. */
   @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  @Max(100)
-  maxBudgetUsd!: number;
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  maxRunMinutes!: number;
 
   @IsBoolean()
   allowRunOverrides!: boolean;
+}
+
+/** Per-store analysis context: which niche pack applies and any store-only rules. */
+export class UpdateCreativeAiStoreContextDto {
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[A-Z_]+$/)
+  niche!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  storeRules?: string;
+}
+
+/** Advertiser-managed rules appended to every analysis prompt. Empty clears them. */
+export class UpdateCreativeAiHouseRulesDto {
+  @IsString()
+  @MaxLength(6000)
+  houseRules!: string;
 }
 
 export class SubmitCreativeAiProviderCodeDto {

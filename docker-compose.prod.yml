@@ -53,6 +53,22 @@ services:
       WMS_PACKING_POST_COMPLETE_QUEUE_ATTEMPTS: ${WMS_PACKING_POST_COMPLETE_QUEUE_ATTEMPTS:-4}
       WMS_PACKING_POST_COMPLETE_QUEUE_BACKOFF_MS: ${WMS_PACKING_POST_COMPLETE_QUEUE_BACKOFF_MS:-3000}
       WMS_PACKING_POST_COMPLETE_QUEUE_TIMEOUT_MS: ${WMS_PACKING_POST_COMPLETE_QUEUE_TIMEOUT_MS:-60000}
+      # Creative AI. The gateway (Claudex) runs on its own droplet and is
+      # reached over the private VPC; these values point at it.
+      AI_AGENT_ENABLED: ${AI_AGENT_ENABLED:-false}
+      CLAUDEBOX_WS_URL: ${CLAUDEBOX_WS_URL}
+      CLAUDEBOX_HTTP_URL: ${CLAUDEBOX_HTTP_URL}
+      CLAUDEBOX_API_KEY: ${CLAUDEBOX_API_KEY:-}
+      AI_AGENT_SIGNING_SECRET: ${AI_AGENT_SIGNING_SECRET:-}
+      CREATIVE_AI_WORKSPACE_ROOT: /app/creative-ai
+      CREATIVE_AI_UPLOAD_TMP_DIR: /app/creative-ai-uploads
+      CREATIVE_AI_MAX_VIDEO_MB: ${CREATIVE_AI_MAX_VIDEO_MB:-250}
+      CREATIVE_AI_MAX_VIDEO_SECONDS: ${CREATIVE_AI_MAX_VIDEO_SECONDS:-600}
+      CREATIVE_AI_RUN_TIMEOUT_MS: ${CREATIVE_AI_RUN_TIMEOUT_MS:-600000}
+      CREATIVE_AI_QUEUE_CONCURRENCY: ${CREATIVE_AI_QUEUE_CONCURRENCY:-1}
+      CREATIVE_AI_QUEUE_ATTEMPTS: ${CREATIVE_AI_QUEUE_ATTEMPTS:-2}
+      CREATIVE_AI_RETAIN_SOURCE_VIDEO: ${CREATIVE_AI_RETAIN_SOURCE_VIDEO:-false}
+      CREATIVE_AI_WORKSPACE_RETENTION_DAYS: ${CREATIVE_AI_WORKSPACE_RETENTION_DAYS:-14}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
@@ -79,6 +95,9 @@ services:
       SEED_ADMIN_LAST_NAME: ${SEED_ADMIN_LAST_NAME}
     ports:
       - "3001:3001"
+    volumes:
+      - creative_ai_workspace:/app/creative-ai
+      - creative_ai_uploads:/app/creative-ai-uploads
     depends_on:
       redis:
         condition: service_healthy
@@ -104,6 +123,9 @@ services:
       PROCESS_ROLE: ${WORKER_PROCESS_ROLE:-worker}
       DATABASE_CONNECTION_LIMIT: ${WORKER_DATABASE_CONNECTION_LIMIT:-3}
       DATABASE_POOL_TIMEOUT_SECONDS: ${WORKER_DATABASE_POOL_TIMEOUT_SECONDS:-20}
+    volumes:
+      - creative_ai_workspace:/app/creative-ai
+      - creative_ai_uploads:/app/creative-ai-uploads
     depends_on:
       redis:
         condition: service_healthy
@@ -119,6 +141,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_TIMEZONE: ${NEXT_PUBLIC_TIMEZONE}
+        NEXT_PUBLIC_AI_AGENT_ENABLED: ${NEXT_PUBLIC_AI_AGENT_ENABLED:-false}
     container_name: erp-web-prod
     environment:
       TZ: ${TZ}
@@ -152,6 +175,10 @@ services:
 
 volumes:
   redis_data:
+  # Creative AI: uploads land in creative_ai_uploads, prepared runs live in
+  # creative_ai_workspace, shared by the api and the worker.
+  creative_ai_workspace:
+  creative_ai_uploads:
 
 networks:
   erp-network:

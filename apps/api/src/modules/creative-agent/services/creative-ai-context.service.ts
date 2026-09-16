@@ -16,8 +16,7 @@ export class CreativeAiContextService {
       include: {
         creative: {
           include: {
-            storeConfig: { select: { storeId: true, storeNameSnapshot: true } },
-            createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+            storeConfig: { select: { storeNameSnapshot: true } },
             aliases: { select: { alias: true } },
             metaAdLinks: {
               select: { accountId: true, adId: true, adNameSnapshot: true, source: true, linkedAt: true },
@@ -78,7 +77,7 @@ export class CreativeAiContextService {
           }),
           this.prisma.metaAdInsight.findMany({
             where: { tenantId, adId: { in: adIds }, date },
-            select: { accountId: true, adId: true, adName: true, campaignId: true, campaignName: true, adsetId: true, status: true },
+            select: { adName: true, campaignName: true, status: true },
             distinct: ['adId'],
             orderBy: { date: 'desc' },
           }),
@@ -143,9 +142,11 @@ export class CreativeAiContextService {
         dateStart: this.dateOnly(run.dateStart),
         dateEnd: this.dateOnly(run.dateEnd),
       },
-      question: run.question || 'Explain why this creative is or is not working and recommend concrete improvements.',
+      // The analysis question is fixed in the prompt (with a lens chosen from
+      // the creative's performance status), so no free-text question is sent.
+      // Only what the analysis needs. Record IDs, account IDs, and the
+      // creator's identity add nothing to the answer, so they never leave ERP.
       creative: {
-        id: creative.id,
         code: creative.code,
         title: creative.title,
         kind: creative.kind,
@@ -154,17 +155,10 @@ export class CreativeAiContextService {
         script: creative.script,
         notes: creative.notes,
         product: {
-          variationId: creative.posVariationId,
-          customId: creative.posCustomId,
           name: creative.posProductName,
         },
         store: {
-          id: creative.storeConfig.storeId,
           name: creative.storeConfig.storeNameSnapshot,
-        },
-        creator: {
-          id: creative.createdBy.id,
-          name: this.personName(creative.createdBy),
         },
         workflow: {
           revisionState: creative.revisionState,
@@ -175,8 +169,12 @@ export class CreativeAiContextService {
         aliases: creative.aliases.map((alias) => alias.alias),
       },
       attribution: {
-        linkedAdIds: adIds,
-        ads: adDescriptors,
+        linkedAdCount: adIds.length,
+        ads: adDescriptors.map((ad: { adName: string | null; campaignName: string | null; status: string | null }) => ({
+          adName: ad.adName,
+          campaignName: ad.campaignName,
+          status: ad.status,
+        })),
         source: 'creative_meta_ad_links -> reconcile_marketing + meta_ad_insights',
       },
       metrics: {
@@ -238,10 +236,6 @@ export class CreativeAiContextService {
         ],
       },
     };
-  }
-
-  private personName(person: { firstName: string | null; lastName: string | null; email: string }) {
-    return [person.firstName, person.lastName].filter(Boolean).join(' ').trim() || person.email;
   }
 
   private dateOnly(value: Date | string) {

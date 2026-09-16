@@ -41,6 +41,7 @@ import { CreativeAiAnalyzerService } from './services/creative-ai-analyzer.servi
 import { ClaudeboxClientService } from './services/claudebox-client.service';
 import { AiGatewayAdminClientService } from './services/ai-gateway-admin-client.service';
 import { CreativeAiPolicyService } from './services/creative-ai-policy.service';
+import { CreativeAiMaintenanceService } from './services/creative-ai-maintenance.service';
 import { CreativeAiProcessor } from './processors/creative-ai.processor';
 import { CREATIVE_AI_QUEUE } from './creative-agent.constants';
 import { CreativeAiEnabledGuard } from './guards/creative-ai-enabled.guard';
@@ -94,7 +95,9 @@ import { isCreativeAiEnabled } from './utils/creative-ai-enabled';
     ClaudeboxClientService,
     AiGatewayAdminClientService,
     CreativeAiPolicyService,
-    ...(isCreativeAiEnabled() && resolveProcessRole() !== 'api' ? [CreativeAiProcessor] : []),
+    ...(isCreativeAiEnabled() && resolveProcessRole() !== 'api'
+      ? [CreativeAiProcessor, CreativeAiMaintenanceService]
+      : []),
   ],
   exports: [CreativeMetaLinkService],
 })

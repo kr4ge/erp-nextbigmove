@@ -10,8 +10,9 @@ import { Prisma } from '@prisma/client';
 import { Queue } from 'bull';
 import { createHash } from 'crypto';
 import { createReadStream } from 'fs';
-import { copyFile, mkdir, rename, unlink } from 'fs/promises';
+import { copyFile, mkdir, rename, rm, unlink } from 'fs/promises';
 import { extname, join, relative, resolve, sep } from 'path';
+import { Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   CREATIVE_AGENT_PERMISSIONS,
@@ -21,8 +22,11 @@ import {
 } from '../creative-agent.constants';
 import { ListCreativeAiRunsQueryDto, StartCreativeAiRunDto } from '../dto/creative-ai-run.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
+import { creativeAiJobTimeoutMs } from '../utils/creative-ai-timeouts';
 import { CreativeAccessService } from './creative-access.service';
 import { CreativeAiPolicyService } from './creative-ai-policy.service';
+
+const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'] as const;
 
 type UploadedVideoFile = {
   path: string;
@@ -33,6 +37,8 @@ type UploadedVideoFile = {
 
 @Injectable()
 export class CreativeAiRunService {
+  private readonly logger = new Logger(CreativeAiRunService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
@@ -57,9 +63,9 @@ export class CreativeAiRunService {
         select: { id: true, createdById: true, title: true, code: true, kind: true },
       });
       if (!creative) throw new NotFoundException('Creative not found');
-      if (creative.kind !== 'VIDEO') {
-        throw new BadRequestException('Video analysis can only be run for a VIDEO creative');
-      }
+      // Both kinds are analysable: a video is sampled across its timeline, a
+      // static creative is one normalised image. The upload must match.
+      this.assertUploadMatchesKind(creative.kind, video.originalname);
       if (!this.access.canReadAll(context) && creative.createdById !== context.userId) {
         throw new ForbiddenException('You can only analyze your own creatives');
       }
@@ -105,7 +111,9 @@ export class CreativeAiRunService {
             type: 'exponential',
             delay: this.positiveInt(process.env.CREATIVE_AI_QUEUE_BACKOFF_MS, 3000),
           },
-          timeout: this.positiveInt(process.env.CREATIVE_AI_RUN_TIMEOUT_MS, 10 * 60 * 1000),
+          // Preprocessing, optional transcription, and the model call all run
+          // inside this one job, so its timeout covers all of them.
+          timeout: creativeAiJobTimeoutMs(settings.maxRunMinutes),
           removeOnComplete: 100,
           removeOnFail: 200,
         });
@@ -149,12 +157,97 @@ export class CreativeAiRunService {
             completedAt: new Date(),
           },
         }).catch(() => undefined);
+        // Nothing will ever process this run, so do not leave its video behind.
+        await rm(resolve(this.workspaceRoot(), context.tenantId, run.id), { recursive: true, force: true })
+          .catch(() => undefined);
         throw error;
       }
     } finally {
       if (video?.path) {
         await unlink(video.path).catch(() => undefined);
       }
+    }
+  }
+
+  /**
+   * Stops a run. A queued job is removed from the queue; a run that is already
+   * being processed is stopped by the worker at its next checkpoint, or the
+   * in-flight model call is aborted through the gateway.
+   */
+  async cancel(actor: CreativeActor, runId: string) {
+    const context = await this.access.resolve(actor);
+    this.access.require(
+      context,
+      CREATIVE_AGENT_PERMISSIONS.AI_USE,
+      CREATIVE_AGENT_PERMISSIONS.AI_MANAGE,
+    );
+    const run = await this.prisma.creativeAiRun.findFirst({
+      where: { id: runId, tenantId: context.tenantId },
+      select: { id: true, status: true, queueJobId: true, creative: { select: { createdById: true } } },
+    });
+    if (!run) throw new NotFoundException('Creative AI run not found');
+    if (!this.access.canReadAll(context) && run.creative.createdById !== context.userId) {
+      throw new ForbiddenException('You can only cancel analyses for your own creatives');
+    }
+    if ((TERMINAL_STATUSES as readonly string[]).includes(run.status)) {
+      throw new BadRequestException(`This analysis already finished (${run.status.toLowerCase()})`);
+    }
+
+    const cancelled = await this.prisma.creativeAiRun.updateMany({
+      where: { id: runId, tenantId: context.tenantId, status: { notIn: [...TERMINAL_STATUSES] } },
+      data: {
+        status: 'CANCELLED',
+        stage: 'Cancelled by user',
+        errorMessage: null,
+        completedAt: new Date(),
+      },
+    });
+    if (cancelled.count === 1) {
+      await this.removeQueuedJob(run.queueJobId);
+      await this.prisma.auditLog.create({
+        data: {
+          tenantId: context.tenantId,
+          userId: context.userId,
+          action: 'creative.ai.run.cancel',
+          resource: 'CreativeAiRun',
+          resourceId: runId,
+          changes: { previousStatus: run.status },
+        },
+      });
+    }
+    return this.get(actor, runId);
+  }
+
+  /**
+   * The controller accepts video and image uploads; here we check the file
+   * actually matches the creative it is being analysed against, so a video is
+   * never sampled as a still or the reverse.
+   */
+  private assertUploadMatchesKind(kind: 'VIDEO' | 'STATIC', originalName: string) {
+    const extension = extname(originalName || '').toLowerCase();
+    const isImage = ['.jpg', '.jpeg', '.png', '.webp'].includes(extension);
+    const isVideo = ['.mp4', '.mov', '.m4v', '.webm'].includes(extension);
+    if (kind === 'STATIC' && !isImage) {
+      throw new BadRequestException('This is a static creative. Upload a JPG, PNG, or WebP image.');
+    }
+    if (kind === 'VIDEO' && !isVideo) {
+      throw new BadRequestException('This is a video creative. Upload an MP4, MOV, M4V, or WebM video.');
+    }
+  }
+
+  private async removeQueuedJob(queueJobId: string | null) {
+    if (!queueJobId) return;
+    try {
+      const job = await this.queue.getJob(queueJobId);
+      if (!job) return;
+      const state = await job.getState();
+      // An active job cannot be removed; the worker sees the CANCELLED status
+      // itself and stops. Anything still waiting is dropped here.
+      if (state === 'waiting' || state === 'delayed' || state === 'paused') {
+        await job.remove();
+      }
+    } catch (error) {
+      this.logger.warn(`Could not remove queued creative AI job ${queueJobId}: ${this.errorMessage(error)}`);
     }
   }
 

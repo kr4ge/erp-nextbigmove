@@ -21,8 +21,12 @@ export class CreativeAiProcessor {
 
   @Process({ name: CREATIVE_AI_ANALYZE_JOB, concurrency })
   async analyze(job: Job<CreativeAiAnalyzeJobData>) {
-    this.logger.log(`Starting creative AI run=${job.data.runId} tenant=${job.data.tenantId}`);
-    await this.analyzer.analyze(job.data.tenantId, job.data.runId);
+    const attempts = Math.max(1, Number(job.opts?.attempts) || 1);
+    const attempt = (job.attemptsMade || 0) + 1;
+    this.logger.log(`Starting creative AI run=${job.data.runId} tenant=${job.data.tenantId} attempt=${attempt}/${attempts}`);
+    // Only the last attempt may close the run as FAILED; an earlier failure
+    // leaves it in progress so the retry resumes from its checkpoints.
+    await this.analyzer.analyze(job.data.tenantId, job.data.runId, { finalAttempt: attempt >= attempts });
   }
 
   @OnQueueFailed()

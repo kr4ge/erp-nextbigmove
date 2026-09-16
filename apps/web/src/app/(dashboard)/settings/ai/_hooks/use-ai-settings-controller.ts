@@ -11,6 +11,8 @@ import {
   submitCreativeAiProviderLoginCode,
   testCreativeAiProvider,
   updateCreativeAiConfig,
+  updateCreativeAiHouseRules,
+  updateCreativeAiStoreContext,
 } from '@/app/(dashboard)/creative-agent/video-registry/_services/creative-ai.service';
 import type {
   CreativeAiConfig,
@@ -26,7 +28,7 @@ const EMPTY_POLICY: UpdateCreativeAiConfigInput = {
   codexModel: 'gpt-5.6-terra',
   defaultEffort: 'MEDIUM',
   maxTurns: 12,
-  maxBudgetUsd: 1,
+  maxRunMinutes: 15,
   allowRunOverrides: true,
 };
 
@@ -36,6 +38,8 @@ export function useAiSettingsController() {
   const [draft, setDraft] = useState<UpdateCreativeAiConfigInput>(EMPTY_POLICY);
   const [loading, setLoading] = useState(CREATIVE_AI_UI_ENABLED);
   const [saving, setSaving] = useState(false);
+  const [savingHouseRules, setSavingHouseRules] = useState(false);
+  const [savingStoreId, setSavingStoreId] = useState<string | null>(null);
   const [busyProvider, setBusyProvider] = useState<CreativeAiProvider | null>(null);
   const [loginProvider, setLoginProvider] = useState<CreativeAiProvider | null>(null);
   const [login, setLogin] = useState<CreativeAiProviderLogin | null>(null);
@@ -62,7 +66,7 @@ export function useAiSettingsController() {
         codexModel: next.policy.codexModel,
         defaultEffort: next.policy.defaultEffort,
         maxTurns: next.policy.maxTurns,
-        maxBudgetUsd: next.policy.maxBudgetUsd,
+        maxRunMinutes: next.policy.maxRunMinutes,
         allowRunOverrides: next.policy.allowRunOverrides,
       });
     } catch (loadError) {
@@ -171,6 +175,34 @@ export function useAiSettingsController() {
     }
   }, [addToast, draft]);
 
+  const saveHouseRules = useCallback(async (houseRules: string) => {
+    setSavingHouseRules(true);
+    setError(null);
+    try {
+      const saved = await updateCreativeAiHouseRules(houseRules);
+      setConfig((current) => current ? { ...current, prompt: { ...current.prompt, ...saved } } : current);
+      addToast('success', saved.houseRules === null ? 'House rules reset to the default.' : 'House rules saved.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save the house rules.');
+    } finally {
+      setSavingHouseRules(false);
+    }
+  }, [addToast]);
+
+  const saveStoreContext = useCallback(async (storeConfigId: string, input: { niche: string; storeRules: string }) => {
+    setSavingStoreId(storeConfigId);
+    setError(null);
+    try {
+      const saved = await updateCreativeAiStoreContext(storeConfigId, input);
+      setConfig((current) => current ? { ...current, prompt: { ...current.prompt, stores: saved.stores } } : current);
+      addToast('success', 'Store analysis settings saved.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save the store analysis settings.');
+    } finally {
+      setSavingStoreId(null);
+    }
+  }, [addToast]);
+
   const setDefaultProvider = useCallback((defaultProvider: CreativeAiProvider) => {
     setDraft((current) => {
       const providerStatus = config?.providers.find((entry) => entry.provider === defaultProvider);
@@ -222,7 +254,11 @@ export function useAiSettingsController() {
     logout,
     submitLoginCode,
     save,
+    saveHouseRules,
+    savingHouseRules,
+    saveStoreContext,
+    savingStoreId,
     reload: load,
     closeLogin: () => { setLogin(null); setLoginProvider(null); },
-  }), [busyProvider, config, draft, error, load, loading, login, loginProvider, logout, save, saving, setDefaultProvider, setEffort, setModel, startLogin, submitLoginCode, submittingCode, test]);
+  }), [busyProvider, config, draft, error, load, loading, login, loginProvider, logout, save, saveHouseRules, saveStoreContext, saving, savingHouseRules, savingStoreId, setDefaultProvider, setEffort, setModel, startLogin, submitLoginCode, submittingCode, test]);
 }

@@ -1,6 +1,8 @@
 import axios from 'axios';
 import apiClient from '@/lib/api-client';
 import type {
+  CreativeAiHouseRules,
+  CreativeAiStoreContext,
   CreativeAiRun,
   CreativeAiRunsResponse,
   CreativeAiConfig,
@@ -23,7 +25,6 @@ export async function startCreativeAiRun(input: StartCreativeAiRunInput): Promis
   form.append('creativeId', input.creativeId);
   form.append('startDate', input.startDate);
   form.append('endDate', input.endDate);
-  if (input.question?.trim()) form.append('question', input.question.trim());
   if (input.provider) form.append('provider', input.provider);
   if (input.model) form.append('model', input.model);
   if (input.effort) form.append('effort', input.effort);
@@ -54,6 +55,30 @@ export async function updateCreativeAiConfig(input: UpdateCreativeAiConfigInput)
     return data;
   } catch (error) {
     throw creativeAiError(error, 'Unable to save AI defaults.');
+  }
+}
+
+export async function updateCreativeAiHouseRules(houseRules: string): Promise<CreativeAiHouseRules> {
+  try {
+    const { data } = await apiClient.patch<CreativeAiHouseRules>('/creative-agent/ai/config/house-rules', { houseRules });
+    return data;
+  } catch (error) {
+    throw creativeAiError(error, 'Unable to save the analysis house rules.');
+  }
+}
+
+export async function updateCreativeAiStoreContext(
+  storeConfigId: string,
+  input: { niche: string; storeRules: string },
+): Promise<{ stores: CreativeAiStoreContext[] }> {
+  try {
+    const { data } = await apiClient.patch<{ stores: CreativeAiStoreContext[] }>(
+      `/creative-agent/ai/config/stores/${storeConfigId}`,
+      input,
+    );
+    return data;
+  } catch (error) {
+    throw creativeAiError(error, 'Unable to save the store analysis settings.');
   }
 }
 
@@ -126,5 +151,14 @@ export async function fetchCreativeAiRun(runId: string): Promise<CreativeAiRun> 
     return data;
   } catch (error) {
     throw creativeAiError(error, 'Unable to refresh the video analysis.');
+  }
+}
+
+export async function cancelCreativeAiRun(runId: string): Promise<CreativeAiRun> {
+  try {
+    const { data } = await apiClient.post<CreativeAiRun>(`/creative-agent/ai/runs/${runId}/cancel`);
+    return data;
+  } catch (error) {
+    throw creativeAiError(error, 'Unable to cancel the video analysis.');
   }
 }

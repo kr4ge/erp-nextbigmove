@@ -83,8 +83,8 @@ export function AiDefaultsPanel({ config, draft, saving, onDraftChange, onProvid
             <ChevronDown className="h-4 w-4 text-muted transition group-open:rotate-180" />
           </summary>
           <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-2">
-            <label><span className="form-label">Maximum agent turns</span><input className="input mt-2 w-full" type="number" min={1} max={100} value={draft.maxTurns} onChange={(event) => onDraftChange({ ...draft, maxTurns: Number(event.target.value) })} /><span className="mt-1 block text-xs text-muted">Stops unusually long analysis loops.</span></label>
-            <label><span className="form-label">Maximum cost per run (USD)</span><input className="input mt-2 w-full" type="number" min={0.01} max={100} step={0.01} value={draft.maxBudgetUsd} onChange={(event) => onDraftChange({ ...draft, maxBudgetUsd: Number(event.target.value) })} /><span className="mt-1 block text-xs text-muted">A safety cap, not a target.</span></label>
+            <label><span className="form-label">Maximum agent turns</span><input className="input mt-2 w-full" type="number" min={1} max={100} value={draft.maxTurns} onChange={(event) => onDraftChange({ ...draft, maxTurns: Number(event.target.value) })} /><span className="mt-1 block text-xs text-muted">Caps how many steps the agent may take.</span></label>
+            <label><span className="form-label">Maximum time per run (minutes)</span><input className="input mt-2 w-full" type="number" min={1} max={60} step={1} value={draft.maxRunMinutes} onChange={(event) => onDraftChange({ ...draft, maxRunMinutes: Number(event.target.value) })} /><span className="mt-1 block text-xs text-muted">Stops a run that hangs. Deeper thinking needs more time; 15 minutes suits every model.</span></label>
           </div>
         </details>
 

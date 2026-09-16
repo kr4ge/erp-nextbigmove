@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import type { CreativeAiProvider } from '@/app/(dashboard)/creative-agent/video-registry/_types/creative-ai';
 import { AiDefaultsPanel } from './_components/ai-defaults-panel';
+import { AiHouseRulesPanel } from './_components/ai-house-rules-panel';
 import { AiProviderCard } from './_components/ai-provider-card';
+import { AiStoreNichePanel } from './_components/ai-store-niche-panel';
 import { AiSignInDialog } from './_components/ai-sign-in-dialog';
 import { useAiSettingsController } from './_hooks/use-ai-settings-controller';
 
@@ -69,6 +71,23 @@ export default function AiSettingsPage() {
           <div className="mt-4 flex gap-2 rounded-xl border border-warning/30 bg-warning-soft/30 p-4 text-sm text-warning"><AlertCircle className="h-4 w-4 shrink-0" />No AI providers were reported by the gateway.</div>
         ) : null}
       </section>
+
+      <AiHouseRulesPanel
+        prompt={controller.config.prompt}
+        canEdit={controller.config.permissions.canEditHouseRules}
+        saving={controller.savingHouseRules}
+        onSave={(houseRules) => void controller.saveHouseRules(houseRules)}
+      />
+
+      {controller.config.prompt.stores.length ? (
+        <AiStoreNichePanel
+          niches={controller.config.prompt.niches}
+          stores={controller.config.prompt.stores}
+          canEdit={controller.config.permissions.canEditHouseRules}
+          savingStoreId={controller.savingStoreId}
+          onSave={(storeConfigId, input) => void controller.saveStoreContext(storeConfigId, input)}
+        />
+      ) : null}
 
       {controller.config.permissions.canConfigure ? (
         <AiDefaultsPanel

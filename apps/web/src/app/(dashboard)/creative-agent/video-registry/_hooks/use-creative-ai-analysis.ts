@@ -2,17 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  cancelCreativeAiRun,
   fetchCreativeAiRun,
   fetchCreativeAiRuns,
   fetchCreativeAiConfig,
   startCreativeAiRun,
+  updateCreativeAiHouseRules,
 } from '../_services/creative-ai.service';
 import type { CreativeAiConfig, CreativeAiEffort, CreativeAiProvider, CreativeAiRun, CreativeAiTarget } from '../_types/creative-ai';
 
 const TERMINAL_STATUSES = new Set(['COMPLETED', 'FAILED', 'CANCELLED']);
 const MAX_LOCAL_VIDEO_BYTES = 250 * 1024 * 1024;
 const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm'];
-const DEFAULT_QUESTION = 'Explain why this video is or is not working and recommend three measurable improvements.';
+const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 
 type DateRange = { startDate: string; endDate: string };
 
@@ -27,7 +29,6 @@ export function useCreativeAiAnalysis({
 }) {
   const [video, setVideo] = useState<File | null>(null);
   const [dateRange, setDateRange] = useState(initialDateRange);
-  const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [config, setConfig] = useState<CreativeAiConfig | null>(null);
   const [provider, setProvider] = useState<CreativeAiProvider>('CLAUDE');
   const [model, setModel] = useState('sonnet');
@@ -36,6 +37,8 @@ export function useCreativeAiAnalysis({
   const [activeRun, setActiveRun] = useState<CreativeAiRun | null>(null);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isSavingPrompt, setIsSavingPrompt] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadRuns = useCallback(async (creativeId: string) => {
@@ -63,7 +66,6 @@ export function useCreativeAiAnalysis({
       startDate: initialDateRange.startDate,
       endDate: initialDateRange.endDate,
     });
-    setQuestion(DEFAULT_QUESTION);
     setRuns([]);
     setError(null);
     setActiveRun(null);
@@ -110,6 +112,9 @@ export function useCreativeAiAnalysis({
     };
   }, [activeRunId, activeRunStatus, open]);
 
+  const isStatic = item?.kind === 'STATIC';
+  const allowedExtensions = isStatic ? ALLOWED_IMAGE_EXTENSIONS : ALLOWED_VIDEO_EXTENSIONS;
+
   const chooseVideo = useCallback((file: File | null) => {
     setError(null);
     if (!file) {
@@ -117,9 +122,9 @@ export function useCreativeAiAnalysis({
       return;
     }
     const name = file.name.toLowerCase();
-    if (!ALLOWED_VIDEO_EXTENSIONS.some((extension) => name.endsWith(extension))) {
+    if (!allowedExtensions.some((extension) => name.endsWith(extension))) {
       setVideo(null);
-      setError('Choose an MP4, MOV, M4V, or WebM video.');
+      setError(isStatic ? 'Choose a JPG, PNG, or WebP image.' : 'Choose an MP4, MOV, M4V, or WebM video.');
       return;
     }
     if (file.size > MAX_LOCAL_VIDEO_BYTES) {
@@ -128,11 +133,11 @@ export function useCreativeAiAnalysis({
       return;
     }
     setVideo(file);
-  }, []);
+  }, [allowedExtensions, isStatic]);
 
   const start = useCallback(async () => {
     if (!item || !video) {
-      setError('Choose the local video file before starting the analysis.');
+      setError(isStatic ? 'Choose the image file before starting the analysis.' : 'Choose the local video file before starting the analysis.');
       return;
     }
     if (dateRange.startDate > dateRange.endDate) {
@@ -148,7 +153,6 @@ export function useCreativeAiAnalysis({
         video,
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
-        question,
         provider,
         model,
         effort,
@@ -161,7 +165,37 @@ export function useCreativeAiAnalysis({
     } finally {
       setIsSubmitting(false);
     }
-  }, [dateRange.endDate, dateRange.startDate, effort, item, model, provider, question, video]);
+  }, [dateRange.endDate, dateRange.startDate, effort, isStatic, item, model, provider, video]);
+
+  const cancel = useCallback(async () => {
+    if (!activeRun || TERMINAL_STATUSES.has(activeRun.status)) return;
+    setIsCancelling(true);
+    setError(null);
+    try {
+      const run = await cancelCreativeAiRun(activeRun.id);
+      setActiveRun(run);
+      setRuns((current) => [run, ...current.filter((entry) => entry.id !== run.id)]);
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : 'Unable to cancel the video analysis.');
+    } finally {
+      setIsCancelling(false);
+    }
+  }, [activeRun]);
+
+  // House rules are edited in place from the run dialog by whoever manages
+  // creative performance, so the advertiser never has to leave the screen.
+  const savePromptRules = useCallback(async (houseRules: string) => {
+    setIsSavingPrompt(true);
+    setError(null);
+    try {
+      const saved = await updateCreativeAiHouseRules(houseRules);
+      setConfig((current) => current ? { ...current, prompt: { ...current.prompt, ...saved } } : current);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save the analysis house rules.');
+    } finally {
+      setIsSavingPrompt(false);
+    }
+  }, []);
 
   const selectedProvider = useMemo(
     () => config?.providers.find((entry) => entry.provider === provider) ?? null,
@@ -202,7 +236,6 @@ export function useCreativeAiAnalysis({
   return useMemo(() => ({
     video,
     dateRange,
-    question,
     config,
     provider,
     model,
@@ -214,27 +247,35 @@ export function useCreativeAiAnalysis({
     activeRun,
     isLoadingRuns,
     isSubmitting,
+    isCancelling,
+    isSavingPrompt,
+    isStatic,
     isRunning,
     canStart,
     error,
     setDateRange,
-    setQuestion,
     chooseProvider,
     chooseModel,
     setEffort,
     chooseVideo,
     selectRun,
     start,
+    cancel,
+    savePromptRules,
   }), [
     activeRun,
+    cancel,
     canStart,
     chooseVideo,
     dateRange,
     error,
+    isCancelling,
+    isSavingPrompt,
+    isStatic,
+    savePromptRules,
     isLoadingRuns,
     isRunning,
     isSubmitting,
-    question,
     config,
     provider,
     model,

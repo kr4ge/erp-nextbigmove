@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertTriangle, Bot, ChevronDown, Sparkles } from 'lucide-react';
+import { AlertTriangle, Bot, Sparkles } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import type { CreativeAiEffort, CreativeAiProvider } from '../_types/creative-ai';
 
@@ -47,78 +47,88 @@ export function CreativeAiProviderControls({
   onEffortChange,
 }: Props) {
   if (!configLoaded) {
-    return <p className="flex items-center gap-2 text-sm text-muted"><Spinner className="h-4 w-4" /> Checking AI connection…</p>;
+    return (
+      <section className="rounded-xl border border-border bg-surface p-4">
+        <p className="flex items-center gap-2 text-sm text-muted"><Spinner className="h-4 w-4" /> Checking AI connection…</p>
+      </section>
+    );
   }
 
-  const selectedModel = models.find((entry) => entry.id === model)?.label || model;
+  const modelLabel = models.find((entry) => entry.id === model)?.label || model;
 
   return (
-    <details className="group rounded-xl border border-border bg-background-secondary/30">
-      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surface text-primary shadow-sm">
-          {provider === 'CLAUDE' ? <Sparkles className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-foreground">AI engine</span>
-          <span className="block truncate text-xs text-muted">
-            {provider === 'CLAUDE' ? 'Claude' : 'Codex'} · {selectedModel} · {EFFORT_LABELS[effort].label}
+    <section className="rounded-xl border border-border bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+            {provider === 'CLAUDE' ? <Sparkles className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
           </span>
-        </span>
-        <span className={`pill px-2 py-1 text-xs font-semibold ${connected ? 'border-success/30 bg-success-soft/30 text-success' : 'border-warning/30 bg-warning-soft/40 text-warning'}`}>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">AI engine</h3>
+            <p className="mt-0.5 truncate text-xs text-muted">{modelLabel} · {EFFORT_LABELS[effort].label}</p>
+          </div>
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${connected ? 'bg-success-soft/50 text-success' : 'bg-warning-soft/60 text-warning'}`}>
           {connected ? 'Ready' : 'Not connected'}
         </span>
-        <ChevronDown className="h-4 w-4 text-muted transition group-open:rotate-180" />
-      </summary>
+      </div>
 
-      <div className="space-y-4 border-t border-border px-4 py-4">
+      <div className="space-y-4 p-4">
         {canOverride ? (
           <>
             <fieldset>
-              <legend className="form-label">Choose AI</legend>
+              <legend className="form-label">Provider</legend>
+              {/* Two across on every width: these are short labels and the
+                  column is narrow, so a single row wastes no space. */}
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {(['CLAUDE', 'CODEX'] as const).map((key) => {
                   const status = providers.find((entry) => entry.provider === key);
                   const disabled = !status?.available;
+                  const active = provider === key;
                   return (
                     <button
                       key={key}
                       type="button"
                       disabled={disabled}
-                      aria-pressed={provider === key}
-                      className={`rounded-xl border px-3 py-3 text-left transition ${provider === key ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:border-primary/40'} disabled:cursor-not-allowed disabled:opacity-50`}
+                      aria-pressed={active}
+                      className={`flex flex-col gap-0.5 rounded-lg border px-3 py-2.5 text-left transition ${active ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:border-primary/40'} disabled:cursor-not-allowed disabled:opacity-50`}
                       onClick={() => onProviderChange(key)}
                     >
-                      <span className="block text-sm font-semibold text-foreground">{key === 'CLAUDE' ? 'Claude' : 'Codex'}</span>
-                      <span className="mt-1 block text-xs text-muted">{disabled ? 'Not installed' : status?.connected ? 'Connected' : 'Needs connection'}</span>
+                      <span className="text-sm font-semibold text-foreground">{key === 'CLAUDE' ? 'Claude' : 'Codex'}</span>
+                      <span className="text-xs leading-tight text-muted">
+                        {disabled ? 'Not installed' : status?.connected ? 'Connected' : 'Needs connection'}
+                      </span>
                     </button>
                   );
                 })}
               </div>
             </fieldset>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label>
+            {/* Stacked by default so neither select is squeezed in the narrow
+                sidebar; side by side once the dialog is wide enough. */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <label className="min-w-0">
                 <span className="form-label">Model</span>
-                <select className="input mt-2 w-full" value={model} onChange={(event) => onModelChange(event.target.value)}>
+                <select className="input mt-1.5 w-full" value={model} onChange={(event) => onModelChange(event.target.value)}>
                   {models.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
                 </select>
               </label>
-              <label>
+              <label className="min-w-0">
                 <span className="form-label">Thinking level</span>
-                <select className="input mt-2 w-full" value={effort} onChange={(event) => onEffortChange(event.target.value as CreativeAiEffort)}>
+                <select className="input mt-1.5 w-full" value={effort} onChange={(event) => onEffortChange(event.target.value as CreativeAiEffort)}>
                   {efforts.map((entry) => <option key={entry} value={entry}>{EFFORT_LABELS[entry].label}</option>)}
                 </select>
-                <span className="mt-1 block text-xs text-muted">{EFFORT_LABELS[effort].help}</span>
               </label>
             </div>
+            <p className="text-xs leading-relaxed text-muted">{EFFORT_LABELS[effort].help}. Deeper levels take longer.</p>
           </>
         ) : (
           <p className="text-sm text-muted">Your workspace uses the administrator’s recommended AI settings.</p>
         )}
 
         {!connected ? (
-          <div className="flex gap-2 rounded-xl border border-warning/30 bg-warning-soft/40 p-3 text-sm text-warning">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex gap-2 rounded-lg border border-warning/30 bg-warning-soft/40 p-3 text-xs leading-relaxed text-warning">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               {providerMessage || 'This AI provider is not connected.'}{' '}
               {canConfigure ? <Link href="/settings/ai" className="font-semibold underline">Open AI settings</Link> : 'Ask your administrator to connect it.'}
@@ -126,6 +136,6 @@ export function CreativeAiProviderControls({
           </div>
         ) : null}
       </div>
-    </details>
+    </section>
   );
 }

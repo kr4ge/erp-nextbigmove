@@ -50,7 +50,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     if (perms.includes('kpi.marketing.read') || perms.includes('kpi.marketing.manage')) {
       base.push({ href: '/settings/kpis', label: 'KPIs' });
     }
-    if (CREATIVE_AI_UI_ENABLED && perms.includes('creative_agent.ai.manage')) {
+    // Tenant admins manage connections and defaults; the advertising team
+    // (performance.manage) owns the analysis house rules on the same page.
+    if (CREATIVE_AI_UI_ENABLED && (perms.includes('creative_agent.ai.manage') || perms.includes('creative_agent.performance.manage'))) {
       base.push({ href: '/settings/ai', label: 'AI' });
     }
     return base;
