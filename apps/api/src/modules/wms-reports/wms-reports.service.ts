@@ -4,6 +4,7 @@ import {
   TenantStatus,
   WmsInventoryUnitStatus,
   WmsLocationKind,
+  WmsProductProfileStatus,
 } from '@prisma/client';
 import { ClsService } from 'nestjs-cls';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -48,7 +49,9 @@ export class WmsReportsService {
       this.prisma.posProduct.findMany({
         where: {
           storeId: { in: reportStoreIds },
-          wmsProductProfile: { isNot: null },
+          wmsProductProfile: {
+            is: { status: { not: WmsProductProfileStatus.ARCHIVED } },
+          },
         },
         select: {
           id: true,

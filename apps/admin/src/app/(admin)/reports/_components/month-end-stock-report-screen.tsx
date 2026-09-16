@@ -62,7 +62,7 @@ export function MonthEndStockReportScreen() {
               </span>
               <div className="min-w-0">
                 <h1 className="text-lg font-semibold text-primary">Month-End Stock Report</h1>
-                <p className="mt-1 text-sm text-muted">Current put-away and physical bin quantities for every WMS variant in scope.</p>
+                <p className="mt-1 text-sm text-muted">Current put-away and physical bin quantities for every active WMS variant in scope.</p>
               </div>
             </div>
 

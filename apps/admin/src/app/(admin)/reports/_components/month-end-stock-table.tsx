@@ -31,28 +31,26 @@ export function MonthEndStockTable({ rows, isLoading }: { rows: MonthEndStockRow
       <div className="flex flex-col gap-3 border-b border-[#e6edf1] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-primary">Variant stock</h2>
-          <p className="mt-0.5 text-xs text-muted">One row per WMS product variant and store.</p>
+          <p className="mt-0.5 text-xs text-muted">One row per active WMS product variant and store, including zero stock.</p>
         </div>
         <label className="flex h-10 min-w-0 items-center gap-2 rounded-2xl border border-[#d7e0e7] bg-white px-3 sm:w-[320px]">
           <Search className="h-4 w-4 shrink-0 text-[#8193a0]" />
           <input
             value={search}
             onChange={(event) => { setSearch(event.target.value); setPage(1); }}
-            placeholder="Search variant, store, or ID"
+            placeholder="Search variant, store, or partner"
             className="min-w-0 flex-1 border-0 bg-transparent text-sm text-primary outline-none placeholder:text-[#94a3b8]"
           />
         </label>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[840px] border-collapse text-left text-sm">
           <thead className="bg-[#f6f8fa] text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6f8290]">
             <tr>
               <th className="px-4 py-3">Partner</th>
               <th className="px-4 py-3">Store</th>
               <th className="px-4 py-3">Variant</th>
-              <th className="px-4 py-3">Variant code</th>
-              <th className="px-4 py-3 text-right">Awaiting put away</th>
               <th className="px-4 py-3 text-right">Put away</th>
               <th className="px-4 py-3 text-right">Reserved</th>
               <th className="px-4 py-3 text-right">Currently in bin</th>
@@ -68,10 +66,7 @@ export function MonthEndStockTable({ rows, isLoading }: { rows: MonthEndStockRow
                 </td>
                 <td className="max-w-[320px] px-4 py-3">
                   <span className="block truncate font-semibold">{row.variantName}</span>
-                  <span className="block truncate text-[11px] text-muted">Variation {row.variationId ?? '—'}</span>
                 </td>
-                <td className="px-4 py-3 font-mono text-xs">{row.variantCode ?? row.variantDisplayId ?? '—'}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{row.awaitingPutAwayQty.toLocaleString()}</td>
                 <td className="px-4 py-3 text-right font-semibold tabular-nums">{row.putAwayQty.toLocaleString()}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{row.reservedQty.toLocaleString()}</td>
                 <td className="px-4 py-3 text-right font-semibold tabular-nums text-emerald-700">{row.inBinQty.toLocaleString()}</td>

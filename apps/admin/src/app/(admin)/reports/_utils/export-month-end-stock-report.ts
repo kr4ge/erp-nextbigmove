@@ -5,10 +5,6 @@ const HEADERS = [
   'Store',
   'Shop ID',
   'Variant name',
-  'Variant code',
-  'Product ID',
-  'Variation ID',
-  'Awaiting put away',
   'Put away',
   'Reserved in bin',
   'Currently in bin',
@@ -20,10 +16,6 @@ function rowValues(row: MonthEndStockRow) {
     row.storeName,
     row.shopId,
     row.variantName,
-    row.variantCode ?? row.variantDisplayId ?? '',
-    row.productId,
-    row.variationId ?? '',
-    row.awaitingPutAwayQty,
     row.putAwayQty,
     row.reservedQty,
     row.inBinQty,
@@ -59,8 +51,8 @@ export async function exportMonthEndStockWorkbook(data: MonthEndStockReportRespo
     ...data.rows.map(rowValues),
   ]);
   worksheet['!cols'] = [
-    { wch: 24 }, { wch: 24 }, { wch: 16 }, { wch: 36 }, { wch: 20 },
-    { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 18 }, { wch: 18 },
+    { wch: 24 }, { wch: 24 }, { wch: 16 }, { wch: 36 },
+    { wch: 14 }, { wch: 18 }, { wch: 18 },
   ];
   worksheet['!freeze'] = { xSplit: 0, ySplit: 5 };
   const workbook = xlsx.utils.book_new();
