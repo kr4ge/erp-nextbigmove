@@ -82,24 +82,17 @@ export class UpdateCreativeAiPolicyDto {
   allowRunOverrides!: boolean;
 }
 
-/** Per-store analysis context: which niche pack applies and any store-only rules. */
-export class UpdateCreativeAiStoreContextDto {
+/** A new version of one of the two analysis prompts. */
+export class UpdateCreativePromptDto {
   @IsString()
-  @MaxLength(64)
-  @Matches(/^[A-Z_]+$/)
-  niche!: string;
+  @MaxLength(60000)
+  body!: string;
 
+  /** What changed and why, shown in the version history. */
   @IsOptional()
   @IsString()
-  @MaxLength(4000)
-  storeRules?: string;
-}
-
-/** Advertiser-managed rules appended to every analysis prompt. Empty clears them. */
-export class UpdateCreativeAiHouseRulesDto {
-  @IsString()
-  @MaxLength(6000)
-  houseRules!: string;
+  @MaxLength(300)
+  note?: string;
 }
 
 export class SubmitCreativeAiProviderCodeDto {

@@ -1,8 +1,10 @@
 import axios from 'axios';
 import apiClient from '@/lib/api-client';
 import type {
-  CreativeAiHouseRules,
-  CreativeAiStoreContext,
+  CreativeAiPromptConfig,
+  CreativeAiPromptKind,
+  CreativeAiPromptSetting,
+  CreativeAiPromptVersion,
   CreativeAiRun,
   CreativeAiRunsResponse,
   CreativeAiConfig,
@@ -58,27 +60,48 @@ export async function updateCreativeAiConfig(input: UpdateCreativeAiConfigInput)
   }
 }
 
-export async function updateCreativeAiHouseRules(houseRules: string): Promise<CreativeAiHouseRules> {
+export async function fetchCreativeAiPrompts(): Promise<CreativeAiPromptConfig> {
   try {
-    const { data } = await apiClient.patch<CreativeAiHouseRules>('/creative-agent/ai/config/house-rules', { houseRules });
+    const { data } = await apiClient.get<CreativeAiPromptConfig>('/creative-agent/ai/config/prompts');
     return data;
   } catch (error) {
-    throw creativeAiError(error, 'Unable to save the analysis house rules.');
+    throw creativeAiError(error, 'Unable to load the analysis prompts.');
   }
 }
 
-export async function updateCreativeAiStoreContext(
-  storeConfigId: string,
-  input: { niche: string; storeRules: string },
-): Promise<{ stores: CreativeAiStoreContext[] }> {
+export async function updateCreativeAiPrompt(kind: CreativeAiPromptKind, input: { body: string; note?: string }): Promise<CreativeAiPromptSetting> {
   try {
-    const { data } = await apiClient.patch<{ stores: CreativeAiStoreContext[] }>(
-      `/creative-agent/ai/config/stores/${storeConfigId}`,
-      input,
-    );
+    const { data } = await apiClient.patch<CreativeAiPromptSetting>(`/creative-agent/ai/config/prompts/${kind}`, input);
     return data;
   } catch (error) {
-    throw creativeAiError(error, 'Unable to save the store analysis settings.');
+    throw creativeAiError(error, 'Unable to save the prompt.');
+  }
+}
+
+export async function resetCreativeAiPrompt(kind: CreativeAiPromptKind): Promise<CreativeAiPromptSetting> {
+  try {
+    const { data } = await apiClient.post<CreativeAiPromptSetting>(`/creative-agent/ai/config/prompts/${kind}/reset`);
+    return data;
+  } catch (error) {
+    throw creativeAiError(error, 'Unable to reset the prompt.');
+  }
+}
+
+export async function fetchCreativeAiPromptVersions(kind: CreativeAiPromptKind): Promise<CreativeAiPromptVersion[]> {
+  try {
+    const { data } = await apiClient.get<CreativeAiPromptVersion[]>(`/creative-agent/ai/config/prompts/${kind}/versions`);
+    return data;
+  } catch (error) {
+    throw creativeAiError(error, 'Unable to load the prompt history.');
+  }
+}
+
+export async function activateCreativeAiPromptVersion(kind: CreativeAiPromptKind, version: number): Promise<CreativeAiPromptSetting> {
+  try {
+    const { data } = await apiClient.post<CreativeAiPromptSetting>(`/creative-agent/ai/config/prompts/${kind}/versions/${version}/activate`);
+    return data;
+  } catch (error) {
+    throw creativeAiError(error, 'Unable to switch prompt version.');
   }
 }
 

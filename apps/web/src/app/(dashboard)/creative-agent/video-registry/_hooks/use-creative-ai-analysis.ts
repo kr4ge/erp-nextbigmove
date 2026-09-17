@@ -7,7 +7,6 @@ import {
   fetchCreativeAiRuns,
   fetchCreativeAiConfig,
   startCreativeAiRun,
-  updateCreativeAiHouseRules,
 } from '../_services/creative-ai.service';
 import type { CreativeAiConfig, CreativeAiEffort, CreativeAiProvider, CreativeAiRun, CreativeAiTarget } from '../_types/creative-ai';
 
@@ -38,7 +37,6 @@ export function useCreativeAiAnalysis({
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
-  const [isSavingPrompt, setIsSavingPrompt] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadRuns = useCallback(async (creativeId: string) => {
@@ -184,19 +182,6 @@ export function useCreativeAiAnalysis({
 
   // House rules are edited in place from the run dialog by whoever manages
   // creative performance, so the advertiser never has to leave the screen.
-  const savePromptRules = useCallback(async (houseRules: string) => {
-    setIsSavingPrompt(true);
-    setError(null);
-    try {
-      const saved = await updateCreativeAiHouseRules(houseRules);
-      setConfig((current) => current ? { ...current, prompt: { ...current.prompt, ...saved } } : current);
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save the analysis house rules.');
-    } finally {
-      setIsSavingPrompt(false);
-    }
-  }, []);
-
   const selectedProvider = useMemo(
     () => config?.providers.find((entry) => entry.provider === provider) ?? null,
     [config, provider],
@@ -248,7 +233,6 @@ export function useCreativeAiAnalysis({
     isLoadingRuns,
     isSubmitting,
     isCancelling,
-    isSavingPrompt,
     isStatic,
     isRunning,
     canStart,
@@ -261,7 +245,6 @@ export function useCreativeAiAnalysis({
     selectRun,
     start,
     cancel,
-    savePromptRules,
   }), [
     activeRun,
     cancel,
@@ -270,9 +253,7 @@ export function useCreativeAiAnalysis({
     dateRange,
     error,
     isCancelling,
-    isSavingPrompt,
     isStatic,
-    savePromptRules,
     isLoadingRuns,
     isRunning,
     isSubmitting,

@@ -452,6 +452,10 @@ const ROLES: RoleDef[] = [
       'creative_agent.alias.manage',
       'creative_agent.performance.manage',
       'creative_agent.ai.use',
+      // Curating the knowledge base is an advertising judgement, not a tenant
+      // admin one: deciding which creatives count as winners is the same call
+      // as steering creative performance, which this role already owns.
+      'creative_agent.ai.manage',
       // Advertisers own the Meta spend import end to end: they manage the
       // integrations it reads from, build and run the workflows that pull it,
       // and read the POS reports it reconciles against.

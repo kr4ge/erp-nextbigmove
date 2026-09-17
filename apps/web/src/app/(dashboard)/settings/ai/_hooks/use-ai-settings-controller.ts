@@ -11,12 +11,14 @@ import {
   submitCreativeAiProviderLoginCode,
   testCreativeAiProvider,
   updateCreativeAiConfig,
-  updateCreativeAiHouseRules,
-  updateCreativeAiStoreContext,
+  updateCreativeAiPrompt,
+  resetCreativeAiPrompt,
 } from '@/app/(dashboard)/creative-agent/video-registry/_services/creative-ai.service';
 import type {
   CreativeAiConfig,
   CreativeAiEffort,
+  CreativeAiPromptKind,
+  CreativeAiPromptSetting,
   CreativeAiProvider,
   CreativeAiProviderLogin,
   UpdateCreativeAiConfigInput,
@@ -38,8 +40,7 @@ export function useAiSettingsController() {
   const [draft, setDraft] = useState<UpdateCreativeAiConfigInput>(EMPTY_POLICY);
   const [loading, setLoading] = useState(CREATIVE_AI_UI_ENABLED);
   const [saving, setSaving] = useState(false);
-  const [savingHouseRules, setSavingHouseRules] = useState(false);
-  const [savingStoreId, setSavingStoreId] = useState<string | null>(null);
+  const [savingPromptKind, setSavingPromptKind] = useState<CreativeAiPromptKind | null>(null);
   const [busyProvider, setBusyProvider] = useState<CreativeAiProvider | null>(null);
   const [loginProvider, setLoginProvider] = useState<CreativeAiProvider | null>(null);
   const [login, setLogin] = useState<CreativeAiProviderLogin | null>(null);
@@ -175,33 +176,38 @@ export function useAiSettingsController() {
     }
   }, [addToast, draft]);
 
-  const saveHouseRules = useCallback(async (houseRules: string) => {
-    setSavingHouseRules(true);
-    setError(null);
-    try {
-      const saved = await updateCreativeAiHouseRules(houseRules);
-      setConfig((current) => current ? { ...current, prompt: { ...current.prompt, ...saved } } : current);
-      addToast('success', saved.houseRules === null ? 'House rules reset to the default.' : 'House rules saved.');
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save the house rules.');
-    } finally {
-      setSavingHouseRules(false);
-    }
-  }, [addToast]);
+  const applyPrompt = useCallback((setting: CreativeAiPromptSetting) => {
+    setConfig((current) => current
+      ? { ...current, prompt: { ...current.prompt, [setting.kind === 'RUNNING_ANALYST' ? 'runningAnalyst' : 'newReviewer']: setting } }
+      : current);
+  }, []);
 
-  const saveStoreContext = useCallback(async (storeConfigId: string, input: { niche: string; storeRules: string }) => {
-    setSavingStoreId(storeConfigId);
+  const savePrompt = useCallback(async (kind: CreativeAiPromptKind, body: string, note: string) => {
+    setSavingPromptKind(kind);
     setError(null);
     try {
-      const saved = await updateCreativeAiStoreContext(storeConfigId, input);
-      setConfig((current) => current ? { ...current, prompt: { ...current.prompt, stores: saved.stores } } : current);
-      addToast('success', 'Store analysis settings saved.');
+      const saved = await updateCreativeAiPrompt(kind, { body, note: note || undefined });
+      applyPrompt(saved);
+      addToast('success', `Saved as version ${saved.version}.`);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save the store analysis settings.');
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save the prompt.');
     } finally {
-      setSavingStoreId(null);
+      setSavingPromptKind(null);
     }
-  }, [addToast]);
+  }, [addToast, applyPrompt]);
+
+  const resetPrompt = useCallback(async (kind: CreativeAiPromptKind) => {
+    setSavingPromptKind(kind);
+    setError(null);
+    try {
+      applyPrompt(await resetCreativeAiPrompt(kind));
+      addToast('success', 'Back to the built-in prompt.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to reset the prompt.');
+    } finally {
+      setSavingPromptKind(null);
+    }
+  }, [addToast, applyPrompt]);
 
   const setDefaultProvider = useCallback((defaultProvider: CreativeAiProvider) => {
     setDraft((current) => {
@@ -254,11 +260,11 @@ export function useAiSettingsController() {
     logout,
     submitLoginCode,
     save,
-    saveHouseRules,
-    savingHouseRules,
-    saveStoreContext,
-    savingStoreId,
+    savePrompt,
+    resetPrompt,
+    applyPrompt,
+    savingPromptKind,
     reload: load,
     closeLogin: () => { setLogin(null); setLoginProvider(null); },
-  }), [busyProvider, config, draft, error, load, loading, login, loginProvider, logout, save, saveHouseRules, saveStoreContext, saving, savingHouseRules, savingStoreId, setDefaultProvider, setEffort, setModel, startLogin, submitLoginCode, submittingCode, test]);
+  }), [busyProvider, config, draft, error, load, loading, login, loginProvider, logout, save, savePrompt, resetPrompt, applyPrompt, saving, savingPromptKind, setDefaultProvider, setEffort, setModel, startLogin, submitLoginCode, submittingCode, test]);
 }

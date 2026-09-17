@@ -49,8 +49,9 @@ describe('CreativeAiPolicyService', () => {
       logout: jest.fn(),
       test: jest.fn(),
     };
+    const templates = { describeAll: jest.fn(async () => ({ runningAnalyst: { kind: 'RUNNING_ANALYST' }, newReviewer: { kind: 'NEW_REVIEWER' } })) };
     return {
-      service: new CreativeAiPolicyService(prisma as any, access as any, gateway as any),
+      service: new CreativeAiPolicyService(prisma as any, access as any, gateway as any, templates as any),
       prisma,
       access,
       gateway,

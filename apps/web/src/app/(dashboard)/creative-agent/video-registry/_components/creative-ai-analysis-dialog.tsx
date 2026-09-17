@@ -27,6 +27,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { useCreativeAiAnalysis } from '../_hooks/use-creative-ai-analysis';
 import {
   CREATIVE_AI_SECTION_KEYS,
+  isAnalystResult,
+  isReviewerResult,
   isSectionedResult,
   type CreativeAiEvidenceType,
   type CreativeAiFinding,
@@ -44,6 +46,15 @@ import {
 import { VideoRegistryDateRangePicker } from './video-registry-date-range-picker';
 import { CreativeAiProviderControls } from './creative-ai-provider-controls';
 import { CreativeAiPromptPanel } from './creative-ai-prompt-panel';
+import { CreativeAiPromotePanel } from './creative-ai-promote-panel';
+import {
+  NewReviewerView,
+  RunningAnalystView,
+  analystTabs,
+  reviewerTabs,
+  type AnalystTab,
+  type ReviewerTab,
+} from './creative-ai-verdict-views';
 
 const STATUS_LABELS: Record<CreativeAiRunStatus, string> = {
   QUEUED: 'Queued',
@@ -86,7 +97,9 @@ const PRIORITY_TONES: Record<CreativeAiRecommendation['priority'], string> = {
 
 const PRIORITY_ORDER: Record<CreativeAiRecommendation['priority'], number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
 
-type TabKey = 'overview' | CreativeAiSectionKey | 'tests';
+type TabKey = 'overview' | CreativeAiSectionKey | 'tests' | AnalystTab | ReviewerTab;
+/** The six-section report indexes by section; the two-prompt tab keys must never reach it. */
+const isSectionKey = (key: TabKey): key is CreativeAiSectionKey => (CREATIVE_AI_SECTION_KEYS as readonly string[]).includes(key);
 
 /** A sectioned result together with the run metadata the worker stores beside it. */
 type SectionedResult = CreativeAiResultV2 & Pick<CreativeAiResult, '_run'>;
@@ -519,6 +532,8 @@ export function CreativeAiAnalysisDialog({ item, startDate, endDate, onClose }: 
   useEffect(() => { setTab('overview'); }, [activeRun?.id]);
 
   const tabs = useMemo<DashboardTabItem<TabKey>[]>(() => {
+    if (isAnalystResult(result)) return analystTabs(result);
+    if (isReviewerResult(result)) return reviewerTabs(result);
     if (!sectioned) return [{ value: 'overview', label: 'Overview' }];
     const testCount = CREATIVE_AI_SECTION_KEYS.reduce((sum, key) => sum + sectioned.sections[key].recommendations.length, 0);
     return [
@@ -526,7 +541,7 @@ export function CreativeAiAnalysisDialog({ item, startDate, endDate, onClose }: 
       ...CREATIVE_AI_SECTION_KEYS.map((key) => ({ value: key, label: SECTION_LABELS[key], badge: `${sectioned.sections[key].score}/5` })),
       { value: 'tests', label: 'Tests', icon: <FlaskConical className="h-3.5 w-3.5" />, badge: testCount },
     ];
-  }, [sectioned]);
+  }, [sectioned, result]);
 
   const showStatus = Boolean(activeRun && (activeRun.status !== 'COMPLETED' || !result));
 
@@ -604,14 +619,9 @@ export function CreativeAiAnalysisDialog({ item, startDate, endDate, onClose }: 
                   />
                   </div>
 
-                  {analysis.config?.prompt ? (
+                  {analysis.config ? (
                     <div className="sm:col-span-2 xl:col-span-1">
-                      <CreativeAiPromptPanel
-                        prompt={analysis.config.prompt}
-                        canEdit={Boolean(analysis.config.permissions.canEditHouseRules)}
-                        saving={analysis.isSavingPrompt}
-                        onSave={analysis.savePromptRules}
-                      />
+                      <CreativeAiPromptPanel />
                     </div>
                   ) : null}
 
@@ -631,6 +641,17 @@ export function CreativeAiAnalysisDialog({ item, startDate, endDate, onClose }: 
                     ) : null}
                   </div>
                   <p className="text-xs leading-relaxed text-muted sm:col-span-2 xl:col-span-1">{analysis.isStatic ? 'The image is used only inside ERP and is removed after the analysis.' : 'The video is used only to extract frames inside ERP and is removed afterwards.'}</p>
+
+                  {/* Once an analysis is finished it can be recorded in the
+                      store's knowledge base, which is what future creatives get
+                      judged against. */}
+                  {activeRun && activeRun.status === 'COMPLETED' ? (
+                    <CreativeAiPromotePanel
+                      creativeId={item.id}
+                      runId={activeRun.id}
+                      canManage={Boolean(analysis.config?.permissions.canConfigure)}
+                    />
+                  ) : null}
                 </div>
               </aside>
 
@@ -650,10 +671,15 @@ export function CreativeAiAnalysisDialog({ item, startDate, endDate, onClose }: 
                       <DashboardTabs value={tab} items={tabs} onValueChange={setTab} />
                     </div>
                     <div className="flex-1 px-4 py-5 sm:px-6 xl:min-h-0 xl:overflow-y-auto">
-                      {sectioned ? (
+                      {isAnalystResult(result) ? (
+                        <RunningAnalystView result={result} tab={tab} modeNote={activeRun?.analysisModeNote ?? null} warnings={activeRun?.warnings ?? []} />
+                      ) : isReviewerResult(result) ? (
+                        <NewReviewerView result={result} tab={tab} modeNote={activeRun?.analysisModeNote ?? null} warnings={activeRun?.warnings ?? []} />
+                      ) : sectioned ? (
                         tab === 'overview' ? <OverviewView result={sectioned} warnings={activeRun?.warnings ?? []} />
                           : tab === 'tests' ? <TestsView result={sectioned} />
-                            : <SectionView section={sectioned.sections[tab]} label={SECTION_LABELS[tab]} />
+                            : isSectionKey(tab) ? <SectionView section={sectioned.sections[tab]} label={SECTION_LABELS[tab]} />
+                              : <OverviewView result={sectioned} warnings={activeRun?.warnings ?? []} />
                       ) : (
                         <LegacyResultView result={result as CreativeAiResultV1} warnings={activeRun?.warnings ?? []} />
                       )}

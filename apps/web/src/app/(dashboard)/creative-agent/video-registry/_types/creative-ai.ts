@@ -42,43 +42,53 @@ export type CreativeAiConfig = {
     updatedAt: string | null;
   };
   providers: CreativeAiProviderStatus[];
-  /** The fixed analysis prompt's editable parts: workspace rules, the lens per
-   *  performance status, the niche packs, and each store's assigned pack. */
-  prompt: {
-    houseRules: string | null;
-    defaultHouseRules: string;
-    lenses: Record<CreativeLens, string>;
-    niches: CreativeAiNicheOption[];
-    stores: CreativeAiStoreContext[];
-  };
+  /** The two analysis prompts, editable as versioned text. */
+  prompt: CreativeAiPromptConfig;
   permissions: {
     canConfigure: boolean;
     canManageConnections: boolean;
     canOverrideRuns: boolean;
-    canEditHouseRules: boolean;
+    canEditPrompts: boolean;
   };
 };
 
-export type CreativeAiNicheOption = {
-  key: string;
+export type CreativeAiPromptKind = 'RUNNING_ANALYST' | 'NEW_REVIEWER';
+
+export type CreativeAiPromptVariable = { token: string; description: string; required?: boolean };
+
+/** One analysis prompt as the settings page shows it. */
+export type CreativeAiPromptSetting = {
+  kind: CreativeAiPromptKind;
   label: string;
-  summary: string;
-  whatMatters: string;
-  lookFor: string[];
-  complianceWatch: string[];
+  purpose: string;
+  body: string;
+  isDefault: boolean;
+  version: number | null;
+  latestVersion: number;
+  note: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+  variables: CreativeAiPromptVariable[];
+  usedTokens: string[];
+  unknownTokens: string[];
+  /** What the system appends after the text: files, vocabulary, output rule. */
+  appendix: string;
+  defaultBody: string;
 };
 
-export type CreativeAiStoreContext = {
+export type CreativeAiPromptConfig = {
+  runningAnalyst: CreativeAiPromptSetting;
+  newReviewer: CreativeAiPromptSetting;
+};
+
+export type CreativeAiPromptVersion = {
   id: string;
-  name: string;
-  codePrefix: string;
-  niche: string;
-  storeRules: string | null;
-};
-
-export type CreativeAiHouseRules = {
-  houseRules: string | null;
-  defaultHouseRules: string;
+  version: number;
+  note: string | null;
+  isActive: boolean;
+  characters: number;
+  createdAt: string;
+  createdBy: string | null;
 };
 
 export type UpdateCreativeAiConfigInput = Omit<CreativeAiConfig['policy'], 'updatedAt'>;
@@ -164,7 +174,63 @@ export type CreativeAiResultV2 = {
   sections: Record<CreativeAiSectionKey, CreativeAiSection>;
 };
 
-export type CreativeAiResult = (CreativeAiResultV1 | CreativeAiResultV2) & {
+export type CreativeAiAttributes = {
+  angle: string;
+  hookType: string;
+  format: string;
+  speaker: string;
+  durationBucket: string;
+  offerShown: string;
+  ctaType: string;
+  priceVisible: boolean;
+  otherNote?: string | null;
+};
+
+/** Prompt 1: a verdict on a creative that has run. */
+export type CreativeAiResultAnalyst = {
+  verdict: 'SCALE' | 'WATCH' | 'KILL';
+  verdictReason: string;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  dataSufficiency: { sufficient: boolean; note: string; recheckAfter?: string | null };
+  evidence: Array<{ metric: string; value: string; versusTarget: string }>;
+  diagnosis: { funnelReading: string; creativeElement: string; notTheCreative?: string | null };
+  action: { what: string; byHowMuch?: string | null; when: string };
+  attributes: CreativeAiAttributes;
+  audienceQuality: { failed: boolean; suspectedElement: string | null };
+  lesson: string;
+  complianceFlags?: string[];
+};
+
+/** Prompt 2: a decision on a creative that has not run. */
+export type CreativeAiResultReviewer = {
+  decision: 'APPROVE' | 'REVISE' | 'REJECT';
+  qualityScore: number;
+  scoreBreakdown?: Partial<Record<'hook' | 'clarity' | 'structurePacing' | 'production' | 'cta' | 'originality', number>>;
+  noveltyLabel: 'NEW_ANGLE' | 'ITERATION' | 'DUPLICATE';
+  iteratesOn?: string | null;
+  confidence: number;
+  openingQuote?: string | null;
+  attributes: CreativeAiAttributes;
+  whatWorks: string[];
+  whatToFix: Array<{ fix: string; why: string; timestampSeconds?: number | null; priority?: 'HIGH' | 'MEDIUM' | 'LOW' }>;
+  unfixableReason?: string | null;
+  audienceQualityFlags: Array<{ element: string; basis: string; timestampSeconds?: number | null }>;
+  dataBasis: { corpusUsable: boolean; note: string; matchedPatterns?: string[] };
+  testHypothesis?: string | null;
+  checksNotPerformed?: string[];
+};
+
+export function isAnalystResult(result: unknown): result is CreativeAiResultAnalyst {
+  const r = result as CreativeAiResultAnalyst | null;
+  return Boolean(r && typeof r === 'object' && 'verdict' in r && 'lesson' in r && 'attributes' in r && ['SCALE', 'WATCH', 'KILL'].includes(r.verdict));
+}
+
+export function isReviewerResult(result: unknown): result is CreativeAiResultReviewer {
+  const r = result as CreativeAiResultReviewer | null;
+  return Boolean(r && typeof r === 'object' && 'decision' in r && 'qualityScore' in r && ['APPROVE', 'REVISE', 'REJECT'].includes(r.decision));
+}
+
+export type CreativeAiResult = (CreativeAiResultV1 | CreativeAiResultV2 | CreativeAiResultAnalyst | CreativeAiResultReviewer) & {
   /** Run metadata written by the worker next to the model output. */
   _run?: {
     provider?: CreativeAiProvider;
@@ -181,6 +247,10 @@ export function isSectionedResult(result: CreativeAiResult | null | undefined): 
 }
 
 export type CreativeAiRun = {
+  /** Which prompt judged this run, and why. Null on runs made before the two-prompt design. */
+  analysisMode?: CreativeAiPromptKind | null;
+  analysisModeNote?: string | null;
+  promptTemplateId?: string | null;
   id: string;
   status: CreativeAiRunStatus;
   progress: number;

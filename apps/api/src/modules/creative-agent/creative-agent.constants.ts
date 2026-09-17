@@ -47,10 +47,21 @@ export const CREATIVE_AGENT_PERMISSIONS = {
 
 export const CREATIVE_AI_QUEUE = 'creative-ai-analysis';
 export const CREATIVE_AI_ANALYZE_JOB = 'creative-ai.analyze';
+/**
+ * Enrollment gate reviews share the analysis queue rather than getting their
+ * own. Both talk to the same gateway, and one queue means a review waits behind
+ * an analysis instead of competing with it for the same tenant's session.
+ */
+export const CREATIVE_GATE_REVIEW_JOB = 'creative-ai.gate-review';
 
 export type CreativeAiAnalyzeJobData = {
   tenantId: string;
   runId: string;
+};
+
+export type CreativeGateReviewJobData = {
+  tenantId: string;
+  reviewId: string;
 };
 
 /**

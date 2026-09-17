@@ -23,6 +23,11 @@ export type ClaudeboxRunInput = {
    * on a different host with no shared volume.
    */
   localWorkspace?: string;
+  /**
+   * Structured-output schema for this run. Defaults to the creative analysis
+   * schema; the enrollment gate supplies its own, much smaller one.
+   */
+  jsonSchema?: unknown;
   /** Aborting the signal cancels the run on the gateway and rejects with CreativeAiRunCancelledError. */
   signal?: AbortSignal;
   onDelta?: (text: string) => void;
@@ -307,7 +312,7 @@ export class ClaudeboxClientService {
             maxTurns: input.maxTurns,
             maxRunMinutes: input.maxRunMinutes,
             allowedTools: ['Read', 'Glob'],
-            jsonSchema: JSON.stringify(RESULT_SCHEMA),
+            jsonSchema: JSON.stringify(input.jsonSchema ?? RESULT_SCHEMA),
           },
         }));
       };

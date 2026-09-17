@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { access, readFile, unlink, writeFile } from 'fs/promises';
 import { dirname, join, resolve, sep } from 'path';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { CREATIVE_AI_PROMPT_VERSION, buildCreativeAiPrompt } from '../prompts/creative-ai-analysis.prompt';
+import { CreativePromptContextService } from './creative-prompt-context.service';
 import { ClaudeboxClientService, CreativeAiRunCancelledError, CreativeAiRunLimitError } from './claudebox-client.service';
 import { CreativeAiContextService } from './creative-ai-context.service';
 import { CreativeAiMediaService } from './creative-ai-media.service';
@@ -33,6 +33,7 @@ export class CreativeAiAnalyzerService {
     private readonly media: CreativeAiMediaService,
     private readonly contextBuilder: CreativeAiContextService,
     private readonly claudebox: ClaudeboxClientService,
+    private readonly promptContext: CreativePromptContextService,
   ) {}
 
   async analyze(tenantId: string, runId: string, options: { finalAttempt?: boolean } = {}) {
@@ -46,6 +47,7 @@ export class CreativeAiAnalyzerService {
         id: true,
         tenantId: true,
         requestedById: true,
+        creativeId: true,
         sourcePath: true,
         status: true,
         provider: true,
@@ -121,10 +123,6 @@ export class CreativeAiAnalyzerService {
           if (cancelled) abort.abort();
         });
       }, CANCEL_POLL_MS);
-      const policy = await this.prisma.creativeAiPolicy.findUnique({
-        where: { tenantId },
-        select: { analysisHouseRules: true },
-      });
       // Stream the answer into the run row so the dialog can show it forming
       // instead of a progress bar that sits still for minutes.
       // The activity feed is what the dialog shows while the model works: each
@@ -172,18 +170,37 @@ export class CreativeAiAnalyzerService {
         if (pendingFlush) void flushPartial();
       }, PARTIAL_FLUSH_MS);
 
+      // Which prompt this creative gets is decided from its own measured
+      // delivery, not from anyone choosing: a creative that has spent and been
+      // seen is judged on what it earned, one that has not is judged on how it
+      // is made.
+      const built = await this.promptContext.build({
+        tenantId,
+        creativeId: run.creativeId,
+        kind: run.creative.kind,
+        signals: {
+          linkedAdCount: analysisContext.attribution.linkedAdCount,
+          spend: analysisContext.metrics.spend,
+          impressions: analysisContext.metrics.impressions,
+        },
+        period: `${analysisContext.scope.dateStart} to ${analysisContext.scope.dateEnd}`,
+      });
+      await this.prisma.creativeAiRun.updateMany({
+        where: { id: runId, tenantId },
+        data: {
+          analysisMode: built.mode,
+          analysisModeNote: built.modeNote,
+          promptTemplateId: built.promptTemplateId,
+        },
+      });
+
       const output = await this.claudebox.run({
         tenantId,
         userId: run.requestedById,
         runId,
         workspace: `/workspace/${tenantId}/${runId}`,
-        prompt: buildCreativeAiPrompt({
-          performanceStatus: run.creative.performanceStatus,
-          kind: run.creative.kind,
-          niche: run.creative.storeConfig?.aiNiche,
-          houseRules: policy?.analysisHouseRules,
-          storeRules: run.creative.storeConfig?.aiStoreRules,
-        }),
+        prompt: built.prompt,
+        jsonSchema: built.schema,
         provider: run.provider,
         model: run.model,
         effort: run.effort,
@@ -227,7 +244,8 @@ export class CreativeAiAnalyzerService {
               provider: run.provider,
               model: run.model,
               effort: run.effort,
-              promptVersion: CREATIVE_AI_PROMPT_VERSION,
+              promptVersion: built.promptVersion,
+              analysisMode: built.mode,
               lens: run.creative.performanceStatus,
               kind: run.creative.kind,
               niche: run.creative.storeConfig?.aiNiche ?? null,

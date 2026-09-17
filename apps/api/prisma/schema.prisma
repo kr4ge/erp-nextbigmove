@@ -111,6 +111,9 @@ model Tenant {
   creativeMetaAdLinks                 CreativeMetaAdLink[]
   creativeReviewComments              CreativeReviewComment[]
   creativeAiRuns                      CreativeAiRun[]
+  creativeKnowledgeEntries            CreativeKnowledgeEntry[]
+  creativeAiPromptTemplates           CreativeAiPromptTemplate[]
+  creativeEnrollmentReviews           CreativeEnrollmentReview[]
   creativeAiPolicy                    CreativeAiPolicy?
   metaAdInsightDuplicateArchives      MetaAdInsightDuplicateArchive[]
   wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
@@ -422,6 +425,9 @@ model User {
   adStrategyEntries                         AdStrategyEntry[]              @relation("AdStrategyEntryCreatedBy")
   adLibraryEntries                          AdLibraryEntry[]               @relation("AdLibraryEntryCreatedBy")
   creativeAiRunsRequested                   CreativeAiRun[]                @relation("CreativeAiRunRequestedBy")
+  creativeKnowledgePromoted                 CreativeKnowledgeEntry[]       @relation("CreativeKnowledgePromotedBy")
+  creativeAiPromptTemplatesCreated          CreativeAiPromptTemplate[]     @relation("CreativeAiPromptTemplateCreatedBy")
+  creativeEnrollmentReviewsDecided          CreativeEnrollmentReview[]     @relation("CreativeEnrollmentReviewDecidedBy")
   creativeAiPoliciesUpdated                 CreativeAiPolicy[]             @relation("CreativeAiPolicyUpdatedBy")
 
   @@unique([email, tenantId])
@@ -1386,13 +1392,14 @@ model CreativeStoreConfig {
   /// perfume store and a supplement store need different domain knowledge even
   /// though the analysis method itself is identical.
   aiNiche           String    @default("GENERAL_MERCHANDISE")
-  /// Rules that apply only to this store's creatives, appended to the
-  /// workspace-wide house rules. Advertiser-maintained.
+  /// Rules that apply only to this store's creatives. Advertiser-maintained.
   aiStoreRules      String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  creatives Creative[]
+  creatives         Creative[]
+  knowledgeEntries  CreativeKnowledgeEntry[]
+  enrollmentReviews CreativeEnrollmentReview[]
 
   @@unique([tenantId, codePrefix])
   @@index([tenantId, active])
@@ -1458,12 +1465,14 @@ model Creative {
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
-  aliases         CreativeAlias[]
-  statusEvents    CreativeStatusEvent[]
-  metaAdLinks     CreativeMetaAdLink[]
-  reviewComments  CreativeReviewComment[]
-  strategyEntries CreativeStrategyEntry[]
-  aiRuns          CreativeAiRun[]
+  aliases           CreativeAlias[]
+  statusEvents      CreativeStatusEvent[]
+  metaAdLinks       CreativeMetaAdLink[]
+  reviewComments    CreativeReviewComment[]
+  strategyEntries   CreativeStrategyEntry[]
+  aiRuns            CreativeAiRun[]
+  knowledgeEntries  CreativeKnowledgeEntry[]
+  enrollmentReviews CreativeEnrollmentReview[]
 
   @@unique([tenantId, code])
   @@unique([storeConfigId, codeNumber])
@@ -1679,13 +1688,11 @@ model CreativeAiPolicy {
   /// Wall-clock ceiling for one analysis, in minutes.
   maxRunMinutes     Int                @default(15)
   allowRunOverrides Boolean            @default(true)
-  /// Advertiser-managed rules appended to every analysis prompt (brand
-  /// claims, market facts, banned wording). Null means the built-in default.
-  analysisHouseRules String?
-  updatedById       String?            @db.Uuid
-  updatedBy         User?              @relation("CreativeAiPolicyUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+
+  updatedById String?  @db.Uuid
+  updatedBy   User?    @relation("CreativeAiPolicyUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("creative_ai_policies")
 }
@@ -1695,46 +1702,273 @@ model CreativeAiPolicy {
 /// never returns that path to clients. GOOGLE_DRIVE is reserved for the next
 /// ingestion adapter and keeps the analysis pipeline storage-agnostic.
 model CreativeAiRun {
-  id                String               @id @default(uuid()) @db.Uuid
-  tenantId          String               @db.Uuid
-  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  creativeId        String               @db.Uuid
-  creative          Creative             @relation(fields: [creativeId], references: [id], onDelete: Cascade)
-  requestedById     String               @db.Uuid
-  requestedBy       User                 @relation("CreativeAiRunRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
-  status            CreativeAiRunStatus  @default(QUEUED)
-  sourceType        CreativeAiSourceType @default(LOCAL_UPLOAD)
-  provider          CreativeAiProvider   @default(CLAUDE)
-  model             String               @default("sonnet")
-  effort            CreativeAiEffort     @default(MEDIUM)
+  id                String                    @id @default(uuid()) @db.Uuid
+  tenantId          String                    @db.Uuid
+  tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creativeId        String                    @db.Uuid
+  creative          Creative                  @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  requestedById     String                    @db.Uuid
+  requestedBy       User                      @relation("CreativeAiRunRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  status            CreativeAiRunStatus       @default(QUEUED)
+  sourceType        CreativeAiSourceType      @default(LOCAL_UPLOAD)
+  provider          CreativeAiProvider        @default(CLAUDE)
+  model             String                    @default("sonnet")
+  effort            CreativeAiEffort          @default(MEDIUM)
   settingsSnapshot  Json?
   sourceFileName    String?
   sourceContentType String?
   sourceByteSize    Int?
   sourcePath        String?
   question          String?
-  dateStart         DateTime             @db.Date
-  dateEnd           DateTime             @db.Date
-  progress          Int                  @default(0)
-  stage             String               @default("Queued")
+  dateStart         DateTime                  @db.Date
+  dateEnd           DateTime                  @db.Date
+  progress          Int                       @default(0)
+  stage             String                    @default("Queued")
   queueJobId        String?
-  mediaHash         String?              @db.VarChar(64)
+  /// Which prompt judged this run, and why. Recorded because the two answer
+  /// different questions: a reader must know whether they are looking at a
+  /// performance verdict or a craft review.
+  analysisMode      String?
+  analysisModeNote  String?
+  /// The saved prompt version this run used. Null means the built-in default.
+  promptTemplateId  String?                   @db.Uuid
+  promptTemplate    CreativeAiPromptTemplate? @relation(fields: [promptTemplateId], references: [id], onDelete: SetNull)
+  mediaHash         String?                   @db.VarChar(64)
   mediaManifest     Json?
   metricsSnapshot   Json?
   analysisResult    Json?
   responseText      String?
   claudeSessionId   String?
-  warnings          String[]             @default([])
+  warnings          String[]                  @default([])
   errorMessage      String?
   startedAt         DateTime?
   completedAt       DateTime?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  knowledgeEntries  CreativeKnowledgeEntry[]
+  enrollmentReviews CreativeEnrollmentReview[] @relation("CreativeEnrollmentReviewRun")
 
   @@index([tenantId, requestedById, createdAt])
   @@index([tenantId, creativeId, createdAt])
   @@index([tenantId, status, createdAt])
   @@map("creative_ai_runs")
+}
+
+/// Which of the two analysis prompts a template is for. A creative with real
+/// Meta delivery gets the running analyst; one without gets the new-creative
+/// reviewer. The choice is made from the creative's own data, never by hand.
+enum CreativeAiPromptKind {
+  RUNNING_ANALYST
+  NEW_REVIEWER
+}
+
+/// One saved version of an analysis prompt.
+///
+/// Prompts are versioned the way code is: every edit is a new row, earlier
+/// rows stay, and each run records which version judged it. That is what lets
+/// someone read an old analysis and know exactly what the model was told, and
+/// roll back a wording change that turned out to hurt. Only one version per
+/// kind is active; none active means the built-in default runs.
+///
+/// The body is the advertiser's text. It may use {{VARIABLES}} the system
+/// fills at run time (store, product, the knowledge base, the library). The
+/// output contract stays in code, so a wording edit can never break what the
+/// ERP parses.
+model CreativeAiPromptTemplate {
+  id          String               @id @default(uuid()) @db.Uuid
+  tenantId    String               @db.Uuid
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind        CreativeAiPromptKind
+  version     Int
+  body        String
+  /// What changed and why, like a commit message.
+  note        String?
+  isActive    Boolean              @default(true)
+  createdById String?              @db.Uuid
+  createdBy   User?                @relation("CreativeAiPromptTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime             @default(now())
+
+  runs CreativeAiRun[]
+
+  @@unique([tenantId, kind, version])
+  @@index([tenantId, kind, isActive])
+  @@map("creative_ai_prompt_templates")
+}
+
+/// Why a creative entered the knowledge base. A knowledge entry is only ever
+/// created from a COMPLETED analysis, so the structural record always exists;
+/// this says what outcome the structure is evidence *for*.
+enum CreativeKnowledgeLabel {
+  WINNER
+  LOSER
+  INCONCLUSIVE
+}
+
+/// How the label was decided. Automatic labels come from reconciled spend and
+/// contribution; a human can override, and the override is never recomputed.
+enum CreativeKnowledgeLabelSource {
+  AUTOMATIC
+  MANUAL
+}
+
+/// How confidently the label can be attributed to THIS creative rather than to
+/// whatever else ran beside it. Revenue in the ERP attributes to a Meta
+/// campaign, so a creative that shared its campaign carries a weaker claim on
+/// the result. The knowledge base records this instead of hiding it: SOLE means
+/// the creative ran alone in its campaign and the outcome is unambiguously its
+/// own; SHARED means the campaign carried other creatives too.
+enum CreativeKnowledgeAttribution {
+  SOLE
+  SHARED
+  UNKNOWN
+}
+
+/// One analyzed creative promoted into a store's knowledge base.
+///
+/// This is the corpus the enrollment gate reasons over. Scope is always
+/// (tenant, store): a fragrance store and a supplement store must never inform
+/// each other's decisions, and store is the narrowest scope the advertiser
+/// actually curates. The row keeps a snapshot of the structural analysis rather
+/// than pointing at the run alone, so re-running or purging an analysis cannot
+/// silently change what the gate already learned from.
+model CreativeKnowledgeEntry {
+  id            String              @id @default(uuid()) @db.Uuid
+  tenantId      String              @db.Uuid
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeConfigId String              @db.Uuid
+  storeConfig   CreativeStoreConfig @relation(fields: [storeConfigId], references: [id], onDelete: Cascade)
+  creativeId    String              @db.Uuid
+  creative      Creative            @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  /// The analysis this entry was built from. Kept for provenance; the payload
+  /// below is the copy the gate reads.
+  runId         String?             @db.Uuid
+  run           CreativeAiRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  label          CreativeKnowledgeLabel
+  labelSource    CreativeKnowledgeLabelSource @default(AUTOMATIC)
+  attribution    CreativeKnowledgeAttribution @default(UNKNOWN)
+  /// Free-text reason a human gave when overriding, or the rule that fired.
+  labelRationale String?
+
+  /// The store's niche when this entry was captured. Kept on the row because a
+  /// store can be relabelled later and the entry should remember the context it
+  /// was judged in.
+  nicheSnapshot String
+
+  /// Frozen copy of the structural analysis: the six sections with their
+  /// timestamped findings. This is what makes the knowledge base a craft
+  /// library rather than a metrics table.
+  structure Json
+  /// Frozen copy of the economics behind the label (spend, delivered orders,
+  /// net contribution, rates) so a reader can audit why it was called.
+  metrics   Json?
+  /// Short retrieval digest written at promotion time: the construction
+  /// pattern in a few lines. Keeps gate prompts small when a store has many
+  /// entries.
+  digest    String?
+
+  promotedById String?  @db.Uuid
+  promotedBy   User?    @relation("CreativeKnowledgePromotedBy", fields: [promotedById], references: [id], onDelete: SetNull)
+  promotedAt   DateTime @default(now())
+  /// Soft-retire an entry without deleting its history. Retired entries stop
+  /// informing the gate.
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reviews CreativeEnrollmentReview[]
+
+  /// One entry per creative: promoting twice updates in place.
+  @@unique([tenantId, creativeId])
+  @@index([tenantId, storeConfigId, active, label])
+  @@index([tenantId, storeConfigId, promotedAt])
+  @@map("creative_knowledge_entries")
+}
+
+enum CreativeEnrollmentReviewStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// What the gate concluded. REVISE exists because rejecting a fixable creative
+/// wastes the work that made it; most real feedback is "change these two things".
+enum CreativeEnrollmentDecision {
+  APPROVE
+  REVISE
+  REJECT
+}
+
+/// A human's ruling on the gate's recommendation. The gate never publishes on
+/// its own: this field is what authorizes anything downstream, and it starts
+/// PENDING for every review.
+enum CreativeEnrollmentReviewOutcome {
+  PENDING
+  ACCEPTED
+  OVERRIDDEN
+}
+
+/// One pass of the enrollment gate over a newly enrolled creative.
+///
+/// The gate compares the creative's structure against its own store's knowledge
+/// entries and recommends approve, revise or reject. It is advisory by
+/// construction: `outcome` stays PENDING until a person rules, and nothing may
+/// publish to Meta on the recommendation alone. `shadow` marks runs made while
+/// the gate is still being calibrated, so its accuracy can be measured against
+/// human decisions before it is trusted.
+model CreativeEnrollmentReview {
+  id            String              @id @default(uuid()) @db.Uuid
+  tenantId      String              @db.Uuid
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeConfigId String              @db.Uuid
+  storeConfig   CreativeStoreConfig @relation(fields: [storeConfigId], references: [id], onDelete: Cascade)
+  creativeId    String              @db.Uuid
+  creative      Creative            @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  /// The analysis of the creative under review.
+  runId         String?             @db.Uuid
+  run           CreativeAiRun?      @relation("CreativeEnrollmentReviewRun", fields: [runId], references: [id], onDelete: SetNull)
+
+  status          CreativeEnrollmentReviewStatus @default(QUEUED)
+  decision        CreativeEnrollmentDecision?
+  /// 0-100. Low confidence should route to a person even when the gate is
+  /// otherwise trusted.
+  confidence      Int?
+  /// The gate's reasoning, each point citing a knowledge entry or a timestamp.
+  rationale       Json?
+  /// What to change, when the decision is REVISE.
+  requiredChanges Json?
+
+  /// True while the gate is being calibrated: it records what it would have
+  /// decided and changes nothing.
+  shadow     Boolean  @default(true)
+  /// Which knowledge entries informed this decision, for audit.
+  entryIds   String[] @default([]) @db.Uuid
+  /// How many entries existed for the store at decision time. A decision made
+  /// against a thin corpus deserves less weight, and this records that.
+  corpusSize Int      @default(0)
+
+  outcome       CreativeEnrollmentReviewOutcome @default(PENDING)
+  decidedById   String?                         @db.Uuid
+  decidedBy     User?                           @relation("CreativeEnrollmentReviewDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt     DateTime?
+  decisionNotes String?
+
+  knowledgeEntryId String?                 @db.Uuid
+  knowledgeEntry   CreativeKnowledgeEntry? @relation(fields: [knowledgeEntryId], references: [id], onDelete: SetNull)
+
+  errorMessage String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([tenantId, storeConfigId, createdAt])
+  @@index([tenantId, creativeId, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, outcome, createdAt])
+  @@map("creative_enrollment_reviews")
 }
 
 // ============================================================================

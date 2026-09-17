@@ -27,12 +27,12 @@ import {
   ListCreativeAiRunsQueryDto,
   StartCreativeAiRunDto,
   SubmitCreativeAiProviderCodeDto,
-  UpdateCreativeAiHouseRulesDto,
   UpdateCreativeAiPolicyDto,
-  UpdateCreativeAiStoreContextDto,
+  UpdateCreativePromptDto,
 } from './dto/creative-ai-run.dto';
 import { CreativeAiRunService } from './services/creative-ai-run.service';
 import { CreativeAiPolicyService } from './services/creative-ai-policy.service';
+import { CreativePromptTemplateService, isPromptKind } from './services/creative-prompt-template.service';
 import type { CreativeActor } from './types/creative-actor.type';
 
 type CreativeRequest = { user: CreativeActor };
@@ -49,6 +49,7 @@ export class CreativeAiController {
   constructor(
     private readonly runs: CreativeAiRunService,
     private readonly policy: CreativeAiPolicyService,
+    private readonly prompts: CreativePromptTemplateService,
   ) {}
 
   private static buildUploadRoot() {
@@ -135,24 +136,6 @@ export class CreativeAiController {
     return this.policy.update(req.user, body);
   }
 
-  /** The analysis prompt's house rules: advertiser-owned, not tenant-admin-owned. */
-  @Patch('config/house-rules')
-  @Permissions('creative_agent.performance.manage')
-  updateHouseRules(@Request() req: CreativeRequest, @Body() body: UpdateCreativeAiHouseRulesDto) {
-    return this.policy.updateHouseRules(req.user, body);
-  }
-
-  /** Which niche pack and store-only rules apply to one store's creatives. */
-  @Patch('config/stores/:storeConfigId')
-  @Permissions('creative_agent.performance.manage')
-  updateStoreContext(
-    @Request() req: CreativeRequest,
-    @Param('storeConfigId', ParseUUIDPipe) storeConfigId: string,
-    @Body() body: UpdateCreativeAiStoreContextDto,
-  ) {
-    return this.policy.updateStoreContext(req.user, storeConfigId, body);
-  }
-
   @Post('providers/:provider/test')
   @Permissions('creative_agent.ai.manage')
   testProvider(@Request() req: CreativeRequest, @Param('provider') provider: string) {
@@ -190,5 +173,52 @@ export class CreativeAiController {
   @Permissions('creative_agent.ai.manage')
   logoutProvider(@Request() req: CreativeRequest, @Param('provider') provider: string) {
     return this.policy.logout(req.user, provider);
+  }
+
+  /**
+   * The two analysis prompts. Reading them needs the same permission as the
+   * settings page; changing them belongs to whoever manages creative
+   * performance, since the wording decides what every analysis says.
+   */
+  @Get('config/prompts')
+  @Permissions('creative_agent.ai.use', 'creative_agent.ai.manage')
+  listPrompts(@Request() req: CreativeRequest) {
+    return this.policy.prompts(req.user);
+  }
+
+  @Get('config/prompts/:kind/versions')
+  @Permissions('creative_agent.ai.use', 'creative_agent.ai.manage')
+  promptVersions(@Request() req: CreativeRequest, @Param('kind') kind: string) {
+    return this.prompts.versions(req.user, this.promptKind(kind));
+  }
+
+  @Patch('config/prompts/:kind')
+  @Permissions('creative_agent.performance.manage')
+  updatePrompt(@Request() req: CreativeRequest, @Param('kind') kind: string, @Body() body: UpdateCreativePromptDto) {
+    return this.prompts.update(req.user, this.promptKind(kind), body);
+  }
+
+  @Post('config/prompts/:kind/reset')
+  @Permissions('creative_agent.performance.manage')
+  resetPrompt(@Request() req: CreativeRequest, @Param('kind') kind: string) {
+    return this.prompts.reset(req.user, this.promptKind(kind));
+  }
+
+  @Post('config/prompts/:kind/versions/:version/activate')
+  @Permissions('creative_agent.performance.manage')
+  activatePromptVersion(
+    @Request() req: CreativeRequest,
+    @Param('kind') kind: string,
+    @Param('version') version: string,
+  ) {
+    const parsed = Number.parseInt(version, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) throw new BadRequestException('Version must be a positive number');
+    return this.prompts.activate(req.user, this.promptKind(kind), parsed);
+  }
+
+  private promptKind(value: string) {
+    const upper = value.toUpperCase();
+    if (!isPromptKind(upper)) throw new BadRequestException('Prompt kind must be RUNNING_ANALYST or NEW_REVIEWER');
+    return upper;
   }
 }

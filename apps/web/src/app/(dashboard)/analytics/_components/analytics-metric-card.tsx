@@ -2,6 +2,7 @@
 
 import { type ReactNode } from 'react';
 import { Spinner } from '@/components/ui/spinner';
+import { FloatingTooltip } from '@/components/ui/floating-tooltip';
 import { ArrowDown, ArrowUp, Info } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { formatMetricValue } from '../_utils/metrics';
@@ -91,16 +92,14 @@ function TooltipIcon({ label, content, mode }: { label: string; content: ReactNo
   }
 
   return (
-    <span
-      className="relative group inline-flex cursor-help"
-      tabIndex={0}
-      aria-label={`${label} formula`}
+    <FloatingTooltip
+      ariaLabel={`${label} formula`}
+      content={content}
+      triggerClassName="group inline-flex cursor-help rounded-full outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+      contentClassName="w-80 text-xs leading-relaxed text-foreground"
     >
       <Info className="h-4 w-4 text-slate-400 group-hover:text-emerald-600 group-focus-within:text-emerald-600" />
-      <div className="absolute left-1/2 top-full z-30 mt-2 hidden w-80 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] leading-relaxed text-slate-700 shadow-lg group-hover:block group-focus-within:block">
-        {content}
-      </div>
-    </span>
+    </FloatingTooltip>
   );
 }
 

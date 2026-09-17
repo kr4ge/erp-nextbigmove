@@ -8,15 +8,12 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CREATIVE_AGENT_PERMISSIONS } from '../creative-agent.constants';
 import {
   StartCreativeAiRunDto,
-  UpdateCreativeAiHouseRulesDto,
   UpdateCreativeAiPolicyDto,
-  UpdateCreativeAiStoreContextDto,
 } from '../dto/creative-ai-run.dto';
-import { CREATIVE_AI_LENSES, DEFAULT_HOUSE_RULES } from '../prompts/creative-ai-analysis.prompt';
-import { creativeAiNicheOptions, isCreativeAiNiche } from '../prompts/creative-ai-niches';
 import type { CreativeActor, CreativeAccessContext } from '../types/creative-actor.type';
 import { AiGatewayAdminClientService, type AiProviderKey } from './ai-gateway-admin-client.service';
 import { CreativeAccessService } from './creative-access.service';
+import { CreativePromptTemplateService } from './creative-prompt-template.service';
 
 export type ResolvedCreativeAiSettings = {
   provider: CreativeAiProvider;
@@ -34,7 +31,6 @@ const FALLBACK_POLICY = {
   maxTurns: 12,
   maxRunMinutes: 15,
   allowRunOverrides: true,
-  analysisHouseRules: null as string | null,
 };
 
 @Injectable()
@@ -43,6 +39,7 @@ export class CreativeAiPolicyService {
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
     private readonly gateway: AiGatewayAdminClientService,
+    private readonly templates: CreativePromptTemplateService,
   ) {}
 
   async get(actor: CreativeActor) {
@@ -53,110 +50,24 @@ export class CreativeAiPolicyService {
     return {
       policy: this.serializePolicy(policy),
       providers,
-      prompt: {
-        houseRules: policy.analysisHouseRules ?? null,
-        defaultHouseRules: DEFAULT_HOUSE_RULES,
-        lenses: CREATIVE_AI_LENSES,
-        niches: creativeAiNicheOptions(),
-        stores: await this.storeContexts(context.tenantId),
-      },
+      // The two analysis prompts, as editable versioned text. The output
+      // contract stays in code so a wording edit cannot break what is parsed.
+      prompt: await this.templates.describeAll(context.tenantId),
       permissions: {
         canConfigure: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.AI_MANAGE),
         canManageConnections: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.AI_MANAGE),
         canOverrideRuns: policy.allowRunOverrides,
         // The analysis prompt belongs to the advertising team, not the tenant admin.
-        canEditHouseRules: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.PERFORMANCE_MANAGE),
+        canEditPrompts: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.PERFORMANCE_MANAGE),
       },
     };
   }
 
-  /**
-   * House rules are the only editable part of the analysis prompt and are
-   * owned by whoever manages creative performance (the advertiser role).
-   */
-  async updateHouseRules(actor: CreativeActor, dto: UpdateCreativeAiHouseRulesDto) {
+  /** The two prompts alone, for the settings page's refresh. */
+  async prompts(actor: CreativeActor) {
     const context = await this.access.resolve(actor);
-    this.access.require(context, CREATIVE_AGENT_PERMISSIONS.PERFORMANCE_MANAGE);
-    const houseRules = dto.houseRules.trim() || null;
-    const saved = await this.prisma.$transaction(async (tx) => {
-      const policy = await tx.creativeAiPolicy.upsert({
-        where: { tenantId: context.tenantId },
-        create: {
-          tenantId: context.tenantId,
-          defaultProvider: FALLBACK_POLICY.defaultProvider,
-          claudeModel: FALLBACK_POLICY.claudeModel,
-          codexModel: FALLBACK_POLICY.codexModel,
-          defaultEffort: FALLBACK_POLICY.defaultEffort,
-          maxTurns: FALLBACK_POLICY.maxTurns,
-          maxRunMinutes: FALLBACK_POLICY.maxRunMinutes,
-          allowRunOverrides: FALLBACK_POLICY.allowRunOverrides,
-          analysisHouseRules: houseRules,
-          updatedById: context.userId,
-        },
-        update: { analysisHouseRules: houseRules, updatedById: context.userId },
-      });
-      await tx.auditLog.create({
-        data: {
-          tenantId: context.tenantId,
-          userId: context.userId,
-          action: 'creative.ai.house_rules.update',
-          resource: 'CreativeAiPolicy',
-          resourceId: context.tenantId,
-          changes: { characters: houseRules?.length ?? 0, cleared: houseRules === null },
-        },
-      });
-      return policy;
-    });
-    return { houseRules: saved.analysisHouseRules ?? null, defaultHouseRules: DEFAULT_HOUSE_RULES };
-  }
-
-  /** Stores with their niche pack and store-only rules, for the settings page. */
-  private async storeContexts(tenantId: string) {
-    const stores = await this.prisma.creativeStoreConfig.findMany({
-      where: { tenantId, active: true },
-      select: { id: true, storeNameSnapshot: true, codePrefix: true, aiNiche: true, aiStoreRules: true },
-      orderBy: { storeNameSnapshot: 'asc' },
-    });
-    return stores.map((store) => ({
-      id: store.id,
-      name: store.storeNameSnapshot,
-      codePrefix: store.codePrefix,
-      niche: store.aiNiche,
-      storeRules: store.aiStoreRules ?? null,
-    }));
-  }
-
-  /** The niche pack and rules for one store. Advertiser-owned, like house rules. */
-  async updateStoreContext(actor: CreativeActor, storeConfigId: string, dto: UpdateCreativeAiStoreContextDto) {
-    const context = await this.access.resolve(actor);
-    this.access.require(context, CREATIVE_AGENT_PERMISSIONS.PERFORMANCE_MANAGE);
-    if (!isCreativeAiNiche(dto.niche)) {
-      throw new BadRequestException('Unknown product category');
-    }
-    const store = await this.prisma.creativeStoreConfig.findFirst({
-      where: { id: storeConfigId, tenantId: context.tenantId },
-      select: { id: true, storeNameSnapshot: true },
-    });
-    if (!store) throw new BadRequestException('Store not found in this tenant');
-
-    const storeRules = dto.storeRules?.trim() || null;
-    await this.prisma.$transaction([
-      this.prisma.creativeStoreConfig.update({
-        where: { id: store.id },
-        data: { aiNiche: dto.niche, aiStoreRules: storeRules },
-      }),
-      this.prisma.auditLog.create({
-        data: {
-          tenantId: context.tenantId,
-          userId: context.userId,
-          action: 'creative.ai.store_context.update',
-          resource: 'CreativeStoreConfig',
-          resourceId: store.id,
-          changes: { store: store.storeNameSnapshot, niche: dto.niche, storeRuleCharacters: storeRules?.length ?? 0 },
-        },
-      }),
-    ]);
-    return { stores: await this.storeContexts(context.tenantId) };
+    this.access.require(context, CREATIVE_AGENT_PERMISSIONS.AI_USE, CREATIVE_AGENT_PERMISSIONS.AI_MANAGE);
+    return this.templates.describeAll(context.tenantId);
   }
 
   async update(actor: CreativeActor, dto: UpdateCreativeAiPolicyDto) {

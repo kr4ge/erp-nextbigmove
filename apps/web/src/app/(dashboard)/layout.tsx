@@ -21,6 +21,7 @@ import {
   Moon,
   Sun,
   Video,
+  BookOpen,
   FolderCheck,
   Sparkles,
 } from 'lucide-react';
@@ -137,6 +138,12 @@ const baseNavigation: NavLink[] = [
     label: 'Video Registry',
     description: 'Meta ads waiting to be enrolled',
     icon: <Video className={iconClasses} />,
+  },
+  {
+    href: '/knowledge-base',
+    label: 'Knowledge Base',
+    description: 'What wins and loses, per store',
+    icon: <BookOpen className={iconClasses} />,
   },
   {
     href: '/strategy-log',
@@ -342,6 +349,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         if (link.href === '/creative-insights') return canShowCreativeWorkspace && canReadCreative ? [link] : [];
         if (link.href === '/assets') return canShowCreativeWorkspace && canShowAssets ? [link] : [];
         if (link.href === '/video-registry') return canShowCreativeWorkspace && canShowVideoRegistry ? [link] : [];
+        // The library is scoped per store and meant to be studied, so anyone who
+        // can read creatives can read it. Curating it needs ai.manage, enforced
+        // by the API rather than by hiding the page.
+        if (link.href === '/knowledge-base') return canShowCreativeWorkspace && canReadCreative ? [link] : [];
         // Unlike Creative Insights, the log is deliberately open to read_all too:
         // a manager reading what the team changed is the point of keeping it.
         if (link.href === '/strategy-log') {

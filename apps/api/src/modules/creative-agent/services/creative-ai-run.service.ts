@@ -360,6 +360,11 @@ export class CreativeAiRunService {
       mediaHash: run.mediaHash,
       mediaManifest: run.mediaManifest,
       metricsSnapshot: run.metricsSnapshot,
+      // Which of the two prompts judged this run, and why. A reader must know
+      // whether they are looking at a performance verdict or a craft review.
+      analysisMode: run.analysisMode ?? null,
+      analysisModeNote: run.analysisModeNote ?? null,
+      promptTemplateId: run.promptTemplateId ?? null,
       result: run.analysisResult,
       responseText: run.responseText,
       warnings: run.warnings,

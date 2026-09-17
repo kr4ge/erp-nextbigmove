@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, type ReactNode } from 'react';
+import { FloatingTooltip } from '@/components/ui/floating-tooltip';
 import { RATE_TONE_TEXT, type RateTone } from '../_utils/creative-overview-format';
 
 /**
@@ -11,19 +12,13 @@ import { RATE_TONE_TEXT, type RateTone } from '../_utils/creative-overview-forma
 
 export function InfoTip({ text }: { text: string }) {
   return (
-    <span
-      tabIndex={0}
-      className="group relative inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-border/70 text-xs-tight font-normal normal-case leading-none text-faint outline-none transition-colors hover:border-primary hover:text-primary focus-visible:border-primary focus-visible:text-primary"
-      aria-label={text}
+    <FloatingTooltip
+      ariaLabel={text}
+      content={text}
+      triggerClassName="inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-border/70 text-xs-tight font-normal normal-case leading-none text-faint outline-none transition-colors hover:border-primary hover:text-primary focus-visible:border-primary focus-visible:text-primary focus-visible:ring-2 focus-visible:ring-primary/20"
     >
       i
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 hidden w-60 -translate-x-1/2 rounded-lg border border-border bg-surface px-3 py-2 text-left text-xs-tight font-normal normal-case leading-snug tracking-normal text-muted shadow-card group-hover:block group-focus-visible:block"
-      >
-        {text}
-      </span>
-    </span>
+    </FloatingTooltip>
   );
 }
 
