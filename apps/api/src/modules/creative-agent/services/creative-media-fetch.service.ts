@@ -17,11 +17,15 @@ import { pipeline } from 'stream/promises';
  *
  * How each source is read, and why:
  *
- *  - Facebook video. The public post page, requested with an ordinary browser
- *    identity, carries the player's own CDN links in inline JSON
- *    (browser_native_hd_url and friends). Those download directly. Requested
- *    as a crawler, the same page hands back a proxy that serves HTML, so the
- *    browser identity is the one that works.
+ *  - Facebook video. The public post page carries the player's own CDN links
+ *    in inline JSON (browser_native_hd_url and friends), which download
+ *    directly. Which identity gets that page depends on where the request
+ *    comes from, and this was measured rather than assumed: from the
+ *    production server Facebook refuses browser identities with HTTP 400 but
+ *    answers a plain client identity with the full page; from a residential
+ *    address the browser identity works. Crawler identities get the page too,
+ *    but with proxy links that serve HTML, never video. So the plain identity
+ *    is tried first, the browser identity second, and proxy links are ignored.
  *  - Facebook image. The page's og:image is the full picture, the same tag the
  *    thumbnail capture already relies on.
  *  - Google Drive. A file shared as "anyone with the link" downloads from the
@@ -47,6 +51,10 @@ export type FetchedMedia = {
 const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const CRAWLER_UA = 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)';
+/** A plain client identity: the one Facebook answers from datacenter addresses. */
+const PLAIN_UA = 'curl/8.5.0';
+/** Facebook's crawler-only media proxy. It serves HTML, so it is never a download candidate. */
+const PROXY_HOST = /^https:\/\/lookaside\.fbsbx\.com\//i;
 
 const FACEBOOK_HOST = /^https:\/\/(?:[a-z0-9-]+\.)?(?:facebook\.com|fb\.com|fb\.watch)\//i;
 const DRIVE_HOST = /^https:\/\/(?:drive|docs)\.google\.com\//i;
@@ -90,7 +98,7 @@ export function findFacebookVideoUrls(html: string): string[] {
       } catch {
         continue;
       }
-      if (/^https:\/\//i.test(url) && !found.includes(url)) found.push(url);
+      if (/^https:\/\//i.test(url) && !PROXY_HOST.test(url) && !found.includes(url)) found.push(url);
     }
   }
   return found;
@@ -219,13 +227,15 @@ export class CreativeMediaFetchService {
     if (kind === 'STATIC') {
       // The crawler identity is what the thumbnail capture uses and it reliably
       // returns the Open Graph tags; fall back to the browser view if needed.
-      const crawlerHtml = await this.fetchPage(postUrl, CRAWLER_UA);
-      let imageUrl = crawlerHtml ? findFacebookImageUrl(crawlerHtml) : null;
+      const crawler = await this.fetchPage(postUrl, CRAWLER_UA);
+      let imageUrl = 'html' in crawler ? findFacebookImageUrl(crawler.html) : null;
+      let failure = 'failure' in crawler ? crawler.failure : null;
       if (!imageUrl) {
-        const browserHtml = await this.fetchPage(postUrl, BROWSER_UA);
-        imageUrl = browserHtml ? findFacebookImageUrl(browserHtml) : null;
+        const browser = await this.fetchPage(postUrl, BROWSER_UA);
+        imageUrl = 'html' in browser ? findFacebookImageUrl(browser.html) : null;
+        failure = failure ?? ('failure' in browser ? browser.failure : null);
       }
-      if (!imageUrl) throw new Error('the post did not expose an image (is it public?)');
+      if (!imageUrl) throw new Error(failure ?? 'the post did not expose an image (is it public?)');
       return this.download(imageUrl, {
         kind,
         maxBytes: this.maxImageBytes,
@@ -236,30 +246,44 @@ export class CreativeMediaFetchService {
       });
     }
 
-    const html = await this.fetchPage(postUrl, BROWSER_UA);
-    if (!html) throw new Error('the post page could not be loaded');
-    if (/id="login_form"|\/login\/\?next=/.test(html.slice(0, 20_000))) {
-      throw new Error('Facebook asks for a login to view this post, so it is not public');
-    }
-    const candidates = findFacebookVideoUrls(html);
-    if (candidates.length === 0) throw new Error('the post did not expose a video file (is it public, and a video post?)');
-
-    let lastError: unknown = null;
-    for (const url of candidates) {
-      try {
-        return await this.download(url, {
-          kind,
-          maxBytes: this.maxVideoBytes,
-          sourceType: 'FACEBOOK_POST',
-          sourceUrl: postUrl,
-          headers: { 'user-agent': BROWSER_UA, referer: 'https://www.facebook.com/' },
-          nameHint: 'facebook-post',
-        });
-      } catch (error) {
-        lastError = error;
+    // Identities in the order that works from a server first, then from a
+    // desk. The first page that yields real CDN links is used.
+    const failures: string[] = [];
+    for (const pageIdentity of [PLAIN_UA, BROWSER_UA]) {
+      const page = await this.fetchPage(postUrl, pageIdentity);
+      if ('failure' in page) {
+        failures.push(page.failure);
+        continue;
       }
+      if (/id="login_form"|\/login\/\?next=/.test(page.html.slice(0, 20_000))) {
+        failures.push('Facebook asks for a login to view this post, so it is not public');
+        continue;
+      }
+      const candidates = findFacebookVideoUrls(page.html);
+      if (candidates.length === 0) {
+        failures.push('the page did not expose a video file (is it public, and a video post?)');
+        continue;
+      }
+      let lastError: unknown = null;
+      for (const url of candidates) {
+        for (const downloadIdentity of [...new Set([pageIdentity, BROWSER_UA])]) {
+          try {
+            return await this.download(url, {
+              kind,
+              maxBytes: this.maxVideoBytes,
+              sourceType: 'FACEBOOK_POST',
+              sourceUrl: postUrl,
+              headers: { 'user-agent': downloadIdentity, referer: 'https://www.facebook.com/' },
+              nameHint: 'facebook-post',
+            });
+          } catch (error) {
+            lastError = error;
+          }
+        }
+      }
+      failures.push(`every video link on the post failed (${message(lastError)})`);
     }
-    throw new Error(`every video link on the post failed (${message(lastError)})`);
+    throw new Error([...new Set(failures)].join('; '));
   }
 
   async fetchGoogleDrive(driveUrl: string, kind: 'VIDEO' | 'STATIC'): Promise<FetchedMedia> {
@@ -297,14 +321,23 @@ export class CreativeMediaFetchService {
     return this.download(second.toString(), { kind, maxBytes, sourceType: 'GOOGLE_DRIVE', sourceUrl: driveUrl, headers, nameHint: `drive-${fileId}` });
   }
 
-  private async fetchPage(url: string, userAgent: string): Promise<string | null> {
-    const response = await this.fetchWithTimeout(
+  /**
+   * Load a page and say precisely why when it cannot be loaded. "Could not be
+   * loaded" hides the one fact that decides the fix: a 4xx from Facebook means
+   * the server's address is being refused, a timeout means the network, a
+   * redirect to /login means the post is not public.
+   */
+  private async fetchPage(url: string, userAgent: string): Promise<{ html: string } | { failure: string }> {
+    const attempt = await this.fetchDetailed(
       url,
       { headers: { 'user-agent': userAgent, accept: 'text/html,application/xhtml+xml', 'accept-language': 'en-US,en;q=0.9' } },
       this.pageTimeoutMs,
     );
-    if (!response?.ok) return null;
-    return response.text();
+    if ('error' in attempt) return { failure: attempt.error };
+    const response = attempt.response;
+    if (/\/login\/?\?|\/checkpoint\//i.test(response.url)) return { failure: `Facebook redirected to ${new URL(response.url).pathname}, so the post is not public` };
+    if (!response.ok) return { failure: `Facebook answered HTTP ${response.status} for the post page (final URL ${new URL(response.url).host})` };
+    return { html: await response.text() };
   }
 
   private async download(
@@ -372,6 +405,22 @@ export class CreativeMediaFetchService {
 
   private tmpDir() {
     return resolve(process.env.CREATIVE_AI_UPLOAD_TMP_DIR || join(process.cwd(), 'tmp', 'creative-ai-uploads'));
+  }
+
+  private async fetchDetailed(url: string, init: RequestInit, timeoutMs: number): Promise<{ response: Response } | { error: string }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return { response: await fetch(url, { ...init, signal: controller.signal, redirect: 'follow' }) };
+    } catch (error) {
+      const text = message(error);
+      const cause = (error as { cause?: { code?: string; message?: string } })?.cause;
+      const detail = cause?.code ?? cause?.message ?? '';
+      if (controller.signal.aborted) return { error: `the request timed out after ${Math.round(timeoutMs / 1000)} s` };
+      return { error: `network error: ${detail || text}` };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response | null> {

@@ -55,6 +55,14 @@ describe('findFacebookVideoUrls', () => {
     ]);
   });
 
+  it('ignores the crawler-only proxy links, which serve HTML instead of video', () => {
+    // Requested as a crawler, the page lists lookaside.fbsbx.com proxies. From
+    // every address tested they answer with an HTML page, so treating them as
+    // downloads would only produce a confusing "not a video file" failure.
+    const proxied = '"browser_native_hd_url":"https:\\/\\/lookaside.fbsbx.com\\/lookaside\\/crawler\\/media\\/?media_id=1"';
+    expect(findFacebookVideoUrls(proxied)).toEqual([]);
+  });
+
   it('finds nothing on a page with no player data', () => {
     expect(findFacebookVideoUrls('<html><body>login</body></html>')).toEqual([]);
   });
