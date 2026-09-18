@@ -13,13 +13,25 @@ import type { PromptVariable } from './creative-prompt-template';
  * Settings; every edit is a new version and each run records the version it
  * used. The output schema is not editable: the ERP parses it.
  */
-export const RUNNING_ANALYST_PROMPT_VERSION = 2;
+export const RUNNING_ANALYST_PROMPT_VERSION = 3;
 
 export const RUNNING_ANALYST_VARIABLES: PromptVariable[] = [
   { token: 'STORE_NAME', description: 'The store this creative belongs to.' },
   { token: 'PRODUCT_NAME', description: 'The product the creative advertises, as registered.' },
   { token: 'CREATIVE_CODE', description: 'The registry code, e.g. OW-V0002.' },
   { token: 'PERIOD', description: 'The performance window being analysed, e.g. 2026-08-19 to 2026-09-17.' },
+  {
+    token: 'STORE_TARGETS',
+    description: "The store's target KPIs as a block: CPP, AR%, cancellation and RTS ceilings, hook, hold and CTR benchmarks. Set per store in Integrations, Stores. Always included.",
+    required: true,
+  },
+  { token: 'TARGET_CPP', description: 'Target cost per purchase for the store, or "not set".' },
+  { token: 'TARGET_AR_PCT', description: 'Target advertising ratio for the store, or "not set".' },
+  { token: 'MAX_CANCELLATION_RATE', description: 'Maximum acceptable cancellation rate, or "not set".' },
+  { token: 'MAX_RTS_RATE', description: 'Maximum acceptable return-to-sender rate, or "not set".' },
+  { token: 'TARGET_HOOK_RATE', description: 'Hook rate benchmark, or "not set".' },
+  { token: 'TARGET_HOLD_RATE', description: 'Hold rate benchmark, or "not set".' },
+  { token: 'TARGET_CTR', description: 'Link CTR benchmark, or "not set".' },
 ];
 
 export const DEFAULT_RUNNING_ANALYST_PROMPT = `You are the advertising analyst inside our ERP. Your job is to review creatives (videos and images) that are already running in Meta Ads Manager and tell the team, for each one, whether to SCALE, WATCH, or KILL it, with the evidence behind the call. You also record what each creative teaches us, because those records become the knowledge base used later to review new creatives.
@@ -60,19 +72,18 @@ For image creatives, hook rate and hold rate do not apply. Use CTR as the only d
 </metrics>
 
 <thresholds>
-Keep one threshold table per product. Fill these in for every product you advertise. If the product being analysed ({{PRODUCT_NAME}}) has no table below, say so, return WATCH with reason NO_THRESHOLDS, and do not borrow thresholds from another product.
+The targets below are set per store in the ERP (Integrations, Stores, Creative targets) and filled in automatically for {{STORE_NAME}}. Judge this creative against them and nothing else; never borrow numbers from another store or invent them.
 
-Product: (product name exactly as registered)
-- Target CPP:
-- Target AR%:
-- Maximum acceptable cancellation rate:
-- Maximum acceptable RTS rate:
-- Benchmarks for diagnostics (hook rate / hold rate / CTR):
-- Minimum spend before any verdict: (e.g. 2× target CPP)
-- Minimum orders before SCALE is possible:
-- Minimum orders with final status before the RTS rate is trusted:
-- Typical days from order to final status:
-- Budget increase per scaling step:
+{{STORE_TARGETS}}
+
+If Target CPP or Target AR% reads "not set", you cannot reach SCALE or KILL: return WATCH with reason NO_THRESHOLDS and name the missing targets so the team can set them. A diagnostic benchmark that reads "not set" simply means you describe that metric without comparing it.
+
+Sufficiency rules:
+- Minimum spend before any verdict: 2× Target CPP.
+- Minimum orders before SCALE is possible: 10.
+- Minimum orders with final status before the RTS rate is trusted: 20.
+- Typical days from order to final status: 10.
+- Budget increase per scaling step: 20%.
 </thresholds>
 
 <decision_rules>

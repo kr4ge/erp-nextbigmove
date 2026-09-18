@@ -10,6 +10,7 @@ import {
 } from '../prompts/creative-prompt-router';
 import { renderCorpus } from '../utils/creative-knowledge-structure';
 import { CreativePromptTemplateService } from './creative-prompt-template.service';
+import { CreativeStoreTargetService, renderStoreTargets, storeTargetVariables } from './creative-store-target.service';
 
 /**
  * Assembles the prompt a run receives.
@@ -24,6 +25,7 @@ export class CreativePromptContextService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly templates: CreativePromptTemplateService,
+    private readonly storeTargets: CreativeStoreTargetService,
   ) {}
 
   async build(input: {
@@ -59,6 +61,15 @@ export class CreativePromptContextService {
       CREATIVE_CODE: creative.code,
       PERIOD: input.period ?? 'not applicable',
     };
+
+    if (mode === 'RUNNING_ANALYST') {
+      // The store's definition of a winner, written down once and handed to
+      // every analysis of its creatives. A store with nothing set is told so
+      // in words, which is what makes the prompt return NO_THRESHOLDS.
+      const targets = await this.storeTargets.forStore(input.tenantId, creative.storeConfigId);
+      variables.STORE_TARGETS = renderStoreTargets(creative.storeConfig.storeNameSnapshot, targets);
+      Object.assign(variables, storeTargetVariables(targets));
+    }
 
     if (mode === 'NEW_REVIEWER') {
       // The corpus is the whole store, every product in it. How a creative is

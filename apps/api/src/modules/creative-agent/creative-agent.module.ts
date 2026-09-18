@@ -42,10 +42,12 @@ import { ClaudeboxClientService } from './services/claudebox-client.service';
 import { AiGatewayAdminClientService } from './services/ai-gateway-admin-client.service';
 import { CreativeAiPolicyService } from './services/creative-ai-policy.service';
 import { CreativeKnowledgeController } from './creative-knowledge.controller';
+import { CreativeStoreTargetController } from './creative-store-target.controller';
 import { CreativeKnowledgeService } from './services/creative-knowledge.service';
 import { CreativePromptContextService } from './services/creative-prompt-context.service';
 import { CreativePromptTemplateService } from './services/creative-prompt-template.service';
 import { CreativeMediaFetchService } from './services/creative-media-fetch.service';
+import { CreativeStoreTargetService } from './services/creative-store-target.service';
 import { CreativeEnrollmentReviewService } from './services/creative-enrollment-review.service';
 import { CreativeAiMaintenanceService } from './services/creative-ai-maintenance.service';
 import { CreativeAiProcessor } from './processors/creative-ai.processor';
@@ -74,6 +76,7 @@ import { isCreativeAiEnabled } from './utils/creative-ai-enabled';
     CreativeStrategyController,
     CreativeOptionsController,
     CreativeKnowledgeController,
+    CreativeStoreTargetController,
   ],
   providers: [
     PermissionsGuard,
@@ -106,6 +109,7 @@ import { isCreativeAiEnabled } from './utils/creative-ai-enabled';
     CreativePromptContextService,
     CreativePromptTemplateService,
     CreativeMediaFetchService,
+    CreativeStoreTargetService,
     CreativeEnrollmentReviewService,
     ...(isCreativeAiEnabled() && resolveProcessRole() !== 'api'
       ? [CreativeAiProcessor, CreativeAiMaintenanceService]

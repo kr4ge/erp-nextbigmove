@@ -1,13 +1,15 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Building2, DollarSign, RefreshCcw, Tags } from 'lucide-react';
+import { Building2, DollarSign, RefreshCcw, Tags, Target } from 'lucide-react';
 
 interface StoreDetailQuickActionsProps {
   isSyncingProducts: boolean;
   isSyncingTags: boolean;
   isSyncingWarehouses: boolean;
   onSetInitialOffer: () => void;
+  /** Opens the creative targets modal; omitted when the viewer cannot read them. */
+  onSetCreativeTargets?: () => void;
   onSyncProducts: () => void;
   onSyncTags: () => void;
   onSyncWarehouses: () => void;
@@ -18,6 +20,7 @@ export function StoreDetailQuickActions({
   isSyncingTags,
   isSyncingWarehouses,
   onSetInitialOffer,
+  onSetCreativeTargets,
   onSyncProducts,
   onSyncTags,
   onSyncWarehouses,
@@ -29,6 +32,17 @@ export function StoreDetailQuickActions({
         <h4 className="panel-title">Quick Actions</h4>
       </div>
       <div className="flex flex-wrap items-center gap-2 p-3">
+        {onSetCreativeTargets ? (
+          <Button
+            variant="outline"
+            size="sm"
+            iconLeft={<Target className="h-3.5 w-3.5" />}
+            onClick={onSetCreativeTargets}
+            className='btn-icon'
+          >
+            Creative Targets
+          </Button>
+        ) : null}
         <Button
           variant="outline"
           size="sm"

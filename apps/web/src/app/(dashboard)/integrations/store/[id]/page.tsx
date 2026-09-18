@@ -21,6 +21,8 @@ import { StoreInitialOfferModal } from './_components/store-initial-offer-modal'
 import { StoreProductsTab } from './_components/store-products-tab';
 import { StoreOrdersTab } from './_components/store-orders-tab';
 import { useStoreDetailController } from './_hooks/use-store-detail-controller';
+import { usePermissions } from '@/hooks/use-permissions';
+import { StoreCreativeTargetsModal } from './_components/store-creative-targets-modal';
 
 function formatCurrency(value: number) {
   return `PHP ${value.toLocaleString('en-US', {
@@ -98,6 +100,10 @@ const orangeTabsClass = [
 ].join(' ');
 
 export default function StoreDetailPage() {
+  const { data: permissionList = [] } = usePermissions();
+  const canEditCreativeTargets = permissionList.includes('creative_agent.performance.manage');
+  const canReadCreativeTargets = permissionList.some((permission) => ['creative_agent.read', 'creative_agent.read_all', 'creative_agent.ai.use', 'creative_agent.ai.manage'].includes(permission));
+  const [creativeTargetsOpen, setCreativeTargetsOpen] = useState(false);
   const router = useRouter();
   const params = useParams();
   const storeId = params?.id as string;
@@ -257,6 +263,7 @@ export default function StoreDetailPage() {
             isSyncingTags={isSyncingTags}
             isSyncingWarehouses={isSyncingWarehouses}
             onSetInitialOffer={() => setInitialOfferModalOpen(true)}
+            onSetCreativeTargets={canReadCreativeTargets ? () => setCreativeTargetsOpen(true) : undefined}
             onSyncProducts={handleSyncProducts}
             onSyncTags={handleSyncTags}
             onSyncWarehouses={handleSyncWarehouses}
@@ -300,6 +307,12 @@ export default function StoreDetailPage() {
         />
       </div>
 
+      <StoreCreativeTargetsModal
+        isOpen={creativeTargetsOpen}
+        posStoreId={String(params?.id ?? '')}
+        canEdit={canEditCreativeTargets}
+        onClose={() => setCreativeTargetsOpen(false)}
+      />
       <StoreInitialOfferModal
         isOpen={initialOfferModalOpen}
         value={initialOfferInput}

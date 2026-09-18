@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ImageIcon, Plus, RotateCcw, Video, X } from "lucide-react";
+import { ChevronDown, ExternalLink, ImageIcon, Plus, RotateCcw, Video, X } from "lucide-react";
+import { usePermissions } from "@/hooks/use-permissions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -122,6 +123,8 @@ export function RegisterVideoDialog({
   onRegistered,
   creatorLabel,
 }: Props) {
+  const { data: permissionList = [] } = usePermissions();
+  const canSetStoreTargets = permissionList.includes("creative_agent.performance.manage") && permissionList.includes("pos.read");
   // The server label knows about namesakes in the tenant; the local first
   // name only bridges the moment before the registry response arrives.
   const [localCreator, setLocalCreator] = useState<string | null>(null);
@@ -610,6 +613,14 @@ export function RegisterVideoDialog({
                       helper={itemLoadFailed ? "Choose the store again to retry loading its current items." : "Its Pancake custom ID leads the ad name and becomes the mapping."}
                       required
                     />
+                    {store && canSetStoreTargets ? (
+                      <p className="-mt-1 text-xs text-muted lg:col-span-2">
+                        Targets decide what &ldquo;winning&rdquo; means for this store&rsquo;s creatives; every analysis reads them.{" "}
+                        <a href={`/integrations/store/${store.value}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-primary hover:underline">
+                          Set creative targets <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </p>
+                    ) : null}
                     <FormInput
                       name={`title-${entry.id}`}
                       label="Library title"
