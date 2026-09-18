@@ -1431,6 +1431,10 @@ model Creative {
   script              String?
   notes               String?
   mediaUrl            String?
+  /// Google Drive share link to the source file. The Facebook post link above
+  /// is the creative as it ran; this is the file it was made from, and the
+  /// second place the analysis looks when fetching media by link.
+  driveUrl            String?
   // The item this creative advertises, chosen at enrollment. customId is the
   // partner's own Pancake identifier and becomes the ad-name mapping segment;
   // the name is a display snapshot so the registry stays readable if the POS
@@ -1656,6 +1660,7 @@ enum CreativeAiRunStatus {
 enum CreativeAiSourceType {
   LOCAL_UPLOAD
   GOOGLE_DRIVE
+  FACEBOOK_POST
 }
 
 enum CreativeAiProvider {

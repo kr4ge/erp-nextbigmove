@@ -93,7 +93,7 @@ export class CreativeAssetsService {
         take: query.pageSize,
         orderBy,
         select: {
-          id: true, code: true, title: true, kind: true, mediaUrl: true, format: true, hookType: true, angle: true,
+          id: true, code: true, title: true, kind: true, mediaUrl: true, driveUrl: true, format: true, hookType: true, angle: true,
           posCustomId: true,
           script: true, notes: true, revisionState: true, performanceStatus: true, createdById: true,
           revisionRequestedAt: true, revisionResolvedAt: true,
@@ -144,7 +144,7 @@ export class CreativeAssetsService {
         const linkedAdIds = item.metaAdLinks.map((link) => link.adId);
         if (linkedAdIds.length === 0 && item.metaAdId) linkedAdIds.push(item.metaAdId);
         return {
-          id: item.id, code: item.code, title: item.title, kind: item.kind, mediaUrl: item.mediaUrl,
+          id: item.id, code: item.code, title: item.title, kind: item.kind, mediaUrl: item.mediaUrl, driveUrl: item.driveUrl,
           customId: item.posCustomId ?? null,
           format: item.format, hookType: item.hookType, angle: item.angle, script: item.script, notes: item.notes,
           revisionState: item.revisionState, performanceStatus: item.performanceStatus,

@@ -155,7 +155,6 @@ export function VideoRegistryScreen() {
       />
       <LinkVideoDialog
         item={controller.linkingItem}
-        videos={data?.items ?? []}
         isSaving={controller.isMutating}
         onClose={() => controller.setLinkingItem(null)}
         onSubmit={linkAlias}

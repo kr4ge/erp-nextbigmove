@@ -30,7 +30,7 @@ export async function startCreativeAiRun(input: StartCreativeAiRunInput): Promis
   if (input.provider) form.append('provider', input.provider);
   if (input.model) form.append('model', input.model);
   if (input.effort) form.append('effort', input.effort);
-  form.append('video', input.video);
+  if (input.video) form.append('video', input.video);
 
   try {
     const { data } = await apiClient.post<CreativeAiRun>('/creative-agent/ai/runs', form, {

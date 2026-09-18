@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
-import { Prisma } from '@prisma/client';
+import { CreativeAiSourceType, Prisma } from '@prisma/client';
 import { Queue } from 'bull';
 import { createHash } from 'crypto';
 import { createReadStream } from 'fs';
@@ -25,6 +25,7 @@ import type { CreativeActor } from '../types/creative-actor.type';
 import { creativeAiJobTimeoutMs } from '../utils/creative-ai-timeouts';
 import { CreativeAccessService } from './creative-access.service';
 import { CreativeAiPolicyService } from './creative-ai-policy.service';
+import { CreativeMediaFetchService } from './creative-media-fetch.service';
 
 const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'] as const;
 
@@ -43,32 +44,51 @@ export class CreativeAiRunService {
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
     private readonly policy: CreativeAiPolicyService,
+    private readonly mediaFetch: CreativeMediaFetchService,
     @InjectQueue(CREATIVE_AI_QUEUE) private readonly queue: Queue<CreativeAiAnalyzeJobData>,
   ) {}
 
   async start(actor: CreativeActor, dto: StartCreativeAiRunDto, video?: UploadedVideoFile) {
+    // A file fetched from a link lives in the upload directory until it is
+    // moved into the run's workspace; if anything fails before that, it is
+    // removed in the finally block like an upload would be.
+    let fetchedPath: string | null = null;
     try {
       if (process.env.AI_AGENT_ENABLED !== 'true') {
         throw new ServiceUnavailableException('Creative AI is disabled. Set AI_AGENT_ENABLED=true for local testing.');
       }
-      if (!video?.path) {
-        throw new BadRequestException('A local video file is required');
-      }
-
       const context = await this.access.resolve(actor);
       this.access.require(context, CREATIVE_AGENT_PERMISSIONS.AI_USE);
       const settings = await this.policy.resolveRunSettings(context, dto);
       const creative = await this.prisma.creative.findFirst({
         where: { id: dto.creativeId, tenantId: context.tenantId },
-        select: { id: true, createdById: true, title: true, code: true, kind: true },
+        select: { id: true, createdById: true, title: true, code: true, kind: true, mediaUrl: true, driveUrl: true },
       });
       if (!creative) throw new NotFoundException('Creative not found');
-      // Both kinds are analysable: a video is sampled across its timeline, a
-      // static creative is one normalised image. The upload must match.
-      this.assertUploadMatchesKind(creative.kind, video.originalname);
       if (!this.access.canReadAll(context) && creative.createdById !== context.userId) {
         throw new ForbiddenException('You can only analyze your own creatives');
       }
+
+      // Where the file comes from, in the advertiser's order: an upload when
+      // one was given, otherwise the Facebook post, then the Google Drive
+      // link. Only a creative with neither link needs the upload.
+      let source: { path: string; originalname: string; mimetype: string; size: number };
+      let sourceType: CreativeAiSourceType = 'LOCAL_UPLOAD';
+      if (video?.path) {
+        source = video;
+      } else {
+        const fetched = await this.mediaFetch.resolveForAnalysis({
+          kind: creative.kind,
+          mediaUrl: creative.mediaUrl,
+          driveUrl: creative.driveUrl,
+        });
+        fetchedPath = fetched.path;
+        source = fetched;
+        sourceType = fetched.sourceType;
+      }
+      // Both kinds are analysable: a video is sampled across its timeline, a
+      // static creative is one normalised image. The file must match.
+      this.assertUploadMatchesKind(creative.kind, source.originalname);
 
       const range = this.resolveDateRange(dto.startDate, dto.endDate);
       const run = await this.prisma.creativeAiRun.create({
@@ -76,10 +96,10 @@ export class CreativeAiRunService {
           tenantId: context.tenantId,
           creativeId: creative.id,
           requestedById: context.userId,
-          sourceType: 'LOCAL_UPLOAD',
-          sourceFileName: this.safeFileName(video.originalname),
-          sourceContentType: video.mimetype,
-          sourceByteSize: video.size,
+          sourceType,
+          sourceFileName: this.safeFileName(source.originalname),
+          sourceContentType: source.mimetype,
+          sourceByteSize: source.size,
           question: dto.question?.trim() || null,
           dateStart: range.start,
           dateEnd: range.end,
@@ -91,7 +111,7 @@ export class CreativeAiRunService {
       });
 
       try {
-        const stored = await this.persistUpload(video.path, context.tenantId, run.id, video.originalname);
+        const stored = await this.persistUpload(source.path, context.tenantId, run.id, source.originalname);
         // Commit every input the worker needs before publishing the queue job. A local
         // worker can otherwise reserve the job before sourcePath is visible in Postgres.
         await this.prisma.creativeAiRun.update({
@@ -137,7 +157,7 @@ export class CreativeAiRunService {
                 creativeId: creative.id,
                 dateStart: range.start.toISOString().slice(0, 10),
                 dateEnd: range.end.toISOString().slice(0, 10),
-                sourceType: 'LOCAL_UPLOAD',
+                sourceType,
                 provider: settings.provider,
                 model: settings.model,
                 effort: settings.effort,
@@ -163,9 +183,10 @@ export class CreativeAiRunService {
         throw error;
       }
     } finally {
-      if (video?.path) {
-        await unlink(video.path).catch(() => undefined);
-      }
+      // persistUpload moves the file into the workspace, so these unlinks only
+      // matter when the run failed before that point.
+      if (video?.path) await unlink(video.path).catch(() => undefined);
+      if (fetchedPath) await unlink(fetchedPath).catch(() => undefined);
     }
   }
 

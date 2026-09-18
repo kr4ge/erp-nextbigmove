@@ -5,6 +5,7 @@ describe('CreativeMetaLinkService', () => {
   function createService(options: {
     insights: Array<{ accountId: string; adId: string; adName: string }>;
     creativeCode?: string;
+    aliases?: string[];
   }) {
     let insertedLinks: Array<{
       accountId: string;
@@ -26,8 +27,17 @@ describe('CreativeMetaLinkService', () => {
     };
     const prisma = {
       creative: {
-        findMany: jest.fn<() => Promise<Array<{ id: string; code: string; metaAdId: string | null }>>>()
-          .mockResolvedValue([{ id: 'creative-1', code: options.creativeCode ?? 'AP-V0001', metaAdId: null }]),
+        findMany: jest.fn<() => Promise<Array<{
+          id: string;
+          code: string;
+          metaAdId: string | null;
+          aliases: Array<{ normalizedAlias: string }>;
+        }>>>().mockResolvedValue([{
+          id: 'creative-1',
+          code: options.creativeCode ?? 'AP-V0001',
+          metaAdId: null,
+          aliases: (options.aliases ?? []).map((normalizedAlias) => ({ normalizedAlias })),
+        }]),
       },
       $transaction: jest.fn(async (callback: (tx: typeof transactionClient) => Promise<unknown>) => (
         callback(transactionClient)
@@ -114,6 +124,44 @@ describe('CreativeMetaLinkService', () => {
     }));
   });
 
+  it('automatically links every repost that uses an approved full-name alias', async () => {
+    const insights = [
+      { accountId: 'account-1', adId: 'ad-repost-1', adName: 'Winning Hook Repost' },
+      { accountId: 'account-1', adId: 'ad-repost-2', adName: 'winning hook repost' },
+    ];
+    const { service, transactionClient } = createService({
+      insights,
+      aliases: ['WINNING HOOK REPOST'],
+    });
+
+    await expect(service.reconcileInsights('tenant-1', insights)).resolves.toBe(2);
+
+    expect(transactionClient.creativeMetaAdLink.createMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.arrayContaining([
+        expect.objectContaining({ adId: 'ad-repost-1', creativeId: 'creative-1' }),
+        expect.objectContaining({ adId: 'ad-repost-2', creativeId: 'creative-1' }),
+      ]),
+    }));
+  });
+
+  it('matches an approved code-shaped alias only as a delimited code segment', async () => {
+    const insights = [{
+      accountId: 'account-1',
+      adId: 'ad-legacy-repost',
+      adName: 'ITEM_Legacy winner_AP-V0999_Lyca',
+    }];
+    const { service, transactionClient } = createService({
+      insights,
+      aliases: ['AP-V0999'],
+    });
+
+    await expect(service.reconcileInsights('tenant-1', insights)).resolves.toBe(1);
+
+    expect(transactionClient.creativeMetaAdLink.createMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: [expect.objectContaining({ adId: 'ad-legacy-repost', creativeId: 'creative-1' })],
+    }));
+  });
+
   it('does not auto-link when the creative code is only part of the ad name', async () => {
     const { service, prisma } = createService({ insights: [] });
 
@@ -122,7 +170,11 @@ describe('CreativeMetaLinkService', () => {
     ])).resolves.toBe(0);
 
     expect(prisma.creative.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ code: { in: ['Launch AP-V0001 today'] } }),
+      where: expect.objectContaining({
+        OR: expect.arrayContaining([
+          expect.objectContaining({ code: { in: ['LAUNCH AP-V0001 TODAY'] } }),
+        ]),
+      }),
     }));
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });

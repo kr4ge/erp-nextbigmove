@@ -31,6 +31,16 @@ export class UpdateCreativeDto {
   @MaxLength(2048)
   mediaUrl?: string;
 
+  /** Google Drive share link to the source file; the second place an analysis fetches from. */
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @ValidateIf((_, value) => value !== '')
+  @IsUrl({ protocols: ['https'], require_protocol: true })
+  @Matches(/^https:\/\/(?:drive|docs)\.google\.com\//i, { message: 'driveUrl must be a Google Drive link' })
+  @MaxLength(2048)
+  driveUrl?: string;
+
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString()

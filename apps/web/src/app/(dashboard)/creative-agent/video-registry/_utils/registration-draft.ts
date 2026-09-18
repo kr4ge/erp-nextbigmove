@@ -14,6 +14,7 @@ export type RegistrationDraftForm = {
   variationId: string;
   title: string;
   mediaUrl: string;
+  driveUrl: string;
   format: string;
   hookType: string;
   angle: string;
@@ -39,6 +40,7 @@ const FORM_FIELDS: Array<keyof RegistrationDraftForm> = [
   "variationId",
   "title",
   "mediaUrl",
+  "driveUrl",
   "format",
   "hookType",
   "angle",
@@ -106,6 +108,7 @@ export function hasMeaningfulRegistrationDraft(
     Boolean(form.variationId)
     || Boolean(form.title.trim())
     || Boolean(form.mediaUrl.trim())
+    || Boolean(form.driveUrl?.trim())
     || Boolean(form.format)
     || Boolean(form.hookType)
     || Boolean(form.angle.trim())

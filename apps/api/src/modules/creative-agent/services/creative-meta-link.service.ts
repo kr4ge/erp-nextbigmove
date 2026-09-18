@@ -9,6 +9,14 @@ export type MetaInsightLinkIdentity = {
   adName: string;
 };
 
+type ResolvedMetaInsightLink = MetaInsightLinkIdentity & {
+  matchedBy: 'CODE' | 'ALIAS';
+};
+
+function normalizeMatchKey(value: string): string {
+  return value.trim().toUpperCase();
+}
+
 /**
  * The code forms an ad name may legitimately carry.
  *
@@ -49,23 +57,73 @@ export class CreativeMetaLinkService {
     }
     if (identities.size === 0) return 0;
 
-    // An ad name is either the bare code, or the paste-ready form the Assets
-    // copy button produces: `title_creator_CODE`. The code is always the LAST
-    // underscore-delimited segment, so only that segment is ever treated as a
-    // code — the readable parts in front are free text and never matched on.
+    // Canonical codes always win. A tenant-approved alias is only considered
+    // when there is no canonical code match: full-name aliases match exactly,
+    // while code-shaped aliases must occupy a safe underscore-delimited code
+    // segment. This prevents a generic word such as "sale" from linking an ad
+    // merely because it appeared somewhere in the name.
     const candidateCodes = new Set<string>();
+    const candidateAliases = new Set<string>();
     for (const insight of identities.values()) {
-      for (const candidate of codeCandidatesFor(insight.adName)) candidateCodes.add(candidate);
+      const candidates = codeCandidatesFor(insight.adName).map(normalizeMatchKey);
+      for (const candidate of candidates) candidateCodes.add(candidate);
+      candidateAliases.add(normalizeMatchKey(insight.adName));
+      for (const candidate of candidates.filter(isCodeSegment)) candidateAliases.add(candidate);
     }
     const creatives = await this.prisma.creative.findMany({
-      where: { tenantId, code: { in: [...candidateCodes] } },
-      select: { id: true, code: true, metaAdId: true },
+      where: {
+        tenantId,
+        OR: [
+          { code: { in: [...candidateCodes] } },
+          { aliases: { some: { normalizedAlias: { in: [...candidateAliases] } } } },
+        ],
+      },
+      select: {
+        id: true,
+        code: true,
+        metaAdId: true,
+        aliases: { select: { normalizedAlias: true } },
+      },
     });
+    const creativeByCode = new Map(
+      creatives.map((creative) => [normalizeMatchKey(creative.code), creative]),
+    );
+    const creativeByExactAlias = new Map<string, (typeof creatives)[number]>();
+    const creativeByCodeAlias = new Map<string, (typeof creatives)[number]>();
+    for (const creative of creatives) {
+      for (const alias of creative.aliases) {
+        creativeByExactAlias.set(alias.normalizedAlias, creative);
+        if (isCodeSegment(alias.normalizedAlias)) {
+          creativeByCodeAlias.set(alias.normalizedAlias, creative);
+        }
+      }
+    }
+
+    const matchesByCreative = new Map<string, ResolvedMetaInsightLink[]>();
+    for (const identity of identities.values()) {
+      const candidates = codeCandidatesFor(identity.adName).map(normalizeMatchKey);
+      const canonicalMatch = candidates
+        .map((candidate) => creativeByCode.get(candidate))
+        .find((creative) => Boolean(creative));
+      const exactAliasMatch = creativeByExactAlias.get(normalizeMatchKey(identity.adName));
+      const codeAliasMatch = candidates
+        .filter(isCodeSegment)
+        .map((candidate) => creativeByCodeAlias.get(candidate))
+        .find((creative) => Boolean(creative));
+      const creative = canonicalMatch ?? exactAliasMatch ?? codeAliasMatch;
+      if (!creative) continue;
+      const current = matchesByCreative.get(creative.id) ?? [];
+      current.push({
+        ...identity,
+        matchedBy: canonicalMatch ? 'CODE' : 'ALIAS',
+      });
+      matchesByCreative.set(creative.id, current);
+    }
+
     let linked = 0;
 
     for (const creative of creatives) {
-      const matches = [...identities.values()]
-        .filter((identity) => codeCandidatesFor(identity.adName).includes(creative.code))
+      const matches = (matchesByCreative.get(creative.id) ?? [])
         .sort((left, right) => left.adId.localeCompare(right.adId));
       if (matches.length === 0) continue;
 
@@ -111,7 +169,12 @@ export class CreativeMetaLinkService {
               resource: 'Creative',
               resourceId: creative.id,
               changes: {
-                linkedAds: matches.map((match) => ({ accountId: match.accountId, adId: match.adId, adName: match.adName })),
+                linkedAds: matches.map((match) => ({
+                  accountId: match.accountId,
+                  adId: match.adId,
+                  adName: match.adName,
+                  matchedBy: match.matchedBy,
+                })),
                 count: result.count,
               },
             },

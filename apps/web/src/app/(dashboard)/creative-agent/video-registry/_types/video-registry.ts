@@ -96,6 +96,7 @@ export type VideoRegistryItem = {
   script: string | null;
   notes: string | null;
   mediaUrl: string | null;
+  driveUrl: string | null;
   /** Signed URL for the cached post cover, when captured. */
   thumbnailUrl?: string | null;
   thumbnailIsVideo?: boolean;
@@ -185,6 +186,7 @@ export type CreateVideoRegistryInput = {
   variationId: string;
   title: string;
   mediaUrl: string;
+  driveUrl?: string;
   format: string;
   hookType: string;
   angle?: string;
@@ -199,14 +201,22 @@ export type CreateVideoRegistryInput = {
 };
 export type UpdateVideoRegistryInput = Pick<
   CreateVideoRegistryInput,
-  "kind" | "title" | "mediaUrl" | "format" | "hookType" | "angle" | "script" | "notes"
+  "kind" | "title" | "mediaUrl" | "driveUrl" | "format" | "hookType" | "angle" | "script" | "notes"
 >;
 export type LinkCreativeAliasInput = {
   unregisteredKey: string;
   creativeId: string;
-  alias: string;
+  /** When omitted, only this tenant + Ad ID is linked. */
+  alias?: string;
   accountId: string;
   adId: string;
+};
+export type CreativeLinkTarget = {
+  id: string;
+  code: string;
+  title: string;
+  storeName: string;
+  linkedAdsCount: number;
 };
 export type CreativeStoreOption = {
   id: string;

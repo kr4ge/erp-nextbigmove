@@ -7,6 +7,8 @@ import { isValidFacebookPostUrl } from '../_utils/facebook-post-url';
 
 type Props = {
   mediaUrl: string | null;
+  /** The Drive source link, used for a preview when no cover is cached. */
+  driveUrl?: string | null;
   title: string;
   compact?: boolean;
   onClick?: () => void;
@@ -22,6 +24,7 @@ type Props = {
 
 export function DriveThumbnail({
   mediaUrl,
+  driveUrl = null,
   title,
   compact = false,
   onClick,
@@ -29,7 +32,7 @@ export function DriveThumbnail({
   isVideo = false,
 }: Props) {
   // Cached cover wins; a Drive link can still derive one directly.
-  const thumbnailUrl = cachedThumbnailUrl ?? getGoogleDriveThumbnailUrl(mediaUrl);
+  const thumbnailUrl = cachedThumbnailUrl ?? getGoogleDriveThumbnailUrl(driveUrl);
   // A Facebook post with no cached cover yet cannot be framed — link out.
   const isFacebookPost = mediaUrl ? isValidFacebookPostUrl(mediaUrl) : false;
   const [failed, setFailed] = useState(false);

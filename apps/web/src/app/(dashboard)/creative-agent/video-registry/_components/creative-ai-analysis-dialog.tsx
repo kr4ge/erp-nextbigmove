@@ -515,6 +515,22 @@ function EmptyResult() {
   );
 }
 
+/**
+ * Where the analysis will get its file. The order is the advertiser's: an
+ * upload wins if present, otherwise the Facebook post, then Google Drive, and
+ * only with neither registered is an upload required.
+ */
+function SourceHint({ item, hasFile }: { item: CreativeAiTarget; hasFile: boolean }) {
+  const text = hasFile
+    ? 'The uploaded file will be analyzed.'
+    : item.mediaUrl
+      ? 'No file chosen: the video or image will be downloaded from the Facebook post.'
+      : item.driveUrl
+        ? 'No file chosen: the file will be downloaded from the Google Drive link.'
+        : 'No Facebook post or Google Drive link is registered, so the file must be uploaded.';
+  return <p className="mt-1.5 text-xs leading-relaxed text-muted">{text}</p>;
+}
+
 type Props = {
   item: CreativeAiTarget | null;
   startDate: string;
@@ -592,6 +608,7 @@ export function CreativeAiAnalysisDialog({ item, startDate, endDate, onClose }: 
                       className="sr-only"
                       onChange={(event) => { analysis.chooseVideo(event.target.files?.[0] ?? null); event.currentTarget.value = ''; }}
                     />
+                    <SourceHint item={item} hasFile={Boolean(analysis.video)} />
                   </div>
 
                   <div>

@@ -19,6 +19,14 @@ function createAccess() {
   } as never;
 }
 
+function createAccessFor(context: typeof CONTEXT) {
+  return {
+    resolve: jest.fn<() => Promise<typeof CONTEXT>>().mockResolvedValue(context),
+    require: jest.fn(),
+    has: jest.fn().mockReturnValue(true),
+  } as never;
+}
+
 function createHarness(overrides: {
   insight?: { accountId: string; adId: string; adName: string } | null;
   existingLink?: { id: string } | null;
@@ -126,6 +134,57 @@ describe('CreativeAliasService identity linking', () => {
     await expect(service.linkUnregistered({ userId: 'user-1', tenantId: 'tenant-1' }, {
       creativeId: 'creative-1', accountId: 'acct-1', adId: 'ad-1', alias: 'NOT-IN-NAME',
     })).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('CreativeAliasService link targets', () => {
+  it('returns lightweight tenant-scoped targets including already-linked creatives', async () => {
+    const prisma = {
+      creative: {
+        findMany: jest.fn<() => Promise<unknown[]>>().mockResolvedValue([{
+          id: 'creative-1',
+          code: 'AP-V0001',
+          title: 'Winning hook',
+          storeConfig: { storeNameSnapshot: 'Alpha Store' },
+          _count: { metaAdLinks: 2 },
+        }]),
+      },
+    };
+    const service = new CreativeAliasService(prisma as never, createAccess());
+
+    await expect(service.listLinkTargets(
+      { userId: 'user-1', tenantId: 'tenant-1' },
+      { query: 'winning', limit: 20 },
+    )).resolves.toEqual({
+      items: [{
+        id: 'creative-1', code: 'AP-V0001', title: 'Winning hook',
+        storeName: 'Alpha Store', linkedAdsCount: 2,
+      }],
+    });
+    expect(prisma.creative.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ tenantId: 'tenant-1' }),
+      take: 20,
+    }));
+  });
+
+  it('limits an enroll-only user to creatives they created', async () => {
+    const enrollContext = {
+      ...CONTEXT,
+      permissions: new Set(['creative_agent.enroll']),
+    };
+    const prisma = {
+      creative: { findMany: jest.fn<() => Promise<unknown[]>>().mockResolvedValue([]) },
+    };
+    const service = new CreativeAliasService(prisma as never, createAccessFor(enrollContext));
+
+    await service.listLinkTargets(
+      { userId: 'user-1', tenantId: 'tenant-1' },
+      { limit: 20 },
+    );
+
+    expect(prisma.creative.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ tenantId: 'tenant-1', createdById: 'user-1' }),
+    }));
   });
 });
 

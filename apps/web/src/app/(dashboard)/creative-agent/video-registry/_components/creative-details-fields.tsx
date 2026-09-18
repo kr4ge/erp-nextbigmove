@@ -12,6 +12,7 @@ import {
 } from "../_constants/video-registry.constants";
 import type { CreativeKind, CreativeOptionField, CreativeOptions, UpdateVideoRegistryInput } from "../_types/video-registry";
 import { isValidFacebookPostUrl } from "../_utils/facebook-post-url";
+import { isValidGoogleDriveUrl } from "../_utils/google-drive-url";
 
 /**
  * Custom entries are stored the way the fixed options are (UPPER_SNAKE), so
@@ -165,6 +166,16 @@ export function CreativeDetailsFields({
         helper="Paste the public Facebook post link for this creative. Clear this field to remove the current source."
       />
 
+      <FormInput
+        name="driveUrl"
+        type="url"
+        label="Google Drive link"
+        value={value.driveUrl ?? ""}
+        onChange={(event) => onChange("driveUrl", event.target.value)}
+        placeholder="https://drive.google.com/file/d/.../view"
+        helper="The source video or image, shared as anyone with the link. The analysis fetches from the Facebook post first, then from here, so you only upload when neither is set."
+      />
+
       <CollapsibleField label="Internal notes" filled={Boolean(value.notes?.trim())}>
         <FormTextarea
           name="notes"
@@ -179,6 +190,11 @@ export function CreativeDetailsFields({
       {value.mediaUrl && isValidFacebookPostUrl(value.mediaUrl) ? (
         <a href={value.mediaUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">
           Open Facebook post <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ) : null}
+      {value.driveUrl && isValidGoogleDriveUrl(value.driveUrl) ? (
+        <a href={value.driveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">
+          Open Drive file <ExternalLink className="h-3.5 w-3.5" />
         </a>
       ) : null}
     </div>

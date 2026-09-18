@@ -1,5 +1,5 @@
-import { Transform } from 'class-transformer';
-import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateCreativeAliasDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
@@ -38,6 +38,21 @@ export class LinkUnregisteredCreativeDto {
   @IsString()
   @MaxLength(100)
   adId!: string;
+}
+
+export class ListCreativeLinkTargetsQueryDto {
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(200)
+  query?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit: number = 20;
 }
 
 export class UnlinkMetaAdDto {

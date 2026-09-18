@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { CreativeKind, UpdateVideoRegistryInput } from "../_types/video-registry";
 import { isValidFacebookPostUrl } from "../_utils/facebook-post-url";
+import { isValidGoogleDriveUrl } from "../_utils/google-drive-url";
 import { CreativeDetailsFields } from "./creative-details-fields";
 import { useCreativeOptions } from "../_hooks/use-creative-options";
 
@@ -15,6 +16,7 @@ export type EditableCreative = {
   title: string;
   kind: CreativeKind;
   mediaUrl: string | null;
+  driveUrl: string | null;
   format: string | null;
   hookType: string | null;
   angle: string | null;
@@ -45,6 +47,7 @@ function toForm(item: EditableCreative): UpdateVideoRegistryInput {
     kind: item.kind,
     title: item.title,
     mediaUrl: item.mediaUrl ?? "",
+    driveUrl: item.driveUrl ?? "",
     format: item.format ?? "",
     hookType: item.hookType ?? "",
     angle: item.angle ?? "",
@@ -178,6 +181,7 @@ export function EditCreativeDialog({ item, isSaving, onClose, onSave, onUploadTh
     setError(null);
     if (!form.title.trim()) return setError("Enter the title shown in the creative registry.");
     if (form.mediaUrl && !isValidFacebookPostUrl(form.mediaUrl)) return setError("Use a valid Facebook post link, such as https://www.facebook.com/.../posts/...");
+    if (form.driveUrl && !isValidGoogleDriveUrl(form.driveUrl)) return setError("Use a Google Drive share link, such as https://drive.google.com/file/d/.../view");
     try {
       await onSave(item.id, {
         ...form,

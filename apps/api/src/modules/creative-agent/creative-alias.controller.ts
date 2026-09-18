@@ -1,9 +1,14 @@
-import { Body, Controller, Delete, HttpCode, Param, ParseUUIDPipe, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
-import { CreateCreativeAliasDto, LinkUnregisteredCreativeDto, UnlinkMetaAdDto } from './dto/creative-alias.dto';
+import {
+  CreateCreativeAliasDto,
+  LinkUnregisteredCreativeDto,
+  ListCreativeLinkTargetsQueryDto,
+  UnlinkMetaAdDto,
+} from './dto/creative-alias.dto';
 import { CreativeAliasService } from './services/creative-alias.service';
 import type { CreativeActor } from './types/creative-actor.type';
 
@@ -13,6 +18,15 @@ type CreativeRequest = { user: CreativeActor };
 @UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
 export class CreativeAliasController {
   constructor(private readonly aliases: CreativeAliasService) {}
+
+  @Get('link-targets')
+  @Permissions('creative_agent.alias.manage', 'creative_agent.enroll')
+  listLinkTargets(
+    @Request() req: CreativeRequest,
+    @Query() query: ListCreativeLinkTargetsQueryDto,
+  ) {
+    return this.aliases.listLinkTargets(req.user, query);
+  }
 
   @Post('unregistered/link')
   // enroll can link too, but only to their OWN creative — enforced in the service.

@@ -100,7 +100,7 @@ export class CreativeAiController {
   }))
   start(
     @Request() req: CreativeRequest,
-    @UploadedFile() video: UploadedVideoFile,
+    @UploadedFile() video: UploadedVideoFile | undefined,
     @Body() body: StartCreativeAiRunDto,
   ) {
     return this.runs.start(req.user, body, video);

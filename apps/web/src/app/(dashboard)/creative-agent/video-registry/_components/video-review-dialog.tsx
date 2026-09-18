@@ -31,7 +31,7 @@ export function VideoReviewDialog({ item, comments, isLoadingComments, permissio
   const [unlinkingAdId, setUnlinkingAdId] = useState<string | null>(null);
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
   useEffect(() => { setReason(''); setError(null); setUnlinkingAdId(null); setUnlinkError(null); }, [item?.id]);
-  const previewUrl = getGoogleDrivePreviewUrl(item?.mediaUrl);
+  const previewUrl = getGoogleDrivePreviewUrl(item?.driveUrl);
   // Facebook blocks embedding, so a post link gets an explicit open-out card
   // rather than an iframe that silently renders blank.
   const facebookUrl = item?.mediaUrl && isValidFacebookPostUrl(item.mediaUrl) ? item.mediaUrl : null;

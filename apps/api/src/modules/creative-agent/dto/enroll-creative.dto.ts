@@ -7,6 +7,7 @@ import {
   IsString,
   IsUUID,
   IsUrl,
+  ValidateIf,
   Matches,
   MaxLength,
   MinLength,
@@ -58,6 +59,16 @@ export class EnrollCreativeDto {
   @Matches(/^https:\/\/(?:[a-z0-9-]+\.)?(?:facebook\.com|fb\.com|fb\.watch)\//i, { message: 'mediaUrl must be a Facebook post URL' })
   @MaxLength(2048)
   mediaUrl?: string;
+
+  /** Google Drive share link to the source file; the second place an analysis fetches from. */
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @ValidateIf((_, value) => value !== '')
+  @IsUrl({ protocols: ['https'], require_protocol: true })
+  @Matches(/^https:\/\/(?:drive|docs)\.google\.com\//i, { message: 'driveUrl must be a Google Drive link' })
+  @MaxLength(2048)
+  driveUrl?: string;
 
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)

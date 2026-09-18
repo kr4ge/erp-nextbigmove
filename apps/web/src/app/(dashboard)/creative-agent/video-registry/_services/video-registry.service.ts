@@ -1,6 +1,7 @@
 import axios from 'axios';
 import apiClient from '@/lib/api-client';
 import type {
+  CreativeLinkTarget,
   CreativeOption,
   CreativeOptionField,
   CreativeOptions, CreativeReviewComment, CreativeStatusDimension, CreativeStoreOption, CreateVideoRegistryInput, GetVideoRegistryParams, LinkCreativeAliasInput, UpdateVideoRegistryInput, VideoRegistryItem, VideoRegistryResponse } from '../_types/video-registry';
@@ -37,7 +38,7 @@ export async function fetchStoreEnrollmentItems(storeId: string): Promise<StoreE
 export async function createVideoRegistryItem(input: CreateVideoRegistryInput): Promise<VideoRegistryItem> {
   // Explicit whitelist: every field the enroll DTO accepts must be listed here
   // or it never leaves the browser, however correct the form state is.
-  const payload = { storeId: input.storeId, variationId: input.variationId, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, angle: input.angle || undefined, remixOfCode: input.remixOfCode || undefined, script: input.script || undefined, notes: input.notes || undefined };
+  const payload = { storeId: input.storeId, variationId: input.variationId, kind: input.kind, title: input.title, submitForApproval: input.submitForApproval, mediaUrl: input.mediaUrl || undefined, driveUrl: input.driveUrl || undefined, format: input.format || undefined, hookType: input.hookType || undefined, angle: input.angle || undefined, remixOfCode: input.remixOfCode || undefined, script: input.script || undefined, notes: input.notes || undefined };
   const enrollsMetaAd = Boolean(input.accountId && input.adId && input.adName);
   try {
     return (enrollsMetaAd
@@ -80,8 +81,23 @@ export async function createCreativeAlias(creativeId: string, alias: string) {
   catch (error) { throw apiError(error, 'Unable to create this alias.'); }
 }
 export async function linkCreativeAlias(input: LinkCreativeAliasInput) {
-  try { return (await apiClient.post('/creative-agent/unregistered/link', { creativeId: input.creativeId, alias: input.alias, accountId: input.accountId, adId: input.adId })).data; }
+  try {
+    return (await apiClient.post('/creative-agent/unregistered/link', {
+      creativeId: input.creativeId,
+      accountId: input.accountId,
+      adId: input.adId,
+      ...(input.alias ? { alias: input.alias } : {}),
+    })).data;
+  }
   catch (error) { throw apiError(error, 'Unable to link this Meta ad.'); }
+}
+export async function fetchCreativeLinkTargets(query: string): Promise<CreativeLinkTarget[]> {
+  try {
+    const { data } = await apiClient.get<{ items: CreativeLinkTarget[] }>('/creative-agent/link-targets', {
+      params: { query: query.trim() || undefined, limit: 30 },
+    });
+    return data.items;
+  } catch (error) { throw apiError(error, 'Unable to load creatives for linking.'); }
 }
 export async function removeCreativeAlias(creativeId: string, aliasId: string) {
   try { return (await apiClient.delete(`/creative-agent/creatives/${creativeId}/aliases/${aliasId}`)).data; }

@@ -19,6 +19,7 @@ export type CreativeAsset = {
   customId: string | null;
   kind: CreativeKind;
   mediaUrl: string | null;
+  driveUrl: string | null;
   format: string | null;
   hookType: string | null;
   angle: string | null;

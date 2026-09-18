@@ -112,6 +112,9 @@ export type CreativeAiTarget = {
   code: string;
   title: string;
   kind: 'VIDEO' | 'STATIC';
+  /** The registered links the analysis can fetch from when nothing is uploaded. */
+  mediaUrl?: string | null;
+  driveUrl?: string | null;
 };
 
 export type CreativeAiFinding = {
@@ -295,7 +298,8 @@ export type CreativeAiRunsResponse = {
 
 export type StartCreativeAiRunInput = {
   creativeId: string;
-  video: File;
+  /** Optional: when absent the API fetches from the Facebook post, then Google Drive. */
+  video?: File | null;
   startDate: string;
   endDate: string;
   provider?: CreativeAiProvider;

@@ -94,7 +94,6 @@ export function UnlinkedAdsPanel() {
 
       <LinkVideoDialog
         item={linkingItem}
-        videos={data.items}
         isSaving={isSaving}
         onClose={() => setLinkingItem(null)}
         onSubmit={submitLink}

@@ -7,7 +7,11 @@ import {
   CREATIVE_CODE_REGEX,
   parseCreativeCode,
 } from '../creative-agent.constants';
-import { CreateCreativeAliasDto, LinkUnregisteredCreativeDto } from '../dto/creative-alias.dto';
+import {
+  CreateCreativeAliasDto,
+  LinkUnregisteredCreativeDto,
+  ListCreativeLinkTargetsQueryDto,
+} from '../dto/creative-alias.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
 import { preferCanonicalMetaAdIdentity } from '../utils/meta-ad-identity';
 import { CreativeAccessService } from './creative-access.service';
@@ -18,6 +22,45 @@ export class CreativeAliasService {
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
   ) {}
+
+  async listLinkTargets(actor: CreativeActor, query: ListCreativeLinkTargetsQueryDto) {
+    const context = await this.access.resolve(actor);
+    this.access.require(context, CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE, CREATIVE_AGENT_PERMISSIONS.ENROLL);
+    const canLinkAny = context.permissions.has(CREATIVE_AGENT_PERMISSIONS.ALIAS_MANAGE);
+    const search = query.query?.trim();
+    const creatives = await this.prisma.creative.findMany({
+      where: {
+        tenantId: context.tenantId,
+        ...(canLinkAny ? {} : { createdById: context.userId }),
+        ...(search ? {
+          OR: [
+            { code: { contains: search, mode: 'insensitive' } },
+            { title: { contains: search, mode: 'insensitive' } },
+            { storeConfig: { storeNameSnapshot: { contains: search, mode: 'insensitive' } } },
+          ],
+        } : {}),
+      },
+      select: {
+        id: true,
+        code: true,
+        title: true,
+        storeConfig: { select: { storeNameSnapshot: true } },
+        _count: { select: { metaAdLinks: true } },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { code: 'asc' }],
+      take: query.limit,
+    });
+
+    return {
+      items: creatives.map((creative) => ({
+        id: creative.id,
+        code: creative.code,
+        title: creative.title,
+        storeName: creative.storeConfig.storeNameSnapshot,
+        linkedAdsCount: creative._count.metaAdLinks,
+      })),
+    };
+  }
 
   async create(actor: CreativeActor, creativeId: string, dto: CreateCreativeAliasDto) {
     const context = await this.access.resolve(actor);

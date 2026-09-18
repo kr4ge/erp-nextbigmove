@@ -57,6 +57,7 @@ const EMPTY_FORM: RegistrationDraftForm = {
   variationId: "",
   title: "",
   mediaUrl: "",
+  driveUrl: "",
   format: "",
   hookType: "",
   angle: "",

@@ -134,8 +134,16 @@ export function useCreativeAiAnalysis({
   }, [allowedExtensions, isStatic]);
 
   const start = useCallback(async () => {
-    if (!item || !video) {
-      setError(isStatic ? 'Choose the image file before starting the analysis.' : 'Choose the local video file before starting the analysis.');
+    if (!item) return;
+    // An upload is only required when the creative has no link to fetch from.
+    // With a link, the API downloads the file itself: Facebook post first,
+    // then Google Drive.
+    if (!video && !item.mediaUrl && !item.driveUrl) {
+      setError(
+        isStatic
+          ? 'Choose the image file, or register a Facebook post or Google Drive link first.'
+          : 'Choose the video file, or register a Facebook post or Google Drive link first.',
+      );
       return;
     }
     if (dateRange.startDate > dateRange.endDate) {
@@ -148,7 +156,7 @@ export function useCreativeAiAnalysis({
     try {
       const run = await startCreativeAiRun({
         creativeId: item.id,
-        video,
+        video: video ?? undefined,
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
         provider,
@@ -216,7 +224,8 @@ export function useCreativeAiAnalysis({
   }, [runs]);
 
   const isRunning = Boolean(activeRun && !TERMINAL_STATUSES.has(activeRun.status));
-  const canStart = Boolean(video && !isSubmitting && !isRunning && selectedProvider?.connected && model);
+  const hasLinkSource = Boolean(item?.mediaUrl || item?.driveUrl);
+  const canStart = Boolean((video || hasLinkSource) && !isSubmitting && !isRunning && selectedProvider?.connected && model);
 
   return useMemo(() => ({
     video,
