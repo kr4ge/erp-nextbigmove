@@ -50,7 +50,7 @@ function setup(options: {
     },
     creativeKnowledgeEntry: { upsert: jest.fn(async (args: any) => ({ id: 'entry-1', ...args.create })) },
     reconcileMarketing: { aggregate: jest.fn(async () => ({ _sum: {} })) },
-    metaAdInsight: { findMany: jest.fn(async () => []) },
+    metaAdInsight: { findMany: jest.fn(async () => []), aggregate: jest.fn(async () => ({ _sum: {} })) },
     creativeMetaAdLink: { findMany: jest.fn(async () => []) },
   };
   const access = {
@@ -61,7 +61,8 @@ function setup(options: {
       }
     }),
   };
-  const service = new CreativeKnowledgeService(prisma, access as any);
+  const frames = { listForRun: jest.fn(async () => []) };
+  const service = new CreativeKnowledgeService(prisma, access as any, frames as any);
   return { service, prisma, access };
 }
 

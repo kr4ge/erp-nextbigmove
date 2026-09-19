@@ -26,6 +26,7 @@ import { creativeAiJobTimeoutMs } from '../utils/creative-ai-timeouts';
 import { CreativeAccessService } from './creative-access.service';
 import { CreativeAiPolicyService } from './creative-ai-policy.service';
 import { CreativeMediaFetchService } from './creative-media-fetch.service';
+import { CreativeAiFrameService } from './creative-ai-frame.service';
 
 const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'] as const;
 
@@ -45,6 +46,7 @@ export class CreativeAiRunService {
     private readonly access: CreativeAccessService,
     private readonly policy: CreativeAiPolicyService,
     private readonly mediaFetch: CreativeMediaFetchService,
+    private readonly frameStore: CreativeAiFrameService,
     @InjectQueue(CREATIVE_AI_QUEUE) private readonly queue: Queue<CreativeAiAnalyzeJobData>,
   ) {}
 
@@ -323,6 +325,29 @@ export class CreativeAiRunService {
       throw new ForbiddenException('You can only view analyses for your own creatives');
     }
     return this.serialize(run);
+  }
+
+  /**
+   * The scene thumbnails of one run, signed for the storyboard. Fetched once
+   * when a result is shown rather than on every progress poll, because each
+   * URL is signed on request.
+   */
+  async frames(actor: CreativeActor, runId: string) {
+    const context = await this.access.resolve(actor);
+    this.access.require(
+      context,
+      CREATIVE_AGENT_PERMISSIONS.AI_USE,
+      CREATIVE_AGENT_PERMISSIONS.AI_MANAGE,
+    );
+    const run = await this.prisma.creativeAiRun.findFirst({
+      where: { id: runId, tenantId: context.tenantId },
+      select: { id: true, creative: { select: { createdById: true } } },
+    });
+    if (!run) throw new NotFoundException('Creative AI run not found');
+    if (!this.access.canReadAll(context) && run.creative.createdById !== context.userId) {
+      throw new ForbiddenException('You can only view analyses for your own creatives');
+    }
+    return this.frameStore.listForRun(context.tenantId, run.id);
   }
 
   private detailInclude() {

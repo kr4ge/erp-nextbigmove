@@ -135,6 +135,30 @@ describe('buildAnalysisPrompt', () => {
     expect(built.prompt).toMatch(/one frame with timestampSeconds null/);
   });
 
+  it('tells a video analysis about the sheets, the frames and the transcript', () => {
+    const built = analyst();
+    expect(built.prompt).toMatch(/sheets\/\*\.jpg/);
+    expect(built.prompt).toMatch(/amber label marks the first frame of a detected scene/);
+    expect(built.prompt).toMatch(/transcript\.status is COMPLETED/);
+    expect(built.prompt).toMatch(/TIMELINE \(fixed\)/);
+  });
+
+  it('never mentions sheets or a transcript for a static creative', () => {
+    const built = buildAnalysisPrompt({ mode: 'RUNNING_ANALYST', kind: 'STATIC', body: 'x', variables: {} });
+    expect(built.prompt).not.toMatch(/sheets\//);
+    expect(built.prompt).not.toMatch(/transcript\.status/);
+    expect(built.prompt).toMatch(/startSeconds and endSeconds 0/);
+  });
+
+  it('requires the timeline and beats from both prompts', () => {
+    for (const mode of ['RUNNING_ANALYST', 'NEW_REVIEWER'] as const) {
+      const schema = PROMPT_KINDS[mode].schema as { required: readonly string[]; properties: Record<string, unknown> };
+      expect(schema.required).toEqual(expect.arrayContaining(['timeline', 'beats']));
+      expect(schema.properties.timeline).toBeDefined();
+      expect(schema.properties.beats).toBeDefined();
+    }
+  });
+
   it('ships default bodies that use every required variable', () => {
     for (const mode of ['RUNNING_ANALYST', 'NEW_REVIEWER'] as const) {
       const used = extractTokens(PROMPT_KINDS[mode].defaultBody);

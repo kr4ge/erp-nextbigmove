@@ -146,7 +146,20 @@ CLAUDEBOX_API_KEY=<openssl rand -hex 32>
 AI_AGENT_SIGNING_SECRET=<openssl rand -hex 32>
 CREATIVE_AI_QUEUE_CONCURRENCY=1
 CREATIVE_AI_WORKSPACE_RETENTION_DAYS=14
+
+# Audio transcription: the whisper service in docker-compose.prod.yml. The
+# URL defaults to http://whisper:3110 in the compose file; set the language
+# to pin Tagalog (tl) or leave blank to auto-detect. Model size is baked into
+# the image at build time (small by default; base is lighter, medium better).
+CREATIVE_AI_WHISPER_LANGUAGE=
+CREATIVE_AI_WHISPER_MODEL=small
+WHISPER_MEMORY_LIMIT=1536m
 ```
+
+The whisper image is built by the deploy workflow beside api, web and admin.
+Its first build downloads the model (a few minutes); later builds are cached.
+Scene thumbnails from every analysis go to object storage, so the same
+`OBJECT_STORAGE_*` settings the rest of the ERP uses must be present.
 
 Both secrets must be identical on the two hosts. The gateway refuses to start
 without the signing secret, and a run whose token does not verify is rejected.
@@ -161,7 +174,15 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api \
   node -e "fetch('http://10.x.x.x:3000/health').then(r=>r.json()).then(console.log)"
 ```
 
-Expect `status: ok` with `signedRunsRequired: true`. Then confirm the gateway is
+Expect `status: ok` with `signedRunsRequired: true`. Check the transcription
+service the same way:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T worker \
+  node -e "fetch('http://whisper:3110/health').then(r=>r.json()).then(console.log)"
+```
+
+Expect `ok: true` with the model name. Then confirm the gateway is
 **not** reachable publicly:
 
 ```bash

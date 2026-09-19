@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { X, AlertTriangle, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { CreativeAiStoryboard } from '@/app/(dashboard)/creative-agent/video-registry/_components/creative-ai-storyboard';
 import { fetchKnowledgeEntry } from '../_services/creative-knowledge.service';
-import type { KnowledgeEntry, KnowledgeEntryDetail, KnowledgeStructureV1, KnowledgeStructureV2 } from '../_types/creative-knowledge';
+import type { KnowledgeEntry, KnowledgeEntryDetail, KnowledgeStructureV1, KnowledgeStructureV2, KnowledgeStructureV3 } from '../_types/creative-knowledge';
 
 const SECTION_LABELS: Record<string, string> = {
   hook: 'Hook',
@@ -97,6 +98,11 @@ export function KnowledgeEntryDialog({ entry, onClose }: { entry: KnowledgeEntry
               <div className="space-y-5">
                 {!structure ? (
                   <p className="text-sm text-muted">This entry has no structural record, so there is nothing to study here.</p>
+                ) : structure.schemaVersion === 3 ? (
+                  <>
+                    <VerdictRecord structure={structure} />
+                    <SceneRecord structure={structure} frames={detail?.frames ?? []} kind={creative?.kind ?? 'VIDEO'} />
+                  </>
                 ) : structure.schemaVersion === 2 ? (
                   <VerdictRecord structure={structure} />
                 ) : (
@@ -111,8 +117,28 @@ export function KnowledgeEntryDialog({ entry, onClose }: { entry: KnowledgeEntry
   );
 }
 
+/**
+ * How the creative is built, scene by scene, with the stored thumbnails. This
+ * is the part of the record that lets a future reviewer see, not just read,
+ * what a winner in this store looks like.
+ */
+function SceneRecord({ structure, frames, kind }: { structure: KnowledgeStructureV3; frames: NonNullable<KnowledgeEntryDetail['frames']>; kind: 'VIDEO' | 'STATIC' }) {
+  return (
+    <section className="space-y-3">
+      <h4 className="text-sm font-semibold">Scene by scene</h4>
+      <CreativeAiStoryboard
+        timeline={structure.timeline}
+        beats={structure.beats}
+        frames={frames}
+        manifest={{ kind, durationSeconds: structure.durationSeconds, pacing: structure.pacing ? { ...structure.pacing, silenceGaps: [] } : null }}
+        kind={kind}
+      />
+    </section>
+  );
+}
+
 /** The running analyst's record: classification, lesson, why. */
-function VerdictRecord({ structure }: { structure: KnowledgeStructureV2 }) {
+function VerdictRecord({ structure }: { structure: KnowledgeStructureV2 | KnowledgeStructureV3 }) {
   const a = structure.attributes;
   const rows: Array<[string, string]> = [
     ['Angle', a.angle], ['Hook', a.hookType], ['Format', a.format], ['Speaker', a.speaker],

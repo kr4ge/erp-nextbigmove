@@ -189,6 +189,83 @@ export type CreativeAiAttributes = {
   otherNote?: string | null;
 };
 
+export type CreativeAiTimelineRole = 'HOOK' | 'PROBLEM' | 'PROOF' | 'DEMO' | 'OFFER' | 'CTA' | 'OTHER';
+
+/** One scene as the model read it: what was seen, shown and said. */
+export type CreativeAiTimelineEntry = {
+  startSeconds: number;
+  endSeconds: number;
+  role: CreativeAiTimelineRole;
+  whatIsSeen: string;
+  onScreenText: string | null;
+  spokenLine: string | null;
+  technique: string | null;
+  issue: string | null;
+  keepOrFix: 'KEEP' | 'FIX';
+};
+
+/** The moments the timeline reveals, in seconds; null when they never come. */
+export type CreativeAiBeats = {
+  hookEndsAt: number | null;
+  productFirstSeenAt: number | null;
+  priceFirstSeenAt: number | null;
+  ctaFirstSeenAt: number | null;
+  faceInFirst3s: boolean;
+  speechInFirst3s: boolean;
+  textInFirst3s: boolean;
+};
+
+/** What code measured about the edit and the audio before the model saw anything. */
+export type CreativeAiPacing = {
+  sceneCount: number;
+  cutsPerMinute: number;
+  firstCutAt: number | null;
+  longestStaticRun: { startSeconds: number; endSeconds: number; seconds: number };
+  hasSpeech: boolean;
+  speechStartsAt: number | null;
+  speechCoverage: number | null;
+  wordsPerMinute: number | null;
+  silenceGaps: Array<{ startSeconds: number; endSeconds: number }>;
+};
+
+export type CreativeAiMediaManifest = {
+  version?: number;
+  kind: 'VIDEO' | 'STATIC';
+  durationSeconds: number | null;
+  scenes?: Array<{ index: number; startSeconds: number; endSeconds: number }>;
+  sheets?: unknown[];
+  transcript?: { status: string; text?: string | null };
+  pacing?: CreativeAiPacing | null;
+  warnings?: string[];
+};
+
+/** A stored scene thumbnail, signed for display. */
+export type CreativeAiRunFrame = {
+  sceneIndex: number;
+  timestampSeconds: number | null;
+  endSeconds: number | null;
+  url: string | null;
+  width: number | null;
+  height: number | null;
+};
+
+export type CreativeAiRetentionPoint = {
+  share: number;
+  label: string;
+  atSeconds: number | null;
+  sceneIndex: number | null;
+  plays: number;
+  ofImpressions: number | null;
+  of3sViewers: number | null;
+  lostSincePrevious: number | null;
+};
+
+/** The slice of the analysis context the storyboard pins onto scenes. */
+export type CreativeAiMetricsSnapshot = {
+  retention?: { threeSecondPlays: number; impressions: number; points: CreativeAiRetentionPoint[] } | null;
+  metrics?: { hookRate?: number | null; holdRate?: number | null; completionRate?: number | null; ctr?: number | null } | null;
+};
+
 /** Prompt 1: a verdict on a creative that has run. */
 export type CreativeAiResultAnalyst = {
   verdict: 'SCALE' | 'WATCH' | 'KILL';
@@ -202,6 +279,8 @@ export type CreativeAiResultAnalyst = {
   audienceQuality: { failed: boolean; suspectedElement: string | null };
   lesson: string;
   complianceFlags?: string[];
+  timeline?: CreativeAiTimelineEntry[];
+  beats?: CreativeAiBeats | null;
 };
 
 /** Prompt 2: a decision on a creative that has not run. */
@@ -221,6 +300,8 @@ export type CreativeAiResultReviewer = {
   dataBasis: { corpusUsable: boolean; note: string; matchedPatterns?: string[] };
   testHypothesis?: string | null;
   checksNotPerformed?: string[];
+  timeline?: CreativeAiTimelineEntry[];
+  beats?: CreativeAiBeats | null;
 };
 
 export function isAnalystResult(result: unknown): result is CreativeAiResultAnalyst {
@@ -276,6 +357,8 @@ export type CreativeAiRun = {
   question: string | null;
   ai?: { provider: CreativeAiProvider; model: string; effort: CreativeAiEffort };
   dateRange: { startDate: string; endDate: string };
+  mediaManifest?: CreativeAiMediaManifest | null;
+  metricsSnapshot?: CreativeAiMetricsSnapshot | null;
   result: CreativeAiResult | null;
   responseText: string | null;
   warnings: string[];

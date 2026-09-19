@@ -77,7 +77,59 @@ export type KnowledgeStructureV2 = {
   complianceFlags: string[];
 };
 
-export type KnowledgeStructure = KnowledgeStructureV1 | KnowledgeStructureV2;
+export type KnowledgeTimelineEntry = {
+  startSeconds: number;
+  endSeconds: number;
+  role: 'HOOK' | 'PROBLEM' | 'PROOF' | 'DEMO' | 'OFFER' | 'CTA' | 'OTHER';
+  whatIsSeen: string;
+  onScreenText: string | null;
+  spokenLine: string | null;
+  technique: string | null;
+  issue: string | null;
+  keepOrFix: 'KEEP' | 'FIX';
+};
+
+export type KnowledgeBeats = {
+  hookEndsAt: number | null;
+  productFirstSeenAt: number | null;
+  priceFirstSeenAt: number | null;
+  ctaFirstSeenAt: number | null;
+  faceInFirst3s: boolean;
+  speechInFirst3s: boolean;
+  textInFirst3s: boolean;
+};
+
+export type KnowledgePacing = {
+  sceneCount: number;
+  cutsPerMinute: number;
+  firstCutAt: number | null;
+  longestStaticRun: { startSeconds: number; endSeconds: number; seconds: number };
+  hasSpeech: boolean;
+  speechStartsAt: number | null;
+  speechCoverage: number | null;
+  wordsPerMinute: number | null;
+};
+
+/** The verdict record plus the scene timeline, beats and measured pacing. */
+export type KnowledgeStructureV3 = Omit<KnowledgeStructureV2, 'schemaVersion'> & {
+  schemaVersion: 3;
+  durationSeconds: number | null;
+  timeline: KnowledgeTimelineEntry[];
+  beats: KnowledgeBeats | null;
+  pacing: KnowledgePacing | null;
+};
+
+export type KnowledgeStructure = KnowledgeStructureV1 | KnowledgeStructureV2 | KnowledgeStructureV3;
+
+/** A stored scene thumbnail of the run the entry was promoted from. */
+export type KnowledgeFrame = {
+  sceneIndex: number;
+  timestampSeconds: number | null;
+  endSeconds: number | null;
+  url: string | null;
+  width: number | null;
+  height: number | null;
+};
 
 export type KnowledgeEntryDetail = KnowledgeEntry & {
   structure: KnowledgeStructure | null;
@@ -89,7 +141,10 @@ export type KnowledgeEntryDetail = KnowledgeEntry & {
     netContribution: number | null;
     deliveredCostPerOrder: number | null;
     linkedAdCount: number;
+    hookRate?: number | null;
+    holdRate?: number | null;
   } | null;
+  frames?: KnowledgeFrame[];
 };
 
 export type KnowledgeCoverage = {

@@ -7,6 +7,8 @@ import { CreativePromptContextService } from './creative-prompt-context.service'
 import { ClaudeboxClientService, CreativeAiRunCancelledError, CreativeAiRunLimitError } from './claudebox-client.service';
 import { CreativeAiContextService } from './creative-ai-context.service';
 import { CreativeAiMediaService } from './creative-ai-media.service';
+import { CreativeAiFrameService } from './creative-ai-frame.service';
+import { verifyAnalysis } from '../utils/creative-ai-verify';
 
 const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'] as const;
 const CANCEL_POLL_MS = 3_000;
@@ -34,6 +36,7 @@ export class CreativeAiAnalyzerService {
     private readonly contextBuilder: CreativeAiContextService,
     private readonly claudebox: ClaudeboxClientService,
     private readonly promptContext: CreativePromptContextService,
+    private readonly frameStore: CreativeAiFrameService,
   ) {}
 
   async analyze(tenantId: string, runId: string, options: { finalAttempt?: boolean } = {}) {
@@ -99,6 +102,11 @@ export class CreativeAiAnalyzerService {
         mediaManifest = await this.media.preprocess(workspace, sourcePath, run.creative.kind);
         await this.discardSourceVideo(sourcePath);
       }
+      // Scene thumbnails leave the workspace now, before the model runs, so
+      // the storyboard exists even for a run that later fails or is cancelled.
+      // On a retry the scenes already stored are skipped.
+      const frameWarnings = await this.frameStore.persist(tenantId, runId, workspace, mediaManifest);
+      mediaManifest.warnings = [...new Set([...(mediaManifest.warnings ?? []), ...frameWarnings])];
       await this.setStage(tenantId, runId, 'CONTEXT_BUILDING', 55, 'Loading linked ad and order performance', {
         mediaManifest: mediaManifest as Prisma.InputJsonValue,
         warnings: mediaManifest.warnings,
@@ -230,6 +238,13 @@ export class CreativeAiAnalyzerService {
       cancelPoll = undefined;
 
       const result = this.parseResult(output.result);
+      // What the model claimed, checked against what code knows: the video's
+      // length, the transcript, the store's thresholds. Failures are recorded
+      // beside the result rather than rejecting it.
+      const checks = verifyAnalysis({ result, mode: built.mode, manifest: mediaManifest, variables: built.variables });
+      if (checks.length) {
+        this.logger.warn(`Creative AI checks failed run=${runId}: ${checks.map((check) => check.code).join(', ')}`);
+      }
       // One statement completes the run, so a failure after this point (for
       // example the audit write) can never lead a retry to call the model again.
       const completed = await this.prisma.creativeAiRun.updateMany({
@@ -251,8 +266,14 @@ export class CreativeAiAnalyzerService {
               niche: run.creative.storeConfig?.aiNiche ?? null,
               usage: output.usage,
               totalCostUsd: output.totalCostUsd,
+              checks,
             },
           } as Prisma.InputJsonValue,
+          warnings: [...new Set([
+            ...mediaManifest.warnings,
+            ...analysisContext.dataQuality.warnings,
+            ...checks.map((check) => `CHECK_${check.code}`),
+          ])],
           responseText: output.responseText,
           claudeSessionId: output.sessionId,
           completedAt: new Date(),

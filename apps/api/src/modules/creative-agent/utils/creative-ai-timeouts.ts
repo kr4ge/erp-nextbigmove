@@ -11,7 +11,11 @@ const positiveInt = (value: string | undefined, fallback: number) => {
 
 export const CREATIVE_AI_PROBE_TIMEOUT_MS = 30_000;
 export const CREATIVE_AI_HOOK_FRAMES_TIMEOUT_MS = 120_000;
+/** One decode pass over the whole video, detecting cuts and saving their frames. */
+export const CREATIVE_AI_SCENE_DETECT_TIMEOUT_MS = 240_000;
 export const CREATIVE_AI_TIMELINE_FRAMES_TIMEOUT_MS = 180_000;
+/** Composing contact sheets and thumbnails with sharp; generous for a 2-core box. */
+export const CREATIVE_AI_SHEET_BUILD_BUDGET_MS = 120_000;
 export const CREATIVE_AI_AUDIO_EXTRACT_TIMEOUT_MS = 180_000;
 
 /**
@@ -31,13 +35,19 @@ export function creativeAiTranscriptionTimeoutMs() {
   return positiveInt(process.env.CREATIVE_AI_TRANSCRIPTION_TIMEOUT_MS, 20 * 60 * 1000);
 }
 
-/** Worst case for probe + frame extraction + optional audio + transcription. */
+/** Transcription runs through a local binary or a Whisper service; either counts as configured. */
+export function creativeAiTranscriptionConfigured() {
+  return Boolean(process.env.CREATIVE_AI_WHISPER_BIN?.trim() || process.env.CREATIVE_AI_WHISPER_URL?.trim());
+}
+
+/** Worst case for probe + cut detection + frames + sheets + optional audio + transcription. */
 export function creativeAiPreprocessingBudgetMs() {
-  const whisperConfigured = Boolean(process.env.CREATIVE_AI_WHISPER_BIN?.trim());
   return CREATIVE_AI_PROBE_TIMEOUT_MS
     + CREATIVE_AI_HOOK_FRAMES_TIMEOUT_MS
+    + CREATIVE_AI_SCENE_DETECT_TIMEOUT_MS
     + CREATIVE_AI_TIMELINE_FRAMES_TIMEOUT_MS
-    + (whisperConfigured ? CREATIVE_AI_AUDIO_EXTRACT_TIMEOUT_MS + creativeAiTranscriptionTimeoutMs() : 0);
+    + CREATIVE_AI_SHEET_BUILD_BUDGET_MS
+    + (creativeAiTranscriptionConfigured() ? CREATIVE_AI_AUDIO_EXTRACT_TIMEOUT_MS + creativeAiTranscriptionTimeoutMs() : 0);
 }
 
 /**

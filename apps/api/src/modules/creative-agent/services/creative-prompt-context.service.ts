@@ -8,7 +8,16 @@ import {
   type BuiltPrompt,
   type PromptRoutingSignals,
 } from '../prompts/creative-prompt-router';
-import { renderCorpus } from '../utils/creative-knowledge-structure';
+import { renderCorpus, type CreativeKnowledgeStructure } from '../utils/creative-knowledge-structure';
+import {
+  EVIDENCE_PRIOR_STRENGTH,
+  computeStorePatterns,
+  evidenceLevel,
+  rankCorpus,
+  renderEvidenceLevel,
+  renderStorePatterns,
+  type PatternEntry,
+} from '../utils/creative-knowledge-patterns';
 import { CreativePromptTemplateService } from './creative-prompt-template.service';
 import { CreativeStoreTargetService, renderStoreTargets, storeTargetVariables } from './creative-store-target.service';
 
@@ -35,7 +44,7 @@ export class CreativePromptContextService {
     signals: PromptRoutingSignals;
     /** The analysed window, for the running analyst's {{PERIOD}}. */
     period?: string;
-  }): Promise<BuiltPrompt & { modeNote: string; promptTemplateId: string | null; promptVersion: number }> {
+  }): Promise<BuiltPrompt & { modeNote: string; promptTemplateId: string | null; promptVersion: number; variables: Record<string, string> }> {
     const mode = resolveAnalysisMode(input.signals);
     const modeNote = describeAnalysisMode(mode, input.signals);
 
@@ -45,8 +54,11 @@ export class CreativePromptContextService {
         id: true,
         code: true,
         posProductName: true,
+        format: true,
+        hookType: true,
+        angle: true,
         storeConfigId: true,
-        storeConfig: { select: { storeNameSnapshot: true } },
+        storeConfig: { select: { storeNameSnapshot: true, aiNiche: true } },
       },
     });
 
@@ -74,19 +86,82 @@ export class CreativePromptContextService {
     if (mode === 'NEW_REVIEWER') {
       // The corpus is the whole store, every product in it. How a creative is
       // built travels across a store; what it cost to get an order does not,
-      // and the prompt text says which is which.
-      const [corpus, library] = await Promise.all([
+      // and the prompt text says which is which. A thin store borrows records
+      // from its niche, marked as such; the patterns are counted here rather
+      // than left for the model to infer from a pile of digests.
+      const [own, library] = await Promise.all([
         this.corpusFor(input.tenantId, creative.storeConfigId),
         this.libraryFor(input.tenantId, creative.storeConfigId, creative.id),
       ]);
-      variables.KNOWLEDGE_BASE = renderCorpus(corpus);
+      const winners = own.filter((entry) => entry.label === CreativeKnowledgeLabel.WINNER).length;
+      const losers = own.filter((entry) => entry.label === CreativeKnowledgeLabel.LOSER).length;
+      const borrowed = own.length < EVIDENCE_PRIOR_STRENGTH
+        ? await this.borrowedFor(input.tenantId, creative.storeConfigId, creative.storeConfig.aiNiche)
+        : [];
+      const entries: PatternEntry[] = [
+        ...own.map((row) => this.toPatternEntry(row, null)),
+        ...borrowed.map((row) => this.toPatternEntry(row, row.storeConfig.storeNameSnapshot)),
+      ];
+      const ranked = rankCorpus(entries, {
+        format: creative.format,
+        hookType: creative.hookType,
+        angle: creative.angle,
+        posProductName: creative.posProductName,
+      });
+      const ordered = [...ranked.exemplars, ...ranked.rest];
+      variables.KNOWLEDGE_BASE = renderCorpus(
+        ordered.map((entry) => ({
+          label: entry.label,
+          attribution: entry.attribution,
+          digest: entry.digest,
+          creative: { code: entry.code, posProductName: entry.posProductName },
+          borrowedFrom: entry.borrowedFrom,
+          structure: entry.structure,
+        })),
+        { exemplarCodes: new Set(ranked.exemplars.map((entry) => entry.code)) },
+      );
+      variables.STORE_PATTERNS = renderStorePatterns(computeStorePatterns(entries));
+      variables.EVIDENCE_LEVEL = renderEvidenceLevel(
+        evidenceLevel(own.length, borrowed.length),
+        creative.storeConfig.storeNameSnapshot,
+        { winners, losers },
+      );
       variables.LIBRARY = library;
-      variables.WINNER_COUNT = String(corpus.filter((entry) => entry.label === CreativeKnowledgeLabel.WINNER).length);
-      variables.LOSER_COUNT = String(corpus.filter((entry) => entry.label === CreativeKnowledgeLabel.LOSER).length);
+      variables.WINNER_COUNT = String(winners);
+      variables.LOSER_COUNT = String(losers);
     }
 
     const built = buildAnalysisPrompt({ mode, kind: input.kind, body: template.body, variables, vocabularyOverrides });
-    return { ...built, modeNote, promptTemplateId: template.templateId, promptVersion: template.version };
+    return { ...built, modeNote, promptTemplateId: template.templateId, promptVersion: template.version, variables };
+  }
+
+  private toPatternEntry(
+    row: {
+      label: CreativeKnowledgeLabel;
+      attribution: string;
+      digest: string | null;
+      structure: unknown;
+      metrics: unknown;
+      promotedAt: Date;
+      creative: { code: string; posProductName: string | null; format: string | null; hookType: string | null; angle: string | null };
+    },
+    borrowedFrom: string | null,
+  ): PatternEntry {
+    const metrics = row.metrics && typeof row.metrics === 'object' ? (row.metrics as PatternEntry['metrics']) : null;
+    return {
+      code: row.creative.code,
+      label: row.label === CreativeKnowledgeLabel.WINNER ? 'WINNER' : 'LOSER',
+      attribution: row.attribution as PatternEntry['attribution'],
+      posProductName: row.creative.posProductName,
+      format: row.creative.format,
+      hookType: row.creative.hookType,
+      angle: row.creative.angle,
+      borrowedFrom,
+      structure: (row.structure ?? null) as CreativeKnowledgeStructure | null,
+      metrics,
+      digest: row.digest,
+      promotedAt: row.promotedAt,
+    };
   }
 
   /** Recorded results to compare a new creative against: every promoted creative in the store. */
@@ -99,8 +174,32 @@ export class CreativePromptContextService {
         label: { in: [CreativeKnowledgeLabel.WINNER, CreativeKnowledgeLabel.LOSER] },
       },
       orderBy: [{ attribution: 'asc' }, { promotedAt: 'desc' }],
-      take: 24,
-      include: { creative: { select: { code: true, posProductName: true } } },
+      take: 60,
+      include: { creative: { select: { code: true, posProductName: true, format: true, hookType: true, angle: true } } },
+    });
+  }
+
+  /**
+   * Records from other stores in the same niche, for a store too thin to
+   * lean on its own. Construction travels across stores of a kind; money and
+   * verdicts do not, and the corpus marks each borrowed record so the model
+   * treats it that way.
+   */
+  private async borrowedFor(tenantId: string, storeConfigId: string, niche: string, limit = 12) {
+    return this.prisma.creativeKnowledgeEntry.findMany({
+      where: {
+        tenantId,
+        storeConfigId: { not: storeConfigId },
+        nicheSnapshot: niche,
+        active: true,
+        label: { in: [CreativeKnowledgeLabel.WINNER, CreativeKnowledgeLabel.LOSER] },
+      },
+      orderBy: [{ attribution: 'asc' }, { promotedAt: 'desc' }],
+      take: limit,
+      include: {
+        creative: { select: { code: true, posProductName: true, format: true, hookType: true, angle: true } },
+        storeConfig: { select: { storeNameSnapshot: true } },
+      },
     });
   }
 

@@ -1,4 +1,4 @@
-import { ATTRIBUTE_SCHEMA_PROPERTIES } from './creative-ai-shared';
+import { ATTRIBUTE_SCHEMA_PROPERTIES, TIMELINE_SCHEMA_PROPERTIES } from './creative-ai-shared';
 import type { PromptVariable } from './creative-prompt-template';
 
 /**
@@ -14,7 +14,7 @@ import type { PromptVariable } from './creative-prompt-template';
  * knowledge base and the library are always injected: if the edited text
  * leaves their variables out, the blocks are appended anyway.
  */
-export const NEW_REVIEWER_PROMPT_VERSION = 2;
+export const NEW_REVIEWER_PROMPT_VERSION = 3;
 
 export const NEW_REVIEWER_VARIABLES: PromptVariable[] = [
   { token: 'STORE_NAME', description: 'The store this creative belongs to.' },
@@ -32,6 +32,16 @@ export const NEW_REVIEWER_VARIABLES: PromptVariable[] = [
   },
   { token: 'WINNER_COUNT', description: 'How many recorded winners the store has.' },
   { token: 'LOSER_COUNT', description: 'How many recorded losers the store has.' },
+  {
+    token: 'EVIDENCE_LEVEL',
+    description: 'How much the store\'s own record can carry, computed by the ERP: its record count, what was borrowed from its niche, and the weight to give each. Always included.',
+    required: true,
+  },
+  {
+    token: 'STORE_PATTERNS',
+    description: 'Win and loss counts by hook type, format, angle and offer, the typical beats of winners against losers, and what the store has never tried. Computed by the ERP. Always included.',
+    required: true,
+  },
 ];
 
 export const DEFAULT_NEW_REVIEWER_PROMPT = `You are the creative reviewer inside our ERP. The creatives team registers new videos and images here before they go to Meta. Your job is to review each new creative and return APPROVE, REVISE, or REJECT, with feedback specific enough that the editor knows exactly what to fix.
@@ -56,8 +66,15 @@ A creative that is well made but different from our past winners is exactly what
 <knowledge_base>
 Every record below comes from this store, across all its products, and each names the product it advertised. How a creative is built travels across a store: the same audience, the same brand, the same reasons people believe or refuse. So a hook that held attention for one product is evidence for another. What does NOT travel is money: never carry a cost per order, or a judgement about price, from one product to another.
 
-This store has {{WINNER_COUNT}} recorded winner(s) and {{LOSER_COUNT}} recorded loser(s). Use only records with trusted data. If there are fewer than 5, say so at the top of your review and base it on craft quality and the repeat check only.
+This store has {{WINNER_COUNT}} recorded winner(s) and {{LOSER_COUNT}} recorded loser(s). Use only records with trusted data.
 
+How much to lean on them:
+{{EVIDENCE_LEVEL}}
+
+What the records say in aggregate, counted by the ERP so you do not have to:
+{{STORE_PATTERNS}}
+
+The records themselves. The first few are worked examples chosen for their closeness to this creative, shown with their scene timelines; the rest are one line each:
 {{KNOWLEDGE_BASE}}
 </knowledge_base>
 
@@ -68,7 +85,7 @@ Everything already registered for this store, so you can check for repeats:
 </library>
 
 <review_steps>
-Step 1. Describe what is actually in the creative, before judging it. Quote the first 3 seconds word for word (spoken and on-screen text). Then note the angle, how the message develops, when the product first appears, the offer, the price if shown, the CTA, the duration, and whether it has captions.
+Step 1. Describe what is actually in the creative, before judging it. Build the scene timeline first, from the contact sheets and the transcript, the way the system explains below. Quote the first 3 seconds word for word (spoken and on-screen text). Then note the angle, how the message develops, when the product first appears, the offer, the price if shown, the CTA, the duration, and whether it has captions.
 
 Step 2. Classify it with the fixed attribute lists the system provides below. These must match the knowledge base so the creative can be compared now and measured later.
 
@@ -123,7 +140,7 @@ Never REJECT or mark down a creative because it does not resemble past winners. 
 export const NEW_REVIEWER_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['decision', 'qualityScore', 'noveltyLabel', 'confidence', 'attributes', 'whatWorks', 'whatToFix', 'audienceQualityFlags', 'dataBasis'],
+  required: ['decision', 'qualityScore', 'noveltyLabel', 'confidence', 'attributes', 'whatWorks', 'whatToFix', 'audienceQualityFlags', 'dataBasis', 'timeline', 'beats'],
   properties: {
     decision: { type: 'string', enum: ['APPROVE', 'REVISE', 'REJECT'] },
     qualityScore: { type: 'integer', minimum: 0, maximum: 100 },
@@ -192,5 +209,6 @@ export const NEW_REVIEWER_SCHEMA = {
     },
     testHypothesis: { type: ['string', 'null'], maxLength: 400, description: 'APPROVE only: what this creative will teach us and which metric to watch first.' },
     checksNotPerformed: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 200 } },
+    ...TIMELINE_SCHEMA_PROPERTIES,
   },
 } as const;

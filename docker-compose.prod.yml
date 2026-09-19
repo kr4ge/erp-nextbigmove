@@ -69,6 +69,14 @@ services:
       CREATIVE_AI_QUEUE_ATTEMPTS: ${CREATIVE_AI_QUEUE_ATTEMPTS:-2}
       CREATIVE_AI_RETAIN_SOURCE_VIDEO: ${CREATIVE_AI_RETAIN_SOURCE_VIDEO:-false}
       CREATIVE_AI_WORKSPACE_RETENTION_DAYS: ${CREATIVE_AI_WORKSPACE_RETENTION_DAYS:-14}
+      # Audio transcription runs in the whisper service below; the worker
+      # posts the extracted audio to it. Leave the URL blank to run without.
+      CREATIVE_AI_WHISPER_URL: ${CREATIVE_AI_WHISPER_URL:-http://whisper:3110}
+      CREATIVE_AI_WHISPER_LANGUAGE: ${CREATIVE_AI_WHISPER_LANGUAGE:-}
+      CREATIVE_AI_MAX_SCENES: ${CREATIVE_AI_MAX_SCENES:-40}
+      CREATIVE_AI_MAX_GRID_FRAMES: ${CREATIVE_AI_MAX_GRID_FRAMES:-90}
+      CREATIVE_AI_SCENE_THRESHOLD: ${CREATIVE_AI_SCENE_THRESHOLD:-0.3}
+      CREATIVE_AI_PUSH_BUDGET_BYTES: ${CREATIVE_AI_PUSH_BUDGET_BYTES:-8000000}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
@@ -129,6 +137,31 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - erp-network
+
+  # Whisper transcription for creative analysis. Its own image because the
+  # API runs on Alpine, where the Whisper runtimes cannot be installed. Only
+  # the worker talks to it, over the private network. Memory-capped; the
+  # model loads on first use and is released after ten idle minutes.
+  whisper:
+    image: erp-whisper
+    build:
+      context: .
+      dockerfile: apps/whisper/Dockerfile
+      args:
+        WHISPER_MODEL: ${CREATIVE_AI_WHISPER_MODEL:-small}
+    container_name: erp-whisper-prod
+    environment:
+      WHISPER_MODEL: ${CREATIVE_AI_WHISPER_MODEL:-small}
+      WHISPER_THREADS: ${WHISPER_THREADS:-2}
+      WHISPER_IDLE_UNLOAD_SECONDS: ${WHISPER_IDLE_UNLOAD_SECONDS:-600}
+    deploy:
+      resources:
+        limits:
+          memory: ${WHISPER_MEMORY_LIMIT:-1536m}
     restart: unless-stopped
     logging: *default-logging
     networks:

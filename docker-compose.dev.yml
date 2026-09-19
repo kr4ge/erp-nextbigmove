@@ -57,6 +57,26 @@ services:
     networks:
       - erp-network
 
+  # Optional: audio transcription for creative analysis. Start it with
+  # `docker compose -f docker-compose.dev.yml --profile ai up -d whisper` and
+  # point the API at it with CREATIVE_AI_WHISPER_URL=http://127.0.0.1:3110.
+  whisper:
+    build:
+      context: .
+      dockerfile: apps/whisper/Dockerfile
+      args:
+        WHISPER_MODEL: ${CREATIVE_AI_WHISPER_MODEL:-small}
+    container_name: erp-whisper
+    profiles: ["ai"]
+    environment:
+      WHISPER_MODEL: ${CREATIVE_AI_WHISPER_MODEL:-small}
+      WHISPER_THREADS: ${WHISPER_THREADS:-4}
+      WHISPER_IDLE_UNLOAD_SECONDS: 0
+    ports:
+      - "3110:3110"
+    networks:
+      - erp-network
+
 volumes:
   postgres_data:
   postgres_data_v18:

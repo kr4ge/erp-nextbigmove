@@ -69,8 +69,16 @@ export class CreativeAiRunLimitError extends Error {
 
 const LIMIT_SUBTYPES = new Set(['error_max_budget_usd', 'error_max_turns']);
 
-/** What an analysis is allowed to read: sampled frames and the JSON context. */
+/** What an analysis is allowed to read: sampled frames, contact sheets and the JSON context. */
 const TRANSFERABLE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.json'];
+/**
+ * Working directories the model never needs: grid frames only exist to build
+ * the sheets, thumbnails go to object storage for the storyboard, and the
+ * transcript is already inside video-timeline.json.
+ */
+const UNTRANSFERABLE_DIRECTORIES = new Set(['grid', 'thumbs', 'transcript']);
+/** The gateway's WebSocket message cap; one run.files message must fit under it. */
+const DEFAULT_GATEWAY_MESSAGE_BYTES = 12_582_912;
 
 /**
  * Read a prepared run directory into the shape the gateway accepts. Only the
@@ -84,6 +92,7 @@ async function collectRunFiles(root: string) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name);
       if (entry.isDirectory()) {
+        if (directory === root && UNTRANSFERABLE_DIRECTORIES.has(entry.name)) continue;
         await walk(absolute);
         continue;
       }
@@ -95,7 +104,19 @@ async function collectRunFiles(root: string) {
   };
 
   await walk(root);
-  return files.sort((a, b) => a.path.localeCompare(b.path));
+  const sorted = files.sort((a, b) => a.path.localeCompare(b.path));
+  // The gateway closes the socket on an oversized message, which surfaces as a
+  // bare disconnect. Refuse up front with a message that says what to change.
+  const cap = Number(process.env.CLAUDEBOX_MAX_BODY_BYTES) > 0 ? Number(process.env.CLAUDEBOX_MAX_BODY_BYTES) : DEFAULT_GATEWAY_MESSAGE_BYTES;
+  const payloadBytes = sorted.reduce((sum, file) => sum + file.base64.length + file.path.length + 40, 2_048);
+  if (payloadBytes > cap) {
+    const mb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
+    throw new Error(
+      `The prepared analysis files (${mb(payloadBytes)} MB encoded) exceed the gateway's ${mb(cap)} MB message limit. `
+      + 'Lower CREATIVE_AI_PUSH_BUDGET_BYTES, or raise CLAUDEBOX_MAX_BODY_BYTES on both the gateway and the ERP.',
+    );
+  }
+  return sorted;
 }
 
 function errorForSubtype(subtype: string, input: ClaudeboxRunInput, detail?: string) {

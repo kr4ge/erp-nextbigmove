@@ -86,20 +86,37 @@ export const PROMPT_KINDS: Record<
  */
 export function systemAppendix(mode: CreativeAnalysisMode, kind: CreativeKind, vocabularyOverrides?: { hookType?: string[]; format?: string[] }): string {
   const isStatic = kind === 'STATIC';
+  const contextLine = mode === 'RUNNING_ANALYST'
+    ? '1. analysis-context.json: the creative record, its linked Meta ads, and the measured performance for the period, with order outcomes from the ERP.'
+      + (isStatic ? '' : ' It also carries `video` (duration, scene count, pacing measured by code) and, when Meta measured it, `retention`: how many viewers were still watching at 25, 50, 75, 95 and 100 percent of the length, each mapped to a timestamp and to the scene containing it.')
+    : '1. analysis-context.json: the creative record and its registration data.'
+      + (isStatic ? '' : ' It also carries `video`: duration, scene count and pacing measured by code.');
   const materials = [
     'MATERIALS (provided by the ERP)',
     'Work only from the files in the current directory.',
-    mode === 'RUNNING_ANALYST'
-      ? '1. analysis-context.json: the creative record, its linked Meta ads, and the measured performance for the period, with order outcomes from the ERP.'
-      : '1. analysis-context.json: the creative record and its registration data.',
+    contextLine,
     isStatic
       ? '2. video-timeline.json: the image manifest, one frame with timestampSeconds null.\n3. frames/static-01.jpg: look at this image before writing anything.'
-      : '2. video-timeline.json: duration, sampling plan, and every extracted frame with its timestampSeconds.\n3. frames/*.jpg: read every frame listed there, in timestamp order, before writing anything.',
-    'If there is no transcript, use the registered script only, say so, and never invent dialogue. Metrics that are null were not measured: treat them as unknown, never as zero.',
+      : [
+          '2. video-timeline.json: the detected scenes with their startSeconds and endSeconds, every contact sheet with the timestamp of each cell, the full-size frames, the transcript with per-line timestamps, and the pacing measurements (cuts per minute, longest static run, when speech starts, silences).',
+          '3. sheets/*.jpg: the whole video sampled once a second, in timestamp order, tiled onto sheets. Every cell shows its timestamp in the corner; an amber label marks the first frame of a detected scene. Read every sheet in order, several per turn, before writing anything.',
+          '4. frames/*.jpg: full-size frames for the hook (the first 3 seconds, two per second) and for the first frame of each scene. Open one only when a sheet cannot show the detail you need, such as small on-screen text or a price card.',
+          'Sound: when transcript.status is COMPLETED in video-timeline.json, its segments are what was actually said, with timestamps; quote from them. When there is no transcript, use the registered script only, say so, and never invent dialogue.',
+        ].join('\n'),
+    'Metrics that are null were not measured: treat them as unknown, never as zero.',
+  ].join('\n');
+
+  const timeline = [
+    'TIMELINE (fixed)',
+    isStatic
+      ? 'Fill `timeline` with one entry per region of the image in reading order (headline, product, offer, call to action, and so on), each with startSeconds and endSeconds 0, the role it plays, what is seen, the text it carries, spokenLine null, the technique used, an issue if there is one, and KEEP or FIX. Fill `beats` with 0 for what is present and null for what is absent; the three first-3-seconds flags describe the image itself.'
+      : 'Before judging, fill `timeline`: one entry per scene as you read the creative, using the detected scenes in video-timeline.json as the starting point and merging or splitting them where the content demands, covering the whole running time. Each entry gives startSeconds and endSeconds, a role (HOOK, PROBLEM, PROOF, DEMO, OFFER, CTA, OTHER), what is seen, the on-screen text (null when none), the spoken line quoted from the transcript (null when none), the technique the maker used, an issue if there is one (null otherwise), and KEEP or FIX. Then fill `beats` with the moments the timeline reveals, in seconds from the start and null when the moment never comes: when the hook ends, when the product, the price and the call to action first appear, and whether a face, speech and on-screen text are present in the first 3 seconds. Every timestamp you cite anywhere in the result must appear on a sheet or in the transcript.',
   ].join('\n');
 
   return [
     materials,
+    '',
+    timeline,
     '',
     'CLASSIFY THE CREATIVE (fixed vocabulary)',
     renderAttributeVocabulary(vocabularyOverrides),

@@ -1,4 +1,4 @@
-import { ATTRIBUTE_SCHEMA_PROPERTIES } from './creative-ai-shared';
+import { ATTRIBUTE_SCHEMA_PROPERTIES, TIMELINE_SCHEMA_PROPERTIES } from './creative-ai-shared';
 import type { PromptVariable } from './creative-prompt-template';
 
 /**
@@ -13,7 +13,7 @@ import type { PromptVariable } from './creative-prompt-template';
  * Settings; every edit is a new version and each run records the version it
  * used. The output schema is not editable: the ERP parses it.
  */
-export const RUNNING_ANALYST_PROMPT_VERSION = 3;
+export const RUNNING_ANALYST_PROMPT_VERSION = 4;
 
 export const RUNNING_ANALYST_VARIABLES: PromptVariable[] = [
   { token: 'STORE_NAME', description: 'The store this creative belongs to.' },
@@ -108,7 +108,7 @@ You recommend. You do not change budgets, pause ads, or publish anything.
 </decision_rules>
 
 <diagnosis>
-After the verdict, explain the why by reading the diagnostic metrics as a funnel, and tie it to what is actually in the creative. Open the video or image and look at it.
+Read the creative scene by scene first, using the contact sheets and the transcript, and record that reading in the timeline. Then explain the why by reading the diagnostic metrics as a funnel, and tie each reading to the scene behind it, citing its timestamps. When retention data is present in analysis-context.json, name the scene where viewers left.
 - Low hook rate: the first 3 seconds fail to stop the scroll. Describe what the first 3 seconds show and say.
 - Good hook rate, low hold rate: the opening works but the body loses people. Point to where it drags or where the message turns unclear.
 - Good hold rate, low CTR: people watch but do not act. Look at the offer, the CTA, and whether the next step is obvious.
@@ -128,7 +128,7 @@ After the verdict, explain the why by reading the diagnostic metrics as a funnel
 export const RUNNING_ANALYST_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['verdict', 'verdictReason', 'confidence', 'dataSufficiency', 'evidence', 'diagnosis', 'action', 'attributes', 'audienceQuality', 'lesson'],
+  required: ['verdict', 'verdictReason', 'confidence', 'dataSufficiency', 'evidence', 'diagnosis', 'action', 'attributes', 'audienceQuality', 'lesson', 'timeline', 'beats'],
   properties: {
     verdict: { type: 'string', enum: ['SCALE', 'WATCH', 'KILL'] },
     verdictReason: {
@@ -218,5 +218,6 @@ export const RUNNING_ANALYST_SCHEMA = {
       description: 'One sentence tying the construction to the outcome, for the knowledge base.',
     },
     complianceFlags: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 240 } },
+    ...TIMELINE_SCHEMA_PROPERTIES,
   },
 } as const;

@@ -15,11 +15,8 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CREATIVE_AGENT_PERMISSIONS } from '../creative-agent.constants';
 import type { CreativeActor } from '../types/creative-actor.type';
 import { CreativeAccessService } from './creative-access.service';
-import {
-  buildKnowledgeDigest,
-  extractStructure,
-  type CreativeKnowledgeStructure,
-} from '../utils/creative-knowledge-structure';
+import { CreativeAiFrameService } from './creative-ai-frame.service';
+import { buildKnowledgeDigest, extractStructure, type CreativeKnowledgeStructure, type KnowledgeMediaHint } from '../utils/creative-knowledge-structure';
 
 /**
  * The winning-ads knowledge base.
@@ -51,6 +48,7 @@ export class CreativeKnowledgeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CreativeAccessService,
+    private readonly frames: CreativeAiFrameService,
   ) {}
 
   /**
@@ -101,7 +99,9 @@ export class CreativeKnowledgeService {
       throw new BadRequestException(`That analysis is ${run.status.toLowerCase()}, not completed.`);
     }
 
-    const structure = extractStructure(run.analysisResult);
+    // The media manifest contributes the duration and the measured pacing,
+    // so the record carries what code measured beside what the model read.
+    const structure = extractStructure(run.analysisResult, run.mediaManifest as KnowledgeMediaHint);
     if (!structure) {
       throw new BadRequestException(
         'That analysis has no structural sections, so there is nothing for the knowledge base to learn from.',
@@ -236,7 +236,9 @@ export class CreativeKnowledgeService {
       },
     });
     if (!entry) throw new NotFoundException('Knowledge entry not found');
-    return { ...this.present(entry), structure: entry.structure, metrics: entry.metrics };
+    // Scene thumbnails live with the run the entry was promoted from.
+    const frames = entry.runId ? await this.frames.listForRun(context.tenantId, entry.runId) : [];
+    return { ...this.present(entry), structure: entry.structure, metrics: entry.metrics, frames };
   }
 
   /**
@@ -347,8 +349,15 @@ export class CreativeKnowledgeService {
    */
   private async economicsFor(tenantId: string, adIds: string[]): Promise<KnowledgeEconomics> {
     if (adIds.length === 0) {
-      return { spend: 0, impressions: 0, orders: 0, delivered: 0, netContribution: null, deliveredCostPerOrder: null, linkedAdCount: 0 };
+      return { spend: 0, impressions: 0, orders: 0, delivered: 0, netContribution: null, deliveredCostPerOrder: null, linkedAdCount: 0, hookRate: null, holdRate: null };
     }
+    // The diagnostics come from Meta's own video counters, the same way the
+    // analysis context computes them, so an entry's hook and hold rates can be
+    // averaged by hook type later.
+    const video = await this.prisma.metaAdInsight.aggregate({
+      where: { tenantId, adId: { in: adIds }, videoPlays3s: { not: null } },
+      _sum: { videoPlays3s: true, impressions: true, thruPlays: true },
+    });
     const sum = await this.prisma.reconcileMarketing.aggregate({
       where: { tenantId, adId: { in: adIds } },
       _sum: {
@@ -383,6 +392,10 @@ export class CreativeKnowledgeService {
       netContribution: hasRevenue ? Math.round((deliveredRevenue - costs - spend) * 100) / 100 : null,
       deliveredCostPerOrder: delivered > 0 ? Math.round((spend / delivered) * 100) / 100 : null,
       linkedAdCount: adIds.length,
+      hookRate: (video._sum.impressions ?? 0) > 0 ? Math.round(((video._sum.videoPlays3s ?? 0) / (video._sum.impressions ?? 1)) * 1000) / 1000 : null,
+      holdRate: (video._sum.videoPlays3s ?? 0) > 0 && video._sum.thruPlays != null
+        ? Math.round(((video._sum.thruPlays ?? 0) / (video._sum.videoPlays3s ?? 1)) * 1000) / 1000
+        : null,
     };
   }
 
@@ -478,4 +491,8 @@ export type KnowledgeEconomics = {
   netContribution: number | null;
   deliveredCostPerOrder: number | null;
   linkedAdCount: number;
+  /** Meta's 3-second plays over impressions; null when the export lacked video counters. */
+  hookRate?: number | null;
+  /** ThruPlays over 3-second plays. */
+  holdRate?: number | null;
 };

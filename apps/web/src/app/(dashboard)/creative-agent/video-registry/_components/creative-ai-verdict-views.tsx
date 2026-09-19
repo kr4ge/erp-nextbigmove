@@ -1,8 +1,24 @@
 'use client';
 
-import { AlertTriangle, BookOpen, CheckCircle2, Database, Layers, ShieldAlert, Target, Wrench } from 'lucide-react';
+import { AlertTriangle, BookOpen, CheckCircle2, Clapperboard, Database, Layers, ShieldAlert, Target, Wrench } from 'lucide-react';
 import type { DashboardTabItem } from '@/components/ui/dashboard-tabs';
-import type { CreativeAiResultAnalyst, CreativeAiResultReviewer } from '../_types/creative-ai';
+import type {
+  CreativeAiMediaManifest,
+  CreativeAiMetricsSnapshot,
+  CreativeAiResultAnalyst,
+  CreativeAiResultReviewer,
+  CreativeAiRunFrame,
+} from '../_types/creative-ai';
+import { CreativeAiStoryboard } from './creative-ai-storyboard';
+
+/** What the scene-by-scene tab needs beyond the result: thumbnails, the media manifest, the metrics. */
+export type StoryboardContext = {
+  frames: CreativeAiRunFrame[];
+  loadingFrames: boolean;
+  manifest: CreativeAiMediaManifest | null;
+  metrics: CreativeAiMetricsSnapshot | null;
+  kind: 'VIDEO' | 'STATIC';
+};
 
 /**
  * Tabbed renderers for the two-prompt results.
@@ -13,13 +29,17 @@ import type { CreativeAiResultAnalyst, CreativeAiResultReviewer } from '../_type
  * the evidence, the fixes, or the classification.
  */
 
-export type AnalystTab = 'overview' | 'evidence' | 'diagnosis' | 'structure' | 'lesson';
-export type ReviewerTab = 'overview' | 'fixes' | 'risk' | 'data' | 'structure';
+export type AnalystTab = 'overview' | 'timeline' | 'evidence' | 'diagnosis' | 'structure' | 'lesson';
+export type ReviewerTab = 'overview' | 'timeline' | 'fixes' | 'risk' | 'data' | 'structure';
+
+const timelineTab = (count: number): DashboardTabItem<'timeline'>[] =>
+  count > 0 ? [{ value: 'timeline', label: 'Scene by scene', icon: <Clapperboard className="h-3.5 w-3.5" />, badge: count }] : [];
 
 export function analystTabs(result: CreativeAiResultAnalyst): DashboardTabItem<AnalystTab>[] {
   const flags = result.complianceFlags?.length ?? 0;
   return [
     { value: 'overview', label: 'Overview' },
+    ...timelineTab(result.timeline?.length ?? 0),
     { value: 'evidence', label: 'Evidence', badge: result.evidence.length },
     { value: 'diagnosis', label: 'Why', icon: <Target className="h-3.5 w-3.5" /> },
     { value: 'structure', label: 'How it is built', icon: <Layers className="h-3.5 w-3.5" /> },
@@ -30,6 +50,7 @@ export function analystTabs(result: CreativeAiResultAnalyst): DashboardTabItem<A
 export function reviewerTabs(result: CreativeAiResultReviewer): DashboardTabItem<ReviewerTab>[] {
   return [
     { value: 'overview', label: 'Overview' },
+    ...timelineTab(result.timeline?.length ?? 0),
     { value: 'fixes', label: 'Keep & fix', icon: <Wrench className="h-3.5 w-3.5" />, badge: result.whatToFix.length },
     { value: 'risk', label: 'Audience risk', icon: <ShieldAlert className="h-3.5 w-3.5" />, badge: result.audienceQualityFlags.length },
     { value: 'data', label: 'What our data says', icon: <Database className="h-3.5 w-3.5" /> },
@@ -54,13 +75,28 @@ export function RunningAnalystView({
   tab,
   modeNote,
   warnings,
+  storyboard,
 }: {
   result: CreativeAiResultAnalyst;
   tab: string;
   modeNote: string | null;
   warnings: string[];
+  storyboard: StoryboardContext;
 }) {
   switch (tab) {
+    case 'timeline':
+      return (
+        <CreativeAiStoryboard
+          timeline={result.timeline ?? []}
+          beats={result.beats ?? null}
+          frames={storyboard.frames}
+          loadingFrames={storyboard.loadingFrames}
+          manifest={storyboard.manifest}
+          metrics={storyboard.metrics}
+          kind={storyboard.kind}
+          showMetrics
+        />
+      );
     case 'evidence':
       return (
         <div className="space-y-4">
@@ -157,13 +193,27 @@ export function NewReviewerView({
   tab,
   modeNote,
   warnings,
+  storyboard,
 }: {
   result: CreativeAiResultReviewer;
   tab: string;
   modeNote: string | null;
   warnings: string[];
+  storyboard: StoryboardContext;
 }) {
   switch (tab) {
+    case 'timeline':
+      return (
+        <CreativeAiStoryboard
+          timeline={result.timeline ?? []}
+          beats={result.beats ?? null}
+          frames={storyboard.frames}
+          loadingFrames={storyboard.loadingFrames}
+          manifest={storyboard.manifest}
+          metrics={null}
+          kind={storyboard.kind}
+        />
+      );
     case 'fixes':
       return (
         <div className="grid gap-3 lg:grid-cols-2">

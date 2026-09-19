@@ -12,6 +12,7 @@ import type {
   CreativeAiProviderLogin,
   StartCreativeAiRunInput,
   UpdateCreativeAiConfigInput,
+  CreativeAiRunFrame,
 } from '../_types/creative-ai';
 
 function creativeAiError(error: unknown, fallback: string): Error {
@@ -183,5 +184,19 @@ export async function cancelCreativeAiRun(runId: string): Promise<CreativeAiRun>
     return data;
   } catch (error) {
     throw creativeAiError(error, 'Unable to cancel the video analysis.');
+  }
+}
+
+/** The stored scene thumbnails of a finished run, signed for display. */
+export async function fetchCreativeAiRunFrames(runId: string): Promise<CreativeAiRunFrame[]> {
+  try {
+    const { data } = await apiClient.get<CreativeAiRunFrame[]>(`/creative-agent/ai/runs/${runId}/frames`);
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.message;
+      throw new Error(Array.isArray(message) ? message.join(', ') : message || 'Unable to load the scene thumbnails.');
+    }
+    throw error instanceof Error ? error : new Error('Unable to load the scene thumbnails.');
   }
 }

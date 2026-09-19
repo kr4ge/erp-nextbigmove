@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { sceneIndexAt } from '../utils/creative-ai-sampling';
+import type { MediaManifest } from './creative-ai-media.service';
 
 const numberValue = (value: Prisma.Decimal | number | null | undefined) => Number(value ?? 0);
 const ratio = (numerator: number, denominator: number) => denominator > 0 ? numerator / denominator : null;
@@ -35,7 +37,7 @@ export class CreativeAiContextService {
     const warnings: string[] = [];
     if (adIds.length === 0) warnings.push('NO_LINKED_META_ADS');
 
-    const [reconciled, hook, hold, completion, adDescriptors, daily] = adIds.length > 0
+    const [reconciled, hook, hold, completion, adDescriptors, daily, quartiles] = adIds.length > 0
       ? await Promise.all([
           this.prisma.reconcileMarketing.aggregate({
             where: { tenantId, adId: { in: adIds }, date },
@@ -101,6 +103,20 @@ export class CreativeAiContextService {
             },
             orderBy: { date: 'asc' },
           }),
+          // How far viewers got, as Meta measures it: plays reaching 25, 50,
+          // 75, 95 and 100 percent of the video's length.
+          this.prisma.metaAdInsight.aggregate({
+            where: { tenantId, adId: { in: adIds }, date, videoPlays25: { not: null } },
+            _sum: {
+              impressions: true,
+              videoPlays3s: true,
+              videoPlays25: true,
+              videoPlays50: true,
+              videoPlays75: true,
+              videoPlays95: true,
+              videoPlays100: true,
+            },
+          }),
         ])
       : [
           { _sum: {} },
@@ -109,6 +125,7 @@ export class CreativeAiContextService {
           { _sum: {} },
           [],
           [],
+          { _sum: {} },
         ] as any;
 
     const spend = numberValue(reconciled._sum.spend);
@@ -135,6 +152,21 @@ export class CreativeAiContextService {
 
     if (impressions > 0 && hookDenominator === 0) warnings.push('VIDEO_METRICS_NOT_MEASURED');
     if (adIds.length > 0 && daily.length === 0) warnings.push('NO_RECONCILED_DATA_IN_DATE_RANGE');
+
+    // The preprocessing manifest is saved on the run before this builder is
+    // called, so retention shares can be pinned to real timestamps and scenes.
+    const manifest = (run.mediaManifest ?? null) as MediaManifest | null;
+    const video = manifest && manifest.kind === 'VIDEO'
+      ? {
+          durationSeconds: manifest.durationSeconds,
+          sceneCount: manifest.scenes?.length ?? 0,
+          sheetCount: manifest.sheets?.length ?? 0,
+          transcriptStatus: manifest.transcript?.status ?? null,
+          pacing: manifest.pacing ?? null,
+        }
+      : null;
+    const retention = this.retention(quartiles._sum ?? {}, manifest);
+    if (adIds.length > 0 && creative.kind === 'VIDEO' && !retention) warnings.push('VIDEO_RETENTION_NOT_MEASURED');
 
     return {
       schemaVersion: 1,
@@ -177,6 +209,8 @@ export class CreativeAiContextService {
         })),
         source: 'creative_meta_ad_links -> reconcile_marketing + meta_ad_insights',
       },
+      video,
+      retention,
       metrics: {
         spend: money(spend),
         impressions,
@@ -235,6 +269,55 @@ export class CreativeAiContextService {
           'The analysis may explain correlation but must not claim causation from these aggregates.',
         ],
       },
+    };
+  }
+
+  /**
+   * Retention as a curve the model can read against the timeline: each share
+   * of the length becomes a timestamp and the scene containing it, with how
+   * many of the 3-second viewers were still there and how many left since
+   * the previous point.
+   */
+  private retention(
+    sums: Record<string, number | null | undefined>,
+    manifest: MediaManifest | null,
+  ) {
+    const base3s = sums.videoPlays3s ?? 0;
+    const impressions = sums.impressions ?? 0;
+    const duration = manifest?.kind === 'VIDEO' ? manifest.durationSeconds : null;
+    const scenes = manifest?.kind === 'VIDEO' ? manifest.scenes ?? [] : [];
+    const raw: Array<[number, number | null | undefined]> = [
+      [0.25, sums.videoPlays25],
+      [0.5, sums.videoPlays50],
+      [0.75, sums.videoPlays75],
+      [0.95, sums.videoPlays95],
+      [1, sums.videoPlays100],
+    ];
+    const measured = raw.filter((entry): entry is [number, number] => typeof entry[1] === 'number');
+    if (measured.length === 0 || base3s <= 0) return null;
+
+    let previous = base3s;
+    const points = measured.map(([share, plays]) => {
+      const atSeconds = duration != null ? Math.round(duration * share * 10) / 10 : null;
+      const point = {
+        share,
+        label: `${Math.round(share * 100)}%`,
+        atSeconds,
+        sceneIndex: atSeconds != null ? sceneIndexAt(scenes, atSeconds) : null,
+        plays,
+        ofImpressions: ratio(plays, impressions),
+        of3sViewers: ratio(plays, base3s),
+        lostSincePrevious: previous > 0 ? Math.round((1 - plays / previous) * 1000) / 1000 : null,
+      };
+      previous = plays;
+      return point;
+    });
+    return {
+      basis: 'Meta video plays reaching 25/50/75/95/100% of the length, summed over the linked ads in the period.',
+      threeSecondPlays: base3s,
+      impressions,
+      points,
+      note: 'atSeconds maps each share to this creative\'s duration; sceneIndex is the detected scene containing that moment. lostSincePrevious is the share of viewers who left between this point and the previous one.',
     };
   }
 

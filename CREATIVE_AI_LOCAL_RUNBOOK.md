@@ -277,20 +277,60 @@ hypotheses. Null/unmeasured rates remain unknown rather than being converted to
 zero. Only aggregated marketing/order metrics are included; customer and
 order-level PII are not sent to Claudebox.
 
-## 11. Optional local audio transcription
+## 11. Audio transcription
 
-Visual analysis works without Whisper. If `CREATIVE_AI_WHISPER_BIN` is blank,
-the run explicitly reports `AUDIO_TRANSCRIPTION_NOT_CONFIGURED` and uses the
-registered Creative script as context.
+Without a transcript the model is deaf: it judges the ad on frames plus the
+script typed at enrollment, and every run carries the warning
+`AUDIO_TRANSCRIPTION_NOT_CONFIGURED`. Two ways to give it ears; the service
+wins when both are set.
 
-After installing the local Whisper CLI, set its executable path, for example:
+**The Whisper service (what production runs).** A container from
+`apps/whisper` running OpenAI's Whisper weights through faster-whisper, model
+`small` by default. Start it once and point the API at it:
+
+```bash
+docker compose -f docker-compose.dev.yml --profile ai up -d whisper
+curl -s localhost:3110/health
+```
+
+```dotenv
+CREATIVE_AI_WHISPER_URL=http://127.0.0.1:3110
+CREATIVE_AI_WHISPER_LANGUAGE=tl   # optional; blank lets Whisper detect
+```
+
+The first build downloads the model into the image (a few minutes). The
+container answers `/health` at once and loads the model on the first request.
+
+**A local Whisper CLI instead.** `pip install openai-whisper`, then:
 
 ```dotenv
 CREATIVE_AI_WHISPER_BIN=/absolute/path/to/whisper
-CREATIVE_AI_WHISPER_MODEL=base
+CREATIVE_AI_WHISPER_MODEL=small
 ```
 
-Restart ERP after changing `.env`.
+Restart the API after changing `.env`. A completed transcript shows in
+`video-timeline.json` as `transcript.status: COMPLETED` with timestamped
+segments, and the storyboard tab quotes from it.
+
+### Scene sampling
+
+Preprocessing detects cuts, samples one frame a second, and tiles everything
+onto contact sheets with the timestamp printed in each cell (amber for the
+first frame of a scene). Full-size frames are kept for the hook and for each
+scene start. The tunables, all optional:
+
+```dotenv
+CREATIVE_AI_SCENE_THRESHOLD=0.3      # cut sensitivity, 0.05..0.95
+CREATIVE_AI_MAX_SCENES=40
+CREATIVE_AI_MAX_GRID_FRAMES=90       # above this many seconds, sampling stretches
+CREATIVE_AI_PUSH_BUDGET_BYTES=8000000 # frames + sheets pushed to the gateway
+```
+
+Scene thumbnails are stored in object storage (`creative_ai_run_frames`), so
+MinIO must be up locally for the storyboard to show pictures. Warnings a run
+can report from this stage: `SCENE_CUTS_TRUNCATED`, `FRAME_PUSH_BUDGET_TRIMMED`,
+`FRAME_STORAGE_NOT_CONFIGURED`, `VIDEO_HAS_NO_AUDIO`, and `CHECK_*` for
+claims the verifier could not support against the manifest.
 
 ## 12. Stop the local gateway
 

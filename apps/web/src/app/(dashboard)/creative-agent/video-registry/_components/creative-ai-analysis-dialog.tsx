@@ -37,12 +37,14 @@ import {
   type CreativeAiResultV1,
   type CreativeAiResultV2,
   type CreativeAiRun,
+  type CreativeAiRunFrame,
   type CreativeAiRunStatus,
   type CreativeAiSection,
   type CreativeAiSectionKey,
   type CreativeAiTarget,
   type CreativeLens,
 } from '../_types/creative-ai';
+import { fetchCreativeAiRunFrames } from '../_services/creative-ai.service';
 import { VideoRegistryDateRangePicker } from './video-registry-date-range-picker';
 import { CreativeAiProviderControls } from './creative-ai-provider-controls';
 import { CreativeAiPromptPanel } from './creative-ai-prompt-panel';
@@ -52,6 +54,7 @@ import {
   RunningAnalystView,
   analystTabs,
   reviewerTabs,
+  type StoryboardContext,
   type AnalystTab,
   type ReviewerTab,
 } from './creative-ai-verdict-views';
@@ -547,6 +550,29 @@ export function CreativeAiAnalysisDialog({ item, startDate, endDate, onClose }: 
 
   useEffect(() => { setTab('overview'); }, [activeRun?.id]);
 
+  // Scene thumbnails are signed on request, so they are fetched once per
+  // finished run rather than on every progress poll.
+  const [frames, setFrames] = useState<{ runId: string; items: CreativeAiRunFrame[] } | null>(null);
+  const [loadingFrames, setLoadingFrames] = useState(false);
+  const hasTimeline = Boolean(result && 'timeline' in result && Array.isArray((result as { timeline?: unknown[] }).timeline) && (result as { timeline: unknown[] }).timeline.length);
+  useEffect(() => {
+    if (!activeRun || activeRun.status !== 'COMPLETED' || !hasTimeline || frames?.runId === activeRun.id) return;
+    let cancelled = false;
+    setLoadingFrames(true);
+    fetchCreativeAiRunFrames(activeRun.id)
+      .then((items) => { if (!cancelled) setFrames({ runId: activeRun.id, items }); })
+      .catch(() => { if (!cancelled) setFrames({ runId: activeRun.id, items: [] }); })
+      .finally(() => { if (!cancelled) setLoadingFrames(false); });
+    return () => { cancelled = true; };
+  }, [activeRun, hasTimeline, frames?.runId]);
+  const storyboard: StoryboardContext = {
+    frames: frames && activeRun && frames.runId === activeRun.id ? frames.items : [],
+    loadingFrames,
+    manifest: activeRun?.mediaManifest ?? null,
+    metrics: activeRun?.metricsSnapshot ?? null,
+    kind: activeRun?.creative.kind ?? item?.kind ?? 'VIDEO',
+  };
+
   const tabs = useMemo<DashboardTabItem<TabKey>[]>(() => {
     if (isAnalystResult(result)) return analystTabs(result);
     if (isReviewerResult(result)) return reviewerTabs(result);
@@ -689,9 +715,9 @@ export function CreativeAiAnalysisDialog({ item, startDate, endDate, onClose }: 
                     </div>
                     <div className="flex-1 px-4 py-5 sm:px-6 xl:min-h-0 xl:overflow-y-auto">
                       {isAnalystResult(result) ? (
-                        <RunningAnalystView result={result} tab={tab} modeNote={activeRun?.analysisModeNote ?? null} warnings={activeRun?.warnings ?? []} />
+                        <RunningAnalystView result={result} tab={tab} modeNote={activeRun?.analysisModeNote ?? null} warnings={activeRun?.warnings ?? []} storyboard={storyboard} />
                       ) : isReviewerResult(result) ? (
-                        <NewReviewerView result={result} tab={tab} modeNote={activeRun?.analysisModeNote ?? null} warnings={activeRun?.warnings ?? []} />
+                        <NewReviewerView result={result} tab={tab} modeNote={activeRun?.analysisModeNote ?? null} warnings={activeRun?.warnings ?? []} storyboard={storyboard} />
                       ) : sectioned ? (
                         tab === 'overview' ? <OverviewView result={sectioned} warnings={activeRun?.warnings ?? []} />
                           : tab === 'tests' ? <TestsView result={sectioned} />

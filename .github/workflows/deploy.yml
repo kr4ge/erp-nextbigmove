@@ -63,7 +63,8 @@ jobs:
           ssh "$SSH_USER@$SSH_HOST" "cd /opt/erp && \
             docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build api && \
             docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build web && \
-            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build admin"
+            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build admin && \
+            docker compose -f docker-compose.prod.yml -f docker-compose.prod.override.yml --env-file .env.prod build whisper"
 
           # Clean up old images BEFORE starting services to free memory
           ssh "$SSH_USER@$SSH_HOST" "docker image prune -f"

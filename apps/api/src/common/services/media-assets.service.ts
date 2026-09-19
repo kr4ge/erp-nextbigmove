@@ -46,6 +46,10 @@ export class MediaAssetsService {
     process.env.OBJECT_STORAGE_CREATIVE_THUMBNAIL_MAX_FILE_MB,
     8,
   );
+  private readonly creativeAiFrameMaxFileMb = this.parsePositiveInt(
+    process.env.OBJECT_STORAGE_CREATIVE_AI_FRAME_MAX_FILE_MB,
+    4,
+  );
 
   constructor(
     private readonly prisma: PrismaService,
@@ -136,6 +140,27 @@ export class MediaAssetsService {
       tooLargeLabel: 'Creative thumbnail image',
       resizeWidth: 960,
       resizeHeight: 960,
+    });
+  }
+
+  /**
+   * One scene of an analysed creative, kept for the storyboard and the
+   * knowledge base. Small on purpose: it is a thumbnail, not model input.
+   */
+  async uploadCreativeAiFrameImage(
+    file: UploadedImageFile | undefined,
+    tenantId: string,
+  ): Promise<UploadedAssetView> {
+    return this.uploadImageAsset({
+      file,
+      tenantId,
+      kind: MediaAssetKind.CREATIVE_AI_FRAME_IMAGE,
+      maxFileMb: this.creativeAiFrameMaxFileMb,
+      objectPrefix: 'creative-ai-frames',
+      requiredMessage: 'Creative frame image is required',
+      tooLargeLabel: 'Creative frame image',
+      resizeWidth: 640,
+      resizeHeight: 640,
     });
   }
 

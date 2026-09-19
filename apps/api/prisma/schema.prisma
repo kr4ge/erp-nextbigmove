@@ -113,6 +113,7 @@ model Tenant {
   creativeAiRuns                      CreativeAiRun[]
   creativeKnowledgeEntries            CreativeKnowledgeEntry[]
   creativeAiPromptTemplates           CreativeAiPromptTemplate[]
+  creativeAiRunFrames                 CreativeAiRunFrame[]
   creativeStoreTargets                CreativeStoreTarget[]
   creativeEnrollmentReviews           CreativeEnrollmentReview[]
   creativeAiPolicy                    CreativeAiPolicy?
@@ -713,6 +714,7 @@ enum MediaAssetKind {
   UNDELIVERABLE_REMARK_PROOF_IMAGE
   WMS_PACKING_PROOF_IMAGE
   CREATIVE_THUMBNAIL_IMAGE
+  CREATIVE_AI_FRAME_IMAGE
 }
 
 enum WmsPackingProofSource {
@@ -1757,11 +1759,34 @@ model CreativeAiRun {
 
   knowledgeEntries  CreativeKnowledgeEntry[]
   enrollmentReviews CreativeEnrollmentReview[] @relation("CreativeEnrollmentReviewRun")
+  frames            CreativeAiRunFrame[]
 
   @@index([tenantId, requestedById, createdAt])
   @@index([tenantId, creativeId, createdAt])
   @@index([tenantId, status, createdAt])
   @@map("creative_ai_runs")
+}
+
+/// One stored thumbnail per detected scene of an analysed video, so the
+/// storyboard and the knowledge base can show how a creative is built long
+/// after the run workspace has been swept.
+model CreativeAiRunFrame {
+  id               String        @id @default(uuid()) @db.Uuid
+  tenantId         String        @db.Uuid
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runId            String        @db.Uuid
+  run              CreativeAiRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  sceneIndex       Int
+  /// Seconds from the start; null for a static creative's single frame.
+  timestampSeconds Decimal?      @db.Decimal(10, 3)
+  endSeconds       Decimal?      @db.Decimal(10, 3)
+  assetId          String        @db.Uuid
+  asset            MediaAsset    @relation("CreativeAiRunFrameAsset", fields: [assetId], references: [id], onDelete: Cascade)
+  createdAt        DateTime      @default(now())
+
+  @@unique([runId, sceneIndex])
+  @@index([tenantId, runId])
+  @@map("creative_ai_run_frames")
 }
 
 /// Which of the two analysis prompts a template is for. A creative with real
@@ -2415,6 +2440,7 @@ model MediaAsset {
   undeliverableAttemptProof        UndeliverableAttemptProof? @relation("UndeliverableAttemptProofAsset")
   wmsPackingProof                  WmsPackingProof?           @relation("WmsPackingProofAsset")
   creativeThumbnails               Creative[]                 @relation("CreativeThumbnailAsset")
+  creativeAiRunFrames              CreativeAiRunFrame[]       @relation("CreativeAiRunFrameAsset")
 
   @@unique([bucket, objectKey])
   @@index([tenantId, kind])

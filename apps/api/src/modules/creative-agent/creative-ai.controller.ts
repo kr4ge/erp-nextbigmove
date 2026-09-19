@@ -118,6 +118,12 @@ export class CreativeAiController {
     return this.runs.get(req.user, id);
   }
 
+  @Get('runs/:id/frames')
+  @Permissions('creative_agent.ai.use', 'creative_agent.ai.manage')
+  frames(@Request() req: CreativeRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.runs.frames(req.user, id);
+  }
+
   @Post('runs/:id/cancel')
   @Permissions('creative_agent.ai.use', 'creative_agent.ai.manage')
   cancel(@Request() req: CreativeRequest, @Param('id', ParseUUIDPipe) id: string) {
