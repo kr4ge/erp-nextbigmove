@@ -419,6 +419,22 @@ export type WmsFulfillmentBasketPackPlan = {
     productDisplayId: string | null;
     unitCount: number;
   }>;
+  units: Array<{
+    id: string;
+    inventoryUnitId: string;
+    code: string | null;
+    barcode: string | null;
+    scannableCode: string | null;
+    status: 'PICKED' | 'PACKED';
+    variationId: string;
+    productId: string | null;
+    productName: string;
+    productDisplayId: string | null;
+    assignedOrder: {
+      id: string;
+      posOrderId: string;
+    } | null;
+  }>;
   orders: WmsFulfillmentBasketPackPlanOrder[];
   activeOrder: WmsFulfillmentBasketPackPlanOrder | null;
 };

@@ -5,6 +5,7 @@ import { CheckCircle2, CornerDownLeft, PackageOpen, RefreshCcw, ShieldAlert, Sla
 import { WmsCompactPanel } from '../../_components/wms-compact-panel';
 import { WmsInlineNotice } from '../../_components/wms-inline-notice';
 import { WmsModal } from '../../_components/wms-modal';
+import { FulfillmentBasketUnitManifest } from './fulfillment-basket-unit-manifest';
 import type {
   WmsFulfillmentBasketPackPlan,
   WmsFulfillmentBasketPackValidation,
@@ -1196,6 +1197,8 @@ function DemandBasketPackExecutionPanel({
               </div>
             </div>
           </div>
+
+          <FulfillmentBasketUnitManifest units={plan.units ?? []} />
         </div>
       </WmsCompactPanel>
 

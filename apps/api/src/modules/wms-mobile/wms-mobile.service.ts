@@ -4371,24 +4371,6 @@ export class WmsMobileService {
         throw new BadRequestException(`Unit ${scannedUnit.code} is not in basket ${scopedBasket.barcode}`);
       }
 
-      if (basketUnit.status === WmsBasketUnitStatus.PACKED) {
-        if (basketUnit.fulfillmentOrderId && basketUnit.fulfillmentOrderId !== scopedOrder.id) {
-          const siblingOrder = (scopedBasket.fulfillmentOrders ?? []).find((order: any) => order.id === basketUnit.fulfillmentOrderId);
-          throw new ConflictException(
-            `Unit ${scannedUnit.code} is already packed for order ${siblingOrder?.posOrderId ?? basketUnit.fulfillmentOrderId}`,
-          );
-        }
-
-        throw new ConflictException(`Unit ${scannedUnit.code} was already packed`);
-      }
-
-      if (basketUnit.fulfillmentOrderId && basketUnit.fulfillmentOrderId !== scopedOrder.id) {
-        const siblingOrder = (scopedBasket.fulfillmentOrders ?? []).find((order: any) => order.id === basketUnit.fulfillmentOrderId);
-        throw new ConflictException(
-          `Unit ${scannedUnit.code} is already assigned to order ${siblingOrder?.posOrderId ?? basketUnit.fulfillmentOrderId}`,
-        );
-      }
-
       const packableLines = (scopedOrder.lines ?? []).filter((line: any) => (
         line.status !== WmsFulfillmentLineStatus.CANCELED
         && Math.max(line.quantityRequired ?? 0, 0) > 0
@@ -4404,6 +4386,19 @@ export class WmsMobileService {
       )).length;
       if (packedForLine >= Math.max(matchingLine.quantityRequired ?? 0, 0)) {
         throw new BadRequestException(`Order ${scopedOrder.posOrderId} already has all required ${matchingLine.productName} units packed`);
+      }
+
+      const reassignment = await this.reassignDemandPackingUnitIfNeeded(tx, {
+        basketId: scopedBasket.id,
+        basketCode: scopedBasket.barcode,
+        basketUnit,
+        targetOrderId: scopedOrder.id,
+        targetOrderCode: scopedOrder.posOrderId,
+        unitCode: scannedUnit.code,
+      });
+
+      if (basketUnit.status === WmsBasketUnitStatus.PACKED) {
+        throw new ConflictException(`Unit ${scannedUnit.code} was already packed`);
       }
 
       const updateBasketUnitResult = await tx.wmsBasketUnit.updateMany({
@@ -4487,6 +4482,7 @@ export class WmsMobileService {
         basketUnitId: basketUnit.id,
         inventoryUnitId: basketUnit.inventoryUnitId,
         inventoryWarehouseId: basketUnit.inventoryUnit.warehouseId,
+        reassignment,
       };
     });
 
@@ -4504,6 +4500,8 @@ export class WmsMobileService {
         basketCode: transactionResult.basket.barcode,
         unitCode: transactionResult.basketUnitCode,
         mode: 'BASKET_DEMAND',
+        reassignedFromOrderId: transactionResult.reassignment?.sourceOrderId ?? null,
+        exchangedUnitId: transactionResult.reassignment?.replacementUnitId ?? null,
       },
     });
 
@@ -4520,6 +4518,136 @@ export class WmsMobileService {
       basket: this.mapMobilePickBasket(transactionResult.basket),
       tasks: this.mapMobileBasketTasks(transactionResult.basket),
       plan: this.buildMobileBasketPackPlan(transactionResult.basket, activeOrderId),
+    };
+  }
+
+  private async reassignDemandPackingUnitIfNeeded(
+    tx: Prisma.TransactionClient,
+    params: {
+      basketId: string;
+      basketCode: string;
+      basketUnit: {
+        id: string;
+        status: WmsBasketUnitStatus;
+        fulfillmentOrderId: string | null;
+        fulfillmentLineId: string | null;
+        variationId: string;
+        productId: string;
+      };
+      targetOrderId: string;
+      targetOrderCode: string;
+      unitCode: string;
+    },
+  ) {
+    const sourceOrderId = params.basketUnit.fulfillmentOrderId;
+    if (!sourceOrderId || sourceOrderId === params.targetOrderId) {
+      return null;
+    }
+
+    const sourceOrder = await tx.wmsFulfillmentOrder.findUnique({
+      where: { id: sourceOrderId },
+      select: {
+        posOrderId: true,
+        status: true,
+        lines: {
+          where: {
+            variationId: params.basketUnit.variationId,
+            status: { not: WmsFulfillmentLineStatus.CANCELED },
+            quantityRequired: { gt: 0 },
+          },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    });
+    const sourceOrderCode = sourceOrder?.posOrderId ?? sourceOrderId;
+
+    if (params.basketUnit.status === WmsBasketUnitStatus.PACKED) {
+      throw new ConflictException(
+        `Unit ${params.unitCode} is already packed for order ${sourceOrderCode}`,
+      );
+    }
+    if (params.basketUnit.status !== WmsBasketUnitStatus.PICKED) {
+      throw new ConflictException(
+        `Unit ${params.unitCode} is not available for order ${params.targetOrderCode}`,
+      );
+    }
+    if (
+      !sourceOrder
+      || (
+        sourceOrder.status !== WmsFulfillmentOrderStatus.PICKED
+        && sourceOrder.status !== WmsFulfillmentOrderStatus.PACKING
+      )
+    ) {
+      throw new ConflictException(
+        `Unit ${params.unitCode} belongs to completed or unavailable order ${sourceOrderCode}`,
+      );
+    }
+
+    const sourceLineId = params.basketUnit.fulfillmentLineId ?? sourceOrder.lines[0]?.id ?? null;
+    if (!sourceLineId) {
+      throw new ConflictException(
+        `Unit ${params.unitCode} has no valid order line in basket ${params.basketCode}`,
+      );
+    }
+
+    const replacementWhere = {
+      basketId: params.basketId,
+      id: { not: params.basketUnit.id },
+      status: WmsBasketUnitStatus.PICKED,
+      variationId: params.basketUnit.variationId,
+      productId: params.basketUnit.productId,
+      inventoryUnit: {
+        is: { status: WmsInventoryUnitStatus.PICKED },
+      },
+    } satisfies Prisma.WmsBasketUnitWhereInput;
+    const replacementSelect = {
+      id: true,
+      fulfillmentOrderId: true,
+    } satisfies Prisma.WmsBasketUnitSelect;
+    let replacementUnit = await tx.wmsBasketUnit.findFirst({
+      where: {
+        ...replacementWhere,
+        fulfillmentOrderId: params.targetOrderId,
+      },
+      select: replacementSelect,
+      orderBy: [{ pickedAt: 'asc' }, { createdAt: 'asc' }],
+    });
+    replacementUnit ??= await tx.wmsBasketUnit.findFirst({
+      where: {
+        ...replacementWhere,
+        fulfillmentOrderId: null,
+      },
+      select: replacementSelect,
+      orderBy: [{ pickedAt: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    if (!replacementUnit) {
+      throw new ConflictException(
+        `Unit ${params.unitCode} is allocated to order ${sourceOrderCode}. Scan a matching unpacked serial allocated to order ${params.targetOrderCode}.`,
+      );
+    }
+
+    const exchangeResult = await tx.wmsBasketUnit.updateMany({
+      where: {
+        id: replacementUnit.id,
+        status: WmsBasketUnitStatus.PICKED,
+        fulfillmentOrderId: replacementUnit.fulfillmentOrderId,
+      },
+      data: {
+        fulfillmentOrderId: sourceOrderId,
+        fulfillmentLineId: sourceLineId,
+      },
+    });
+    if (exchangeResult.count !== 1) {
+      throw new ConflictException(
+        `Basket ${params.basketCode} changed while assigning ${params.unitCode}. Scan the unit again.`,
+      );
+    }
+
+    return {
+      sourceOrderId,
+      replacementUnitId: replacementUnit.id,
     };
   }
 
@@ -4654,17 +4782,6 @@ export class WmsMobileService {
         throw new BadRequestException(`Unit ${scannedUnit.code} is not in basket ${scopedBasket.barcode}`);
       }
 
-      if (basketUnit.fulfillmentOrderId && basketUnit.fulfillmentOrderId !== scopedOrder.id) {
-        const siblingOrder = await tx.wmsFulfillmentOrder.findUnique({
-          where: { id: basketUnit.fulfillmentOrderId },
-          select: { posOrderId: true },
-        });
-        const assignmentLabel = basketUnit.status === WmsBasketUnitStatus.PACKED ? 'packed for' : 'assigned to';
-        throw new ConflictException(
-          `Unit ${scannedUnit.code} is already ${assignmentLabel} order ${siblingOrder?.posOrderId ?? basketUnit.fulfillmentOrderId}`,
-        );
-      }
-
       const matchingLine = scopedOrder.lines.find((line) => (
         line.id === basketUnit.fulfillmentLineId
         || line.variationId === basketUnit.variationId
@@ -4673,7 +4790,32 @@ export class WmsMobileService {
         throw new BadRequestException(`Unit ${scannedUnit.code} is not one of the products required by order ${scopedOrder.posOrderId}`);
       }
 
+      if (
+        basketUnit.status === WmsBasketUnitStatus.PACKED
+        && basketUnit.fulfillmentOrderId !== scopedOrder.id
+      ) {
+        const packedOrder = basketUnit.fulfillmentOrderId
+          ? await tx.wmsFulfillmentOrder.findUnique({
+              where: { id: basketUnit.fulfillmentOrderId },
+              select: { posOrderId: true },
+            })
+          : null;
+        throw new ConflictException(
+          `Unit ${scannedUnit.code} is already packed for order ${packedOrder?.posOrderId ?? basketUnit.fulfillmentOrderId ?? 'another order'}`,
+        );
+      }
+
       let alreadyProcessed = basketUnit.status === WmsBasketUnitStatus.PACKED;
+      let reassignment = alreadyProcessed
+        ? null
+        : await this.reassignDemandPackingUnitIfNeeded(tx, {
+            basketId: scopedBasket.id,
+            basketCode: scopedBasket.barcode,
+            basketUnit,
+            targetOrderId: scopedOrder.id,
+            targetOrderCode: scopedOrder.posOrderId,
+            unitCode: scannedUnit.code,
+          });
       if (!alreadyProcessed) {
         const packedForLine = await tx.wmsBasketUnit.count({
           where: {
@@ -4787,6 +4929,7 @@ export class WmsMobileService {
 
       return {
         alreadyProcessed,
+        reassignment: alreadyProcessed ? null : reassignment,
         basket: scopedBasket,
         order: scopedOrder,
         line: matchingLine,
@@ -4831,6 +4974,8 @@ export class WmsMobileService {
             unitCode: transactionResult.inventoryUnit.code,
             mode: 'BASKET_DEMAND',
             responseMode: 'scan-delta-v1',
+            reassignedFromOrderId: transactionResult.reassignment?.sourceOrderId ?? null,
+            exchangedUnitId: transactionResult.reassignment?.replacementUnitId ?? null,
           },
         });
       } catch (error) {
@@ -11470,6 +11615,12 @@ export class WmsMobileService {
     const summary = this.asJsonRecord(order?.changeSummary);
     if (order?.changeDetectedAt || summary) {
       const changeState = order.changeState ?? WmsFulfillmentChangeState.NONE;
+      const completedDetachment = changeState === WmsFulfillmentChangeState.NONE
+        && Boolean(this.readString(summary?.detachedAt));
+      if (completedDetachment) {
+        return null;
+      }
+
       const reworkGuide = changeState === WmsFulfillmentChangeState.NONE
         ? { returnSteps: [], pickSteps: [] }
         : this.resolveFulfillmentReworkGuide(order, summary);
@@ -12859,6 +13010,12 @@ export class WmsMobileService {
           },
         },
         include: {
+          fulfillmentOrder: {
+            select: {
+              id: true,
+              posOrderId: true,
+            },
+          },
           inventoryUnit: {
             select: {
               id: true,
@@ -13333,6 +13490,24 @@ export class WmsMobileService {
           return map;
         }, new Map<string, any>()).values(),
       ),
+      units: basketUnits.map((basketUnit: any) => ({
+        id: basketUnit.id,
+        inventoryUnitId: basketUnit.inventoryUnitId,
+        code: basketUnit.inventoryUnit?.code ?? null,
+        barcode: basketUnit.inventoryUnit?.barcode ?? null,
+        scannableCode: basketUnit.inventoryUnit?.barcode ?? basketUnit.inventoryUnit?.code ?? null,
+        status: basketUnit.status,
+        variationId: basketUnit.variationId,
+        productId: basketUnit.productId ?? null,
+        productName: basketUnit.inventoryUnit?.posProduct?.name ?? `Variation ${basketUnit.variationId}`,
+        productDisplayId: basketUnit.inventoryUnit?.posProduct?.customId ?? null,
+        assignedOrder: basketUnit.fulfillmentOrder
+          ? {
+              id: basketUnit.fulfillmentOrder.id,
+              posOrderId: basketUnit.fulfillmentOrder.posOrderId,
+            }
+          : null,
+      })),
       orders,
       activeOrder,
     };

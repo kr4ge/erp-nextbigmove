@@ -1513,7 +1513,7 @@ function PickExecutionStack({
         <StatusBadge status={activeTask.status} label={mapPickCardStatus(activeTask.status, activeTask.statusLabel)} />
       </View>
 
-      {tasks.filter((task) => task.itemChange).map((task) => (
+      {tasks.filter((task) => task.itemChange?.requiresAction).map((task) => (
         <OrderChangeNotice
           key={`change-${task.id}`}
           canDetach={canDetachOrders}
