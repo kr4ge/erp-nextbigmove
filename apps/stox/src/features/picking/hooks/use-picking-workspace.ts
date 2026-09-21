@@ -10,6 +10,8 @@ import {
   retryMobilePickingAllocation,
   scanMobilePickingBasketBin,
   scanMobilePickingBasketUnit,
+  startMobileFulfillmentOrderDetachment,
+  returnMobileDetachedFulfillmentUnit,
   returnMobileFulfillmentReworkUnit,
   scanMobilePickingBasket,
   scanMobilePickingBin,
@@ -471,6 +473,89 @@ export function usePickingWorkspace({
     }
   }, [device, filters.tenantId, loadPickingPage, page, session.accessToken]);
 
+  const startOrderDetachment = useCallback(async (params: {
+    basketId: string;
+    orderId: string;
+    confirmation: string;
+    sourceRevision: number;
+    reason: string;
+  }) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return false;
+    }
+    setIsSubmitting(true);
+    try {
+      const result = await startMobileFulfillmentOrderDetachment({
+        accessToken: session.accessToken,
+        device,
+        tenantId: filters.tenantId,
+        basketId: params.basketId,
+        orderId: params.orderId,
+        confirmPosOrderId: params.confirmation,
+        expectedSourceRevision: params.sourceRevision,
+        reason: params.reason,
+      });
+      if (result.plan) {
+        setBasketPlans((current) => ({ ...current, [params.basketId]: result.plan! }));
+      }
+      if (result.task) {
+        setPicking((current) => current ? replacePickingTask(current, result.task!) : current);
+      }
+      if (result.detached) {
+        setActiveTaskId(null);
+        setActiveBin(null);
+      }
+      await loadPickingPage({ loadingKind: 'refresh', page: 1, preserveLoadedPages: page });
+      setError(null);
+      return true;
+    } catch (requestError) {
+      setError(resolvePickingError(requestError));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, loadPickingPage, page, session.accessToken]);
+
+  const returnDetachedUnit = useCallback(async (params: {
+    basketId: string;
+    orderId: string;
+    binCode: string;
+    code: string;
+  }) => {
+    if (!device) {
+      setError('Device is not ready.');
+      return false;
+    }
+    setIsSubmitting(true);
+    try {
+      const result = await returnMobileDetachedFulfillmentUnit({
+        accessToken: session.accessToken,
+        device,
+        tenantId: filters.tenantId,
+        ...params,
+      });
+      if (result.plan) {
+        setBasketPlans((current) => ({ ...current, [params.basketId]: result.plan! }));
+      }
+      if (result.task) {
+        setPicking((current) => current ? replacePickingTask(current, result.task!) : current);
+      }
+      if (result.detached) {
+        setActiveTaskId(null);
+        setActiveBin(null);
+      }
+      await loadPickingPage({ loadingKind: 'refresh', page: 1, preserveLoadedPages: page });
+      setError(null);
+      return true;
+    } catch (requestError) {
+      setError(resolvePickingError(requestError));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [device, filters.tenantId, loadPickingPage, page, session.accessToken]);
+
   const handoffTask = useCallback(async (taskId: string, packerId: string) => {
     if (!device) {
       setError('Device is not ready.');
@@ -626,12 +711,14 @@ export function usePickingWorkspace({
     picking,
     refreshPicking,
     retryAllocation,
+    returnDetachedUnit,
     returnReworkUnit,
     scanBasketBin,
     scanBasketUnit,
     scanBasket,
     scanBin,
     scanUnit,
+    startOrderDetachment,
     setActiveBin,
     setActiveTaskId,
     setFilters: updateFilters,

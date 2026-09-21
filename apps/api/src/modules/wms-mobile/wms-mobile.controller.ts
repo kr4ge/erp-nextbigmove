@@ -37,6 +37,8 @@ import {
   GetWmsMobilePickBasketLookupDto,
   WmsMobilePickBasketBatchAssignDto,
   WmsMobilePickHandoffDto,
+  WmsMobileFulfillmentDetachReturnDto,
+  WmsMobileFulfillmentDetachStartDto,
   WmsMobileFulfillmentReworkReturnDto,
   WmsMobilePickBasketUnitScanDto,
   WmsMobilePickBasketVoidDto,
@@ -405,6 +407,28 @@ export class WmsMobileController {
     @Body() body: WmsMobileFulfillmentReworkReturnDto,
   ) {
     return this.wmsMobileService.returnFulfillmentReworkUnit(req.user, id, orderId, body, req);
+  }
+
+  @Post('picking/baskets/:id/orders/:orderId/detach')
+  @Permissions('wms.fulfillment.override')
+  async startFulfillmentOrderDetachment(
+    @Request() req,
+    @Param('id') id: string,
+    @Param('orderId') orderId: string,
+    @Body() body: WmsMobileFulfillmentDetachStartDto,
+  ) {
+    return this.wmsMobileService.startFulfillmentOrderDetachment(req.user, id, orderId, body, req);
+  }
+
+  @Post('picking/baskets/:id/orders/:orderId/detach/return-unit')
+  @Permissions('wms.fulfillment.write', 'wms.fulfillment.edit', 'wms.fulfillment.override')
+  async returnDetachedFulfillmentUnit(
+    @Request() req,
+    @Param('id') id: string,
+    @Param('orderId') orderId: string,
+    @Body() body: WmsMobileFulfillmentDetachReturnDto,
+  ) {
+    return this.wmsMobileService.returnDetachedFulfillmentUnit(req.user, id, orderId, body, req);
   }
 
   @Post('picking/baskets/:id/void')

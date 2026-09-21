@@ -188,6 +188,10 @@ export function canUsePickWorkspace(bootstrap: BootstrapResponse) {
     && (hasOperationalSupervisorAccess(bootstrap, 'pick') || bootstrap.operations?.taskAssignment === 'PICK');
 }
 
+export function canDetachStoxPickOrder(bootstrap: BootstrapResponse) {
+  return hasAnyWmsPermission(bootstrap, STOX_PICK_SUPERVISOR_PERMISSIONS);
+}
+
 export function canUsePackWorkspace(bootstrap: BootstrapResponse) {
   return hasAnyWmsPermission(bootstrap, STOX_PACK_EXECUTE_PERMISSIONS)
     && (hasOperationalSupervisorAccess(bootstrap, 'pack') || bootstrap.operations?.taskAssignment === 'PACK');

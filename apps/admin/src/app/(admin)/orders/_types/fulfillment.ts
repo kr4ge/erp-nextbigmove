@@ -26,6 +26,44 @@ export type WmsFulfillmentPackStatus =
   | 'AWAITING_TRACKING'
   | 'PACKED';
 
+export type WmsFulfillmentReworkLocation = {
+  id: string;
+  code: string;
+  name: string;
+  kind: string;
+  label: string;
+};
+
+export type WmsFulfillmentReworkUnit = {
+  id: string;
+  code: string | null;
+  barcode: string | null;
+  sourceBin: WmsFulfillmentReworkLocation | null;
+};
+
+export type WmsFulfillmentReturnStep = {
+  variationId: string;
+  productName: string;
+  productDisplayId: string | null;
+  quantity: number;
+  serializedUnits: WmsFulfillmentReworkUnit[];
+  unidentifiedQuantity: number;
+};
+
+export type WmsFulfillmentPickStep = {
+  variationId: string;
+  productName: string;
+  productDisplayId: string | null;
+  quantity: number;
+  serializedUnits: WmsFulfillmentReworkUnit[];
+  sourceBins: {
+    location: WmsFulfillmentReworkLocation;
+    quantity: number;
+  }[];
+  unallocatedQuantity: number;
+  scanAnyMatchingUnit: boolean;
+};
+
 export type WmsFulfillmentQueueTask = {
   id: string;
   posOrderId: string;
@@ -92,6 +130,14 @@ export type WmsFulfillmentQueueTask = {
     removed: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
     increased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
     decreased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
+    order: {
+      id: string;
+      posOrderId: string;
+      tracking: string | null;
+      basketCode: string | null;
+    };
+    returnSteps: WmsFulfillmentReturnStep[];
+    pickSteps: WmsFulfillmentPickStep[];
   } | null;
   fulfillmentAdjustment: WmsFulfillmentAdjustmentSummary | null;
   priority: {

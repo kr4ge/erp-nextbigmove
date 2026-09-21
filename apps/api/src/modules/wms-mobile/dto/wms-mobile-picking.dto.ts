@@ -96,6 +96,32 @@ export class WmsMobilePickBasketUnitScanDto extends WmsMobilePickScanDto {
 
 export class WmsMobileFulfillmentReworkReturnDto extends WmsMobilePickScanDto {}
 
+export class WmsMobileFulfillmentDetachStartDto extends WmsMobilePickScopedDto {
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  confirmPosOrderId!: string;
+
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MinLength(10)
+  @MaxLength(500)
+  reason!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  expectedSourceRevision!: number;
+}
+
+export class WmsMobileFulfillmentDetachReturnDto extends WmsMobilePickScanDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  binCode!: string;
+}
+
 export class WmsMobilePickBasketBatchAssignDto extends WmsMobilePickScopedDto {
   @IsString()
   @MinLength(1)

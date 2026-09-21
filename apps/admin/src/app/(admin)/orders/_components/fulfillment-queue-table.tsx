@@ -890,30 +890,118 @@ async function handleReleasePriority(params: {
 function OrderChangeAlert({ task }: { task: WmsFulfillmentQueueTask }) {
   const change = task.itemChange;
   if (!change) return null;
+  const returnSteps = change.returnSteps ?? [];
+  const pickSteps = change.pickSteps ?? [];
 
   return (
-    <div className={`rounded-[20px] border px-4 py-3 ${change.requiresAction ? 'border-amber-200 bg-amber-50' : 'border-sky-200 bg-sky-50'}`}>
+    <div className={`rounded-xl border px-4 py-3 ${change.requiresAction ? 'border-warning/30 bg-warning-soft/45' : 'border-info/30 bg-info-soft'}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className={`text-sm font-semibold ${change.requiresAction ? 'text-amber-950' : 'text-sky-950'}`}>
+          <p className="text-sm font-semibold text-foreground">
             {change.title}
           </p>
-          <p className={`mt-1 text-[13px] ${change.requiresAction ? 'text-amber-800' : 'text-sky-800'}`}>
+          <p className="mt-1 text-sm-custom text-muted">
             {change.message}
           </p>
         </div>
-        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-primary">
+        <span className="pill bg-surface text-primary">
           Automatic revision
         </span>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-[12px] font-semibold text-[#4d6677]">
-        {change.addedUnits > 0 ? <span className="rounded-full bg-white px-2.5 py-1">+{change.addedUnits} to pick</span> : null}
-        {change.removedUnits > 0 ? <span className="rounded-full bg-white px-2.5 py-1">−{change.removedUnits} removed</span> : null}
-        {change.returnUnitsRemaining > 0 ? <span className="rounded-full bg-white px-2.5 py-1">{change.returnUnitsRemaining} to return</span> : null}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-muted">
+        <span className="pill bg-surface text-foreground">Order #{change.order?.posOrderId ?? task.posOrderId}</span>
+        <span className="pill bg-surface text-muted">
+          {change.order?.tracking ?? task.tracking ? `Waybill ${change.order?.tracking ?? task.tracking}` : 'No waybill yet'}
+        </span>
+        {change.addedUnits > 0 ? <span className="pill bg-surface">+{change.addedUnits} to pick</span> : null}
+        {change.removedUnits > 0 ? <span className="pill bg-surface">−{change.removedUnits} removed</span> : null}
+        {change.returnUnitsRemaining > 0 ? <span className="pill bg-surface">{change.returnUnitsRemaining} to return</span> : null}
       </div>
-      <p className="mt-3 text-[12px] text-[#667a88]">
+
+      {returnSteps.length > 0 || pickSteps.length > 0 ? (
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          {returnSteps.map((step) => (
+            <div key={`return-${step.variationId}`} className="rounded-xl border border-destructive/20 bg-surface p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs-tight font-semibold uppercase text-destructive">Remove & return · {step.quantity}</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-foreground">{step.productName}</p>
+                  <p className="mt-1 text-xs text-muted">Item {step.productDisplayId ?? step.variationId}</p>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {step.serializedUnits.map((unit) => (
+                  <div key={unit.id} className="flex items-center justify-between gap-3 rounded-lg bg-secondary/35 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-xs-tight font-semibold uppercase text-muted">Serialized code</p>
+                      <p className="truncate text-sm font-semibold text-foreground">{unit.code ?? unit.barcode ?? 'Scan label'}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs-tight font-semibold uppercase text-muted">Return to</p>
+                      <p className="text-sm font-semibold text-primary">{unit.sourceBin?.code ?? 'Original bin unavailable'}</p>
+                    </div>
+                  </div>
+                ))}
+                {step.unidentifiedQuantity > 0 ? (
+                  <p className="rounded-lg bg-destructive-soft/55 px-3 py-2 text-xs font-semibold text-destructive">
+                    {step.unidentifiedQuantity} serialized unit {step.unidentifiedQuantity === 1 ? 'is' : 'are'} not linked to this order. Match item {step.productDisplayId ?? step.variationId} in this basket and scan its label.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ))}
+
+          {pickSteps.map((step) => (
+            <div key={`pick-${step.variationId}`} className="rounded-xl border border-primary/20 bg-surface p-3">
+              <div className="min-w-0">
+                <p className="text-xs-tight font-semibold uppercase text-primary">Add & pick · {step.quantity}</p>
+                <p className="mt-1 truncate text-sm font-semibold text-foreground">{step.productName}</p>
+                <p className="mt-1 text-xs text-muted">Item {step.productDisplayId ?? step.variationId}</p>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {step.serializedUnits.map((unit) => (
+                  <div key={unit.id} className="flex items-center justify-between gap-3 rounded-lg bg-secondary/35 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-xs-tight font-semibold uppercase text-muted">Pick serialized code</p>
+                      <p className="truncate text-sm font-semibold text-foreground">{unit.code ?? unit.barcode ?? 'Scan label'}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs-tight font-semibold uppercase text-muted">From bin</p>
+                      <p className="text-sm font-semibold text-primary">{unit.sourceBin?.code ?? 'Bin unavailable'}</p>
+                    </div>
+                  </div>
+                ))}
+
+                {step.sourceBins.map((source) => (
+                  <div key={source.location.id} className="flex items-center justify-between gap-3 rounded-lg bg-secondary/35 px-3 py-2">
+                    <div>
+                      <p className="text-xs-tight font-semibold uppercase text-muted">Pick from bin</p>
+                      <p className="text-sm font-semibold text-primary">{source.location.code}</p>
+                    </div>
+                    <p className="text-xs font-semibold text-muted">{source.quantity} unit{source.quantity === 1 ? '' : 's'}</p>
+                  </div>
+                ))}
+
+                {step.scanAnyMatchingUnit ? (
+                  <p className="text-xs text-muted">At the bin, scan any serialized unit matching item {step.productDisplayId ?? step.variationId}.</p>
+                ) : null}
+
+                {step.unallocatedQuantity > 0 ? (
+                  <p className="rounded-lg bg-warning-soft px-3 py-2 text-xs font-semibold text-warning">
+                    No pickable bin is allocated for {step.unallocatedQuantity} unit{step.unallocatedQuantity === 1 ? '' : 's'}. Wait for putaway or retry allocation; do not substitute another item.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <p className="mt-3 text-xs text-muted">
         {change.requiresAction
-          ? 'The picker must finish the highlighted return and pick steps in STOX. Packer assignment and packing remain blocked until then.'
+          ? 'Complete the return first, then follow the assigned pick bin. Packer assignment and packing remain blocked until both steps finish.'
           : 'The current Pick list already uses the latest POS variations and quantities. No manual sync is needed.'}
       </p>
     </div>

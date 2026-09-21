@@ -19,6 +19,7 @@ import {
   WmsBasketStatus,
   WmsBasketUnitStatus,
   WmsFulfillmentAssignmentMode,
+  WmsFulfillmentAmendmentStatus,
   WmsFulfillmentChangeState,
   WmsStaffAssignmentTaskType,
   WmsStaffActivityOutcome,
@@ -84,6 +85,8 @@ import {
   WmsMobilePickBasketUnitScanDto,
   WmsMobilePickBasketVoidDto,
   WmsMobilePickHandoffDto,
+  WmsMobileFulfillmentDetachReturnDto,
+  WmsMobileFulfillmentDetachStartDto,
   WmsMobileFulfillmentReworkReturnDto,
   WmsMobilePickReallocateDto,
   WmsMobilePickResyncDto,
@@ -239,6 +242,7 @@ const PICKER_ACTIVE_BASKET_STATUSES = [
   WmsBasketStatus.ASSIGNED,
   WmsBasketStatus.IN_PICKING,
 ] as const;
+const PICKER_ACTIVE_BASKET_STATUS_SET = new Set<WmsBasketStatus>(PICKER_ACTIVE_BASKET_STATUSES);
 const BLOCKED_PICK_BASKET_STATUSES = [
   WmsBasketStatus.DAMAGED,
   WmsBasketStatus.RETIRED,
@@ -7336,6 +7340,8 @@ export class WmsMobileService {
             sourceLocationId: activeBin.id,
             productId: scannedUnit.productId,
             variationId: scannedUnit.variationId,
+            fulfillmentOrderId: scopedBin.demand.fulfillmentOrderId,
+            fulfillmentLineId: scopedBin.demand.fulfillmentLineId,
             status: WmsBasketUnitStatus.PICKED,
             pickedById: userId || undefined,
           },
@@ -7761,6 +7767,9 @@ export class WmsMobileService {
     if (!order) {
       throw new NotFoundException('The changed order is no longer inside this basket');
     }
+    if (this.resolveFulfillmentOrderItemChange(order)?.detachment) {
+      throw new ConflictException('This order is being detached. Use the validated bin-and-unit return steps shown in STOX.');
+    }
 
     const result = await this.wmsFulfillmentSyncService.returnAmendmentBasketUnit({
       tenantId: order.tenantId,
@@ -7797,6 +7806,724 @@ export class WmsMobileService {
       basket: this.mapMobilePickBasket(updatedBasket),
       plan: this.buildMobileBasketPickPlan(updatedBasket),
     };
+  }
+
+  async startFulfillmentOrderDetachment(
+    user: BootstrapUser,
+    basketId: string,
+    orderId: string,
+    body: WmsMobileFulfillmentDetachStartDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    if (!userId) {
+      throw new ForbiddenException('Missing WMS user context');
+    }
+
+    const basket = await this.findPickingBasketForRepairAction(user, basketId, body.tenantId, request);
+    this.assertDemandPickBasketVoidable(basket);
+    const scopedOrder = this.getMobileBasketOrders(basket).find((candidate: any) => candidate.id === orderId);
+    if (!scopedOrder) {
+      throw new NotFoundException('The changed order is no longer inside this basket');
+    }
+    if (body.confirmPosOrderId.trim() !== scopedOrder.posOrderId) {
+      throw new BadRequestException(`Type order ${scopedOrder.posOrderId} exactly to confirm detachment`);
+    }
+
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockBasketForUpdate(tx, basket.id);
+      const lockedBasket = await tx.wmsBasket.findUnique({
+        where: { id: basket.id },
+        select: { status: true },
+      });
+      if (
+        !lockedBasket
+        || !PICKER_ACTIVE_BASKET_STATUS_SET.has(lockedBasket.status)
+      ) {
+        throw new ConflictException('The basket changed state. Refresh before detaching this order.');
+      }
+      await tx.$queryRaw`SELECT "id" FROM "wms_fulfillment_orders" WHERE "id" = ${orderId}::uuid FOR UPDATE`;
+
+      const order = await tx.wmsFulfillmentOrder.findFirst({
+        where: {
+          id: orderId,
+          basketId: basket.id,
+          tenantId: scopedOrder.tenantId,
+        },
+        include: {
+          basket: {
+            select: {
+              id: true,
+              barcode: true,
+              status: true,
+            },
+          },
+          lines: {
+            orderBy: [{ createdAt: 'asc' }],
+          },
+          basketPickDemands: {
+            include: {
+              bins: true,
+            },
+          },
+          amendments: {
+            where: { status: WmsFulfillmentAmendmentStatus.OPEN },
+            orderBy: { detectedAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+      if (!order || !order.basket) {
+        throw new NotFoundException('The changed order is no longer inside this basket');
+      }
+      if (order.assignmentMode !== WmsFulfillmentAssignmentMode.BASKET_DEMAND) {
+        throw new BadRequestException('Order detachment is only available for basket-demand picking');
+      }
+      if (order.status !== WmsFulfillmentOrderStatus.IN_PICKING) {
+        throw new ConflictException(`Order ${order.posOrderId} is ${this.formatEnumLabel(order.status)} and cannot be detached from picking`);
+      }
+      if (order.changeState !== WmsFulfillmentChangeState.PICK_REWORK_REQUIRED) {
+        throw new ConflictException(`Order ${order.posOrderId} does not have an active Pick rework`);
+      }
+      if (order.sourceRevision !== body.expectedSourceRevision) {
+        throw new ConflictException('The POS order changed again. Refresh the basket before confirming detachment.');
+      }
+
+      const amendment = order.amendments[0];
+      if (!amendment) {
+        throw new ConflictException('The open POS order amendment was not found');
+      }
+      const requiredActions = this.asJsonRecord(amendment.requiredActions) ?? {};
+      const existingDetachment = this.asJsonRecord(requiredActions.detach);
+      if (existingDetachment?.status === 'RETURNING') {
+        return {
+          detached: false,
+          alreadyStarted: true,
+          tenantId: order.tenantId,
+          storeId: order.storeId,
+          warehouseId: order.warehouseId,
+          posOrderId: order.posOrderId,
+          variationIds: order.lines.map((line) => line.variationId),
+        };
+      }
+
+      const pickActions = this.readFulfillmentReworkActions({
+        raw: requiredActions.pick,
+        fallbackChanges: [],
+        fallbackTotal: 0,
+      });
+      const hasUnavailableAddedUnit = pickActions.some((action) => (
+        action.quantity > 0
+        && order.lines.some((line) => (
+          line.variationId === action.variationId
+          && line.status !== WmsFulfillmentLineStatus.CANCELED
+          && line.quantityAllocated < line.quantityRequired
+        ))
+      ));
+      if (!hasUnavailableAddedUnit) {
+        throw new ConflictException('This order still has an allocated pick path. Retry or complete the highlighted pick before detaching it.');
+      }
+
+      const returnActions = this.readFulfillmentReworkActions({
+        raw: requiredActions.return,
+        fallbackChanges: [],
+        fallbackTotal: 0,
+      });
+      const quantityByVariation = new Map<string, number>();
+      for (const demand of order.basketPickDemands) {
+        if (demand.quantityPicked > 0) {
+          quantityByVariation.set(
+            demand.variationId,
+            (quantityByVariation.get(demand.variationId) ?? 0) + demand.quantityPicked,
+          );
+        }
+      }
+      for (const action of returnActions) {
+        quantityByVariation.set(
+          action.variationId,
+          (quantityByVariation.get(action.variationId) ?? 0) + action.quantity,
+        );
+      }
+
+      const basketUnits = await tx.wmsBasketUnit.findMany({
+        where: {
+          basketId: basket.id,
+          status: { in: [...ACTIVE_BASKET_UNIT_STATUSES] },
+          OR: [
+            { fulfillmentOrderId: order.id },
+            { fulfillmentOrderId: null },
+          ],
+        },
+        include: {
+          inventoryUnit: {
+            select: {
+              id: true,
+              code: true,
+              barcode: true,
+              status: true,
+            },
+          },
+          sourceLocation: {
+            select: {
+              id: true,
+              code: true,
+              barcode: true,
+              name: true,
+              kind: true,
+            },
+          },
+        },
+        orderBy: [
+          { pickedAt: 'asc' },
+          { createdAt: 'asc' },
+        ],
+      });
+      const competingPickedDemands = await tx.wmsBasketPickDemand.findMany({
+        where: {
+          basketId: basket.id,
+          fulfillmentOrderId: { not: order.id },
+          quantityPicked: { gt: 0 },
+        },
+        select: { variationId: true },
+        distinct: ['variationId'],
+      });
+      const competingPickedVariations = new Set(
+        competingPickedDemands.map((demand) => demand.variationId),
+      );
+      const lineByVariation = new Map(order.lines.map((line) => [line.variationId, line]));
+      const selectedBasketUnitIds = new Set<string>();
+      const detachUnits: Array<Record<string, unknown>> = [];
+
+      for (const [variationId, quantity] of quantityByVariation) {
+        const candidates = basketUnits
+          .filter((basketUnit) => (
+            basketUnit.variationId === variationId
+            && !selectedBasketUnitIds.has(basketUnit.id)
+          ))
+          .sort((left, right) => (
+            Number(right.fulfillmentOrderId === order.id) - Number(left.fulfillmentOrderId === order.id)
+          ));
+        const selected = candidates.slice(0, quantity);
+        if (selected.length !== quantity) {
+          throw new ConflictException(
+            `WMS could identify only ${selected.length} of ${quantity} picked ${lineByVariation.get(variationId)?.productName ?? 'item'} unit(s). Refresh inventory links before detaching.`,
+          );
+        }
+        if (
+          selected.some((basketUnit) => !basketUnit.fulfillmentOrderId)
+          && competingPickedVariations.has(variationId)
+        ) {
+          throw new ConflictException(
+            `WMS cannot safely identify which ${lineByVariation.get(variationId)?.productName ?? 'item'} serial belongs to this order because another order in the basket has the same item. Repair the legacy basket-unit links before detaching.`,
+          );
+        }
+
+        for (const basketUnit of selected) {
+          if (!basketUnit.sourceLocation || basketUnit.sourceLocation.kind !== WmsLocationKind.BIN) {
+            throw new ConflictException(
+              `Unit ${basketUnit.inventoryUnit.code} has no original pick bin. Repair its basket history before detaching this order.`,
+            );
+          }
+          selectedBasketUnitIds.add(basketUnit.id);
+          const line = lineByVariation.get(variationId);
+          detachUnits.push({
+            basketUnitId: basketUnit.id,
+            inventoryUnitId: basketUnit.inventoryUnitId,
+            variationId,
+            productId: basketUnit.productId,
+            productName: line?.productName ?? 'Picked item',
+            productDisplayId: line?.productDisplayId ?? null,
+            code: basketUnit.inventoryUnit.code,
+            barcode: basketUnit.inventoryUnit.barcode,
+            destinationBin: {
+              id: basketUnit.sourceLocation.id,
+              code: basketUnit.sourceLocation.code,
+              barcode: basketUnit.sourceLocation.barcode,
+              name: basketUnit.sourceLocation.name,
+              kind: basketUnit.sourceLocation.kind,
+            },
+            returnedAt: null,
+          });
+        }
+      }
+
+      const detachment = {
+        status: detachUnits.length > 0 ? 'RETURNING' : 'COMPLETED',
+        reason: body.reason.trim(),
+        confirmedAt: now.toISOString(),
+        confirmedById: userId,
+        sourceRevision: order.sourceRevision,
+        units: detachUnits,
+      };
+      const nextRequiredActions = {
+        ...requiredActions,
+        detach: detachment,
+      };
+
+      await tx.wmsBasketPickDemandBin.updateMany({
+        where: {
+          basketId: basket.id,
+          demand: { fulfillmentOrderId: order.id },
+        },
+        data: {
+          quantityTarget: 0,
+          quantityPicked: 0,
+        },
+      });
+
+      const currentSummary = this.asJsonRecord(order.changeSummary) ?? {};
+      await tx.wmsFulfillmentAmendment.update({
+        where: { id: amendment.id },
+        data: { requiredActions: nextRequiredActions as Prisma.InputJsonValue },
+      });
+      await tx.wmsFulfillmentOrder.update({
+        where: { id: order.id },
+        data: {
+          changeSummary: {
+            ...currentSummary,
+            notificationTitle: 'Order detachment confirmed',
+            message: detachUnits.length > 0
+              ? `Return the listed units to their validated bins. Order ${order.posOrderId} will detach automatically after the last scan.`
+              : `Order ${order.posOrderId} was detached and returned to fulfillment restocking.`,
+            detachmentRemainingUnits: detachUnits.length,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      if (detachUnits.length === 0) {
+        await this.finalizeFulfillmentOrderDetachmentTx(tx, {
+          order,
+          amendmentId: amendment.id,
+          requiredActions: nextRequiredActions,
+          detachment,
+          basketId: basket.id,
+          basketCode: basket.barcode,
+          actorId: userId,
+          now,
+        });
+      }
+
+      return {
+        detached: detachUnits.length === 0,
+        alreadyStarted: false,
+        tenantId: order.tenantId,
+        storeId: order.storeId,
+        warehouseId: order.warehouseId,
+        posOrderId: order.posOrderId,
+        variationIds: order.lines.map((line) => line.variationId),
+      };
+    }, {
+      maxWait: 3000,
+      timeout: 15000,
+    });
+
+    if (result.detached) {
+      await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
+        tenantId: result.tenantId,
+        storeId: result.storeId,
+        variationIds: result.variationIds,
+      });
+    }
+
+    const [updatedOrder, updatedBasket] = await Promise.all([
+      this.prisma.wmsFulfillmentOrder.findUnique({
+        where: { id: orderId },
+        include: this.pickingTaskInclude(),
+      }),
+      this.prisma.wmsBasket.findUnique({
+        where: { id: basket.id },
+        include: this.mobileBasketInclude(),
+      }),
+    ]);
+
+    await this.recordStockActivity(user, request, {
+      tenantId: result.tenantId,
+      actionType: result.detached ? 'FULFILLMENT_ORDER_DETACHED' : 'FULFILLMENT_ORDER_DETACH_CONFIRMED',
+      resourceType: 'WMS_FULFILLMENT_ORDER',
+      resourceId: orderId,
+      taskType: 'PICK',
+      storeId: result.storeId,
+      warehouseId: result.warehouseId,
+      metadata: {
+        basketId: basket.id,
+        basketCode: basket.barcode,
+        posOrderId: result.posOrderId,
+        reason: body.reason.trim(),
+        alreadyStarted: result.alreadyStarted,
+      },
+    });
+
+    return {
+      success: true,
+      detached: result.detached,
+      alreadyStarted: result.alreadyStarted,
+      task: updatedOrder ? this.mapMobilePickingTask(updatedOrder) : null,
+      basket: updatedBasket ? this.mapMobilePickBasket(updatedBasket) : null,
+      plan: updatedBasket ? this.buildMobileBasketPickPlan(updatedBasket) : null,
+    };
+  }
+
+  async returnDetachedFulfillmentUnit(
+    user: BootstrapUser,
+    basketId: string,
+    orderId: string,
+    body: WmsMobileFulfillmentDetachReturnDto,
+    request?: Request,
+  ) {
+    const userId = user.userId || user.id || null;
+    if (!userId) {
+      throw new ForbiddenException('Missing WMS user context');
+    }
+    const basket = await this.findPickingBasketForAction(user, basketId, body.tenantId, request);
+    if (!PICKER_ACTIVE_BASKET_STATUS_SET.has(basket.status)) {
+      throw new BadRequestException(
+        `Basket ${basket.barcode} is ${this.formatEnumLabel(basket.status)} and cannot accept item returns`,
+      );
+    }
+    if (basket.assignedPickerId !== userId) {
+      await this.assertPickSupervisorAccess(user);
+    }
+    const scopedOrder = this.getMobileBasketOrders(basket).find((candidate: any) => candidate.id === orderId);
+    if (!scopedOrder) {
+      throw new NotFoundException('The detaching order is no longer inside this basket');
+    }
+
+    const unitCode = this.normalizeScannedCode(body.code);
+    const binCode = this.normalizeScannedCode(body.binCode);
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockBasketForUpdate(tx, basket.id);
+      const lockedBasket = await tx.wmsBasket.findUnique({
+        where: { id: basket.id },
+        select: { assignedPickerId: true, status: true },
+      });
+      if (
+        !lockedBasket
+        || !PICKER_ACTIVE_BASKET_STATUS_SET.has(lockedBasket.status)
+        || lockedBasket.assignedPickerId !== basket.assignedPickerId
+      ) {
+        throw new ConflictException('The basket assignment changed. Refresh before returning this unit.');
+      }
+      await tx.$queryRaw`SELECT "id" FROM "wms_fulfillment_orders" WHERE "id" = ${orderId}::uuid FOR UPDATE`;
+      const order = await tx.wmsFulfillmentOrder.findFirst({
+        where: {
+          id: orderId,
+          basketId: basket.id,
+          tenantId: scopedOrder.tenantId,
+          changeState: WmsFulfillmentChangeState.PICK_REWORK_REQUIRED,
+        },
+        include: {
+          basket: { select: { id: true, barcode: true } },
+          lines: true,
+          amendments: {
+            where: { status: WmsFulfillmentAmendmentStatus.OPEN },
+            orderBy: { detectedAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+      if (!order || !order.basket) {
+        throw new NotFoundException('The active detachment plan was not found');
+      }
+      const amendment = order.amendments[0];
+      if (!amendment) {
+        throw new ConflictException('The open order amendment was not found');
+      }
+      const requiredActions = this.asJsonRecord(amendment.requiredActions) ?? {};
+      const detachment = this.asJsonRecord(requiredActions.detach);
+      const rawUnits = Array.isArray(detachment?.units) ? detachment.units : [];
+      if (detachment?.status !== 'RETURNING' || rawUnits.length === 0) {
+        throw new ConflictException('This order does not have pending detachment returns');
+      }
+
+      const units = rawUnits.map((rawUnit) => this.asJsonRecord(rawUnit) ?? {});
+      const unitIndex = units.findIndex((unit) => (
+        !this.readString(unit.returnedAt)
+        && [this.readString(unit.code), this.readString(unit.barcode)]
+          .filter(Boolean)
+          .some((candidate) => this.normalizeScannedCode(candidate!) === unitCode)
+      ));
+      if (unitIndex < 0) {
+        throw new BadRequestException('Scanned unit is not pending return for this detached order');
+      }
+      const unitPlan = units[unitIndex];
+      const destinationBin = this.asJsonRecord(unitPlan.destinationBin);
+      const validBinCodes = [this.readString(destinationBin?.code), this.readString(destinationBin?.barcode)]
+        .filter(Boolean)
+        .map((candidate) => this.normalizeScannedCode(candidate!));
+      if (!validBinCodes.includes(binCode)) {
+        throw new BadRequestException(
+          `Scan destination bin ${this.readString(destinationBin?.code) ?? 'shown in the return plan'} before returning this unit`,
+        );
+      }
+
+      const basketUnitId = this.readString(unitPlan.basketUnitId);
+      const inventoryUnitId = this.readString(unitPlan.inventoryUnitId);
+      const destinationBinId = this.readString(destinationBin?.id);
+      if (!basketUnitId || !inventoryUnitId || !destinationBinId) {
+        throw new ConflictException('The detachment return plan is incomplete. Refresh and contact a supervisor.');
+      }
+      const basketUnit = await tx.wmsBasketUnit.findFirst({
+        where: {
+          id: basketUnitId,
+          basketId: basket.id,
+          inventoryUnitId,
+          status: { in: [...ACTIVE_BASKET_UNIT_STATUSES] },
+        },
+        include: { inventoryUnit: true },
+      });
+      if (!basketUnit) {
+        throw new ConflictException('This serialized unit is no longer active in the basket. Refresh the detachment plan.');
+      }
+      if (
+        basketUnit.inventoryUnit.status !== WmsInventoryUnitStatus.PICKED
+        && basketUnit.inventoryUnit.status !== WmsInventoryUnitStatus.PACKED
+      ) {
+        throw new ConflictException(`Unit ${basketUnit.inventoryUnit.code} is no longer held for return`);
+      }
+
+      await tx.wmsInventoryUnit.update({
+        where: { id: inventoryUnitId },
+        data: {
+          status: WmsInventoryUnitStatus.PUTAWAY,
+          currentLocationId: destinationBinId,
+          updatedById: userId,
+        },
+      });
+      await tx.wmsBasketUnit.update({
+        where: { id: basketUnit.id },
+        data: {
+          status: WmsBasketUnitStatus.REMOVED,
+          removedById: userId,
+          removedAt: now,
+        },
+      });
+      await tx.wmsInventoryMovement.create({
+        data: {
+          tenantId: basketUnit.tenantId,
+          inventoryUnitId,
+          warehouseId: basketUnit.warehouseId,
+          fromLocationId: null,
+          toLocationId: destinationBinId,
+          fromStatus: basketUnit.inventoryUnit.status,
+          toStatus: WmsInventoryUnitStatus.PUTAWAY,
+          movementType: WmsInventoryMovementType.TRANSFER,
+          referenceType: 'WMS_FULFILLMENT_DETACH',
+          referenceId: order.id,
+          referenceCode: order.posOrderId,
+          notes: `Returned while detaching order ${order.posOrderId} from basket ${basket.barcode}`,
+          actorId: userId,
+          createdAt: now,
+        },
+      });
+
+      units[unitIndex] = {
+        ...unitPlan,
+        returnedAt: now.toISOString(),
+        returnedById: userId,
+      };
+      const remainingUnits = units.filter((unit) => !this.readString(unit.returnedAt)).length;
+      const nextDetachment = {
+        ...detachment,
+        status: remainingUnits === 0 ? 'COMPLETED' : 'RETURNING',
+        units,
+        ...(remainingUnits === 0 ? { completedAt: now.toISOString() } : {}),
+      };
+      const nextRequiredActions = {
+        ...requiredActions,
+        detach: nextDetachment,
+      };
+      const currentSummary = this.asJsonRecord(order.changeSummary) ?? {};
+
+      if (remainingUnits === 0) {
+        await this.finalizeFulfillmentOrderDetachmentTx(tx, {
+          order,
+          amendmentId: amendment.id,
+          requiredActions: nextRequiredActions,
+          detachment: nextDetachment,
+          basketId: basket.id,
+          basketCode: basket.barcode,
+          actorId: userId,
+          now,
+        });
+      } else {
+        await tx.wmsFulfillmentAmendment.update({
+          where: { id: amendment.id },
+          data: { requiredActions: nextRequiredActions as Prisma.InputJsonValue },
+        });
+        await tx.wmsFulfillmentOrder.update({
+          where: { id: order.id },
+          data: {
+            changeSummary: {
+              ...currentSummary,
+              detachmentRemainingUnits: remainingUnits,
+              message: `${remainingUnits} unit${remainingUnits === 1 ? '' : 's'} must still be returned before order ${order.posOrderId} detaches.`,
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+
+      return {
+        detached: remainingUnits === 0,
+        remainingUnits,
+        tenantId: order.tenantId,
+        storeId: order.storeId,
+        warehouseId: order.warehouseId,
+        posOrderId: order.posOrderId,
+        variationIds: order.lines.map((line) => line.variationId),
+        returnedUnit: {
+          id: inventoryUnitId,
+          code: basketUnit.inventoryUnit.code,
+          variationId: basketUnit.variationId,
+          destinationBin: this.readString(destinationBin?.code),
+        },
+      };
+    }, {
+      maxWait: 3000,
+      timeout: 15000,
+    });
+
+    if (result.detached) {
+      await this.wmsFulfillmentSyncService.refreshDemandQueueForScope({
+        tenantId: result.tenantId,
+        storeId: result.storeId,
+        variationIds: result.variationIds,
+      });
+    }
+
+    const [updatedOrder, updatedBasket] = await Promise.all([
+      this.prisma.wmsFulfillmentOrder.findUnique({
+        where: { id: orderId },
+        include: this.pickingTaskInclude(),
+      }),
+      this.prisma.wmsBasket.findUnique({
+        where: { id: basket.id },
+        include: this.mobileBasketInclude(),
+      }),
+    ]);
+
+    await this.recordStockActivity(user, request, {
+      tenantId: result.tenantId,
+      actionType: result.detached ? 'FULFILLMENT_ORDER_DETACHED' : 'FULFILLMENT_DETACH_UNIT_RETURN',
+      resourceType: 'WMS_INVENTORY_UNIT',
+      resourceId: result.returnedUnit.id,
+      taskType: 'PICK',
+      storeId: result.storeId,
+      warehouseId: result.warehouseId,
+      metadata: {
+        basketId: basket.id,
+        basketCode: basket.barcode,
+        fulfillmentOrderId: orderId,
+        posOrderId: result.posOrderId,
+        unitCode: result.returnedUnit.code,
+        destinationBin: result.returnedUnit.destinationBin,
+        remainingUnits: result.remainingUnits,
+      },
+    });
+
+    return {
+      success: true,
+      detached: result.detached,
+      remainingUnits: result.remainingUnits,
+      returnedUnit: result.returnedUnit,
+      task: updatedOrder ? this.mapMobilePickingTask(updatedOrder) : null,
+      basket: updatedBasket ? this.mapMobilePickBasket(updatedBasket) : null,
+      plan: updatedBasket ? this.buildMobileBasketPickPlan(updatedBasket) : null,
+    };
+  }
+
+  private async finalizeFulfillmentOrderDetachmentTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      order: any;
+      amendmentId: string;
+      requiredActions: Record<string, unknown>;
+      detachment: Record<string, unknown>;
+      basketId: string;
+      basketCode: string;
+      actorId: string;
+      now: Date;
+    },
+  ) {
+    const activeLines = (params.order.lines ?? []).filter(
+      (line: any) => line.status !== WmsFulfillmentLineStatus.CANCELED && line.quantityRequired > 0,
+    );
+    const currentSummary = this.asJsonRecord(params.order.changeSummary) ?? {};
+    const completedDetachment = {
+      ...params.detachment,
+      status: 'COMPLETED',
+      completedAt: this.readString(params.detachment.completedAt) ?? params.now.toISOString(),
+    };
+
+    await tx.wmsBasketPickDemand.deleteMany({
+      where: { fulfillmentOrderId: params.order.id },
+    });
+    await tx.wmsFulfillmentLine.updateMany({
+      where: {
+        fulfillmentOrderId: params.order.id,
+        status: { not: WmsFulfillmentLineStatus.CANCELED },
+      },
+      data: {
+        quantityAllocated: 0,
+        quantityPicked: 0,
+        status: WmsFulfillmentLineStatus.RESTOCKING,
+        issueReason: `Waiting for stock after detachment from basket ${params.basketCode}.`,
+      },
+    });
+    await tx.wmsFulfillmentAmendment.update({
+      where: { id: params.amendmentId },
+      data: {
+        status: WmsFulfillmentAmendmentStatus.RESOLVED,
+        resolvedAt: params.now,
+        requiredActions: {
+          ...params.requiredActions,
+          detach: completedDetachment,
+        } as Prisma.InputJsonValue,
+      },
+    });
+    await tx.wmsFulfillmentOrder.update({
+      where: { id: params.order.id },
+      data: {
+        basketId: null,
+        status: activeLines.length > 0
+          ? WmsFulfillmentOrderStatus.RESTOCKING
+          : WmsFulfillmentOrderStatus.ISSUE,
+        allocatedQuantity: 0,
+        pickedQuantity: 0,
+        claimedById: null,
+        claimedAt: null,
+        packedById: null,
+        completedAt: null,
+        changeState: WmsFulfillmentChangeState.NONE,
+        issueReason: activeLines.length > 0
+          ? `Waiting for stock after detachment from basket ${params.basketCode}.`
+          : 'Order has no pickable variation items after detachment.',
+        changeSummary: {
+          ...currentSummary,
+          requiresAction: false,
+          notificationTitle: 'Order detached — waiting for stock',
+          message: `Order ${params.order.posOrderId} was detached from basket ${params.basketCode} and returned to fulfillment allocation.`,
+          returnUnitsRemaining: 0,
+          pickUnitsRequired: 0,
+          detachmentRemainingUnits: 0,
+          detachedFromBasket: params.basketCode,
+          detachedAt: params.now.toISOString(),
+          detachedById: params.actorId,
+        } as Prisma.InputJsonValue,
+      },
+    });
+    await tx.wmsBasket.updateMany({
+      where: {
+        id: params.basketId,
+        fulfillmentOrderId: params.order.id,
+      },
+      data: { fulfillmentOrderId: null },
+    });
+    await this.refreshBasketState(tx, params.basketId, params.now, {
+      basketAlreadyLocked: true,
+      cleanupOrphans: false,
+    });
   }
 
   async completePickingTask(
@@ -10743,6 +11470,10 @@ export class WmsMobileService {
     const summary = this.asJsonRecord(order?.changeSummary);
     if (order?.changeDetectedAt || summary) {
       const changeState = order.changeState ?? WmsFulfillmentChangeState.NONE;
+      const reworkGuide = changeState === WmsFulfillmentChangeState.NONE
+        ? { returnSteps: [], pickSteps: [] }
+        : this.resolveFulfillmentReworkGuide(order, summary);
+      const detachment = this.resolveFulfillmentDetachment(order);
       return {
         hasChanged: changeState !== WmsFulfillmentChangeState.NONE,
         autoRebuilt: summary?.autoRebuilt === true,
@@ -10765,6 +11496,15 @@ export class WmsMobileService {
         removed: Array.isArray(summary?.removed) ? summary.removed : [],
         increased: Array.isArray(summary?.increased) ? summary.increased : [],
         decreased: Array.isArray(summary?.decreased) ? summary.decreased : [],
+        order: {
+          id: order.id,
+          posOrderId: order.posOrderId,
+          tracking: this.readString(order.posOrder?.tracking) ?? null,
+          basketCode: this.readString(order.basket?.barcode) ?? null,
+        },
+        returnSteps: reworkGuide.returnSteps,
+        pickSteps: reworkGuide.pickSteps,
+        detachment,
       };
     }
     if (!order || !Array.isArray(order.lines) || !order.posOrder?.orderSnapshot) {
@@ -10812,7 +11552,216 @@ export class WmsMobileService {
       removed: [],
       increased: [],
       decreased: [],
+      order: {
+        id: order.id,
+        posOrderId: order.posOrderId,
+        tracking: this.readString(order.posOrder?.tracking) ?? null,
+        basketCode: this.readString(order.basket?.barcode) ?? null,
+      },
+      returnSteps: [],
+      pickSteps: [],
+      detachment: null,
     };
+  }
+
+  private resolveFulfillmentDetachment(order: any) {
+    const amendment = Array.isArray(order?.amendments) ? order.amendments[0] : null;
+    const requiredActions = this.asJsonRecord(amendment?.requiredActions);
+    const detachment = this.asJsonRecord(requiredActions?.detach);
+    if (!detachment || detachment.status !== 'RETURNING') {
+      return null;
+    }
+
+    const units = (Array.isArray(detachment.units) ? detachment.units : [])
+      .map((rawUnit) => this.asJsonRecord(rawUnit))
+      .filter((unit): unit is Record<string, unknown> => Boolean(unit))
+      .map((unit) => {
+        const destinationBin = this.asJsonRecord(unit.destinationBin);
+        return {
+          basketUnitId: this.readString(unit.basketUnitId) ?? '',
+          inventoryUnitId: this.readString(unit.inventoryUnitId) ?? '',
+          variationId: this.readString(unit.variationId) ?? '',
+          productName: this.readString(unit.productName) ?? 'Picked item',
+          productDisplayId: this.readString(unit.productDisplayId),
+          code: this.readString(unit.code),
+          barcode: this.readString(unit.barcode),
+          destinationBin: destinationBin
+            ? {
+                id: this.readString(destinationBin.id) ?? '',
+                code: this.readString(destinationBin.code) ?? '',
+                barcode: this.readString(destinationBin.barcode),
+                name: this.readString(destinationBin.name) ?? this.readString(destinationBin.code) ?? 'Return bin',
+                kind: this.readString(destinationBin.kind) ?? WmsLocationKind.BIN,
+              }
+            : null,
+          returnedAt: this.readString(unit.returnedAt),
+        };
+      })
+      .filter((unit) => unit.basketUnitId && unit.inventoryUnitId && unit.variationId);
+    const returnedUnits = units.filter((unit) => Boolean(unit.returnedAt)).length;
+
+    return {
+      status: 'RETURNING' as const,
+      reason: this.readString(detachment.reason) ?? '',
+      confirmedAt: this.readString(detachment.confirmedAt),
+      totalUnits: units.length,
+      returnedUnits,
+      remainingUnits: Math.max(units.length - returnedUnits, 0),
+      units,
+    };
+  }
+
+  private resolveFulfillmentReworkGuide(
+    order: any,
+    summary: Record<string, unknown> | null,
+  ) {
+    const amendment = Array.isArray(order?.amendments) ? order.amendments[0] : null;
+    const requiredActions = this.asJsonRecord(amendment?.requiredActions);
+    const returnActions = this.readFulfillmentReworkActions({
+      raw: requiredActions?.return,
+      fallbackChanges: [
+        ...(Array.isArray(summary?.removed) ? summary.removed : []),
+        ...(Array.isArray(summary?.decreased) ? summary.decreased : []),
+      ],
+      fallbackTotal: typeof summary?.returnUnitsRemaining === 'number'
+        ? summary.returnUnitsRemaining
+        : 0,
+    });
+    const pickActions = this.readFulfillmentReworkActions({
+      raw: requiredActions?.pick,
+      fallbackChanges: [
+        ...(Array.isArray(summary?.added) ? summary.added : []),
+        ...(Array.isArray(summary?.increased) ? summary.increased : []),
+      ],
+      fallbackTotal: typeof summary?.pickUnitsRequired === 'number'
+        ? summary.pickUnitsRequired
+        : 0,
+    });
+    const lines = Array.isArray(order?.lines) ? order.lines : [];
+    const basketUnits = [
+      ...(Array.isArray(order?.reworkBasketUnits) ? order.reworkBasketUnits : []),
+      ...(Array.isArray(order?.basketUnits) ? order.basketUnits : []),
+    ]
+      .filter((basketUnit: any, index: number, all: any[]) => (
+        basketUnit?.id
+        && all.findIndex((candidate) => candidate?.id === basketUnit.id) === index
+        && ACTIVE_BASKET_UNIT_STATUSES.includes(basketUnit.status)
+        && (
+          basketUnit.fulfillmentOrderId === order.id
+          || !basketUnit.fulfillmentOrderId
+        )
+      ))
+      .sort((left: any, right: any) => (
+        Number(right.fulfillmentOrderId === order.id) - Number(left.fulfillmentOrderId === order.id)
+      ));
+    const demands = Array.isArray(order?.basketPickDemands) ? order.basketPickDemands : [];
+
+    const returnSteps = returnActions.map((action) => {
+      const line = lines.find((candidate: any) => candidate.variationId === action.variationId) ?? null;
+      const serializedUnits = basketUnits
+        .filter((basketUnit: any) => basketUnit.variationId === action.variationId)
+        .slice(0, action.quantity)
+        .map((basketUnit: any) => ({
+          id: basketUnit.inventoryUnit?.id ?? basketUnit.inventoryUnitId,
+          code: basketUnit.inventoryUnit?.code ?? null,
+          barcode: basketUnit.inventoryUnit?.barcode ?? null,
+          sourceBin: basketUnit.sourceLocation
+            ? this.mapLocation(basketUnit.sourceLocation)
+            : null,
+        }));
+
+      return {
+        variationId: action.variationId,
+        productName: action.productName || line?.productName || 'Changed item',
+        productDisplayId: line?.productDisplayId ?? null,
+        quantity: action.quantity,
+        serializedUnits,
+        unidentifiedQuantity: Math.max(action.quantity - serializedUnits.length, 0),
+      };
+    });
+
+    const pickSteps = pickActions.map((action) => {
+      const line = lines.find((candidate: any) => candidate.variationId === action.variationId) ?? null;
+      const demand = demands.find((candidate: any) => candidate.variationId === action.variationId) ?? null;
+      const reservedUnits = (line?.reservations ?? [])
+        .filter((reservation: any) => reservation.status === WmsPickReservationStatus.RESERVED)
+        .slice(0, action.quantity)
+        .map((reservation: any) => ({
+          id: reservation.inventoryUnit?.id ?? reservation.inventoryUnitId,
+          code: reservation.inventoryUnit?.code ?? null,
+          barcode: reservation.inventoryUnit?.barcode ?? null,
+          sourceBin: reservation.inventoryUnit?.currentLocation
+            ? this.mapLocation(reservation.inventoryUnit.currentLocation)
+            : null,
+        }));
+      const sourceBins = (demand?.bins ?? [])
+        .map((bin: any) => ({
+          location: bin.location ? this.mapLocation(bin.location) : null,
+          quantity: Math.max((bin.quantityTarget ?? 0) - (bin.quantityPicked ?? 0), 0),
+        }))
+        .filter((bin: any) => bin.location && bin.quantity > 0);
+      const allocatedQuantity = reservedUnits.length > 0
+        ? reservedUnits.length
+        : sourceBins.reduce((total: number, bin: any) => total + bin.quantity, 0);
+
+      return {
+        variationId: action.variationId,
+        productName: action.productName || demand?.productName || line?.productName || 'Changed item',
+        productDisplayId: demand?.productDisplayId ?? line?.productDisplayId ?? null,
+        quantity: action.quantity,
+        serializedUnits: reservedUnits,
+        sourceBins,
+        unallocatedQuantity: Math.max(action.quantity - allocatedQuantity, 0),
+        scanAnyMatchingUnit: reservedUnits.length === 0 && sourceBins.length > 0,
+      };
+    });
+
+    return { returnSteps, pickSteps };
+  }
+
+  private readFulfillmentReworkActions(params: {
+    raw: unknown;
+    fallbackChanges: unknown[];
+    fallbackTotal: number;
+  }) {
+    if (Array.isArray(params.raw)) {
+      return params.raw
+        .map((value) => {
+          const action = this.asJsonRecord(value);
+          const variationId = this.readString(action?.variationId);
+          const quantity = typeof action?.quantity === 'number'
+            ? Math.max(Math.trunc(action.quantity), 0)
+            : 0;
+          if (!variationId || quantity <= 0) {
+            return null;
+          }
+          return {
+            variationId,
+            productName: this.readString(action?.productName) ?? '',
+            quantity,
+          };
+        })
+        .filter((action): action is { variationId: string; productName: string; quantity: number } => Boolean(action));
+    }
+
+    let remaining = Math.max(Math.trunc(params.fallbackTotal), 0);
+    return params.fallbackChanges
+      .map((value) => {
+        const change = this.asJsonRecord(value);
+        const variationId = this.readString(change?.variationId);
+        const delta = typeof change?.delta === 'number' ? Math.abs(Math.trunc(change.delta)) : 0;
+        const quantity = Math.min(delta, remaining);
+        if (!variationId || quantity <= 0) {
+          return null;
+        }
+        remaining -= quantity;
+        return {
+          variationId,
+          productName: this.readString(change?.productName) ?? '',
+          quantity,
+        };
+      })
+      .filter((action): action is { variationId: string; productName: string; quantity: number } => Boolean(action));
   }
 
   private buildOrderSnapshotDemandSignature(orderSnapshot: Prisma.JsonValue | null) {
@@ -11461,6 +12410,16 @@ export class WmsMobileService {
         },
         orderBy: [{ createdAt: 'asc' }],
       },
+      amendments: {
+        where: { status: 'OPEN' },
+        select: {
+          id: true,
+          requiredActions: true,
+          detectedAt: true,
+        },
+        orderBy: [{ detectedAt: 'desc' }],
+        take: 1,
+      },
       basket: {
         select: {
           id: true,
@@ -11729,6 +12688,16 @@ export class WmsMobileService {
           },
         },
         orderBy: [{ createdAt: 'asc' }],
+      },
+      amendments: {
+        where: { status: 'OPEN' },
+        select: {
+          id: true,
+          requiredActions: true,
+          detectedAt: true,
+        },
+        orderBy: [{ detectedAt: 'desc' }],
+        take: 1,
       },
       basket: {
         select: {
@@ -12208,7 +13177,11 @@ export class WmsMobileService {
   }
 
   private mapMobileBasketTasks(basket: any) {
-    return this.getMobileBasketOrders(basket).map((task: any) => this.mapMobilePickingTask(task));
+    const reworkBasketUnits = Array.isArray(basket?.basketUnits) ? basket.basketUnits : [];
+    return this.getMobileBasketOrders(basket).map((task: any) => this.mapMobilePickingTask({
+      ...task,
+      reworkBasketUnits,
+    }));
   }
 
   private getMobileBasketOrders(basket: any) {
@@ -12700,32 +13673,24 @@ export class WmsMobileService {
   }
 
   private mapMobileHeldBasket(basket: any) {
-    const activeTasks = Array.isArray(basket.fulfillmentOrders)
-      ? basket.fulfillmentOrders
-      : basket.fulfillmentOrder
-        ? [basket.fulfillmentOrder]
-        : [];
-    const activeTask = activeTasks[0] ?? null;
+    const tasks = this.mapMobileBasketTasks(basket);
+    const activeTask = tasks[0] ?? null;
 
     return {
       ...this.mapMobilePickBasket(basket),
-      task: activeTask ? this.mapMobilePickingTask(activeTask) : null,
-      tasks: activeTasks.map((task: any) => this.mapMobilePickingTask(task)),
+      task: activeTask,
+      tasks,
     };
   }
 
   private mapMobileBasketLookup(basket: any) {
-    const activeTasks = Array.isArray(basket.fulfillmentOrders)
-      ? basket.fulfillmentOrders
-      : basket.fulfillmentOrder
-        ? [basket.fulfillmentOrder]
-        : [];
-    const activeTask = activeTasks[0] ?? null;
+    const tasks = this.mapMobileBasketTasks(basket);
+    const activeTask = tasks[0] ?? null;
 
     return {
       ...this.mapMobilePickBasket(basket),
-      task: activeTask ? this.mapMobilePickingTask(activeTask) : null,
-      tasks: activeTasks.map((task: any) => this.mapMobilePickingTask(task)),
+      task: activeTask,
+      tasks,
     };
   }
 

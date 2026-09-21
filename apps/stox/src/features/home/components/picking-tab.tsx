@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import type { BootstrapResponse, DeviceIdentity, StoredSession } from '@/src/features/auth/types';
-import { canFilterStoxPartners, canUsePickWorkspace } from '@/src/features/home/rbac';
+import { canDetachStoxPickOrder, canFilterStoxPartners, canUsePickWorkspace } from '@/src/features/home/rbac';
 import { usePickingWorkspace } from '@/src/features/picking/hooks/use-picking-workspace';
 import type {
   PickingFilters,
@@ -102,12 +102,14 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
     picking,
     refreshPicking,
     retryAllocation,
+    returnDetachedUnit,
     returnReworkUnit,
     scanBasketBin,
     scanBasketUnit,
     scanBasket,
     scanBin,
     scanUnit,
+    startOrderDetachment,
     setActiveBin,
     setActiveTaskId,
     setFilters,
@@ -492,6 +494,7 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
           activeBin={activeBin}
           activeTask={activeTask}
           currentUserEmail={bootstrap.user.email}
+          canDetachOrders={canDetachStoxPickOrder(bootstrap)}
           isSubmitting={isSubmitting}
           tasks={executionTasks}
           onBack={() => {
@@ -503,6 +506,8 @@ function PickingWorkspaceTab({ bootstrap, device, session }: PickingTabProps) {
           onRefresh={refreshPicking}
           onRetryAllocation={retryAllocation}
           onReturnReworkUnit={returnReworkUnit}
+          onReturnDetachedUnit={returnDetachedUnit}
+          onStartOrderDetachment={startOrderDetachment}
           basketPlan={activeTask.basket ? basketPlans[activeTask.basket.id] ?? null : null}
           onFetchBasketPlan={fetchBasketPlan}
           onHandoff={handoffTask}
@@ -1431,6 +1436,7 @@ function PickExecutionStack({
   activeTask,
   basketPlan,
   currentUserEmail,
+  canDetachOrders,
   isSubmitting,
   onBack,
   onClaim,
@@ -1439,11 +1445,13 @@ function PickExecutionStack({
   onRefresh,
   onRetryAllocation,
   onReturnReworkUnit,
+  onReturnDetachedUnit,
   onScanBasketBin,
   onScanBasketUnit,
   onScanBasket,
   onScanBin,
   onScanUnit,
+  onStartOrderDetachment,
   packerOptions,
   tasks,
 }: {
@@ -1451,6 +1459,7 @@ function PickExecutionStack({
   activeTask: WmsMobilePickingTask;
   basketPlan: WmsMobileBasketPickPlan | null;
   currentUserEmail: string;
+  canDetachOrders: boolean;
   isSubmitting: boolean;
   onBack: () => void;
   onClaim: (taskId: string) => Promise<void>;
@@ -1459,11 +1468,19 @@ function PickExecutionStack({
   onRefresh: () => Promise<void>;
   onRetryAllocation: (taskId: string) => Promise<boolean>;
   onReturnReworkUnit: (basketId: string, orderId: string, code: string) => Promise<boolean>;
+  onReturnDetachedUnit: (params: { basketId: string; orderId: string; binCode: string; code: string }) => Promise<boolean>;
   onScanBasketBin: (basketId: string, code: string) => Promise<boolean>;
   onScanBasketUnit: (basketId: string, binId: string, code: string) => Promise<boolean>;
   onScanBasket: (taskId: string, code: string) => Promise<boolean>;
   onScanBin: (taskId: string, code: string) => Promise<boolean>;
   onScanUnit: (taskId: string, code: string) => Promise<boolean>;
+  onStartOrderDetachment: (params: {
+    basketId: string;
+    orderId: string;
+    confirmation: string;
+    sourceRevision: number;
+    reason: string;
+  }) => Promise<boolean>;
   packerOptions: WmsMobilePickingPackerOption[];
   tasks: WmsMobilePickingTask[];
 }) {
@@ -1499,8 +1516,26 @@ function PickExecutionStack({
       {tasks.filter((task) => task.itemChange).map((task) => (
         <OrderChangeNotice
           key={`change-${task.id}`}
+          canDetach={canDetachOrders}
           change={task.itemChange}
           disabled={isSubmitting}
+          onStartDetachment={basket && canDetachOrders
+            ? (confirmation, reason) => onStartOrderDetachment({
+                basketId: basket.id,
+                orderId: task.id,
+                confirmation,
+                sourceRevision: task.sourceRevision,
+                reason,
+              })
+            : undefined}
+          onReturnDetachedUnit={basket && task.itemChange?.detachment
+            ? (binCode, code) => onReturnDetachedUnit({
+                basketId: basket.id,
+                orderId: task.id,
+                binCode,
+                code,
+              })
+            : undefined}
           onReturnUnit={basket && task.itemChange?.returnUnitsRemaining
             ? (code) => onReturnReworkUnit(basket.id, task.id, code)
             : undefined}

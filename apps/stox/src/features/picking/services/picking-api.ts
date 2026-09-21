@@ -253,6 +253,63 @@ export function returnMobileFulfillmentReworkUnit(params: PickingRequestParams &
   });
 }
 
+type FulfillmentDetachmentResponse = {
+  success: boolean;
+  detached: boolean;
+  task: WmsMobilePickingTask | null;
+  basket: WmsMobilePickingTask['basket'];
+  plan: WmsMobileBasketPickPlanResponse['plan'] | null;
+};
+
+export function startMobileFulfillmentOrderDetachment(params: PickingRequestParams & {
+  basketId: string;
+  orderId: string;
+  confirmPosOrderId: string;
+  expectedSourceRevision: number;
+  reason: string;
+}) {
+  return apiRequest<FulfillmentDetachmentResponse>(
+    `/wms/mobile/picking/baskets/${params.basketId}/orders/${params.orderId}/detach`,
+    {
+      method: 'POST',
+      token: params.accessToken,
+      device: params.device,
+      body: {
+        tenantId: params.tenantId,
+        confirmPosOrderId: params.confirmPosOrderId,
+        expectedSourceRevision: params.expectedSourceRevision,
+        reason: params.reason,
+      },
+    },
+  );
+}
+
+export function returnMobileDetachedFulfillmentUnit(params: PickingRequestParams & {
+  basketId: string;
+  orderId: string;
+  binCode: string;
+  code: string;
+}) {
+  return apiRequest<FulfillmentDetachmentResponse & {
+    remainingUnits: number;
+    returnedUnit: {
+      id: string;
+      code: string;
+      variationId: string;
+      destinationBin: string | null;
+    };
+  }>(`/wms/mobile/picking/baskets/${params.basketId}/orders/${params.orderId}/detach/return-unit`, {
+    method: 'POST',
+    token: params.accessToken,
+    device: params.device,
+    body: {
+      tenantId: params.tenantId,
+      binCode: params.binCode,
+      code: params.code,
+    },
+  });
+}
+
 function buildPickingPath(params: {
   filters: PickingFilters;
   status?: PickingStatus | null;

@@ -36,6 +36,79 @@ export type WmsFulfillmentItemChange = {
   removed: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
   increased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
   decreased: Array<{ variationId: string; productName: string; previousQuantity: number; nextQuantity: number; delta: number }>;
+  order: {
+    id: string;
+    posOrderId: string;
+    tracking: string | null;
+    basketCode: string | null;
+  };
+  returnSteps: WmsFulfillmentReturnStep[];
+  pickSteps: WmsFulfillmentPickStep[];
+  detachment: WmsFulfillmentDetachment | null;
+};
+
+export type WmsFulfillmentDetachment = {
+  status: 'RETURNING';
+  reason: string;
+  confirmedAt: string | null;
+  totalUnits: number;
+  returnedUnits: number;
+  remainingUnits: number;
+  units: {
+    basketUnitId: string;
+    inventoryUnitId: string;
+    variationId: string;
+    productName: string;
+    productDisplayId: string | null;
+    code: string | null;
+    barcode: string | null;
+    destinationBin: {
+      id: string;
+      code: string;
+      barcode: string | null;
+      name: string;
+      kind: string;
+    } | null;
+    returnedAt: string | null;
+  }[];
+};
+
+export type WmsFulfillmentReworkLocation = {
+  id: string;
+  code: string;
+  name: string;
+  kind: string;
+  label: string;
+};
+
+export type WmsFulfillmentReworkUnit = {
+  id: string;
+  code: string | null;
+  barcode: string | null;
+  sourceBin: WmsFulfillmentReworkLocation | null;
+};
+
+export type WmsFulfillmentReturnStep = {
+  variationId: string;
+  productName: string;
+  productDisplayId: string | null;
+  quantity: number;
+  serializedUnits: WmsFulfillmentReworkUnit[];
+  unidentifiedQuantity: number;
+};
+
+export type WmsFulfillmentPickStep = {
+  variationId: string;
+  productName: string;
+  productDisplayId: string | null;
+  quantity: number;
+  serializedUnits: WmsFulfillmentReworkUnit[];
+  sourceBins: {
+    location: WmsFulfillmentReworkLocation;
+    quantity: number;
+  }[];
+  unallocatedQuantity: number;
+  scanAnyMatchingUnit: boolean;
 };
 
 export type WmsMobilePickingResponse = {
