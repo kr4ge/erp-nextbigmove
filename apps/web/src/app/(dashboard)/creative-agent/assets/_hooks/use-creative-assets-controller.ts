@@ -24,7 +24,7 @@ thirtyDaysAgo.setDate(today.getDate() - 29);
 const DEFAULT_PARAMS: CreativeAssetsParams = {
   startDate: toDateInputValue(thirtyDaysAgo),
   endDate: toDateInputValue(today),
-  query: '', storeId: '', creatorId: '', creativeId: '', revisionState: '', queue: '', page: 1, pageSize: 12,
+  query: '', storeIds: [], creatorIds: [], creativeId: '', revisionState: '', linked: [], analyzed: [], queue: '', page: 1, pageSize: 12,
 };
 
 const REVISION_STATE_VALUES = ['NONE', 'NEEDS_REVISION', 'RESOLVED'];

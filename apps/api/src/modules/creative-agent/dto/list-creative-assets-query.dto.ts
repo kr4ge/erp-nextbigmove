@@ -1,6 +1,13 @@
 import { Transform, Type } from 'class-transformer';
 import { CreativeRevisionState } from '@prisma/client';
-import { IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+
+/** "a,b,c" from the query string into a list; blank means no filter. */
+const commaList = ({ value }: { value: unknown }) => {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const ids = value.split(',').map((id) => id.trim()).filter(Boolean);
+  return ids.length ? ids : undefined;
+};
 
 export class ListCreativeAssetsQueryDto {
   /** The window the per-creative performance figures are summed over. */
@@ -36,6 +43,36 @@ export class ListCreativeAssetsQueryDto {
   @Transform(({ value }) => value === '' ? undefined : value)
   @IsUUID()
   creatorId?: string;
+
+  /** Several stores at once, comma-separated. Wins over storeId when both are sent. */
+  @IsOptional()
+  @Transform(commaList)
+  @IsArray()
+  @IsUUID('all', { each: true })
+  @ArrayMaxSize(200)
+  storeIds?: string[];
+
+  /** Several creators at once, comma-separated. Wins over creatorId when both are sent. */
+  @IsOptional()
+  @Transform(commaList)
+  @IsArray()
+  @IsUUID('all', { each: true })
+  @ArrayMaxSize(200)
+  creatorIds?: string[];
+
+  /** Meta link states to show, comma-separated. Both or none means no filter. */
+  @IsOptional()
+  @Transform(commaList)
+  @IsArray()
+  @IsIn(['LINKED', 'UNLINKED'], { each: true })
+  linked?: Array<'LINKED' | 'UNLINKED'>;
+
+  /** AI analysis states to show, comma-separated. Both or none means no filter. */
+  @IsOptional()
+  @Transform(commaList)
+  @IsArray()
+  @IsIn(['ANALYZED', 'NOT_ANALYZED'], { each: true })
+  analyzed?: Array<'ANALYZED' | 'NOT_ANALYZED'>;
 
   /** Deep-link focus: narrow the list to one creative (e.g. /assets?creative=<uuid>). */
   @IsOptional()

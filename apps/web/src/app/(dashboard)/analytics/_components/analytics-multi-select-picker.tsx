@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 type AnalyticsMultiSelectOption = {
   value: string;
@@ -23,6 +24,10 @@ type AnalyticsMultiSelectPickerProps = {
   titleClassName?: string;
   searchClassName?: string;
   hintClassName?: string;
+  /** Show a chevron instead of the "(click to choose)" hint, for compact toolbars. */
+  chevron?: boolean;
+  /** Classes for the label; defaults keep the dashboard's colours. */
+  labelClassName?: string;
 };
 
 export function AnalyticsMultiSelectPicker({
@@ -41,6 +46,8 @@ export function AnalyticsMultiSelectPicker({
   titleClassName,
   searchClassName,
   hintClassName,
+  chevron = false,
+  labelClassName,
 }: AnalyticsMultiSelectPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -75,10 +82,14 @@ export function AnalyticsMultiSelectPicker({
           'flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:border-slate-300 focus:outline-none dark:border-border dark:bg-transparent'
         }
       >
-        <span className="text-slate-900 dark:text-foreground">{selectedLabel}</span>
-        <span className={hintClassName || 'text-xs text-slate-400 dark:text-slate-300'}>
-          (click to choose)
-        </span>
+        <span className={labelClassName || 'text-slate-900 dark:text-foreground'}>{selectedLabel}</span>
+        {chevron ? (
+          <ChevronDown className={`h-4 w-4 shrink-0 text-muted transition ${open ? 'rotate-180' : ''}`} />
+        ) : (
+          <span className={hintClassName || 'text-xs text-slate-400 dark:text-slate-300'}>
+            (click to choose)
+          </span>
+        )}
       </button>
 
       {open && (

@@ -11,7 +11,13 @@ function apiError(error: unknown, fallback: string) {
 }
 
 export async function fetchCreativeAssets(params: CreativeAssetsParams) {
-  try { return (await apiClient.get<CreativeAssetsResponse>('/creative-agent/assets', { params })).data; }
+  const { storeIds, creatorIds, linked, analyzed, ...rest } = params;
+  const query: Record<string, string | number> = { ...rest };
+  if (storeIds.length) query.storeIds = storeIds.join(',');
+  if (creatorIds.length) query.creatorIds = creatorIds.join(',');
+  if (linked.length) query.linked = linked.join(',');
+  if (analyzed.length) query.analyzed = analyzed.join(',');
+  try { return (await apiClient.get<CreativeAssetsResponse>('/creative-agent/assets', { params: query })).data; }
   catch (error) { throw new Error(apiError(error, 'Unable to load Creative Assets.')); }
 }
 

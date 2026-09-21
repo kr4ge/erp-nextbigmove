@@ -36,6 +36,10 @@ export type CreativeAsset = {
   lastCommentAt: string | null;
   linked: boolean;
   metaAdIds: string[];
+  /** At least one AI analysis has completed for this creative. */
+  aiAnalyzed: boolean;
+  aiAnalyzedAt: string | null;
+  aiAnalysisMode: 'RUNNING_ANALYST' | 'NEW_REVIEWER' | null;
   /** Signed URL for the cached Facebook post cover, when one was captured. */
   thumbnailUrl: string | null;
   thumbnailIsVideo: boolean;
@@ -60,10 +64,15 @@ export type CreativeAssetsParams = {
   startDate: string;
   endDate: string;
   query: string;
-  storeId: string;
-  creatorId: string;
+  /** Empty means every store the person can see. */
+  storeIds: string[];
+  /** Empty means every creator. */
+  creatorIds: string[];
   creativeId: string;
   revisionState: '' | CreativeRevisionState;
+  /** Empty or both means no filter; one state narrows. */
+  linked: Array<'LINKED' | 'UNLINKED'>;
+  analyzed: Array<'ANALYZED' | 'NOT_ANALYZED'>;
   queue: '' | 'REVIEW';
   page: number;
   pageSize: number;
@@ -77,6 +86,8 @@ export type CreativeAssetsResponse = {
     defaultStoreId?: string | null;
     creators: Array<{ value: string; label: string }>;
     revisionStates: Array<{ value: CreativeRevisionState; label: string }>;
+    linkStates: Array<{ value: 'LINKED' | 'UNLINKED'; label: string }>;
+    analysisStates: Array<{ value: 'ANALYZED' | 'NOT_ANALYZED'; label: string }>;
   };
   summary: Record<string, number>;
   items: CreativeAsset[];

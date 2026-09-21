@@ -19,6 +19,64 @@ const REVISION_STATES: CreativeRevisionState[] = [
   CreativeRevisionState.RESOLVED,
 ];
 
+const LINK_STATES = [
+  { value: 'LINKED', label: 'Linked to a Meta ad' },
+  { value: 'UNLINKED', label: 'Not linked yet' },
+] as const;
+
+const ANALYSIS_STATES = [
+  { value: 'ANALYZED', label: 'Analyzed by AI' },
+  { value: 'NOT_ANALYZED', label: 'Not analyzed yet' },
+] as const;
+
+/** A two-state picker filters only when exactly one state is chosen. */
+const onlyState = <T extends string>(states: T[] | undefined): T | undefined => (states && states.length === 1 ? states[0] : undefined);
+
+/**
+ * The ways people type a registry code. "SE-I0342" is stored, but the search
+ * box receives "se i0342", "sei0342", "I0342" and the pasted ad name just as
+ * often. Each token yields the spellings a stored code could contain.
+ */
+export function codeSpellings(token: string): string[] {
+  const raw = token.trim();
+  if (!raw) return [];
+  const spellings = new Set<string>([raw]);
+  const compact = raw.replace(/[^a-z0-9]/gi, '');
+  if (compact && compact !== raw) spellings.add(compact);
+  // "SEI0342" -> "SE-I0342": the letters before the kind letter and number.
+  const glued = compact.match(/^([a-z]+?)([a-z]\d+)$/i);
+  if (glued && glued[1]) spellings.add(`${glued[1]}-${glued[2]}`);
+  return [...spellings];
+}
+
+/**
+ * Every word must match somewhere: the code in any spelling, the title, the
+ * product, the store, the creator, or a linked Meta ad's id or name. Two
+ * words narrow rather than widen, which is what a search box is expected
+ * to do.
+ */
+export function buildAssetSearchWhere(query: string): Prisma.CreativeWhereInput[] {
+  const tokens = query.split(/\s+/).map((token) => token.trim()).filter(Boolean).slice(0, 8);
+  return tokens.map((token) => ({
+    OR: [
+      ...codeSpellings(token).map((spelling) => ({ code: { contains: spelling, mode: 'insensitive' as const } })),
+      { title: { contains: token, mode: 'insensitive' as const } },
+      { posProductName: { contains: token, mode: 'insensitive' as const } },
+      { storeConfig: { storeNameSnapshot: { contains: token, mode: 'insensitive' as const } } },
+      { createdBy: { OR: [
+        { firstName: { contains: token, mode: 'insensitive' as const } },
+        { lastName: { contains: token, mode: 'insensitive' as const } },
+        { email: { contains: token, mode: 'insensitive' as const } },
+      ] } },
+      { metaAdId: { contains: token, mode: 'insensitive' as const } },
+      { metaAdLinks: { some: { OR: [
+        { adId: { contains: token, mode: 'insensitive' as const } },
+        { adNameSnapshot: { contains: token, mode: 'insensitive' as const } },
+      ] } } },
+    ],
+  }));
+}
+
 /** Play counts stay nullable: "not measured" is not the same as zero. */
 type AssetMetricBucket = {
   spend: number;
@@ -48,11 +106,15 @@ export class CreativeAssetsService {
       select: { id: true, firstName: true, lastName: true, email: true },
     }));
     const canReadAll = this.access.canReadAll(context);
+    const creatorIds = query.creatorIds ?? (query.creatorId ? [query.creatorId] : []);
     const ownershipWhere: Prisma.CreativeWhereInput = canReadAll
-      ? (query.creatorId ? { createdById: query.creatorId } : {})
+      ? (creatorIds.length ? { createdById: { in: creatorIds } } : {})
       : { createdById: context.userId };
     const storeOptions = await loadCreativeStoreOptions(this.prisma, context.tenantId, canReadAll ? null : context.userId);
-    const effectiveStoreId = query.storeId ?? storeOptions.defaultStoreId ?? undefined;
+    // A creator with one store is pinned to it; everyone else may pick several.
+    const storeIds = storeOptions.defaultStoreId
+      ? [storeOptions.defaultStoreId]
+      : (query.storeIds ?? (query.storeId ? [query.storeId] : []));
     const where: Prisma.CreativeWhereInput = {
       tenantId: context.tenantId,
       ...ownershipWhere,
@@ -64,16 +126,13 @@ export class CreativeAssetsService {
           : query.queue === 'REVIEW'
             ? { revisionState: { in: REVIEW_QUEUE_STATES } }
             : {}),
-      ...(effectiveStoreId ? { storeConfig: { storeId: effectiveStoreId } } : {}),
-      ...(query.query ? { OR: [
-        { code: { contains: query.query, mode: 'insensitive' } },
-        { title: { contains: query.query, mode: 'insensitive' } },
-        { createdBy: { OR: [
-          { firstName: { contains: query.query, mode: 'insensitive' } },
-          { lastName: { contains: query.query, mode: 'insensitive' } },
-          { email: { contains: query.query, mode: 'insensitive' } },
-        ] } },
-      ] } : {}),
+      ...(storeIds.length ? { storeConfig: { storeId: { in: storeIds } } } : {}),
+      // A link is either a row in creative_meta_ad_links or the legacy metaAdId.
+      ...(onlyState(query.linked) === 'LINKED' ? { OR: [{ metaAdLinks: { some: {} } }, { metaAdId: { not: null } }] } : {}),
+      ...(onlyState(query.linked) === 'UNLINKED' ? { metaAdLinks: { none: {} }, metaAdId: null } : {}),
+      ...(onlyState(query.analyzed) === 'ANALYZED' ? { aiRuns: { some: { status: 'COMPLETED' } } } : {}),
+      ...(onlyState(query.analyzed) === 'NOT_ANALYZED' ? { aiRuns: { none: { status: 'COMPLETED' } } } : {}),
+      ...(query.query ? { AND: buildAssetSearchWhere(query.query) } : {}),
     };
     const skip = (query.page - 1) * query.pageSize;
     // The review queue reads oldest-waiting first. Tenant-wide readers browsing
@@ -104,6 +163,7 @@ export class CreativeAssetsService {
           createdBy: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } },
           reviewComments: { select: { createdAt: true }, orderBy: { createdAt: 'desc' }, take: 1 },
           metaAdLinks: { select: { adId: true }, orderBy: { linkedAt: 'asc' } },
+          aiRuns: { where: { status: 'COMPLETED' }, orderBy: { completedAt: 'desc' }, take: 1, select: { completedAt: true, analysisMode: true } },
           _count: { select: { reviewComments: true } },
         },
       }),
@@ -131,13 +191,16 @@ export class CreativeAssetsService {
       permissions: { canReadAll },
       selected: {
         startDate: range.startKey, endDate: range.endKey,
-        query: query.query ?? '', storeId: effectiveStoreId ?? '', creatorId: query.creatorId ?? '', revisionState: query.revisionState ?? '', queue: query.queue ?? '', page: query.page, pageSize: query.pageSize,
+        query: query.query ?? '', storeIds, creatorIds, linked: query.linked ?? [], analyzed: query.analyzed ?? [],
+        revisionState: query.revisionState ?? '', queue: query.queue ?? '', page: query.page, pageSize: query.pageSize,
       },
       filters: {
         stores: stores.stores,
         defaultStoreId: stores.defaultStoreId,
         creators: creators.map(({ createdBy }) => ({ value: createdBy.id, label: this.personName(createdBy) })).sort((a, b) => a.label.localeCompare(b.label)),
         revisionStates: REVISION_STATES.map((state) => ({ value: state, label: this.humanize(state) })),
+        linkStates: LINK_STATES.map((state) => ({ ...state })),
+        analysisStates: ANALYSIS_STATES.map((state) => ({ ...state })),
       },
       summary: Object.fromEntries(REVISION_STATES.map((state) => [state, statusCounts.find((row) => row.revisionState === state)?._count._all ?? 0])),
       items: items.map((item) => {
@@ -156,6 +219,9 @@ export class CreativeAssetsService {
           lastCommentAt: item.reviewComments[0]?.createdAt ?? null,
           linked: linkedAdIds.length > 0,
           metaAdIds: [...new Set(linkedAdIds)],
+          aiAnalyzed: item.aiRuns.length > 0,
+          aiAnalyzedAt: item.aiRuns[0]?.completedAt ?? null,
+          aiAnalysisMode: item.aiRuns[0]?.analysisMode ?? null,
           thumbnailUrl: thumbnailUrls.get(item.id) ?? null,
           thumbnailIsVideo: item.thumbnailIsVideo,
           metrics: this.serializeMetrics(item.kind, metricsByCreative.get(item.id)),
