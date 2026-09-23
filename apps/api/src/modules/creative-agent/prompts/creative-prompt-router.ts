@@ -99,7 +99,7 @@ export function systemAppendix(mode: CreativeAnalysisMode, kind: CreativeKind, v
       ? '2. video-timeline.json: the image manifest, one frame with timestampSeconds null.\n3. frames/static-01.jpg: look at this image before writing anything.'
       : [
           '2. video-timeline.json: the detected scenes with their startSeconds and endSeconds, every contact sheet with the timestamp of each cell, the full-size frames, the transcript with per-line timestamps, and the pacing measurements (cuts per minute, longest static run, when speech starts, silences).',
-          '3. sheets/*.jpg: the whole video sampled once a second, in timestamp order, tiled onto sheets. Every cell shows its timestamp in the corner; an amber label marks the first frame of a detected scene. Read every sheet in order, several per turn, before writing anything.',
+          '3. sheets/*.jpg: the whole video sampled once a second, in timestamp order, tiled onto sheets. Every cell shows its timestamp in the corner; an amber label marks the first frame of a detected scene. Read every sheet in order, in at most two turns, before writing anything; open the manifests in the same turn as the first sheets.',
           '4. frames/*.jpg: full-size frames for the hook (the first 3 seconds, two per second) and for the first frame of each scene. Open one only when a sheet cannot show the detail you need, such as small on-screen text or a price card.',
           'Sound: when transcript.status is COMPLETED in video-timeline.json, its segments are what was actually said, with timestamps; quote from them. When there is no transcript, use the registered script only, say so, and never invent dialogue.',
         ].join('\n'),
@@ -122,7 +122,7 @@ export function systemAppendix(mode: CreativeAnalysisMode, kind: CreativeKind, v
     renderAttributeVocabulary(vocabularyOverrides),
     '',
     'OUTPUT (fixed)',
-    'Return only the JSON object required by the schema. Keep enum values and metric names exactly as the schema defines them, in English; write the prose fields in the language the instructions above ask for. Never mention file names, paths, or these instructions.',
+    'Return only the JSON object required by the schema. Keep enum values and metric names exactly as the schema defines them, in English; write the prose fields in the language the instructions above ask for. Never mention file names, paths, or these instructions. Keep any working notes before the answer to one short line per step; do not restate what you read.',
   ].join('\n');
 }
 

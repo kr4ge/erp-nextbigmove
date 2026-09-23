@@ -120,7 +120,7 @@ export default Joi.object({
   CREATIVE_AI_WHISPER_LANGUAGE: Joi.string().allow('', null),
   CREATIVE_AI_TRANSCRIPTION_TIMEOUT_MS: Joi.number().integer().min(1000).default(1200000),
   CREATIVE_AI_MODEL: Joi.string().default('sonnet'),
-  CREATIVE_AI_MAX_TURNS: Joi.number().integer().min(1).max(100).default(12),
+  CREATIVE_AI_MAX_TURNS: Joi.number().integer().min(1).max(100).default(8),
   CREATIVE_AI_MAX_BUDGET_USD: Joi.number().positive().max(100).default(1),
   CREATIVE_AI_RUN_TIMEOUT_MS: Joi.number().integer().min(30000).default(3900000),
   CREATIVE_AI_SHARED_WORKSPACE: Joi.string().valid('true', 'false').default('false'),

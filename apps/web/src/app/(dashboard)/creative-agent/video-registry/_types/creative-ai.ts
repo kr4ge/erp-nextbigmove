@@ -81,6 +81,35 @@ export type CreativeAiPromptConfig = {
   newReviewer: CreativeAiPromptSetting;
 };
 
+export type CreativeAiDocumentScope = 'TENANT' | 'STORE' | 'PRODUCT';
+
+/** A reference document the analysis consults, as the settings page lists it. */
+export type CreativeAiDocument = {
+  id: string;
+  title: string;
+  fileName: string;
+  scope: CreativeAiDocumentScope;
+  storeConfigId: string | null;
+  storeName: string | null;
+  productName: string | null;
+  byteSize: number;
+  characterCount: number;
+  tokenEstimate: number;
+  status: 'READY' | 'FAILED' | 'UNSUPPORTED';
+  statusNote: string | null;
+  version: number;
+  uploadedBy: string | null;
+  createdAt: string;
+  excerpt: string;
+};
+
+export type CreativeAiDocumentsResponse = {
+  documents: CreativeAiDocument[];
+  limits: { maxFileMb: number; maxCharactersPerDocument: number; maxCharactersPerRun: number; acceptedExtensions: string[] };
+  stores: Array<{ value: string; label: string }>;
+  canManage: boolean;
+};
+
 export type CreativeAiPromptVersion = {
   id: string;
   version: number;

@@ -1,5 +1,13 @@
 import axios from 'axios';
 import apiClient from '@/lib/api-client';
+
+function apiError(error: unknown, fallback: string) {
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.message;
+    return Array.isArray(message) ? message.join(', ') : message || fallback;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
 import type {
   CreativeAiPromptConfig,
   CreativeAiPromptKind,
@@ -13,6 +21,9 @@ import type {
   StartCreativeAiRunInput,
   UpdateCreativeAiConfigInput,
   CreativeAiRunFrame,
+  CreativeAiDocument,
+  CreativeAiDocumentsResponse,
+  CreativeAiDocumentScope,
 } from '../_types/creative-ai';
 
 function creativeAiError(error: unknown, fallback: string): Error {
@@ -198,5 +209,46 @@ export async function fetchCreativeAiRunFrames(runId: string): Promise<CreativeA
       throw new Error(Array.isArray(message) ? message.join(', ') : message || 'Unable to load the scene thumbnails.');
     }
     throw error instanceof Error ? error : new Error('Unable to load the scene thumbnails.');
+  }
+}
+
+/** Reference documents the analysis consults, with the tenant's stores for scoping. */
+export async function fetchCreativeAiDocuments(): Promise<CreativeAiDocumentsResponse> {
+  try {
+    const { data } = await apiClient.get<CreativeAiDocumentsResponse>('/creative-agent/ai/documents');
+    return data;
+  } catch (error) {
+    throw new Error(apiError(error, 'Unable to load reference documents.'));
+  }
+}
+
+export async function uploadCreativeAiDocument(input: {
+  file: File;
+  scope: CreativeAiDocumentScope;
+  storeConfigId?: string;
+  productName?: string;
+  title?: string;
+}): Promise<CreativeAiDocument> {
+  const form = new FormData();
+  form.append('file', input.file);
+  form.append('scope', input.scope);
+  if (input.storeConfigId) form.append('storeConfigId', input.storeConfigId);
+  if (input.productName) form.append('productName', input.productName);
+  if (input.title) form.append('title', input.title);
+  try {
+    const { data } = await apiClient.post<CreativeAiDocument>('/creative-agent/ai/documents', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  } catch (error) {
+    throw new Error(apiError(error, 'Unable to upload the document.'));
+  }
+}
+
+export async function removeCreativeAiDocument(id: string): Promise<void> {
+  try {
+    await apiClient.delete(`/creative-agent/ai/documents/${id}`);
+  } catch (error) {
+    throw new Error(apiError(error, 'Unable to remove the document.'));
   }
 }

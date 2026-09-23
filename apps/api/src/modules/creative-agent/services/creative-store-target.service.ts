@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CREATIVE_AGENT_PERMISSIONS } from '../creative-agent.constants';
@@ -10,8 +10,17 @@ export type StoreTargetValues = {
   hookRatePct: number | null;
   holdRatePct: number | null;
   ctrPct: number | null;
+  /** Where an order stops making money. A ceiling, not an ambition. */
+  breakevenCpp: number | null;
+  /** What a good creative should achieve, comfortably under break-even. */
   cpp: number | null;
+  /** Proven headroom: below this, put more budget behind it. */
+  scaleCpp: number | null;
+  /** Above this the creative is losing money faster than it can recover. */
+  killCpp: number | null;
   arPct: number | null;
+  scaleArPct: number | null;
+  killArPct: number | null;
   maxCancellationPct: number | null;
   maxRtsPct: number | null;
   note: string | null;
@@ -21,8 +30,13 @@ export const STORE_TARGET_KEYS = [
   'hookRatePct',
   'holdRatePct',
   'ctrPct',
+  'breakevenCpp',
   'cpp',
+  'scaleCpp',
+  'killCpp',
   'arPct',
+  'scaleArPct',
+  'killArPct',
   'maxCancellationPct',
   'maxRtsPct',
 ] as const;
@@ -79,6 +93,58 @@ export class CreativeStoreTargetService {
     return this.hasAny(row) ? this.values(row!) : null;
   }
 
+  /**
+   * What the ERP would derive as this store's break-even from its own
+   * reconciled orders, so the form can offer it instead of leaving the
+   * number to memory. Null until enough orders have been delivered.
+   */
+  async derivedBreakeven(actor: CreativeActor, storeConfigId: string) {
+    const context = await this.access.resolve(actor);
+    this.access.require(
+      context,
+      CREATIVE_AGENT_PERMISSIONS.READ,
+      CREATIVE_AGENT_PERMISSIONS.READ_ALL,
+      CREATIVE_AGENT_PERMISSIONS.AI_USE,
+      CREATIVE_AGENT_PERMISSIONS.AI_MANAGE,
+    );
+    const store = await this.prisma.creativeStoreConfig.findFirst({
+      where: { id: storeConfigId, tenantId: context.tenantId },
+      select: { storeId: true },
+    });
+    if (!store) throw new NotFoundException('Store not found');
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const adIds = await this.prisma.creativeMetaAdLink.findMany({
+      where: { tenantId: context.tenantId, creative: { storeConfig: { storeId: store.storeId } } },
+      select: { adId: true },
+      distinct: ['adId'],
+    }).then((rows) => rows.map((row) => row.adId));
+    if (adIds.length === 0) return { breakevenCpp: null, deliveredOrders: 0, days: 90 };
+
+    const sums = await this.prisma.reconcileMarketing.aggregate({
+      where: { tenantId: context.tenantId, adId: { in: adIds }, date: { gte: since } },
+      _sum: {
+        deliveredCount: true, canceledCount: true, rtsCount: true, purchasesPos: true,
+        deliveredCodPos: true, cogsDeliveredPos: true, sfSdrPos: true, ffSdrPos: true, ifSdrPos: true, codFeeDeliveredPos: true,
+      },
+    }).then((row) => row._sum);
+    const num = (value: Prisma.Decimal | number | null | undefined) => Number(value ?? 0);
+    const delivered = sums.deliveredCount ?? 0;
+    const orders = sums.purchasesPos ?? 0;
+    if (delivered <= 0 || orders <= 0) return { breakevenCpp: null, deliveredOrders: delivered, days: 90 };
+
+    // Margin on a delivered order, spread over every order it takes to get
+    // one delivered. That is the most an order may cost before it loses money.
+    const costs = num(sums.cogsDeliveredPos) + num(sums.sfSdrPos) + num(sums.ffSdrPos) + num(sums.ifSdrPos) + num(sums.codFeeDeliveredPos);
+    const marginPerDelivered = (num(sums.deliveredCodPos) - costs) / delivered;
+    const deliveryRate = delivered / orders;
+    const breakeven = marginPerDelivered * deliveryRate;
+    return {
+      breakevenCpp: breakeven > 0 ? Math.round(breakeven * 100) / 100 : null,
+      deliveredOrders: delivered,
+      days: 90,
+    };
+  }
+
   async get(actor: CreativeActor, storeConfigId: string) {
     const context = await this.access.resolve(actor);
     this.access.require(
@@ -106,13 +172,19 @@ export class CreativeStoreTargetService {
     });
     if (!store) throw new NotFoundException('Store not found');
 
+    assertBandOrder(dto);
     const decimal = (value: number | null | undefined) => (value == null ? null : new Prisma.Decimal(value));
     const values = {
       hookRatePct: decimal(dto.hookRatePct),
       holdRatePct: decimal(dto.holdRatePct),
       ctrPct: decimal(dto.ctrPct),
+      breakevenCpp: decimal(dto.breakevenCpp),
       cpp: decimal(dto.cpp),
+      scaleCpp: decimal(dto.scaleCpp),
+      killCpp: decimal(dto.killCpp),
       arPct: decimal(dto.arPct),
+      scaleArPct: decimal(dto.scaleArPct),
+      killArPct: decimal(dto.killArPct),
       maxCancellationPct: decimal(dto.maxCancellationPct),
       maxRtsPct: decimal(dto.maxRtsPct),
       note: dto.note?.trim() || null,
@@ -150,8 +222,13 @@ export class CreativeStoreTargetService {
       hookRatePct: num(row.hookRatePct),
       holdRatePct: num(row.holdRatePct),
       ctrPct: num(row.ctrPct),
+      breakevenCpp: num(row.breakevenCpp),
       cpp: num(row.cpp),
+      scaleCpp: num(row.scaleCpp),
+      killCpp: num(row.killCpp),
       arPct: num(row.arPct),
+      scaleArPct: num(row.scaleArPct),
+      killArPct: num(row.killArPct),
       maxCancellationPct: num(row.maxCancellationPct),
       maxRtsPct: num(row.maxRtsPct),
       note: row.note ?? null,
@@ -172,35 +249,110 @@ export class CreativeStoreTargetService {
  * The targets as prompt text. A missing target is said to be missing, in
  * words, so the model reports NO_THRESHOLDS instead of inventing a number.
  */
-export function renderStoreTargets(storeName: string, targets: StoreTargetValues | null): string {
-  if (!targets) {
-    return `${storeName} has no target KPIs set yet. Every target below is "not set".\n- Target CPP: not set\n- Target AR%: not set\n- Maximum acceptable cancellation rate: not set\n- Maximum acceptable RTS rate: not set\n- Hook rate benchmark: not set\n- Hold rate benchmark: not set\n- Link CTR benchmark: not set`;
+const pctText = (value: number | null | undefined) => (value == null ? 'not set' : `${value}%`);
+const moneyText = (value: number | null | undefined) => (value == null ? 'not set' : `₱${value.toLocaleString('en-PH')}`);
+
+/**
+ * How the scale and kill lines relate to the target when a store has not
+ * named its own. Most stores use the same ratios, so asking for four numbers
+ * per metric earns nothing; the ERP derives them and says so.
+ */
+export const BAND_RATIOS = { scale: 0.75, kill: 1.3 } as const;
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+/** The bands a metric actually has: the store's own lines, else derived from the target. */
+export function resolveBands(target: number | null, scale: number | null, kill: number | null) {
+  return {
+    target,
+    scale: scale ?? (target == null ? null : round2(target * BAND_RATIOS.scale)),
+    kill: kill ?? (target == null ? null : round2(target * BAND_RATIOS.kill)),
+    scaleDerived: scale == null && target != null,
+    killDerived: kill == null && target != null,
+  };
+}
+
+/**
+ * The bands as a sentence the model can act on.
+ *
+ * Naming each line for what it decides is the point: a target is an ambition,
+ * a break-even is where the money runs out, and the scale and kill lines are
+ * where budget moves. Without that distinction every figure under the target
+ * reads the same and nothing can be scaled with confidence.
+ */
+function renderBand(
+  label: string,
+  format: (value: number | null | undefined) => string,
+  input: { scale: number | null; target: number | null; breakeven?: number | null; kill: number | null },
+): string[] {
+  const band = resolveBands(input.target, input.scale, input.kill);
+  const lines = [
+    `- ${label} target: ${format(band.target)} (the ambition; at or below this the creative is working)`,
+    `- ${label} scale below: ${format(band.scale)} (proven headroom; recommend increasing budget${band.scaleDerived ? `, derived as ${BAND_RATIOS.scale * 100}% of the target` : ''})`,
+    `- ${label} kill above: ${format(band.kill)} (losing money faster than it can recover${band.killDerived ? `, derived as ${BAND_RATIOS.kill * 100}% of the target` : ''})`,
+  ];
+  if (input.breakeven !== undefined) {
+    lines.splice(1, 0, `- ${label} break-even: ${format(input.breakeven)} (where an order stops making money; never an ambition)`);
   }
-  const pct = (value: number | null) => (value == null ? 'not set' : `${value}%`);
-  const money = (value: number | null) => (value == null ? 'not set' : `₱${value.toLocaleString('en-PH')}`);
+  return lines;
+}
+
+export function renderStoreTargets(storeName: string, targets: StoreTargetValues | null): string {
+  const empty: StoreTargetValues = {
+    hookRatePct: null, holdRatePct: null, ctrPct: null,
+    breakevenCpp: null, cpp: null, scaleCpp: null, killCpp: null,
+    arPct: null, scaleArPct: null, killArPct: null,
+    maxCancellationPct: null, maxRtsPct: null, note: null,
+  };
+  const values = targets ?? empty;
   return [
-    `Targets for ${storeName}:`,
-    `- Target CPP: ${money(targets.cpp)}`,
-    `- Target AR%: ${pct(targets.arPct)}`,
-    `- Maximum acceptable cancellation rate: ${pct(targets.maxCancellationPct)}`,
-    `- Maximum acceptable RTS rate: ${pct(targets.maxRtsPct)}`,
-    `- Hook rate benchmark: ${pct(targets.hookRatePct)}`,
-    `- Hold rate benchmark: ${pct(targets.holdRatePct)}`,
-    `- Link CTR benchmark: ${pct(targets.ctrPct)}`,
-    ...(targets.note ? [`- Note from the store: ${targets.note}`] : []),
+    targets
+      ? `Targets for ${storeName}. Judge against these bands, not against a single number:`
+      : `${storeName} has no target KPIs set yet. Every value below is "not set".`,
+    ...renderBand('CPP', moneyText, { scale: values.scaleCpp, target: values.cpp, breakeven: values.breakevenCpp, kill: values.killCpp }),
+    ...renderBand('AR%', pctText, { scale: values.scaleArPct, target: values.arPct, kill: values.killArPct }),
+    `- Maximum acceptable cancellation rate: ${pctText(values.maxCancellationPct)}`,
+    `- Maximum acceptable RTS rate: ${pctText(values.maxRtsPct)}`,
+    `- Minimum hook rate: ${pctText(values.hookRatePct)} (a floor: above it is good, below it is a weakness to explain)`,
+    '- Hold rate and link CTR have no store figure: judge them against platform norms for cold traffic (hold rate healthy from about 40%, link CTR from about 1%) and say that is what you compared against.',
+    ...(values.note ? [`- Note from the store: ${values.note}`] : []),
   ].join('\n');
 }
 
 export function storeTargetVariables(targets: StoreTargetValues | null): Record<string, string> {
-  const pct = (value: number | null | undefined) => (value == null ? 'not set' : `${value}%`);
-  const money = (value: number | null | undefined) => (value == null ? 'not set' : `₱${value.toLocaleString('en-PH')}`);
+  const cpp = resolveBands(targets?.cpp ?? null, targets?.scaleCpp ?? null, targets?.killCpp ?? null);
+  const ar = resolveBands(targets?.arPct ?? null, targets?.scaleArPct ?? null, targets?.killArPct ?? null);
   return {
-    TARGET_HOOK_RATE: pct(targets?.hookRatePct),
-    TARGET_HOLD_RATE: pct(targets?.holdRatePct),
-    TARGET_CTR: pct(targets?.ctrPct),
-    TARGET_AR_PCT: pct(targets?.arPct),
-    TARGET_CPP: money(targets?.cpp),
-    MAX_CANCELLATION_RATE: pct(targets?.maxCancellationPct),
-    MAX_RTS_RATE: pct(targets?.maxRtsPct),
+    TARGET_HOOK_RATE: pctText(targets?.hookRatePct),
+    TARGET_HOLD_RATE: pctText(targets?.holdRatePct),
+    TARGET_CTR: pctText(targets?.ctrPct),
+    TARGET_AR_PCT: pctText(targets?.arPct),
+    SCALE_AR_PCT: pctText(ar.scale),
+    KILL_AR_PCT: pctText(ar.kill),
+    BREAKEVEN_CPP: moneyText(targets?.breakevenCpp),
+    TARGET_CPP: moneyText(targets?.cpp),
+    SCALE_CPP: moneyText(cpp.scale),
+    KILL_CPP: moneyText(cpp.kill),
+    MAX_CANCELLATION_RATE: pctText(targets?.maxCancellationPct),
+    MAX_RTS_RATE: pctText(targets?.maxRtsPct),
   };
+}
+
+/**
+ * The bands only mean anything in order. A kill line below the target, or a
+ * target above break-even, would have the analysis contradict itself, so the
+ * save is refused with the specific pair that is wrong.
+ */
+export function assertBandOrder(values: Partial<StoreTargetValues>) {
+  const ordered: Array<[string, number | null | undefined, string, number | null | undefined]> = [
+    ['Scale below CPP', values.scaleCpp, 'Target CPP', values.cpp],
+    ['Target CPP', values.cpp, 'Kill above CPP', values.killCpp],
+    ['Target CPP', values.cpp, 'Break-even CPP', values.breakevenCpp],
+    ['Scale below AR%', values.scaleArPct, 'Target AR%', values.arPct],
+    ['Target AR%', values.arPct, 'Kill above AR%', values.killArPct],
+  ];
+  for (const [lowerName, lower, higherName, higher] of ordered) {
+    if (lower == null || higher == null) continue;
+    if (lower > higher) throw new BadRequestException(`${lowerName} must be at or below ${higherName}.`);
+  }
 }

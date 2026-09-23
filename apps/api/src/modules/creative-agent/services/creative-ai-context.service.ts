@@ -241,26 +241,11 @@ export class CreativeAiContextService {
           completion: { numerator: completionNumerator, denominator: completionDenominator },
         },
       },
-      daily: daily.map((row: any) => {
-        const daySpend = numberValue(row._sum.spend);
-        const dayDeliveredRevenue = numberValue(row._sum.deliveredCodPos);
-        const dayCosts = numberValue(row._sum.cogsDeliveredPos)
-          + numberValue(row._sum.sfSdrPos)
-          + numberValue(row._sum.ffSdrPos)
-          + numberValue(row._sum.ifSdrPos)
-          + numberValue(row._sum.codFeeDeliveredPos);
-        return {
-          date: this.dateOnly(row.date),
-          spend: money(daySpend),
-          impressions: row._sum.impressions ?? 0,
-          linkClicks: row._sum.linkClicks ?? 0,
-          orders: row._sum.purchasesPos ?? 0,
-          delivered: row._sum.deliveredCount ?? 0,
-          cancelled: row._sum.canceledCount ?? 0,
-          rts: row._sum.rtsCount ?? 0,
-          netContribution: money(dayDeliveredRevenue - dayCosts - daySpend),
-        };
-      }),
+      // The decision rules read the last three days for a trend; earlier days
+      // matter as a curve, not as thirty rows. Recent days stay daily, the
+      // rest is summed by week, which cuts the file to a third with nothing
+      // the verdict needs lost.
+      ...this.trend(daily.map((row: any) => this.dayRow(row))),
       dataQuality: {
         warnings,
         notes: [
@@ -270,6 +255,53 @@ export class CreativeAiContextService {
         ],
       },
     };
+  }
+
+  private dayRow(row: any) {
+    const daySpend = numberValue(row._sum.spend);
+    const dayDeliveredRevenue = numberValue(row._sum.deliveredCodPos);
+    const dayCosts = numberValue(row._sum.cogsDeliveredPos)
+      + numberValue(row._sum.sfSdrPos)
+      + numberValue(row._sum.ffSdrPos)
+      + numberValue(row._sum.ifSdrPos)
+      + numberValue(row._sum.codFeeDeliveredPos);
+    return {
+      date: this.dateOnly(row.date),
+      spend: money(daySpend),
+      impressions: row._sum.impressions ?? 0,
+      linkClicks: row._sum.linkClicks ?? 0,
+      orders: row._sum.purchasesPos ?? 0,
+      delivered: row._sum.deliveredCount ?? 0,
+      cancelled: row._sum.canceledCount ?? 0,
+      rts: row._sum.rtsCount ?? 0,
+      netContribution: money(dayDeliveredRevenue - dayCosts - daySpend),
+    };
+  }
+
+  /** The last seven days as they are, everything before summed into weeks. */
+  private trend(rows: Array<ReturnType<CreativeAiContextService['dayRow']>>) {
+    const RECENT_DAYS = 7;
+    const recent = rows.slice(-RECENT_DAYS);
+    const earlier = rows.slice(0, Math.max(0, rows.length - RECENT_DAYS));
+    const weekly: Array<{ weekStarting: string; days: number } & Omit<ReturnType<CreativeAiContextService['dayRow']>, 'date'>> = [];
+    for (let index = 0; index < earlier.length; index += 7) {
+      const chunk = earlier.slice(index, index + 7);
+      const sum = (key: 'spend' | 'impressions' | 'linkClicks' | 'orders' | 'delivered' | 'cancelled' | 'rts' | 'netContribution') =>
+        chunk.reduce((total, row) => total + row[key], 0);
+      weekly.push({
+        weekStarting: chunk[0].date,
+        days: chunk.length,
+        spend: money(sum('spend')),
+        impressions: sum('impressions'),
+        linkClicks: sum('linkClicks'),
+        orders: sum('orders'),
+        delivered: sum('delivered'),
+        cancelled: sum('cancelled'),
+        rts: sum('rts'),
+        netContribution: money(sum('netContribution')),
+      });
+    }
+    return { recentDaily: recent, earlierWeekly: weekly };
   }
 
   /**

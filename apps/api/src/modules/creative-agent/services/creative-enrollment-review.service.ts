@@ -178,7 +178,7 @@ export class CreativeEnrollmentReviewService {
         provider: review.run.provider,
         model: review.run.model,
         effort: review.run.effort,
-        maxTurns: policy?.maxTurns ?? 12,
+        maxTurns: policy?.maxTurns ?? 8,
         maxRunMinutes: policy?.maxRunMinutes ?? 15,
         jsonSchema: built.schema,
         localWorkspace:

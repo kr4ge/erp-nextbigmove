@@ -203,6 +203,9 @@ export class CreativePerformanceService {
     );
     const scope = await this.computeScope(context.tenantId, range, {
       accountId: query.accountId, storeAdIds,
+      // When exactly one store is in scope, its configured break-even is the
+      // ceiling; the derived figure is only a fallback.
+      posStoreId: effectiveStoreId,
     });
 
     const [accounts, creators, page] = await Promise.all([
@@ -254,7 +257,7 @@ export class CreativePerformanceService {
         }] : []),
         ...(scope.ceiling.workingCeiling !== null && scope.ceiling.provisional ? [{
           code: 'PROVISIONAL_CEILING', severity: 'info' as const,
-          message: 'No target CPP is configured; the working ceiling is derived from the reconciled break-even with a provisional safety margin.',
+          message: 'No break-even CPP is set for this store; the working ceiling is derived from the reconciled break-even with a provisional safety margin. Set it on the store\'s Creative Targets to use your own number.',
         }] : []),
       ],
       generatedAt: new Date().toISOString(),
@@ -271,7 +274,7 @@ export class CreativePerformanceService {
   async computeScope(
     tenantId: string,
     range: AdvertisingDateRange,
-    filter: { accountId?: string; storeAdIds: string[] | null },
+    filter: { accountId?: string; storeAdIds: string[] | null; posStoreId?: string },
   ): Promise<AdvertisingScope> {
     const date = { gte: range.start, lte: range.end };
     const baseWhere: Prisma.ReconcileMarketingWhereInput = {
@@ -316,6 +319,15 @@ export class CreativePerformanceService {
     const deliveredCosts = toNum(sums.cogsDeliveredPos) + toNum(sums.sfSdrPos)
       + toNum(sums.ffSdrPos) + toNum(sums.ifSdrPos) + toNum(sums.codFeeDeliveredPos);
     const rates = resolvedRates(delivered, cancelled, rts);
+    // The store's own break-even, decided on its Creative Targets, is the
+    // ceiling when it is set. Only a store without one falls back to the
+    // figure derived here, and the banner says which is in use.
+    const configuredCeiling = filter.posStoreId
+      ? await this.prisma.creativeStoreTarget.findFirst({
+          where: { tenantId, storeConfig: { storeId: filter.posStoreId } },
+          select: { breakevenCpp: true },
+        }).then((row) => (row?.breakevenCpp == null ? null : Number(row.breakevenCpp)))
+      : null;
     const ceiling = codCeiling({
       deliveredRevenue: deliveredSales,
       deliveredCogs: toNum(sums.cogsDeliveredPos),
@@ -326,9 +338,9 @@ export class CreativePerformanceService {
       // No RTS-cost source exists in the ERP; the term is dropped and the
       // ceiling flagged provisional rather than inventing a peso figure.
       rtsCostPerRtsOrder: null,
-      // No configured target CPP source exists (MarketingKpiTarget has no CPP
-      // metric); fall back to break-even × (1 − safety margin), provisional.
-      configuredTargetCpp: null,
+      // The store's configured break-even wins; without one the ceiling is
+      // derived from reconciled economics and flagged provisional.
+      configuredTargetCpp: configuredCeiling,
       safetyMargin: ADVERTISING_PROVISIONAL_DEFAULTS.safetyMargin,
     });
     const attributedPosOrders = sums.purchasesPos ?? 0;

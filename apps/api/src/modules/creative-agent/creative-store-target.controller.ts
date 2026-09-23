@@ -34,6 +34,13 @@ export class CreativeStoreTargetController {
     return this.targets.get(req.user, storeConfigId);
   }
 
+  /** What the ERP derives as this store's break-even, offered beside the field. */
+  @Get(':storeConfigId/targets/derived')
+  @Permissions('creative_agent.read', 'creative_agent.read_all', 'creative_agent.ai.use', 'creative_agent.ai.manage')
+  derived(@Request() req: CreativeRequest, @Param('storeConfigId', ParseUUIDPipe) storeConfigId: string) {
+    return this.targets.derivedBreakeven(req.user, storeConfigId);
+  }
+
   @Put(':storeConfigId/targets')
   @Permissions('creative_agent.performance.manage')
   upsert(

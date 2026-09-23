@@ -113,6 +113,7 @@ model Tenant {
   creativeAiRuns                      CreativeAiRun[]
   creativeKnowledgeEntries            CreativeKnowledgeEntry[]
   creativeAiPromptTemplates           CreativeAiPromptTemplate[]
+  creativeAiReferenceDocuments        CreativeAiReferenceDocument[]
   creativeAiRunFrames                 CreativeAiRunFrame[]
   creativeStoreTargets                CreativeStoreTarget[]
   creativeEnrollmentReviews           CreativeEnrollmentReview[]
@@ -429,6 +430,7 @@ model User {
   creativeAiRunsRequested                   CreativeAiRun[]                @relation("CreativeAiRunRequestedBy")
   creativeKnowledgePromoted                 CreativeKnowledgeEntry[]       @relation("CreativeKnowledgePromotedBy")
   creativeAiPromptTemplatesCreated          CreativeAiPromptTemplate[]     @relation("CreativeAiPromptTemplateCreatedBy")
+  creativeAiReferenceDocumentsUploaded      CreativeAiReferenceDocument[]  @relation("CreativeAiReferenceDocumentUploadedBy")
   creativeStoreTargetsUpdated               CreativeStoreTarget[]          @relation("CreativeStoreTargetUpdatedBy")
   creativeEnrollmentReviewsDecided          CreativeEnrollmentReview[]     @relation("CreativeEnrollmentReviewDecidedBy")
   creativeAiPoliciesUpdated                 CreativeAiPolicy[]             @relation("CreativeAiPolicyUpdatedBy")
@@ -1406,6 +1408,8 @@ model CreativeStoreConfig {
   creatives         Creative[]
   knowledgeEntries  CreativeKnowledgeEntry[]
   enrollmentReviews CreativeEnrollmentReview[]
+  referenceDocuments CreativeAiReferenceDocument[]
+
 
   @@unique([tenantId, codePrefix])
   @@index([tenantId, active])
@@ -1830,6 +1834,59 @@ model CreativeAiPromptTemplate {
   @@map("creative_ai_prompt_templates")
 }
 
+/// Which creatives a reference document applies to.
+enum CreativeAiDocumentScope {
+  TENANT
+  STORE
+  PRODUCT
+}
+
+enum CreativeAiDocumentStatus {
+  READY
+  FAILED
+  UNSUPPORTED
+}
+
+/// A document the advertiser uploaded for the analysis to consult: brand
+/// rules, claim sheets, agency playbooks. Text is extracted once at upload
+/// and injected into both prompts as reference material. Never evidence: a
+/// document has no outcome, so it stays out of the knowledge entries.
+model CreativeAiReferenceDocument {
+  id            String                   @id @default(uuid()) @db.Uuid
+  tenantId      String                   @db.Uuid
+  tenant        Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scope         CreativeAiDocumentScope  @default(TENANT)
+  storeConfigId String?                  @db.Uuid
+  storeConfig   CreativeStoreConfig?     @relation(fields: [storeConfigId], references: [id], onDelete: Cascade)
+  /// Matches Creative.posProductName for PRODUCT scope.
+  productName   String?
+  title         String
+  fileName      String
+  contentType   String
+  byteSize      Int
+  sha256        String                   @db.VarChar(64)
+  /// Where the original bytes live, so the text can be re-extracted later.
+  objectKey     String?
+  /// The extracted text the prompt receives, capped at upload.
+  text          String
+  characterCount Int
+  /// Roughly characters / 4; what the document adds to every analysis.
+  tokenEstimate Int
+  status        CreativeAiDocumentStatus @default(READY)
+  statusNote    String?
+  /// Increments when the same title is re-uploaded, so runs can cite exactly what they read.
+  version       Int                      @default(1)
+  active        Boolean                  @default(true)
+  uploadedById  String?                  @db.Uuid
+  uploadedBy    User?                    @relation("CreativeAiReferenceDocumentUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@index([tenantId, active, scope])
+  @@index([tenantId, storeConfigId])
+  @@map("creative_ai_reference_documents")
+}
+
 /// Target KPIs for one store's creatives.
 ///
 /// This is what "winning" means for the store, written down once and read by
@@ -1850,9 +1907,19 @@ model CreativeStoreTarget {
   holdRatePct Decimal? @db.Decimal(6, 2)
   ctrPct      Decimal? @db.Decimal(6, 2)
 
-  /// Verdict targets: cost per purchase, spend as a share of collected revenue.
-  cpp   Decimal? @db.Decimal(12, 2)
-  arPct Decimal? @db.Decimal(6, 2)
+  /// Verdict bands for cost per purchase. The break-even is where an order
+  /// stops making money, derived from the store's own reconciled economics;
+  /// the target is the ambition below it; scale and kill are the lines that
+  /// decide where budget goes.
+  breakevenCpp Decimal? @db.Decimal(12, 2)
+  cpp          Decimal? @db.Decimal(12, 2)
+  scaleCpp     Decimal? @db.Decimal(12, 2)
+  killCpp      Decimal? @db.Decimal(12, 2)
+
+  /// The same three bands for spend as a share of collected revenue.
+  arPct      Decimal? @db.Decimal(6, 2)
+  scaleArPct Decimal? @db.Decimal(6, 2)
+  killArPct  Decimal? @db.Decimal(6, 2)
 
   /// Audience-quality ceilings under cash on delivery.
   maxCancellationPct Decimal? @db.Decimal(6, 2)

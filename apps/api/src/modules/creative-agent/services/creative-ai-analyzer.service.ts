@@ -212,7 +212,7 @@ export class CreativeAiAnalyzerService {
         provider: run.provider,
         model: run.model,
         effort: run.effort,
-        maxTurns: this.settingNumber(run.settingsSnapshot, 'maxTurns', 12),
+        maxTurns: this.settingNumber(run.settingsSnapshot, 'maxTurns', 8),
         maxRunMinutes: this.settingNumber(run.settingsSnapshot, 'maxRunMinutes', 15),
         // When the gateway runs on its own host it cannot see this directory,
         // so the prepared files are pushed to it over the socket. Set
@@ -267,6 +267,7 @@ export class CreativeAiAnalyzerService {
               usage: output.usage,
               totalCostUsd: output.totalCostUsd,
               checks,
+              documents: built.documents,
             },
           } as Prisma.InputJsonValue,
           warnings: [...new Set([

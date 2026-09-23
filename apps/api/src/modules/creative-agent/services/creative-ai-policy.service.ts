@@ -28,7 +28,10 @@ const FALLBACK_POLICY = {
   claudeModel: 'sonnet',
   codexModel: 'gpt-5.6-terra',
   defaultEffort: CreativeAiEffort.MEDIUM,
-  maxTurns: 12,
+  // Contact sheets made reading cheap: manifests in one turn, sheets in one or
+  // two, an optional zoom, then the answer. Twelve was the budget for reading
+  // eighteen frames one by one; every extra turn re-reads the whole context.
+  maxTurns: 8,
   maxRunMinutes: 15,
   allowRunOverrides: true,
 };

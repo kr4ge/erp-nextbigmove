@@ -37,6 +37,7 @@ import { CreativeWorkflowService } from './services/creative-workflow.service';
 import { CreativeAiRunService } from './services/creative-ai-run.service';
 import { CreativeAiMediaService } from './services/creative-ai-media.service';
 import { CreativeAiFrameService } from './services/creative-ai-frame.service';
+import { CreativeAiDocumentService } from './services/creative-ai-document.service';
 import { CreativeAiContextService } from './services/creative-ai-context.service';
 import { CreativeAiAnalyzerService } from './services/creative-ai-analyzer.service';
 import { ClaudeboxClientService } from './services/claudebox-client.service';
@@ -102,6 +103,7 @@ import { isCreativeAiEnabled } from './utils/creative-ai-enabled';
     CreativeAiRunService,
     CreativeAiMediaService,
     CreativeAiFrameService,
+    CreativeAiDocumentService,
     CreativeAiContextService,
     CreativeAiAnalyzerService,
     ClaudeboxClientService,

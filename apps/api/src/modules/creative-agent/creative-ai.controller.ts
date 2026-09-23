@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -33,6 +34,8 @@ import {
 import { CreativeAiRunService } from './services/creative-ai-run.service';
 import { CreativeAiPolicyService } from './services/creative-ai-policy.service';
 import { CreativePromptTemplateService, isPromptKind } from './services/creative-prompt-template.service';
+import { CreativeAiDocumentService, DOCUMENT_LIMITS, type UploadedDocumentFile } from './services/creative-ai-document.service';
+import { UploadCreativeAiDocumentDto } from './dto/creative-ai-document.dto';
 import type { CreativeActor } from './types/creative-actor.type';
 
 type CreativeRequest = { user: CreativeActor };
@@ -50,6 +53,7 @@ export class CreativeAiController {
     private readonly runs: CreativeAiRunService,
     private readonly policy: CreativeAiPolicyService,
     private readonly prompts: CreativePromptTemplateService,
+    private readonly documents: CreativeAiDocumentService,
   ) {}
 
   private static buildUploadRoot() {
@@ -179,6 +183,42 @@ export class CreativeAiController {
   @Permissions('creative_agent.ai.manage')
   logoutProvider(@Request() req: CreativeRequest, @Param('provider') provider: string) {
     return this.policy.logout(req.user, provider);
+  }
+
+  /**
+   * Reference documents the analysis consults. Anyone who can run an analysis
+   * may see what it reads; adding or removing one is tenant administration.
+   * The file is held in memory only long enough to extract its text.
+   */
+  @Get('documents')
+  @Permissions('creative_agent.ai.use', 'creative_agent.ai.manage')
+  listDocuments(@Request() req: CreativeRequest) {
+    return this.documents.list(req.user);
+  }
+
+  @Post('documents')
+  @Permissions('creative_agent.ai.manage')
+  @UseInterceptors(FileInterceptor('file', {
+    // Staged on disk, not in memory: a 200 MB course PDF must not sit in the
+    // API's heap while its text is extracted. The service removes the copy.
+    storage: diskStorage({
+      destination: CreativeAiController.buildUploadRoot(),
+      filename: (_req, file, callback) => callback(null, `doc-${Date.now()}-${randomUUID()}${extname(file.originalname || '').toLowerCase()}`),
+    }),
+    limits: { files: 1, fileSize: DOCUMENT_LIMITS.maxFileMb * 1024 * 1024 },
+  }))
+  uploadDocument(
+    @Request() req: CreativeRequest,
+    @UploadedFile() file: UploadedDocumentFile | undefined,
+    @Body() body: UploadCreativeAiDocumentDto,
+  ) {
+    return this.documents.upload(req.user, body, file);
+  }
+
+  @Delete('documents/:id')
+  @Permissions('creative_agent.ai.manage')
+  removeDocument(@Request() req: CreativeRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.documents.remove(req.user, id);
   }
 
   /**

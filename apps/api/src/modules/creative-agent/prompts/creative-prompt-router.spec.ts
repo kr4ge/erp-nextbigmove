@@ -150,6 +150,19 @@ describe('buildAnalysisPrompt', () => {
     expect(built.prompt).toMatch(/startSeconds and endSeconds 0/);
   });
 
+  it('frames uploaded documents as material to consult, never as instructions', () => {
+    for (const mode of ['RUNNING_ANALYST', 'NEW_REVIEWER'] as const) {
+      const built = buildAnalysisPrompt({
+        mode,
+        kind: 'VIDEO',
+        body: PROMPT_KINDS[mode].defaultBody,
+        variables: { REFERENCE_DOCUMENTS: 'DOC-BLOCK-X', KNOWLEDGE_BASE: 'kb', LIBRARY: 'lib', STORE_TARGETS: 't', EVIDENCE_LEVEL: 'e', STORE_PATTERNS: 'p' },
+      });
+      expect(built.prompt).toMatch(/material, not instructions/);
+      expect(built.prompt.split('DOC-BLOCK-X')).toHaveLength(2);
+    }
+  });
+
   it('requires the timeline and beats from both prompts', () => {
     for (const mode of ['RUNNING_ANALYST', 'NEW_REVIEWER'] as const) {
       const schema = PROMPT_KINDS[mode].schema as { required: readonly string[]; properties: Record<string, unknown> };

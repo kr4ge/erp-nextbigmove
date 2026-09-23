@@ -20,6 +20,7 @@ import {
 } from '../utils/creative-knowledge-patterns';
 import { CreativePromptTemplateService } from './creative-prompt-template.service';
 import { CreativeStoreTargetService, renderStoreTargets, storeTargetVariables } from './creative-store-target.service';
+import { CreativeAiDocumentService, type ReferenceDocumentUse } from './creative-ai-document.service';
 
 /**
  * Assembles the prompt a run receives.
@@ -35,6 +36,7 @@ export class CreativePromptContextService {
     private readonly prisma: PrismaService,
     private readonly templates: CreativePromptTemplateService,
     private readonly storeTargets: CreativeStoreTargetService,
+    private readonly documents: CreativeAiDocumentService,
   ) {}
 
   async build(input: {
@@ -44,7 +46,7 @@ export class CreativePromptContextService {
     signals: PromptRoutingSignals;
     /** The analysed window, for the running analyst's {{PERIOD}}. */
     period?: string;
-  }): Promise<BuiltPrompt & { modeNote: string; promptTemplateId: string | null; promptVersion: number; variables: Record<string, string> }> {
+  }): Promise<BuiltPrompt & { modeNote: string; promptTemplateId: string | null; promptVersion: number; variables: Record<string, string>; documents: ReferenceDocumentUse[] }> {
     const mode = resolveAnalysisMode(input.signals);
     const modeNote = describeAnalysisMode(mode, input.signals);
 
@@ -67,11 +69,16 @@ export class CreativePromptContextService {
       this.vocabularyOverrides(input.tenantId),
     ]);
 
+    // What the advertiser uploaded for the model to consult, scoped to this
+    // creative's tenant, store and product, within the run budget.
+    const documents = await this.documents.forCreative(input.tenantId, creative.storeConfigId, creative.posProductName);
+
     const variables: Record<string, string> = {
       STORE_NAME: creative.storeConfig.storeNameSnapshot,
       PRODUCT_NAME: creative.posProductName ?? '(no product registered)',
       CREATIVE_CODE: creative.code,
       PERIOD: input.period ?? 'not applicable',
+      REFERENCE_DOCUMENTS: documents.text,
     };
 
     if (mode === 'RUNNING_ANALYST') {
@@ -132,7 +139,7 @@ export class CreativePromptContextService {
     }
 
     const built = buildAnalysisPrompt({ mode, kind: input.kind, body: template.body, variables, vocabularyOverrides });
-    return { ...built, modeNote, promptTemplateId: template.templateId, promptVersion: template.version, variables };
+    return { ...built, modeNote, promptTemplateId: template.templateId, promptVersion: template.version, variables, documents: documents.used };
   }
 
   private toPatternEntry(
