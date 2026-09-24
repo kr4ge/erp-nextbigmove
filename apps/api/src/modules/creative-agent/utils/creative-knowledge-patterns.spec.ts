@@ -40,6 +40,16 @@ const v3 = (overrides: Partial<CreativeKnowledgeStructureV3> = {}): CreativeKnow
   ],
   beats: { hookEndsAt: 2.8, productFirstSeenAt: 4, priceFirstSeenAt: 9, ctaFirstSeenAt: 18, faceInFirst3s: true, speechInFirst3s: true, textInFirst3s: false },
   pacing: { sceneCount: 2, cutsPerMinute: 8, firstCutAt: 2.8, longestStaticRun: { startSeconds: 2.8, endSeconds: 30, seconds: 27.2 }, hasSpeech: true, speechStartsAt: 0.4, speechCoverage: 0.6, wordsPerMinute: 140 },
+  framework: {
+    awarenessStage: '2 problem aware',
+    sophisticationLevel: '3 mechanism',
+    sophisticationBasis: 'Inferred from this store\'s records.',
+    bucket: 'COLD_TOF',
+    bucketBasis: 'Ad set name.',
+    triggers: ['curiosity', 'authority'],
+    mechanismNamed: null,
+    mismatches: [],
+  },
   ...overrides,
 });
 
@@ -107,6 +117,44 @@ describe('renderStorePatterns', () => {
     expect(text).toMatch(/By hook type: pattern interrupt 1W\/1L \(hook 30%, hold 45%\)/);
     expect(text).toMatch(/Winners' beats \(median of 1 with timelines\): hook ends 2.8s; product first seen 4s; price 9s/);
     expect(text).toMatch(/Not yet tested in this store/);
+  });
+});
+
+describe('computeStorePatterns framework reading', () => {
+  it('counts win and loss by bucket, stage, sophistication and trigger', () => {
+    const cold = entry('A', 'WINNER');
+    const hotLoser = entry('B', 'LOSER', {
+      structure: v3({
+        framework: {
+          awarenessStage: '5 most aware', sophisticationLevel: '2 bigger claim', sophisticationBasis: null,
+          bucket: 'HOT_BOF', bucketBasis: null, triggers: ['urgency', 'scarcity'], mechanismNamed: null,
+          mismatches: [{ what: 'Scarcity aimed at cold traffic', fixBelongsTo: 'CREATIVE' }],
+        },
+      }),
+    });
+    const patterns = computeStorePatterns([cold, hotLoser]);
+    expect(patterns.dimensions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ dimension: 'bucket', value: 'COLD_TOF', winners: 1, losers: 0 }),
+      expect.objectContaining({ dimension: 'bucket', value: 'HOT_BOF', winners: 0, losers: 1 }),
+      expect.objectContaining({ dimension: 'awareness stage', value: '2 problem aware', winners: 1 }),
+      expect.objectContaining({ dimension: 'trigger', value: 'urgency', losers: 1 }),
+    ]));
+  });
+
+  it('names a mismatch the store has made more than once, and stays quiet about a single one', () => {
+    const mismatch = [{ what: 'Scarcity aimed at cold traffic', fixBelongsTo: 'CREATIVE' }];
+    const withMismatch = (code: string) => entry(code, 'LOSER', {
+      structure: v3({
+        framework: {
+          awarenessStage: '1 unaware', sophisticationLevel: '2 bigger claim', sophisticationBasis: null,
+          bucket: 'COLD_TOF', bucketBasis: null, triggers: ['scarcity'], mechanismNamed: null, mismatches: mismatch,
+        },
+      }),
+    });
+    expect(computeStorePatterns([withMismatch('A')]).repeatedMismatches).toEqual([]);
+    const twice = computeStorePatterns([withMismatch('A'), withMismatch('B')]);
+    expect(twice.repeatedMismatches).toEqual([{ what: 'scarcity aimed at cold traffic', count: 2, fixBelongsTo: 'CREATIVE' }]);
+    expect(renderStorePatterns(twice)).toMatch(/Mismatches seen more than once: scarcity aimed at cold traffic \(2x, fix CREATIVE\)/);
   });
 });
 

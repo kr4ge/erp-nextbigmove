@@ -295,6 +295,26 @@ export type CreativeAiMetricsSnapshot = {
   metrics?: { hookRate?: number | null; holdRate?: number | null; completionRate?: number | null; ctr?: number | null } | null;
 };
 
+/** The framework reading both prompts now return. */
+export type CreativeAiFramework = {
+  awarenessStage: string;
+  sophisticationLevel: string;
+  sophisticationBasis?: string | null;
+  bucket: string;
+  bucketBasis?: string | null;
+  triggers: string[];
+  mechanismNamed?: string | null;
+  mismatches: Array<{ what: string; fixBelongsTo: 'CREATIVE' | 'AUDIENCE' | 'OFFER_OR_PAGE' }>;
+};
+
+/** Advisory only: a line the product cannot back, with its replacement. */
+export type CreativeAiHeadsUp = {
+  line: string;
+  why: string;
+  replacement: string;
+  timestampSeconds?: number | null;
+};
+
 /** Prompt 1: a verdict on a creative that has run. */
 export type CreativeAiResultAnalyst = {
   verdict: 'SCALE' | 'WATCH' | 'KILL';
@@ -310,13 +330,15 @@ export type CreativeAiResultAnalyst = {
   complianceFlags?: string[];
   timeline?: CreativeAiTimelineEntry[];
   beats?: CreativeAiBeats | null;
+  framework?: CreativeAiFramework | null;
+  headsUps?: CreativeAiHeadsUp[];
 };
 
 /** Prompt 2: a decision on a creative that has not run. */
 export type CreativeAiResultReviewer = {
   decision: 'APPROVE' | 'REVISE' | 'REJECT';
   qualityScore: number;
-  scoreBreakdown?: Partial<Record<'hook' | 'clarity' | 'structurePacing' | 'production' | 'cta' | 'originality', number>>;
+  scoreBreakdown?: Partial<Record<'hook' | 'frameworkFit' | 'clarity' | 'structurePacing' | 'production' | 'cta' | 'originality', number>>;
   noveltyLabel: 'NEW_ANGLE' | 'ITERATION' | 'DUPLICATE';
   iteratesOn?: string | null;
   confidence: number;
@@ -331,6 +353,8 @@ export type CreativeAiResultReviewer = {
   checksNotPerformed?: string[];
   timeline?: CreativeAiTimelineEntry[];
   beats?: CreativeAiBeats | null;
+  framework?: CreativeAiFramework | null;
+  headsUps?: CreativeAiHeadsUp[];
 };
 
 export function isAnalystResult(result: unknown): result is CreativeAiResultAnalyst {

@@ -1,8 +1,10 @@
 'use client';
 
-import { AlertTriangle, BookOpen, CheckCircle2, Clapperboard, Database, Layers, ShieldAlert, Target, Wrench } from 'lucide-react';
+import { AlertTriangle, BookOpen, CheckCircle2, Clapperboard, Compass, Database, Layers, PenLine, ShieldAlert, Target, Wrench } from 'lucide-react';
 import type { DashboardTabItem } from '@/components/ui/dashboard-tabs';
 import type {
+  CreativeAiFramework,
+  CreativeAiHeadsUp,
   CreativeAiMediaManifest,
   CreativeAiMetricsSnapshot,
   CreativeAiResultAnalyst,
@@ -29,8 +31,14 @@ export type StoryboardContext = {
  * the evidence, the fixes, or the classification.
  */
 
-export type AnalystTab = 'overview' | 'timeline' | 'evidence' | 'diagnosis' | 'structure' | 'lesson';
-export type ReviewerTab = 'overview' | 'timeline' | 'fixes' | 'risk' | 'data' | 'structure';
+export type AnalystTab = 'overview' | 'timeline' | 'evidence' | 'diagnosis' | 'frameworks' | 'structure' | 'lesson';
+export type ReviewerTab = 'overview' | 'timeline' | 'fixes' | 'frameworks' | 'risk' | 'data' | 'structure';
+
+const frameworkTab = (framework: CreativeAiFramework | null | undefined, headsUps: CreativeAiHeadsUp[] | undefined): DashboardTabItem<'frameworks'>[] => {
+  if (!framework) return [];
+  const flags = (framework.mismatches?.length ?? 0) + (headsUps?.length ?? 0);
+  return [{ value: 'frameworks', label: 'Frameworks', icon: <Compass className="h-3.5 w-3.5" />, ...(flags ? { badge: flags } : {}) }];
+};
 
 const timelineTab = (count: number): DashboardTabItem<'timeline'>[] =>
   count > 0 ? [{ value: 'timeline', label: 'Scene by scene', icon: <Clapperboard className="h-3.5 w-3.5" />, badge: count }] : [];
@@ -42,6 +50,7 @@ export function analystTabs(result: CreativeAiResultAnalyst): DashboardTabItem<A
     ...timelineTab(result.timeline?.length ?? 0),
     { value: 'evidence', label: 'Evidence', badge: result.evidence.length },
     { value: 'diagnosis', label: 'Why', icon: <Target className="h-3.5 w-3.5" /> },
+    ...frameworkTab(result.framework, result.headsUps),
     { value: 'structure', label: 'How it is built', icon: <Layers className="h-3.5 w-3.5" /> },
     { value: 'lesson', label: 'Lesson', icon: <BookOpen className="h-3.5 w-3.5" />, ...(flags ? { badge: flags } : {}) },
   ];
@@ -52,6 +61,7 @@ export function reviewerTabs(result: CreativeAiResultReviewer): DashboardTabItem
     { value: 'overview', label: 'Overview' },
     ...timelineTab(result.timeline?.length ?? 0),
     { value: 'fixes', label: 'Keep & fix', icon: <Wrench className="h-3.5 w-3.5" />, badge: result.whatToFix.length },
+    ...frameworkTab(result.framework, result.headsUps),
     { value: 'risk', label: 'Audience risk', icon: <ShieldAlert className="h-3.5 w-3.5" />, badge: result.audienceQualityFlags.length },
     { value: 'data', label: 'What our data says', icon: <Database className="h-3.5 w-3.5" /> },
     { value: 'structure', label: 'How it is built', icon: <Layers className="h-3.5 w-3.5" /> },
@@ -138,6 +148,8 @@ export function RunningAnalystView({
           )}
         </div>
       );
+    case 'frameworks':
+      return result.framework ? <FrameworkView framework={result.framework} headsUps={result.headsUps} /> : null;
     case 'structure':
       return <AttributesGrid attributes={result.attributes} />;
     case 'lesson':
@@ -284,6 +296,8 @@ export function NewReviewerView({
           <DataNotes warnings={warnings} />
         </div>
       );
+    case 'frameworks':
+      return result.framework ? <FrameworkView framework={result.framework} headsUps={result.headsUps} /> : null;
     case 'structure':
       return <AttributesGrid attributes={result.attributes} />;
     default:
@@ -312,14 +326,90 @@ export function NewReviewerView({
   }
 }
 
+const FIX_OWNER: Record<string, string> = {
+  CREATIVE: 'Fix the creative',
+  AUDIENCE: 'Reassign the audience',
+  OFFER_OR_PAGE: 'Fix the offer or the page',
+};
+
+/**
+ * The framework reading: where the buyer is, how tired the market is, which
+ * bucket the creative ran in, and which triggers it used. A mismatch here is
+ * the most common reason a well-made creative wastes money, so it is named
+ * with the fix it belongs to rather than left in prose.
+ */
+function FrameworkView({ framework, headsUps }: { framework: CreativeAiFramework; headsUps?: CreativeAiHeadsUp[] }) {
+  const rows: Array<[string, string, string | null | undefined]> = [
+    ['Speaks to', words(framework.awarenessStage), null],
+    ['Message level', words(framework.sophisticationLevel), framework.sophisticationBasis],
+    ['Bucket', framework.bucket === 'UNKNOWN' ? 'unknown' : words(framework.bucket), framework.bucketBasis],
+  ];
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted">Where the buyer is, how tired the market is of this message, and whether the triggers belong where the creative ran.</p>
+      <section className="rounded-xl border border-border bg-surface p-4">
+        <dl className="grid gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
+          {rows.map(([label, value, basis]) => (
+            <div key={label}>
+              <dt className="text-xs text-muted">{label}</dt>
+              <dd className="font-medium">{value}</dd>
+              {basis ? <dd className="mt-0.5 text-xs leading-relaxed text-muted">{basis}</dd> : null}
+            </div>
+          ))}
+        </dl>
+        <div className="mt-4 flex flex-wrap items-center gap-1.5 border-t border-border pt-3">
+          <span className="mr-1 text-xs text-muted">Triggers</span>
+          {framework.triggers.length
+            ? framework.triggers.map((trigger) => <span key={trigger} className="pill border border-border bg-background-secondary text-muted">{trigger}</span>)
+            : <span className="text-xs text-muted">none used</span>}
+          {framework.mechanismNamed ? <span className="ml-2 text-xs text-muted">Mechanism: {framework.mechanismNamed}</span> : null}
+        </div>
+      </section>
+
+      {framework.mismatches?.length ? (
+        <Note tone="warn" icon={<AlertTriangle className="h-4 w-4" />} title="Mismatches">
+          <ul className="space-y-2">
+            {framework.mismatches.map((mismatch, index) => (
+              <li key={index}>
+                {mismatch.what}
+                <span className="mt-0.5 block text-xs opacity-80">{FIX_OWNER[mismatch.fixBelongsTo] ?? mismatch.fixBelongsTo}</span>
+              </li>
+            ))}
+          </ul>
+        </Note>
+      ) : (
+        <p className="text-xs text-muted">No stage, bucket or trigger mismatch was found.</p>
+      )}
+
+      {headsUps?.length ? (
+        <section className="rounded-xl border border-border bg-surface p-4">
+          <h4 className="flex items-center gap-2 text-sm font-semibold"><PenLine className="h-4 w-4 text-muted" /> Heads-up, advisory only</h4>
+          <p className="mt-1 text-xs text-muted">These carry no weight in the decision above. Each comes with a replacement that keeps the selling power.</p>
+          <ul className="mt-3 space-y-3">
+            {headsUps.map((headsUp, index) => (
+              <li key={index} className="rounded-lg bg-background-secondary/50 px-3 py-2.5 text-sm">
+                {seconds(headsUp.timestampSeconds) ? <span className="mr-1.5 font-mono text-xs text-primary">{seconds(headsUp.timestampSeconds)}</span> : null}
+                <span className="italic">&ldquo;{headsUp.line}&rdquo;</span>
+                <span className="mt-1 block text-xs text-muted">{headsUp.why}</span>
+                <span className="mt-1.5 block">Instead: <span className="italic">&ldquo;{headsUp.replacement}&rdquo;</span></span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function ScoreBreakdown({ breakdown }: { breakdown: NonNullable<CreativeAiResultReviewer['scoreBreakdown']> }) {
   const rows: Array<[string, number | undefined, number]> = [
-    ['Hook, first 3 seconds', breakdown.hook, 30],
-    ['Clarity of message and offer', breakdown.clarity, 20],
-    ['Structure and pacing', breakdown.structurePacing, 15],
-    ['Production quality', breakdown.production, 15],
-    ['Call to action', breakdown.cta, 10],
-    ['Originality against our library', breakdown.originality, 10],
+    ['Hook, first 3 seconds', breakdown.hook, 25],
+    ['Framework fit', breakdown.frameworkFit, 20],
+    ['Clarity of message and offer', breakdown.clarity, 15],
+    ['Structure and pacing', breakdown.structurePacing, 12],
+    ['Production quality', breakdown.production, 12],
+    ['Call to action', breakdown.cta, 8],
+    ['Originality against our library', breakdown.originality, 8],
   ];
   return (
     <section className="rounded-xl border border-border bg-surface p-4">

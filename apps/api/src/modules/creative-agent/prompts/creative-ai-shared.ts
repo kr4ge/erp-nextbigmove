@@ -59,6 +59,116 @@ export const CREATIVE_ATTRIBUTE_VOCABULARY = {
   ctaType: ['order now', 'message us', 'learn more', 'limited stock', 'none'],
 } as const;
 
+/**
+ * The framework classification our team is trained on.
+ *
+ * Kept beside the craft attributes because it is the same kind of fact: a
+ * fixed value recorded per creative so records stay comparable and the store
+ * patterns can count win rates by stage, by bucket and by trigger. Prose in a
+ * diagnosis cannot be counted; these can.
+ */
+export const CREATIVE_FRAMEWORK_VOCABULARY = {
+  /** Schwartz's awareness ladder: where the buyer is before she sees the ad. */
+  awarenessStage: [
+    '1 unaware',
+    '2 problem aware',
+    '3 solution aware',
+    '4 product aware',
+    '5 most aware',
+  ],
+  /** Schwartz's market sophistication: how tired the market is of the category's messaging. */
+  sophisticationLevel: [
+    '1 first to market',
+    '2 bigger claim',
+    '3 mechanism',
+    '4 new mechanism',
+    '5 identity',
+  ],
+  /** Brunson's funnel bucket, which decides the metric the creative is judged on. */
+  bucket: ['COLD_TOF', 'WARM_MOF', 'HOT_BOF', 'UNKNOWN'],
+  /** The seven buying triggers. Each is gold at one stage and poison at another. */
+  triggers: [
+    'urgency',
+    'scarcity',
+    'social proof',
+    'authority',
+    'curiosity',
+    'reciprocity',
+    'commitment escalation',
+  ],
+} as const;
+
+/** The framework lists as prompt text, with the rule that makes each one usable. */
+export function renderFrameworkVocabulary(): string {
+  return [
+    'Record the framework reading with these fixed values, so a mismatch can be counted across the store, not just described once.',
+    `- awarenessStage: ${CREATIVE_FRAMEWORK_VOCABULARY.awarenessStage.join(', ')} — the stage the creative SPEAKS TO, which may differ from the stage of the audience it ran against.`,
+    `- sophisticationLevel: ${CREATIVE_FRAMEWORK_VOCABULARY.sophisticationLevel.join(', ')} — the level of the message. You cannot go backwards: a level 2 message in a level 4 market is ignored.`,
+    `- bucket: ${CREATIVE_FRAMEWORK_VOCABULARY.bucket.join(', ')} — where it ran or is meant to run. UNKNOWN when nothing indicates it; never guess silently.`,
+    `- triggers: any of ${CREATIVE_FRAMEWORK_VOCABULARY.triggers.join(', ')} — list only those actually used.`,
+    '- mechanismNamed: the mechanism the creative names, or null when it names none.',
+  ].join('\n');
+}
+
+/** The framework block both prompts emit into their result. */
+export const FRAMEWORK_SCHEMA_PROPERTIES = {
+  framework: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['awarenessStage', 'sophisticationLevel', 'bucket', 'triggers', 'mismatches'],
+    properties: {
+      awarenessStage: { type: 'string', enum: CREATIVE_FRAMEWORK_VOCABULARY.awarenessStage },
+      sophisticationLevel: { type: 'string', enum: CREATIVE_FRAMEWORK_VOCABULARY.sophisticationLevel },
+      /** How the level was arrived at, since the ERP stores no per-product diagnosis. */
+      sophisticationBasis: { type: ['string', 'null'], maxLength: 300, description: 'Where the market level came from: a reference document, the store\'s own records, or an inference you are making. Say which.' },
+      bucket: { type: 'string', enum: CREATIVE_FRAMEWORK_VOCABULARY.bucket },
+      bucketBasis: { type: ['string', 'null'], maxLength: 200, description: 'How the bucket was determined: the ad set name, the content itself, or assumed.' },
+      triggers: { type: 'array', maxItems: 7, items: { type: 'string', enum: CREATIVE_FRAMEWORK_VOCABULARY.triggers } },
+      mechanismNamed: { type: ['string', 'null'], maxLength: 160 },
+      /** The named mismatches: a trigger in the wrong bucket, a stage skip, a level too low. */
+      mismatches: {
+        type: 'array',
+        maxItems: 5,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['what', 'fixBelongsTo'],
+          properties: {
+            what: { type: 'string', maxLength: 300 },
+            fixBelongsTo: { type: 'string', enum: ['CREATIVE', 'AUDIENCE', 'OFFER_OR_PAGE'] },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+/**
+ * An advisory rewrite for a line the product cannot honestly back.
+ *
+ * Deliberately separate from the verdict: a warning with no alternative is
+ * useless to an editor on a deadline, and platform risk is not this system's
+ * job. Never affects the score or the decision.
+ */
+export const HEADS_UP_SCHEMA_PROPERTIES = {
+  headsUps: {
+    type: 'array',
+    maxItems: 2,
+    description: 'Advisory only. A line the product cannot honestly keep, with a replacement that keeps the same selling power.',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['line', 'why', 'replacement'],
+      properties: {
+        line: { type: 'string', maxLength: 300, description: 'The line as it appears in the creative.' },
+        why: { type: 'string', maxLength: 240 },
+        replacement: { type: 'string', maxLength: 300, description: "The exact replacement line, in the creative's own language and register." },
+        timestampSeconds: { type: ['number', 'null'] },
+      },
+    },
+  },
+} as const;
+
 /** The attribute lists as prompt text, with any tenant additions merged in. */
 export function renderAttributeVocabulary(overrides?: { hookType?: string[]; format?: string[] }): string {
   const merge = (base: readonly string[], extra?: string[]) => [...new Set([...(extra ?? []), ...base])].join(', ');

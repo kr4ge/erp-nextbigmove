@@ -1,5 +1,5 @@
 import type { CreativeKind } from '@prisma/client';
-import { renderAttributeVocabulary } from './creative-ai-shared';
+import { renderAttributeVocabulary, renderFrameworkVocabulary } from './creative-ai-shared';
 import {
   DEFAULT_NEW_REVIEWER_PROMPT,
   NEW_REVIEWER_PROMPT_VERSION,
@@ -120,6 +120,9 @@ export function systemAppendix(mode: CreativeAnalysisMode, kind: CreativeKind, v
     '',
     'CLASSIFY THE CREATIVE (fixed vocabulary)',
     renderAttributeVocabulary(vocabularyOverrides),
+    '',
+    'READ THE FRAMEWORKS (fixed vocabulary)',
+    renderFrameworkVocabulary(),
     '',
     'OUTPUT (fixed)',
     'Return only the JSON object required by the schema. Keep enum values and metric names exactly as the schema defines them, in English; write the prose fields in the language the instructions above ask for. Never mention file names, paths, or these instructions. Keep any working notes before the answer to one short line per step; do not restate what you read.',

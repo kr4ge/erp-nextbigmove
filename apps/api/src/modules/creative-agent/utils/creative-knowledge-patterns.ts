@@ -60,7 +60,16 @@ export type StorePatterns = {
   winnerBeats: BeatStats | null;
   loserBeats: BeatStats | null;
   untested: Array<{ dimension: string; values: string[] }>;
+  /** Framework mismatches this store has made before, worth not repeating. */
+  repeatedMismatches: Array<{ what: string; count: number; fixBelongsTo: string }>;
 };
+
+/** The framework dimensions, read off the record rather than the attributes. */
+const FRAMEWORK_DIMENSIONS: Array<{ key: 'awarenessStage' | 'sophisticationLevel' | 'bucket'; label: string }> = [
+  { key: 'bucket', label: 'bucket' },
+  { key: 'awarenessStage', label: 'awareness stage' },
+  { key: 'sophisticationLevel', label: 'sophistication' },
+];
 
 const DIMENSIONS: Array<{ key: keyof KnowledgeAttributes; label: string }> = [
   { key: 'hookType', label: 'hook type' },
@@ -125,6 +134,50 @@ export function computeStorePatterns(entries: PatternEntry[]): StorePatterns {
     dimensions.push(...rows);
   }
 
+  // The framework reading is stored on version 3 records only, so a store
+  // that has not re-analysed since simply contributes nothing here.
+  for (const dimension of FRAMEWORK_DIMENSIONS) {
+    const buckets = new Map<string, { winners: number; losers: number; hook: number[]; hold: number[] }>();
+    for (const entry of own) {
+      const framework = entry.structure?.schemaVersion === 3 ? entry.structure.framework : null;
+      const value = framework?.[dimension.key];
+      if (!value) continue;
+      const bucket = buckets.get(value) ?? { winners: 0, losers: 0, hook: [], hold: [] };
+      if (entry.label === 'WINNER') bucket.winners += 1;
+      else bucket.losers += 1;
+      if (typeof entry.metrics?.hookRate === 'number') bucket.hook.push(entry.metrics.hookRate);
+      if (typeof entry.metrics?.holdRate === 'number') bucket.hold.push(entry.metrics.holdRate);
+      buckets.set(value, bucket);
+    }
+    dimensions.push(...[...buckets.entries()]
+      .map(([value, bucket]) => ({
+        dimension: dimension.label,
+        value,
+        winners: bucket.winners,
+        losers: bucket.losers,
+        avgHookRate: mean(bucket.hook),
+        avgHoldRate: mean(bucket.hold),
+      }))
+      .sort((a, b) => b.winners + b.losers - (a.winners + a.losers) || a.value.localeCompare(b.value))
+      .slice(0, MAX_VALUES_PER_DIMENSION));
+  }
+
+  // Triggers are a list per creative, so one creative counts in several rows.
+  const triggerBuckets = new Map<string, { winners: number; losers: number }>();
+  for (const entry of own) {
+    const framework = entry.structure?.schemaVersion === 3 ? entry.structure.framework : null;
+    for (const trigger of framework?.triggers ?? []) {
+      const bucket = triggerBuckets.get(trigger) ?? { winners: 0, losers: 0 };
+      if (entry.label === 'WINNER') bucket.winners += 1;
+      else bucket.losers += 1;
+      triggerBuckets.set(trigger, bucket);
+    }
+  }
+  dimensions.push(...[...triggerBuckets.entries()]
+    .map(([value, bucket]) => ({ dimension: 'trigger', value, winners: bucket.winners, losers: bucket.losers, avgHookRate: null, avgHoldRate: null }))
+    .sort((a, b) => b.winners + b.losers - (a.winners + a.losers) || a.value.localeCompare(b.value))
+    .slice(0, MAX_VALUES_PER_DIMENSION));
+
   const untested: StorePatterns['untested'] = [];
   const tried = (key: keyof KnowledgeAttributes) => new Set(own.map((entry) => String(attributesOf(entry)[key] ?? '')).filter(Boolean));
   for (const [key, label, vocabulary] of [
@@ -146,7 +199,26 @@ export function computeStorePatterns(entries: PatternEntry[]): StorePatterns {
     winnerBeats: beatStats(winners),
     loserBeats: beatStats(losers),
     untested,
+    repeatedMismatches: repeatedMismatches(own),
   };
+}
+
+/** A mismatch the store has made more than once is worth naming to the reviewer. */
+function repeatedMismatches(entries: PatternEntry[]): StorePatterns['repeatedMismatches'] {
+  const counts = new Map<string, { count: number; fixBelongsTo: string }>();
+  for (const entry of entries) {
+    const framework = entry.structure?.schemaVersion === 3 ? entry.structure.framework : null;
+    for (const mismatch of framework?.mismatches ?? []) {
+      const key = mismatch.what.toLowerCase().slice(0, 80);
+      const existing = counts.get(key);
+      counts.set(key, { count: (existing?.count ?? 0) + 1, fixBelongsTo: existing?.fixBelongsTo ?? mismatch.fixBelongsTo });
+    }
+  }
+  return [...counts.entries()]
+    .filter(([, row]) => row.count > 1)
+    .map(([what, row]) => ({ what, count: row.count, fixBelongsTo: row.fixBelongsTo }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
 }
 
 function beatStats(entries: PatternEntry[]): BeatStats | null {
@@ -196,6 +268,9 @@ export function renderStorePatterns(patterns: StorePatterns): string {
   };
   beats("Winners' beats", patterns.winnerBeats);
   beats("Losers' beats", patterns.loserBeats);
+  if (patterns.repeatedMismatches.length) {
+    lines.push(`Mismatches seen more than once: ${patterns.repeatedMismatches.map((row) => `${row.what} (${row.count}x, fix ${row.fixBelongsTo})`).join('; ')}`);
+  }
   if (patterns.untested.length) {
     lines.push(`Not yet tested in this store: ${patterns.untested.map((group) => `${group.dimension} ${group.values.join(', ')}`).join('; ')}. A new angle here is wanted, not penalised.`);
   }

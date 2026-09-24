@@ -42,6 +42,18 @@ export type KnowledgeTimelineEntry = {
   keepOrFix: 'KEEP' | 'FIX';
 };
 
+/** The framework reading, recorded so mismatches can be counted across a store. */
+export type KnowledgeFramework = {
+  awarenessStage: string;
+  sophisticationLevel: string;
+  sophisticationBasis: string | null;
+  bucket: string;
+  bucketBasis: string | null;
+  triggers: string[];
+  mechanismNamed: string | null;
+  mismatches: Array<{ what: string; fixBelongsTo: string }>;
+};
+
 export type KnowledgeBeats = {
   hookEndsAt: number | null;
   productFirstSeenAt: number | null;
@@ -88,6 +100,8 @@ export type CreativeKnowledgeStructureV3 = Omit<CreativeKnowledgeStructureV2, 's
   timeline: KnowledgeTimelineEntry[];
   beats: KnowledgeBeats | null;
   pacing: KnowledgePacing | null;
+  /** Null for records written before the frameworks were part of the contract. */
+  framework: KnowledgeFramework | null;
 };
 
 export type CreativeKnowledgeStructure = CreativeKnowledgeStructureV1 | CreativeKnowledgeStructureV2 | CreativeKnowledgeStructureV3;
@@ -141,6 +155,7 @@ export function extractStructure(analysisResult: unknown, media: KnowledgeMediaH
         timeline,
         beats: extractBeats(result.beats),
         pacing: extractPacing(media?.pacing),
+        framework: extractFramework(result.framework),
       };
     }
     return verdict;
@@ -223,6 +238,32 @@ function extractTimeline(value: unknown): KnowledgeTimelineEntry[] {
     if (entries.length >= MAX_TIMELINE_ENTRIES) break;
   }
   return entries;
+}
+
+function extractFramework(value: unknown): KnowledgeFramework | null {
+  const framework = asRecord(value);
+  if (!framework) return null;
+  const stage = asString(framework.awarenessStage);
+  const level = asString(framework.sophisticationLevel);
+  if (!stage || !level) return null;
+  const mismatches = Array.isArray(framework.mismatches) ? framework.mismatches : [];
+  return {
+    awarenessStage: stage,
+    sophisticationLevel: level,
+    sophisticationBasis: asString(framework.sophisticationBasis),
+    bucket: asString(framework.bucket) ?? 'UNKNOWN',
+    bucketBasis: asString(framework.bucketBasis),
+    triggers: (Array.isArray(framework.triggers) ? framework.triggers : [])
+      .map((trigger) => asString(trigger))
+      .filter((trigger): trigger is string => Boolean(trigger))
+      .slice(0, 7),
+    mechanismNamed: asString(framework.mechanismNamed),
+    mismatches: mismatches
+      .map((row) => asRecord(row))
+      .filter((row): row is Record<string, unknown> => Boolean(row))
+      .slice(0, 5)
+      .map((row) => ({ what: truncate(asString(row.what) ?? '', 300), fixBelongsTo: asString(row.fixBelongsTo) ?? 'CREATIVE' })),
+  };
 }
 
 function extractBeats(value: unknown): KnowledgeBeats | null {
@@ -320,6 +361,11 @@ export function buildKnowledgeDigest(
         lines.push(`Edit: ${p.sceneCount} scenes, ${p.cutsPerMinute} cuts/min, longest static ${p.longestStaticRun.seconds}s${p.speechStartsAt != null ? `, speech from ${p.speechStartsAt}s` : p.hasSpeech ? '' : ', no speech'}`);
       }
       lines.push(`Scenes: ${structure.timeline.map((entry) => entry.role).join(' → ')}`);
+      const f = structure.framework;
+      if (f) {
+        lines.push(`Framework: stage ${f.awarenessStage}, sophistication ${f.sophisticationLevel}, ${f.bucket}${f.triggers.length ? `, triggers ${f.triggers.join('/')}` : ''}${f.mechanismNamed ? `, mechanism "${f.mechanismNamed}"` : ''}`);
+        if (f.mismatches.length) lines.push(`Mismatch: ${f.mismatches.map((row) => `${row.what} (fix: ${row.fixBelongsTo})`).join('; ')}`);
+      }
     }
     lines.push(`Lesson: ${structure.lesson}`);
     if (structure.audienceQuality.failed && structure.audienceQuality.suspectedElement) {
